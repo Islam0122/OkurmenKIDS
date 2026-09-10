@@ -225,7 +225,12 @@ class AddTrainerForm(forms.ModelForm):
         queryset=Subject.objects.none(),
         required=False,
         label="Предметы",
-        widget=forms.SelectMultiple(attrs={"class": "ok-input"}),
+        widget=forms.SelectMultiple(
+            attrs={
+                "class": "ok-subject-select",
+                "data-placeholder": "Поиск и выбор предметов...",
+            }
+        ),
     )
 
     class Meta:
@@ -381,6 +386,7 @@ class TeacherAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
     list_per_page = 20
     actions = ["verify_accounts", "deactivate_trainers"]
+    add_form_template = "admin/users/add_teacher.html"
 
     def get_queryset(self, request):
         return (
@@ -455,13 +461,13 @@ class TeacherAdmin(admin.ModelAdmin):
         name = obj.user.get_full_name() or obj.user.username
         if obj.image:
             img_html = format_html(
-                '<img src="{}" style="width:34px; height:34px; border-radius:50%; object-fit:cover; border:1px solid var(--border);" />',
+                '<img src="{}" class="ok-person-avatar" style="width:34px; height:34px;" />',
                 obj.image.url,
             )
         else:
             initial = name[0].upper() if name else "T"
             img_html = format_html(
-                '<div style="width:34px; height:34px; border-radius:50%; background:var(--primary-soft); color:var(--primary); display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:0.85rem;">{}</div>',
+                '<div class="ok-person-avatar" style="width:34px; height:34px; font-size:0.85rem;">{}</div>',
                 initial,
             )
 
@@ -469,8 +475,8 @@ class TeacherAdmin(admin.ModelAdmin):
             '<div style="display:flex; align-items:center; gap:0.75rem;">'
             "{}"
             '<div style="display:flex; flex-direction:column;">'
-            '<span style="font-weight:600; color:var(--text);">{}</span>'
-            '<span style="font-size:0.75rem; color:var(--text-muted);">@{}</span>'
+            '<span style="font-weight:600; color:var(--ok-text);">{}</span>'
+            '<span style="font-size:0.75rem; color:var(--ok-text-muted);">@{}</span>'
             "</div>"
             "</div>",
             img_html,
@@ -483,7 +489,7 @@ class TeacherAdmin(admin.ModelAdmin):
         if not obj.user.email:
             return "—"
         return format_html(
-            '<a href="mailto:{}" style="color:var(--text-secondary); text-decoration:none;">'
+            '<a href="mailto:{}" style="color:var(--ok-text-secondary); text-decoration:none;">'
             '<i class="bi bi-envelope" style="margin-right:4px;"></i>{}'
             '</a>',
             obj.user.email,
@@ -494,26 +500,19 @@ class TeacherAdmin(admin.ModelAdmin):
     def subjects_badges(self, obj: Teacher) -> str:
         subjects = list(obj.subjects.all())
         if not subjects:
-            return format_html('<span style="color:var(--text-muted); font-size:0.8rem;">—</span>')
+            return format_html('<span style="color:var(--ok-text-muted); font-size:0.8rem;">—</span>')
 
         max_show = 2
         visible = subjects[:max_show]
         more_count = len(subjects) - max_show
 
         badges_list = [
-            format_html(
-                '<span style="display:inline-block; padding:0.15rem 0.5rem; background:var(--surface-hover); border:1px solid var(--border); border-radius:0.375rem; font-size:0.75rem; margin-right:4px; font-weight:500;">{}</span>',
-                s.name,
-            )
-            for s in visible
+            format_html('<span class="ok-chip">{}</span>', s.name) for s in visible
         ]
 
         if more_count > 0:
             badges_list.append(
-                format_html(
-                    '<span style="display:inline-block; padding:0.15rem 0.4rem; background:var(--primary-soft); color:var(--primary); border-radius:0.375rem; font-size:0.72rem; font-weight:700;">+{}</span>',
-                    more_count,
-                )
+                format_html('<span class="ok-chip-more">+{}</span>', more_count)
             )
 
         return mark_safe("".join(badges_list))

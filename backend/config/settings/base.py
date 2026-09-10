@@ -23,7 +23,12 @@ ALLOWED_HOSTS = []
 
 DJANGO_APPS = [
     "jazzmin",
-    "django.contrib.admin",
+    # Swaps in OkurmenKidsAdminSite (custom dashboard template + live
+    # stats) as the default admin site — see apps/users/apps.py and
+    # apps/users/admin_site.py. Must replace "django.contrib.admin"
+    # here, not merely subclass it elsewhere, or admin.site.urls keeps
+    # resolving to the stock AdminSite and the dashboard never renders.
+    "apps.users.apps.OkurmenKidsAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -226,22 +231,31 @@ JAZZMIN_SETTINGS = {
 
 
 
-    # Hide the raw "Users" app group from the sidebar — Teacher and Subject
-    # are exposed instead under the "Обучение" custom group below, in the
-    # order the product actually wants them shown. Admin accounts stay
-    # reachable under "Система".
+    # Hide the raw "Users" app group from the sidebar — every model in it
+    # (Teacher, Subject, User) is exposed instead through the custom groups
+    # below, grouped the way an academy admin actually thinks about them
+    # (teaching staff/students, organisation, day-to-day control, system)
+    # rather than by Django app label.
     "hide_apps": ["users"],
 
     "custom_links": {
         "обучение": [
             {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
-            {"name": "Предметы", "model": "users.subject", "icon": "bi bi-journal-bookmark"},
             {"name": "Студенты · скоро", "url": "#", "icon": "bi bi-mortarboard"},
             {"name": "Группы · скоро", "url": "#", "icon": "bi bi-people"},
+            {"name": "Предметы", "model": "users.subject", "icon": "bi bi-journal-bookmark"},
+        ],
+        "организация": [
             {"name": "Расписание · скоро", "url": "#", "icon": "bi bi-calendar-week"},
+            {"name": "Кабинеты · скоро", "url": "#", "icon": "bi bi-door-open"},
+        ],
+        "контроль": [
             {"name": "Посещаемость · скоро", "url": "#", "icon": "bi bi-clipboard-check"},
             {"name": "Домашние задания · скоро", "url": "#", "icon": "bi bi-journal-text"},
             {"name": "KPI · скоро", "url": "#", "icon": "bi bi-graph-up-arrow"},
+        ],
+        "система": [
+            {"name": "Администраторы", "model": "users.user", "icon": "bi bi-shield-lock"},
         ],
     },
 
@@ -252,13 +266,16 @@ JAZZMIN_SETTINGS = {
     # more typical look for section labels in a premium dashboard.
     "icons": {
         "обучение": "bi bi-mortarboard-fill",
+        "организация": "bi bi-diagram-3",
+        "контроль": "bi bi-clipboard-data",
         "система": "bi bi-gear",
         "auth": "bi bi-people",
         "auth.group": "bi bi-people",
         "users.user": "bi bi-shield-lock",
         # "model"-type custom_links entries ignore their own "icon" key and
-        # look the icon up here by "app_label.model" instead — so Тренеры
-        # and Предметы need entries here too, not just in custom_links.
+        # look the icon up here by "app_label.model" instead — so every
+        # model-backed entry above needs an entry here too, not just in
+        # custom_links.
         "users.teacher": "bi bi-person-badge",
         "users.subject": "bi bi-journal-bookmark",
     },

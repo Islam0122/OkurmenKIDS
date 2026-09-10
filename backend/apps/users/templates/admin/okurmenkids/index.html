@@ -21,8 +21,8 @@
     <div class="col-12">
 
         <div class="ok-welcome">
-            <h1>Добро пожаловать в OkurmenKIDS 👋</h1>
-            <p>Обзор текущего состояния академии на сегодня.</p>
+            <h1>Добро пожаловать в OkurmenKIDS</h1>
+            <p>Сегодня, {% now "j E" %} — обзор текущего состояния академии.</p>
         </div>
 
         <div class="ok-kpi-grid">
@@ -176,55 +176,85 @@
             var total = JSON.parse(document.getElementById("ok-teachers-total").textContent) || 0;
             var inactive = Math.max(total - active - pending, 0);
 
-            var emerald = "#0B6E4F";
-            var green = "#2E9E62";
-            var grey = "#D8E2DC";
+            function cssVar(name) {
+                return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            }
 
-            var subjectsCtx = document.getElementById("ok-subjects-chart");
-            if (subjectsCtx) {
-                new Chart(subjectsCtx, {
-                    type: "bar",
-                    data: {
-                        labels: subjects.map(function (s) { return s.name; }),
-                        datasets: [{
-                            label: "Тренеров",
-                            data: subjects.map(function (s) { return s.teacher_count; }),
-                            backgroundColor: green,
-                            borderRadius: 6,
-                            maxBarThickness: 34
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#EEF3EF" } },
-                            x: { grid: { display: false } }
+            var subjectsChart, statusChart;
+
+            function palette() {
+                return {
+                    primary: cssVar("--ok-primary") || "#2F8F5B",
+                    primaryHover: cssVar("--ok-primary-hover") || "#287A4D",
+                    muted: cssVar("--ok-border") || "#D8E2DC",
+                    text: cssVar("--ok-text-secondary") || "#68736C",
+                    grid: cssVar("--ok-border") || "#EEF3EF"
+                };
+            }
+
+            function render() {
+                var colors = palette();
+
+                var subjectsCtx = document.getElementById("ok-subjects-chart");
+                if (subjectsCtx) {
+                    if (subjectsChart) subjectsChart.destroy();
+                    subjectsChart = new Chart(subjectsCtx, {
+                        type: "bar",
+                        data: {
+                            labels: subjects.map(function (s) { return s.name; }),
+                            datasets: [{
+                                label: "Тренеров",
+                                data: subjects.map(function (s) { return s.teacher_count; }),
+                                backgroundColor: colors.primary,
+                                borderRadius: 6,
+                                maxBarThickness: 34
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { precision: 0, color: colors.text },
+                                    grid: { color: colors.grid }
+                                },
+                                x: { ticks: { color: colors.text }, grid: { display: false } }
+                            }
                         }
-                    }
-                });
+                    });
+                }
+
+                var statusCtx = document.getElementById("ok-status-chart");
+                if (statusCtx) {
+                    if (statusChart) statusChart.destroy();
+                    statusChart = new Chart(statusCtx, {
+                        type: "doughnut",
+                        data: {
+                            labels: ["Подтверждены", "Ожидают подтверждения", "Неактивны"],
+                            datasets: [{
+                                data: [active - pending > 0 ? active - pending : active, pending, inactive],
+                                backgroundColor: [colors.primary, colors.primaryHover, colors.muted],
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: "bottom",
+                                    labels: { boxWidth: 10, font: { size: 11 }, color: colors.text }
+                                }
+                            }
+                        }
+                    });
+                }
             }
 
-            var statusCtx = document.getElementById("ok-status-chart");
-            if (statusCtx) {
-                new Chart(statusCtx, {
-                    type: "doughnut",
-                    data: {
-                        labels: ["Подтверждены", "Ожидают подтверждения", "Неактивны"],
-                        datasets: [{
-                            data: [active - pending > 0 ? active - pending : active, pending, inactive],
-                            backgroundColor: [emerald, green, grey],
-                            borderWidth: 0
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } }
-                    }
-                });
-            }
+            render();
+            document.addEventListener("ok-theme-changed", render);
         })();
     </script>
 {% endblock %}
