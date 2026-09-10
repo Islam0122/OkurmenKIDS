@@ -6,11 +6,12 @@ import { Drawer } from '@/components/ui/Drawer'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/utils/cn'
 
-import { MOBILE_MORE_NAV } from './navItems'
+import { getMobileMoreNav } from './navItems'
 
 export function Header() {
   const { user, logout } = useAuth()
   const [isMoreOpen, setIsMoreOpen] = useState(false)
+  const moreNavItems = getMobileMoreNav(user?.role)
 
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
 
@@ -43,7 +44,7 @@ export function Header() {
             <p className="text-sm font-medium text-ink">
               {user?.first_name} {user?.last_name}
             </p>
-            <p className="text-xs text-ink-secondary">Тренер</p>
+            <p className="text-xs text-ink-secondary">{user?.role === 'admin' ? 'Администратор' : 'Тренер'}</p>
           </div>
         </div>
 
@@ -59,7 +60,7 @@ export function Header() {
 
       <Drawer isOpen={isMoreOpen} onClose={() => setIsMoreOpen(false)} title="Другие разделы" side="bottom">
         <nav className="grid grid-cols-2 gap-2">
-          {MOBILE_MORE_NAV.map((item) => (
+          {moreNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

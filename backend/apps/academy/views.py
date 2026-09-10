@@ -54,6 +54,8 @@ from .serializers import (
     CourseLessonPlanSerializer,
     CourseSerializer,
     GenerateLessonsResponseSerializer,
+    GroupScheduleLessonSerializer,
+    GroupScheduleSerializer,
     GroupSerializer,
     HomeworkResultSerializer,
     HomeworkSerializer,
@@ -66,6 +68,8 @@ from .serializers import (
     KPIStudentSerializer,
     KPITeacherSerializer,
     LessonSerializer,
+    RoomAvailabilityRequestSerializer,
+    RoomAvailabilitySerializer,
     RoomSerializer,
     StudentSerializer,
 )
@@ -181,6 +185,59 @@ class RoomViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "capacity"]
     ordering = ["name"]
 
+    @extend_schema(
+        tags=["Rooms"],
+        parameters=[RoomAvailabilityRequestSerializer],
+        responses=RoomAvailabilitySerializer,
+        description=(
+            "Free vs. occupied rooms for a given date + time window, based on "
+            "existing Lesson rows (any Lesson whose [start_time, end_time) "
+            "overlaps the requested window occupies its room; cancelled "
+            "lessons never occupy a room)."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="available", permission_classes=[IsAuthenticated])
+    def available(self, request):
+        params = RoomAvailabilityRequestSerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        date_ = params.validated_data["date"]
+        start_time = params.validated_data["start_time"]
+        end_time = params.validated_data["end_time"]
+
+        overlapping_lessons = (
+            Lesson.objects.filter(date=date_, room__isnull=False)
+            .exclude(status=Lesson.Status.CANCELLED)
+            .filter(start_time__lt=end_time, end_time__gt=start_time)
+            .select_related("room", "group")
+        )
+
+        occupied_room_ids = set()
+        occupied = []
+        for lesson in overlapping_lessons:
+            occupied_room_ids.add(lesson.room_id)
+            occupied.append(
+                {
+                    "room": lesson.room_id,
+                    "room_name": lesson.room.name,
+                    "lesson": lesson.id,
+                    "group": lesson.group_id,
+                    "group_name": lesson.group.name,
+                    "start_time": lesson.start_time,
+                    "end_time": lesson.end_time,
+                }
+            )
+
+        available_rooms = Room.objects.filter(is_active=True).exclude(id__in=occupied_room_ids).order_by("name")
+
+        payload = {
+            "date": date_,
+            "start_time": start_time,
+            "end_time": end_time,
+            "available": RoomSerializer(available_rooms, many=True).data,
+            "occupied": occupied,
+        }
+        return Response(RoomAvailabilitySerializer(payload).data)
+
 
 @extend_schema_view(
     list=extend_schema(tags=["Students"]),
@@ -281,6 +338,47 @@ class GroupViewSet(viewsets.ModelViewSet):
         }
         response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(GenerateLessonsResponseSerializer(payload).data, status=response_status)
+
+    @extend_schema(tags=["Groups"], responses=GroupScheduleSerializer)
+    @action(detail=True, methods=["get"], url_path="schedule")
+    def schedule(self, request, pk=None):
+        """The Trainer-facing "schedule of this group": the group itself plus
+        every one of its concrete, dated Lessons (day-by-day, not a generic
+        flat Lesson list) — what `GroupsListPage -> Group -> schedule` opens.
+
+        Looked up via `get_queryset()` directly rather than `self.get_object()`:
+        the latter also runs this viewset's `GroupFilter` (via
+        `filter_queryset()`), and `?status=` here means *Lesson* status, not
+        the `Group.status` field `GroupFilter` defines under the same name —
+        applying that filter to a single-object lookup by id would wrongly
+        404 e.g. an active group when `?status=cancelled` is passed.
+        """
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        lessons = group.lessons.select_related("room", "subject", "plan").order_by("date", "start_time")
+
+        status_param = request.query_params.get("status")
+        if status_param:
+            lessons = lessons.filter(status=status_param)
+
+        payload = {
+            "group": GroupSerializer(group, context=self.get_serializer_context()).data,
+            "lessons": GroupScheduleLessonSerializer(lessons, many=True).data,
+        }
+        return Response(payload)
+
+    @extend_schema(tags=["Groups"], responses=StudentSerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="students")
+    def students(self, request, pk=None):
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        qs = group.students.select_related("group").order_by("last_name", "first_name")
+
+        is_active_param = request.query_params.get("is_active")
+        if is_active_param is not None:
+            qs = qs.filter(is_active=is_active_param.lower() in ("1", "true", "yes"))
+        else:
+            qs = qs.filter(is_active=True)
+
+        return Response(StudentSerializer(qs, many=True, context=self.get_serializer_context()).data)
 
 
 # ---------------------------------------------------------------------------

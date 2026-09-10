@@ -20,12 +20,11 @@ from django.views.decorators.http import require_POST
 
 from apps.users.models import Subject, Teacher, User
 
+from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 from .models import Course, Group, Lesson, Room
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
-WEEKDAY_NAMES = [
-    "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье",
-]
+WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
 
 
 def _is_admin_user(user) -> bool:

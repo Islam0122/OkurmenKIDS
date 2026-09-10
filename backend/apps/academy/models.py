@@ -358,6 +358,21 @@ class Group(models.Model):
                 f"аудитории «{self.room.name}» ({self.room.capacity})."
             )
 
+        if self.room_id and self.days_of_week and self.start_time and self.end_time and self.start_date:
+            from .services.room_conflicts import find_room_schedule_conflict
+
+            conflict = find_room_schedule_conflict(
+                room=self.room,
+                days_of_week=self.days_of_week,
+                start_time=self.start_time,
+                end_time=self.end_time,
+                start_date=self.start_date,
+                end_date=self.end_date,
+                exclude_group_id=self.pk,
+            )
+            if conflict is not None:
+                errors["room"] = f"Аудитория «{self.room.name}» уже занята в это время группой «{conflict.name}»."
+
         if errors:
             raise ValidationError(errors)
 

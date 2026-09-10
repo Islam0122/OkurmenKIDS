@@ -1,16 +1,20 @@
 import { NavLink } from 'react-router-dom'
 
+import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/utils/cn'
 
-import { MOBILE_PRIMARY_NAV } from './navItems'
+import { getMobilePrimaryNav } from './navItems'
 
 export function MobileNavigation() {
+  const { user } = useAuth()
+  const items = getMobilePrimaryNav(user?.role)
+
   return (
     <nav
       aria-label="Основная навигация"
       className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
-      {MOBILE_PRIMARY_NAV.map((item) => (
+      {items.map((item) => (
         <NavLink
           key={item.to}
           to={item.to}

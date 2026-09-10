@@ -9,14 +9,13 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useAttendanceList } from '@/hooks/useAttendance'
-import { useGroup } from '@/hooks/useGroups'
+import { useGroup, useGroupSchedule } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
 import { useKPIGroups } from '@/hooks/useKPI'
-import { useLessons } from '@/hooks/useLessons'
 import { useStudents } from '@/hooks/useStudents'
-import type { Group } from '@/types/academy'
+import type { Group, GroupScheduleLesson, LessonStatus } from '@/types/academy'
 import { ATTENDANCE_STATUS_LABELS } from '@/types/attendance'
-import { DAY_LABELS } from '@/types/common'
+import { DAY_LABELS, WEEKDAY_ORDER } from '@/types/common'
 import { cn } from '@/utils/cn'
 import { formatDateShort, formatTimeRange } from '@/utils/format'
 
@@ -27,10 +26,16 @@ const STATUS_TONE: Record<Group['status'], BadgeTone> = {
   cancelled: 'danger',
 }
 
+const LESSON_STATUS_TONE: Record<LessonStatus, BadgeTone> = {
+  planned: 'muted',
+  completed: 'success',
+  cancelled: 'danger',
+}
+
 const TABS = [
   { key: 'overview', label: 'Обзор' },
   { key: 'students', label: 'Студенты' },
-  { key: 'lessons', label: 'Занятия' },
+  { key: 'schedule', label: 'Расписание' },
   { key: 'attendance', label: 'Посещаемость' },
   { key: 'homework', label: 'Домашние задания' },
   { key: 'kpi', label: 'KPI' },
@@ -74,7 +79,7 @@ export function GroupDetailPage() {
 
       {tab === 'overview' ? <OverviewTab group={group} /> : null}
       {tab === 'students' ? <StudentsTab groupId={groupId} /> : null}
-      {tab === 'lessons' ? <LessonsTab groupId={groupId} /> : null}
+      {tab === 'schedule' ? <ScheduleTab groupId={groupId} /> : null}
       {tab === 'attendance' ? <AttendanceTab groupId={groupId} /> : null}
       {tab === 'homework' ? <HomeworkTab groupId={groupId} /> : null}
       {tab === 'kpi' ? <KpiTab groupId={groupId} /> : null}
@@ -134,26 +139,68 @@ function StudentsTab({ groupId }: { groupId: number }) {
   )
 }
 
-function LessonsTab({ groupId }: { groupId: number }) {
-  const { data, isPending, isError, refetch } = useLessons({ group: groupId, ordering: '-date' })
+/** The group's schedule, grouped by weekday (Пн/Чт/Пт-style) rather than a
+ * flat reverse-chronological Lesson list — a Trainer opens a group to see
+ * *when* it meets and what's coming up on each of those days, not to hunt
+ * through every Lesson ever generated for it. */
+function ScheduleTab({ groupId }: { groupId: number }) {
+  const { data, isPending, isError, refetch } = useGroupSchedule(groupId)
 
-  if (isPending) return <LoadingState label="Загружаем занятия…" />
+  if (isPending) return <LoadingState label="Загружаем расписание…" />
   if (isError) return <ErrorState onRetry={() => void refetch()} />
-  if (data.results.length === 0) return <EmptyState title="Занятий пока нет" description="Сгенерируйте занятия по курсу в Django Admin." />
+  if (data.lessons.length === 0) {
+    return <EmptyState title="Занятий пока нет" description="Занятия создаются автоматически после того, как у курса группы готов план занятий." />
+  }
+
+  const byWeekday = new Map<string, GroupScheduleLesson[]>()
+  for (const lesson of data.lessons) {
+    const bucket = byWeekday.get(lesson.weekday)
+    if (bucket) bucket.push(lesson)
+    else byWeekday.set(lesson.weekday, [lesson])
+  }
+  const weekdays = WEEKDAY_ORDER.filter((day) => byWeekday.has(day))
 
   return (
-    <ul className="space-y-2">
-      {data.results.map((lesson) => (
-        <li key={lesson.id}>
-          <Link to={`/app/lessons/${lesson.id}`} className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3 hover:bg-surface-hover">
-            <span className="text-sm text-ink">
-              {formatDateShort(lesson.date)} · {formatTimeRange(lesson.start_time, lesson.end_time)}
-            </span>
-            <span className="text-sm text-ink-secondary">{lesson.subject_name ?? 'Без предмета'}</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-5">
+      {weekdays.map((day) => {
+        const lessons = byWeekday.get(day) ?? []
+        return (
+          <div key={day}>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+              {lessons[0]?.weekday_label ?? DAY_LABELS[day]}
+            </h3>
+            <ul className="space-y-2">
+              {lessons.map((lesson) => (
+                <li key={lesson.id}>
+                  <Link
+                    to={`/app/lessons/${lesson.id}`}
+                    className={cn(
+                      'flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface px-4 py-3 hover:bg-surface-hover',
+                      lesson.status === 'cancelled' && 'opacity-70',
+                    )}
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-ink">
+                        {formatTimeRange(lesson.start_time, lesson.end_time)}
+                        <span className="ml-2 font-normal text-ink-secondary">
+                          {formatDateShort(lesson.date)} · Занятие {lesson.lesson_number}
+                        </span>
+                      </p>
+                      <p className="mt-0.5 text-sm text-ink-secondary">
+                        {lesson.subject_name ?? 'Без предмета'}
+                        {lesson.topic ? ` — ${lesson.topic}` : ''}
+                      </p>
+                      {lesson.room_name ? <p className="mt-0.5 text-xs text-ink-muted">Аудитория: {lesson.room_name}</p> : null}
+                    </div>
+                    <Badge tone={LESSON_STATUS_TONE[lesson.status]}>{lesson.status_display}</Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

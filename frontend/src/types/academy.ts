@@ -136,3 +136,41 @@ export interface Lesson {
   created_at: string
   updated_at: string
 }
+
+/** `apps.academy.serializers.GroupScheduleLessonSerializer` — a Lesson plus
+ * which weekday it fell on (from the backend's canonical mon/tue/... map,
+ * never a locale-formatted date). */
+export interface GroupScheduleLesson extends Lesson {
+  weekday: DayOfWeek
+  weekday_label: string
+}
+
+/** `apps.academy.serializers.GroupScheduleSerializer` — response of
+ * `GET /academy/groups/{id}/schedule/`: the group's own recurring pattern
+ * (days_of_week/start_time/end_time/room) plus every dated Lesson it has. */
+export interface GroupSchedule {
+  group: Group
+  lessons: GroupScheduleLesson[]
+}
+
+/** `apps.academy.serializers.RoomOccupancySerializer` — one Lesson occupying
+ * a room within the requested window. */
+export interface RoomOccupancy {
+  room: number
+  room_name: string
+  lesson: number
+  group: number | null
+  group_name: string | null
+  start_time: string
+  end_time: string
+}
+
+/** `apps.academy.serializers.RoomAvailabilitySerializer` — response of
+ * `GET /academy/rooms/available/?date=&start_time=&end_time=`. */
+export interface RoomAvailability {
+  date: string
+  start_time: string
+  end_time: string
+  available: Room[]
+  occupied: RoomOccupancy[]
+}
