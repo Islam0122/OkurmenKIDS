@@ -5,6 +5,7 @@ from rest_framework import serializers
 from apps.users.models import Teacher, User
 from apps.users.serializers import SubjectSerializer
 
+from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 from .models import (
     Attendance,
     Course,
@@ -22,6 +23,7 @@ from .models import (
     Room,
     Student,
 )
+from .services.room_conflicts import find_room_schedule_conflict
 
 
 def _is_teacher(user) -> bool:
@@ -137,6 +139,39 @@ class RoomSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+class RoomAvailabilityRequestSerializer(serializers.Serializer):
+    """Query params for `GET /rooms/available/`."""
+
+    date = serializers.DateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+
+    def validate(self, attrs):
+        if attrs["end_time"] <= attrs["start_time"]:
+            raise serializers.ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
+        return attrs
+
+
+class RoomOccupancySerializer(serializers.Serializer):
+    """One occupying Lesson, for the `occupied` list of `GET /rooms/available/`."""
+
+    room = serializers.IntegerField()
+    room_name = serializers.CharField()
+    lesson = serializers.IntegerField()
+    group = serializers.IntegerField(allow_null=True)
+    group_name = serializers.CharField(allow_null=True)
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+
+
+class RoomAvailabilitySerializer(serializers.Serializer):
+    date = serializers.DateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+    available = RoomSerializer(many=True)
+    occupied = RoomOccupancySerializer(many=True)
+
+
 class StudentSerializer(_RequestAwareSerializer):
     full_name = serializers.SerializerMethodField()
     group_name = serializers.CharField(source="group.name", read_only=True, default=None)
@@ -244,6 +279,21 @@ class GroupSerializer(serializers.ModelSerializer):
                 {"max_students": f"Максимум студентов превышает вместимость аудитории «{room.name}» ({room.capacity})."}
             )
 
+        if room is not None and days_of_week and start_time and end_time and start_date:
+            conflict = find_room_schedule_conflict(
+                room=room,
+                days_of_week=days_of_week,
+                start_time=start_time,
+                end_time=end_time,
+                start_date=start_date,
+                end_date=end_date,
+                exclude_group_id=getattr(self.instance, "pk", None),
+            )
+            if conflict is not None:
+                raise serializers.ValidationError(
+                    {"room": f"Аудитория «{room.name}» уже занята в это время группой «{conflict.name}»."}
+                )
+
         return attrs
 
     def create(self, validated_data):
@@ -316,6 +366,32 @@ class LessonSerializer(serializers.ModelSerializer):
         if start_time and end_time and end_time <= start_time:
             raise serializers.ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
         return attrs
+
+
+class GroupScheduleLessonSerializer(LessonSerializer):
+    """LessonSerializer plus the lesson's weekday — for `GET /groups/{id}/schedule/`,
+    so the frontend can group a group's lessons "Пн / Чт / Пт" without redoing
+    the mon/tue/... mapping itself."""
+
+    weekday = serializers.SerializerMethodField()
+    weekday_label = serializers.SerializerMethodField()
+
+    class Meta(LessonSerializer.Meta):
+        fields = LessonSerializer.Meta.fields + ["weekday", "weekday_label"]
+
+    def get_weekday(self, obj: Lesson) -> str:
+        return WEEKDAY_CODES[obj.date.weekday()]
+
+    def get_weekday_label(self, obj: Lesson) -> str:
+        return WEEKDAY_LABELS_FULL[WEEKDAY_CODES[obj.date.weekday()]]
+
+
+class GroupScheduleSerializer(serializers.Serializer):
+    """Response of `GET /groups/{id}/schedule/`: the group itself plus its
+    concrete, dated Lessons — the Trainer-facing "schedule of this group"."""
+
+    group = GroupSerializer()
+    lessons = GroupScheduleLessonSerializer(many=True)
 
 
 # ---------------------------------------------------------------------------

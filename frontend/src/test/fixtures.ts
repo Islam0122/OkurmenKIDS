@@ -1,4 +1,4 @@
-import type { Group, Lesson, Subject, Teacher } from '@/types/academy'
+import type { Group, GroupScheduleLesson, Lesson, Subject, Teacher } from '@/types/academy'
 import type { AttendanceRecord } from '@/types/attendance'
 import type { User } from '@/types/auth'
 import type { Homework, HomeworkResult } from '@/types/homework'
@@ -102,6 +102,15 @@ export function buildLesson(overrides: Partial<Lesson> = {}): Lesson {
     cancellation_reason: '',
     created_at: '2026-09-01T00:00:00Z',
     updated_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+export function buildGroupScheduleLesson(overrides: Partial<GroupScheduleLesson> = {}): GroupScheduleLesson {
+  return {
+    ...buildLesson(),
+    weekday: 'mon',
+    weekday_label: 'Понедельник',
     ...overrides,
   }
 }

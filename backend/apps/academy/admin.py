@@ -7,6 +7,7 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from .admin_views import generate_lessons_for_group_view, schedule_view
+from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
 from .models import (
     KPIAttendance,
     KPIGroup,
@@ -34,10 +35,7 @@ from .services.kpi_calculator import (
 )
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
-DAY_CHOICES = [
-    ("mon", "Пн"), ("tue", "Вт"), ("wed", "Ср"), ("thu", "Чт"),
-    ("fri", "Пт"), ("sat", "Сб"), ("sun", "Вс"),
-]
+DAY_CHOICES = [(code, WEEKDAY_LABELS_SHORT[code]) for code in WEEKDAY_CODES]
 
 
 def _badge(css: str, label: str) -> str:

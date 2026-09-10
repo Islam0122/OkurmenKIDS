@@ -4,10 +4,11 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/utils/cn'
 
-import { NAV_ITEMS, PROFILE_NAV_ITEM } from './navItems'
+import { getNavItems, PROFILE_NAV_ITEM } from './navItems'
 
 export function Sidebar() {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
+  const navItems = getNavItems(user?.role)
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-surface lg:flex">
@@ -19,7 +20,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Основная навигация">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

@@ -198,6 +198,198 @@ class GroupTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+class GroupRoomConflictTests(AcademyTestBase):
+    """group1 already occupies room1 on Mon/Wed 15:00-16:30 (see AcademyTestBase.setUp)."""
+
+    def _create(self, **overrides):
+        payload = {
+            "name": "New Group",
+            "course": self.course.id,
+            "teacher": self.teacher2.id,
+            "room": self.room1.id,
+            "start_date": "2026-09-07",
+            "start_time": "15:30",
+            "end_time": "17:00",
+            "days_of_week": ["mon"],
+        }
+        payload.update(overrides)
+        return self.admin_client.post("/api/v1/academy/groups/", payload, format="json")
+
+    def test_overlapping_room_day_and_time_rejected(self):
+        response = self._create()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("room", response.data)
+
+    def test_same_room_different_day_allowed(self):
+        response = self._create(days_of_week=["tue"])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_same_room_non_overlapping_time_allowed(self):
+        response = self._create(start_time="09:00", end_time="10:00")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_different_room_same_day_and_time_allowed(self):
+        response = self._create(room=self.room2.id)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_cancelled_group_does_not_block_room(self):
+        self.group1.status = Group.Status.CANCELLED
+        self.group1.save(update_fields=["status"])
+        response = self._create()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_editing_group_to_conflict_rejected(self):
+        # group2 is room2/Tue,Thu 17:00-18:30 — moving it onto group1's own
+        # room1/Mon slot must be rejected too, not just on create.
+        response = self.admin_client.patch(
+            f"/api/v1/academy/groups/{self.group2.id}/",
+            {"room": self.room1.id, "days_of_week": ["mon"], "start_time": "15:00", "end_time": "16:30"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("room", response.data)
+
+    def test_editing_group_without_touching_its_own_schedule_not_blocked_by_itself(self):
+        # Re-saving group1's own unchanged schedule must not conflict with itself.
+        response = self.admin_client.patch(
+            f"/api/v1/academy/groups/{self.group1.id}/", {"description": "updated"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+    def test_model_clean_also_rejects_conflict(self):
+        # Admin's ModelForm validates via full_clean(), not the DRF serializer —
+        # the same rule must hold there too.
+        conflicting = Group(
+            name="Model-level conflict",
+            course=self.course,
+            teacher=self.teacher2,
+            room=self.room1,
+            start_date=dt.date(2026, 9, 7),
+            start_time=dt.time(15, 30),
+            end_time=dt.time(17, 0),
+            days_of_week=["mon"],
+        )
+        with self.assertRaises(Exception):
+            conflicting.full_clean()
+
+    def test_open_ended_group_conflicts_with_future_dated_group(self):
+        # group1 has no end_date (open-ended) — a new group starting well in
+        # the future, same room/day/time, must still be seen as overlapping.
+        response = self._create(start_date="2027-01-04")  # a Monday
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("room", response.data)
+
+
+class RoomAvailabilityTests(AcademyTestBase):
+    """group1 occupies room1 Mon/Wed 15:00-16:30; group2 occupies room2 Tue/Thu 17:00-18:30."""
+
+    def test_requires_date_and_times(self):
+        response = self.admin_client.get("/api/v1/academy/rooms/available/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_free_slot_lists_all_active_rooms_available(self):
+        response = self.admin_client.get(
+            "/api/v1/academy/rooms/available/",
+            {"date": "2026-09-07", "start_time": "09:00", "end_time": "10:00"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        available_ids = {room["id"] for room in response.data["available"]}
+        self.assertEqual(available_ids, {self.room1.id, self.room2.id})
+        self.assertEqual(response.data["occupied"], [])
+
+    def test_occupied_room_excluded_and_reported(self):
+        # 2026-09-07 is a Monday — group1's lesson there runs 15:00-16:30 in room1.
+        response = self.admin_client.get(
+            "/api/v1/academy/rooms/available/",
+            {"date": "2026-09-07", "start_time": "15:15", "end_time": "16:00"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        available_ids = {room["id"] for room in response.data["available"]}
+        self.assertEqual(available_ids, {self.room2.id})
+        occupied_rooms = {row["room"] for row in response.data["occupied"]}
+        self.assertEqual(occupied_rooms, {self.room1.id})
+        self.assertEqual(response.data["occupied"][0]["group_name"], "Python Beginner")
+
+    def test_adjacent_non_overlapping_slot_is_free(self):
+        # Ends exactly when group1's lesson starts — [start, end) semantics, no overlap.
+        response = self.admin_client.get(
+            "/api/v1/academy/rooms/available/",
+            {"date": "2026-09-07", "start_time": "13:00", "end_time": "15:00"},
+        )
+        available_ids = {room["id"] for room in response.data["available"]}
+        self.assertIn(self.room1.id, available_ids)
+
+    def test_cancelled_lesson_never_occupies_room(self):
+        lesson = Lesson.objects.filter(group=self.group1, date=dt.date(2026, 9, 7)).first()
+        lesson.status = Lesson.Status.CANCELLED
+        lesson.save(update_fields=["status"])
+
+        response = self.admin_client.get(
+            "/api/v1/academy/rooms/available/",
+            {"date": "2026-09-07", "start_time": "15:15", "end_time": "16:00"},
+        )
+        available_ids = {room["id"] for room in response.data["available"]}
+        self.assertIn(self.room1.id, available_ids)
+
+
+class GroupScheduleEndpointTests(AcademyTestBase):
+    def test_returns_group_and_dated_lessons_with_weekday(self):
+        response = self.admin_client.get(f"/api/v1/academy/groups/{self.group1.id}/schedule/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["group"]["id"], self.group1.id)
+
+        lessons = response.data["lessons"]
+        self.assertEqual(len(lessons), 4)
+        # 2026-09-07 is a Monday, 2026-09-09 is a Wednesday.
+        self.assertEqual(lessons[0]["date"], "2026-09-07")
+        self.assertEqual(lessons[0]["weekday"], "mon")
+        self.assertEqual(lessons[0]["weekday_label"], "Понедельник")
+        self.assertEqual(lessons[1]["weekday"], "wed")
+
+    def test_teacher_can_see_own_group_schedule(self):
+        response = self.teacher1_client.get(f"/api/v1/academy/groups/{self.group1.id}/schedule/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_teacher_cannot_see_other_teachers_group_schedule(self):
+        response = self.teacher1_client.get(f"/api/v1/academy/groups/{self.group2.id}/schedule/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_status_filter(self):
+        lesson = Lesson.objects.filter(group=self.group1).first()
+        lesson.status = Lesson.Status.CANCELLED
+        lesson.save(update_fields=["status"])
+
+        response = self.admin_client.get(
+            f"/api/v1/academy/groups/{self.group1.id}/schedule/", {"status": "cancelled"}
+        )
+        self.assertEqual(len(response.data["lessons"]), 1)
+        self.assertEqual(response.data["lessons"][0]["id"], lesson.id)
+
+
+class GroupStudentsEndpointTests(AcademyTestBase):
+    def test_returns_active_students_of_the_group(self):
+        response = self.admin_client.get(f"/api/v1/academy/groups/{self.group1.id}/students/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = {row["full_name"] for row in response.data}
+        self.assertEqual(names, {"Алина Иванова", "Мансур Алиев"})
+
+    def test_inactive_student_excluded_by_default(self):
+        self.student1.is_active = False
+        self.student1.save(update_fields=["is_active"])
+        response = self.admin_client.get(f"/api/v1/academy/groups/{self.group1.id}/students/")
+        names = {row["full_name"] for row in response.data}
+        self.assertEqual(names, {"Мансур Алиев"})
+
+    def test_teacher_can_see_own_group_students(self):
+        response = self.teacher1_client.get(f"/api/v1/academy/groups/{self.group1.id}/students/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+
+    def test_teacher_cannot_see_other_teachers_group_students(self):
+        response = self.teacher1_client.get(f"/api/v1/academy/groups/{self.group2.id}/students/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
 class StudentTests(AcademyTestBase):
     def test_admin_sees_all_students(self):
         response = self.admin_client.get("/api/v1/academy/students/")

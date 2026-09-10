@@ -5,9 +5,8 @@ import datetime as dt
 
 from django.db import transaction
 
+from ..constants import WEEKDAY_CODES
 from ..models import Group, Lesson
-
-WEEKDAY_CODES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 # A misconfigured group (an empty days_of_week that somehow bypassed
 # validation, say) must never turn this into an infinite loop.

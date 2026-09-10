@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { addDays, addWeeks, endOfWeek, format, isToday, startOfWeek } from 'date-fns'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
 
 import { lessonsApi, type LessonListParams } from '@/api/lessons'
 import { roomsApi } from '@/api/rooms'
 import { subjectsApi } from '@/api/subjects'
+import { RoomAvailabilityPanel } from '@/components/academy/RoomAvailabilityPanel'
 import { DaySchedule } from '@/components/calendar/DaySchedule'
 import { WeekCalendar } from '@/components/calendar/WeekCalendar'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -32,6 +33,7 @@ export function SchedulePage() {
   const [subjectId, setSubjectId] = useState('')
   const [roomId, setRoomId] = useState('')
   const [status, setStatus] = useState('')
+  const [showRoomAvailability, setShowRoomAvailability] = useState(false)
 
   const rangeStart = view === 'week' ? startOfWeek(anchor, { weekStartsOn: 1 }) : anchor
   const rangeEnd = view === 'week' ? endOfWeek(anchor, { weekStartsOn: 1 }) : anchor
@@ -96,23 +98,39 @@ export function SchedulePage() {
           </span>
         </div>
 
-        <div className="flex rounded-lg border border-border p-1">
-          <button
-            type="button"
-            onClick={() => setView('week')}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === 'week' ? 'bg-brand-500 text-white' : 'text-ink-secondary'}`}
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-border p-1">
+            <button
+              type="button"
+              onClick={() => setView('week')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === 'week' ? 'bg-brand-500 text-white' : 'text-ink-secondary'}`}
+            >
+              Неделя
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('day')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === 'day' ? 'bg-brand-500 text-white' : 'text-ink-secondary'}`}
+            >
+              День
+            </button>
+          </div>
+          <Button
+            variant={showRoomAvailability ? 'primary' : 'secondary'}
+            size="sm"
+            leftIcon={<Search className="size-4" aria-hidden />}
+            onClick={() => setShowRoomAvailability((value) => !value)}
           >
-            Неделя
-          </button>
-          <button
-            type="button"
-            onClick={() => setView('day')}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === 'day' ? 'bg-brand-500 text-white' : 'text-ink-secondary'}`}
-          >
-            День
-          </button>
+            Свободные аудитории
+          </Button>
         </div>
       </div>
+
+      {showRoomAvailability ? (
+        <div className="mb-6">
+          <RoomAvailabilityPanel defaultDate={dateFrom} />
+        </div>
+      ) : null}
 
       <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Select
