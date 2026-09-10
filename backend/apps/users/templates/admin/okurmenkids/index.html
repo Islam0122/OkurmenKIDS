@@ -98,20 +98,23 @@
                 <div class="row">
                     <div class="col-md-6 col-12 mb-3">
                         <div class="card ok-chart-card">
-                            <div class="card-header">Сегодняшние занятия</div>
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Расписание сегодня</span>
+                                <a href="{% url 'admin:academy_schedule' %}" class="btn btn-outline-success btn-sm">Открыть расписание</a>
+                            </div>
                             <div class="card-body p-0">
                                 {% if ok_stats.lessons_today %}
                                     <table class="table table-sm mb-0">
                                         <thead>
-                                            <tr><th>Время</th><th>Группа</th><th>Тренер</th><th>Аудитория</th></tr>
+                                            <tr><th>Время</th><th>Предмет</th><th>Группа</th><th>Тренер</th></tr>
                                         </thead>
                                         <tbody>
                                             {% for lesson in ok_stats.lessons_today %}
                                                 <tr>
-                                                    <td>{{ lesson.start_time|time:"H:i" }}</td>
+                                                    <td><a href="{% url 'admin:academy_lesson_change' lesson.id %}">{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</a></td>
+                                                    <td>{{ lesson.subject|default:"—" }}</td>
                                                     <td>{{ lesson.group.name }}</td>
                                                     <td>{{ lesson.group.teacher }}</td>
-                                                    <td>{{ lesson.room|default:"—" }}</td>
                                                 </tr>
                                             {% endfor %}
                                         </tbody>

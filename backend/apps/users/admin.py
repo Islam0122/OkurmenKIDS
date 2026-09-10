@@ -377,6 +377,7 @@ class TeacherAdmin(admin.ModelAdmin):
         "subjects_badges",
         "verified_badge",
         "active_badge",
+        "schedule_link",
         "change_password_link",
     )
     list_display_links = ("avatar_and_name",)
@@ -500,7 +501,9 @@ class TeacherAdmin(admin.ModelAdmin):
     def subjects_badges(self, obj: Teacher) -> str:
         subjects = list(obj.subjects.all())
         if not subjects:
-            return format_html('<span style="color:var(--ok-text-muted); font-size:0.8rem;">—</span>')
+            return format_html(
+                '<span style="color:var(--ok-text-muted); font-size:0.8rem;">{}</span>', "—"
+            )
 
         max_show = 2
         visible = subjects[:max_show]
@@ -535,6 +538,17 @@ class TeacherAdmin(admin.ModelAdmin):
             '<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>',
             css,
             label,
+        )
+
+    @admin.display(description="Расписание")
+    def schedule_link(self, obj: Teacher) -> str:
+        # academy.admin_views.schedule_view — schedule has no model of its
+        # own, so it's reached by URL name rather than a cross-app import.
+        url = f"{reverse('admin:academy_schedule')}?teacher={obj.pk}"
+        return format_html(
+            '<a class="btn btn-secondary" style="padding:0.25rem 0.6rem; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.3rem;" href="{}">'
+            '<i class="bi bi-calendar-week"></i>Расписание</a>',
+            url,
         )
 
     @admin.display(description="Действия")

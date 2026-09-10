@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import datetime as dt
 
+from django.test import Client as DjangoClient
 from django.test import TestCase
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -519,3 +521,179 @@ class KPITests(AcademyTestBase):
         calculate_student_kpi(self.student1, self.group1, self.date_from, self.date_to)
         response = self.teacher2_client.get("/api/v1/academy/kpi/students/")
         self.assertEqual(response.data["count"], 0)
+
+
+class ScheduleAdminViewTests(AcademyTestBase):
+    """The custom "Расписание" admin page — no model of its own, built on Lesson.
+
+    group1 (teacher1, room1) runs Mon/Wed from 2026-09-07: lessons on
+    09-07, 09-09, 09-14, 09-16. group2 (teacher2, room2) runs Tue/Thu from
+    the same start_date: lessons on 09-08, 09-10, 09-15, 09-17. Both fall
+    within the two-week window 09-07..09-20 used by the filter tests below.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.week1_lessons = generate_lessons_for_group(self.group1)
+        self.week2_lessons = generate_lessons_for_group(self.group2)
+
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    def _get(self, params=None):
+        return self.admin_web.get(reverse("admin:academy_schedule"), params or {})
+
+    def test_admin_can_access_schedule(self):
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+
+    def test_teacher_cannot_access_schedule(self):
+        response = self.teacher_web.get(reverse("admin:academy_schedule"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_default_view_is_current_week(self):
+        response = self._get()
+        days = response.context["days"]
+        self.assertEqual(len(days), 7)
+        self.assertEqual(response.context["week_start"].weekday(), 0)
+        self.assertTrue(any(day["is_today"] for day in days))
+
+    def test_filter_by_teacher(self):
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-20", "teacher": self.teacher1.id})
+        shown = {lesson.id for day in response.context["days"] for lesson in day["lessons"]}
+        self.assertEqual(shown, {lesson.id for lesson in self.week1_lessons})
+
+    def test_filter_by_group(self):
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-20", "group": self.group2.id})
+        shown = {lesson.id for day in response.context["days"] for lesson in day["lessons"]}
+        self.assertEqual(shown, {lesson.id for lesson in self.week2_lessons})
+
+    def test_filter_by_room(self):
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-20", "room": self.room1.id})
+        shown = {lesson.id for day in response.context["days"] for lesson in day["lessons"]}
+        self.assertEqual(shown, {lesson.id for lesson in self.week1_lessons})
+
+    def test_filter_by_subject(self):
+        response = self._get(
+            {"date_from": "2026-09-07", "date_to": "2026-09-20", "subject": self.subject_python.id}
+        )
+        shown_lessons = [lesson for day in response.context["days"] for lesson in day["lessons"]]
+        self.assertTrue(shown_lessons)
+        self.assertTrue(all(lesson.subject_id == self.subject_python.id for lesson in shown_lessons))
+
+    def test_filter_by_status(self):
+        cancelled = self.week1_lessons[0]
+        cancelled.status = Lesson.Status.CANCELLED
+        cancelled.save(update_fields=["status"])
+
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-20", "status": "cancelled"})
+        shown = {lesson.id for day in response.context["days"] for lesson in day["lessons"]}
+        self.assertEqual(shown, {cancelled.id})
+
+    def test_lesson_displayed_on_correct_date_and_time(self):
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-13"})
+        by_date = {day["date"]: day["lessons"] for day in response.context["days"]}
+
+        monday_lessons = by_date[dt.date(2026, 9, 7)]
+        self.assertEqual(len(monday_lessons), 1)
+        self.assertEqual(monday_lessons[0].start_time, self.group1.start_time)
+
+        wednesday_lessons = by_date[dt.date(2026, 9, 9)]
+        self.assertEqual(len(wednesday_lessons), 1)
+
+        self.assertEqual(by_date[dt.date(2026, 9, 11)], [])
+
+    def test_previous_week_navigation(self):
+        response = self._get({"week": "2026-09-14"})
+        self.assertEqual(response.context["week_start"], dt.date(2026, 9, 14))
+
+        prev_response = self.admin_web.get(response.context["prev_week_url"])
+        self.assertEqual(prev_response.context["week_start"], dt.date(2026, 9, 7))
+        shown = {lesson.id for day in prev_response.context["days"] for lesson in day["lessons"]}
+        self.assertTrue({self.week1_lessons[0].id, self.week2_lessons[0].id}.issubset(shown))
+
+    def test_next_week_navigation(self):
+        response = self._get({"week": "2026-09-07"})
+        next_response = self.admin_web.get(response.context["next_week_url"])
+        self.assertEqual(next_response.context["week_start"], dt.date(2026, 9, 14))
+        shown = {lesson.id for day in next_response.context["days"] for lesson in day["lessons"]}
+        self.assertTrue({self.week1_lessons[2].id, self.week2_lessons[2].id}.issubset(shown))
+
+    def test_teacher_conflict_detection(self):
+        overlapping_group = Group.objects.create(
+            name="Python Advanced", course=self.course, teacher=self.teacher1, room=self.room2,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            days_of_week=["mon"],
+        )
+        conflicting_lesson = Lesson.objects.create(
+            group=overlapping_group, lesson_number=1, date=dt.date(2026, 9, 7),
+            start_time=dt.time(15, 30), end_time=dt.time(17, 0), room=self.room2,
+        )
+
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-07"})
+        self.assertEqual(len(response.context["teacher_conflicts"]), 1)
+        self.assertEqual(len(response.context["room_conflicts"]), 0)
+        conflicting_ids = response.context["conflicting_ids"]
+        self.assertIn(self.week1_lessons[0].id, conflicting_ids)
+        self.assertIn(conflicting_lesson.id, conflicting_ids)
+
+    def test_room_conflict_detection(self):
+        overlapping_group = Group.objects.create(
+            name="React Beginner", course=self.course, teacher=self.teacher2, room=self.room1,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            days_of_week=["mon"],
+        )
+        conflicting_lesson = Lesson.objects.create(
+            group=overlapping_group, lesson_number=1, date=dt.date(2026, 9, 7),
+            start_time=dt.time(15, 15), end_time=dt.time(16, 45), room=self.room1,
+        )
+
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-07"})
+        self.assertEqual(len(response.context["room_conflicts"]), 1)
+        self.assertEqual(len(response.context["teacher_conflicts"]), 0)
+        self.assertIn(conflicting_lesson.id, response.context["conflicting_ids"])
+
+    def test_cancelled_lesson_never_flagged_as_conflict(self):
+        cancelled = self.week1_lessons[0]
+        cancelled.status = Lesson.Status.CANCELLED
+        cancelled.save(update_fields=["status"])
+
+        overlapping_group = Group.objects.create(
+            name="Python Advanced", course=self.course, teacher=self.teacher1, room=self.room1,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            days_of_week=["mon"],
+        )
+        Lesson.objects.create(
+            group=overlapping_group, lesson_number=1, date=dt.date(2026, 9, 7),
+            start_time=dt.time(15, 30), end_time=dt.time(17, 0), room=self.room1,
+        )
+
+        response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-07"})
+        self.assertEqual(len(response.context["teacher_conflicts"]), 0)
+        self.assertEqual(len(response.context["room_conflicts"]), 0)
+
+    def test_generate_lessons_quick_action(self):
+        empty_group = Group.objects.create(
+            name="Empty Group", course=self.course, teacher=self.teacher1, room=self.room1,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+            days_of_week=["mon", "wed"],
+        )
+        url = reverse("admin:academy_schedule_generate_lessons", args=[empty_group.id])
+        response = self.admin_web.post(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Lesson.objects.filter(group=empty_group).count(), 4)
+
+    def test_generate_lessons_quick_action_admin_only(self):
+        empty_group = Group.objects.create(
+            name="Empty Group 2", course=self.course, teacher=self.teacher1, room=self.room1,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+            days_of_week=["mon"],
+        )
+        url = reverse("admin:academy_schedule_generate_lessons", args=[empty_group.id])
+        response = self.teacher_web.post(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+        self.assertEqual(Lesson.objects.filter(group=empty_group).count(), 0)
