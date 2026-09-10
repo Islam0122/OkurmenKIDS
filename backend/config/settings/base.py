@@ -288,23 +288,13 @@ JAZZMIN_SETTINGS = {
 }
 
 JAZZMIN_UI_TWEAKS = {
-# "default" — NOT a Bootswatch theme (e.g. "flatly"). Loading a Bootswatch
-# theme layers an entire second Bootstrap build on top of AdminLTE's own,
-# each setting its own --bs-* variables; since theme.css already defines a
-# complete, exact palette by overriding those same variables, the extra
-# layer only adds payload and a second source of hardcoded (non-variable)
-# colours that our overrides can't reach. One base stylesheet, fully owned.
-"theme": "default",
+"theme": "flatly",
 
 "navbar": "navbar-white navbar-light",
 "no_navbar_border": True,
 "navbar_fixed": True,
 
-# Jazzmin always renders the sidebar with data-bs-theme="dark" regardless
-# of this setting (see theme.css header comment) — "sidebar-dark-primary"
-# just keeps the preset's own base classes consistent with that reality
-# instead of fighting a light preset.
-"sidebar": "sidebar-dark-primary",
+"sidebar": "sidebar-light-primary",
 "sidebar_fixed": True,
 "sidebar_nav_flat_style": True,
 "sidebar_nav_child_indent": True,
@@ -313,10 +303,6 @@ JAZZMIN_UI_TWEAKS = {
 "layout_boxed": False,
 
 "accent": "accent-success",
-
-# Light is the primary theme (see theme.css) — dark is opt-in via the
-# toggle in ui.js, never assumed from the OS/browser preference.
-"default_theme_mode": "light",
 
 "button_classes": {
     "primary": "btn-success",

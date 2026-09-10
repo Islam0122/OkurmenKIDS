@@ -1,220 +1,159 @@
 /*
- * OkurmenKIDS Admin — "White + Green accent / Soft Dark" design system
+ * OkurmenKIDS Admin — "Green + White / Soft Dark" design system
  * -----------------------------------------------------------------
- * Loaded last (custom_css in JAZZMIN_SETTINGS), after adminlte.min.css
- * and bootstrap.min.css, so redeclaring Bootstrap 5's own CSS custom
- * properties here (--bs-*) wins the cascade by source order alone —
- * no specificity fights needed. This is the important architectural
- * point: Jazzmin 3.x / AdminLTE 4 is built on Bootstrap 5, and most
- * components (cards, tables, navbar, dropdowns, pagination, forms)
- * read their colours from --bs-* variables, NOT from ad-hoc classes.
- * Overriding only our own --ok-* tokens and leaving --bs-* alone was
- * the bug in the previous pass: it left native Bootstrap components
- * (in particular table rows) stuck on Bootstrap's own light values
- * while the surrounding chrome used our dark values, producing a
- * half-dark, illegible result. Fixed by owning both variable sets.
+ * Loaded last (after AdminLTE, the Bootswatch "flatly" base theme, and
+ * Jazzmin's own main.css), so most rules here win the cascade without
+ * needing !important. A handful of AdminLTE/Bootswatch rules are more
+ * specific than ours, so those few are marked !important deliberately —
+ * not sprinkled everywhere.
  *
- * Theme switching: Jazzmin's own boot script (admin/base.html) reads
- * localStorage["jazzmin-theme-mode"] and sets data-bs-theme on <html>
- * before first paint. Our toggle (ui.js) writes to that SAME key and
- * attribute — there is only one theme system, not two.
- *
- * One deliberate exception: Jazzmin hardcodes data-bs-theme="dark" on
- * the <aside class="app-sidebar"> itself, regardless of the page
- * theme. We lean into that instead of fighting it — the sidebar tokens
- * defined under [data-bs-theme="dark"] give it a permanently restrained
- * dark charcoal-green, which is exactly what the design calls for.
+ * Everything is driven by CSS custom properties (--ok-*) so every
+ * component — including inline styles rendered from admin.py and the
+ * standalone templates — reads from ONE source of truth for colour,
+ * spacing and radius. Dark mode is a second set of values for the same
+ * tokens, switched by [data-theme="dark"] on <html> (see ui.js), with a
+ * prefers-color-scheme fallback for a first visit.
  */
 
-:root {
-  /* ---- OkurmenKIDS tokens (light) ---- */
-  --ok-bg: #F6F8F6;
-  --ok-surface: #FFFFFF;
-  --ok-surface-soft: #F9FBF9;
-  --ok-surface-hover: #F6FAF7;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css');
 
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                      */
+/* ------------------------------------------------------------------ */
+
+:root {
+  /* Brand */
   --ok-primary: #2F8F5B;
-  --ok-primary-hover: #287D4E;
-  --ok-primary-soft: #E8F5ED;
+  --ok-primary-hover: #287A4D;
+  --ok-primary-soft: #E7F3EC;
   --ok-on-primary: #FFFFFF;
 
-  --ok-text: #1F2923;
-  --ok-text-secondary: #66736B;
-  --ok-text-muted: #89948D;
+  /* Light surfaces (default) */
+  --ok-bg: #F7F9F7;
+  --ok-surface: #FFFFFF;
+  --ok-surface-hover: #F1F6F2;
+  --ok-surface-elevated: #FFFFFF;
 
-  --ok-border: #E3E9E5;
-  --ok-border-strong: #CFDAD3;
+  --ok-text: #202622;
+  --ok-text-secondary: #68736C;
+  --ok-text-muted: #89938D;
+
+  --ok-border: #E1E7E2;
+  --ok-border-strong: #CBD6CF;
 
   --ok-danger: #C7402E;
   --ok-danger-soft: #FBEAE7;
   --ok-warning: #B4790F;
   --ok-warning-soft: #FBF1DF;
 
-  --ok-radius: 0.6rem;
-  --ok-radius-sm: 8px;
-  --ok-radius-lg: 0.85rem;
-  --ok-shadow: 0 2px 8px rgba(31, 41, 35, 0.05);
-  --ok-shadow-hover: 0 4px 14px rgba(31, 41, 35, 0.08);
-  --ok-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-
-  /* Sidebar is always dark (see [data-bs-theme="dark"] .app-sidebar below) */
-  --ok-sidebar-bg: #132019;
-  --ok-sidebar-text: #C7D2CB;
-  --ok-sidebar-text-muted: #8B978F;
-  --ok-sidebar-border: rgba(255, 255, 255, 0.07);
-  --ok-sidebar-hover: rgba(255, 255, 255, 0.05);
-  --ok-sidebar-active-bg: rgba(47, 143, 91, 0.16);
-  --ok-sidebar-active-text: #4CAF72;
-
-  /* Bootstrap 5 tokens — every native component reads these */
-  --bs-body-bg: var(--ok-bg);
-  --bs-body-color: var(--ok-text);
-  --bs-border-color: var(--ok-border);
-  --bs-border-color-translucent: var(--ok-border);
-  --bs-secondary-bg: var(--ok-surface-soft);
-  --bs-tertiary-bg: var(--ok-surface-soft);
-  --bs-secondary-color: var(--ok-text-secondary);
-  --bs-emphasis-color: var(--ok-text);
-  --bs-heading-color: var(--ok-text);
-  --bs-link-color: var(--ok-primary);
-  --bs-link-hover-color: var(--ok-primary-hover);
-  --bs-link-color-rgb: 47, 143, 91;
-  --bs-primary: var(--ok-primary);
-  --bs-primary-rgb: 47, 143, 91;
-  --bs-primary-text-emphasis: var(--ok-primary);
-  --bs-primary-bg-subtle: var(--ok-primary-soft);
-  --bs-primary-border-subtle: var(--ok-primary);
-  --bs-focus-ring-color: rgba(47, 143, 91, 0.25);
-
-  --bs-card-bg: var(--ok-surface);
-  --bs-card-border-color: var(--ok-border);
-  --bs-card-cap-bg: var(--ok-surface);
-
-  --bs-table-bg: var(--ok-surface);
-  --bs-table-color: var(--ok-text);
-  --bs-table-border-color: var(--ok-border);
-  --bs-table-striped-bg: var(--ok-surface);
-  --bs-table-striped-color: var(--ok-text);
-  --bs-table-hover-bg: var(--ok-surface-hover);
-  --bs-table-hover-color: var(--ok-text);
-
-  --bs-dropdown-bg: var(--ok-surface);
-  --bs-dropdown-color: var(--ok-text);
-  --bs-dropdown-border-color: var(--ok-border);
-  --bs-dropdown-link-color: var(--ok-text);
-  --bs-dropdown-link-hover-bg: var(--ok-surface-hover);
-
-  --bs-modal-bg: var(--ok-surface);
-  --bs-modal-color: var(--ok-text);
+  /* Shared metrics */
+  --ok-radius: 0.65rem;
+  --ok-radius-sm: 0.45rem;
+  --ok-radius-lg: 0.9rem;
+  --ok-shadow: 0 1px 2px rgba(20, 30, 24, 0.04), 0 2px 10px rgba(20, 30, 24, 0.05);
+  --ok-shadow-hover: 0 6px 20px rgba(20, 30, 24, 0.08);
+  --ok-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   color-scheme: light;
 }
 
-/* Soft dark theme — driven by Jazzmin's own data-bs-theme attribute */
-[data-bs-theme="dark"] {
-  --ok-bg: #111713;
-  --ok-surface: #171E19;
-  --ok-surface-soft: #1C251F;
-  --ok-surface-hover: #1C251F;
-
-  --ok-primary: #55B879;
-  --ok-primary-hover: #63C489;
-  --ok-primary-soft: rgba(85, 184, 121, 0.16);
+/* Soft dark theme — explicit choice via the toggle */
+:root[data-theme="dark"] {
+  --ok-primary: #4CAF72;
+  --ok-primary-hover: #5ABB80;
+  --ok-primary-soft: rgba(76, 175, 114, 0.14);
   --ok-on-primary: #0C130F;
 
-  --ok-text: #DCE4DE;
-  --ok-text-secondary: #A3AEA6;
-  --ok-text-muted: #7F8B83;
+  --ok-bg: #101512;
+  --ok-surface: #151C18;
+  --ok-surface-hover: #1B241E;
+  --ok-surface-elevated: #202A23;
 
-  --ok-border: #29342D;
-  --ok-border-strong: #37453D;
+  --ok-text: #E1E7E3;
+  --ok-text-secondary: #A5B0A9;
+  --ok-text-muted: #7F8A83;
+
+  --ok-border: #28332C;
+  --ok-border-strong: #36453C;
 
   --ok-danger: #E0665A;
   --ok-danger-soft: rgba(224, 102, 90, 0.14);
   --ok-warning: #D9A441;
   --ok-warning-soft: rgba(217, 164, 65, 0.14);
 
-  --ok-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
-  --ok-shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.34);
-
-  --bs-body-bg: var(--ok-bg);
-  --bs-body-color: var(--ok-text);
-  --bs-border-color: var(--ok-border);
-  --bs-border-color-translucent: var(--ok-border);
-  --bs-secondary-bg: var(--ok-surface-soft);
-  --bs-tertiary-bg: var(--ok-surface-soft);
-  --bs-secondary-color: var(--ok-text-secondary);
-  --bs-emphasis-color: var(--ok-text);
-  --bs-heading-color: var(--ok-text);
-  --bs-link-color: var(--ok-primary);
-  --bs-link-hover-color: var(--ok-primary-hover);
-  --bs-primary: var(--ok-primary);
-  --bs-primary-rgb: 85, 184, 121;
-  --bs-primary-text-emphasis: var(--ok-primary);
-  --bs-primary-bg-subtle: var(--ok-primary-soft);
-  --bs-primary-border-subtle: var(--ok-primary);
-  --bs-focus-ring-color: rgba(85, 184, 121, 0.3);
-
-  --bs-card-bg: var(--ok-surface);
-  --bs-card-border-color: var(--ok-border);
-  --bs-card-cap-bg: var(--ok-surface);
-
-  --bs-table-bg: var(--ok-surface);
-  --bs-table-color: var(--ok-text);
-  --bs-table-border-color: var(--ok-border);
-  --bs-table-striped-bg: var(--ok-surface);
-  --bs-table-striped-color: var(--ok-text);
-  --bs-table-hover-bg: var(--ok-surface-hover);
-  --bs-table-hover-color: var(--ok-text);
-
-  --bs-dropdown-bg: var(--ok-surface);
-  --bs-dropdown-color: var(--ok-text);
-  --bs-dropdown-border-color: var(--ok-border);
-  --bs-dropdown-link-color: var(--ok-text);
-  --bs-dropdown-link-hover-bg: var(--ok-surface-hover);
-
-  --bs-modal-bg: var(--ok-surface);
-  --bs-modal-color: var(--ok-text);
+  --ok-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 10px rgba(0, 0, 0, 0.22);
+  --ok-shadow-hover: 0 6px 22px rgba(0, 0, 0, 0.32);
 
   color-scheme: dark;
 }
 
-/* Sidebar: Jazzmin always renders <aside data-bs-theme="dark">, so this
-   selector applies regardless of the page's own theme — by design (see
-   the file header). It reads --ok-sidebar-* which never change with the
-   toggle, giving the restrained "always slightly dark" sidebar. */
-[data-bs-theme="dark"] .app-sidebar {
-  --bs-body-bg: var(--ok-sidebar-bg);
-  --bs-body-color: var(--ok-sidebar-text);
-  --bs-border-color: var(--ok-sidebar-border);
+/* First visit, no explicit choice yet: follow the OS preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --ok-primary: #4CAF72;
+    --ok-primary-hover: #5ABB80;
+    --ok-primary-soft: rgba(76, 175, 114, 0.14);
+    --ok-on-primary: #0C130F;
+
+    --ok-bg: #101512;
+    --ok-surface: #151C18;
+    --ok-surface-hover: #1B241E;
+    --ok-surface-elevated: #202A23;
+
+    --ok-text: #E1E7E3;
+    --ok-text-secondary: #A5B0A9;
+    --ok-text-muted: #7F8A83;
+
+    --ok-border: #28332C;
+    --ok-border-strong: #36453C;
+
+    --ok-danger: #E0665A;
+    --ok-danger-soft: rgba(224, 102, 90, 0.14);
+    --ok-warning: #D9A441;
+    --ok-warning-soft: rgba(217, 164, 65, 0.14);
+
+    --ok-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 10px rgba(0, 0, 0, 0.22);
+    --ok-shadow-hover: 0 6px 22px rgba(0, 0, 0, 0.32);
+    color-scheme: dark;
+  }
 }
 
-/* Local Bootstrap Icons + system font stack — no external CDN calls, so
-   icons/typography never silently disappear on a network-restricted
-   deployment (an actual problem observed with the previous jsdelivr
-   @import: the icon font simply failed to load, leaving every icon
-   blank). */
-@import url("../vendor/bootstrap-icons/bootstrap-icons.css");
+/* Legacy aliases: a handful of inline styles (admin.py, standalone
+   templates) were written against generic --primary/--text/--border/
+   --surface names before this token system existed. Keep them mapped to
+   the real tokens instead of hunting down every inline reference. */
+:root {
+  --primary: var(--ok-primary);
+  --primary-soft: var(--ok-primary-soft);
+  --surface: var(--ok-surface);
+  --surface-hover: var(--ok-surface-hover);
+  --text: var(--ok-text);
+  --text-secondary: var(--ok-text-secondary);
+  --text-muted: var(--ok-text-muted);
+  --border: var(--ok-border);
+}
 
 /* ------------------------------------------------------------------ */
 /* Theme transition                                                    */
 /* ------------------------------------------------------------------ */
 
-body, .app-header, .app-sidebar, .sidebar-brand, .user-panel,
+body,
+.app-header, .app-sidebar, .sidebar-brand, .user-panel,
 .sidebar-menu .nav-link, .sidebar-menu .nav-link .nav-icon,
-.card, .card-header, .content-wrapper, .main-footer,
+.card, .card-header, .small-box, .info-box,
 #result_list, .table, #result_list td, #result_list th, .table td, .table th,
 .form-control, .form-select, textarea, select, .ok-input,
 .btn, .ok-badge, .paginator, .pagination .page-link,
 .dropdown-menu, .modal-content, .breadcrumb,
 .ok-card, .ok-kpi-card, .ok-soon-card, .ok-chart-card,
 .ok-multiselect, .ok-multiselect-panel, .ok-ms-option, .ok-ms-chip,
-.ok-empty-state, .login-box .card, #changelist-filter, #changelist-search, .actions {
+.ok-empty-state, .login-box .card {
   transition:
-    background-color 220ms ease,
-    color 220ms ease,
-    border-color 220ms ease,
-    box-shadow 220ms ease;
+    background-color 250ms ease,
+    color 250ms ease,
+    border-color 250ms ease,
+    box-shadow 250ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -227,47 +166,39 @@ body, .app-header, .app-sidebar, .sidebar-brand, .user-panel,
 
 body {
   font-family: var(--ok-font);
-  background: var(--ok-bg);
+  background: var(--ok-bg) !important;
   color: var(--ok-text);
 }
 
-.wrapper, .content-wrapper {
-  background: var(--ok-bg);
+.wrapper, .content-wrapper, .main-footer {
+  background: var(--ok-bg) !important;
   color: var(--ok-text);
 }
 
 .main-footer {
-  background: var(--ok-bg);
   border-top: 1px solid var(--ok-border);
   color: var(--ok-text-muted);
   font-size: 0.8rem;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1, h2, h3, h4, h5, h6,
+.app-content-header h3 {
   font-family: var(--ok-font);
   font-weight: 700;
   color: var(--ok-text);
   letter-spacing: -0.01em;
 }
 
-/* Page title ("Предметы", etc.) — was too pale before: give it real
-   size and full-strength text colour, not a muted tone. */
-.content-header h1, .app-content-header h3 {
-  color: var(--ok-text);
-  font-size: 1.7rem;
-  font-weight: 700;
-  margin-bottom: 0.15rem;
-}
-
-a { color: var(--ok-primary); text-decoration: none; }
+a { color: var(--ok-primary); }
 a:hover { color: var(--ok-primary-hover); }
 
 .text-muted, .help, p.help, .small.text-muted { color: var(--ok-text-muted) !important; }
 
-.breadcrumb { background: transparent; padding: 0; margin: 0; }
-.breadcrumb-item, .breadcrumb-item a { color: var(--ok-text-secondary); font-size: 0.85rem; }
+.breadcrumb { background: transparent; }
+.breadcrumb-item, .breadcrumb-item a { color: var(--ok-text-secondary); }
 .breadcrumb-item.active { color: var(--ok-text-muted); }
 
+/* Calmer, more visible focus ring everywhere (accessibility) */
 a:focus-visible, button:focus-visible, input:focus-visible,
 select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   outline: 2px solid var(--ok-primary);
@@ -276,6 +207,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 
 ::selection { background: var(--ok-primary-soft); color: var(--ok-text); }
 
+/* Slim, calm scrollbars (Webkit) */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -286,49 +218,56 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 ::-webkit-scrollbar-thumb:hover { background: var(--ok-text-muted); }
 
 /* ------------------------------------------------------------------ */
-/* Top navbar — plain white, never a dark block                        */
+/* Top navbar                                                          */
 /* ------------------------------------------------------------------ */
 
 .app-header {
-  background: var(--ok-surface);
-  border-bottom: 1px solid var(--ok-border);
-  box-shadow: none;
+  background: var(--ok-surface) !important;
+  border-bottom: 1px solid var(--ok-border) !important;
+  box-shadow: none !important;
 }
 
-.app-header .nav-link { color: var(--ok-text-secondary); }
-.app-header .nav-link:hover { color: var(--ok-primary); }
-.app-header .form-control-navbar { background: var(--ok-surface-soft); border: 1px solid var(--ok-border); color: var(--ok-text); }
+.app-header .nav-link { color: var(--ok-text) !important; }
+.app-header .nav-link:hover { color: var(--ok-primary) !important; }
+.app-header .form-control-navbar { background: var(--ok-bg); border: 1px solid var(--ok-border); color: var(--ok-text); }
 
+/* Theme toggle button (injected by ui.js) */
 .ok-theme-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--ok-radius-sm);
   border: 1px solid var(--ok-border);
   background: var(--ok-surface);
   color: var(--ok-text-secondary);
   cursor: pointer;
-  font-size: 0.95rem;
-  margin: 0 0.3rem;
+  font-size: 1rem;
+  margin: 0 0.35rem;
 }
-.ok-theme-toggle:hover { background: var(--ok-surface-hover); color: var(--ok-primary); border-color: var(--ok-border-strong); }
+.ok-theme-toggle:hover {
+  background: var(--ok-surface-hover);
+  color: var(--ok-primary);
+  border-color: var(--ok-border-strong);
+}
 .ok-theme-toggle .bi-sun-fill { display: none; }
-[data-bs-theme="dark"] .ok-theme-toggle .bi-moon-stars-fill { display: none; }
-[data-bs-theme="dark"] .ok-theme-toggle .bi-sun-fill { display: inline; }
+:root[data-theme="dark"] .ok-theme-toggle .bi-moon-stars-fill { display: none; }
+:root[data-theme="dark"] .ok-theme-toggle .bi-sun-fill { display: inline; }
 
 /* ------------------------------------------------------------------ */
-/* Sidebar — restrained dark charcoal-green, not black                 */
+/* Sidebar                                                             */
 /* ------------------------------------------------------------------ */
 
 .app-sidebar {
-  background: var(--ok-sidebar-bg);
-  border-right: 1px solid var(--ok-sidebar-border);
-  box-shadow: none;
+  background: var(--ok-surface) !important;
+  border-right: 1px solid var(--ok-border);
+  box-shadow: none !important;
 }
 
-.sidebar-brand { border-bottom: 1px solid var(--ok-sidebar-border); }
+.sidebar-brand {
+  border-bottom: 1px solid var(--ok-border);
+}
 
 .sidebar-brand .brand-link {
   display: flex;
@@ -337,6 +276,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   padding: 1rem 1.1rem;
 }
 
+/* Hide Jazzmin's bundled default logo image; we draw our own emblem. */
 .ok-hidden-logo { display: none !important; }
 
 .sidebar-brand .brand-link::before {
@@ -344,151 +284,128 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   background: var(--ok-primary);
-  color: #fff;
+  color: var(--ok-on-primary);
   font-weight: 800;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   letter-spacing: 0.02em;
   flex-shrink: 0;
 }
 
 .sidebar-brand .brand-text {
-  color: var(--ok-sidebar-text) !important;
+  color: var(--ok-text) !important;
   font-weight: 700;
-  font-size: 1.02rem;
+  font-size: 1.05rem;
   opacity: 1 !important;
 }
 
-.user-panel { border-bottom: 1px solid var(--ok-sidebar-border); padding: 0.8rem 1.1rem; }
+.user-panel { border-bottom: 1px solid var(--ok-border); padding: 0.85rem 1.1rem; }
 .user-panel .user-profile { color: var(--ok-primary); }
-.user-panel .info a, .user-panel .info span { color: var(--ok-sidebar-text) !important; font-weight: 600; font-size: 0.85rem; }
+.user-panel .info a, .user-panel .info span { color: var(--ok-text) !important; font-weight: 600; font-size: 0.88rem; }
 
 .sidebar-menu .nav-header {
-  color: var(--ok-sidebar-text-muted) !important;
-  font-size: 0.66rem;
+  color: var(--ok-text-muted) !important;
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  padding: 1.05rem 1.1rem 0.35rem;
+  padding: 1.1rem 1.1rem 0.4rem;
 }
 
 .sidebar-menu .nav-link {
-  color: var(--ok-sidebar-text) !important;
+  color: var(--ok-text) !important;
   border-radius: var(--ok-radius-sm);
   margin: 1px 0.6rem;
-  padding: 0.52rem 0.7rem;
-  font-size: 0.86rem;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.88rem;
   font-weight: 500;
 }
 
 .sidebar-menu .nav-link .nav-icon {
-  color: var(--ok-sidebar-text-muted);
-  font-size: 0.95rem;
+  color: var(--ok-text-muted);
+  font-size: 1rem;
   width: 1.4rem;
 }
 
 .sidebar-menu .nav-link:hover {
-  background: var(--ok-sidebar-hover) !important;
-  color: var(--ok-sidebar-text) !important;
+  background: var(--ok-surface-hover) !important;
+  color: var(--ok-primary) !important;
 }
 .sidebar-menu .nav-link:hover .nav-icon { color: var(--ok-primary); }
 
-/* Active item: subtle green background + green icon/text, not a solid
-   green block (spec requirement). */
+/* Active item: subtle green background + green icon/text (spec requirement) */
 .sidebar-menu .nav-item > .nav-link.active,
 .sidebar-menu .nav-item.menu-open > .nav-link {
-  background: var(--ok-sidebar-active-bg) !important;
-  color: var(--ok-sidebar-active-text) !important;
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-primary) !important;
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--ok-primary);
 }
 .sidebar-menu .nav-item > .nav-link.active .nav-icon,
-.sidebar-menu .nav-item.menu-open > .nav-link .nav-icon { color: var(--ok-sidebar-active-text) !important; }
+.sidebar-menu .nav-item.menu-open > .nav-link .nav-icon { color: var(--ok-primary) !important; }
 
 /* "Coming soon" placeholder nav items (href="#") — present, but visibly inert */
 .sidebar-menu .nav-link[href="#"],
 .sidebar-menu .nav-link[href="##"] {
-  color: var(--ok-sidebar-text-muted) !important;
+  color: var(--ok-text-muted) !important;
   cursor: default;
-  opacity: 0.7;
+  opacity: 0.72;
 }
 .sidebar-menu .nav-link[href="#"]:hover,
 .sidebar-menu .nav-link[href="##"]:hover {
   background: transparent !important;
-  color: var(--ok-sidebar-text-muted) !important;
+  color: var(--ok-text-muted) !important;
 }
 .sidebar-menu .nav-link[href="#"] .nav-icon,
-.sidebar-menu .nav-link[href="##"] .nav-icon { color: var(--ok-sidebar-text-muted) !important; }
+.sidebar-menu .nav-link[href="##"] .nav-icon { color: var(--ok-text-muted) !important; }
 
 /* ------------------------------------------------------------------ */
-/* Buttons                                                              */
+/* Buttons                                                             */
 /* ------------------------------------------------------------------ */
 
 .btn {
   font-family: var(--ok-font);
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   border-radius: var(--ok-radius-sm);
   padding: 0.5rem 1rem;
   min-height: 2.25rem;
-  box-shadow: none;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .btn-success, .btn-primary {
-  background: var(--ok-primary);
-  border-color: var(--ok-primary);
-  color: var(--ok-on-primary);
+  background: var(--ok-primary) !important;
+  border-color: var(--ok-primary) !important;
+  color: var(--ok-on-primary) !important;
 }
 .btn-success:hover, .btn-primary:hover {
-  background: var(--ok-primary-hover);
-  border-color: var(--ok-primary-hover);
-  box-shadow: none;
+  background: var(--ok-primary-hover) !important;
+  border-color: var(--ok-primary-hover) !important;
+  box-shadow: 0 2px 10px rgba(47, 143, 91, 0.22);
 }
 
 .btn-outline-success, .btn-secondary {
-  background: var(--ok-surface);
-  border: 1.5px solid var(--ok-primary);
-  color: var(--ok-primary);
+  background: var(--ok-surface) !important;
+  border: 1.5px solid var(--ok-primary) !important;
+  color: var(--ok-primary) !important;
 }
 .btn-outline-success:hover, .btn-secondary:hover {
-  background: var(--ok-primary-soft);
-  color: var(--ok-primary-hover);
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-primary-hover) !important;
 }
 
 .btn-danger, .btn-outline-danger {
-  background: var(--ok-danger);
-  border-color: var(--ok-danger);
-  color: #fff;
+  background: var(--ok-danger) !important;
+  border-color: var(--ok-danger) !important;
+  color: #fff !important;
 }
 .btn-danger:hover, .btn-outline-danger:hover { filter: brightness(1.06); }
 
-.btn-light, .btn-default {
-  background: var(--ok-surface);
-  border: 1px solid var(--ok-border);
-  color: var(--ok-text-secondary);
-}
-.btn-light:hover, .btn-default:hover { background: var(--ok-surface-hover); color: var(--ok-text); }
-
-/* Change-form sidebar (Save / Save and continue editing / Delete, ...):
-   Russian button labels run noticeably longer than the English originals,
-   and <input type="submit"> never wraps its own value text — so give
-   each button the sidebar's full width rather than letting it clip. */
-#jazzy-actions input[type="submit"],
-#jazzy-actions button[type="submit"],
-#jazzy-actions a.btn {
-  width: 100%;
-  font-size: 0.78rem;
-  white-space: normal;
-  line-height: 1.3;
-  padding: 0.55rem 0.7rem;
-}
-
 /* ------------------------------------------------------------------ */
-/* Cards                                                                */
+/* Cards (Django admin / dashboard modules)                            */
 /* ------------------------------------------------------------------ */
 
 .card {
@@ -503,13 +420,13 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   border-bottom: 1px solid var(--ok-border);
   color: var(--ok-text);
   font-weight: 700;
-  padding: 0.85rem 1.1rem;
+  padding: 0.9rem 1.1rem;
 }
 
 .card-body { padding: 1.1rem; color: var(--ok-text); }
 
-/* Reusable "form card" building blocks shared by every custom admin
-   template, so no page needs its own <style> block for the same thing. */
+/* Reusable "form card" building blocks — shared by every custom admin
+   template so no page needs its own <style> block for the same thing. */
 
 .ok-card {
   background: var(--ok-surface);
@@ -522,7 +439,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 
 .ok-card-header {
   padding: 1rem 1.35rem;
-  background: var(--ok-surface-soft);
+  background: var(--ok-surface-hover);
   border-bottom: 1px solid var(--ok-border);
   font-size: 0.95rem;
   font-weight: 700;
@@ -544,7 +461,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .ok-field-group { display: flex; flex-direction: column; gap: 0.4rem; }
 
 .ok-label {
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   font-weight: 600;
   color: var(--ok-text);
   display: flex;
@@ -602,22 +519,24 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 }
 
 .ok-btn-primary, .ok-btn-secondary {
-  padding: 0.6rem 1.2rem;
+  padding: 0.62rem 1.25rem;
   border-radius: var(--ok-radius-sm);
   font-weight: 600;
-  font-size: 0.86rem;
+  font-size: 0.88rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   text-decoration: none;
   border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .ok-btn-primary { background: var(--ok-primary); color: var(--ok-on-primary); }
 .ok-btn-primary:hover { background: var(--ok-primary-hover); color: var(--ok-on-primary); }
 .ok-btn-secondary { background: var(--ok-surface); border-color: var(--ok-border); color: var(--ok-text-secondary); }
 .ok-btn-secondary:hover { background: var(--ok-surface-hover); color: var(--ok-text); }
 
+/* Profile summary strip (used on the change-password screen) */
 .ok-person-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
 .ok-person-avatar {
   width: 48px; height: 48px; border-radius: 50%;
@@ -633,150 +552,22 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 }
 
 /* ------------------------------------------------------------------ */
-/* Search / filter toolbar (above the table)                           */
+/* Tables                                                               */
 /* ------------------------------------------------------------------ */
-
-#changelist-search {
-  background: var(--ok-surface);
-  border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius);
-  box-shadow: var(--ok-shadow);
-  padding: 0.85rem 1rem;
-  margin-bottom: 0.9rem;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-#searchbar {
-  background: var(--ok-surface-soft);
-  border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius-sm);
-  color: var(--ok-text);
-  padding: 0.5rem 0.85rem;
-  min-height: 2.25rem;
-}
-#searchbar:focus {
-  border-color: var(--ok-primary);
-  outline: none;
-  box-shadow: 0 0 0 3px var(--ok-primary-soft);
-  background: var(--ok-surface);
-}
-
-#changelist-search .search-button-wrapper { display: flex; gap: 0.5rem; align-items: center; }
-#changelist-search input[type="submit"] {
-  background: var(--ok-primary);
-  border: 1px solid var(--ok-primary);
-  color: #fff;
-  border-radius: var(--ok-radius-sm);
-  padding: 0.5rem 1.1rem;
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-#changelist-search input[type="submit"]:hover { background: var(--ok-primary-hover); }
-
-/* Bulk-actions bar — its own white toolbar, not a bare dark strip */
-.actions {
-  background: var(--ok-surface);
-  border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius);
-  box-shadow: var(--ok-shadow);
-  padding: 0.7rem 1rem;
-  margin-bottom: 0.9rem;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-.actions label { margin: 0; }
-.actions select {
-  background: var(--ok-surface-soft);
-  border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius-sm);
-  color: var(--ok-text);
-  padding: 0.5rem 0.75rem;
-  min-width: 220px;
-  min-height: 2.25rem;
-}
-.actions .button, .actions button[type="submit"] {
-  background: var(--ok-primary);
-  border: 1px solid var(--ok-primary);
-  color: #fff;
-  border-radius: var(--ok-radius-sm);
-  padding: 0.5rem 1.1rem;
-  font-weight: 600;
-  margin: 0 !important;
-}
-.actions .button:hover, .actions button[type="submit"]:hover { background: var(--ok-primary-hover); }
-.actions.ok-action-danger .button,
-.actions.ok-action-danger button[type="submit"] {
-  background: var(--ok-danger) !important;
-  border-color: var(--ok-danger) !important;
-}
-.actions .action-counter { color: var(--ok-text-muted); font-size: 0.85rem; }
-
-/* Filters sidebar (right of the table) */
-#changelist-filter {
-  background: var(--ok-surface);
-  border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius);
-  box-shadow: var(--ok-shadow);
-  padding-bottom: 0.5rem;
-}
-#changelist-filter h2 {
-  background: var(--ok-surface-soft);
-  color: var(--ok-text);
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 0.75rem 1rem;
-  border-radius: var(--ok-radius) var(--ok-radius) 0 0;
-  margin: 0;
-}
-#changelist-filter h3 {
-  color: var(--ok-text-secondary);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.75rem 1rem 0.3rem;
-  margin: 0;
-}
-#changelist-filter ul { margin: 0 0 0.4rem; padding: 0 0.5rem; list-style: none; }
-#changelist-filter li a {
-  display: block;
-  padding: 0.32rem 0.6rem;
-  border-radius: var(--ok-radius-sm);
-  color: var(--ok-text-secondary);
-  font-size: 0.84rem;
-}
-#changelist-filter li a:hover { background: var(--ok-surface-hover); color: var(--ok-text); }
-#changelist-filter li.selected a {
-  background: var(--ok-primary-soft);
-  color: var(--ok-primary);
-  font-weight: 600;
-}
-
-/* ------------------------------------------------------------------ */
-/* Table — the primary content element                                 */
-/* ------------------------------------------------------------------ */
-
-#changelist .results, .ok-table-scroll { overflow-x: auto; border-radius: var(--ok-radius); }
 
 #result_list, .table, .card table {
   background: var(--ok-surface);
   color: var(--ok-text);
-  margin-bottom: 0;
 }
 
 #result_list thead th, .table thead th {
-  background: var(--ok-surface-soft);
-  color: var(--ok-text-secondary);
+  background: var(--ok-surface-hover) !important;
+  color: var(--ok-text-muted);
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 1px solid var(--ok-border);
+  border-bottom: 1px solid var(--ok-border) !important;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -784,33 +575,42 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 
 #result_list td, #result_list th, .table td, .table th {
   border-top: 1px solid var(--ok-border);
-  padding: 0.8rem 0.9rem;
+  padding: 0.75rem 0.9rem;
   vertical-align: middle;
   font-size: 0.87rem;
   color: var(--ok-text);
-  background: var(--ok-surface);
 }
 
-#result_list tbody tr:hover td, .table tbody tr:hover td {
+#result_list tbody tr:hover, .table tbody tr:hover {
   background: var(--ok-surface-hover);
 }
 
 #result_list a, .table a { color: var(--ok-text); font-weight: 500; }
 #result_list a:hover, .table a:hover { color: var(--ok-primary); }
 
-.paginator { color: var(--ok-text-muted); font-size: 0.82rem; padding: 0.75rem 0; }
+/* Table + filters can outgrow narrow viewports — scroll horizontally
+   instead of breaking the page layout (responsive requirement). */
+#changelist .results, .ok-table-scroll { overflow-x: auto; }
+
+.paginator, .pagination .page-link { color: var(--ok-text); }
+.paginator { color: var(--ok-text-muted); font-size: 0.82rem; }
 .pagination .page-link {
   background: var(--ok-surface);
   border: 1px solid var(--ok-border);
   color: var(--ok-text);
 }
-.pagination .page-link:hover { background: var(--ok-surface-hover); color: var(--ok-primary); }
+.pagination .page-link:hover {
+  background: var(--ok-surface-hover);
+  color: var(--ok-primary);
+}
 .pagination .page-item.active .page-link {
   background: var(--ok-primary);
   border-color: var(--ok-primary);
-  color: #fff;
+  color: var(--ok-on-primary);
 }
 
+/* Empty changelist — friendly message instead of a bare "0 results"
+   (injected/decorated by ui.js; this just supplies the look). */
 .ok-empty-state {
   text-align: center;
   padding: 3rem 1.5rem;
@@ -819,44 +619,57 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--ok-surface);
   color: var(--ok-text-muted);
 }
-.ok-empty-state i { display: block; font-size: 2rem; color: var(--ok-primary); margin-bottom: 0.75rem; opacity: 0.8; }
+.ok-empty-state i {
+  display: block;
+  font-size: 2rem;
+  color: var(--ok-primary);
+  margin-bottom: 0.75rem;
+  opacity: 0.8;
+}
 .ok-empty-state h4 { color: var(--ok-text); font-size: 1.05rem; margin: 0 0 0.35rem; }
 .ok-empty-state p { margin: 0; font-size: 0.88rem; }
 
-.alert-info { background-color: var(--ok-primary-soft); color: var(--ok-primary); border-color: var(--ok-primary); }
-.alert-info a, .alert-info .alert-link { color: var(--ok-primary); }
-.alert-success { background-color: var(--ok-primary-soft); color: var(--ok-primary); border-left: 3px solid var(--ok-primary); }
-.alert-warning { background-color: var(--ok-warning-soft); color: var(--ok-warning); border-left: 3px solid var(--ok-warning); }
-.alert-danger, .errornote { background-color: var(--ok-danger-soft); color: var(--ok-danger); border-left: 3px solid var(--ok-danger); }
+/* Neutralize the base theme's solid-blue "info" alert so nothing renders
+   off-brand blue even if Django's messages framework emits an info-level
+   message somewhere outside our own code paths (which only ever use
+   success/warning/error). */
+.alert-info {
+  background-color: var(--ok-primary-soft) !important;
+  color: var(--ok-primary) !important;
+  border-color: var(--ok-primary) !important;
+}
+.alert-info a, .alert-info .alert-link { color: var(--ok-primary) !important; }
+
+.alert-success { background-color: var(--ok-primary-soft) !important; color: var(--ok-primary) !important; border-left: 3px solid var(--ok-primary); }
+.alert-warning { background-color: var(--ok-warning-soft) !important; color: var(--ok-warning) !important; border-left: 3px solid var(--ok-warning); }
+.alert-danger, .errornote { background-color: var(--ok-danger-soft) !important; color: var(--ok-danger) !important; border-left: 3px solid var(--ok-danger); }
 
 /* ------------------------------------------------------------------ */
-/* Status badges — one consistent, subtle system                       */
+/* Status badges — one consistent system                              */
 /* ------------------------------------------------------------------ */
 
 .ok-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.22rem 0.6rem;
+  padding: 0.24rem 0.62rem;
   border-radius: 999px;
-  font-size: 0.73rem;
-  font-weight: 600;
+  font-size: 0.74rem;
+  font-weight: 700;
   line-height: 1.4;
   white-space: nowrap;
 }
-.ok-badge-success { background: #E8F5ED; color: #287D4E; }
-.ok-badge-muted { background: #F0F2F1; color: #69746D; }
+.ok-badge-success { background: var(--ok-primary-soft); color: var(--ok-primary); }
+.ok-badge-muted { background: var(--ok-surface-hover); color: var(--ok-text-muted); border: 1px solid var(--ok-border); }
 .ok-badge-warning { background: var(--ok-warning-soft); color: var(--ok-warning); }
 .ok-badge-danger { background: var(--ok-danger-soft); color: var(--ok-danger); }
 .ok-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
-[data-bs-theme="dark"] .ok-badge-success { background: rgba(85, 184, 121, 0.16); color: #63C489; }
-[data-bs-theme="dark"] .ok-badge-muted { background: var(--ok-surface-soft); color: var(--ok-text-muted); }
-
+/* Subject / tag chips used in list views */
 .ok-chip {
   display: inline-block;
-  padding: 0.15rem 0.5rem;
-  background: var(--ok-surface-soft);
+  padding: 0.16rem 0.55rem;
+  background: var(--ok-surface-hover);
   border: 1px solid var(--ok-border);
   color: var(--ok-text);
   border-radius: var(--ok-radius-sm);
@@ -866,7 +679,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 }
 .ok-chip-more {
   display: inline-block;
-  padding: 0.15rem 0.45rem;
+  padding: 0.16rem 0.5rem;
   background: var(--ok-primary-soft);
   color: var(--ok-primary);
   border-radius: var(--ok-radius-sm);
@@ -880,7 +693,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 
 label, .form-label {
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   color: var(--ok-text);
 }
 
@@ -906,26 +719,35 @@ textarea, .ok-form-container textarea { min-height: 5.5rem; resize: vertical; }
   box-shadow: 0 0 0 3px var(--ok-primary-soft);
 }
 
-.form-control::placeholder, .ok-input::placeholder, #searchbar::placeholder { color: var(--ok-text-muted); opacity: 1; }
+.form-control::placeholder, .ok-input::placeholder { color: var(--ok-text-muted); opacity: 1; }
 
 .form-control:disabled, .form-select:disabled, select:disabled {
-  background: var(--ok-surface-soft);
+  background: var(--ok-surface-hover);
   color: var(--ok-text-muted);
 }
 
-select[multiple] { min-height: 8rem; }
+select[multiple] {
+  min-height: 8rem;
+}
 
-.help, p.help, .form-text { font-size: 0.78rem; color: var(--ok-text-muted); margin-top: 0.25rem; }
+.help, p.help, .form-text {
+  font-size: 0.78rem;
+  color: var(--ok-text-muted);
+  margin-top: 0.25rem;
+}
 
 .errorlist { color: var(--ok-danger); font-size: 0.82rem; padding-left: 0; list-style: none; }
 .errorlist li { display: flex; align-items: center; gap: 0.3rem; }
 
 fieldset.module, .form-row { border-color: var(--ok-border) !important; }
 .module h2, .module caption, fieldset.module h2 {
-  background: var(--ok-surface-soft) !important;
+  background: var(--ok-surface-hover) !important;
   color: var(--ok-text) !important;
 }
 
+.checkbox-row label, label.vCheckboxLabel { font-weight: 500; }
+
+/* Password visibility toggle (added by okurmenkids/js/ui.js) */
 .ok-password-wrap { position: relative; }
 .ok-password-toggle {
   position: absolute;
@@ -947,6 +769,8 @@ fieldset.module, .form-row { border-color: var(--ok-border) !important; }
 /* Comfortable multi-select (subjects, students, …)                    */
 /* ------------------------------------------------------------------ */
 
+/* The source <select multiple> is hidden but kept in the DOM (still the
+   thing that actually submits) once ui.js enhances it. */
 .ok-ms-native { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
 
 .ok-multiselect {
@@ -956,7 +780,13 @@ fieldset.module, .form-row { border-color: var(--ok-border) !important; }
   overflow: hidden;
 }
 
-.ok-ms-search { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--ok-border); }
+.ok-ms-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--ok-border);
+}
 .ok-ms-search i { color: var(--ok-text-muted); }
 .ok-ms-search input {
   border: none !important;
@@ -970,24 +800,54 @@ fieldset.module, .form-row { border-color: var(--ok-border) !important; }
   box-shadow: none !important;
 }
 
-.ok-ms-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.7rem 0.8rem 0.2rem; }
+.ok-ms-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.7rem 0.8rem 0.2rem;
+}
 .ok-ms-chips:empty { display: none; }
 
 .ok-ms-chip {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  background: var(--ok-primary-soft); color: var(--ok-primary);
-  border-radius: 999px; padding: 0.24rem 0.5rem 0.24rem 0.7rem;
-  font-size: 0.78rem; font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  border-radius: 999px;
+  padding: 0.24rem 0.5rem 0.24rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
-.ok-ms-chip button { border: none; background: none; color: inherit; cursor: pointer; display: inline-flex; padding: 0; font-size: 0.8rem; opacity: 0.75; }
+.ok-ms-chip button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
 .ok-ms-chip button:hover { opacity: 1; }
 
-.ok-multiselect-panel { max-height: 220px; overflow-y: auto; padding: 0.35rem; }
+.ok-multiselect-panel {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.35rem;
+}
 
 .ok-ms-option {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
-  padding: 0.5rem 0.65rem; border-radius: var(--ok-radius-sm);
-  font-size: 0.87rem; color: var(--ok-text); cursor: pointer; user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--ok-radius-sm);
+  font-size: 0.87rem;
+  color: var(--ok-text);
+  cursor: pointer;
+  user-select: none;
 }
 .ok-ms-option:hover { background: var(--ok-surface-hover); }
 .ok-ms-option.is-selected { background: var(--ok-primary-soft); color: var(--ok-primary); font-weight: 600; }
@@ -997,54 +857,175 @@ fieldset.module, .form-row { border-color: var(--ok-border) !important; }
 
 .ok-ms-empty { padding: 1rem 0.65rem; text-align: center; color: var(--ok-text-muted); font-size: 0.85rem; }
 
-.ok-ms-footer { padding: 0.5rem 0.8rem; border-top: 1px solid var(--ok-border); font-size: 0.76rem; color: var(--ok-text-muted); background: var(--ok-surface-soft); }
+.ok-ms-footer {
+  padding: 0.5rem 0.8rem;
+  border-top: 1px solid var(--ok-border);
+  font-size: 0.76rem;
+  color: var(--ok-text-muted);
+  background: var(--ok-surface-hover);
+}
 .ok-ms-footer strong { color: var(--ok-text); }
 
 /* ------------------------------------------------------------------ */
-/* Dropdowns / modals                                                   */
+/* Filters sidebar                                                     */
 /* ------------------------------------------------------------------ */
 
-.dropdown-menu { background: var(--ok-surface); border: 1px solid var(--ok-border); box-shadow: var(--ok-shadow-hover); color: var(--ok-text); }
+#changelist-filter {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow);
+  padding-bottom: 0.5rem;
+}
+#changelist-filter h2 {
+  background: var(--ok-surface-hover) !important;
+  color: var(--ok-text) !important;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-radius: var(--ok-radius) var(--ok-radius) 0 0;
+}
+#changelist-filter h3 {
+  color: var(--ok-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem 0.3rem;
+  margin: 0;
+}
+#changelist-filter ul { margin: 0 0 0.4rem; padding: 0 0.5rem; }
+#changelist-filter li { list-style: none; }
+#changelist-filter li a {
+  display: block;
+  padding: 0.32rem 0.6rem;
+  border-radius: var(--ok-radius-sm);
+  color: var(--ok-text-secondary);
+  font-size: 0.84rem;
+}
+#changelist-filter li a:hover { background: var(--ok-surface-hover); color: var(--ok-text); }
+#changelist-filter li.selected a {
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  font-weight: 600;
+}
+
+#changelist-search, .actions {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow);
+}
+
+/* Search box */
+#searchbar {
+  background: var(--ok-surface) !important;
+  color: var(--ok-text) !important;
+}
+#changelist-search .search-button-wrapper { display: flex; gap: 0.5rem; }
+
+/* Actions row — make "Go" clearly primary, and visually warn when a
+   destructive action (name/label containing "удал") is selected. */
+.actions select { min-width: 220px; }
+.actions .button, .actions button[type="submit"] {
+  background: var(--ok-primary);
+  border-color: var(--ok-primary);
+  color: var(--ok-on-primary);
+}
+.actions.ok-action-danger .button,
+.actions.ok-action-danger button[type="submit"] {
+  background: var(--ok-danger) !important;
+  border-color: var(--ok-danger) !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dropdowns / modals (AdminLTE + Bootstrap)                           */
+/* ------------------------------------------------------------------ */
+
+.dropdown-menu {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  box-shadow: var(--ok-shadow-hover);
+  color: var(--ok-text);
+}
 .dropdown-item { color: var(--ok-text); }
 .dropdown-item:hover, .dropdown-item:focus { background: var(--ok-surface-hover); color: var(--ok-text); }
 .dropdown-divider { border-color: var(--ok-border); }
 
-.modal-content { background: var(--ok-surface); color: var(--ok-text); border: 1px solid var(--ok-border); border-radius: var(--ok-radius); }
+.modal-content {
+  background: var(--ok-surface);
+  color: var(--ok-text);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+}
 .modal-header, .modal-footer { border-color: var(--ok-border); }
 
 /* ------------------------------------------------------------------ */
-/* Dashboard                                                            */
+/* Dashboard: KPI cards, charts, roadmap                                */
 /* ------------------------------------------------------------------ */
 
 .ok-welcome { margin-bottom: 1.4rem; }
-.ok-welcome h1 { font-size: 1.6rem; margin-bottom: 0.2rem; }
+.ok-welcome h1 { font-size: 1.5rem; margin-bottom: 0.2rem; }
 .ok-welcome p { color: var(--ok-text-muted); margin: 0; font-size: 0.92rem; }
 
-.ok-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.9rem; margin-bottom: 1.4rem; }
+.ok-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1.4rem;
+}
 
-.ok-kpi-card { background: var(--ok-surface); border: 1px solid var(--ok-border); border-radius: var(--ok-radius); box-shadow: var(--ok-shadow); padding: 1.1rem 1.2rem; }
+.ok-kpi-card {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow);
+  padding: 1.1rem 1.2rem;
+}
+.ok-kpi-card:hover { box-shadow: var(--ok-shadow-hover); }
+
 .ok-kpi-card.is-soon { opacity: 0.7; }
 
 .ok-kpi-icon {
-  width: 34px; height: 34px; border-radius: 8px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--ok-primary-soft); color: var(--ok-primary); font-size: 1rem; margin-bottom: 0.7rem;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  font-size: 1rem;
+  margin-bottom: 0.7rem;
 }
 
 .ok-kpi-value { font-size: 1.6rem; font-weight: 800; color: var(--ok-text); line-height: 1.1; }
 .ok-kpi-label { font-size: 0.8rem; color: var(--ok-text-muted); margin-top: 0.2rem; }
 .ok-kpi-soon-tag {
-  display: inline-block; margin-top: 0.5rem; font-size: 0.65rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.05em; color: var(--ok-text-muted);
-  background: var(--ok-surface-soft); border: 1px solid var(--ok-border); border-radius: 999px; padding: 0.15rem 0.5rem;
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ok-text-muted);
+  background: var(--ok-surface-hover);
+  border: 1px solid var(--ok-border);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
 }
 
 .ok-chart-card { min-height: 320px; }
 .ok-chart-card canvas { max-height: 260px; }
 
 .ok-soon-card {
-  border: 1px dashed var(--ok-border); border-radius: var(--ok-radius);
-  background: var(--ok-surface); padding: 1.4rem; text-align: center; color: var(--ok-text-muted); font-size: 0.86rem;
+  border: 1px dashed var(--ok-border);
+  border-radius: var(--ok-radius);
+  background: var(--ok-surface);
+  padding: 1.4rem;
+  text-align: center;
+  color: var(--ok-text-muted);
+  font-size: 0.86rem;
 }
 .ok-soon-card i { font-size: 1.4rem; color: var(--ok-primary); margin-bottom: 0.4rem; display: block; }
 
@@ -1059,7 +1040,7 @@ fieldset.module, .form-row { border-color: var(--ok-border) !important; }
 .login-box .ok-theme-toggle { position: absolute; top: 1rem; right: 1rem; }
 
 /* ------------------------------------------------------------------ */
-/* Responsive                                                           */
+/* Responsive                                                          */
 /* ------------------------------------------------------------------ */
 
 @media (max-width: 991px) {
@@ -1072,6 +1053,4 @@ fieldset.module, .form-row { border-color: var(--ok-border) !important; }
   .ok-form-actions { flex-direction: column; align-items: stretch; }
   .ok-form-actions .ok-btn-primary, .ok-form-actions .ok-btn-secondary { justify-content: center; }
   .ok-person-row { flex-wrap: wrap; }
-  #changelist-search, .actions { flex-direction: column; align-items: stretch; }
-  .actions select { min-width: 0; width: 100%; }
 }

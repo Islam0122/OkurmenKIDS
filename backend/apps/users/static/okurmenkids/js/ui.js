@@ -2,34 +2,24 @@
  * OkurmenKIDS admin — UX enhancements.
  *
  * Vanilla JS, no build step, no dependencies beyond what the admin already
- * loads (Bootstrap Icons, now self-hosted). Split into small, independent
- * modules that each run once on DOMContentLoaded:
+ * loads (Bootstrap Icons). Split into small, independent modules that each
+ * run once on DOMContentLoaded:
  *
- *   1. Theme      — light/dark toggle button, hooked into Jazzmin's OWN
- *                   theme mechanism (localStorage "jazzmin-theme-mode" +
- *                   data-bs-theme on <html> — see admin/base.html in the
- *                   jazzmin package). Jazzmin 3.x is Bootstrap 5 based and
- *                   every native component (tables, cards, navbar) reads
- *                   --bs-* variables keyed to that attribute; a separate,
- *                   unrelated toggle would only theme our own custom bits
- *                   and leave native components stuck on the other mode —
- *                   exactly the "dark chrome / white table" bug this fixes.
+ *   1. Theme      — light/dark toggle button + persistence
  *   2. Password   — show/hide toggle on every password field
  *   3. MultiSelect — comfortable search + chips UI for <select multiple>
  *   4. SearchHint — Russian, model-specific search placeholders
  *   5. EmptyState — friendly message instead of a bare "0 results"
  *   6. Actions    — visually warn when a destructive bulk action is picked
- *   7. RuChrome   — fixes a handful of admin strings this Django build's
- *                   ru locale ships untranslated (blank bulk-action option)
  */
 (function () {
   "use strict";
 
   /* ------------------------------------------------------------------ */
-  /* 1. Theme toggle (Jazzmin-native: data-bs-theme + jazzmin-theme-mode) */
+  /* 1. Theme toggle                                                     */
   /* ------------------------------------------------------------------ */
 
-  var THEME_KEY = "jazzmin-theme-mode";
+  var THEME_KEY = "okurmenkids-theme";
 
   function getStoredTheme() {
     try {
@@ -48,13 +38,15 @@
   }
 
   function applyTheme(theme) {
-    document.documentElement.setAttribute("data-bs-theme", theme);
+    document.documentElement.setAttribute("data-theme", theme);
   }
 
   function initTheme() {
-    // Jazzmin's own inline boot script (admin/base.html) already set
-    // data-bs-theme before first paint; nothing to do here but wire up
-    // the toggle button.
+    var stored = getStoredTheme();
+    if (stored === "dark" || stored === "light") {
+      applyTheme(stored);
+    }
+
     var nav = document.querySelector(".app-header .navbar-nav") ||
       document.querySelector(".app-header .navbar");
     var loginHost = !nav && document.body.classList.contains("login-page")
@@ -71,7 +63,12 @@
       '<i class="bi bi-moon-stars-fill"></i><i class="bi bi-sun-fill"></i>';
 
     btn.addEventListener("click", function () {
-      var current = document.documentElement.getAttribute("data-bs-theme") || "light";
+      var current = document.documentElement.getAttribute("data-theme");
+      if (!current) {
+        current = window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+      }
       var next = current === "dark" ? "light" : "dark";
       applyTheme(next);
       setStoredTheme(next);
@@ -336,27 +333,6 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* 7. Russian admin chrome — fill gaps in this Django build's ru       */
-  /*    locale (a handful of core admin strings ship untranslated: the  */
-  /*    bulk-action placeholder option is the one that's actually       */
-  /*    visible). Everything else on this page (Go, Действие, Добавить, */
-  /*    Изменить, Удалить, ...) already comes translated from Django's  */
-  /*    own {% trans %} tags once the ru catalog has the entry.         */
-  /* ------------------------------------------------------------------ */
-
-  function initRuChrome() {
-    var actionSelect = document.querySelector('select[name="action"]');
-    if (actionSelect) {
-      var blankOption = actionSelect.querySelector('option[value=""]');
-      if (blankOption) blankOption.textContent = "— Выберите действие —";
-    }
-    var goBtn = document.querySelector(".actions button[type=submit]");
-    if (goBtn && goBtn.textContent.trim() === "Go") {
-      goBtn.textContent = "Выполнить";
-    }
-  }
-
-  /* ------------------------------------------------------------------ */
 
   document.addEventListener("DOMContentLoaded", function () {
     initTheme();
@@ -365,6 +341,5 @@
     initSearchHint();
     initEmptyState();
     initActionWarning();
-    initRuChrome();
   });
 })();
