@@ -1,12 +1,3 @@
-"""Business logic for the users app.
-
-Views and the Django admin should stay thin and delegate to these functions
-rather than embedding business rules directly.
-
-Note: Trainer accounts never get a backend-generated password. Admin always
-supplies the password (at creation, and whenever it needs to change), and
-that same password is what gets emailed to the trainer.
-"""
 from __future__ import annotations
 
 import logging
@@ -15,15 +6,14 @@ from dataclasses import dataclass
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
-
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from django.templatetags.static import static
+from django.template.loader import render_to_string
 from apps.users.models import Subject, Teacher, User
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Teacher creation
-# ---------------------------------------------------------------------------
 
 @dataclass
 class TeacherCreationResult:
@@ -56,7 +46,7 @@ def create_teacher(
             first_name=first_name,
             last_name=last_name,
             role=User.Role.TEACHER,
-            is_verified=False,
+            is_verified=True,
         )
         user.is_active = is_active
         user.set_password(password)
@@ -92,13 +82,6 @@ def create_teacher(
 
 
 def change_teacher_password_and_send(teacher: Teacher, new_password: str) -> TeacherCreationResult:
-    """Set a new Admin-supplied password for an existing teacher and email it.
-
-    The previous password becomes invalid immediately. There is no way to
-    resend a teacher's *existing* password — Django only stores a hash — so
-    this is the only supported way to get a trainer working credentials
-    again (used by the "Изменить пароль и отправить" admin action).
-    """
     user = teacher.user
     user.set_password(new_password)
     user.save(update_fields=["password", "updated_at"])
@@ -122,28 +105,36 @@ def _try_send_credentials(user: User, password: str) -> tuple[bool, str | None]:
 
 
 def send_teacher_credentials(user: User, password: str) -> None:
-    """Send the trainer their login credentials by email.
-
-    Credentials are never logged — only success/failure is logged by the
-    caller, and never with the password value.
-    """
     subject = "OkurmenKIDS — доступ к системе"
-    message = (
-        "OkurmenKIDS\n\n"
+
+    logo_url = static('images/img.png')
+
+    context = {
+        "user": user,
+        "password": password,
+        "login_url": f"{settings.SITE_URL}/login/",
+        "logo_url":"https://encrypted-tbn0.gstatic.com/images",
+    }
+
+    html_message = render_to_string(
+        "emails/teacher_credentials.html",
+        context,
+    )
+
+    text_message = (
         f"Здравствуйте, {user.first_name}!\n\n"
         "Ваш аккаунт тренера в системе OkurmenKIDS был создан.\n\n"
-        "Логин:\n"
-        f"{user.username}\n\n"
-        "Пароль:\n"
-        f"{password}\n\n"
-        "Для входа используйте систему OkurmenKIDS.\n\n"
-        "С уважением,\n"
-        "OkurmenKIDS Academy"
+        f"Логин: {user.username}\n"
+        f"Пароль: {password}\n\n"
+        f"Вход: {settings.SITE_URL}/login/"
     )
-    send_mail(
+
+    email = EmailMultiAlternatives(
         subject=subject,
-        message=message,
+        body=text_message,
         from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-        fail_silently=False,
+        to=[user.email],
     )
+
+    email.attach_alternative(html_message, "text/html")
+    email.send(fail_silently=False)

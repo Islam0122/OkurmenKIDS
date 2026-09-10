@@ -16,7 +16,7 @@ SECRET_KEY = env(
     "SECRET_KEY",
     default="django-insecure-change-me",
 )
-
+SITE_URL = os.getenv("SITE_URL")
 DEBUG = False
 
 ALLOWED_HOSTS = []
@@ -47,6 +47,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "apps.users.apps.UsersConfig",
     "apps.academy.apps.AcademyConfig",
+
 ]
 
 INSTALLED_APPS = (
