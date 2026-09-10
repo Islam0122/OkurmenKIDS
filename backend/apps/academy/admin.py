@@ -3,8 +3,10 @@ from __future__ import annotations
 from django import forms
 from django.contrib import admin, messages
 from django.db.models import Count, Q
+from django.urls import path, reverse
 from django.utils.html import format_html
 
+from .admin_views import generate_lessons_for_group_view, schedule_view
 from .models import (
     KPIAttendance,
     KPIGroup,
@@ -116,21 +118,35 @@ class CourseLessonPlanAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "capacity", "active_badge", "created_at")
+    list_display = ("name", "capacity", "active_badge", "schedule_link", "created_at")
     list_filter = ("is_active",)
     search_fields = ("name", "description")
     ordering = ("name",)
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at", "schedule_link_detail")
     list_per_page = 25
 
     fieldsets = (
         ("Основная информация", {"fields": ("name", "capacity", "description", "is_active")}),
+        ("Расписание", {"fields": ("schedule_link_detail",)}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
     @admin.display(description="Статус", ordering="is_active")
     def active_badge(self, obj: Room) -> str:
         return _badge("ok-badge-success", "Активна") if obj.is_active else _badge("ok-badge-danger", "Неактивна")
+
+    @admin.display(description="Расписание")
+    def schedule_link(self, obj: Room) -> str:
+        if not obj.pk:
+            return "—"
+        url = f"{reverse('admin:academy_schedule')}?room={obj.pk}"
+        return format_html('<a class="btn btn-outline-success btn-sm" href="{}">Расписание аудитории</a>', url)
+
+    @admin.display(description="Расписание аудитории")
+    def schedule_link_detail(self, obj: Room) -> str:
+        if not obj.pk:
+            return "Появится после сохранения аудитории."
+        return self.schedule_link(obj)
 
 
 @admin.register(Student)
@@ -221,7 +237,7 @@ class GroupAdmin(admin.ModelAdmin):
     list_filter = ("status", "course", "teacher", "room", "start_date")
     search_fields = ("name", "teacher__user__first_name", "teacher__user__last_name")
     ordering = ("-start_date", "name")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at", "schedule_link_detail")
     autocomplete_fields = ("course", "teacher", "room")
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
     list_per_page = 25
@@ -230,6 +246,7 @@ class GroupAdmin(admin.ModelAdmin):
         ("Основная информация", {"fields": ("name", "course", "teacher", "room", "status", "description")}),
         ("Период и время", {"fields": ("start_date", "end_date", "start_time", "end_time", "days_of_week")}),
         ("Студенты", {"fields": ("max_students", "students")}),
+        ("Расписание", {"fields": ("schedule_link_detail",)}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
@@ -265,6 +282,29 @@ class GroupAdmin(admin.ModelAdmin):
         if not days:
             return "—"
         return f"{days} · {obj.start_time.strftime('%H:%M')}–{obj.end_time.strftime('%H:%M')}"
+
+    @admin.display(description="Расписание группы")
+    def schedule_link_detail(self, obj: Group) -> str:
+        if not obj.pk:
+            return "Появится после сохранения группы."
+        day_labels = dict(DAY_CHOICES)
+        days = ", ".join(day_labels.get(d, d) for d in (obj.days_of_week or [])) or "—"
+        url = f"{reverse('admin:academy_schedule')}?group={obj.pk}"
+        return format_html(
+            '<div style="margin-bottom:0.5rem;">'
+            "<div>Дни: <strong>{}</strong></div>"
+            "<div>Время: <strong>{}–{}</strong></div>"
+            "<div>Аудитория: <strong>{}</strong></div>"
+            "<div>Тренер: <strong>{}</strong></div>"
+            "</div>"
+            '<a class="btn btn-outline-success btn-sm" href="{}">Открыть расписание группы</a>',
+            days,
+            obj.start_time.strftime("%H:%M"),
+            obj.end_time.strftime("%H:%M"),
+            obj.room or "—",
+            obj.teacher,
+            url,
+        )
 
     @admin.display(description="Статус", ordering="status")
     def status_badge(self, obj: Group) -> str:
@@ -743,3 +783,31 @@ class KPIHomeworkAdmin(KPIReadOnlyAdminMixin, admin.ModelAdmin):
 
     def _recalculate_one(self, kpi: KPIHomework):
         calculate_homework_kpi(kpi.group, kpi.date_from, kpi.date_to)
+
+
+# ---------------------------------------------------------------------------
+# "Расписание" — a custom admin page (no model of its own) built on Lesson.
+#
+# Django admin only lets a ModelAdmin nest extra URLs under its own
+# <app_label>/<model_name>/ prefix, and this screen deliberately isn't tied
+# to a single model (it reads Lesson filtered several different ways) — so
+# it's added directly onto the admin site's own URLconf instead, the same
+# approach Django's own docs use for a site-wide custom admin view.
+# ---------------------------------------------------------------------------
+
+_original_get_urls = admin.site.get_urls
+
+
+def _get_urls_with_schedule():
+    custom_urls = [
+        path("academy/schedule/", admin.site.admin_view(schedule_view), name="academy_schedule"),
+        path(
+            "academy/schedule/generate-lessons/<int:group_id>/",
+            admin.site.admin_view(generate_lessons_for_group_view),
+            name="academy_schedule_generate_lessons",
+        ),
+    ]
+    return custom_urls + _original_get_urls()
+
+
+admin.site.get_urls = _get_urls_with_schedule

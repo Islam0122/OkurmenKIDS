@@ -85,7 +85,7 @@ class OkurmenKidsAdminSite(AdminSite):
             "homework_recent_rate": homework_recent_rate,
             "lessons_today": list(
                 Lesson.objects.filter(date=today)
-                .select_related("group", "group__teacher__user", "room")
+                .select_related("group", "group__teacher__user", "room", "subject")
                 .order_by("start_time")[:8]
             ),
             "active_groups": list(

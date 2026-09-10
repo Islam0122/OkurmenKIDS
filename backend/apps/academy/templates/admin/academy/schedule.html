@@ -1,0 +1,213 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} oksch-page{% endblock %}
+
+{% block content_title %}Расписание{% endblock %}
+
+{% block breadcrumbs %}
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+        <li class="breadcrumb-item">Расписание</li>
+    </ol>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .oksch-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:0.75rem; margin-bottom:1rem; }
+        .oksch-nav { display:flex; gap:0.5rem; align-items:center; }
+        .oksch-nav .btn { white-space:nowrap; }
+        .oksch-range { font-weight:600; color:var(--ok-text, #202622); margin:0 0.5rem; }
+        .oksch-quick-actions { display:flex; gap:0.5rem; flex-wrap:wrap; }
+
+        .oksch-filters { background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,0.65rem); padding:1rem 1.25rem; margin-bottom:1.25rem; }
+        .oksch-filters form { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-end; }
+        .oksch-filters .oksch-field { display:flex; flex-direction:column; gap:0.25rem; min-width:150px; }
+        .oksch-filters label { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--ok-text-muted,#89938D); }
+        .oksch-filters select, .oksch-filters input[type="date"] { padding:0.4rem 0.55rem; border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius-sm,0.45rem); background:var(--ok-surface,#fff); color:var(--ok-text,#202622); }
+
+        .oksch-conflicts { margin-bottom:1.25rem; }
+        .oksch-conflict-box { border:1px solid var(--ok-danger,#C7402E); background:var(--ok-danger-soft,#FBEAE7); color:var(--ok-text,#202622); border-radius:var(--ok-radius,0.65rem); padding:0.85rem 1.1rem; margin-bottom:0.6rem; }
+        .oksch-conflict-box h4 { margin:0 0 0.4rem; font-size:0.9rem; color:var(--ok-danger,#C7402E); }
+        .oksch-conflict-box .oksch-conflict-item { font-size:0.85rem; margin-bottom:0.3rem; }
+        .oksch-conflict-box .oksch-conflict-item strong { display:inline-block; min-width:110px; }
+
+        .oksch-week { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:0.85rem; align-items:start; }
+        .oksch-day { background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,0.65rem); overflow:hidden; }
+        .oksch-day--today { border-color:var(--ok-primary,#2F8F5B); box-shadow:0 0 0 1px var(--ok-primary,#2F8F5B); }
+        .oksch-day-header { padding:0.6rem 0.85rem; border-bottom:1px solid var(--ok-border,#E1E7E2); background:var(--ok-surface-hover,#F1F6F2); font-weight:600; font-size:0.85rem; color:var(--ok-text,#202622); }
+        .oksch-day-header .oksch-date { font-weight:400; color:var(--ok-text-secondary,#68736C); font-size:0.78rem; }
+        .oksch-day-body { padding:0.6rem; display:flex; flex-direction:column; gap:0.5rem; min-height:60px; }
+        .oksch-empty-day { color:var(--ok-text-muted,#89938D); font-size:0.78rem; padding:0.4rem 0.2rem; }
+
+        .oksch-card { display:block; border-radius:var(--ok-radius-sm,0.45rem); border:1px solid var(--ok-border,#E1E7E2); border-left:4px solid var(--ok-primary,#2F8F5B); background:var(--ok-primary-soft,#E7F3EC); padding:0.55rem 0.7rem; text-decoration:none; color:inherit; transition:box-shadow .15s ease; }
+        .oksch-card:hover { box-shadow:var(--ok-shadow-hover, 0 6px 20px rgba(20,30,24,.08)); text-decoration:none; color:inherit; }
+        .oksch-card--completed { border-left-color:var(--ok-text-muted,#89938D); background:var(--ok-surface-hover,#F1F6F2); }
+        .oksch-card--cancelled { border-left-color:var(--ok-danger,#C7402E); background:var(--ok-danger-soft,#FBEAE7); opacity:0.85; }
+        .oksch-card--conflict { outline:2px solid var(--ok-danger,#C7402E); }
+        .oksch-card-time { font-weight:700; font-size:0.82rem; color:var(--ok-text,#202622); }
+        .oksch-card-subject { font-size:0.82rem; font-weight:600; margin-top:0.15rem; }
+        .oksch-card-meta { font-size:0.74rem; color:var(--ok-text-secondary,#68736C); margin-top:0.15rem; line-height:1.35; }
+        .oksch-card-status { display:inline-block; margin-top:0.3rem; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.02em; color:var(--ok-text-secondary,#68736C); }
+        .oksch-conflict-flag { color:var(--ok-danger,#C7402E); font-weight:700; }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="oksch-toolbar">
+    <div class="oksch-nav">
+        <a class="btn btn-outline-success btn-sm" href="{{ prev_week_url }}">&larr; Предыдущая неделя</a>
+        <a class="btn btn-outline-success btn-sm" href="{{ today_url }}">Сегодня</a>
+        <a class="btn btn-outline-success btn-sm" href="{{ next_week_url }}">Следующая неделя &rarr;</a>
+        <span class="oksch-range">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span>
+    </div>
+    <div class="oksch-quick-actions">
+        <a class="btn btn-success btn-sm" href="{% url 'admin:academy_lesson_add' %}">+ Создать занятие</a>
+        {% if selected_group %}
+            <form method="post" action="{% url 'admin:academy_schedule_generate_lessons' selected_group.id %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-success btn-sm">Сгенерировать занятия — «{{ selected_group.name }}»</button>
+            </form>
+        {% else %}
+            <a class="btn btn-outline-success btn-sm" href="{% url 'admin:academy_group_changelist' %}">Сгенерировать занятия…</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="oksch-filters">
+    <form method="get">
+        <div class="oksch-field">
+            <label>Дата начала</label>
+            <input type="date" name="date_from" value="{{ selected.date_from }}">
+        </div>
+        <div class="oksch-field">
+            <label>Дата окончания</label>
+            <input type="date" name="date_to" value="{{ selected.date_to }}">
+        </div>
+        <div class="oksch-field">
+            <label>Тренер</label>
+            <select name="teacher">
+                <option value="">Все</option>
+                {% for teacher in teachers %}
+                    <option value="{{ teacher.id }}" {% if selected.teacher == teacher.id|stringformat:"s" %}selected{% endif %}>{{ teacher }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="oksch-field">
+            <label>Группа</label>
+            <select name="group">
+                <option value="">Все</option>
+                {% for group in groups %}
+                    <option value="{{ group.id }}" {% if selected.group == group.id|stringformat:"s" %}selected{% endif %}>{{ group.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="oksch-field">
+            <label>Курс</label>
+            <select name="course">
+                <option value="">Все</option>
+                {% for course in courses %}
+                    <option value="{{ course.id }}" {% if selected.course == course.id|stringformat:"s" %}selected{% endif %}>{{ course.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="oksch-field">
+            <label>Предмет</label>
+            <select name="subject">
+                <option value="">Все</option>
+                {% for subject in subjects %}
+                    <option value="{{ subject.id }}" {% if selected.subject == subject.id|stringformat:"s" %}selected{% endif %}>{{ subject.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="oksch-field">
+            <label>Аудитория</label>
+            <select name="room">
+                <option value="">Все</option>
+                {% for room in rooms %}
+                    <option value="{{ room.id }}" {% if selected.room == room.id|stringformat:"s" %}selected{% endif %}>{{ room.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="oksch-field">
+            <label>Статус</label>
+            <select name="status">
+                <option value="">Все</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="oksch-field">
+            <button type="submit" class="btn btn-success btn-sm">Применить</button>
+            <a class="btn btn-outline-secondary btn-sm" href="{% url 'admin:academy_schedule' %}">Сбросить</a>
+        </div>
+    </form>
+</div>
+
+{% if teacher_conflicts or room_conflicts %}
+<div class="oksch-conflicts">
+    {% for conflict in teacher_conflicts %}
+        <div class="oksch-conflict-box">
+            <h4>⚠ Конфликт тренера</h4>
+            <div class="oksch-conflict-item"><strong>{{ conflict.label }}</strong> ({{ conflict.date|date:"d.m.Y" }})</div>
+            {% for lesson in conflict.lessons %}
+                <div class="oksch-conflict-item">
+                    <strong>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</strong>
+                    {{ lesson.subject|default:"—" }} · {{ lesson.group.name }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+    {% for conflict in room_conflicts %}
+        <div class="oksch-conflict-box">
+            <h4>⚠ Конфликт аудитории</h4>
+            <div class="oksch-conflict-item"><strong>{{ conflict.label }}</strong> ({{ conflict.date|date:"d.m.Y" }})</div>
+            {% for lesson in conflict.lessons %}
+                <div class="oksch-conflict-item">
+                    <strong>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</strong>
+                    {{ lesson.group.name }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="oksch-week">
+    {% for day in days %}
+        <div class="oksch-day {% if day.is_today %}oksch-day--today{% endif %}">
+            <div class="oksch-day-header">
+                {{ day.weekday_label }}
+                <div class="oksch-date">{{ day.date|date:"d E" }}{% if day.is_today %} · сегодня{% endif %}</div>
+            </div>
+            <div class="oksch-day-body">
+                {% if day.lessons %}
+                    {% for lesson in day.lessons %}
+                        <a class="oksch-card
+                            {% if lesson.status == 'completed' %}oksch-card--completed{% endif %}
+                            {% if lesson.status == 'cancelled' %}oksch-card--cancelled{% endif %}
+                            {% if lesson.id in conflicting_ids %}oksch-card--conflict{% endif %}"
+                           href="{% url 'admin:academy_lesson_change' lesson.id %}">
+                            <div class="oksch-card-time">
+                                {{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}
+                                {% if lesson.id in conflicting_ids %}<span class="oksch-conflict-flag">⚠</span>{% endif %}
+                            </div>
+                            <div class="oksch-card-subject">{{ lesson.subject|default:"Без предмета" }}{% if lesson.topic %} — {{ lesson.topic }}{% endif %}</div>
+                            <div class="oksch-card-meta">
+                                Группа: {{ lesson.group.name }}<br>
+                                Тренер: {{ lesson.group.teacher }}<br>
+                                Аудитория: {{ lesson.room|default:"—" }}
+                            </div>
+                            <span class="oksch-card-status">{{ lesson.get_status_display }}</span>
+                        </a>
+                    {% endfor %}
+                {% else %}
+                    <div class="oksch-empty-day">Занятий нет</div>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

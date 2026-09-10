@@ -249,6 +249,7 @@ JAZZMIN_SETTINGS = {
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-journal-bookmark"},
             {"name": "Аудитории", "model": "academy.room", "icon": "bi bi-door-open"},
             {"name": "Занятия", "model": "academy.lesson", "icon": "bi bi-calendar-week"},
+            {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar-week"},
             {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
             {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-text"},
             {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-square"},
