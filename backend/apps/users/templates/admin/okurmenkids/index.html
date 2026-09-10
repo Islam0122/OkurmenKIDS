@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load i18n %}
+{% load i18n static %}
 
 {% block bodyclass %}{{ block.super }} dashboard{% endblock %}
 
@@ -165,7 +165,7 @@
 
 {% block extrajs %}
     {{ block.super }}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="{% static 'okurmenkids/vendor/chartjs/chart.umd.min.js' %}"></script>
     <script>
         (function () {
             if (typeof Chart === "undefined") return;

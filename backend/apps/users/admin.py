@@ -229,6 +229,13 @@ class AddTrainerForm(forms.ModelForm):
             attrs={
                 "class": "ok-subject-select",
                 "data-placeholder": "Поиск и выбор предметов...",
+                # Jazzmin auto-applies its own Select2 widget to every
+                # <select> on the page (change_form.js applySelect2()),
+                # stacking a second, competing control next to ours. This
+                # attribute is one of Jazzmin's own documented exclusions
+                # ("noSelect2" in that script) — it opts this field out so
+                # our custom search+chips UI (ui.js) is the only widget.
+                "data-autocomplete-light-function": "select2",
             }
         ),
     )
@@ -318,6 +325,7 @@ class ChangeTrainerForm(forms.ModelForm):
             attrs={
                 "class": "ok-subject-select",
                 "data-placeholder": "Поиск и выбор предметов...",
+                "data-autocomplete-light-function": "select2",
             }
         ),
     )
