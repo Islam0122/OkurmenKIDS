@@ -1,8 +1,10 @@
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client as DjangoClient
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from apps.users.models import Subject, Teacher, User
 from apps.users.services import change_teacher_password_and_send, create_teacher
@@ -388,3 +390,262 @@ class CredentialsEmailTests(TestCase):
         self.assertEqual(message.to, ["teacher9@okurmenkids.local"])
         self.assertIn("teacher9", message.body)
         self.assertIn("Gulnara2026!", message.body)
+
+
+# ---------------------------------------------------------------------------
+# Teacher Import / Export — apps.users.import_export.teachers
+# ---------------------------------------------------------------------------
+
+def _csv_file(content: str, name: str = "teachers.csv") -> SimpleUploadedFile:
+    return SimpleUploadedFile(name, content.encode("utf-8"), content_type="text/csv")
+
+
+class TeacherImportExportAPITests(APITestCase):
+    def setUp(self):
+        self.login_url = reverse("auth-login")
+        self.export_url = reverse("trainer-export")
+        self.import_url = reverse("trainer-import-file")
+        self.preview_url = reverse("trainer-import-preview")
+
+        self.admin = make_admin()
+        self.subject = Subject.objects.create(name="Python")
+        self.teacher_a, self.password_a = make_teacher(
+            username="teacherA", email="teacherA@okurmenkids.local"
+        )
+        self.teacher_a.subjects.set([self.subject])
+
+    def _login(self, username, password):
+        response = self.client.post(self.login_url, {"username": username, "password": password})
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+
+    def test_export_returns_csv_without_password(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        response = self.client.get(self.export_url, {"export_format": "csv"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        content = response.content.decode("utf-8-sig")
+        header = content.splitlines()[0]
+        self.assertEqual(
+            header,
+            "username,email,first_name,last_name,role,is_active,is_verified,phone,"
+            "position,experience_years,bio,hire_date,subjects",
+        )
+        self.assertNotIn("password", content.lower())
+        self.assertIn("teacherA", content)
+        self.assertIn("Python", content)
+
+    def test_export_xlsx_format(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        response = self.client.get(self.export_url, {"export_format": "xlsx"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    def test_teacher_cannot_export_teachers(self):
+        self._login(self.teacher_a.user.username, self.password_a)
+        response = self.client.get(self.export_url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_cannot_import_teachers(self):
+        self._login(self.teacher_a.user.username, self.password_a)
+        response = self.client.post(
+            self.import_url, {"file": _csv_file("username,email,first_name\nx,x@x.com,X\n")}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.filter(username="x").exists())
+
+    def test_import_creates_new_teacher_with_generated_password(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = (
+            "username,email,first_name,last_name,phone,position,experience_years,"
+            "hire_date,subjects,is_active\n"
+            "newteacher,newteacher@okurmenkids.local,New,Teacher,+996555111111,"
+            "Trainer,2,2024-01-01,Python,true\n"
+        )
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data, {"created": 1, "updated": 0, "total": 1})
+
+        user = User.objects.get(username="newteacher")
+        self.assertEqual(user.role, User.Role.TEACHER)
+        self.assertFalse(user.is_verified)
+        self.assertTrue(user.has_usable_password())
+        # A random password was generated — it must not be the empty string
+        # and must not appear anywhere in the response.
+        self.assertNotIn("password", str(response.data).lower())
+
+        teacher = Teacher.objects.get(user=user)
+        self.assertEqual(teacher.position, "Trainer")
+        self.assertEqual(teacher.experience_years, 2)
+        self.assertIn(self.subject, teacher.subjects.all())
+
+    def test_password_is_never_exported(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        response = self.client.get(self.export_url)
+        body = response.content.decode("utf-8-sig").lower()
+        self.assertNotIn("password", body)
+        self.assertNotIn(self.teacher_a.user.password.lower(), body)
+
+    def test_import_updates_existing_teacher_found_by_username(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = (
+            f"username,email,first_name,last_name,position\n"
+            f"teacherA,teacherA@okurmenkids.local,Айбек,Обновлённый,Senior Trainer\n"
+        )
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data, {"created": 0, "updated": 1, "total": 1})
+
+        self.teacher_a.refresh_from_db()
+        self.teacher_a.user.refresh_from_db()
+        self.assertEqual(self.teacher_a.user.last_name, "Обновлённый")
+        self.assertEqual(self.teacher_a.position, "Senior Trainer")
+        # No duplicate User was created.
+        self.assertEqual(User.objects.filter(username="teacherA").count(), 1)
+
+    def test_import_updates_existing_teacher_found_by_email(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = (
+            f"username,email,first_name,position\n"
+            f"a-different-username,teacherA@okurmenkids.local,Айбек,Lead Trainer\n"
+        )
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["updated"], 1)
+        self.teacher_a.user.refresh_from_db()
+        self.assertEqual(self.teacher_a.user.username, "a-different-username")
+
+    def test_import_with_unknown_subject_is_rejected_and_atomic(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        before = User.objects.count()
+        csv_content = (
+            "username,email,first_name,subjects\n"
+            "valid1,valid1@okurmenkids.local,Valid,Python\n"
+            "valid2,valid2@okurmenkids.local,Valid,C++\n"
+        )
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["invalid"], 1)
+        self.assertIn('"C++"', response.data["errors"][0]["errors"][0])
+        # Atomic rollback: not even the valid row was saved.
+        self.assertEqual(User.objects.count(), before)
+        self.assertFalse(User.objects.filter(username="valid1").exists())
+
+    def test_subject_is_never_auto_created(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = "username,email,first_name,subjects\nx,x@x.com,X,Совершенно Новый Предмет\n"
+        self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertFalse(Subject.objects.filter(name="Совершенно Новый Предмет").exists())
+
+    def test_import_invalid_email_is_rejected(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = "username,email,first_name\nbademail,not-an-email,X\n"
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", response.data["errors"][0]["errors"][0].lower())
+
+    def test_import_duplicate_username_within_file_is_rejected(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = (
+            "username,email,first_name\n"
+            "dupuser,dup1@okurmenkids.local,X\n"
+            "dupuser,dup2@okurmenkids.local,Y\n"
+        )
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(any("Дублирующийся" in e["errors"][0] for e in response.data["errors"]))
+
+    def test_import_missing_required_fields_is_rejected(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = "username,email,first_name\n,missing@x.com,\n"
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        errors = " ".join(response.data["errors"][0]["errors"])
+        self.assertIn("username", errors)
+        self.assertIn("first_name", errors)
+
+    def test_import_invalid_experience_years_is_rejected(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = "username,email,first_name,experience_years\nx,x@x.com,X,not-a-number\n"
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_import_invalid_date_is_rejected(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = "username,email,first_name,hire_date\nx,x@x.com,X,not-a-date\n"
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_import_cannot_hijack_existing_admin_account(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        csv_content = f"username,email,first_name\n{self.admin.username},{self.admin.email},Hacked\n"
+        response = self.client.post(self.import_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.role, User.Role.ADMIN)
+        self.assertNotEqual(self.admin.first_name, "Hacked")
+
+    def test_import_preview_does_not_save_anything(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        before = User.objects.count()
+        csv_content = "username,email,first_name\npreviewonly,preview@x.com,Preview\n"
+        response = self.client.post(self.preview_url, {"file": _csv_file(csv_content)}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"total": 1, "valid": 1, "invalid": 0, "errors": []})
+        self.assertEqual(User.objects.count(), before)
+
+    def test_unsupported_file_extension_is_rejected(self):
+        self._login(self.admin.username, "Str0ng!Pass123")
+        bad_file = SimpleUploadedFile("teachers.txt", b"whatever", content_type="text/plain")
+        response = self.client.post(self.import_url, {"file": bad_file}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_anon_cannot_export_or_import(self):
+        anon = APIClient()
+        response = anon.get(self.export_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class TeacherAdminImportExportTests(TestCase):
+    def setUp(self):
+        self.admin = make_admin()
+        self.teacher, self.password = make_teacher(
+            username="teacherWeb", email="teacherWeb@okurmenkids.local"
+        )
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher.user)
+
+    def test_changelist_has_import_export_buttons(self):
+        response = self.admin_web.get(reverse("admin:users_teacher_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("admin:users_teacher_import"))
+        self.assertContains(response, reverse("admin:users_teacher_export"))
+
+    def test_export_view_downloads_csv(self):
+        response = self.admin_web.get(reverse("admin:users_teacher_export"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertNotIn(b"password", response.content.lower())
+
+    def test_import_preview_then_confirm(self):
+        csv_content = "username,email,first_name\nwebimport,webimport@okurmenkids.local,WebImport\n"
+        url = reverse("admin:users_teacher_import")
+
+        preview_response = self.admin_web.post(url, {"file": _csv_file(csv_content), "preview": "1"})
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertFalse(User.objects.filter(username="webimport").exists())
+
+        confirm_response = self.admin_web.post(
+            url, {"file": _csv_file(csv_content), "confirm": "1"}, follow=True
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+        self.assertTrue(User.objects.filter(username="webimport").exists())
+
+    def test_import_view_requires_admin(self):
+        url = reverse("admin:users_teacher_import")
+        response = self.teacher_web.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)

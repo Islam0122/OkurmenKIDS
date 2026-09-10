@@ -9,6 +9,36 @@ from apps.users.models import Subject, Teacher, User
 from apps.users.services import create_teacher
 
 
+class ImportRowErrorSerializer(serializers.Serializer):
+    """One row's worth of Import/Export validation problems (Students, Teachers)."""
+
+    row = serializers.IntegerField(help_text="Номер строки файла (1 — заголовок).")
+    errors = serializers.ListField(child=serializers.CharField())
+
+
+class ImportPreviewSerializer(serializers.Serializer):
+    """Response of every `.../import/preview/` endpoint."""
+
+    total = serializers.IntegerField()
+    valid = serializers.IntegerField()
+    invalid = serializers.IntegerField()
+    errors = ImportRowErrorSerializer(many=True)
+
+
+class ImportResultSerializer(serializers.Serializer):
+    """Response of every `.../import/` endpoint on success."""
+
+    created = serializers.IntegerField()
+    updated = serializers.IntegerField()
+    total = serializers.IntegerField()
+
+
+class ImportFileRequestSerializer(serializers.Serializer):
+    """Request body of every `.../import/` and `.../import/preview/` endpoint."""
+
+    file = serializers.FileField(help_text="CSV или XLSX файл.")
+
+
 class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subject

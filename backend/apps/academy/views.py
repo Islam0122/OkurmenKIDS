@@ -3,18 +3,21 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
+from apps.users.import_export.formats import UnsupportedFileFormat
 from apps.users.models import Teacher, User
 from apps.users.permissions import IsAdmin
+from apps.users.serializers import ImportFileRequestSerializer, ImportPreviewSerializer, ImportResultSerializer
 
 from .filters import (
     AttendanceFilter,
@@ -59,6 +62,12 @@ from .serializers import (
 from .services.analytics import AnalyticsService
 from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
+from .services.import_export import (
+    StudentImportValidationError,
+    export_students,
+    import_students,
+    preview_students_import,
+)
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
 
@@ -243,6 +252,82 @@ class StudentViewSet(viewsets.ModelViewSet):
         if teacher is None:
             return qs.none()
         return qs.filter(group__teacher=teacher)
+
+    @extend_schema(
+        tags=["Students"],
+        parameters=[
+            OpenApiParameter(name="export_format", type=str, enum=["csv", "xlsx"], required=False, description="csv (по умолчанию) или xlsx."),
+        ],
+        request=None,
+        responses={200: bytes},
+        description=(
+            "Экспорт студентов (текущего отфильтрованного списка — учитывает ?group=, "
+            "?is_active=, ?search= и т.д.) в CSV или XLSX. Group экспортируется по имени. "
+            "Параметр называется export_format (не format — это имя зарезервировано DRF "
+            "для согласования типа содержимого ответа)."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        fmt = request.query_params.get("export_format", "csv")
+        queryset = self.filter_queryset(self.get_queryset())
+        try:
+            return export_students(queryset, fmt)
+        except UnsupportedFileFormat as exc:
+            raise DRFValidationError(str(exc))
+
+    @extend_schema(
+        tags=["Students"],
+        request=ImportFileRequestSerializer,
+        responses=ImportPreviewSerializer,
+        description="Проверка файла импорта студентов без сохранения изменений.",
+    )
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="import/preview",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def import_preview(self, request):
+        file_obj = request.FILES.get("file")
+        if not file_obj:
+            raise DRFValidationError({"file": ["Файл обязателен."]})
+        try:
+            preview = preview_students_import(file_obj)
+        except UnsupportedFileFormat as exc:
+            raise DRFValidationError(str(exc))
+        return Response(preview.as_dict())
+
+    @extend_schema(
+        tags=["Students"],
+        request=ImportFileRequestSerializer,
+        responses={201: ImportResultSerializer, 400: ImportPreviewSerializer},
+        description=(
+            "Импорт студентов из CSV/XLSX. Group ищется по имени (не создаётся автоматически). "
+            "Строка с `id` обновляет существующего студента, без `id` — создаёт нового. "
+            "Транзакционный: при наличии хотя бы одной ошибки ни одна строка не сохраняется."
+        ),
+    )
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="import",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def import_file(self, request):
+        file_obj = request.FILES.get("file")
+        if not file_obj:
+            raise DRFValidationError({"file": ["Файл обязателен."]})
+        try:
+            result = import_students(file_obj)
+        except UnsupportedFileFormat as exc:
+            raise DRFValidationError(str(exc))
+        except StudentImportValidationError as exc:
+            return Response(
+                {"detail": "Импорт не выполнен — найдены ошибки.", **exc.preview.as_dict()},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(result.as_dict(), status=status.HTTP_201_CREATED)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,94 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="ok-form-container" style="max-width: 760px;">
+
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-upload"></i>
+      <span>Импорт студентов</span>
+    </div>
+    <div class="ok-card-body">
+      <div class="ok-alert ok-alert-warning">
+        <i class="bi bi-info-circle"></i>
+        <div>
+          Обязательное поле — <strong>first_name</strong>. Колонка <strong>group</strong> ищет
+          существующую группу по названию (группа не создаётся автоматически). Колонка
+          <strong>id</strong> необязательна — если указана, обновляется существующий студент,
+          иначе создаётся новый. Поддерживаются форматы: {{ export_fields }}.
+        </div>
+      </div>
+
+      <form method="post" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem;">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="ok-alert ok-alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="ok-field-group">
+          <label class="ok-label" for="{{ form.file.id_for_label }}">
+            {{ form.file.label }} <span class="ok-label-required">*</span>
+          </label>
+          {{ form.file }}
+          {% for error in form.file.errors %}
+            <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+          {% endfor %}
+        </div>
+
+        <div class="ok-form-actions" style="margin-top: 0; padding: 1rem 0 0; border: none; border-top: 1px solid var(--ok-border); border-radius: 0; background: transparent;">
+          <a href="{{ changelist_url }}" class="ok-btn-secondary">
+            <i class="bi bi-arrow-left"></i> Отмена
+          </a>
+          <button type="submit" name="preview" value="1" class="ok-btn-secondary">
+            <i class="bi bi-eye"></i> Предпросмотр
+          </button>
+          <button type="submit" name="confirm" value="1" class="ok-btn-primary">
+            <i class="bi bi-check2-circle"></i> Импортировать
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if preview %}
+    <div class="ok-card">
+      <div class="ok-card-header">
+        <i class="bi bi-clipboard-data"></i>
+        <span>{% if failed %}Импорт не выполнен{% else %}Результат предпросмотра{% endif %}</span>
+      </div>
+      <div class="ok-card-body">
+        {% if failed %}
+          <div class="ok-alert ok-alert-danger">
+            <i class="bi bi-x-circle"></i>
+            <div>Найдены ошибки — ни один студент не был сохранён (импорт транзакционный).</div>
+          </div>
+        {% endif %}
+
+        <div style="display:flex; gap:1.5rem; margin-bottom:1rem;">
+          <div><strong>{{ preview.total }}</strong> строк всего</div>
+          <div style="color:var(--ok-success,#2F8F5B);"><strong>{{ preview.valid }}</strong> валидных</div>
+          <div style="color:var(--ok-danger,#C7402E);"><strong>{{ preview.invalid }}</strong> с ошибками</div>
+        </div>
+
+        {% if preview.errors %}
+          <ul style="margin:0; padding-left:1.2rem;">
+            {% for error in preview.errors %}
+              <li class="ok-error-text" style="display:list-item; margin-bottom:0.4rem;">
+                Строка {{ error.row }} — {{ error.errors|join:"; " }}
+              </li>
+            {% endfor %}
+          </ul>
+        {% elif not failed %}
+          <div class="ok-alert ok-alert-success">
+            <i class="bi bi-check-circle"></i>
+            <div>Ошибок не найдено. Нажмите «Импортировать», прикрепив тот же файл ещё раз.</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
