@@ -22,6 +22,7 @@ from apps.users.models import Subject, Teacher, User
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 from .models import Course, Group, Lesson, Room
+from .services.analytics import AnalyticsService
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
@@ -221,3 +222,84 @@ def generate_lessons_for_group_view(request, group_id: int):
             messages.warning(request, f"«{group.name}»: новых занятий не создано (уже сгенерированы).")
 
     return redirect(f"{reverse('admin:academy_schedule')}?group={group_id}")
+
+
+# ---------------------------------------------------------------------------
+# "Аналитика" — a custom admin page (no model of its own), rendering
+# AnalyticsService.get_dashboard() for a date range + optional Teacher/Group
+# filter. Nothing is stored: every number is recomputed on this request.
+# ---------------------------------------------------------------------------
+
+def _quick_periods(today: dt.date) -> list[dict]:
+    """Preset date ranges for the Analytics Dashboard's quick filter buttons."""
+    week_start = _week_start(today)
+    month_start = today.replace(day=1)
+    last_month_end = month_start - dt.timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    year_start = today.replace(month=1, day=1)
+
+    return [
+        {"key": "today", "label": "Сегодня", "date_from": today, "date_to": today},
+        {
+            "key": "this_week",
+            "label": "Эта неделя",
+            "date_from": week_start,
+            "date_to": week_start + dt.timedelta(days=6),
+        },
+        {"key": "this_month", "label": "Этот месяц", "date_from": month_start, "date_to": today},
+        {"key": "last_month", "label": "Прошлый месяц", "date_from": last_month_start, "date_to": last_month_end},
+        {"key": "this_year", "label": "Этот год", "date_from": year_start, "date_to": today},
+    ]
+
+
+def analytics_view(request):
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Раздел «Аналитика» доступен только администратору.")
+
+    today = timezone.localdate()
+    month_start = today.replace(day=1)
+
+    date_from = _parse_date(request.GET.get("date_from"), month_start)
+    date_to = _parse_date(request.GET.get("date_to"), today)
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+
+    teacher_param = request.GET.get("teacher") or ""
+    group_param = request.GET.get("group") or ""
+
+    dashboard = AnalyticsService(
+        date_from,
+        date_to,
+        teacher_id=int(teacher_param) if teacher_param else None,
+        group_id=int(group_param) if group_param else None,
+    ).get_dashboard()
+
+    quick_periods = _quick_periods(today)
+    active_period_key = next(
+        (period["key"] for period in quick_periods if period["date_from"] == date_from and period["date_to"] == date_to),
+        "custom",
+    )
+
+    filter_params = {"teacher": teacher_param, "group": group_param}
+    filter_qs = "&".join(f"{key}={value}" for key, value in filter_params.items() if value)
+
+    def _period_url(period: dict) -> str:
+        qs = f"date_from={period['date_from'].isoformat()}&date_to={period['date_to'].isoformat()}"
+        if filter_qs:
+            qs = f"{qs}&{filter_qs}"
+        return f"{reverse('admin:academy_analytics')}?{qs}"
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Аналитика",
+        "dashboard": dashboard,
+        "date_from": date_from,
+        "date_to": date_to,
+        "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
+        "groups": Group.objects.order_by("name"),
+        "selected": {"teacher": teacher_param, "group": group_param},
+        "quick_periods": [{**period, "url": _period_url(period)} for period in quick_periods],
+        "active_period_key": active_period_key,
+        "reset_url": reverse("admin:academy_analytics"),
+    }
+    return render(request, "admin/academy/analytics.html", context)

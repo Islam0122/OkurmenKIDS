@@ -1,24 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { kpiApi, type KPIListParams } from '@/api/kpi'
+import { kpiApi, type AnalyticsDashboardParams } from '@/api/kpi'
 
-export function useKPIGroups(params: KPIListParams) {
+/** The Analytics Dashboard for a date range (+ optional teacher/group scope) —
+ * recomputed from real data on every call, so this key is invalidated
+ * wherever Attendance/Homework mutations happen (see useAttendance/useHomework). */
+export function useAnalyticsDashboard(params: AnalyticsDashboardParams) {
   return useQuery({
-    queryKey: ['kpi', 'groups', params],
-    queryFn: () => kpiApi.groups(params),
-  })
-}
-
-export function useKPITeachers(params: KPIListParams) {
-  return useQuery({
-    queryKey: ['kpi', 'teachers', params],
-    queryFn: () => kpiApi.teachers(params),
-  })
-}
-
-export function useKPIStudents(params: KPIListParams) {
-  return useQuery({
-    queryKey: ['kpi', 'students', params],
-    queryFn: () => kpiApi.students(params),
+    queryKey: ['kpi', 'dashboard', params],
+    queryFn: () => kpiApi.dashboard(params),
   })
 }

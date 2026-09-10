@@ -14,11 +14,6 @@ from .models import (
     Course,
     Group,
     Homework,
-    KPIAttendance,
-    KPIGroup,
-    KPIHomework,
-    KPIStudent,
-    KPITeacher,
     Lesson,
     Student,
 )
@@ -70,48 +65,3 @@ class HomeworkFilter(filters.FilterSet):
     class Meta:
         model = Homework
         fields = ["lesson", "group"]
-
-
-class KPIGroupFilter(filters.FilterSet):
-    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
-    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
-
-    class Meta:
-        model = KPIGroup
-        fields = ["group"]
-
-
-class KPITeacherFilter(filters.FilterSet):
-    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
-    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
-
-    class Meta:
-        model = KPITeacher
-        fields = ["teacher"]
-
-
-class KPIStudentFilter(filters.FilterSet):
-    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
-    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
-
-    class Meta:
-        model = KPIStudent
-        fields = ["student", "group"]
-
-
-class KPIAttendanceFilter(filters.FilterSet):
-    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
-    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
-
-    class Meta:
-        model = KPIAttendance
-        fields = ["group"]
-
-
-class KPIHomeworkFilter(filters.FilterSet):
-    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
-    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
-
-    class Meta:
-        model = KPIHomework
-        fields = ["group"]

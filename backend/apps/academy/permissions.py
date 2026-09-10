@@ -76,21 +76,3 @@ class IsAdminOrOwningTeacher(BasePermission):
         teacher = _teacher_profile(user)
         group = _group_of(obj)
         return bool(teacher and group and group.teacher_id == teacher.id)
-
-
-class IsAdminForWrite(BasePermission):
-    """Blocks every unsafe method for everyone except Admin — no object-level exception.
-
-    Used for KPI `.../calculate/` actions: a Teacher may read their own
-    KPI records, but only Admin is allowed to trigger a recalculation.
-    """
-
-    message = "Пересчёт KPI доступен только администратору."
-
-    def has_permission(self, request, view) -> bool:
-        user = request.user
-        if not (user and user.is_authenticated):
-            return False
-        if request.method in SAFE_METHODS:
-            return True
-        return _is_admin(user)

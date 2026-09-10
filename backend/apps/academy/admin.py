@@ -6,15 +6,9 @@ from django.db.models import Count, Q
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .admin_views import generate_lessons_for_group_view, schedule_view
+from .admin_views import analytics_view, generate_lessons_for_group_view, schedule_view
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
 from .models import (
-    KPIAttendance,
-    KPIGroup,
-    KPIHomework,
-    KPILesson,
-    KPIStudent,
-    KPITeacher,
     Attendance,
     Course,
     CourseLessonPlan,
@@ -25,14 +19,6 @@ from .models import (
     Room,
     Student,
 )
-from .services.kpi_calculator import (
-    calculate_attendance_kpi,
-    calculate_group_kpi,
-    calculate_homework_kpi,
-    calculate_lesson_kpi,
-    calculate_student_kpi,
-    calculate_teacher_kpi,
-)
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
 DAY_CHOICES = [(code, WEEKDAY_LABELS_SHORT[code]) for code in WEEKDAY_CODES]
@@ -40,11 +26,6 @@ DAY_CHOICES = [(code, WEEKDAY_LABELS_SHORT[code]) for code in WEEKDAY_CODES]
 
 def _badge(css: str, label: str) -> str:
     return format_html('<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label)
-
-
-def _percent_badge(value: float) -> str:
-    css = "ok-badge-success" if value >= 80 else "ok-badge-warning" if value >= 50 else "ok-badge-danger"
-    return _badge(css, f"{value}%")
 
 
 # ---------------------------------------------------------------------------
@@ -533,264 +514,14 @@ class AttendanceAdmin(admin.ModelAdmin):
 
 
 # ---------------------------------------------------------------------------
-# KPI — read-only analytics. Never hand-typed: created/refreshed only via
-# the API's `.../calculate/` endpoints or the "Пересчитать KPI" action here.
-# ---------------------------------------------------------------------------
-
-class KPIReadOnlyAdminMixin:
-    """Common behaviour for every KPI admin: view + recalculate, never freehand add."""
-
-    def has_add_permission(self, request):
-        return False
-
-    def _recalculate_one(self, kpi):
-        raise NotImplementedError
-
-    @admin.action(description="Пересчитать KPI")
-    def recalculate(self, request, queryset):
-        count = 0
-        for kpi in queryset:
-            self._recalculate_one(kpi)
-            count += 1
-        self.message_user(request, f"Пересчитано записей KPI: {count}.", messages.SUCCESS)
-
-
-@admin.register(KPIGroup)
-class KPIGroupAdmin(KPIReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("group", "period", "total_students", "attendance_badge", "homework_badge", "average_score")
-    list_filter = ("group",)
-    search_fields = ("group__name",)
-    ordering = ("-date_to",)
-    readonly_fields = (
-        "group", "date_from", "date_to", "total_students", "total_lessons", "completed_lessons",
-        "cancelled_lessons", "attendance_percent", "homework_completion_percent", "average_score",
-        "created_at", "updated_at",
-    )
-    actions = ["recalculate"]
-    list_per_page = 25
-
-    fieldsets = (
-        ("Период", {"fields": ("group", "date_from", "date_to")}),
-        ("Занятия", {"fields": ("total_students", "total_lessons", "completed_lessons", "cancelled_lessons")}),
-        ("Показатели", {"fields": ("attendance_percent", "homework_completion_percent", "average_score")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("group")
-
-    @admin.display(description="Период")
-    def period(self, obj: KPIGroup) -> str:
-        return f"{obj.date_from.strftime('%d.%m.%Y')} — {obj.date_to.strftime('%d.%m.%Y')}"
-
-    @admin.display(description="Посещаемость")
-    def attendance_badge(self, obj: KPIGroup) -> str:
-        return _percent_badge(obj.attendance_percent)
-
-    @admin.display(description="ДЗ")
-    def homework_badge(self, obj: KPIGroup) -> str:
-        return _percent_badge(obj.homework_completion_percent)
-
-    def _recalculate_one(self, kpi: KPIGroup):
-        calculate_group_kpi(kpi.group, kpi.date_from, kpi.date_to)
-
-
-@admin.register(KPITeacher)
-class KPITeacherAdmin(KPIReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("teacher", "period", "total_groups", "attendance_badge", "homework_badge", "average_student_score")
-    list_filter = ("teacher",)
-    search_fields = ("teacher__user__first_name", "teacher__user__last_name")
-    ordering = ("-date_to",)
-    readonly_fields = (
-        "teacher", "date_from", "date_to", "total_groups", "total_lessons", "completed_lessons",
-        "cancelled_lessons", "attendance_percent", "homework_completion_percent", "average_student_score",
-        "created_at", "updated_at",
-    )
-    actions = ["recalculate"]
-    list_per_page = 25
-
-    fieldsets = (
-        ("Период", {"fields": ("teacher", "date_from", "date_to")}),
-        ("Занятия", {"fields": ("total_groups", "total_lessons", "completed_lessons", "cancelled_lessons")}),
-        ("Показатели", {"fields": ("attendance_percent", "homework_completion_percent", "average_student_score")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("teacher__user")
-
-    @admin.display(description="Период")
-    def period(self, obj: KPITeacher) -> str:
-        return f"{obj.date_from.strftime('%d.%m.%Y')} — {obj.date_to.strftime('%d.%m.%Y')}"
-
-    @admin.display(description="Посещаемость")
-    def attendance_badge(self, obj: KPITeacher) -> str:
-        return _percent_badge(obj.attendance_percent)
-
-    @admin.display(description="ДЗ")
-    def homework_badge(self, obj: KPITeacher) -> str:
-        return _percent_badge(obj.homework_completion_percent)
-
-    def _recalculate_one(self, kpi: KPITeacher):
-        calculate_teacher_kpi(kpi.teacher, kpi.date_from, kpi.date_to)
-
-
-@admin.register(KPIStudent)
-class KPIStudentAdmin(KPIReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("student", "group", "period", "attendance_badge", "homework_badge", "average_score")
-    list_filter = ("group", "student")
-    search_fields = ("student__first_name", "student__last_name", "group__name")
-    ordering = ("-date_to",)
-    readonly_fields = (
-        "student", "group", "date_from", "date_to", "total_lessons", "present_count", "absent_count",
-        "late_count", "attendance_percent", "total_homeworks", "completed_homeworks", "missed_homeworks",
-        "homework_completion_percent", "average_score", "created_at", "updated_at",
-    )
-    actions = ["recalculate"]
-    list_per_page = 25
-
-    fieldsets = (
-        ("Период", {"fields": ("student", "group", "date_from", "date_to")}),
-        ("Посещаемость", {"fields": ("total_lessons", "present_count", "absent_count", "late_count", "attendance_percent")}),
-        ("Домашние задания", {"fields": ("total_homeworks", "completed_homeworks", "missed_homeworks", "homework_completion_percent", "average_score")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("student", "group")
-
-    @admin.display(description="Период")
-    def period(self, obj: KPIStudent) -> str:
-        return f"{obj.date_from.strftime('%d.%m.%Y')} — {obj.date_to.strftime('%d.%m.%Y')}"
-
-    @admin.display(description="Посещаемость")
-    def attendance_badge(self, obj: KPIStudent) -> str:
-        return _percent_badge(obj.attendance_percent)
-
-    @admin.display(description="ДЗ")
-    def homework_badge(self, obj: KPIStudent) -> str:
-        return _percent_badge(obj.homework_completion_percent)
-
-    def _recalculate_one(self, kpi: KPIStudent):
-        calculate_student_kpi(kpi.student, kpi.group, kpi.date_from, kpi.date_to)
-
-
-@admin.register(KPILesson)
-class KPILessonAdmin(KPIReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("lesson", "attendance_badge", "homework_badge", "average_homework_score")
-    list_filter = ("lesson__group",)
-    search_fields = ("lesson__group__name", "lesson__topic")
-    ordering = ("-lesson__date",)
-    readonly_fields = (
-        "lesson", "total_students", "present_count", "absent_count", "late_count", "attendance_percent",
-        "total_homeworks", "homework_completed_count", "homework_completion_percent", "average_homework_score",
-        "created_at", "updated_at",
-    )
-    actions = ["recalculate"]
-    list_per_page = 25
-
-    fieldsets = (
-        ("Занятие", {"fields": ("lesson",)}),
-        ("Посещаемость", {"fields": ("total_students", "present_count", "absent_count", "late_count", "attendance_percent")}),
-        ("Домашние задания", {"fields": ("total_homeworks", "homework_completed_count", "homework_completion_percent", "average_homework_score")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("lesson__group")
-
-    @admin.display(description="Посещаемость")
-    def attendance_badge(self, obj: KPILesson) -> str:
-        return _percent_badge(obj.attendance_percent)
-
-    @admin.display(description="ДЗ")
-    def homework_badge(self, obj: KPILesson) -> str:
-        return _percent_badge(obj.homework_completion_percent)
-
-    def _recalculate_one(self, kpi: KPILesson):
-        calculate_lesson_kpi(kpi.lesson)
-
-
-@admin.register(KPIAttendance)
-class KPIAttendanceAdmin(KPIReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("group", "period", "total_records", "attendance_badge")
-    list_filter = ("group",)
-    search_fields = ("group__name",)
-    ordering = ("-date_to",)
-    readonly_fields = (
-        "group", "date_from", "date_to", "total_records", "present_count", "absent_count",
-        "late_count", "excused_count", "attendance_percent", "created_at", "updated_at",
-    )
-    actions = ["recalculate"]
-    list_per_page = 25
-
-    fieldsets = (
-        ("Период", {"fields": ("group", "date_from", "date_to")}),
-        ("Показатели", {"fields": ("total_records", "present_count", "absent_count", "late_count", "excused_count", "attendance_percent")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("group")
-
-    @admin.display(description="Период")
-    def period(self, obj: KPIAttendance) -> str:
-        return f"{obj.date_from.strftime('%d.%m.%Y')} — {obj.date_to.strftime('%d.%m.%Y')}"
-
-    @admin.display(description="Посещаемость")
-    def attendance_badge(self, obj: KPIAttendance) -> str:
-        return _percent_badge(obj.attendance_percent)
-
-    def _recalculate_one(self, kpi: KPIAttendance):
-        calculate_attendance_kpi(kpi.group, kpi.date_from, kpi.date_to)
-
-
-@admin.register(KPIHomework)
-class KPIHomeworkAdmin(KPIReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("group", "period", "total_homeworks", "completion_badge", "average_score")
-    list_filter = ("group",)
-    search_fields = ("group__name",)
-    ordering = ("-date_to",)
-    readonly_fields = (
-        "group", "date_from", "date_to", "total_homeworks", "total_results", "submitted_count",
-        "checked_count", "not_submitted_count", "late_count", "completion_percent", "average_score",
-        "created_at", "updated_at",
-    )
-    actions = ["recalculate"]
-    list_per_page = 25
-
-    fieldsets = (
-        ("Период", {"fields": ("group", "date_from", "date_to")}),
-        ("Показатели", {"fields": (
-            "total_homeworks", "total_results", "submitted_count", "checked_count",
-            "not_submitted_count", "late_count", "completion_percent", "average_score",
-        )}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("group")
-
-    @admin.display(description="Период")
-    def period(self, obj: KPIHomework) -> str:
-        return f"{obj.date_from.strftime('%d.%m.%Y')} — {obj.date_to.strftime('%d.%m.%Y')}"
-
-    @admin.display(description="Выполнение")
-    def completion_badge(self, obj: KPIHomework) -> str:
-        return _percent_badge(obj.completion_percent)
-
-    def _recalculate_one(self, kpi: KPIHomework):
-        calculate_homework_kpi(kpi.group, kpi.date_from, kpi.date_to)
-
-
-# ---------------------------------------------------------------------------
-# "Расписание" — a custom admin page (no model of its own) built on Lesson.
+# "Расписание" и "Аналитика" — custom admin pages (no model of their own),
+# built on Lesson and on AnalyticsService respectively.
 #
 # Django admin only lets a ModelAdmin nest extra URLs under its own
-# <app_label>/<model_name>/ prefix, and this screen deliberately isn't tied
-# to a single model (it reads Lesson filtered several different ways) — so
-# it's added directly onto the admin site's own URLconf instead, the same
-# approach Django's own docs use for a site-wide custom admin view.
+# <app_label>/<model_name>/ prefix, and neither screen is tied to a single
+# model — so both are added directly onto the admin site's own URLconf
+# instead, the same approach Django's own docs use for a site-wide custom
+# admin view.
 # ---------------------------------------------------------------------------
 
 _original_get_urls = admin.site.get_urls
@@ -804,6 +535,7 @@ def _get_urls_with_schedule():
             admin.site.admin_view(generate_lessons_for_group_view),
             name="academy_schedule_generate_lessons",
         ),
+        path("academy/analytics/", admin.site.admin_view(analytics_view), name="academy_analytics"),
     ]
     return custom_urls + _original_get_urls()
 

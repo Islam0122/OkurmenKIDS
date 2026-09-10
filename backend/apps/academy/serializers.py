@@ -13,12 +13,6 @@ from .models import (
     Group,
     Homework,
     HomeworkResult,
-    KPIAttendance,
-    KPIGroup,
-    KPIHomework,
-    KPILesson,
-    KPIStudent,
-    KPITeacher,
     Lesson,
     Room,
     Student,
@@ -541,15 +535,20 @@ class BulkHomeworkResultItemSerializer(serializers.Serializer):
     comment = serializers.CharField(required=False, allow_blank=True, default="")
 
 
+
 # ---------------------------------------------------------------------------
-# KPI — all read-only, computed by apps.academy.services.kpi_calculator
+# Analytics — read-only, computed on demand by apps.academy.services.analytics.
+# Nothing here maps to a model: AnalyticsService returns plain dicts shaped
+# exactly like these serializers, never a persisted KPI row.
 # ---------------------------------------------------------------------------
 
-class KPIPeriodRequestSerializer(serializers.Serializer):
-    """Body for every KPI `.../calculate/` action."""
+class AnalyticsQuerySerializer(serializers.Serializer):
+    """Query params for `GET /analytics/dashboard/`."""
 
     date_from = serializers.DateField()
     date_to = serializers.DateField()
+    teacher = serializers.PrimaryKeyRelatedField(queryset=Teacher.objects.all(), required=False, allow_null=True)
+    group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all(), required=False, allow_null=True)
 
     def validate(self, attrs):
         if attrs["date_to"] < attrs["date_from"]:
@@ -557,92 +556,140 @@ class KPIPeriodRequestSerializer(serializers.Serializer):
         return attrs
 
 
-class KPIStudentCalculationRequestSerializer(KPIPeriodRequestSerializer):
-    group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all())
+class AnalyticsOverviewSerializer(serializers.Serializer):
+    groups = serializers.IntegerField()
+    teachers = serializers.IntegerField()
+    students = serializers.IntegerField()
+    lessons = serializers.IntegerField()
+    attendance_percent = serializers.FloatField()
+    homework_completion_percent = serializers.FloatField()
+    average_score = serializers.FloatField()
 
 
-class KPIGroupSerializer(serializers.ModelSerializer):
-    group_name = serializers.CharField(source="group.name", read_only=True)
-
-    class Meta:
-        model = KPIGroup
-        fields = [
-            "id", "group", "group_name", "date_from", "date_to",
-            "total_students", "total_lessons", "completed_lessons", "cancelled_lessons",
-            "attendance_percent", "homework_completion_percent", "average_score",
-            "created_at", "updated_at",
-        ]
-        read_only_fields = fields
+class AnalyticsLessonStatsSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    completed = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
+    planned = serializers.IntegerField()
+    completion_rate = serializers.FloatField()
 
 
-class KPITeacherSerializer(serializers.ModelSerializer):
-    teacher_name = serializers.CharField(source="teacher.__str__", read_only=True)
-
-    class Meta:
-        model = KPITeacher
-        fields = [
-            "id", "teacher", "teacher_name", "date_from", "date_to",
-            "total_groups", "total_lessons", "completed_lessons", "cancelled_lessons",
-            "attendance_percent", "homework_completion_percent", "average_student_score",
-            "created_at", "updated_at",
-        ]
-        read_only_fields = fields
+class AnalyticsTimeSeriesPointSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    percent = serializers.FloatField()
 
 
-class KPIStudentSerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source="student.__str__", read_only=True)
-    group_name = serializers.CharField(source="group.name", read_only=True)
-
-    class Meta:
-        model = KPIStudent
-        fields = [
-            "id", "student", "student_name", "group", "group_name", "date_from", "date_to",
-            "total_lessons", "present_count", "absent_count", "late_count", "attendance_percent",
-            "total_homeworks", "completed_homeworks", "missed_homeworks",
-            "homework_completion_percent", "average_score",
-            "created_at", "updated_at",
-        ]
-        read_only_fields = fields
+class AnalyticsAttendanceStatsSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    present = serializers.IntegerField()
+    absent = serializers.IntegerField()
+    late = serializers.IntegerField()
+    excused = serializers.IntegerField()
+    percent = serializers.FloatField()
+    by_date = AnalyticsTimeSeriesPointSerializer(many=True)
 
 
-class KPILessonSerializer(serializers.ModelSerializer):
-    group_name = serializers.CharField(source="lesson.group.name", read_only=True)
-    lesson_date = serializers.DateField(source="lesson.date", read_only=True)
-
-    class Meta:
-        model = KPILesson
-        fields = [
-            "id", "lesson", "group_name", "lesson_date",
-            "total_students", "present_count", "absent_count", "late_count", "attendance_percent",
-            "total_homeworks", "homework_completed_count", "homework_completion_percent", "average_homework_score",
-            "created_at", "updated_at",
-        ]
-        read_only_fields = fields
+class AnalyticsHomeworkStatsSerializer(serializers.Serializer):
+    total_homeworks = serializers.IntegerField()
+    total_results = serializers.IntegerField()
+    submitted = serializers.IntegerField()
+    checked = serializers.IntegerField()
+    late = serializers.IntegerField()
+    not_submitted = serializers.IntegerField()
+    completed = serializers.IntegerField()
+    completion_percent = serializers.FloatField()
+    average_score = serializers.FloatField()
+    by_date = AnalyticsTimeSeriesPointSerializer(many=True)
 
 
-class KPIAttendanceSerializer(serializers.ModelSerializer):
-    group_name = serializers.CharField(source="group.name", read_only=True)
+class AnalyticsGroupRowSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    teacher = serializers.CharField()
+    students = serializers.IntegerField()
+    lessons = serializers.IntegerField()
+    completed_lessons = serializers.IntegerField()
+    cancelled_lessons = serializers.IntegerField()
+    planned_lessons = serializers.IntegerField()
+    attendance_percent = serializers.FloatField()
+    homework_completion_percent = serializers.FloatField()
+    average_score = serializers.FloatField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
 
-    class Meta:
-        model = KPIAttendance
-        fields = [
-            "id", "group", "group_name", "date_from", "date_to",
-            "total_records", "present_count", "absent_count", "late_count", "excused_count",
-            "attendance_percent",
-            "created_at", "updated_at",
-        ]
-        read_only_fields = fields
+
+class AnalyticsTeacherRowSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    groups = serializers.IntegerField()
+    students = serializers.IntegerField()
+    lessons = serializers.IntegerField()
+    attendance_percent = serializers.FloatField()
+    homework_completion_percent = serializers.FloatField()
+    average_score = serializers.FloatField()
 
 
-class KPIHomeworkSerializer(serializers.ModelSerializer):
-    group_name = serializers.CharField(source="group.name", read_only=True)
+class AnalyticsStudentRowSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    group = serializers.CharField(allow_null=True)
+    lessons = serializers.IntegerField()
+    attendance_percent = serializers.FloatField()
+    homework_completion_percent = serializers.FloatField()
+    average_score = serializers.FloatField()
 
-    class Meta:
-        model = KPIHomework
-        fields = [
-            "id", "group", "group_name", "date_from", "date_to",
-            "total_homeworks", "total_results", "submitted_count", "checked_count",
-            "not_submitted_count", "late_count", "completion_percent", "average_score",
-            "created_at", "updated_at",
-        ]
-        read_only_fields = fields
+
+class AnalyticsLessonsByStatusSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    label = serializers.CharField()
+    count = serializers.IntegerField()
+
+
+class AnalyticsGroupPerformanceSerializer(serializers.Serializer):
+    group = serializers.CharField()
+    attendance_percent = serializers.FloatField()
+
+
+class AnalyticsTeacherPerformanceSerializer(serializers.Serializer):
+    teacher = serializers.CharField()
+    attendance_percent = serializers.FloatField()
+
+
+class AnalyticsStudentsByGroupSerializer(serializers.Serializer):
+    group = serializers.CharField()
+    students = serializers.IntegerField()
+
+
+class AnalyticsChartsSerializer(serializers.Serializer):
+    attendance_over_time = AnalyticsTimeSeriesPointSerializer(many=True)
+    lessons_by_status = AnalyticsLessonsByStatusSerializer(many=True)
+    students_by_group = AnalyticsStudentsByGroupSerializer(many=True)
+    homework_completion_over_time = AnalyticsTimeSeriesPointSerializer(many=True)
+    teacher_performance = AnalyticsTeacherPerformanceSerializer(many=True)
+    group_performance = AnalyticsGroupPerformanceSerializer(many=True)
+
+
+class AnalyticsPeriodSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+
+
+class AnalyticsFiltersSerializer(serializers.Serializer):
+    teacher_id = serializers.IntegerField(allow_null=True)
+    group_id = serializers.IntegerField(allow_null=True)
+
+
+class AnalyticsDashboardSerializer(serializers.Serializer):
+    """The full payload of `GET /analytics/dashboard/` — exactly what
+    `AnalyticsService.get_dashboard()` returns, computed fresh on every call."""
+
+    period = AnalyticsPeriodSerializer()
+    filters = AnalyticsFiltersSerializer()
+    overview = AnalyticsOverviewSerializer()
+    lessons = AnalyticsLessonStatsSerializer()
+    attendance = AnalyticsAttendanceStatsSerializer()
+    homework = AnalyticsHomeworkStatsSerializer()
+    groups = AnalyticsGroupRowSerializer(many=True)
+    teachers = AnalyticsTeacherRowSerializer(many=True)
+    top_students = AnalyticsStudentRowSerializer(many=True)
+    charts = AnalyticsChartsSerializer()

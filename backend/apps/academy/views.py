@@ -21,11 +21,6 @@ from .filters import (
     CourseFilter,
     GroupFilter,
     HomeworkFilter,
-    KPIAttendanceFilter,
-    KPIGroupFilter,
-    KPIHomeworkFilter,
-    KPIStudentFilter,
-    KPITeacherFilter,
     LessonFilter,
     StudentFilter,
 )
@@ -36,18 +31,14 @@ from .models import (
     Group,
     Homework,
     HomeworkResult,
-    KPIAttendance,
-    KPIGroup,
-    KPIHomework,
-    KPILesson,
-    KPIStudent,
-    KPITeacher,
     Lesson,
     Room,
     Student,
 )
-from .permissions import IsAdminForWrite, IsAdminOrOwningTeacher, IsAdminOrReadOnly
+from .permissions import IsAdminOrOwningTeacher, IsAdminOrReadOnly
 from .serializers import (
+    AnalyticsDashboardSerializer,
+    AnalyticsQuerySerializer,
     AttendanceSerializer,
     BulkAttendanceItemSerializer,
     BulkHomeworkResultItemSerializer,
@@ -59,30 +50,15 @@ from .serializers import (
     GroupSerializer,
     HomeworkResultSerializer,
     HomeworkSerializer,
-    KPIAttendanceSerializer,
-    KPIGroupSerializer,
-    KPIHomeworkSerializer,
-    KPILessonSerializer,
-    KPIPeriodRequestSerializer,
-    KPIStudentCalculationRequestSerializer,
-    KPIStudentSerializer,
-    KPITeacherSerializer,
     LessonSerializer,
     RoomAvailabilityRequestSerializer,
     RoomAvailabilitySerializer,
     RoomSerializer,
     StudentSerializer,
 )
+from .services.analytics import AnalyticsService
 from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
-from .services.kpi_calculator import (
-    calculate_attendance_kpi,
-    calculate_group_kpi,
-    calculate_homework_kpi,
-    calculate_lesson_kpi,
-    calculate_student_kpi,
-    calculate_teacher_kpi,
-)
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
 
@@ -618,212 +594,41 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
         return qs.filter(homework__lesson__group__teacher=teacher)
 
 
-# ---------------------------------------------------------------------------
-# KPI — read-only viewsets; writes only happen through the calculate endpoints below
-# ---------------------------------------------------------------------------
-
-@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
-class KPIGroupViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = KPIGroupSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_class = KPIGroupFilter
-    search_fields = ["group__name"]
-    ordering_fields = ["date_from", "date_to"]
-    ordering = ["-date_to"]
-
-    def get_queryset(self):
-        qs = KPIGroup.objects.select_related("group")
-        user = self.request.user
-        if _is_admin(user):
-            return qs
-        teacher = _teacher_profile(self.request)
-        if teacher is None:
-            return qs.none()
-        return qs.filter(group__teacher=teacher)
-
-
-@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
-class KPITeacherViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = KPITeacherSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_class = KPITeacherFilter
-    search_fields = ["teacher__user__first_name", "teacher__user__last_name"]
-    ordering_fields = ["date_from", "date_to"]
-    ordering = ["-date_to"]
-
-    def get_queryset(self):
-        qs = KPITeacher.objects.select_related("teacher__user")
-        user = self.request.user
-        if _is_admin(user):
-            return qs
-        teacher = _teacher_profile(self.request)
-        if teacher is None:
-            return qs.none()
-        return qs.filter(teacher=teacher)
-
-
-@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
-class KPIStudentViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = KPIStudentSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_class = KPIStudentFilter
-    search_fields = ["student__first_name", "student__last_name"]
-    ordering_fields = ["date_from", "date_to"]
-    ordering = ["-date_to"]
-
-    def get_queryset(self):
-        qs = KPIStudent.objects.select_related("student", "group")
-        user = self.request.user
-        if _is_admin(user):
-            return qs
-        teacher = _teacher_profile(self.request)
-        if teacher is None:
-            return qs.none()
-        return qs.filter(group__teacher=teacher)
-
-
-@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
-class KPILessonViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = KPILessonSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ["lesson"]
-    ordering_fields = ["lesson__date"]
-    ordering = ["-lesson__date"]
-
-    def get_queryset(self):
-        qs = KPILesson.objects.select_related("lesson__group")
-        user = self.request.user
-        if _is_admin(user):
-            return qs
-        teacher = _teacher_profile(self.request)
-        if teacher is None:
-            return qs.none()
-        return qs.filter(lesson__group__teacher=teacher)
-
-
-@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
-class KPIAttendanceViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = KPIAttendanceSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_class = KPIAttendanceFilter
-    search_fields = ["group__name"]
-    ordering_fields = ["date_from", "date_to"]
-    ordering = ["-date_to"]
-
-    def get_queryset(self):
-        qs = KPIAttendance.objects.select_related("group")
-        user = self.request.user
-        if _is_admin(user):
-            return qs
-        teacher = _teacher_profile(self.request)
-        if teacher is None:
-            return qs.none()
-        return qs.filter(group__teacher=teacher)
-
-
-@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
-class KPIHomeworkViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = KPIHomeworkSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_class = KPIHomeworkFilter
-    search_fields = ["group__name"]
-    ordering_fields = ["date_from", "date_to"]
-    ordering = ["-date_to"]
-
-    def get_queryset(self):
-        qs = KPIHomework.objects.select_related("group")
-        user = self.request.user
-        if _is_admin(user):
-            return qs
-        teacher = _teacher_profile(self.request)
-        if teacher is None:
-            return qs.none()
-        return qs.filter(group__teacher=teacher)
-
 
 # ---------------------------------------------------------------------------
-# KPI recalculation — Admin only. `pk` here is the *source* entity's id
-# (Group/Teacher/Student/Lesson), not the KPI record's — a Teacher/React
-# client always has the source id in hand, never a KPI record it may not
-# know exists yet.
+# Analytics — one read-only endpoint backed by AnalyticsService. Every
+# number is computed fresh from Lesson/Attendance/Homework/HomeworkResult on
+# each call; nothing here is persisted or kept in sync with anything.
 # ---------------------------------------------------------------------------
 
-class KPIGroupCalculateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminForWrite]
+class AnalyticsDashboardView(APIView):
+    """`GET /analytics/dashboard/?date_from=&date_to=&teacher=&group=`
 
-    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPIGroupSerializer)
-    def post(self, request, pk=None):
-        group = get_object_or_404(Group, pk=pk)
-        params = KPIPeriodRequestSerializer(data=request.data)
+    Admin can see any slice (or everything, with no teacher/group filter).
+    A Teacher is always scoped to their own data — a `teacher` query param
+    from a Teacher is ignored in favour of their own profile, and a `group`
+    param for a group they don't teach comes back as an empty dashboard
+    rather than another teacher's numbers.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["Analytics"], parameters=[AnalyticsQuerySerializer], responses=AnalyticsDashboardSerializer)
+    def get(self, request):
+        params = AnalyticsQuerySerializer(data=request.query_params)
         params.is_valid(raise_exception=True)
-        kpi = calculate_group_kpi(group, **params.validated_data)
-        return Response(KPIGroupSerializer(kpi).data)
+        data = params.validated_data
 
+        teacher_id = data["teacher"].id if data.get("teacher") else None
+        group_id = data["group"].id if data.get("group") else None
 
-class KPITeacherCalculateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminForWrite]
+        if not _is_admin(request.user):
+            teacher = _teacher_profile(request)
+            # No id can ever be 0 — forcing this keeps every downstream
+            # query empty instead of special-casing "no teacher profile".
+            teacher_id = teacher.id if teacher is not None else 0
+            if teacher is not None and group_id is not None and not Group.objects.filter(id=group_id, teacher=teacher).exists():
+                group_id = 0
 
-    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPITeacherSerializer)
-    def post(self, request, pk=None):
-        teacher = get_object_or_404(Teacher, pk=pk)
-        params = KPIPeriodRequestSerializer(data=request.data)
-        params.is_valid(raise_exception=True)
-        kpi = calculate_teacher_kpi(teacher, **params.validated_data)
-        return Response(KPITeacherSerializer(kpi).data)
-
-
-class KPIStudentCalculateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminForWrite]
-
-    @extend_schema(tags=["KPI"], request=KPIStudentCalculationRequestSerializer, responses=KPIStudentSerializer)
-    def post(self, request, pk=None):
-        student = get_object_or_404(Student, pk=pk)
-        params = KPIStudentCalculationRequestSerializer(data=request.data)
-        params.is_valid(raise_exception=True)
-        kpi = calculate_student_kpi(
-            student,
-            params.validated_data["group"],
-            params.validated_data["date_from"],
-            params.validated_data["date_to"],
-        )
-        return Response(KPIStudentSerializer(kpi).data)
-
-
-class KPILessonCalculateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminForWrite]
-
-    @extend_schema(tags=["KPI"], request=None, responses=KPILessonSerializer)
-    def post(self, request, pk=None):
-        lesson = get_object_or_404(Lesson, pk=pk)
-        kpi = calculate_lesson_kpi(lesson)
-        return Response(KPILessonSerializer(kpi).data)
-
-
-class KPIAttendanceCalculateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminForWrite]
-
-    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPIAttendanceSerializer)
-    def post(self, request, pk=None):
-        group = get_object_or_404(Group, pk=pk)
-        params = KPIPeriodRequestSerializer(data=request.data)
-        params.is_valid(raise_exception=True)
-        kpi = calculate_attendance_kpi(group, **params.validated_data)
-        return Response(KPIAttendanceSerializer(kpi).data)
-
-
-class KPIHomeworkCalculateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminForWrite]
-
-    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPIHomeworkSerializer)
-    def post(self, request, pk=None):
-        group = get_object_or_404(Group, pk=pk)
-        params = KPIPeriodRequestSerializer(data=request.data)
-        params.is_valid(raise_exception=True)
-        kpi = calculate_homework_kpi(group, **params.validated_data)
-        return Response(KPIHomeworkSerializer(kpi).data)
+        service = AnalyticsService(data["date_from"], data["date_to"], teacher_id=teacher_id, group_id=group_id)
+        return Response(AnalyticsDashboardSerializer(service.get_dashboard()).data)

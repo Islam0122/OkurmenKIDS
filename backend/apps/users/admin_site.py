@@ -35,7 +35,7 @@ class OkurmenKidsAdminSite(AdminSite):
         """Real numbers for every module — Teacher/Subject plus academy."""
         # Imported lazily to avoid a hard app-loading-order dependency
         # between users and academy at import time.
-        from apps.academy.models import Attendance, Group, HomeworkResult, KPIStudent, Lesson, Student
+        from apps.academy.models import Attendance, Group, HomeworkResult, Lesson, Student
 
         teachers = Teacher.objects.all()
         subjects_breakdown = list(
@@ -96,8 +96,5 @@ class OkurmenKidsAdminSite(AdminSite):
             ),
             "recent_students": list(
                 Student.objects.select_related("group").order_by("-created_at")[:8]
-            ),
-            "recent_kpi": list(
-                KPIStudent.objects.select_related("student", "group").order_by("-created_at")[:8]
             ),
         }
