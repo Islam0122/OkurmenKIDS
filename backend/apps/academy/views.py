@@ -1,3 +1,731 @@
-from django.shortcuts import render
+from __future__ import annotations
 
-# Create your views here.
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django_filters.rest_framework import DjangoFilterBackend
+
+from apps.users.models import Teacher, User
+from apps.users.permissions import IsAdmin
+
+from .filters import (
+    AttendanceFilter,
+    CourseFilter,
+    GroupFilter,
+    HomeworkFilter,
+    KPIAttendanceFilter,
+    KPIGroupFilter,
+    KPIHomeworkFilter,
+    KPIStudentFilter,
+    KPITeacherFilter,
+    LessonFilter,
+    StudentFilter,
+)
+from .models import (
+    Attendance,
+    Course,
+    CourseLessonPlan,
+    Group,
+    Homework,
+    HomeworkResult,
+    KPIAttendance,
+    KPIGroup,
+    KPIHomework,
+    KPILesson,
+    KPIStudent,
+    KPITeacher,
+    Lesson,
+    Room,
+    Student,
+)
+from .permissions import IsAdminForWrite, IsAdminOrOwningTeacher, IsAdminOrReadOnly
+from .serializers import (
+    AttendanceSerializer,
+    BulkAttendanceItemSerializer,
+    BulkHomeworkResultItemSerializer,
+    CourseLessonPlanSerializer,
+    CourseSerializer,
+    GenerateLessonsResponseSerializer,
+    GroupSerializer,
+    HomeworkResultSerializer,
+    HomeworkSerializer,
+    KPIAttendanceSerializer,
+    KPIGroupSerializer,
+    KPIHomeworkSerializer,
+    KPILessonSerializer,
+    KPIPeriodRequestSerializer,
+    KPIStudentCalculationRequestSerializer,
+    KPIStudentSerializer,
+    KPITeacherSerializer,
+    LessonSerializer,
+    RoomSerializer,
+    StudentSerializer,
+)
+from .services.attendance_service import bulk_mark_attendance
+from .services.homework_service import bulk_upsert_homework_results
+from .services.kpi_calculator import (
+    calculate_attendance_kpi,
+    calculate_group_kpi,
+    calculate_homework_kpi,
+    calculate_lesson_kpi,
+    calculate_student_kpi,
+    calculate_teacher_kpi,
+)
+from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+
+
+def _teacher_profile(request):
+    return getattr(request.user, "teacher_profile", None)
+
+
+def _is_admin(user) -> bool:
+    # AnonymousUser has no `.role` — guard so schema generation (which
+    # introspects get_queryset with an anonymous request) and any
+    # accidentally-unauthenticated call never crash with an AttributeError.
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(user.is_superuser or user.role == User.Role.ADMIN)
+
+
+def _as_drf_validation_error(exc: DjangoValidationError) -> DRFValidationError:
+    return DRFValidationError(getattr(exc, "messages", None) or [str(exc)])
+
+
+# ---------------------------------------------------------------------------
+# Course catalogue
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Courses"]),
+    retrieve=extend_schema(tags=["Courses"]),
+    create=extend_schema(tags=["Courses"]),
+    update=extend_schema(tags=["Courses"]),
+    partial_update=extend_schema(tags=["Courses"]),
+    destroy=extend_schema(tags=["Courses"]),
+)
+class CourseViewSet(viewsets.ModelViewSet):
+    """Courses. Admin manages the catalogue; a Teacher can only read it."""
+
+    serializer_class = CourseSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = CourseFilter
+    search_fields = ["name", "description"]
+    ordering_fields = ["name", "count_lesson", "created_at"]
+    ordering = ["name"]
+
+    def get_queryset(self):
+        return (
+            Course.objects.prefetch_related("subjects")
+            .annotate(_lesson_plans_count=Count("lesson_plans", distinct=True))
+        )
+
+    @extend_schema(tags=["Courses"], responses=CourseLessonPlanSerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="lesson-plans")
+    def lesson_plans(self, request, pk=None):
+        course = self.get_object()
+        qs = course.lesson_plans.select_related("subject").order_by("lesson_number")
+        return Response(CourseLessonPlanSerializer(qs, many=True).data)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["Course lesson plans"]),
+    retrieve=extend_schema(tags=["Course lesson plans"]),
+    create=extend_schema(tags=["Course lesson plans"]),
+    update=extend_schema(tags=["Course lesson plans"]),
+    partial_update=extend_schema(tags=["Course lesson plans"]),
+    destroy=extend_schema(tags=["Course lesson plans"]),
+)
+class CourseLessonPlanViewSet(viewsets.ModelViewSet):
+    """The full lesson-by-lesson template of a course. Admin-managed."""
+
+    queryset = CourseLessonPlan.objects.select_related("course", "subject")
+    serializer_class = CourseLessonPlanSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["course", "subject"]
+    search_fields = ["topic", "description"]
+    ordering_fields = ["lesson_number", "created_at"]
+    ordering = ["course", "lesson_number"]
+
+
+# ---------------------------------------------------------------------------
+# Rooms & students
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Rooms"]),
+    retrieve=extend_schema(tags=["Rooms"]),
+    create=extend_schema(tags=["Rooms"]),
+    update=extend_schema(tags=["Rooms"]),
+    partial_update=extend_schema(tags=["Rooms"]),
+    destroy=extend_schema(tags=["Rooms"]),
+)
+class RoomViewSet(viewsets.ModelViewSet):
+    """Classrooms. Admin manages them; everyone authenticated can read."""
+
+    queryset = Room.objects.all()
+    serializer_class = RoomSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name", "description"]
+    ordering_fields = ["name", "capacity"]
+    ordering = ["name"]
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["Students"]),
+    retrieve=extend_schema(tags=["Students"]),
+    create=extend_schema(tags=["Students"]),
+    update=extend_schema(tags=["Students"]),
+    partial_update=extend_schema(tags=["Students"]),
+    destroy=extend_schema(tags=["Students"]),
+)
+class StudentViewSet(viewsets.ModelViewSet):
+    """Students. Admin sees/manages all; a Teacher only sees their own groups' students."""
+
+    serializer_class = StudentSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = StudentFilter
+    search_fields = ["first_name", "last_name", "phone", "parent_phone"]
+    ordering_fields = ["last_name", "first_name", "created_at"]
+    ordering = ["last_name", "first_name"]
+
+    def get_queryset(self):
+        qs = Student.objects.select_related("group")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group__teacher=teacher)
+
+
+# ---------------------------------------------------------------------------
+# Groups
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Groups"]),
+    retrieve=extend_schema(tags=["Groups"]),
+    create=extend_schema(tags=["Groups"]),
+    update=extend_schema(tags=["Groups"]),
+    partial_update=extend_schema(tags=["Groups"]),
+    destroy=extend_schema(tags=["Groups"]),
+)
+class GroupViewSet(viewsets.ModelViewSet):
+    """Groups. Admin manages all groups; a Teacher only reads their own."""
+
+    serializer_class = GroupSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = GroupFilter
+    search_fields = ["name", "teacher__user__first_name", "teacher__user__last_name"]
+    ordering_fields = ["name", "start_date", "created_at"]
+    ordering = ["-start_date", "name"]
+
+    def get_queryset(self):
+        qs = (
+            Group.objects.select_related("teacher__user", "room", "course")
+            .annotate(
+                active_students_count=Count(
+                    "students", filter=Q(students__is_active=True), distinct=True
+                )
+            )
+        )
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(teacher=teacher)
+
+    @extend_schema(
+        tags=["Groups"],
+        request=None,
+        responses=GenerateLessonsResponseSerializer,
+    )
+    @action(detail=True, methods=["post"], url_path="generate-lessons", permission_classes=[IsAuthenticated, IsAdmin])
+    def generate_lessons(self, request, pk=None):
+        group = self.get_object()
+        try:
+            created = generate_lessons_for_group(group)
+        except LessonGenerationError as exc:
+            raise DRFValidationError(str(exc))
+
+        if created:
+            first_lesson, last_lesson = created[0], created[-1]
+        else:
+            existing = list(group.lessons.order_by("lesson_number"))
+            first_lesson = existing[0] if existing else None
+            last_lesson = existing[-1] if existing else None
+
+        payload = {
+            "created_count": len(created),
+            "first_lesson": first_lesson.lesson_number if first_lesson else None,
+            "last_lesson": last_lesson.lesson_number if last_lesson else None,
+            "first_date": first_lesson.date if first_lesson else None,
+            "last_date": last_lesson.date if last_lesson else None,
+        }
+        response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(GenerateLessonsResponseSerializer(payload).data, status=response_status)
+
+
+# ---------------------------------------------------------------------------
+# Lessons — list / retrieve / update only; created exclusively by the generator
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Lessons"]),
+    retrieve=extend_schema(tags=["Lessons"]),
+    update=extend_schema(tags=["Lessons"]),
+    partial_update=extend_schema(tags=["Lessons"]),
+)
+class LessonViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = LessonSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrOwningTeacher]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = LessonFilter
+    search_fields = ["topic", "description"]
+    ordering_fields = ["date", "start_time", "lesson_number"]
+    ordering = ["date", "start_time"]
+
+    def get_queryset(self):
+        qs = Lesson.objects.select_related("group__teacher__user", "room", "subject", "plan")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group__teacher=teacher)
+
+    @extend_schema(
+        tags=["Attendance"],
+        request=BulkAttendanceItemSerializer(many=True),
+        responses=AttendanceSerializer(many=True),
+        description=(
+            "GET returns the lesson's full student roster (existing Attendance "
+            "or a not-yet-marked placeholder for each). POST bulk-creates/updates "
+            "Attendance for the given students in one call."
+        ),
+    )
+    @action(detail=True, methods=["get", "post"], url_path="attendance")
+    def attendance(self, request, pk=None):
+        lesson = self.get_object()
+
+        if request.method.lower() == "get":
+            students = lesson.group.students.filter(is_active=True).order_by("last_name", "first_name")
+            existing = {
+                a.student_id: a
+                for a in Attendance.objects.filter(lesson=lesson).select_related("student")
+            }
+            payload = []
+            for student in students:
+                record = existing.get(student.id)
+                if record is not None:
+                    payload.append(AttendanceSerializer(record).data)
+                else:
+                    payload.append(
+                        {
+                            "id": None,
+                            "student": student.id,
+                            "student_name": str(student),
+                            "lesson": lesson.id,
+                            "group_name": lesson.group.name,
+                            "lesson_date": lesson.date,
+                            "status": None,
+                            "status_display": None,
+                            "comment": "",
+                            "created_at": None,
+                            "updated_at": None,
+                        }
+                    )
+            return Response(payload)
+
+        item_serializer = BulkAttendanceItemSerializer(data=request.data, many=True)
+        item_serializer.is_valid(raise_exception=True)
+        try:
+            records = bulk_mark_attendance(lesson, item_serializer.validated_data)
+        except DjangoValidationError as exc:
+            raise _as_drf_validation_error(exc)
+
+        records_qs = Attendance.objects.filter(pk__in=[r.pk for r in records]).select_related("student")
+        return Response(AttendanceSerializer(records_qs, many=True).data, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# Attendance (direct CRUD, for a single record or ?group=&date= listing)
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Attendance"]),
+    retrieve=extend_schema(tags=["Attendance"]),
+    create=extend_schema(tags=["Attendance"]),
+    update=extend_schema(tags=["Attendance"]),
+    partial_update=extend_schema(tags=["Attendance"]),
+    destroy=extend_schema(tags=["Attendance"]),
+)
+class AttendanceViewSet(viewsets.ModelViewSet):
+    serializer_class = AttendanceSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrOwningTeacher]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = AttendanceFilter
+    search_fields = ["student__first_name", "student__last_name"]
+    ordering_fields = ["lesson__date", "created_at"]
+    ordering = ["-lesson__date"]
+
+    def get_queryset(self):
+        qs = Attendance.objects.select_related("student", "lesson__group__teacher__user")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(lesson__group__teacher=teacher)
+
+
+# ---------------------------------------------------------------------------
+# Homework & results
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Homework"]),
+    retrieve=extend_schema(tags=["Homework"]),
+    create=extend_schema(tags=["Homework"]),
+    update=extend_schema(tags=["Homework"]),
+    partial_update=extend_schema(tags=["Homework"]),
+    destroy=extend_schema(tags=["Homework"]),
+)
+class HomeworkViewSet(viewsets.ModelViewSet):
+    """The assignment itself. A Teacher manages homework only for their own lessons."""
+
+    serializer_class = HomeworkSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrOwningTeacher]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = HomeworkFilter
+    search_fields = ["title", "description"]
+    ordering_fields = ["created_at", "deadline"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        qs = Homework.objects.select_related("lesson__group__teacher__user")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(lesson__group__teacher=teacher)
+
+    @extend_schema(
+        tags=["Homework"],
+        request=BulkHomeworkResultItemSerializer(many=True),
+        responses=HomeworkResultSerializer(many=True),
+        description=(
+            "GET returns every active student of the lesson's group with their "
+            "current result (or a not_submitted placeholder). POST bulk-grades "
+            "the given students in one call."
+        ),
+    )
+    @action(detail=True, methods=["get", "post"], url_path="results")
+    def results(self, request, pk=None):
+        homework = self.get_object()
+
+        if request.method.lower() == "get":
+            students = homework.lesson.group.students.filter(is_active=True).order_by("last_name", "first_name")
+            existing = {
+                r.student_id: r
+                for r in HomeworkResult.objects.filter(homework=homework).select_related("student")
+            }
+            payload = []
+            for student in students:
+                record = existing.get(student.id)
+                if record is not None:
+                    payload.append(HomeworkResultSerializer(record).data)
+                else:
+                    payload.append(
+                        {
+                            "id": None,
+                            "homework": homework.id,
+                            "homework_title": homework.title,
+                            "student": student.id,
+                            "student_name": str(student),
+                            "status": HomeworkResult.Status.NOT_SUBMITTED,
+                            "status_display": HomeworkResult.Status.NOT_SUBMITTED.label,
+                            "score": None,
+                            "comment": "",
+                            "submitted_at": None,
+                            "checked_at": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        }
+                    )
+            return Response(payload)
+
+        item_serializer = BulkHomeworkResultItemSerializer(data=request.data, many=True)
+        item_serializer.is_valid(raise_exception=True)
+        try:
+            records = bulk_upsert_homework_results(homework, item_serializer.validated_data)
+        except DjangoValidationError as exc:
+            raise _as_drf_validation_error(exc)
+
+        records_qs = HomeworkResult.objects.filter(pk__in=[r.pk for r in records]).select_related("student", "homework")
+        return Response(HomeworkResultSerializer(records_qs, many=True).data, status=status.HTTP_200_OK)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["Homework"]),
+    retrieve=extend_schema(tags=["Homework"]),
+    create=extend_schema(tags=["Homework"]),
+    update=extend_schema(tags=["Homework"]),
+    partial_update=extend_schema(tags=["Homework"]),
+    destroy=extend_schema(tags=["Homework"]),
+)
+class HomeworkResultViewSet(viewsets.ModelViewSet):
+    serializer_class = HomeworkResultSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrOwningTeacher]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["homework", "student", "status"]
+    search_fields = ["student__first_name", "student__last_name"]
+    ordering_fields = ["created_at", "score"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        qs = HomeworkResult.objects.select_related("student", "homework__lesson__group__teacher__user")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(homework__lesson__group__teacher=teacher)
+
+
+# ---------------------------------------------------------------------------
+# KPI — read-only viewsets; writes only happen through the calculate endpoints below
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
+class KPIGroupViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = KPIGroupSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = KPIGroupFilter
+    search_fields = ["group__name"]
+    ordering_fields = ["date_from", "date_to"]
+    ordering = ["-date_to"]
+
+    def get_queryset(self):
+        qs = KPIGroup.objects.select_related("group")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group__teacher=teacher)
+
+
+@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
+class KPITeacherViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = KPITeacherSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = KPITeacherFilter
+    search_fields = ["teacher__user__first_name", "teacher__user__last_name"]
+    ordering_fields = ["date_from", "date_to"]
+    ordering = ["-date_to"]
+
+    def get_queryset(self):
+        qs = KPITeacher.objects.select_related("teacher__user")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(teacher=teacher)
+
+
+@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
+class KPIStudentViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = KPIStudentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = KPIStudentFilter
+    search_fields = ["student__first_name", "student__last_name"]
+    ordering_fields = ["date_from", "date_to"]
+    ordering = ["-date_to"]
+
+    def get_queryset(self):
+        qs = KPIStudent.objects.select_related("student", "group")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group__teacher=teacher)
+
+
+@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
+class KPILessonViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = KPILessonSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ["lesson"]
+    ordering_fields = ["lesson__date"]
+    ordering = ["-lesson__date"]
+
+    def get_queryset(self):
+        qs = KPILesson.objects.select_related("lesson__group")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(lesson__group__teacher=teacher)
+
+
+@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
+class KPIAttendanceViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = KPIAttendanceSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = KPIAttendanceFilter
+    search_fields = ["group__name"]
+    ordering_fields = ["date_from", "date_to"]
+    ordering = ["-date_to"]
+
+    def get_queryset(self):
+        qs = KPIAttendance.objects.select_related("group")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group__teacher=teacher)
+
+
+@extend_schema_view(list=extend_schema(tags=["KPI"]), retrieve=extend_schema(tags=["KPI"]))
+class KPIHomeworkViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = KPIHomeworkSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = KPIHomeworkFilter
+    search_fields = ["group__name"]
+    ordering_fields = ["date_from", "date_to"]
+    ordering = ["-date_to"]
+
+    def get_queryset(self):
+        qs = KPIHomework.objects.select_related("group")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group__teacher=teacher)
+
+
+# ---------------------------------------------------------------------------
+# KPI recalculation — Admin only. `pk` here is the *source* entity's id
+# (Group/Teacher/Student/Lesson), not the KPI record's — a Teacher/React
+# client always has the source id in hand, never a KPI record it may not
+# know exists yet.
+# ---------------------------------------------------------------------------
+
+class KPIGroupCalculateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminForWrite]
+
+    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPIGroupSerializer)
+    def post(self, request, pk=None):
+        group = get_object_or_404(Group, pk=pk)
+        params = KPIPeriodRequestSerializer(data=request.data)
+        params.is_valid(raise_exception=True)
+        kpi = calculate_group_kpi(group, **params.validated_data)
+        return Response(KPIGroupSerializer(kpi).data)
+
+
+class KPITeacherCalculateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminForWrite]
+
+    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPITeacherSerializer)
+    def post(self, request, pk=None):
+        teacher = get_object_or_404(Teacher, pk=pk)
+        params = KPIPeriodRequestSerializer(data=request.data)
+        params.is_valid(raise_exception=True)
+        kpi = calculate_teacher_kpi(teacher, **params.validated_data)
+        return Response(KPITeacherSerializer(kpi).data)
+
+
+class KPIStudentCalculateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminForWrite]
+
+    @extend_schema(tags=["KPI"], request=KPIStudentCalculationRequestSerializer, responses=KPIStudentSerializer)
+    def post(self, request, pk=None):
+        student = get_object_or_404(Student, pk=pk)
+        params = KPIStudentCalculationRequestSerializer(data=request.data)
+        params.is_valid(raise_exception=True)
+        kpi = calculate_student_kpi(
+            student,
+            params.validated_data["group"],
+            params.validated_data["date_from"],
+            params.validated_data["date_to"],
+        )
+        return Response(KPIStudentSerializer(kpi).data)
+
+
+class KPILessonCalculateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminForWrite]
+
+    @extend_schema(tags=["KPI"], request=None, responses=KPILessonSerializer)
+    def post(self, request, pk=None):
+        lesson = get_object_or_404(Lesson, pk=pk)
+        kpi = calculate_lesson_kpi(lesson)
+        return Response(KPILessonSerializer(kpi).data)
+
+
+class KPIAttendanceCalculateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminForWrite]
+
+    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPIAttendanceSerializer)
+    def post(self, request, pk=None):
+        group = get_object_or_404(Group, pk=pk)
+        params = KPIPeriodRequestSerializer(data=request.data)
+        params.is_valid(raise_exception=True)
+        kpi = calculate_attendance_kpi(group, **params.validated_data)
+        return Response(KPIAttendanceSerializer(kpi).data)
+
+
+class KPIHomeworkCalculateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminForWrite]
+
+    @extend_schema(tags=["KPI"], request=KPIPeriodRequestSerializer, responses=KPIHomeworkSerializer)
+    def post(self, request, pk=None):
+        group = get_object_or_404(Group, pk=pk)
+        params = KPIPeriodRequestSerializer(data=request.data)
+        params.is_valid(raise_exception=True)
+        kpi = calculate_homework_kpi(group, **params.validated_data)
+        return Response(KPIHomeworkSerializer(kpi).data)
