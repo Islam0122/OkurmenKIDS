@@ -1,0 +1,6 @@
+export * from '@/types/academy'
+export * from '@/types/attendance'
+export * from '@/types/auth'
+export * from '@/types/common'
+export * from '@/types/homework'
+export * from '@/types/kpi'
