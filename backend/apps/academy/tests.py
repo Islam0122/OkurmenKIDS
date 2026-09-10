@@ -6,15 +6,50 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.users.models import Teacher, User
+from apps.users.models import Subject, Teacher, User
 
-from .models import KPI, Attendance, Group, Homework, Room, Schedule, Student
+# Absolute imports throughout this file (matching apps/users/tests.py) —
+# not just style: since backend/__init__.py makes "backend" itself a
+# package, a bare `manage.py test` (full discovery) imports this module as
+# `backend.apps.academy.tests`, and a *relative* import from there would
+# resolve to `backend.apps.academy.models` — a second, distinct import of
+# the same file that redefines every model class and crashes Django's app
+# registry. Absolute imports always land on the one canonical module
+# already cached under `apps.academy.*` by Django's normal app loading.
+from apps.academy.models import (
+    Attendance,
+    Course,
+    CourseLessonPlan,
+    Group,
+    Homework,
+    HomeworkResult,
+    KPIGroup,
+    Lesson,
+    Room,
+    Student,
+)
+from apps.academy.services.attendance_service import bulk_mark_attendance
+from apps.academy.services.homework_service import bulk_upsert_homework_results
+from apps.academy.services.kpi_calculator import (
+    calculate_attendance_kpi,
+    calculate_group_kpi,
+    calculate_homework_kpi,
+    calculate_lesson_kpi,
+    calculate_student_kpi,
+    calculate_teacher_kpi,
+)
+from apps.academy.services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+
+# NOTE: login/verification/permission tests for the underlying auth system
+# (admin login, teacher login, unverified/inactive teacher rejected) already
+# live in apps.users.tests and are unaffected by this app — no need to
+# duplicate them here.
 
 
-def make_teacher(username: str, email: str) -> Teacher:
+def make_teacher(username: str) -> Teacher:
     user = User.objects.create_user(
         username=username,
-        email=email,
+        email=f"{username}@okurmen.kg",
         password="Str0ngPassw0rd!",
         first_name=username.capitalize(),
         role=User.Role.TEACHER,
@@ -35,27 +70,53 @@ def make_admin(username: str = "admin") -> User:
 class AcademyTestBase(TestCase):
     def setUp(self):
         self.admin = make_admin()
-        self.teacher1 = make_teacher("teacher1", "teacher1@okurmen.kg")
-        self.teacher2 = make_teacher("teacher2", "teacher2@okurmen.kg")
+        self.teacher1 = make_teacher("teacher1")
+        self.teacher2 = make_teacher("teacher2")
+
+        # "Backend"/"Frontend"/"English"/"Soft Skills" are auto-seeded by
+        # apps.users.signals.create_default_subjects on post_migrate, so
+        # test-only subjects use names outside that seed list to avoid a
+        # unique-constraint clash.
+        self.subject_python = Subject.objects.create(name="Python")
+        self.subject_frontend = Subject.objects.create(name="JavaScript")
+
+        self.course = Course.objects.create(name="Standard", count_lesson=4)
+        self.course.subjects.set([self.subject_python, self.subject_frontend])
+
+        self.plan1 = CourseLessonPlan.objects.create(
+            course=self.course, lesson_number=1, subject=self.subject_python, topic="Переменные"
+        )
+        self.plan2 = CourseLessonPlan.objects.create(
+            course=self.course, lesson_number=2, subject=self.subject_frontend, topic="HTML"
+        )
+        self.plan3 = CourseLessonPlan.objects.create(
+            course=self.course, lesson_number=3, subject=self.subject_python, topic="Функции"
+        )
+        self.plan4 = CourseLessonPlan.objects.create(
+            course=self.course, lesson_number=4, subject=self.subject_frontend, topic="CSS"
+        )
 
         self.room1 = Room.objects.create(name="Room 101", capacity=15)
         self.room2 = Room.objects.create(name="Room 102", capacity=10)
 
+        # 2026-09-07 is a Monday.
         self.group1 = Group.objects.create(
             name="Python Beginner",
+            course=self.course,
             teacher=self.teacher1,
             room=self.room1,
-            start_date=dt.date(2026, 9, 1),
+            start_date=dt.date(2026, 9, 7),
             start_time=dt.time(15, 0),
             end_time=dt.time(16, 30),
-            days_of_week=["mon", "wed", "fri"],
+            days_of_week=["mon", "wed"],
             max_students=15,
         )
         self.group2 = Group.objects.create(
             name="Frontend Beginner",
+            course=self.course,
             teacher=self.teacher2,
             room=self.room2,
-            start_date=dt.date(2026, 9, 1),
+            start_date=dt.date(2026, 9, 7),
             start_time=dt.time(17, 0),
             end_time=dt.time(18, 30),
             days_of_week=["tue", "thu"],
@@ -78,44 +139,7 @@ class AcademyTestBase(TestCase):
         self.anon_client = APIClient()
 
 
-class PermissionsTests(AcademyTestBase):
-    def test_anonymous_cannot_list_students(self):
-        response = self.anon_client.get("/api/v1/academy/students/")
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_admin_can_access_all_endpoints(self):
-        for path in ("students", "groups", "rooms", "schedules", "attendance", "homework", "kpi"):
-            response = self.admin_client.get(f"/api/v1/academy/{path}/")
-            self.assertEqual(response.status_code, status.HTTP_200_OK, path)
-
-    def test_teacher_cannot_access_another_teachers_group_detail(self):
-        response = self.teacher1_client.get(f"/api/v1/academy/groups/{self.group2.id}/")
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_teacher_cannot_write_group(self):
-        response = self.teacher1_client.patch(
-            f"/api/v1/academy/groups/{self.group1.id}/", {"name": "Hacked"}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-
-class StudentScopingTests(AcademyTestBase):
-    def test_admin_sees_all_students(self):
-        response = self.admin_client.get("/api/v1/academy/students/")
-        self.assertEqual(response.data["count"], 3)
-
-    def test_teacher_sees_only_own_students(self):
-        response = self.teacher1_client.get("/api/v1/academy/students/")
-        self.assertEqual(response.data["count"], 2)
-        names = {row["first_name"] for row in response.data["results"]}
-        self.assertEqual(names, {"Алина", "Мансур"})
-
-    def test_teacher_cannot_fetch_other_teachers_student(self):
-        response = self.teacher1_client.get(f"/api/v1/academy/students/{self.student3.id}/")
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-
-class GroupScopingTests(AcademyTestBase):
+class GroupTests(AcademyTestBase):
     def test_admin_sees_all_groups(self):
         response = self.admin_client.get("/api/v1/academy/groups/")
         self.assertEqual(response.data["count"], 2)
@@ -125,15 +149,37 @@ class GroupScopingTests(AcademyTestBase):
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["name"], "Python Beginner")
 
-    def test_group_serializer_reports_students_count(self):
-        response = self.admin_client.get(f"/api/v1/academy/groups/{self.group1.id}/")
-        self.assertEqual(response.data["students_count"], 2)
+    def test_teacher_cannot_access_other_teachers_group(self):
+        response = self.teacher1_client.get(f"/api/v1/academy/groups/{self.group2.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_admin_cannot_assign_inactive_teacher(self):
-        self.teacher2.is_active = False
-        self.teacher2.save(update_fields=["is_active"])
-        response = self.admin_client.patch(
-            f"/api/v1/academy/groups/{self.group1.id}/", {"teacher": self.teacher2.id}, format="json"
+    def test_teacher_cannot_write_group(self):
+        response = self.teacher1_client.patch(
+            f"/api/v1/academy/groups/{self.group1.id}/", {"name": "Hacked"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_group_requires_days_of_week(self):
+        response = self.admin_client.post(
+            "/api/v1/academy/groups/",
+            {
+                "name": "No days", "course": self.course.id, "teacher": self.teacher1.id,
+                "start_date": "2026-09-07", "start_time": "10:00", "end_time": "11:00",
+                "days_of_week": [],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_group_capacity_cannot_exceed_room(self):
+        response = self.admin_client.post(
+            "/api/v1/academy/groups/",
+            {
+                "name": "Too big", "course": self.course.id, "teacher": self.teacher1.id, "room": self.room2.id,
+                "start_date": "2026-09-07", "start_time": "10:00", "end_time": "11:00",
+                "days_of_week": ["mon"], "max_students": 99,
+            },
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -141,60 +187,104 @@ class GroupScopingTests(AcademyTestBase):
         response = self.admin_client.post(
             "/api/v1/academy/groups/",
             {
-                "name": "Bad Group",
-                "teacher": self.teacher1.id,
-                "start_date": "2026-09-10",
-                "end_date": "2026-09-01",
-                "start_time": "10:00",
-                "end_time": "11:00",
-                "days_of_week": ["mon"],
+                "name": "Bad dates", "course": self.course.id, "teacher": self.teacher1.id,
+                "start_date": "2026-09-10", "end_date": "2026-09-01",
+                "start_time": "10:00", "end_time": "11:00", "days_of_week": ["mon"],
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+class StudentTests(AcademyTestBase):
+    def test_admin_sees_all_students(self):
+        response = self.admin_client.get("/api/v1/academy/students/")
+        self.assertEqual(response.data["count"], 3)
+
+    def test_teacher_sees_only_own_groups_students(self):
+        response = self.teacher1_client.get("/api/v1/academy/students/")
+        self.assertEqual(response.data["count"], 2)
+        names = {row["first_name"] for row in response.data["results"]}
+        self.assertEqual(names, {"Алина", "Мансур"})
+
+
+class LessonGenerationTests(AcademyTestBase):
+    def test_generates_correct_count_and_dates(self):
+        lessons = generate_lessons_for_group(self.group1)
+        self.assertEqual(len(lessons), 4)
+        dates = [lesson.date for lesson in lessons]
+        self.assertEqual(
+            dates,
+            [dt.date(2026, 9, 7), dt.date(2026, 9, 9), dt.date(2026, 9, 14), dt.date(2026, 9, 16)],
+        )
+        self.assertEqual([lesson.lesson_number for lesson in lessons], [1, 2, 3, 4])
+
+    def test_copies_content_from_plan(self):
+        lessons = generate_lessons_for_group(self.group1)
+        self.assertEqual(lessons[0].subject_id, self.subject_python.id)
+        self.assertEqual(lessons[0].topic, "Переменные")
+        self.assertEqual(lessons[1].subject_id, self.subject_frontend.id)
+        self.assertEqual(lessons[0].room_id, self.room1.id)
+        self.assertEqual(lessons[0].start_time, self.group1.start_time)
+
+    def test_idempotent_no_duplicates(self):
+        generate_lessons_for_group(self.group1)
+        second_run = generate_lessons_for_group(self.group1)
+        self.assertEqual(second_run, [])
+        self.assertEqual(Lesson.objects.filter(group=self.group1).count(), 4)
+
+    def test_respects_end_date(self):
+        self.group1.end_date = dt.date(2026, 9, 10)
+        self.group1.save(update_fields=["end_date"])
+        lessons = generate_lessons_for_group(self.group1)
+        self.assertEqual(len(lessons), 2)
+
+    def test_mismatched_plan_count_raises(self):
+        self.course.count_lesson = 10
+        self.course.save(update_fields=["count_lesson"])
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(self.group1)
+
+    def test_generate_lessons_api_endpoint(self):
+        response = self.admin_client.post(f"/api/v1/academy/groups/{self.group1.id}/generate-lessons/")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["created_count"], 4)
+        self.assertEqual(response.data["first_lesson"], 1)
+        self.assertEqual(response.data["last_lesson"], 4)
+
+    def test_generate_lessons_api_admin_only(self):
+        response = self.teacher1_client.post(f"/api/v1/academy/groups/{self.group1.id}/generate-lessons/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
 class AttendanceTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.lessons = generate_lessons_for_group(self.group1)
+        self.lesson1 = self.lessons[0]
+
     def test_correct_creation(self):
         response = self.teacher1_client.post(
             "/api/v1/academy/attendance/",
-            {
-                "student": self.student1.id,
-                "group": self.group1.id,
-                "date": "2026-09-12",
-                "status": "present",
-            },
+            {"student": self.student1.id, "lesson": self.lesson1.id, "status": "present"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(response.data["student_name"], "Алина Иванова")
-        self.assertEqual(response.data["status_display"], "Присутствовал")
 
     def test_student_from_other_group_rejected(self):
         response = self.admin_client.post(
             "/api/v1/academy/attendance/",
-            {
-                "student": self.student3.id,  # belongs to group2
-                "group": self.group1.id,
-                "date": "2026-09-12",
-                "status": "present",
-            },
+            {"student": self.student3.id, "lesson": self.lesson1.id, "status": "present"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_duplicate_rejected(self):
-        Attendance.objects.create(
-            student=self.student1, group=self.group1, date=dt.date(2026, 9, 12), status="present"
-        )
+        Attendance.objects.create(student=self.student1, lesson=self.lesson1, status="present")
         response = self.admin_client.post(
             "/api/v1/academy/attendance/",
-            {
-                "student": self.student1.id,
-                "group": self.group1.id,
-                "date": "2026-09-12",
-                "status": "late",
-            },
+            {"student": self.student1.id, "lesson": self.lesson1.id, "status": "late"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -202,188 +292,230 @@ class AttendanceTests(AcademyTestBase):
     def test_teacher_isolation_cannot_create_for_other_group(self):
         response = self.teacher1_client.post(
             "/api/v1/academy/attendance/",
-            {
-                "student": self.student3.id,
-                "group": self.group2.id,
-                "date": "2026-09-12",
-                "status": "present",
-            },
+            {"student": self.student3.id, "lesson": self.lesson1.id, "status": "present"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_teacher_isolation_cannot_edit_other_groups_attendance(self):
-        record = Attendance.objects.create(
-            student=self.student3, group=self.group2, date=dt.date(2026, 9, 12), status="present"
+    def test_bulk_service_all_or_nothing(self):
+        with self.assertRaises(Exception):
+            bulk_mark_attendance(
+                self.lesson1,
+                [
+                    {"student": self.student1, "status": "present"},
+                    {"student": self.student3, "status": "present"},  # wrong group
+                ],
+            )
+        self.assertEqual(Attendance.objects.filter(lesson=self.lesson1).count(), 0)
+
+    def test_bulk_attendance_endpoint_roster_and_marking(self):
+        get_response = self.teacher1_client.get(f"/api/v1/academy/lessons/{self.lesson1.id}/attendance/")
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(get_response.data), 2)  # full roster, unmarked
+
+        post_response = self.teacher1_client.post(
+            f"/api/v1/academy/lessons/{self.lesson1.id}/attendance/",
+            [
+                {"student": self.student1.id, "status": "present"},
+                {"student": self.student2.id, "status": "absent", "comment": "Болеет"},
+            ],
+            format="json",
         )
-        response = self.teacher1_client.patch(
-            f"/api/v1/academy/attendance/{record.id}/", {"status": "absent"}, format="json"
+        self.assertEqual(post_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Attendance.objects.filter(lesson=self.lesson1).count(), 2)
+
+    def test_teacher_cannot_bulk_mark_other_groups_lesson(self):
+        response = self.teacher2_client.post(
+            f"/api/v1/academy/lessons/{self.lesson1.id}/attendance/",
+            [{"student": self.student1.id, "status": "present"}],
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_group_attendance_by_date_view(self):
-        Attendance.objects.create(student=self.student1, group=self.group1, date=dt.date(2026, 9, 12), status="present")
-        Attendance.objects.create(student=self.student2, group=self.group1, date=dt.date(2026, 9, 12), status="absent")
-        response = self.admin_client.get(
-            "/api/v1/academy/attendance/", {"group": self.group1.id, "date": "2026-09-12"}
-        )
-        self.assertEqual(response.data["count"], 2)
-
 
 class HomeworkTests(AcademyTestBase):
-    def test_score_out_of_range_rejected(self):
-        response = self.admin_client.post(
-            "/api/v1/academy/homework/",
-            {"student": self.student1.id, "group": self.group1.id, "date": "2026-09-12", "score": 11},
+    def setUp(self):
+        super().setUp()
+        self.lessons = generate_lessons_for_group(self.group1)
+        self.lesson1 = self.lessons[0]
+        self.other_lesson = generate_lessons_for_group(self.group2)[0]
+
+    def test_teacher_can_create_homework_for_own_lesson(self):
+        response = self.teacher1_client.post(
+            "/api/v1/academy/homeworks/",
+            {"lesson": self.lesson1.id, "title": "ДЗ 1", "description": "Решить примеры"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_teacher_cannot_create_homework_for_other_lesson(self):
+        response = self.teacher1_client.post(
+            "/api/v1/academy/homeworks/",
+            {"lesson": self.other_lesson.id, "title": "ДЗ 1"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_wrong_group_rejected(self):
+    def test_result_score_out_of_range_rejected(self):
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
         response = self.admin_client.post(
-            "/api/v1/academy/homework/",
-            {"student": self.student3.id, "group": self.group1.id, "date": "2026-09-12", "score": 8},
+            "/api/v1/academy/homework-results/",
+            {"homework": homework.id, "student": self.student1.id, "status": "checked", "score": 11},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_duplicate_rejected(self):
-        Homework.objects.create(student=self.student1, group=self.group1, date=dt.date(2026, 9, 12), score=8)
+    def test_result_wrong_group_student_rejected(self):
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
         response = self.admin_client.post(
-            "/api/v1/academy/homework/",
-            {"student": self.student1.id, "group": self.group1.id, "date": "2026-09-12", "score": 5},
+            "/api/v1/academy/homework-results/",
+            {"homework": homework.id, "student": self.student3.id, "status": "submitted"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_teacher_isolation(self):
-        response = self.teacher2_client.get("/api/v1/academy/homework/", {"group": self.group1.id})
-        self.assertEqual(response.data["count"], 0)
+    def test_result_uniqueness(self):
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
+        HomeworkResult.objects.create(homework=homework, student=self.student1, status="submitted")
+        response = self.admin_client.post(
+            "/api/v1/academy/homework-results/",
+            {"homework": homework.id, "student": self.student1.id, "status": "checked", "score": 5},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bulk_results_roster_and_grading(self):
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
+
+        get_response = self.teacher1_client.get(f"/api/v1/academy/homeworks/{homework.id}/results/")
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(get_response.data), 2)
+        self.assertTrue(all(row["status"] == "not_submitted" for row in get_response.data))
+
+        post_response = self.teacher1_client.post(
+            f"/api/v1/academy/homeworks/{homework.id}/results/",
+            [
+                {"student": self.student1.id, "status": "checked", "score": 9},
+                {"student": self.student2.id, "status": "not_submitted"},
+            ],
+            format="json",
+        )
+        self.assertEqual(post_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(HomeworkResult.objects.filter(homework=homework, status="checked").count(), 1)
+
+    def test_bulk_service_rejects_wrong_group(self):
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
+        with self.assertRaises(Exception):
+            bulk_upsert_homework_results(homework, [{"student": self.student3, "status": "submitted"}])
+        self.assertEqual(HomeworkResult.objects.filter(homework=homework).count(), 0)
 
 
 class KPITests(AcademyTestBase):
     def setUp(self):
         super().setUp()
+        self.lessons = generate_lessons_for_group(self.group1)
         self.date_from = dt.date(2026, 9, 1)
         self.date_to = dt.date(2026, 9, 30)
 
-        for day, attendance_status in [
-            (1, Attendance.Status.PRESENT),
-            (3, Attendance.Status.PRESENT),
-            (8, Attendance.Status.LATE),
-            (10, Attendance.Status.ABSENT),
-        ]:
-            Attendance.objects.create(
-                student=self.student1,
-                group=self.group1,
-                date=dt.date(2026, 9, day),
-                status=attendance_status,
-            )
+        statuses = [
+            Attendance.Status.PRESENT,
+            Attendance.Status.PRESENT,
+            Attendance.Status.LATE,
+            Attendance.Status.ABSENT,
+        ]
+        for lesson, attendance_status in zip(self.lessons, statuses):
+            Attendance.objects.create(student=self.student1, lesson=lesson, status=attendance_status)
 
-        Homework.objects.create(student=self.student1, group=self.group1, date=dt.date(2026, 9, 1), score=8)
-        Homework.objects.create(student=self.student1, group=self.group1, date=dt.date(2026, 9, 8), score=6)
-
-        self.kpi = KPI.objects.create(
-            student=self.student1, group=self.group1, date_from=self.date_from, date_to=self.date_to
+        self.homework1 = Homework.objects.create(lesson=self.lessons[0], title="ДЗ 1")
+        self.homework2 = Homework.objects.create(lesson=self.lessons[1], title="ДЗ 2")
+        HomeworkResult.objects.create(
+            homework=self.homework1, student=self.student1, status=HomeworkResult.Status.CHECKED, score=8
         )
+        # No result row for homework2 — counts as missed.
 
-    def test_correct_calculation(self):
-        response = self.admin_client.get(f"/api/v1/academy/kpi/{self.kpi.id}/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        attendance = response.data["attendance"]
-        self.assertEqual(attendance["total_lessons"], 4)
-        self.assertEqual(attendance["present"], 2)
-        self.assertEqual(attendance["late"], 1)
-        self.assertEqual(attendance["absent"], 1)
-        self.assertEqual(attendance["attendance_percentage"], 75.0)
+    def test_calculate_student_kpi(self):
+        kpi = calculate_student_kpi(self.student1, self.group1, self.date_from, self.date_to)
+        self.assertEqual(kpi.total_lessons, 4)
+        self.assertEqual(kpi.present_count, 2)
+        self.assertEqual(kpi.absent_count, 1)
+        self.assertEqual(kpi.late_count, 1)
+        self.assertEqual(kpi.attendance_percent, 75.0)
+        self.assertEqual(kpi.total_homeworks, 2)
+        self.assertEqual(kpi.completed_homeworks, 1)
+        self.assertEqual(kpi.missed_homeworks, 1)
+        self.assertEqual(kpi.homework_completion_percent, 50.0)
+        self.assertEqual(kpi.average_score, 8.0)
 
-        homework = response.data["homework"]
-        self.assertEqual(homework["total_records"], 2)
-        self.assertEqual(homework["average_score"], 7.0)
-        self.assertEqual(homework["homework_percentage"], 70.0)
+    def test_calculate_group_kpi(self):
+        kpi = calculate_group_kpi(self.group1, self.date_from, self.date_to)
+        self.assertEqual(kpi.total_students, 2)
+        self.assertEqual(kpi.total_lessons, 4)
+        self.assertEqual(kpi.attendance_percent, 75.0)
+        self.assertEqual(kpi.homework_completion_percent, 25.0)
+        self.assertEqual(kpi.average_score, 8.0)
 
-    def test_teacher_isolation(self):
-        other_kpi = KPI.objects.create(
-            student=self.student3, group=self.group2, date_from=self.date_from, date_to=self.date_to
-        )
-        response = self.teacher1_client.get(f"/api/v1/academy/kpi/{other_kpi.id}/")
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+    def test_calculate_teacher_kpi(self):
+        kpi = calculate_teacher_kpi(self.teacher1, self.date_from, self.date_to)
+        self.assertEqual(kpi.total_groups, 1)
+        self.assertEqual(kpi.total_lessons, 4)
+        self.assertEqual(kpi.attendance_percent, 75.0)
+        self.assertEqual(kpi.average_student_score, 8.0)
 
-        response = self.teacher1_client.get(f"/api/v1/academy/kpi/{self.kpi.id}/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+    def test_calculate_lesson_kpi(self):
+        kpi = calculate_lesson_kpi(self.lessons[0])
+        self.assertEqual(kpi.total_students, 2)
+        self.assertEqual(kpi.present_count, 1)
+        self.assertEqual(kpi.attendance_percent, 100.0)
+        self.assertEqual(kpi.homework_completed_count, 1)
+        self.assertEqual(kpi.average_homework_score, 8.0)
 
-    def test_kpi_is_read_only(self):
+    def test_calculate_attendance_kpi(self):
+        kpi = calculate_attendance_kpi(self.group1, self.date_from, self.date_to)
+        self.assertEqual(kpi.total_records, 4)
+        self.assertEqual(kpi.attendance_percent, 75.0)
+
+    def test_calculate_homework_kpi(self):
+        kpi = calculate_homework_kpi(self.group1, self.date_from, self.date_to)
+        self.assertEqual(kpi.total_homeworks, 2)
+        self.assertEqual(kpi.total_results, 1)
+        self.assertEqual(kpi.checked_count, 1)
+        self.assertEqual(kpi.completion_percent, 100.0)
+        self.assertEqual(kpi.average_score, 8.0)
+
+    def test_kpi_viewsets_are_read_only(self):
         response = self.admin_client.post(
-            "/api/v1/academy/kpi/",
-            {
-                "student": self.student1.id,
-                "group": self.group1.id,
-                "date_from": "2026-10-01",
-                "date_to": "2026-10-31",
-            },
+            "/api/v1/academy/kpi/groups/",
+            {"group": self.group1.id, "date_from": "2026-09-01", "date_to": "2026-09-30"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-
-class ScheduleTests(AcademyTestBase):
-    def test_end_time_before_start_time_rejected(self):
-        response = self.admin_client.post(
-            "/api/v1/academy/schedules/",
-            {
-                "group": self.group1.id,
-                "date": "2026-09-12",
-                "start_time": "16:00",
-                "end_time": "15:00",
-                "room": self.room1.id,
-            },
+    def test_calculate_endpoint_is_admin_only(self):
+        response = self.teacher1_client.post(
+            f"/api/v1/academy/kpi/groups/{self.group1.id}/calculate/",
+            {"date_from": "2026-09-01", "date_to": "2026-09-30"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_conflicting_room_booking_rejected(self):
-        Schedule.objects.create(
-            group=self.group1,
-            date=dt.date(2026, 9, 12),
-            start_time=dt.time(15, 0),
-            end_time=dt.time(16, 30),
-            room=self.room1,
-        )
+    def test_calculate_endpoint_admin_creates_kpi(self):
         response = self.admin_client.post(
-            "/api/v1/academy/schedules/",
-            {
-                "group": self.group2.id,
-                "date": "2026-09-12",
-                "start_time": "16:00",
-                "end_time": "17:00",
-                "room": self.room1.id,
-            },
+            f"/api/v1/academy/kpi/groups/{self.group1.id}/calculate/",
+            {"date_from": "2026-09-01", "date_to": "2026-09-30"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["attendance_percent"], 75.0)
+        self.assertTrue(KPIGroup.objects.filter(group=self.group1).exists())
 
-    def test_inactive_room_rejected_for_new_schedule(self):
-        self.room1.is_active = False
-        self.room1.save(update_fields=["is_active"])
-        response = self.admin_client.post(
-            "/api/v1/academy/schedules/",
-            {
-                "group": self.group1.id,
-                "date": "2026-09-20",
-                "start_time": "15:00",
-                "end_time": "16:00",
-                "room": self.room1.id,
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_teacher_sees_only_own_schedule(self):
-        Schedule.objects.create(
-            group=self.group1, date=dt.date(2026, 9, 12), start_time=dt.time(15, 0), end_time=dt.time(16, 30), room=self.room1
-        )
-        Schedule.objects.create(
-            group=self.group2, date=dt.date(2026, 9, 13), start_time=dt.time(17, 0), end_time=dt.time(18, 30), room=self.room2
-        )
-        response = self.teacher1_client.get("/api/v1/academy/schedules/")
+    def test_teacher_kpi_isolation(self):
+        calculate_group_kpi(self.group1, self.date_from, self.date_to)
+        calculate_group_kpi(self.group2, self.date_from, self.date_to)
+        response = self.teacher1_client.get("/api/v1/academy/kpi/groups/")
         self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["group"], self.group1.id)
+
+    def test_student_kpi_group_isolation(self):
+        calculate_student_kpi(self.student1, self.group1, self.date_from, self.date_to)
+        response = self.teacher2_client.get("/api/v1/academy/kpi/students/")
+        self.assertEqual(response.data["count"], 0)

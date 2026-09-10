@@ -1,30 +1,117 @@
 """FilterSets for the academy API.
 
-Kept deliberately small: most endpoints only need exact-match filtering on
-a handful of fields (already declared as ``filterset_fields`` on the
-viewsets). Custom FilterSet classes here exist only where a plain field
-list can't express what's needed — date ranges on Schedule and KPI.
+Trivial exact-match filtering (a single FK or boolean) is left to
+``filterset_fields`` on the viewset — a FilterSet class here only earns its
+keep where a plain field list can't express what's needed: date ranges, or
+filtering across a relation (e.g. Attendance by its lesson's group/date).
 """
 from __future__ import annotations
 
 import django_filters as filters
 
-from .models import KPI, Schedule
+from .models import (
+    Attendance,
+    Course,
+    Group,
+    Homework,
+    KPIAttendance,
+    KPIGroup,
+    KPIHomework,
+    KPIStudent,
+    KPITeacher,
+    Lesson,
+    Student,
+)
 
 
-class ScheduleFilter(filters.FilterSet):
+class CourseFilter(filters.FilterSet):
+    subject = filters.NumberFilter(field_name="subjects__id")
+
+    class Meta:
+        model = Course
+        fields = ["subject"]
+
+
+class StudentFilter(filters.FilterSet):
+    class Meta:
+        model = Student
+        fields = ["group", "is_active"]
+
+
+class GroupFilter(filters.FilterSet):
+    class Meta:
+        model = Group
+        fields = ["course", "teacher", "room", "status"]
+
+
+class LessonFilter(filters.FilterSet):
     date_from = filters.DateFilter(field_name="date", lookup_expr="gte")
     date_to = filters.DateFilter(field_name="date", lookup_expr="lte")
 
     class Meta:
-        model = Schedule
-        fields = ["group", "room", "date", "is_cancelled"]
+        model = Lesson
+        fields = ["group", "subject", "status", "date"]
 
 
-class KPIFilter(filters.FilterSet):
+class AttendanceFilter(filters.FilterSet):
+    group = filters.NumberFilter(field_name="lesson__group_id")
+    date = filters.DateFilter(field_name="lesson__date")
+    date_from = filters.DateFilter(field_name="lesson__date", lookup_expr="gte")
+    date_to = filters.DateFilter(field_name="lesson__date", lookup_expr="lte")
+
+    class Meta:
+        model = Attendance
+        fields = ["student", "lesson", "status", "group", "date"]
+
+
+class HomeworkFilter(filters.FilterSet):
+    group = filters.NumberFilter(field_name="lesson__group_id")
+
+    class Meta:
+        model = Homework
+        fields = ["lesson", "group"]
+
+
+class KPIGroupFilter(filters.FilterSet):
     date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
     date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
 
     class Meta:
-        model = KPI
+        model = KPIGroup
+        fields = ["group"]
+
+
+class KPITeacherFilter(filters.FilterSet):
+    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
+    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
+
+    class Meta:
+        model = KPITeacher
+        fields = ["teacher"]
+
+
+class KPIStudentFilter(filters.FilterSet):
+    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
+    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
+
+    class Meta:
+        model = KPIStudent
         fields = ["student", "group"]
+
+
+class KPIAttendanceFilter(filters.FilterSet):
+    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
+    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
+
+    class Meta:
+        model = KPIAttendance
+        fields = ["group"]
+
+
+class KPIHomeworkFilter(filters.FilterSet):
+    date_from = filters.DateFilter(field_name="date_from", lookup_expr="gte")
+    date_to = filters.DateFilter(field_name="date_to", lookup_expr="lte")
+
+    class Meta:
+        model = KPIHomework
+        fields = ["group"]

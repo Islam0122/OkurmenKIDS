@@ -241,19 +241,25 @@ JAZZMIN_SETTINGS = {
 
     "custom_links": {
         "обучение": [
-            {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
-            {"name": "Студенты", "model": "academy.student", "icon": "bi bi-mortarboard"},
+            {"name": "Курсы", "model": "academy.course", "icon": "bi bi-collection-play"},
+            {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
             {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
+            {"name": "Студенты", "model": "academy.student", "icon": "bi bi-mortarboard"},
+            {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-journal-bookmark"},
-        ],
-        "организация": [
-            {"name": "Расписание", "model": "academy.schedule", "icon": "bi bi-calendar-week"},
-            {"name": "Кабинеты", "model": "academy.room", "icon": "bi bi-door-open"},
-        ],
-        "контроль": [
+            {"name": "Аудитории", "model": "academy.room", "icon": "bi bi-door-open"},
+            {"name": "Занятия", "model": "academy.lesson", "icon": "bi bi-calendar-week"},
             {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
             {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-text"},
-            {"name": "KPI", "model": "academy.kpi", "icon": "bi bi-graph-up-arrow"},
+            {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-square"},
+        ],
+        "аналитика": [
+            {"name": "KPI групп", "model": "academy.kpigroup", "icon": "bi bi-graph-up-arrow"},
+            {"name": "KPI тренеров", "model": "academy.kpiteacher", "icon": "bi bi-person-lines-fill"},
+            {"name": "KPI студентов", "model": "academy.kpistudent", "icon": "bi bi-person-check"},
+            {"name": "KPI уроков", "model": "academy.kpilesson", "icon": "bi bi-easel"},
+            {"name": "KPI посещаемости", "model": "academy.kpiattendance", "icon": "bi bi-calendar-check"},
+            {"name": "KPI домашних заданий", "model": "academy.kpihomework", "icon": "bi bi-clipboard-data"},
         ],
         "система": [
             {"name": "Администраторы", "model": "users.user", "icon": "bi bi-shield-lock"},
@@ -267,8 +273,7 @@ JAZZMIN_SETTINGS = {
     # more typical look for section labels in a premium dashboard.
     "icons": {
         "обучение": "bi bi-mortarboard-fill",
-        "организация": "bi bi-diagram-3",
-        "контроль": "bi bi-clipboard-data",
+        "аналитика": "bi bi-clipboard-data",
         "система": "bi bi-gear",
         "auth": "bi bi-people",
         "auth.group": "bi bi-people",
@@ -279,13 +284,21 @@ JAZZMIN_SETTINGS = {
         # custom_links.
         "users.teacher": "bi bi-person-badge",
         "users.subject": "bi bi-journal-bookmark",
+        "academy.course": "bi bi-collection-play",
+        "academy.courselessonplan": "bi bi-list-check",
         "academy.student": "bi bi-mortarboard",
         "academy.group": "bi bi-people",
         "academy.room": "bi bi-door-open",
-        "academy.schedule": "bi bi-calendar-week",
+        "academy.lesson": "bi bi-calendar-week",
         "academy.attendance": "bi bi-clipboard-check",
         "academy.homework": "bi bi-journal-text",
-        "academy.kpi": "bi bi-graph-up-arrow",
+        "academy.homeworkresult": "bi bi-check2-square",
+        "academy.kpigroup": "bi bi-graph-up-arrow",
+        "academy.kpiteacher": "bi bi-person-lines-fill",
+        "academy.kpistudent": "bi bi-person-check",
+        "academy.kpilesson": "bi bi-easel",
+        "academy.kpiattendance": "bi bi-calendar-check",
+        "academy.kpihomework": "bi bi-clipboard-data",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

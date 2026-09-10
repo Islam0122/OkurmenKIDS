@@ -27,14 +27,14 @@
 
         <div class="ok-kpi-grid">
             <div class="ok-kpi-card">
-                <div class="ok-kpi-icon"><i class="bi bi-mortarboard"></i></div>
-                <div class="ok-kpi-value">{{ ok_stats.students_active }}</div>
-                <div class="ok-kpi-label">Студенты (из {{ ok_stats.students_total }})</div>
-            </div>
-            <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
                 <div class="ok-kpi-value">{{ ok_stats.groups_active }}</div>
                 <div class="ok-kpi-label">Активные группы (из {{ ok_stats.groups_total }})</div>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-mortarboard"></i></div>
+                <div class="ok-kpi-value">{{ ok_stats.students_active }}</div>
+                <div class="ok-kpi-label">Активные студенты (из {{ ok_stats.students_total }})</div>
             </div>
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div>
@@ -42,22 +42,21 @@
                 <div class="ok-kpi-label">Тренеры (из {{ ok_stats.teachers_total }})</div>
             </div>
             <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-calendar-week"></i></div>
+                <div class="ok-kpi-value">{{ ok_stats.lessons_today_count }}</div>
+                <div class="ok-kpi-label">Занятий сегодня</div>
+            </div>
+            <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-clipboard-check"></i></div>
-                <div class="ok-kpi-value">{% if ok_stats.attendance_today_rate is not None %}{{ ok_stats.attendance_today_rate }}%{% else %}—{% endif %}</div>
-                <div class="ok-kpi-label">Посещаемость сегодня</div>
-                {% if ok_stats.attendance_today_rate is None %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
+                <div class="ok-kpi-value">{% if ok_stats.attendance_recent_rate is not None %}{{ ok_stats.attendance_recent_rate }}%{% else %}—{% endif %}</div>
+                <div class="ok-kpi-label">Средняя посещаемость (30 дней)</div>
+                {% if ok_stats.attendance_recent_rate is None %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
             </div>
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-journal-text"></i></div>
                 <div class="ok-kpi-value">{% if ok_stats.homework_recent_rate is not None %}{{ ok_stats.homework_recent_rate }}%{% else %}—{% endif %}</div>
-                <div class="ok-kpi-label">Домашние задания (30 дней)</div>
+                <div class="ok-kpi-label">Выполнение ДЗ (30 дней)</div>
                 {% if ok_stats.homework_recent_rate is None %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
-            </div>
-            <div class="ok-kpi-card">
-                <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
-                <div class="ok-kpi-value">{% if ok_stats.average_kpi is not None %}{{ ok_stats.average_kpi }}%{% else %}—{% endif %}</div>
-                <div class="ok-kpi-label">Средний KPI (30 дней)</div>
-                {% if ok_stats.average_kpi is None %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
             </div>
         </div>
 
@@ -97,22 +96,110 @@
                 </div>
 
                 <div class="row">
-                    <div class="col-md-4 col-12 mb-3">
-                        <div class="ok-soon-card">
-                            <i class="bi bi-graph-up"></i>
-                            Рост числа студентов<br>появится вместе с модулем «Студенты»
+                    <div class="col-md-6 col-12 mb-3">
+                        <div class="card ok-chart-card">
+                            <div class="card-header">Сегодняшние занятия</div>
+                            <div class="card-body p-0">
+                                {% if ok_stats.lessons_today %}
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr><th>Время</th><th>Группа</th><th>Тренер</th><th>Аудитория</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for lesson in ok_stats.lessons_today %}
+                                                <tr>
+                                                    <td>{{ lesson.start_time|time:"H:i" }}</td>
+                                                    <td>{{ lesson.group.name }}</td>
+                                                    <td>{{ lesson.group.teacher }}</td>
+                                                    <td>{{ lesson.room|default:"—" }}</td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                {% else %}
+                                    <p class="p-3 mb-0 text-muted">На сегодня занятий не запланировано.</p>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
-                    <div class="col-md-4 col-12 mb-3">
-                        <div class="ok-soon-card">
-                            <i class="bi bi-clipboard-check"></i>
-                            Статистика посещаемости<br>появится вместе с модулем «Посещаемость»
+                    <div class="col-md-6 col-12 mb-3">
+                        <div class="card ok-chart-card">
+                            <div class="card-header">Активные группы</div>
+                            <div class="card-body p-0">
+                                {% if ok_stats.active_groups %}
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr><th>Группа</th><th>Курс</th><th>Тренер</th><th>Студенты</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for group in ok_stats.active_groups %}
+                                                <tr>
+                                                    <td>{{ group.name }}</td>
+                                                    <td>{{ group.course.name }}</td>
+                                                    <td>{{ group.teacher }}</td>
+                                                    <td>{{ group.students_count_annotated }}{% if group.max_students %} / {{ group.max_students }}{% endif %}</td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                {% else %}
+                                    <p class="p-3 mb-0 text-muted">Активных групп пока нет.</p>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
-                    <div class="col-md-4 col-12 mb-3">
-                        <div class="ok-soon-card">
-                            <i class="bi bi-journal-text"></i>
-                            Выполнение домашних заданий<br>появится вместе с модулем «Домашние задания»
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 col-12 mb-3">
+                        <div class="card ok-chart-card">
+                            <div class="card-header">Последние добавленные студенты</div>
+                            <div class="card-body p-0">
+                                {% if ok_stats.recent_students %}
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr><th>Студент</th><th>Группа</th><th>Добавлен</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for student in ok_stats.recent_students %}
+                                                <tr>
+                                                    <td>{{ student.first_name }} {{ student.last_name }}</td>
+                                                    <td>{{ student.group|default:"—" }}</td>
+                                                    <td>{{ student.created_at|date:"d.m.Y" }}</td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                {% else %}
+                                    <p class="p-3 mb-0 text-muted">Студентов пока нет.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-12 mb-3">
+                        <div class="card ok-chart-card">
+                            <div class="card-header">Последние KPI студентов</div>
+                            <div class="card-body p-0">
+                                {% if ok_stats.recent_kpi %}
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr><th>Студент</th><th>Группа</th><th>Посещаемость</th><th>ДЗ</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for kpi in ok_stats.recent_kpi %}
+                                                <tr>
+                                                    <td>{{ kpi.student }}</td>
+                                                    <td>{{ kpi.group.name }}</td>
+                                                    <td>{{ kpi.attendance_percent }}%</td>
+                                                    <td>{{ kpi.homework_completion_percent }}%</td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                {% else %}
+                                    <p class="p-3 mb-0 text-muted">KPI пока не рассчитаны.</p>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                 </div>
