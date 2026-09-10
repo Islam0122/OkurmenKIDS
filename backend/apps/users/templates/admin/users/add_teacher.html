@@ -6,8 +6,8 @@
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
 
-    {% if form.non_field_errors %}
-      <div class="ok-alert ok-alert-danger">{{ form.non_field_errors }}</div>
+    {% if adminform.form.non_field_errors %}
+      <div class="ok-alert ok-alert-danger">{{ adminform.form.non_field_errors }}</div>
     {% endif %}
 
     <!-- Блок 1: Личные и контактные данные -->
@@ -20,41 +20,41 @@
         <div class="ok-grid-2">
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.first_name.id_for_label }}">
-              {{ form.first_name.label }} <span class="ok-label-required">*</span>
+            <label class="ok-label" for="{{ adminform.form.first_name.id_for_label }}">
+              {{ adminform.form.first_name.label }} <span class="ok-label-required">*</span>
             </label>
-            {{ form.first_name }}
-            {% for error in form.first_name.errors %}
+            {{ adminform.form.first_name }}
+            {% for error in adminform.form.first_name.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.last_name.id_for_label }}">
-              {{ form.last_name.label }}
+            <label class="ok-label" for="{{ adminform.form.last_name.id_for_label }}">
+              {{ adminform.form.last_name.label }}
             </label>
-            {{ form.last_name }}
-            {% for error in form.last_name.errors %}
+            {{ adminform.form.last_name }}
+            {% for error in adminform.form.last_name.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.email.id_for_label }}">
-              {{ form.email.label }} <span class="ok-label-required">*</span>
+            <label class="ok-label" for="{{ adminform.form.email.id_for_label }}">
+              {{ adminform.form.email.label }} <span class="ok-label-required">*</span>
             </label>
-            {{ form.email }}
-            {% for error in form.email.errors %}
+            {{ adminform.form.email }}
+            {% for error in adminform.form.email.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.phone.id_for_label }}">
-              {{ form.phone.label }}
+            <label class="ok-label" for="{{ adminform.form.phone.id_for_label }}">
+              {{ adminform.form.phone.label }}
             </label>
-            {{ form.phone }}
-            {% for error in form.phone.errors %}
+            {{ adminform.form.phone }}
+            {% for error in adminform.form.phone.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
@@ -73,51 +73,51 @@
         <div class="ok-grid-2">
 
           <div class="ok-field-group ok-grid-full">
-            <label class="ok-label" for="{{ form.subjects.id_for_label }}">
-              {{ form.subjects.label }}
+            <label class="ok-label" for="{{ adminform.form.subjects.id_for_label }}">
+              {{ adminform.form.subjects.label }}
             </label>
-            {{ form.subjects }}
-            {% for error in form.subjects.errors %}
+            {{ adminform.form.subjects }}
+            {% for error in adminform.form.subjects.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.position.id_for_label }}">
-              {{ form.position.label }}
+            <label class="ok-label" for="{{ adminform.form.position.id_for_label }}">
+              {{ adminform.form.position.label }}
             </label>
-            {{ form.position }}
-            {% for error in form.position.errors %}
+            {{ adminform.form.position }}
+            {% for error in adminform.form.position.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.experience_years.id_for_label }}">
-              {{ form.experience_years.label }}
+            <label class="ok-label" for="{{ adminform.form.experience_years.id_for_label }}">
+              {{ adminform.form.experience_years.label }}
             </label>
-            {{ form.experience_years }}
-            {% for error in form.experience_years.errors %}
+            {{ adminform.form.experience_years }}
+            {% for error in adminform.form.experience_years.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.hire_date.id_for_label }}">
-              {{ form.hire_date.label }}
+            <label class="ok-label" for="{{ adminform.form.hire_date.id_for_label }}">
+              {{ adminform.form.hire_date.label }}
             </label>
-            {{ form.hire_date }}
-            {% for error in form.hire_date.errors %}
+            {{ adminform.form.hire_date }}
+            {% for error in adminform.form.hire_date.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group ok-grid-full">
-            <label class="ok-label" for="{{ form.bio.id_for_label }}">
-              {{ form.bio.label }}
+            <label class="ok-label" for="{{ adminform.form.bio.id_for_label }}">
+              {{ adminform.form.bio.label }}
             </label>
-            {{ form.bio }}
-            {% for error in form.bio.errors %}
+            {{ adminform.form.bio }}
+            {% for error in adminform.form.bio.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
@@ -134,14 +134,14 @@
       </div>
       <div class="ok-card-body">
         <div class="ok-field-group">
-          <label class="ok-label" for="{{ form.image.id_for_label }}">
-            {{ form.image.label }}
+          <label class="ok-label" for="{{ adminform.form.image.id_for_label }}">
+            {{ adminform.form.image.label }}
           </label>
-          {{ form.image }}
-          {% if form.image.help_text %}
-            <span class="ok-help-text">{{ form.image.help_text }}</span>
+          {{ adminform.form.image }}
+          {% if adminform.form.image.help_text %}
+            <span class="ok-help-text">{{ adminform.form.image.help_text }}</span>
           {% endif %}
-          {% for error in form.image.errors %}
+          {% for error in adminform.form.image.errors %}
             <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
           {% endfor %}
         </div>
@@ -159,27 +159,27 @@
         <div class="ok-grid-2">
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.username.id_for_label }}">
-              {{ form.username.label }}
+            <label class="ok-label" for="{{ adminform.form.username.id_for_label }}">
+              {{ adminform.form.username.label }}
             </label>
-            {{ form.username }}
-            {% if form.username.help_text %}
-              <span class="ok-help-text">{{ form.username.help_text }}</span>
+            {{ adminform.form.username }}
+            {% if adminform.form.username.help_text %}
+              <span class="ok-help-text">{{ adminform.form.username.help_text }}</span>
             {% endif %}
-            {% for error in form.username.errors %}
+            {% for error in adminform.form.username.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
 
           <div class="ok-field-group">
-            <label class="ok-label" for="{{ form.password.id_for_label }}">
-              {{ form.password.label }}
+            <label class="ok-label" for="{{ adminform.form.password.id_for_label }}">
+              {{ adminform.form.password.label }}
             </label>
-            {{ form.password }}
-            {% if form.password.help_text %}
-              <span class="ok-help-text">{{ form.password.help_text }}</span>
+            {{ adminform.form.password }}
+            {% if adminform.form.password.help_text %}
+              <span class="ok-help-text">{{ adminform.form.password.help_text }}</span>
             {% endif %}
-            {% for error in form.password.errors %}
+            {% for error in adminform.form.password.errors %}
               <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
             {% endfor %}
           </div>
@@ -196,12 +196,12 @@
       </div>
       <div class="ok-card-body">
         <div class="ok-field-group">
-          <label class="ok-label" for="{{ form.is_active.id_for_label }}" style="flex-direction:row;">
-            {{ form.is_active }}
+          <label class="ok-label" for="{{ adminform.form.is_active.id_for_label }}" style="flex-direction:row;">
+            {{ adminform.form.is_active }}
             Аккаунт активен сразу после создания
           </label>
-          {% if form.is_active.help_text %}
-            <span class="ok-help-text">{{ form.is_active.help_text }}</span>
+          {% if adminform.form.is_active.help_text %}
+            <span class="ok-help-text">{{ adminform.form.is_active.help_text }}</span>
           {% endif %}
         </div>
       </div>
