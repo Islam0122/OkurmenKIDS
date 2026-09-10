@@ -232,28 +232,28 @@ JAZZMIN_SETTINGS = {
 
 
 
-    # Hide the raw "Users" app group from the sidebar — every model in it
-    # (Teacher, Subject, User) is exposed instead through the custom groups
-    # below, grouped the way an academy admin actually thinks about them
+    # Hide the raw "Users"/"Academy" app groups from the sidebar — every
+    # model in them is exposed instead through the custom groups below,
+    # grouped the way an academy admin actually thinks about them
     # (teaching staff/students, organisation, day-to-day control, system)
     # rather than by Django app label.
-    "hide_apps": ["users"],
+    "hide_apps": ["users", "academy"],
 
     "custom_links": {
         "обучение": [
             {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
-            {"name": "Студенты · скоро", "url": "#", "icon": "bi bi-mortarboard"},
-            {"name": "Группы · скоро", "url": "#", "icon": "bi bi-people"},
+            {"name": "Студенты", "model": "academy.student", "icon": "bi bi-mortarboard"},
+            {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-journal-bookmark"},
         ],
         "организация": [
-            {"name": "Расписание · скоро", "url": "#", "icon": "bi bi-calendar-week"},
-            {"name": "Кабинеты · скоро", "url": "#", "icon": "bi bi-door-open"},
+            {"name": "Расписание", "model": "academy.schedule", "icon": "bi bi-calendar-week"},
+            {"name": "Кабинеты", "model": "academy.room", "icon": "bi bi-door-open"},
         ],
         "контроль": [
-            {"name": "Посещаемость · скоро", "url": "#", "icon": "bi bi-clipboard-check"},
-            {"name": "Домашние задания · скоро", "url": "#", "icon": "bi bi-journal-text"},
-            {"name": "KPI · скоро", "url": "#", "icon": "bi bi-graph-up-arrow"},
+            {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
+            {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-text"},
+            {"name": "KPI", "model": "academy.kpi", "icon": "bi bi-graph-up-arrow"},
         ],
         "система": [
             {"name": "Администраторы", "model": "users.user", "icon": "bi bi-shield-lock"},
@@ -279,6 +279,13 @@ JAZZMIN_SETTINGS = {
         # custom_links.
         "users.teacher": "bi bi-person-badge",
         "users.subject": "bi bi-journal-bookmark",
+        "academy.student": "bi bi-mortarboard",
+        "academy.group": "bi bi-people",
+        "academy.room": "bi bi-door-open",
+        "academy.schedule": "bi bi-calendar-week",
+        "academy.attendance": "bi bi-clipboard-check",
+        "academy.homework": "bi bi-journal-text",
+        "academy.kpi": "bi bi-graph-up-arrow",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

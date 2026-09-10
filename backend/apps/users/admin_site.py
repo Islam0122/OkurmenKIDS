@@ -9,7 +9,8 @@ unchanged; we only touch ``index()``.
 from __future__ import annotations
 
 from django.contrib.admin import AdminSite
-from django.db.models import Count
+from django.db.models import Avg, Count, Q
+from django.utils import timezone
 
 from apps.users.models import Subject, Teacher, User
 
@@ -31,12 +32,11 @@ class OkurmenKidsAdminSite(AdminSite):
 
     @staticmethod
     def _build_dashboard_stats() -> dict:
-        """Real numbers for the modules that exist today.
+        """Real numbers for every module — Teacher/Subject plus academy."""
+        # Imported lazily to avoid a hard app-loading-order dependency
+        # between users and academy at import time.
+        from apps.academy.models import Attendance, Group, Homework, Student
 
-        Modules with no backend yet (students, groups, attendance, homework,
-        KPI scoring) are deliberately NOT faked here — the dashboard template
-        renders those as clearly-labelled "скоро" placeholders instead.
-        """
         teachers = Teacher.objects.all()
         subjects_breakdown = list(
             Subject.objects.filter(is_active=True)
@@ -44,6 +44,41 @@ class OkurmenKidsAdminSite(AdminSite):
             .order_by("-teacher_count")[:8]
             .values("name", "teacher_count")
         )
+
+        today = timezone.localdate()
+        last_30_days = today - timezone.timedelta(days=30)
+
+        attendance_today = Attendance.objects.filter(date=today)
+        attendance_today_total = attendance_today.count()
+        attendance_today_attended = attendance_today.filter(
+            status__in=[Attendance.Status.PRESENT, Attendance.Status.LATE]
+        ).count()
+        attendance_today_rate = (
+            round(attendance_today_attended / attendance_today_total * 100, 1)
+            if attendance_today_total
+            else None
+        )
+
+        homework_recent = Homework.objects.filter(date__gte=last_30_days)
+        homework_avg_score = homework_recent.aggregate(avg=Avg("score"))["avg"]
+        homework_recent_rate = (
+            round(homework_avg_score / 10 * 100, 1) if homework_avg_score is not None else None
+        )
+
+        attendance_recent = Attendance.objects.filter(date__gte=last_30_days)
+        attendance_recent_total = attendance_recent.count()
+        attendance_recent_attended = attendance_recent.filter(
+            status__in=[Attendance.Status.PRESENT, Attendance.Status.LATE]
+        ).count()
+        attendance_recent_rate = (
+            round(attendance_recent_attended / attendance_recent_total * 100, 1)
+            if attendance_recent_total
+            else None
+        )
+
+        kpi_components = [r for r in (attendance_recent_rate, homework_recent_rate) if r is not None]
+        average_kpi = round(sum(kpi_components) / len(kpi_components), 1) if kpi_components else None
+
         return {
             "teachers_total": teachers.count(),
             "teachers_active": teachers.filter(is_active=True).count(),
@@ -55,4 +90,11 @@ class OkurmenKidsAdminSite(AdminSite):
             "subjects_active": Subject.objects.filter(is_active=True).count(),
             "admins_total": User.objects.filter(role=User.Role.ADMIN).count(),
             "subjects_breakdown": subjects_breakdown,
+            "students_total": Student.objects.count(),
+            "students_active": Student.objects.filter(is_active=True).count(),
+            "groups_total": Group.objects.count(),
+            "groups_active": Group.objects.filter(status=Group.Status.ACTIVE).count(),
+            "attendance_today_rate": attendance_today_rate,
+            "homework_recent_rate": homework_recent_rate,
+            "average_kpi": average_kpi,
         }

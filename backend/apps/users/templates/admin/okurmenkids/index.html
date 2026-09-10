@@ -28,15 +28,13 @@
         <div class="ok-kpi-grid">
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-mortarboard"></i></div>
-                <div class="ok-kpi-value">—</div>
-                <div class="ok-kpi-label">Всего студентов</div>
-                <span class="ok-kpi-soon-tag">Скоро</span>
+                <div class="ok-kpi-value">{{ ok_stats.students_active }}</div>
+                <div class="ok-kpi-label">Студенты (из {{ ok_stats.students_total }})</div>
             </div>
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
-                <div class="ok-kpi-value">—</div>
-                <div class="ok-kpi-label">Активные группы</div>
-                <span class="ok-kpi-soon-tag">Скоро</span>
+                <div class="ok-kpi-value">{{ ok_stats.groups_active }}</div>
+                <div class="ok-kpi-label">Активные группы (из {{ ok_stats.groups_total }})</div>
             </div>
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div>
@@ -45,21 +43,21 @@
             </div>
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-clipboard-check"></i></div>
-                <div class="ok-kpi-value">—</div>
-                <div class="ok-kpi-label">Посещаемость</div>
-                <span class="ok-kpi-soon-tag">Скоро</span>
+                <div class="ok-kpi-value">{% if ok_stats.attendance_today_rate is not None %}{{ ok_stats.attendance_today_rate }}%{% else %}—{% endif %}</div>
+                <div class="ok-kpi-label">Посещаемость сегодня</div>
+                {% if ok_stats.attendance_today_rate is None %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
             </div>
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-journal-text"></i></div>
-                <div class="ok-kpi-value">—</div>
-                <div class="ok-kpi-label">Домашние задания</div>
-                <span class="ok-kpi-soon-tag">Скоро</span>
+                <div class="ok-kpi-value">{% if ok_stats.homework_recent_rate is not None %}{{ ok_stats.homework_recent_rate }}%{% else %}—{% endif %}</div>
+                <div class="ok-kpi-label">Домашние задания (30 дней)</div>
+                {% if ok_stats.homework_recent_rate is None %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
             </div>
             <div class="ok-kpi-card">
                 <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
-                <div class="ok-kpi-value">—</div>
-                <div class="ok-kpi-label">Средний KPI</div>
-                <span class="ok-kpi-soon-tag">Скоро</span>
+                <div class="ok-kpi-value">{% if ok_stats.average_kpi is not None %}{{ ok_stats.average_kpi }}%{% else %}—{% endif %}</div>
+                <div class="ok-kpi-label">Средний KPI (30 дней)</div>
+                {% if ok_stats.average_kpi is None %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
             </div>
         </div>
 
