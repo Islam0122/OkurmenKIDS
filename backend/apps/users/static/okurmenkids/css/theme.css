@@ -1,34 +1,163 @@
 /*
- * OkurmenKIDS Admin — "Green + White" premium theme
+ * OkurmenKIDS Admin — "Green + White / Soft Dark" design system
  * -----------------------------------------------------------------
  * Loaded last (after AdminLTE, the Bootswatch "flatly" base theme, and
  * Jazzmin's own main.css), so most rules here win the cascade without
  * needing !important. A handful of AdminLTE/Bootswatch rules are more
  * specific than ours, so those few are marked !important deliberately —
  * not sprinkled everywhere.
+ *
+ * Everything is driven by CSS custom properties (--ok-*) so every
+ * component — including inline styles rendered from admin.py and the
+ * standalone templates — reads from ONE source of truth for colour,
+ * spacing and radius. Dark mode is a second set of values for the same
+ * tokens, switched by [data-theme="dark"] on <html> (see ui.js), with a
+ * prefers-color-scheme fallback for a first visit.
  */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css');
 
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                      */
+/* ------------------------------------------------------------------ */
+
 :root {
-  /* Brand palette */
-  --ok-primary: #0B6E4F;        /* deep emerald */
-  --ok-primary-dark: #08543C;
-  --ok-secondary: #2E9E62;      /* fresh medium green */
-  --ok-secondary-light: #E7F5EC;
-  --ok-bg: #F6FAF8;             /* very light green/white */
-  --ok-card: #FFFFFF;
-  --ok-text: #1B211D;           /* dark charcoal, almost black */
-  --ok-text-muted: #64766C;
-  --ok-border: #E4ECE7;         /* subtle light green/gray */
-  --ok-danger: #D64545;
-  --ok-warning: #C98A1D;
-  --ok-radius: 0.6rem;
-  --ok-radius-sm: 0.4rem;
-  --ok-shadow: 0 1px 2px rgba(15, 40, 28, 0.04), 0 2px 8px rgba(15, 40, 28, 0.05);
-  --ok-shadow-hover: 0 4px 16px rgba(15, 40, 28, 0.09);
+  /* Brand */
+  --ok-primary: #2F8F5B;
+  --ok-primary-hover: #287A4D;
+  --ok-primary-soft: #E7F3EC;
+  --ok-on-primary: #FFFFFF;
+
+  /* Light surfaces (default) */
+  --ok-bg: #F7F9F7;
+  --ok-surface: #FFFFFF;
+  --ok-surface-hover: #F1F6F2;
+  --ok-surface-elevated: #FFFFFF;
+
+  --ok-text: #202622;
+  --ok-text-secondary: #68736C;
+  --ok-text-muted: #89938D;
+
+  --ok-border: #E1E7E2;
+  --ok-border-strong: #CBD6CF;
+
+  --ok-danger: #C7402E;
+  --ok-danger-soft: #FBEAE7;
+  --ok-warning: #B4790F;
+  --ok-warning-soft: #FBF1DF;
+
+  /* Shared metrics */
+  --ok-radius: 0.65rem;
+  --ok-radius-sm: 0.45rem;
+  --ok-radius-lg: 0.9rem;
+  --ok-shadow: 0 1px 2px rgba(20, 30, 24, 0.04), 0 2px 10px rgba(20, 30, 24, 0.05);
+  --ok-shadow-hover: 0 6px 20px rgba(20, 30, 24, 0.08);
   --ok-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  color-scheme: light;
+}
+
+/* Soft dark theme — explicit choice via the toggle */
+:root[data-theme="dark"] {
+  --ok-primary: #4CAF72;
+  --ok-primary-hover: #5ABB80;
+  --ok-primary-soft: rgba(76, 175, 114, 0.14);
+  --ok-on-primary: #0C130F;
+
+  --ok-bg: #101512;
+  --ok-surface: #151C18;
+  --ok-surface-hover: #1B241E;
+  --ok-surface-elevated: #202A23;
+
+  --ok-text: #E1E7E3;
+  --ok-text-secondary: #A5B0A9;
+  --ok-text-muted: #7F8A83;
+
+  --ok-border: #28332C;
+  --ok-border-strong: #36453C;
+
+  --ok-danger: #E0665A;
+  --ok-danger-soft: rgba(224, 102, 90, 0.14);
+  --ok-warning: #D9A441;
+  --ok-warning-soft: rgba(217, 164, 65, 0.14);
+
+  --ok-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 10px rgba(0, 0, 0, 0.22);
+  --ok-shadow-hover: 0 6px 22px rgba(0, 0, 0, 0.32);
+
+  color-scheme: dark;
+}
+
+/* First visit, no explicit choice yet: follow the OS preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --ok-primary: #4CAF72;
+    --ok-primary-hover: #5ABB80;
+    --ok-primary-soft: rgba(76, 175, 114, 0.14);
+    --ok-on-primary: #0C130F;
+
+    --ok-bg: #101512;
+    --ok-surface: #151C18;
+    --ok-surface-hover: #1B241E;
+    --ok-surface-elevated: #202A23;
+
+    --ok-text: #E1E7E3;
+    --ok-text-secondary: #A5B0A9;
+    --ok-text-muted: #7F8A83;
+
+    --ok-border: #28332C;
+    --ok-border-strong: #36453C;
+
+    --ok-danger: #E0665A;
+    --ok-danger-soft: rgba(224, 102, 90, 0.14);
+    --ok-warning: #D9A441;
+    --ok-warning-soft: rgba(217, 164, 65, 0.14);
+
+    --ok-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 10px rgba(0, 0, 0, 0.22);
+    --ok-shadow-hover: 0 6px 22px rgba(0, 0, 0, 0.32);
+    color-scheme: dark;
+  }
+}
+
+/* Legacy aliases: a handful of inline styles (admin.py, standalone
+   templates) were written against generic --primary/--text/--border/
+   --surface names before this token system existed. Keep them mapped to
+   the real tokens instead of hunting down every inline reference. */
+:root {
+  --primary: var(--ok-primary);
+  --primary-soft: var(--ok-primary-soft);
+  --surface: var(--ok-surface);
+  --surface-hover: var(--ok-surface-hover);
+  --text: var(--ok-text);
+  --text-secondary: var(--ok-text-secondary);
+  --text-muted: var(--ok-text-muted);
+  --border: var(--ok-border);
+}
+
+/* ------------------------------------------------------------------ */
+/* Theme transition                                                    */
+/* ------------------------------------------------------------------ */
+
+body,
+.app-header, .app-sidebar, .sidebar-brand, .user-panel,
+.sidebar-menu .nav-link, .sidebar-menu .nav-link .nav-icon,
+.card, .card-header, .small-box, .info-box,
+#result_list, .table, #result_list td, #result_list th, .table td, .table th,
+.form-control, .form-select, textarea, select, .ok-input,
+.btn, .ok-badge, .paginator, .pagination .page-link,
+.dropdown-menu, .modal-content, .breadcrumb,
+.ok-card, .ok-kpi-card, .ok-soon-card, .ok-chart-card,
+.ok-multiselect, .ok-multiselect-panel, .ok-ms-option, .ok-ms-chip,
+.ok-empty-state, .login-box .card {
+  transition:
+    background-color 250ms ease,
+    color 250ms ease,
+    border-color 250ms ease,
+    box-shadow 250ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -41,6 +170,17 @@ body {
   color: var(--ok-text);
 }
 
+.wrapper, .content-wrapper, .main-footer {
+  background: var(--ok-bg) !important;
+  color: var(--ok-text);
+}
+
+.main-footer {
+  border-top: 1px solid var(--ok-border);
+  color: var(--ok-text-muted);
+  font-size: 0.8rem;
+}
+
 h1, h2, h3, h4, h5, h6,
 .app-content-header h3 {
   font-family: var(--ok-font);
@@ -50,30 +190,77 @@ h1, h2, h3, h4, h5, h6,
 }
 
 a { color: var(--ok-primary); }
-a:hover { color: var(--ok-primary-dark); }
+a:hover { color: var(--ok-primary-hover); }
 
 .text-muted, .help, p.help, .small.text-muted { color: var(--ok-text-muted) !important; }
+
+.breadcrumb { background: transparent; }
+.breadcrumb-item, .breadcrumb-item a { color: var(--ok-text-secondary); }
+.breadcrumb-item.active { color: var(--ok-text-muted); }
+
+/* Calmer, more visible focus ring everywhere (accessibility) */
+a:focus-visible, button:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--ok-primary);
+  outline-offset: 2px;
+}
+
+::selection { background: var(--ok-primary-soft); color: var(--ok-text); }
+
+/* Slim, calm scrollbars (Webkit) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--ok-border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--ok-bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--ok-text-muted); }
 
 /* ------------------------------------------------------------------ */
 /* Top navbar                                                          */
 /* ------------------------------------------------------------------ */
 
 .app-header {
-  background: var(--ok-card) !important;
+  background: var(--ok-surface) !important;
   border-bottom: 1px solid var(--ok-border) !important;
   box-shadow: none !important;
 }
 
 .app-header .nav-link { color: var(--ok-text) !important; }
 .app-header .nav-link:hover { color: var(--ok-primary) !important; }
-.app-header .form-control-navbar { background: var(--ok-bg); border: 1px solid var(--ok-border); }
+.app-header .form-control-navbar { background: var(--ok-bg); border: 1px solid var(--ok-border); color: var(--ok-text); }
+
+/* Theme toggle button (injected by ui.js) */
+.ok-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ok-radius-sm);
+  border: 1px solid var(--ok-border);
+  background: var(--ok-surface);
+  color: var(--ok-text-secondary);
+  cursor: pointer;
+  font-size: 1rem;
+  margin: 0 0.35rem;
+}
+.ok-theme-toggle:hover {
+  background: var(--ok-surface-hover);
+  color: var(--ok-primary);
+  border-color: var(--ok-border-strong);
+}
+.ok-theme-toggle .bi-sun-fill { display: none; }
+:root[data-theme="dark"] .ok-theme-toggle .bi-moon-stars-fill { display: none; }
+:root[data-theme="dark"] .ok-theme-toggle .bi-sun-fill { display: inline; }
 
 /* ------------------------------------------------------------------ */
 /* Sidebar                                                             */
 /* ------------------------------------------------------------------ */
 
 .app-sidebar {
-  background: var(--ok-card) !important;
+  background: var(--ok-surface) !important;
   border-right: 1px solid var(--ok-border);
   box-shadow: none !important;
 }
@@ -100,8 +287,8 @@ a:hover { color: var(--ok-primary-dark); }
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  background: linear-gradient(155deg, var(--ok-secondary), var(--ok-primary));
-  color: #fff;
+  background: var(--ok-primary);
+  color: var(--ok-on-primary);
   font-weight: 800;
   font-size: 0.85rem;
   letter-spacing: 0.02em;
@@ -116,7 +303,7 @@ a:hover { color: var(--ok-primary-dark); }
 }
 
 .user-panel { border-bottom: 1px solid var(--ok-border); padding: 0.85rem 1.1rem; }
-.user-panel .user-profile { color: var(--ok-secondary); }
+.user-panel .user-profile { color: var(--ok-primary); }
 .user-panel .info a, .user-panel .info span { color: var(--ok-text) !important; font-weight: 600; font-size: 0.88rem; }
 
 .sidebar-menu .nav-header {
@@ -125,7 +312,7 @@ a:hover { color: var(--ok-primary-dark); }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  padding: 1rem 1.1rem 0.4rem;
+  padding: 1.1rem 1.1rem 0.4rem;
 }
 
 .sidebar-menu .nav-link {
@@ -135,31 +322,30 @@ a:hover { color: var(--ok-primary-dark); }
   padding: 0.55rem 0.7rem;
   font-size: 0.88rem;
   font-weight: 500;
-  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .sidebar-menu .nav-link .nav-icon {
   color: var(--ok-text-muted);
   font-size: 1rem;
   width: 1.4rem;
-  transition: color 0.15s ease;
 }
 
 .sidebar-menu .nav-link:hover {
-  background: var(--ok-secondary-light) !important;
-  color: var(--ok-primary-dark) !important;
+  background: var(--ok-surface-hover) !important;
+  color: var(--ok-primary) !important;
 }
 .sidebar-menu .nav-link:hover .nav-icon { color: var(--ok-primary); }
 
 /* Active item: subtle green background + green icon/text (spec requirement) */
 .sidebar-menu .nav-item > .nav-link.active,
 .sidebar-menu .nav-item.menu-open > .nav-link {
-  background: var(--ok-secondary-light) !important;
-  color: var(--ok-primary-dark) !important;
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-primary) !important;
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--ok-primary);
 }
-.sidebar-menu .nav-item > .nav-link.active .nav-icon { color: var(--ok-primary) !important; }
+.sidebar-menu .nav-item > .nav-link.active .nav-icon,
+.sidebar-menu .nav-item.menu-open > .nav-link .nav-icon { color: var(--ok-primary) !important; }
 
 /* "Coming soon" placeholder nav items (href="#") — present, but visibly inert */
 .sidebar-menu .nav-link[href="#"],
@@ -186,40 +372,44 @@ a:hover { color: var(--ok-primary-dark); }
   font-size: 0.86rem;
   border-radius: var(--ok-radius-sm);
   padding: 0.5rem 1rem;
-  transition: filter 0.15s ease, box-shadow 0.15s ease;
+  min-height: 2.25rem;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .btn-success, .btn-primary {
   background: var(--ok-primary) !important;
   border-color: var(--ok-primary) !important;
-  color: #fff !important;
+  color: var(--ok-on-primary) !important;
 }
 .btn-success:hover, .btn-primary:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 2px 8px rgba(11, 110, 79, 0.25);
+  background: var(--ok-primary-hover) !important;
+  border-color: var(--ok-primary-hover) !important;
+  box-shadow: 0 2px 10px rgba(47, 143, 91, 0.22);
 }
 
 .btn-outline-success, .btn-secondary {
-  background: #fff !important;
+  background: var(--ok-surface) !important;
   border: 1.5px solid var(--ok-primary) !important;
   color: var(--ok-primary) !important;
 }
 .btn-outline-success:hover, .btn-secondary:hover {
-  background: var(--ok-secondary-light) !important;
-  color: var(--ok-primary-dark) !important;
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-primary-hover) !important;
 }
 
-.btn-danger {
+.btn-danger, .btn-outline-danger {
   background: var(--ok-danger) !important;
   border-color: var(--ok-danger) !important;
+  color: #fff !important;
 }
+.btn-danger:hover, .btn-outline-danger:hover { filter: brightness(1.06); }
 
 /* ------------------------------------------------------------------ */
-/* Cards                                                                */
+/* Cards (Django admin / dashboard modules)                            */
 /* ------------------------------------------------------------------ */
 
 .card {
-  background: var(--ok-card);
+  background: var(--ok-surface);
   border: 1px solid var(--ok-border);
   border-radius: var(--ok-radius);
   box-shadow: var(--ok-shadow);
@@ -228,22 +418,150 @@ a:hover { color: var(--ok-primary-dark); }
 .card-header {
   background: transparent;
   border-bottom: 1px solid var(--ok-border);
+  color: var(--ok-text);
   font-weight: 700;
   padding: 0.9rem 1.1rem;
 }
 
-.card-body { padding: 1.1rem; }
+.card-body { padding: 1.1rem; color: var(--ok-text); }
+
+/* Reusable "form card" building blocks — shared by every custom admin
+   template so no page needs its own <style> block for the same thing. */
+
+.ok-card {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+  box-shadow: var(--ok-shadow);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+.ok-card-header {
+  padding: 1rem 1.35rem;
+  background: var(--ok-surface-hover);
+  border-bottom: 1px solid var(--ok-border);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ok-text);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ok-card-header i { color: var(--ok-primary); }
+
+.ok-card-body { padding: 1.35rem; }
+
+.ok-form-container { max-width: 860px; margin: 1.25rem auto 3rem; }
+
+.ok-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+.ok-grid-full { grid-column: 1 / -1; }
+@media (max-width: 640px) { .ok-grid-2 { grid-template-columns: 1fr; } }
+
+.ok-field-group { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.ok-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ok-text);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.ok-label-required { color: var(--ok-danger); }
+
+.ok-help-text { font-size: 0.78rem; color: var(--ok-text-muted); margin-top: 0.1rem; }
+
+.ok-error-text {
+  font-size: 0.8rem;
+  color: var(--ok-danger);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ok-badge-auto {
+  font-size: 0.72rem;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+  border: 1px solid var(--ok-primary);
+}
+
+.ok-alert {
+  border-radius: var(--ok-radius-sm);
+  padding: 0.85rem 1.05rem;
+  font-size: 0.88rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid transparent;
+}
+.ok-alert-danger { background: var(--ok-danger-soft); color: var(--ok-danger); border-color: var(--ok-danger); }
+.ok-alert-warning {
+  display: flex; align-items: flex-start; gap: 0.6rem;
+  background: var(--ok-warning-soft); color: var(--ok-warning); border-color: var(--ok-warning);
+}
+.ok-alert-warning i { font-size: 1rem; line-height: 1.3; }
+
+.ok-form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding: 1.1rem 1.35rem;
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+}
+
+.ok-btn-primary, .ok-btn-secondary {
+  padding: 0.62rem 1.25rem;
+  border-radius: var(--ok-radius-sm);
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.ok-btn-primary { background: var(--ok-primary); color: var(--ok-on-primary); }
+.ok-btn-primary:hover { background: var(--ok-primary-hover); color: var(--ok-on-primary); }
+.ok-btn-secondary { background: var(--ok-surface); border-color: var(--ok-border); color: var(--ok-text-secondary); }
+.ok-btn-secondary:hover { background: var(--ok-surface-hover); color: var(--ok-text); }
+
+/* Profile summary strip (used on the change-password screen) */
+.ok-person-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.ok-person-avatar {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: var(--ok-primary-soft); color: var(--ok-primary);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 1.1rem; flex-shrink: 0; overflow: hidden;
+}
+.ok-person-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ok-person-name { margin: 0; font-size: 1.02rem; font-weight: 700; color: var(--ok-text); }
+.ok-person-meta {
+  font-size: 0.85rem; color: var(--ok-text-muted);
+  display: flex; align-items: center; gap: 0.35rem; margin-top: 0.2rem;
+}
 
 /* ------------------------------------------------------------------ */
 /* Tables                                                               */
 /* ------------------------------------------------------------------ */
 
 #result_list, .table, .card table {
-  background: var(--ok-card);
+  background: var(--ok-surface);
+  color: var(--ok-text);
 }
 
 #result_list thead th, .table thead th {
-  background: var(--ok-bg) !important;
+  background: var(--ok-surface-hover) !important;
   color: var(--ok-text-muted);
   font-size: 0.72rem;
   font-weight: 700;
@@ -257,61 +575,117 @@ a:hover { color: var(--ok-primary-dark); }
 
 #result_list td, #result_list th, .table td, .table th {
   border-top: 1px solid var(--ok-border);
-  padding: 0.7rem 0.85rem;
+  padding: 0.75rem 0.9rem;
   vertical-align: middle;
   font-size: 0.87rem;
+  color: var(--ok-text);
 }
 
 #result_list tbody tr:hover, .table tbody tr:hover {
-  background: var(--ok-secondary-light);
+  background: var(--ok-surface-hover);
 }
 
-.paginator, .pagination .page-link {
+#result_list a, .table a { color: var(--ok-text); font-weight: 500; }
+#result_list a:hover, .table a:hover { color: var(--ok-primary); }
+
+/* Table + filters can outgrow narrow viewports — scroll horizontally
+   instead of breaking the page layout (responsive requirement). */
+#changelist .results, .ok-table-scroll { overflow-x: auto; }
+
+.paginator, .pagination .page-link { color: var(--ok-text); }
+.paginator { color: var(--ok-text-muted); font-size: 0.82rem; }
+.pagination .page-link {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
   color: var(--ok-text);
 }
-.pagination .page-link {
-  background: #fff;
-  border: 1px solid var(--ok-border);
-}
 .pagination .page-link:hover {
-  background: var(--ok-secondary-light);
-  color: var(--ok-primary-dark);
+  background: var(--ok-surface-hover);
+  color: var(--ok-primary);
 }
 .pagination .page-item.active .page-link {
   background: var(--ok-primary);
   border-color: var(--ok-primary);
-  color: #fff;
+  color: var(--ok-on-primary);
 }
+
+/* Empty changelist — friendly message instead of a bare "0 results"
+   (injected/decorated by ui.js; this just supplies the look). */
+.ok-empty-state {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  border: 1px dashed var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+  background: var(--ok-surface);
+  color: var(--ok-text-muted);
+}
+.ok-empty-state i {
+  display: block;
+  font-size: 2rem;
+  color: var(--ok-primary);
+  margin-bottom: 0.75rem;
+  opacity: 0.8;
+}
+.ok-empty-state h4 { color: var(--ok-text); font-size: 1.05rem; margin: 0 0 0.35rem; }
+.ok-empty-state p { margin: 0; font-size: 0.88rem; }
 
 /* Neutralize the base theme's solid-blue "info" alert so nothing renders
    off-brand blue even if Django's messages framework emits an info-level
    message somewhere outside our own code paths (which only ever use
    success/warning/error). */
 .alert-info {
-  background-color: var(--ok-secondary-light) !important;
-  color: var(--ok-primary-dark) !important;
+  background-color: var(--ok-primary-soft) !important;
+  color: var(--ok-primary) !important;
+  border-color: var(--ok-primary) !important;
 }
-.alert-info a, .alert-info .alert-link { color: var(--ok-primary-dark) !important; }
+.alert-info a, .alert-info .alert-link { color: var(--ok-primary) !important; }
+
+.alert-success { background-color: var(--ok-primary-soft) !important; color: var(--ok-primary) !important; border-left: 3px solid var(--ok-primary); }
+.alert-warning { background-color: var(--ok-warning-soft) !important; color: var(--ok-warning) !important; border-left: 3px solid var(--ok-warning); }
+.alert-danger, .errornote { background-color: var(--ok-danger-soft) !important; color: var(--ok-danger) !important; border-left: 3px solid var(--ok-danger); }
 
 /* ------------------------------------------------------------------ */
-/* Status badges                                                       */
+/* Status badges — one consistent system                              */
 /* ------------------------------------------------------------------ */
 
 .ok-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.22rem 0.6rem;
+  padding: 0.24rem 0.62rem;
   border-radius: 999px;
   font-size: 0.74rem;
   font-weight: 700;
   line-height: 1.4;
+  white-space: nowrap;
 }
-.ok-badge-success { background: var(--ok-secondary-light); color: var(--ok-primary-dark); }
-.ok-badge-muted { background: #F1F3F1; color: var(--ok-text-muted); }
-.ok-badge-warning { background: #FBF1DF; color: var(--ok-warning); }
-.ok-badge-danger { background: #FBEAEA; color: var(--ok-danger); }
-.ok-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ok-badge-success { background: var(--ok-primary-soft); color: var(--ok-primary); }
+.ok-badge-muted { background: var(--ok-surface-hover); color: var(--ok-text-muted); border: 1px solid var(--ok-border); }
+.ok-badge-warning { background: var(--ok-warning-soft); color: var(--ok-warning); }
+.ok-badge-danger { background: var(--ok-danger-soft); color: var(--ok-danger); }
+.ok-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* Subject / tag chips used in list views */
+.ok-chip {
+  display: inline-block;
+  padding: 0.16rem 0.55rem;
+  background: var(--ok-surface-hover);
+  border: 1px solid var(--ok-border);
+  color: var(--ok-text);
+  border-radius: var(--ok-radius-sm);
+  font-size: 0.75rem;
+  margin-right: 4px;
+  font-weight: 500;
+}
+.ok-chip-more {
+  display: inline-block;
+  padding: 0.16rem 0.5rem;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  border-radius: var(--ok-radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
 
 /* ------------------------------------------------------------------ */
 /* Forms                                                                */
@@ -323,17 +697,37 @@ label, .form-label {
   color: var(--ok-text);
 }
 
-.form-control, .form-select, textarea, select {
+.form-control, .form-select, textarea, select,
+.ok-input, .ok-card input[type="text"], .ok-card input[type="password"],
+.ok-form-container input, .ok-form-container select, .ok-form-container textarea {
   border: 1px solid var(--ok-border);
   border-radius: var(--ok-radius-sm);
   font-size: 0.88rem;
-  padding: 0.55rem 0.75rem;
-  background: #fff;
+  padding: 0.6rem 0.8rem;
+  min-height: 2.5rem;
+  background: var(--ok-surface);
+  color: var(--ok-text);
 }
 
-.form-control:focus, .form-select:focus {
+textarea, .ok-form-container textarea { min-height: 5.5rem; resize: vertical; }
+
+.form-control:focus, .form-select:focus,
+.ok-input:focus, .ok-form-container input:focus,
+.ok-form-container select:focus, .ok-form-container textarea:focus {
   border-color: var(--ok-primary);
-  box-shadow: 0 0 0 3px rgba(11, 110, 79, 0.14);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ok-primary-soft);
+}
+
+.form-control::placeholder, .ok-input::placeholder { color: var(--ok-text-muted); opacity: 1; }
+
+.form-control:disabled, .form-select:disabled, select:disabled {
+  background: var(--ok-surface-hover);
+  color: var(--ok-text-muted);
+}
+
+select[multiple] {
+  min-height: 8rem;
 }
 
 .help, p.help, .form-text {
@@ -342,9 +736,16 @@ label, .form-label {
   margin-top: 0.25rem;
 }
 
-.errorlist { color: var(--ok-danger); font-size: 0.82rem; }
-.errornote, .alert-danger { border-left: 3px solid var(--ok-danger); }
-.alert-success { border-left: 3px solid var(--ok-primary); }
+.errorlist { color: var(--ok-danger); font-size: 0.82rem; padding-left: 0; list-style: none; }
+.errorlist li { display: flex; align-items: center; gap: 0.3rem; }
+
+fieldset.module, .form-row { border-color: var(--ok-border) !important; }
+.module h2, .module caption, fieldset.module h2 {
+  background: var(--ok-surface-hover) !important;
+  color: var(--ok-text) !important;
+}
+
+.checkbox-row label, label.vCheckboxLabel { font-weight: 500; }
 
 /* Password visibility toggle (added by okurmenkids/js/ui.js) */
 .ok-password-wrap { position: relative; }
@@ -365,12 +766,207 @@ label, .form-label {
 .ok-password-wrap input[type="text"] { padding-right: 2.2rem; }
 
 /* ------------------------------------------------------------------ */
+/* Comfortable multi-select (subjects, students, …)                    */
+/* ------------------------------------------------------------------ */
+
+/* The source <select multiple> is hidden but kept in the DOM (still the
+   thing that actually submits) once ui.js enhances it. */
+.ok-ms-native { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+
+.ok-multiselect {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  background: var(--ok-surface);
+  overflow: hidden;
+}
+
+.ok-ms-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--ok-border);
+}
+.ok-ms-search i { color: var(--ok-text-muted); }
+.ok-ms-search input {
+  border: none !important;
+  outline: none;
+  background: transparent !important;
+  padding: 0.15rem 0 !important;
+  min-height: auto !important;
+  font-size: 0.88rem;
+  flex: 1;
+  color: var(--ok-text);
+  box-shadow: none !important;
+}
+
+.ok-ms-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.7rem 0.8rem 0.2rem;
+}
+.ok-ms-chips:empty { display: none; }
+
+.ok-ms-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  border-radius: 999px;
+  padding: 0.24rem 0.5rem 0.24rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.ok-ms-chip button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+.ok-ms-chip button:hover { opacity: 1; }
+
+.ok-multiselect-panel {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.35rem;
+}
+
+.ok-ms-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--ok-radius-sm);
+  font-size: 0.87rem;
+  color: var(--ok-text);
+  cursor: pointer;
+  user-select: none;
+}
+.ok-ms-option:hover { background: var(--ok-surface-hover); }
+.ok-ms-option.is-selected { background: var(--ok-primary-soft); color: var(--ok-primary); font-weight: 600; }
+.ok-ms-option.is-hidden { display: none; }
+.ok-ms-option i { color: var(--ok-primary); visibility: hidden; }
+.ok-ms-option.is-selected i { visibility: visible; }
+
+.ok-ms-empty { padding: 1rem 0.65rem; text-align: center; color: var(--ok-text-muted); font-size: 0.85rem; }
+
+.ok-ms-footer {
+  padding: 0.5rem 0.8rem;
+  border-top: 1px solid var(--ok-border);
+  font-size: 0.76rem;
+  color: var(--ok-text-muted);
+  background: var(--ok-surface-hover);
+}
+.ok-ms-footer strong { color: var(--ok-text); }
+
+/* ------------------------------------------------------------------ */
+/* Filters sidebar                                                     */
+/* ------------------------------------------------------------------ */
+
+#changelist-filter {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow);
+  padding-bottom: 0.5rem;
+}
+#changelist-filter h2 {
+  background: var(--ok-surface-hover) !important;
+  color: var(--ok-text) !important;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-radius: var(--ok-radius) var(--ok-radius) 0 0;
+}
+#changelist-filter h3 {
+  color: var(--ok-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem 0.3rem;
+  margin: 0;
+}
+#changelist-filter ul { margin: 0 0 0.4rem; padding: 0 0.5rem; }
+#changelist-filter li { list-style: none; }
+#changelist-filter li a {
+  display: block;
+  padding: 0.32rem 0.6rem;
+  border-radius: var(--ok-radius-sm);
+  color: var(--ok-text-secondary);
+  font-size: 0.84rem;
+}
+#changelist-filter li a:hover { background: var(--ok-surface-hover); color: var(--ok-text); }
+#changelist-filter li.selected a {
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  font-weight: 600;
+}
+
+#changelist-search, .actions {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow);
+}
+
+/* Search box */
+#searchbar {
+  background: var(--ok-surface) !important;
+  color: var(--ok-text) !important;
+}
+#changelist-search .search-button-wrapper { display: flex; gap: 0.5rem; }
+
+/* Actions row — make "Go" clearly primary, and visually warn when a
+   destructive action (name/label containing "удал") is selected. */
+.actions select { min-width: 220px; }
+.actions .button, .actions button[type="submit"] {
+  background: var(--ok-primary);
+  border-color: var(--ok-primary);
+  color: var(--ok-on-primary);
+}
+.actions.ok-action-danger .button,
+.actions.ok-action-danger button[type="submit"] {
+  background: var(--ok-danger) !important;
+  border-color: var(--ok-danger) !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dropdowns / modals (AdminLTE + Bootstrap)                           */
+/* ------------------------------------------------------------------ */
+
+.dropdown-menu {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  box-shadow: var(--ok-shadow-hover);
+  color: var(--ok-text);
+}
+.dropdown-item { color: var(--ok-text); }
+.dropdown-item:hover, .dropdown-item:focus { background: var(--ok-surface-hover); color: var(--ok-text); }
+.dropdown-divider { border-color: var(--ok-border); }
+
+.modal-content {
+  background: var(--ok-surface);
+  color: var(--ok-text);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+}
+.modal-header, .modal-footer { border-color: var(--ok-border); }
+
+/* ------------------------------------------------------------------ */
 /* Dashboard: KPI cards, charts, roadmap                                */
 /* ------------------------------------------------------------------ */
 
 .ok-welcome { margin-bottom: 1.4rem; }
 .ok-welcome h1 { font-size: 1.5rem; margin-bottom: 0.2rem; }
-.ok-welcome p { color: var(--ok-text-muted); margin: 0; }
+.ok-welcome p { color: var(--ok-text-muted); margin: 0; font-size: 0.92rem; }
 
 .ok-kpi-grid {
   display: grid;
@@ -380,16 +976,15 @@ label, .form-label {
 }
 
 .ok-kpi-card {
-  background: var(--ok-card);
+  background: var(--ok-surface);
   border: 1px solid var(--ok-border);
   border-radius: var(--ok-radius);
   box-shadow: var(--ok-shadow);
   padding: 1.1rem 1.2rem;
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
-.ok-kpi-card:hover { box-shadow: var(--ok-shadow-hover); transform: translateY(-1px); }
+.ok-kpi-card:hover { box-shadow: var(--ok-shadow-hover); }
 
-.ok-kpi-card.is-soon { opacity: 0.65; }
+.ok-kpi-card.is-soon { opacity: 0.7; }
 
 .ok-kpi-icon {
   width: 34px;
@@ -398,7 +993,7 @@ label, .form-label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--ok-secondary-light);
+  background: var(--ok-primary-soft);
   color: var(--ok-primary);
   font-size: 1rem;
   margin-bottom: 0.7rem;
@@ -414,7 +1009,8 @@ label, .form-label {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ok-text-muted);
-  background: #F1F3F1;
+  background: var(--ok-surface-hover);
+  border: 1px solid var(--ok-border);
   border-radius: 999px;
   padding: 0.15rem 0.5rem;
 }
@@ -425,17 +1021,36 @@ label, .form-label {
 .ok-soon-card {
   border: 1px dashed var(--ok-border);
   border-radius: var(--ok-radius);
-  background: #FBFDFC;
+  background: var(--ok-surface);
   padding: 1.4rem;
   text-align: center;
   color: var(--ok-text-muted);
+  font-size: 0.86rem;
 }
-.ok-soon-card i { font-size: 1.4rem; color: var(--ok-secondary); margin-bottom: 0.4rem; display: block; }
+.ok-soon-card i { font-size: 1.4rem; color: var(--ok-primary); margin-bottom: 0.4rem; display: block; }
 
 /* ------------------------------------------------------------------ */
-/* Booleans / login screen touch-ups                                   */
+/* Login screen                                                        */
 /* ------------------------------------------------------------------ */
 
 .login-page, .login-box { background: var(--ok-bg); }
 .login-box .card { box-shadow: var(--ok-shadow-hover); }
 .login-page .btn-success { width: 100%; }
+.login-page .card-body, .login-page label { color: var(--ok-text); }
+.login-box .ok-theme-toggle { position: absolute; top: 1rem; right: 1rem; }
+
+/* ------------------------------------------------------------------ */
+/* Responsive                                                          */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 991px) {
+  .ok-form-container { margin: 1rem auto 2rem; }
+  .ok-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .ok-card-body { padding: 1rem; }
+  .ok-form-actions { flex-direction: column; align-items: stretch; }
+  .ok-form-actions .ok-btn-primary, .ok-form-actions .ok-btn-secondary { justify-content: center; }
+  .ok-person-row { flex-wrap: wrap; }
+}
