@@ -56,7 +56,7 @@ def create_teacher(
             first_name=first_name,
             last_name=last_name,
             role=User.Role.TEACHER,
-            is_verified=True,
+            is_verified=False,
         )
         user.is_active = is_active
         user.set_password(password)
