@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -32,13 +33,14 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     "rest_framework",
+    "rest_framework_simplejwt",
     "corsheaders",
     "drf_spectacular",
     "django_filters",
 ]
 
 LOCAL_APPS = [
-    "apps.users",
+    "apps.users.apps.UsersConfig",
 ]
 
 INSTALLED_APPS = (
@@ -128,13 +130,17 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+AUTH_USER_MODEL = "users.User"
 
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
     ],
+    # "DEFAULT_PERMISSION_CLASSES": [
+    #     "rest_framework.permissions.IsAuthenticated",
+    # ],
     "DEFAULT_SCHEMA_CLASS": (
         "drf_spectacular.openapi.AutoSchema"
     ),
@@ -159,6 +165,26 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
     ],
 }
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": False,
+    "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
+
+EMAIL_VERIFICATION_TOKEN_MAX_AGE = 60 * 60 * 24 * 3  # 3 days
+
+FRONTEND_BASE_URL = env(
+    "FRONTEND_BASE_URL",
+    default="http://localhost:8000",
+)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "OkurmenKIDS API",
@@ -186,40 +212,91 @@ JAZZMIN_SETTINGS = {
     "site_title": "OkurmenKIDS",
     "site_header": "OkurmenKIDS",
     "site_brand": "OkurmenKIDS",
+    # No custom logo asset — the sidebar brand mark is drawn with CSS
+    # (an "OK" emblem + wordmark) instead of an <img>; hide Jazzmin's
+    # bundled default logo rather than requiring a new binary asset.
+    "site_logo_classes": "ok-hidden-logo",
 
     "welcome_sign": "Добро пожаловать в OkurmenKIDS 👋",
     "copyright": "OkurmenKIDS © 2026",
 
     "show_sidebar": True,
     "navigation_expanded": True,
-
     "use_google_fonts_cdn": False,
+    "show_ui_builder": True,
+    "changeform_format": "single",
 
-    # Sidebar
-    "show_ui_builder": False,
 
-    # Top menu
-    "topmenu_links": [
-        {
-            "name": "API Documentation",
-            "url": "/api/docs/",
-            "new_window": True,
-        },
-    ],
 
-    # Icons
-    "icons": {
-        "auth": "fas fa-users-cog",
-        "users": "fas fa-user-shield",
-        "trainers": "fas fa-chalkboard-teacher",
-        "students": "fas fa-user-graduate",
-        "groups": "fas fa-users",
-        "courses": "fas fa-book",
-        "rooms": "fas fa-door-open",
-        "schedules": "fas fa-calendar-alt",
-        "attendance": "fas fa-user-check",
-        "homework": "fas fa-tasks",
-        "kpi": "fas fa-chart-line",
+    # Hide the raw "Users" app group from the sidebar — Teacher and Subject
+    # are exposed instead under the "Обучение" custom group below, in the
+    # order the product actually wants them shown. Admin accounts stay
+    # reachable under "Система".
+    "hide_apps": ["users"],
+
+    "custom_links": {
+        "обучение": [
+            {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
+            {"name": "Предметы", "model": "users.subject", "icon": "bi bi-journal-bookmark"},
+            {"name": "Студенты · скоро", "url": "#", "icon": "bi bi-mortarboard"},
+            {"name": "Группы · скоро", "url": "#", "icon": "bi bi-people"},
+            {"name": "Расписание · скоро", "url": "#", "icon": "bi bi-calendar-week"},
+            {"name": "Посещаемость · скоро", "url": "#", "icon": "bi bi-clipboard-check"},
+            {"name": "Домашние задания · скоро", "url": "#", "icon": "bi bi-journal-text"},
+            {"name": "KPI · скоро", "url": "#", "icon": "bi bi-graph-up-arrow"},
+        ],
     },
+
+    # NOTE: Jazzmin lower-cases every key in "icons" internally, so custom
+    # group keys above are kept lowercase too — otherwise the icon lookup
+    # silently misses. The sidebar visually re-uppercases these via CSS
+    # (.nav-header { text-transform: uppercase }), which is also just the
+    # more typical look for section labels in a premium dashboard.
+    "icons": {
+        "обучение": "bi bi-mortarboard-fill",
+        "система": "bi bi-gear",
+        "auth": "bi bi-people",
+        "auth.group": "bi bi-people",
+        "users.user": "bi bi-shield-lock",
+        # "model"-type custom_links entries ignore their own "icon" key and
+        # look the icon up here by "app_label.model" instead — so Тренеры
+        # and Предметы need entries here too, not just in custom_links.
+        "users.teacher": "bi bi-person-badge",
+        "users.subject": "bi bi-journal-bookmark",
+    },
+    "default_icon_parents": "bi bi-folder2",
+    "default_icon_children": "bi bi-circle",
+
+    # UI tweaks (fonts, icons, colours) — everything else lives in the CSS.
+    "custom_css": "okurmenkids/css/theme.css",
+    "custom_js": "okurmenkids/js/ui.js",
 }
 
+JAZZMIN_UI_TWEAKS = {
+"theme": "flatly",
+
+"navbar": "navbar-white navbar-light",
+"no_navbar_border": True,
+"navbar_fixed": True,
+
+"sidebar": "sidebar-light-primary",
+"sidebar_fixed": True,
+"sidebar_nav_flat_style": True,
+"sidebar_nav_child_indent": True,
+
+"footer_fixed": False,
+"layout_boxed": False,
+
+"accent": "accent-success",
+
+"button_classes": {
+    "primary": "btn-success",
+    "secondary": "btn-outline-success",
+    "info": "btn-success",
+    "warning": "btn-warning",
+    "danger": "btn-danger",
+    "success": "btn-success",
+},
+
+
+}

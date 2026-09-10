@@ -1,6 +1,21 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+
+
+class CustomUserManager(UserManager):
+    """Ensures `python manage.py createsuperuser` produces a correct ADMIN.
+
+    Without this, `role` would fall back to its model default (TEACHER) for
+    any superuser created via the standard command, and the account would
+    also be blocked at login by the Trainer verification checks. Superusers
+    are trusted admin accounts from the moment they're created.
+    """
+
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        extra_fields.setdefault("role", User.Role.ADMIN)
+        extra_fields.setdefault("is_verified", True)
+        return super().create_superuser(username, email, password, **extra_fields)
 
 
 class User(AbstractUser):
@@ -49,12 +64,6 @@ class User(AbstractUser):
         help_text="Подтверждён ли аккаунт администратором.",
     )
 
-    is_email_verified = models.BooleanField(
-        default=False,
-        verbose_name="Email подтверждён",
-        help_text="Подтверждён ли адрес электронной почты пользователя.",
-    )
-
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Дата создания",
@@ -66,6 +75,8 @@ class User(AbstractUser):
         verbose_name="Дата обновления",
         help_text="Дата и время последнего изменения аккаунта.",
     )
+
+    objects = CustomUserManager()
 
     class Meta:
         verbose_name = "Пользователь"

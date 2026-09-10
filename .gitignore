@@ -15,7 +15,7 @@ media/
 staticfiles/
 
 # Environment
-.env
+backend/.env
 
 # IDE
 .vscode/

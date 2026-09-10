@@ -1,0 +1,504 @@
+/*
+ * OkurmenKIDS Admin — Eye-Comfort Dual Theme System (Pure CSS)
+ * -----------------------------------------------------------------
+ * Designed for 6–8h daily use. Zero pure black (#000), zero pure white text,
+ * zero neon accents, zero heavy glows, zero purple/blue gradients.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css');
+
+/* ==================================================================
+   1. LIGHT THEME (Default) — Soft Green + White Identity
+   ================================================================== */
+:root {
+  --ok-bg: #F4F7F5;
+  --ok-sidebar-bg: #FFFFFF;
+  --ok-card-bg: #FFFFFF;
+  --ok-card-elevated: #F9FBF9;
+  --ok-border: #E1E8E4;
+  --ok-border-strong: #D1DDD6;
+
+  /* Accent Greens */
+  --ok-primary: #0C7A58;
+  --ok-primary-hover: #096146;
+  --ok-primary-soft: #EBF5F0;
+
+  /* Typography */
+  --ok-text: #17211C;
+  --ok-text-secondary: #586860;
+  --ok-text-muted: #889890;
+
+  /* Status Badges */
+  --ok-badge-success-bg: #E8F5EE;
+  --ok-badge-success-text: #0C7A58;
+  --ok-badge-warning-bg: #FEF6E7;
+  --ok-badge-warning-text: #B47818;
+  --ok-badge-danger-bg: #FDF0F0;
+  --ok-badge-danger-text: #C63939;
+
+  /* Components */
+  --ok-input-bg: #FFFFFF;
+  --ok-input-border: #D1DDD6;
+  --ok-table-hover: #F2F7F4;
+
+  /* Shadows */
+  --ok-shadow-sm: 0 1px 3px rgba(15, 30, 22, 0.05);
+  --ok-shadow-md: 0 4px 12px rgba(15, 30, 22, 0.06);
+
+  --ok-font: 'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif;
+  --ok-radius-sm: 0.375rem;
+  --ok-radius: 0.625rem;
+  --ok-radius-lg: 0.875rem;
+}
+
+/* ==================================================================
+   2. DARK THEME — Muted Deep Focus Palette
+   ================================================================== */
+[data-theme="dark"] {
+  --ok-bg: #101512;
+  --ok-sidebar-bg: #141B17;
+  --ok-card-bg: #18201B;
+  --ok-card-elevated: #1C251F;
+  --ok-border: #26332B;
+  --ok-border-strong: #314238;
+
+  /* Muted Emerald (No Neon) */
+  --ok-primary: #4CAF72;
+  --ok-primary-hover: #5BBF80;
+  --ok-primary-soft: #1E2E24;
+
+  /* Soft Off-White / Sage Grays */
+  --ok-text: #E4EAE6;
+  --ok-text-secondary: #A7B2AA;
+  --ok-text-muted: #7F8B83;
+
+  /* Status Badges */
+  --ok-badge-success-bg: #192D21;
+  --ok-badge-success-text: #5BBF80;
+  --ok-badge-warning-bg: #2B2619;
+  --ok-badge-warning-text: #D9A752;
+  --ok-badge-danger-bg: #2E1B1B;
+  --ok-badge-danger-text: #E56B6B;
+
+  /* Components */
+  --ok-input-bg: #141B17;
+  --ok-input-border: #26332B;
+  --ok-table-hover: #1E2822;
+
+  /* Shadows */
+  --ok-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --ok-shadow-md: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* ==================================================================
+   3. BASE & SMOOTH TRANSITION
+   ================================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ok-border-strong) transparent;
+}
+
+body,
+.app-header,
+.app-sidebar,
+.card,
+.btn,
+.form-control,
+.form-select,
+.dropdown-menu,
+.table,
+#result_list,
+#result_list td,
+#result_list th,
+.nav-link,
+.ok-kpi-card,
+.ok-badge,
+.ok-theme-toggle {
+  transition:
+    background-color 250ms ease,
+    color 250ms ease,
+    border-color 250ms ease,
+    box-shadow 250ms ease;
+}
+
+body {
+  font-family: var(--ok-font);
+  background-color: var(--ok-bg) !important;
+  color: var(--ok-text);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6, .app-content-header h3 {
+  color: var(--ok-text);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+a { color: var(--ok-primary); text-decoration: none; }
+a:hover { color: var(--ok-primary-hover); }
+
+.text-muted, p.help, .help, .small.text-muted {
+  color: var(--ok-text-muted) !important;
+}
+
+hr { border-color: var(--ok-border); opacity: 1; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ok-border-strong); border-radius: 99px; }
+
+/* ==================================================================
+   4. TOP NAVBAR & COMPACT THEME SWITCHER
+   ================================================================== */
+.app-header {
+  background: var(--ok-sidebar-bg) !important;
+  border-bottom: 1px solid var(--ok-border) !important;
+  box-shadow: none !important;
+}
+
+.app-header .nav-link {
+  color: var(--ok-text-secondary) !important;
+}
+.app-header .nav-link:hover {
+  color: var(--ok-primary) !important;
+  background: var(--ok-primary-soft);
+}
+
+/* Theme Switcher Button */
+.ok-theme-toggle {
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-border);
+  color: var(--ok-text);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--ok-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ok-theme-toggle:hover {
+  border-color: var(--ok-border-strong);
+  color: var(--ok-primary);
+}
+
+[data-theme="light"] .ok-icon-dark { display: none; }
+[data-theme="dark"] .ok-icon-light { display: none; }
+.ok-icon-light { color: #D9A752; }
+.ok-icon-dark { color: #A7B2AA; }
+
+.dropdown-menu {
+  background: var(--ok-card-bg);
+  border: 1px solid var(--ok-border-strong);
+  box-shadow: var(--ok-shadow-md);
+  padding: 0.4rem;
+}
+.dropdown-item {
+  color: var(--ok-text);
+  border-radius: var(--ok-radius-sm);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+}
+.dropdown-item:hover {
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-primary) !important;
+}
+
+/* ==================================================================
+   5. SIDEBAR NAVIGATION
+   ================================================================== */
+.app-sidebar {
+  background: var(--ok-sidebar-bg) !important;
+  border-right: 1px solid var(--ok-border);
+}
+
+.sidebar-brand {
+  border-bottom: 1px solid var(--ok-border);
+}
+
+.sidebar-brand .brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.1rem 1.2rem;
+}
+
+.ok-hidden-logo { display: none !important; }
+
+.sidebar-brand .brand-link::before {
+  content: "OK";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-primary);
+  color: var(--ok-sidebar-bg);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.sidebar-brand .brand-text {
+  color: var(--ok-text) !important;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.sidebar-menu .nav-header {
+  color: var(--ok-text-muted) !important;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 1.2rem 1.2rem 0.4rem;
+}
+
+.sidebar-menu .nav-link {
+  color: var(--ok-text-secondary) !important;
+  border-radius: var(--ok-radius-sm);
+  margin: 2px 0.6rem;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
+.sidebar-menu .nav-link .nav-icon {
+  color: var(--ok-text-muted);
+  font-size: 1rem;
+  margin-right: 0.5rem;
+}
+
+.sidebar-menu .nav-link:hover {
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-text) !important;
+}
+
+.sidebar-menu .nav-item > .nav-link.active {
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-primary) !important;
+  font-weight: 700;
+}
+.sidebar-menu .nav-item > .nav-link.active .nav-icon {
+  color: var(--ok-primary) !important;
+}
+
+/* ==================================================================
+   6. CARDS & DASHBOARD KPI GRID
+   ================================================================== */
+.card {
+  background: var(--ok-card-bg);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow-sm);
+}
+
+.card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--ok-border);
+  padding: 0.9rem 1.2rem;
+  font-weight: 700;
+  color: var(--ok-text);
+}
+
+.card-body { padding: 1.2rem; }
+
+.ok-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.ok-kpi-card {
+  background: var(--ok-card-bg);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  padding: 1.2rem;
+}
+.ok-kpi-card:hover {
+  border-color: var(--ok-border-strong);
+  box-shadow: var(--ok-shadow-md);
+}
+
+.ok-kpi-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--ok-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.ok-kpi-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--ok-text);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ok-kpi-label {
+  font-size: 0.81rem;
+  color: var(--ok-text-secondary);
+  margin-top: 0.35rem;
+}
+
+/* ==================================================================
+   7. TABLES & DATA GRIDS
+   ================================================================== */
+#result_list, .table, .card table {
+  background: var(--ok-card-bg);
+  width: 100%;
+}
+
+#result_list thead th, .table thead th {
+  background: var(--ok-bg) !important;
+  color: var(--ok-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--ok-border) !important;
+  padding: 0.75rem 0.9rem;
+}
+
+#result_list td, #result_list th, .table td, .table th {
+  border-top: 1px solid var(--ok-border);
+  padding: 0.75rem 0.9rem;
+  color: var(--ok-text);
+  font-size: 0.875rem;
+  vertical-align: middle;
+}
+
+#result_list tbody tr:hover, .table tbody tr:hover {
+  background-color: var(--ok-table-hover) !important;
+}
+
+.pagination .page-link {
+  background: var(--ok-card-bg);
+  border: 1px solid var(--ok-border);
+  color: var(--ok-text-secondary);
+  border-radius: var(--ok-radius-sm) !important;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+.pagination .page-link:hover {
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+}
+.pagination .page-item.active .page-link {
+  background: var(--ok-primary) !important;
+  border-color: var(--ok-primary) !important;
+  color: #FFFFFF !important;
+}
+[data-theme="dark"] .pagination .page-item.active .page-link {
+  color: #101512 !important;
+}
+
+/* ==================================================================
+   8. FORMS & INPUTS
+   ================================================================== */
+label, .form-label {
+  font-weight: 600;
+  font-size: 0.83rem;
+  color: var(--ok-text);
+  margin-bottom: 0.35rem;
+}
+
+.form-control, .form-select, textarea, select {
+  background-color: var(--ok-input-bg);
+  border: 1px solid var(--ok-input-border);
+  color: var(--ok-text);
+  border-radius: var(--ok-radius-sm);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.875rem;
+}
+
+.form-control::placeholder {
+  color: var(--ok-text-muted);
+}
+
+.form-control:focus, .form-select:focus {
+  background-color: var(--ok-input-bg);
+  border-color: var(--ok-primary);
+  color: var(--ok-text);
+  box-shadow: 0 0 0 3px var(--ok-primary-soft);
+  outline: none;
+}
+
+fieldset.module {
+  background: var(--ok-card-elevated);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  padding: 1rem 1.2rem;
+  margin-bottom: 1.2rem;
+}
+fieldset.module h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ok-text-secondary);
+  border-bottom: 1px solid var(--ok-border);
+  padding-bottom: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+/* ==================================================================
+   9. STATUS BADGES & BUTTONS
+   ================================================================== */
+.ok-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.ok-badge-success { background: var(--ok-badge-success-bg); color: var(--ok-badge-success-text); }
+.ok-badge-warning { background: var(--ok-badge-warning-bg); color: var(--ok-badge-warning-text); }
+.ok-badge-danger { background: var(--ok-badge-danger-bg); color: var(--ok-badge-danger-text); }
+.ok-badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+.btn {
+  font-weight: 600;
+  font-size: 0.85rem;
+  border-radius: var(--ok-radius-sm);
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.btn-success, .btn-primary {
+  background: var(--ok-primary) !important;
+  border-color: var(--ok-primary) !important;
+  color: #FFFFFF !important;
+}
+[data-theme="dark"] .btn-success,
+[data-theme="dark"] .btn-primary {
+  color: #101512 !important;
+  font-weight: 700;
+}
+.btn-success:hover, .btn-primary:hover {
+  background: var(--ok-primary-hover) !important;
+  border-color: var(--ok-primary-hover) !important;
+}
+
+.btn-secondary, .btn-outline-success {
+  background: var(--ok-card-bg) !important;
+  border: 1px solid var(--ok-border-strong) !important;
+  color: var(--ok-text) !important;
+}
+.btn-secondary:hover, .btn-outline-success:hover {
+  background: var(--ok-primary-soft) !important;
+  color: var(--ok-primary) !important;
+  border-color: var(--ok-primary) !important;
+}

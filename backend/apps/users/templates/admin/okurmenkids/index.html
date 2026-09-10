@@ -1,0 +1,230 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+
+{% block content_title %}{% trans 'Dashboard' %}{% endblock %}
+
+{% block breadcrumbs %}
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">{% trans 'Home' %}</a></li>
+        <li class="breadcrumb-item">{% trans 'Dashboard' %}</li>
+    </ol>
+{% endblock %}
+
+{% block content %}
+    {{ ok_stats.subjects_breakdown|json_script:"ok-subjects-data" }}
+    {{ ok_stats.teachers_active|json_script:"ok-teachers-active" }}
+    {{ ok_stats.teachers_pending|json_script:"ok-teachers-pending" }}
+    {{ ok_stats.teachers_total|json_script:"ok-teachers-total" }}
+
+    <div class="col-12">
+
+        <div class="ok-welcome">
+            <h1>Добро пожаловать в OkurmenKIDS 👋</h1>
+            <p>Обзор текущего состояния академии на сегодня.</p>
+        </div>
+
+        <div class="ok-kpi-grid">
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-mortarboard"></i></div>
+                <div class="ok-kpi-value">—</div>
+                <div class="ok-kpi-label">Всего студентов</div>
+                <span class="ok-kpi-soon-tag">Скоро</span>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
+                <div class="ok-kpi-value">—</div>
+                <div class="ok-kpi-label">Активные группы</div>
+                <span class="ok-kpi-soon-tag">Скоро</span>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div>
+                <div class="ok-kpi-value">{{ ok_stats.teachers_active }}</div>
+                <div class="ok-kpi-label">Тренеры (из {{ ok_stats.teachers_total }})</div>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-clipboard-check"></i></div>
+                <div class="ok-kpi-value">—</div>
+                <div class="ok-kpi-label">Посещаемость</div>
+                <span class="ok-kpi-soon-tag">Скоро</span>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-journal-text"></i></div>
+                <div class="ok-kpi-value">—</div>
+                <div class="ok-kpi-label">Домашние задания</div>
+                <span class="ok-kpi-soon-tag">Скоро</span>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
+                <div class="ok-kpi-value">—</div>
+                <div class="ok-kpi-label">Средний KPI</div>
+                <span class="ok-kpi-soon-tag">Скоро</span>
+            </div>
+        </div>
+
+        <div class="ok-kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 1.6rem;">
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-journal-bookmark"></i></div>
+                <div class="ok-kpi-value">{{ ok_stats.subjects_active }}</div>
+                <div class="ok-kpi-label">Предметы (из {{ ok_stats.subjects_total }})</div>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+                <div class="ok-kpi-value">{{ ok_stats.teachers_pending }}</div>
+                <div class="ok-kpi-label">Ожидают подтверждения</div>
+            </div>
+            <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-shield-lock"></i></div>
+                <div class="ok-kpi-value">{{ ok_stats.admins_total }}</div>
+                <div class="ok-kpi-label">Администраторы</div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-9 col-12">
+                <div class="row">
+                    <div class="col-md-6 col-12 mb-3">
+                        <div class="card ok-chart-card">
+                            <div class="card-header">Тренеры по предметам</div>
+                            <div class="card-body"><canvas id="ok-subjects-chart"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-12 mb-3">
+                        <div class="card ok-chart-card">
+                            <div class="card-header">Статус тренеров</div>
+                            <div class="card-body"><canvas id="ok-status-chart"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-4 col-12 mb-3">
+                        <div class="ok-soon-card">
+                            <i class="bi bi-graph-up"></i>
+                            Рост числа студентов<br>появится вместе с модулем «Студенты»
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-12 mb-3">
+                        <div class="ok-soon-card">
+                            <i class="bi bi-clipboard-check"></i>
+                            Статистика посещаемости<br>появится вместе с модулем «Посещаемость»
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-12 mb-3">
+                        <div class="ok-soon-card">
+                            <i class="bi bi-journal-text"></i>
+                            Выполнение домашних заданий<br>появится вместе с модулем «Домашние задания»
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-3 col-12">
+                <div id="content-related">
+                    <div class="module" id="recent-actions-module">
+                        <h4 class="mb-3">{% trans 'Recent actions' %}</h4>
+                        {% load log %}
+                        {% get_admin_log 8 as admin_log for_user user %}
+                        {% if not admin_log %}
+                            <p>{% trans 'None available' %}</p>
+                        {% else %}
+                            <div class="timeline">
+                                {% for entry in admin_log %}
+                                    <div>
+                                        {% if entry.is_change %}
+                                            <i class="fas fa-edit bg-gray text-xs"></i>
+                                        {% elif entry.is_deletion %}
+                                            <i class="fas fa-trash bg-danger text-xs"></i>
+                                        {% elif entry.is_addition %}
+                                            <i class="fas fa-plus-circle bg-success text-xs"></i>
+                                        {% endif %}
+                                        <div class="timeline-item">
+                                            <span class="time"><i class="fas fa-clock"></i> {% blocktrans with timesince=entry.action_time|timesince %}{{ timesince }} ago{% endblocktrans %}</span>
+                                            <h3 class="timeline-header no-border">
+                                                {% if entry.is_deletion or not entry.get_admin_url %}
+                                                    {{ entry.object_repr }}
+                                                {% else %}
+                                                    <a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+                                                {% endif %}
+                                                {% if entry.model %}
+                                                    <span class="mini quiet">{% filter capfirst %}{{ entry.model }}{% endfilter %}</span>
+                                                {% endif %}
+                                            </h3>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extrajs %}
+    {{ block.super }}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script>
+        (function () {
+            if (typeof Chart === "undefined") return;
+
+            var subjects = JSON.parse(document.getElementById("ok-subjects-data").textContent) || [];
+            var active = JSON.parse(document.getElementById("ok-teachers-active").textContent) || 0;
+            var pending = JSON.parse(document.getElementById("ok-teachers-pending").textContent) || 0;
+            var total = JSON.parse(document.getElementById("ok-teachers-total").textContent) || 0;
+            var inactive = Math.max(total - active - pending, 0);
+
+            var emerald = "#0B6E4F";
+            var green = "#2E9E62";
+            var grey = "#D8E2DC";
+
+            var subjectsCtx = document.getElementById("ok-subjects-chart");
+            if (subjectsCtx) {
+                new Chart(subjectsCtx, {
+                    type: "bar",
+                    data: {
+                        labels: subjects.map(function (s) { return s.name; }),
+                        datasets: [{
+                            label: "Тренеров",
+                            data: subjects.map(function (s) { return s.teacher_count; }),
+                            backgroundColor: green,
+                            borderRadius: 6,
+                            maxBarThickness: 34
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#EEF3EF" } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+
+            var statusCtx = document.getElementById("ok-status-chart");
+            if (statusCtx) {
+                new Chart(statusCtx, {
+                    type: "doughnut",
+                    data: {
+                        labels: ["Подтверждены", "Ожидают подтверждения", "Неактивны"],
+                        datasets: [{
+                            data: [active - pending > 0 ? active - pending : active, pending, inactive],
+                            backgroundColor: [emerald, green, grey],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } }
+                    }
+                });
+            }
+        })();
+    </script>
+{% endblock %}
