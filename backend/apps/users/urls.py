@@ -1,10 +1,11 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from apps.users import views
+from . import views
 
 router = DefaultRouter()
 router.register("trainers", views.TrainerViewSet, basename="trainer")
+router.register("subject", views.SubjectViewSet, basename="user")
 
 auth_urlpatterns = [
     path("login/", views.LoginView.as_view(), name="auth-login"),

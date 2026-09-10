@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+import secrets
+import string
+
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
+from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
-from apps.users.models import Subject, Teacher, User
-from apps.users.services import change_teacher_password_and_send, create_teacher
+from .models import Subject, Teacher, User
+from .services import change_teacher_password_and_send, create_teacher
 
+admin.site.unregister(Group)
 
-# ---------------------------------------------------------------------------
-# User admin
-# ---------------------------------------------------------------------------
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -69,112 +74,217 @@ class UserAdmin(DjangoUserAdmin):
     def verified_badge(self, obj: User) -> str:
         css = "ok-badge-success" if obj.is_verified else "ok-badge-muted"
         label = "Подтверждён" if obj.is_verified else "Не подтверждён"
-        return format_html('<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label)
+        return format_html(
+            '<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label
+        )
 
     @admin.display(description="Статус")
     def active_badge(self, obj: User) -> str:
         css = "ok-badge-success" if obj.is_active else "ok-badge-danger"
         label = "Активен" if obj.is_active else "Деактивирован"
-        return format_html('<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label)
+        return format_html(
+            '<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label
+        )
 
-
-# ---------------------------------------------------------------------------
-# Subject admin
-# ---------------------------------------------------------------------------
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ("name", "active_badge", "created_at")
+    list_display = (
+        "name",
+        "description_short",
+        "teachers_count",
+        "active_badge",
+        "created_at",
+    )
     list_filter = ("is_active",)
-    search_fields = ("name",)
-    readonly_fields = ("created_at", "updated_at")
+    search_fields = ("name", "description")
+    ordering = ("name",)
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "teachers_count_detail",
+    )
+    list_per_page = 25
+    actions = (
+        "activate_subjects",
+        "deactivate_subjects",
+    )
 
-    @admin.display(description="Статус")
+    fieldsets = (
+        (
+            "Основная информация",
+            {
+                "fields": (
+                    "name",
+                    "description",
+                    "is_active",
+                ),
+            },
+        ),
+        (
+            "Статистика",
+            {
+                "fields": ("teachers_count_detail",),
+            },
+        ),
+        (
+            "Системная информация",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .annotate(teachers_count=Count("teachers", distinct=True))
+        )
+
+    @admin.display(description="Описание")
+    def description_short(self, obj: Subject) -> str:
+        if not obj.description:
+            return "—"
+        if len(obj.description) > 60:
+            return f"{obj.description[:60]}..."
+        return obj.description
+
+    @admin.display(description="Тренеры", ordering="teachers_count")
+    def teachers_count(self, obj: Subject) -> int:
+        return getattr(obj, "teachers_count", 0)
+
+    @admin.display(description="Тренеры")
+    def teachers_count_detail(self, obj: Subject) -> str:
+        if not obj.pk:
+            return "0"
+        count = getattr(obj, "teachers_count", None)
+        if count is None:
+            count = obj.teachers.count()
+        return str(count)
+
+    @admin.display(description="Статус", ordering="is_active")
     def active_badge(self, obj: Subject) -> str:
-        css = "ok-badge-success" if obj.is_active else "ok-badge-muted"
+        css = "ok-badge-success" if obj.is_active else "ok-badge-danger"
         label = "Активен" if obj.is_active else "Неактивен"
-        return format_html('<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label)
 
+        return format_html(
+            '<span class="ok-badge {}">'
+            '<span class="ok-badge-dot"></span>{}'
+            "</span>",
+            css,
+            label,
+        )
 
-# ---------------------------------------------------------------------------
-# Trainer ("Add Trainer") form — creates User + Teacher in one step.
-# Admin sets the password directly; the backend never generates one.
-# ---------------------------------------------------------------------------
+    @admin.action(description="Активировать выбранные предметы")
+    def activate_subjects(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f"Активировано предметов: {updated}.")
+
+    @admin.action(description="Деактивировать выбранные предметы")
+    def deactivate_subjects(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f"Деактивировано предметов: {updated}.")
+
 
 class AddTrainerForm(forms.ModelForm):
-    """Single form used by "Add Trainer": collects User + Teacher fields,
-    including a password Admin chooses, so Admin never has to create a User
-    first and a Teacher second.
+    first_name = forms.CharField(
+        label="Имя",
+        max_length=100,
+        widget=forms.TextInput(attrs={"placeholder": "Иван", "class": "ok-input"}),
+    )
+    last_name = forms.CharField(
+        label="Фамилия",
+        max_length=100,
+        required=False,
+        widget=forms.TextInput(attrs={"placeholder": "Иванов", "class": "ok-input"}),
+    )
+    email = forms.EmailField(
+        label="Email",
+        widget=forms.EmailInput(attrs={"placeholder": "teacher@okurmen.kg", "class": "ok-input"}),
+    )
+    username = forms.CharField(
+        label="Логин (необязательно)",
+        max_length=150,
+        required=False,
+        help_text="Если оставить пустым, сгенерируется из Email",
+        widget=forms.TextInput(attrs={"placeholder": "Автовычисление...", "class": "ok-input"}),
+    )
+    password = forms.CharField(
+        label="Пароль (необязательно)",
+        required=False,
+        widget=forms.PasswordInput(attrs={"placeholder": "Автогенерация...", "class": "ok-input"}),
+        help_text="Оставьте пустым — сгенерируется автоматически",
+    )
 
-    The account always starts with ``is_verified=False`` — verification is
-    a deliberate, separate step (admin action or ``/trainers/{id}/verify/``),
-    never something set at creation time.
-    """
-
-    first_name = forms.CharField(label="Имя", max_length=100)
-    last_name = forms.CharField(label="Фамилия", max_length=100, required=False)
-    email = forms.EmailField(label="Email")
-    username = forms.CharField(label="Логин", max_length=150)
-    password = forms.CharField(label="Пароль", widget=forms.PasswordInput)
-    password_confirm = forms.CharField(
-        label="Подтверждение пароля", widget=forms.PasswordInput
+    subjects = forms.ModelMultipleChoiceField(
+        queryset=Subject.objects.none(),
+        required=False,
+        label="Предметы",
+        widget=forms.SelectMultiple(attrs={"class": "ok-input"}),
     )
 
     class Meta:
         model = Teacher
         fields = [
             "phone",
-            "image",
-            "subjects",
             "position",
             "experience_years",
-            "bio",
             "hire_date",
+            "image",
             "is_active",
+            "bio",
         ]
+        widgets = {
+            "phone": forms.TextInput(attrs={"placeholder": "+996 (555) 00-00-00", "class": "ok-input"}),
+            "position": forms.TextInput(attrs={"placeholder": "Senior Trainer", "class": "ok-input"}),
+            "experience_years": forms.NumberInput(attrs={"class": "ok-input", "min": 0}),
+            "hire_date": forms.DateInput(attrs={"type": "date", "class": "ok-input"}),
+            "bio": forms.Textarea(attrs={"rows": 3, "class": "ok-input", "placeholder": "Краткая биография..."}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        field_order = [
-            "first_name",
-            "last_name",
-            "email",
-            "username",
-            "password",
-            "password_confirm",
-            "phone",
-            "image",
-            "subjects",
-            "position",
-            "experience_years",
-            "bio",
-            "hire_date",
-            "is_active",
-        ]
-        self.order_fields(field_order)
-
-    def clean_username(self):
-        username = self.cleaned_data["username"]
-        if User.objects.filter(username=username).exists():
-            raise forms.ValidationError("Пользователь с таким логином уже существует.")
-        return username
+        self.fields["subjects"].queryset = Subject.objects.filter(is_active=True)
+        self.fields["position"].initial = "Тренер"
+        self.fields["experience_years"].initial = 1
+        self.fields["hire_date"].initial = timezone.now().date()
 
     def clean_email(self):
-        email = self.cleaned_data["email"]
+        email = self.cleaned_data.get("email", "").strip().lower()
         if User.objects.filter(email=email).exists():
             raise forms.ValidationError("Пользователь с таким email уже существует.")
         return email
 
+    def clean_username(self):
+        username = self.cleaned_data.get("username", "").strip()
+        if username and User.objects.filter(username=username).exists():
+            raise forms.ValidationError("Пользователь с таким логином уже существует.")
+        return username
+
     def clean(self):
         cleaned = super().clean()
+        email = cleaned.get("email")
+        username = cleaned.get("username")
         password = cleaned.get("password")
-        password_confirm = cleaned.get("password_confirm")
-        if password and password_confirm and password != password_confirm:
-            self.add_error("password_confirm", "Пароли не совпадают.")
-        elif password:
-            # Run this against a throwaway, not-yet-saved User so the
-            # UserAttributeSimilarityValidator has something sensible to
-            # compare against.
+
+        if email and not username:
+            base_username = email.split("@")[0]
+            candidate = base_username
+            counter = 1
+            while User.objects.filter(username=candidate).exists():
+                candidate = f"{base_username}{counter}"
+                counter += 1
+            cleaned["username"] = candidate
+
+        if not password:
+            alphabet = string.ascii_letters + string.digits
+            cleaned["password"] = "".join(secrets.choice(alphabet) for _ in range(10))
+        else:
             temp_user = User(
                 username=cleaned.get("username", ""),
                 email=cleaned.get("email", ""),
@@ -185,28 +295,49 @@ class AddTrainerForm(forms.ModelForm):
                 validate_password(password, user=temp_user)
             except forms.ValidationError as exc:
                 self.add_error("password", exc)
+
         return cleaned
 
 
+class SubjectMultipleChoiceField(forms.ModelMultipleChoiceField):
+    def label_from_instance(self, obj: Subject) -> str:
+        return obj.name
+
+
 class ChangeTrainerForm(forms.ModelForm):
-    """Used when editing an existing Trainer — no username/email/password
-    fields here. Credentials are controlled by Admin only via the dedicated
-    "Изменить пароль и отправить" page, not free-text edits here that could
-    silently desync User <-> Teacher.
-    """
+    subjects = SubjectMultipleChoiceField(
+        queryset=Subject.objects.none(),
+        required=False,
+        label="Предметы",
+        widget=forms.SelectMultiple(
+            attrs={
+                "class": "ok-subject-select",
+                "data-placeholder": "Поиск и выбор предметов...",
+            }
+        ),
+    )
 
     class Meta:
         model = Teacher
         fields = [
-            "phone",
-            "image",
-            "subjects",
             "position",
+            "subjects",
             "experience_years",
             "bio",
+            "phone",
+            "image",
             "hire_date",
             "is_active",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        active_subjects = Subject.objects.filter(is_active=True)
+        if self.instance and self.instance.pk:
+            current_subjects = self.instance.subjects.all()
+            self.fields["subjects"].queryset = (active_subjects | current_subjects).distinct()
+        else:
+            self.fields["subjects"].queryset = active_subjects
 
 
 class ChangeTeacherPasswordForm(forms.Form):
@@ -236,50 +367,185 @@ class ChangeTeacherPasswordForm(forms.Form):
 @admin.register(Teacher)
 class TeacherAdmin(admin.ModelAdmin):
     list_display = (
-        "teacher_name",
-        "email",
-        "phone",
-        "subjects_list",
-        "active_badge",
+        "avatar_and_name",
+        "email_link",
+        "subjects_badges",
         "verified_badge",
-        "hire_date",
+        "active_badge",
         "change_password_link",
     )
+    list_display_links = ("avatar_and_name",)
     list_filter = ("is_active", "user__is_verified", "subjects")
-    search_fields = ("user__username", "user__email", "user__first_name", "user__last_name")
+    search_fields = ("user__username", "user__email", "user__first_name", "user__last_name", "phone")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
-    filter_horizontal = ("subjects",)
+    list_per_page = 20
     actions = ["verify_accounts", "deactivate_trainers"]
 
-    @admin.display(description="Тренер")
-    def teacher_name(self, obj: Teacher) -> str:
-        return obj.user.get_full_name() or obj.user.username
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("user")
+            .prefetch_related("subjects")
+        )
 
-    @admin.display(description="Email")
-    def email(self, obj: Teacher) -> str:
-        return obj.user.email
+    add_fieldsets = (
+        (
+            "Личные и контактные данные",
+            {
+                "fields": ("first_name", "last_name", "email", "phone"),
+            },
+        ),
+        (
+            "Специализация и опыт",
+            {
+                "fields": (
+                    "subjects",
+                    "position",
+                    "experience_years",
+                    "hire_date",
+                ),
+            },
+        ),
+        (
+            "Учётная запись",
+            {
+                "description": "Логин и пароль сгенерируются автоматически, если оставить их пустыми.",
+                "fields": ("username", "password"),
+            },
+        ),
+        (
+            "Дополнительно",
+            {
+                "classes": ("collapse",),
+                "fields": ("image", "is_active", "bio"),
+            },
+        ),
+    )
+
+    fieldsets = (
+        (
+            "Основное",
+            {
+                "fields": (
+                    "user",
+                    "phone",
+                    "position",
+                    "experience_years",
+                    "hire_date",
+                ),
+            },
+        ),
+        (
+            "Предметы и инфо",
+            {
+                "fields": ("subjects", "image", "is_active", "bio"),
+            },
+        ),
+    )
+
+    def get_fieldsets(self, request, obj=None):
+        if not obj:
+            return self.add_fieldsets
+        return super().get_fieldsets(request, obj)
+
+    @admin.display(description="Тренер", ordering="user__first_name")
+    def avatar_and_name(self, obj: Teacher) -> str:
+        name = obj.user.get_full_name() or obj.user.username
+        if obj.image:
+            img_html = format_html(
+                '<img src="{}" style="width:34px; height:34px; border-radius:50%; object-fit:cover; border:1px solid var(--border);" />',
+                obj.image.url,
+            )
+        else:
+            initial = name[0].upper() if name else "T"
+            img_html = format_html(
+                '<div style="width:34px; height:34px; border-radius:50%; background:var(--primary-soft); color:var(--primary); display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:0.85rem;">{}</div>',
+                initial,
+            )
+
+        return format_html(
+            '<div style="display:flex; align-items:center; gap:0.75rem;">'
+            "{}"
+            '<div style="display:flex; flex-direction:column;">'
+            '<span style="font-weight:600; color:var(--text);">{}</span>'
+            '<span style="font-size:0.75rem; color:var(--text-muted);">@{}</span>'
+            "</div>"
+            "</div>",
+            img_html,
+            name,
+            obj.user.username,
+        )
+
+    @admin.display(description="Email", ordering="user__email")
+    def email_link(self, obj: Teacher) -> str:
+        if not obj.user.email:
+            return "—"
+        return format_html(
+            '<a href="mailto:{}" style="color:var(--text-secondary); text-decoration:none;">'
+            '<i class="bi bi-envelope" style="margin-right:4px;"></i>{}'
+            '</a>',
+            obj.user.email,
+            obj.user.email,
+        )
 
     @admin.display(description="Предметы")
-    def subjects_list(self, obj: Teacher) -> str:
-        return ", ".join(obj.subjects.values_list("name", flat=True)) or "—"
+    def subjects_badges(self, obj: Teacher) -> str:
+        subjects = list(obj.subjects.all())
+        if not subjects:
+            return format_html('<span style="color:var(--text-muted); font-size:0.8rem;">—</span>')
 
-    @admin.display(description="Подтверждён")
+        max_show = 2
+        visible = subjects[:max_show]
+        more_count = len(subjects) - max_show
+
+        badges_list = [
+            format_html(
+                '<span style="display:inline-block; padding:0.15rem 0.5rem; background:var(--surface-hover); border:1px solid var(--border); border-radius:0.375rem; font-size:0.75rem; margin-right:4px; font-weight:500;">{}</span>',
+                s.name,
+            )
+            for s in visible
+        ]
+
+        if more_count > 0:
+            badges_list.append(
+                format_html(
+                    '<span style="display:inline-block; padding:0.15rem 0.4rem; background:var(--primary-soft); color:var(--primary); border-radius:0.375rem; font-size:0.72rem; font-weight:700;">+{}</span>',
+                    more_count,
+                )
+            )
+
+        return mark_safe("".join(badges_list))
+
+    @admin.display(description="Подтверждён", ordering="user__is_verified")
     def verified_badge(self, obj: Teacher) -> str:
         css = "ok-badge-success" if obj.user.is_verified else "ok-badge-warning"
         label = "Подтверждён" if obj.user.is_verified else "Ожидает"
-        return format_html('<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label)
+        return format_html(
+            '<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>',
+            css,
+            label,
+        )
 
-    @admin.display(description="Статус")
+    @admin.display(description="Статус", ordering="is_active")
     def active_badge(self, obj: Teacher) -> str:
         css = "ok-badge-success" if obj.is_active else "ok-badge-danger"
         label = "Активен" if obj.is_active else "Деактивирован"
-        return format_html('<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label)
+        return format_html(
+            '<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>',
+            css,
+            label,
+        )
 
-    @admin.display(description="Пароль")
+    @admin.display(description="Действия")
     def change_password_link(self, obj: Teacher) -> str:
         url = reverse("admin:users_teacher_change_password", args=[obj.pk])
-        return format_html('<a href="{}">Изменить и отправить</a>', url)
+        return format_html(
+            '<a class="btn btn-secondary" style="padding:0.25rem 0.6rem; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.3rem;" href="{}">'
+            '<i class="bi bi-key"></i>Пароль</a>',
+            url,
+        )
 
     def get_form(self, request, obj=None, **kwargs):
         if obj is None:
@@ -292,9 +558,6 @@ class TeacherAdmin(admin.ModelAdmin):
         if change:
             return super().save_form(request, form, change)
 
-        # "Add Trainer": create User (role=TEACHER) + Teacher atomically
-        # using the password Admin entered, then email those exact
-        # credentials to the trainer.
         cleaned = form.cleaned_data
         result = create_teacher(
             username=cleaned["username"],
@@ -312,10 +575,6 @@ class TeacherAdmin(admin.ModelAdmin):
             is_active=cleaned.get("is_active", True),
         )
         self._pending_creation_result = result
-        # Subjects were already applied inside create_teacher(); the admin
-        # machinery still calls form.save_m2m() after save_related(), and
-        # since we bypassed form.save() entirely (create_teacher() does its
-        # own atomic save), that attribute was never set — make it a no-op.
         form.save_m2m = lambda: None
         return result.teacher
 
@@ -325,23 +584,21 @@ class TeacherAdmin(admin.ModelAdmin):
             if result.email_sent:
                 messages.success(
                     request,
-                    f"Тренер «{obj.user.get_full_name() or obj.user.username}» создан, "
+                    f"Тренер «{obj.user.get_full_name() or obj.user.username}» успешно создан, "
                     f"учётные данные отправлены на {obj.user.email}.",
                 )
             else:
                 messages.warning(
                     request,
                     f"Тренер создан, но письмо с учётными данными не отправлено "
-                    f"({result.email_error}). Используйте «Изменить пароль и отправить».",
+                    f"({result.email_error}). Используйте кнопку «Пароль» для повторной отправки.",
                 )
         return super().response_add(request, obj, post_url_continue)
-
-    # -- Custom "change password and send" page -----------------------
 
     def get_urls(self):
         custom_urls = [
             path(
-                "<int:teacher_id>/change-password/",
+                "<path:teacher_id>/change-password/",
                 self.admin_site.admin_view(self.change_password_view),
                 name="users_teacher_change_password",
             ),
@@ -381,8 +638,6 @@ class TeacherAdmin(admin.ModelAdmin):
         }
         return render(request, "admin/users/change_teacher_password.html", context)
 
-    # -- Actions ------------------------------------------------------
-
     @admin.action(description="Подтвердить аккаунт(ы)")
     def verify_accounts(self, request, queryset):
         updated = 0
@@ -402,11 +657,4 @@ class TeacherAdmin(admin.ModelAdmin):
             teacher.user.save(update_fields=["is_active", "updated_at"])
             teacher.save(update_fields=["is_active", "updated_at"])
             updated += 1
-        self.message_user(request, f"Деактивировано: {updated}.", messages.SUCCESS)
-
-
-
-from django.contrib import admin, messages
-from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
-from django.contrib.auth.models import Group
-admin.site.unregister(Group)
+        self.message_user(request, f"Деактивировано тренеров: {updated}.", messages.SUCCESS)

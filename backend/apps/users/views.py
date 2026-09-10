@@ -10,10 +10,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework.filters import OrderingFilter, SearchFilter
+from django_filters.rest_framework import DjangoFilterBackend
 
-from apps.users.models import Teacher
-from apps.users.permissions import IsAdmin, IsTeacher
-from apps.users.serializers import (
+from .models import Subject, User
+from .permissions import IsAdmin, IsTeacher
+from .serializers import SubjectSerializer
+
+from .models import Teacher
+from .serializers import (
     LoginSerializer,
     TeacherSerializer,
     TrainerCreateSerializer,
@@ -45,8 +50,6 @@ class RefreshView(TokenRefreshView):
 
 
 class MeView(APIView):
-    """GET /api/v1/users/auth/me/ — the authenticated user's own profile."""
-
     permission_classes = [IsAuthenticated]
 
     @extend_schema(tags=["Authentication"], responses=UserSerializer)
@@ -56,18 +59,6 @@ class MeView(APIView):
 
 @extend_schema(tags=["Trainers"])
 class TrainerViewSet(viewsets.ModelViewSet):
-    """
-    /api/v1/users/trainers/            — Admin: list, create
-    /api/v1/users/trainers/{id}/       — Admin: retrieve, delete (deactivate)
-    /api/v1/users/trainers/{id}/verify/  — Admin: confirm account
-    /api/v1/users/trainers/me/         — Teacher: their own profile only
-
-    Trainer profiles are read-only through the API in this version — editing
-    (including changing a trainer's password) goes through Django Admin, via
-    the "Изменить пароль и отправить" page. The API never generates or
-    resends a password on its own.
-    """
-
     queryset = Teacher.objects.select_related("user").prefetch_related("subjects").all()
     serializer_class = TeacherSerializer
     http_method_names = ["get", "post", "delete"]
@@ -122,3 +113,39 @@ class TrainerViewSet(viewsets.ModelViewSet):
         teacher.user.is_verified = True
         teacher.user.save(update_fields=["is_verified", "updated_at"])
         return Response(TeacherSerializer(teacher).data)
+
+
+class SubjectViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = SubjectSerializer
+    filter_backends = [
+        DjangoFilterBackend,
+        SearchFilter,
+        OrderingFilter,
+    ]
+
+    filterset_fields = ["is_active"]
+    search_fields = ["name", "description"]
+    ordering_fields = ["name", "created_at", "updated_at"]
+    ordering = ["name"]
+
+    def get_permissions(self):
+        user = self.request.user
+
+        if not user or not user.is_authenticated:
+            return super().get_permissions()
+
+        if getattr(user, "role", None) == User.Role.ADMIN:
+            return [IsAdmin()]
+
+        return [IsTeacher()]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if not user or not user.is_authenticated:
+            return Subject.objects.none()
+
+        if getattr(user, "role", None) == User.Role.TEACHER:
+            return Subject.objects.filter(is_active=True)
+
+        return Subject.objects.all()

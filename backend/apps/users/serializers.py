@@ -24,8 +24,6 @@ class SubjectSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """Read-only representation of a User. Never exposes the password."""
-
     class Meta:
         model = User
         fields = [
@@ -42,11 +40,6 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class TeacherSerializer(serializers.ModelSerializer):
-    """Read representation of a Teacher profile, including its User info.
-
-    On the first version teacher profiles are read-only through the API
-    (per spec §13) — profile edits go through the admin.
-    """
 
     user = UserSerializer(read_only=True)
     subjects = SubjectSerializer(many=True, read_only=True)
