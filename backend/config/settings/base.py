@@ -46,6 +46,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "apps.users.apps.UsersConfig",
+    "apps.academy.apps.AcademyConfig",
 ]
 
 INSTALLED_APPS = (
