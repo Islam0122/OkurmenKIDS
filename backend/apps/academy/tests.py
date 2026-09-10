@@ -211,18 +211,35 @@ class StudentTests(AcademyTestBase):
 
 
 class LessonGenerationTests(AcademyTestBase):
-    def test_generates_correct_count_and_dates(self):
-        lessons = generate_lessons_for_group(self.group1)
+    """Group creation (in AcademyTestBase.setUp) already triggers automatic
+    generation via the `post_save` signal — see apps.academy.signals — so
+    group1/group2 arrive with their lessons already made. Tests here either
+    inspect that already-generated state, or spin up a fresh Group to
+    observe generation happening from a clean slate.
+    """
+
+    def test_group_creation_automatically_generates_lessons(self):
+        """The core new-workflow guarantee: Admin never has to click anything."""
+        group = Group.objects.create(
+            name="Auto-generated group",
+            course=self.course,
+            teacher=self.teacher1,
+            room=self.room1,
+            start_date=dt.date(2026, 9, 7),
+            start_time=dt.time(9, 0),
+            end_time=dt.time(10, 30),
+            days_of_week=["mon", "wed"],
+        )
+        lessons = list(Lesson.objects.filter(group=group).order_by("lesson_number"))
         self.assertEqual(len(lessons), 4)
-        dates = [lesson.date for lesson in lessons]
         self.assertEqual(
-            dates,
+            [lesson.date for lesson in lessons],
             [dt.date(2026, 9, 7), dt.date(2026, 9, 9), dt.date(2026, 9, 14), dt.date(2026, 9, 16)],
         )
         self.assertEqual([lesson.lesson_number for lesson in lessons], [1, 2, 3, 4])
 
     def test_copies_content_from_plan(self):
-        lessons = generate_lessons_for_group(self.group1)
+        lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
         self.assertEqual(lessons[0].subject_id, self.subject_python.id)
         self.assertEqual(lessons[0].topic, "Переменные")
         self.assertEqual(lessons[1].subject_id, self.subject_frontend.id)
@@ -230,16 +247,36 @@ class LessonGenerationTests(AcademyTestBase):
         self.assertEqual(lessons[0].start_time, self.group1.start_time)
 
     def test_idempotent_no_duplicates(self):
+        # group1's lessons were already generated on creation — re-running
+        # explicitly (the same call the "Generate lessons" admin action and
+        # API action make) must never create duplicates.
         generate_lessons_for_group(self.group1)
         second_run = generate_lessons_for_group(self.group1)
         self.assertEqual(second_run, [])
         self.assertEqual(Lesson.objects.filter(group=self.group1).count(), 4)
 
+    def test_editing_group_does_not_duplicate_or_alter_existing_lessons(self):
+        original_ids = set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True))
+        self.group1.description = "Обновлённое описание"
+        self.group1.save(update_fields=["description"])
+        self.assertEqual(
+            set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True)),
+            original_ids,
+        )
+
     def test_respects_end_date(self):
-        self.group1.end_date = dt.date(2026, 9, 10)
-        self.group1.save(update_fields=["end_date"])
-        lessons = generate_lessons_for_group(self.group1)
-        self.assertEqual(len(lessons), 2)
+        group = Group.objects.create(
+            name="Short group",
+            course=self.course,
+            teacher=self.teacher1,
+            room=self.room1,
+            start_date=dt.date(2026, 9, 7),
+            end_date=dt.date(2026, 9, 10),
+            start_time=dt.time(9, 0),
+            end_time=dt.time(10, 30),
+            days_of_week=["mon", "wed"],
+        )
+        self.assertEqual(Lesson.objects.filter(group=group).count(), 2)
 
     def test_mismatched_plan_count_raises(self):
         self.course.count_lesson = 10
@@ -247,12 +284,31 @@ class LessonGenerationTests(AcademyTestBase):
         with self.assertRaises(LessonGenerationError):
             generate_lessons_for_group(self.group1)
 
-    def test_generate_lessons_api_endpoint(self):
+    def test_group_with_incomplete_plan_is_skipped_silently(self):
+        """A Group saved before its course's plan is finished must not error out."""
+        self.course.count_lesson = 10
+        self.course.save(update_fields=["count_lesson"])
+        group = Group.objects.create(
+            name="Waiting on its plan",
+            course=self.course,
+            teacher=self.teacher1,
+            room=self.room1,
+            start_date=dt.date(2026, 9, 7),
+            start_time=dt.time(9, 0),
+            end_time=dt.time(10, 30),
+            days_of_week=["mon"],
+        )
+        self.assertEqual(Lesson.objects.filter(group=group).count(), 0)
+
+    def test_generate_lessons_api_endpoint_is_a_safe_retry(self):
+        # Lessons already exist (auto-generated on creation) — the manual
+        # endpoint is now only a retry/fallback, so it must report a no-op.
         response = self.admin_client.post(f"/api/v1/academy/groups/{self.group1.id}/generate-lessons/")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["created_count"], 4)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["created_count"], 0)
         self.assertEqual(response.data["first_lesson"], 1)
         self.assertEqual(response.data["last_lesson"], 4)
+        self.assertEqual(Lesson.objects.filter(group=self.group1).count(), 4)
 
     def test_generate_lessons_api_admin_only(self):
         response = self.teacher1_client.post(f"/api/v1/academy/groups/{self.group1.id}/generate-lessons/")
@@ -262,7 +318,9 @@ class LessonGenerationTests(AcademyTestBase):
 class AttendanceTests(AcademyTestBase):
     def setUp(self):
         super().setUp()
-        self.lessons = generate_lessons_for_group(self.group1)
+        # group1's lessons were already generated automatically on creation
+        # (see AcademyTestBase.setUp / apps.academy.signals).
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
         self.lesson1 = self.lessons[0]
 
     def test_correct_creation(self):
@@ -338,9 +396,11 @@ class AttendanceTests(AcademyTestBase):
 class HomeworkTests(AcademyTestBase):
     def setUp(self):
         super().setUp()
-        self.lessons = generate_lessons_for_group(self.group1)
+        # group1/group2's lessons were already generated automatically on
+        # creation (see AcademyTestBase.setUp / apps.academy.signals).
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
         self.lesson1 = self.lessons[0]
-        self.other_lesson = generate_lessons_for_group(self.group2)[0]
+        self.other_lesson = Lesson.objects.filter(group=self.group2).order_by("lesson_number")[0]
 
     def test_teacher_can_create_homework_for_own_lesson(self):
         response = self.teacher1_client.post(
@@ -415,7 +475,9 @@ class HomeworkTests(AcademyTestBase):
 class KPITests(AcademyTestBase):
     def setUp(self):
         super().setUp()
-        self.lessons = generate_lessons_for_group(self.group1)
+        # group1's lessons were already generated automatically on creation
+        # (see AcademyTestBase.setUp / apps.academy.signals).
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
         self.date_from = dt.date(2026, 9, 1)
         self.date_to = dt.date(2026, 9, 30)
 
@@ -534,8 +596,10 @@ class ScheduleAdminViewTests(AcademyTestBase):
 
     def setUp(self):
         super().setUp()
-        self.week1_lessons = generate_lessons_for_group(self.group1)
-        self.week2_lessons = generate_lessons_for_group(self.group2)
+        # group1/group2's lessons were already generated automatically on
+        # creation (see AcademyTestBase.setUp / apps.academy.signals).
+        self.week1_lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+        self.week2_lessons = list(Lesson.objects.filter(group=self.group2).order_by("lesson_number"))
 
         self.admin_web = DjangoClient()
         self.admin_web.force_login(self.admin)
@@ -623,13 +687,19 @@ class ScheduleAdminViewTests(AcademyTestBase):
         self.assertTrue({self.week1_lessons[2].id, self.week2_lessons[2].id}.issubset(shown))
 
     def test_teacher_conflict_detection(self):
+        # A non-overlapping time slot, so this group's own auto-generated
+        # lessons don't themselves conflict with group1 — only the one
+        # manually-added lesson below (at group1's actual time) should.
         overlapping_group = Group.objects.create(
             name="Python Advanced", course=self.course, teacher=self.teacher1, room=self.room2,
-            start_date=dt.date(2026, 9, 7), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(9, 0), end_time=dt.time(10, 0),
             days_of_week=["mon"],
         )
+        # lesson_number=1 for this group was already auto-generated on
+        # creation above — use a number outside the plan's range for this
+        # extra, manually-placed conflicting lesson.
         conflicting_lesson = Lesson.objects.create(
-            group=overlapping_group, lesson_number=1, date=dt.date(2026, 9, 7),
+            group=overlapping_group, lesson_number=99, date=dt.date(2026, 9, 7),
             start_time=dt.time(15, 30), end_time=dt.time(17, 0), room=self.room2,
         )
 
@@ -641,13 +711,19 @@ class ScheduleAdminViewTests(AcademyTestBase):
         self.assertIn(conflicting_lesson.id, conflicting_ids)
 
     def test_room_conflict_detection(self):
+        # A non-overlapping time slot, so this group's own auto-generated
+        # lessons don't themselves conflict with group1 — only the one
+        # manually-added lesson below (at group1's actual time) should.
         overlapping_group = Group.objects.create(
             name="React Beginner", course=self.course, teacher=self.teacher2, room=self.room1,
-            start_date=dt.date(2026, 9, 7), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(9, 0), end_time=dt.time(10, 0),
             days_of_week=["mon"],
         )
+        # lesson_number=1 for this group was already auto-generated on
+        # creation above — use a number outside the plan's range for this
+        # extra, manually-placed conflicting lesson.
         conflicting_lesson = Lesson.objects.create(
-            group=overlapping_group, lesson_number=1, date=dt.date(2026, 9, 7),
+            group=overlapping_group, lesson_number=99, date=dt.date(2026, 9, 7),
             start_time=dt.time(15, 15), end_time=dt.time(16, 45), room=self.room1,
         )
 
@@ -661,13 +737,20 @@ class ScheduleAdminViewTests(AcademyTestBase):
         cancelled.status = Lesson.Status.CANCELLED
         cancelled.save(update_fields=["status"])
 
+        # A non-overlapping time slot, so this group's own auto-generated
+        # lessons don't themselves conflict with group1 — the point of this
+        # test is that a *cancelled* lesson is the only thing near the
+        # manually-added lesson below, and cancelled lessons never conflict.
         overlapping_group = Group.objects.create(
             name="Python Advanced", course=self.course, teacher=self.teacher1, room=self.room1,
-            start_date=dt.date(2026, 9, 7), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(9, 0), end_time=dt.time(10, 0),
             days_of_week=["mon"],
         )
+        # lesson_number=1 for this group was already auto-generated on
+        # creation above — use a number outside the plan's range for this
+        # extra, manually-placed conflicting lesson.
         Lesson.objects.create(
-            group=overlapping_group, lesson_number=1, date=dt.date(2026, 9, 7),
+            group=overlapping_group, lesson_number=99, date=dt.date(2026, 9, 7),
             start_time=dt.time(15, 30), end_time=dt.time(17, 0), room=self.room1,
         )
 
@@ -676,24 +759,31 @@ class ScheduleAdminViewTests(AcademyTestBase):
         self.assertEqual(len(response.context["room_conflicts"]), 0)
 
     def test_generate_lessons_quick_action(self):
-        empty_group = Group.objects.create(
-            name="Empty Group", course=self.course, teacher=self.teacher1, room=self.room1,
+        group = Group.objects.create(
+            name="New Group", course=self.course, teacher=self.teacher1, room=self.room1,
             start_date=dt.date(2026, 9, 7), start_time=dt.time(10, 0), end_time=dt.time(11, 0),
             days_of_week=["mon", "wed"],
         )
-        url = reverse("admin:academy_schedule_generate_lessons", args=[empty_group.id])
+        # Lessons were already generated automatically the moment the group
+        # was created — the quick action is now a safe, idempotent retry.
+        self.assertEqual(Lesson.objects.filter(group=group).count(), 4)
+
+        url = reverse("admin:academy_schedule_generate_lessons", args=[group.id])
         response = self.admin_web.post(url)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(Lesson.objects.filter(group=empty_group).count(), 4)
+        self.assertEqual(Lesson.objects.filter(group=group).count(), 4)
 
     def test_generate_lessons_quick_action_admin_only(self):
-        empty_group = Group.objects.create(
-            name="Empty Group 2", course=self.course, teacher=self.teacher1, room=self.room1,
+        group = Group.objects.create(
+            name="New Group 2", course=self.course, teacher=self.teacher1, room=self.room1,
             start_date=dt.date(2026, 9, 7), start_time=dt.time(10, 0), end_time=dt.time(11, 0),
             days_of_week=["mon"],
         )
-        url = reverse("admin:academy_schedule_generate_lessons", args=[empty_group.id])
+        lessons_before = Lesson.objects.filter(group=group).count()
+
+        url = reverse("admin:academy_schedule_generate_lessons", args=[group.id])
         response = self.teacher_web.post(url)
         self.assertEqual(response.status_code, 302)
         self.assertIn("/admin/login/", response.url)
-        self.assertEqual(Lesson.objects.filter(group=empty_group).count(), 0)
+        # A non-admin's blocked request must not change anything.
+        self.assertEqual(Lesson.objects.filter(group=group).count(), lessons_before)

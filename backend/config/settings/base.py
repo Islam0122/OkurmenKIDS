@@ -125,9 +125,12 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STATICFILES_DIRS = [
-    BASE_DIR / "static",
-]
+# No project-level static/ directory — every static asset (Jazzmin theme
+# CSS/JS, admin templates' assets) lives under its owning app's own
+# static/ folder and is picked up by the default AppDirectoriesFinder.
+# STATICFILES_DIRS is for *extra* directories beyond that; pointing it at
+# a directory that doesn't exist just produces a staticfiles.W004 warning
+# on every check/test run.
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -184,8 +187,6 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
-EMAIL_VERIFICATION_TOKEN_MAX_AGE = 60 * 60 * 24 * 3  # 3 days
-
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",
     default="http://localhost:8000",
@@ -197,6 +198,16 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    # Group/Lesson/Attendance/HomeworkResult all have their own `status`
+    # field, so drf-spectacular's auto-naming collides on plain "Status"
+    # and falls back to opaque names like "StatusB16Enum" — give each one
+    # its real name instead.
+    "ENUM_NAME_OVERRIDES": {
+        "GroupStatusEnum": "apps.academy.models.Group.Status",
+        "LessonStatusEnum": "apps.academy.models.Lesson.Status",
+        "AttendanceStatusEnum": "apps.academy.models.Attendance.Status",
+        "HomeworkResultStatusEnum": "apps.academy.models.HomeworkResult.Status",
+    },
     "TAGS": [
         {"name": "Authentication", "description": "Authentication and authorization"},
         {"name": "Trainers", "description": "Trainer management"},
