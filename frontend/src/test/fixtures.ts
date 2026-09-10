@@ -2,7 +2,7 @@ import type { Group, GroupScheduleLesson, Lesson, Subject, Teacher } from '@/typ
 import type { AttendanceRecord } from '@/types/attendance'
 import type { User } from '@/types/auth'
 import type { Homework, HomeworkResult } from '@/types/homework'
-import type { KPITeacher } from '@/types/kpi'
+import type { AnalyticsDashboard } from '@/types/kpi'
 import type { Paginated } from '@/types/common'
 
 export function paginated<T>(results: T[]): Paginated<T> {
@@ -167,22 +167,44 @@ export function buildHomeworkResult(overrides: Partial<HomeworkResult> = {}): Ho
   }
 }
 
-export function buildKPITeacher(overrides: Partial<KPITeacher> = {}): KPITeacher {
+export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> = {}): AnalyticsDashboard {
   return {
-    id: 1,
-    teacher: 1,
-    teacher_name: 'Айгуль Сатыбалдиева',
-    date_from: '2026-09-01',
-    date_to: '2026-09-10',
-    total_groups: 2,
-    total_lessons: 10,
-    completed_lessons: 8,
-    cancelled_lessons: 1,
-    attendance_percent: 92.5,
-    homework_completion_percent: 80,
-    average_student_score: 8.4,
-    created_at: '2026-09-10T00:00:00Z',
-    updated_at: '2026-09-10T00:00:00Z',
+    period: { start_date: '2026-09-01', end_date: '2026-09-10' },
+    filters: { teacher_id: null, group_id: null },
+    overview: {
+      groups: 2,
+      teachers: 1,
+      students: 20,
+      lessons: 10,
+      attendance_percent: 92.5,
+      homework_completion_percent: 80,
+      average_score: 8.4,
+    },
+    lessons: { total: 10, completed: 8, cancelled: 1, planned: 1, completion_rate: 80 },
+    attendance: { total: 40, present: 30, absent: 5, late: 5, excused: 0, percent: 92.5, by_date: [] },
+    homework: {
+      total_homeworks: 10,
+      total_results: 16,
+      submitted: 10,
+      checked: 3,
+      late: 0,
+      not_submitted: 3,
+      completed: 13,
+      completion_percent: 80,
+      average_score: 8.4,
+      by_date: [],
+    },
+    groups: [],
+    teachers: [],
+    top_students: [],
+    charts: {
+      attendance_over_time: [],
+      lessons_by_status: [],
+      students_by_group: [],
+      homework_completion_over_time: [],
+      teacher_performance: [],
+      group_performance: [],
+    },
     ...overrides,
   }
 }

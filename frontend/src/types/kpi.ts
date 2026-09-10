@@ -1,114 +1,145 @@
 /**
- * All six KPI models are read-only computed snapshots for a Teacher —
- * `apps.academy.services.kpi_calculator` derives every number from
- * Lesson/Attendance/Homework/HomeworkResult; only Admin can trigger a
- * recalculation. Field names mirror the DRF serializers exactly.
+ * `apps.academy.serializers.AnalyticsDashboardSerializer` — everything here
+ * is computed on demand by `AnalyticsService` from Lesson/Attendance/
+ * Homework/HomeworkResult on every request. There is no stored KPI record
+ * to go stale: mark attendance, then re-fetch, and the numbers already
+ * reflect it.
  */
+import type { GroupStatus } from '@/types/academy'
 
-export interface KPIGroup {
-  id: number
-  group: number
-  group_name: string
-  date_from: string
-  date_to: string
-  total_students: number
-  total_lessons: number
-  completed_lessons: number
-  cancelled_lessons: number
+export interface AnalyticsPeriod {
+  start_date: string
+  end_date: string
+}
+
+export interface AnalyticsFilters {
+  teacher_id: number | null
+  group_id: number | null
+}
+
+export interface AnalyticsOverview {
+  groups: number
+  teachers: number
+  students: number
+  lessons: number
   attendance_percent: number
   homework_completion_percent: number
   average_score: number
-  created_at: string
-  updated_at: string
 }
 
-export interface KPITeacher {
-  id: number
-  teacher: number
-  teacher_name: string
-  date_from: string
-  date_to: string
-  total_groups: number
-  total_lessons: number
-  completed_lessons: number
-  cancelled_lessons: number
-  attendance_percent: number
-  homework_completion_percent: number
-  average_student_score: number
-  created_at: string
-  updated_at: string
+export interface AnalyticsLessonStats {
+  total: number
+  completed: number
+  cancelled: number
+  planned: number
+  completion_rate: number
 }
 
-export interface KPIStudent {
-  id: number
-  student: number
-  student_name: string
-  group: number
-  group_name: string
-  date_from: string
-  date_to: string
-  total_lessons: number
-  present_count: number
-  absent_count: number
-  late_count: number
-  attendance_percent: number
-  total_homeworks: number
-  completed_homeworks: number
-  missed_homeworks: number
-  homework_completion_percent: number
-  average_score: number
-  created_at: string
-  updated_at: string
+export interface AnalyticsTimeSeriesPoint {
+  date: string
+  percent: number
 }
 
-export interface KPILesson {
-  id: number
-  lesson: number
-  group_name: string
-  lesson_date: string
-  total_students: number
-  present_count: number
-  absent_count: number
-  late_count: number
-  attendance_percent: number
-  total_homeworks: number
-  homework_completed_count: number
-  homework_completion_percent: number
-  average_homework_score: number
-  created_at: string
-  updated_at: string
+export interface AnalyticsAttendanceStats {
+  total: number
+  present: number
+  absent: number
+  late: number
+  excused: number
+  percent: number
+  by_date: AnalyticsTimeSeriesPoint[]
 }
 
-export interface KPIAttendance {
-  id: number
-  group: number
-  group_name: string
-  date_from: string
-  date_to: string
-  total_records: number
-  present_count: number
-  absent_count: number
-  late_count: number
-  excused_count: number
-  attendance_percent: number
-  created_at: string
-  updated_at: string
-}
-
-export interface KPIHomework {
-  id: number
-  group: number
-  group_name: string
-  date_from: string
-  date_to: string
+export interface AnalyticsHomeworkStats {
   total_homeworks: number
   total_results: number
-  submitted_count: number
-  checked_count: number
-  not_submitted_count: number
-  late_count: number
+  submitted: number
+  checked: number
+  late: number
+  not_submitted: number
+  completed: number
   completion_percent: number
   average_score: number
-  created_at: string
-  updated_at: string
+  by_date: AnalyticsTimeSeriesPoint[]
+}
+
+export interface AnalyticsGroupRow {
+  id: number
+  name: string
+  teacher: string
+  students: number
+  lessons: number
+  completed_lessons: number
+  cancelled_lessons: number
+  planned_lessons: number
+  attendance_percent: number
+  homework_completion_percent: number
+  average_score: number
+  status: GroupStatus
+  status_display: string
+}
+
+export interface AnalyticsTeacherRow {
+  id: number
+  name: string
+  groups: number
+  students: number
+  lessons: number
+  attendance_percent: number
+  homework_completion_percent: number
+  average_score: number
+}
+
+export interface AnalyticsStudentRow {
+  id: number
+  name: string
+  group: string | null
+  lessons: number
+  attendance_percent: number
+  homework_completion_percent: number
+  average_score: number
+}
+
+export interface AnalyticsLessonsByStatusPoint {
+  status: 'completed' | 'planned' | 'cancelled'
+  label: string
+  count: number
+}
+
+export interface AnalyticsGroupPerformancePoint {
+  group: string
+  attendance_percent: number
+}
+
+export interface AnalyticsTeacherPerformancePoint {
+  teacher: string
+  attendance_percent: number
+}
+
+export interface AnalyticsStudentsByGroupPoint {
+  group: string
+  students: number
+}
+
+export interface AnalyticsCharts {
+  attendance_over_time: AnalyticsTimeSeriesPoint[]
+  lessons_by_status: AnalyticsLessonsByStatusPoint[]
+  students_by_group: AnalyticsStudentsByGroupPoint[]
+  homework_completion_over_time: AnalyticsTimeSeriesPoint[]
+  teacher_performance: AnalyticsTeacherPerformancePoint[]
+  group_performance: AnalyticsGroupPerformancePoint[]
+}
+
+/** Full response of `GET /academy/analytics/dashboard/`. */
+export interface AnalyticsDashboard {
+  period: AnalyticsPeriod
+  filters: AnalyticsFilters
+  overview: AnalyticsOverview
+  lessons: AnalyticsLessonStats
+  attendance: AnalyticsAttendanceStats
+  homework: AnalyticsHomeworkStats
+  groups: AnalyticsGroupRow[]
+  teachers: AnalyticsTeacherRow[]
+  top_students: AnalyticsStudentRow[]
+  charts: AnalyticsCharts
 }

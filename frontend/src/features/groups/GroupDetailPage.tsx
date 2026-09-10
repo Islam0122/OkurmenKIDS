@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -11,8 +12,10 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { useAttendanceList } from '@/hooks/useAttendance'
 import { useGroup, useGroupSchedule } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
-import { useKPIGroups } from '@/hooks/useKPI'
+import { useAnalyticsDashboard } from '@/hooks/useKPI'
 import { useStudents } from '@/hooks/useStudents'
+import { getKPIPeriods } from '@/features/kpi/periods'
+import type { KPIPeriodKey } from '@/features/kpi/periods'
 import type { Group, GroupScheduleLesson, LessonStatus } from '@/types/academy'
 import { ATTENDANCE_STATUS_LABELS } from '@/types/attendance'
 import { DAY_LABELS, WEEKDAY_ORDER } from '@/types/common'
@@ -249,27 +252,54 @@ function HomeworkTab({ groupId }: { groupId: number }) {
   )
 }
 
+/** Computed live from this group's own Lesson/Attendance/HomeworkResult
+ * records for the chosen period — nothing stored, nothing to recalculate. */
 function KpiTab({ groupId }: { groupId: number }) {
-  const { data, isPending, isError, refetch } = useKPIGroups({ group: groupId, ordering: '-date_to' })
+  const [periodKey, setPeriodKey] = useState<KPIPeriodKey>('this_month')
+  const periods = useMemo(() => getKPIPeriods(), [])
+  const period = periods.find((item) => item.key === periodKey) ?? periods[0]
 
-  if (isPending) return <LoadingState label="Загружаем KPI…" />
+  const { data, isPending, isError, refetch } = useAnalyticsDashboard({
+    date_from: period.dateFrom,
+    date_to: period.dateTo,
+    group: groupId,
+  })
+
+  if (isPending) return <LoadingState label="Считаем KPI…" />
   if (isError) return <ErrorState onRetry={() => void refetch()} />
-  if (data.results.length === 0) return <EmptyState title="KPI для этой группы ещё не рассчитаны" description="Расчёт запускает администратор." />
+
+  const row = data.groups[0]
 
   return (
-    <div className="space-y-3">
-      {data.results.map((kpi) => (
-        <div key={kpi.id} className="rounded-xl border border-border bg-surface p-4">
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {periods.map((item) => (
+          <Button
+            key={item.key}
+            variant={item.key === periodKey ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={() => setPeriodKey(item.key)}
+          >
+            {item.label}
+          </Button>
+        ))}
+      </div>
+
+      {!row ? (
+        <EmptyState title="Нет данных за выбранный период" />
+      ) : (
+        <div className="rounded-xl border border-border bg-surface p-4">
           <p className="text-sm font-medium text-ink">
-            {formatDateShort(kpi.date_from)} — {formatDateShort(kpi.date_to)}
+            {formatDateShort(period.dateFrom)} — {formatDateShort(period.dateTo)}
           </p>
-          <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
-            <Field label="Посещаемость" value={`${kpi.attendance_percent}%`} />
-            <Field label="Выполнение ДЗ" value={`${kpi.homework_completion_percent}%`} />
-            <Field label="Средний балл" value={`${kpi.average_score}/10`} />
+          <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+            <Field label="Занятий" value={`${row.lessons} (${row.completed_lessons} проведено)`} />
+            <Field label="Посещаемость" value={`${row.attendance_percent}%`} />
+            <Field label="Выполнение ДЗ" value={`${row.homework_completion_percent}%`} />
+            <Field label="Средний балл" value={`${row.average_score}/10`} />
           </div>
         </div>
-      ))}
+      )}
     </div>
   )
 }

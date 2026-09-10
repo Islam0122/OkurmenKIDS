@@ -181,27 +181,13 @@
                     </div>
                     <div class="col-md-6 col-12 mb-3">
                         <div class="card ok-chart-card">
-                            <div class="card-header">Последние KPI студентов</div>
-                            <div class="card-body p-0">
-                                {% if ok_stats.recent_kpi %}
-                                    <table class="table table-sm mb-0">
-                                        <thead>
-                                            <tr><th>Студент</th><th>Группа</th><th>Посещаемость</th><th>ДЗ</th></tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for kpi in ok_stats.recent_kpi %}
-                                                <tr>
-                                                    <td>{{ kpi.student }}</td>
-                                                    <td>{{ kpi.group.name }}</td>
-                                                    <td>{{ kpi.attendance_percent }}%</td>
-                                                    <td>{{ kpi.homework_completion_percent }}%</td>
-                                                </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                {% else %}
-                                    <p class="p-3 mb-0 text-muted">KPI пока не рассчитаны.</p>
-                                {% endif %}
+                            <div class="card-header">Аналитика</div>
+                            <div class="card-body d-flex flex-column align-items-start justify-content-center" style="gap:0.6rem;">
+                                <p class="mb-0 text-muted">
+                                    Посещаемость, домашние задания и успеваемость по группам, тренерам и студентам —
+                                    считается на лету по реальным данным, без отдельных KPI-таблиц.
+                                </p>
+                                <a class="btn btn-success btn-sm" href="{% url 'admin:academy_analytics' %}">Открыть Аналитику</a>
                             </div>
                         </div>
                     </div>

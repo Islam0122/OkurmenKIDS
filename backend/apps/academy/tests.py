@@ -25,21 +25,13 @@ from apps.academy.models import (
     Group,
     Homework,
     HomeworkResult,
-    KPIGroup,
     Lesson,
     Room,
     Student,
 )
+from apps.academy.services.analytics import AnalyticsService
 from apps.academy.services.attendance_service import bulk_mark_attendance
 from apps.academy.services.homework_service import bulk_upsert_homework_results
-from apps.academy.services.kpi_calculator import (
-    calculate_attendance_kpi,
-    calculate_group_kpi,
-    calculate_homework_kpi,
-    calculate_lesson_kpi,
-    calculate_student_kpi,
-    calculate_teacher_kpi,
-)
 from apps.academy.services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
 # NOTE: login/verification/permission tests for the underlying auth system
@@ -664,7 +656,11 @@ class HomeworkTests(AcademyTestBase):
         self.assertEqual(HomeworkResult.objects.filter(homework=homework).count(), 0)
 
 
-class KPITests(AcademyTestBase):
+class AnalyticsServiceTests(AcademyTestBase):
+    """Same fixture the old KPITests used (and the same expected numbers) —
+    AnalyticsService must derive the identical figures straight from
+    Lesson/Attendance/Homework/HomeworkResult, with nothing persisted."""
+
     def setUp(self):
         super().setUp()
         # group1's lessons were already generated automatically on creation
@@ -689,92 +685,150 @@ class KPITests(AcademyTestBase):
         )
         # No result row for homework2 — counts as missed.
 
-    def test_calculate_student_kpi(self):
-        kpi = calculate_student_kpi(self.student1, self.group1, self.date_from, self.date_to)
-        self.assertEqual(kpi.total_lessons, 4)
-        self.assertEqual(kpi.present_count, 2)
-        self.assertEqual(kpi.absent_count, 1)
-        self.assertEqual(kpi.late_count, 1)
-        self.assertEqual(kpi.attendance_percent, 75.0)
-        self.assertEqual(kpi.total_homeworks, 2)
-        self.assertEqual(kpi.completed_homeworks, 1)
-        self.assertEqual(kpi.missed_homeworks, 1)
-        self.assertEqual(kpi.homework_completion_percent, 50.0)
-        self.assertEqual(kpi.average_score, 8.0)
+    def _dashboard(self, **kwargs):
+        return AnalyticsService(self.date_from, self.date_to, **kwargs).get_dashboard()
 
-    def test_calculate_group_kpi(self):
-        kpi = calculate_group_kpi(self.group1, self.date_from, self.date_to)
-        self.assertEqual(kpi.total_students, 2)
-        self.assertEqual(kpi.total_lessons, 4)
-        self.assertEqual(kpi.attendance_percent, 75.0)
-        self.assertEqual(kpi.homework_completion_percent, 25.0)
-        self.assertEqual(kpi.average_score, 8.0)
+    def test_group_row_matches_old_kpigroup_formula(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        row = dashboard["groups"][0]
+        self.assertEqual(row["students"], 2)
+        self.assertEqual(row["lessons"], 4)
+        self.assertEqual(row["attendance_percent"], 75.0)
+        self.assertEqual(row["homework_completion_percent"], 25.0)
+        self.assertEqual(row["average_score"], 8.0)
 
-    def test_calculate_teacher_kpi(self):
-        kpi = calculate_teacher_kpi(self.teacher1, self.date_from, self.date_to)
-        self.assertEqual(kpi.total_groups, 1)
-        self.assertEqual(kpi.total_lessons, 4)
-        self.assertEqual(kpi.attendance_percent, 75.0)
-        self.assertEqual(kpi.average_student_score, 8.0)
+    def test_teacher_row_matches_old_kpiteacher_formula(self):
+        dashboard = self._dashboard(teacher_id=self.teacher1.id)
+        row = dashboard["teachers"][0]
+        self.assertEqual(row["groups"], 1)
+        self.assertEqual(row["lessons"], 4)
+        self.assertEqual(row["attendance_percent"], 75.0)
+        self.assertEqual(row["average_score"], 8.0)
 
-    def test_calculate_lesson_kpi(self):
-        kpi = calculate_lesson_kpi(self.lessons[0])
-        self.assertEqual(kpi.total_students, 2)
-        self.assertEqual(kpi.present_count, 1)
-        self.assertEqual(kpi.attendance_percent, 100.0)
-        self.assertEqual(kpi.homework_completed_count, 1)
-        self.assertEqual(kpi.average_homework_score, 8.0)
+    def test_top_student_row_matches_old_kpistudent_formula(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        row = next(r for r in dashboard["top_students"] if r["id"] == self.student1.id)
+        self.assertEqual(row["lessons"], 4)
+        self.assertEqual(row["attendance_percent"], 75.0)
+        self.assertEqual(row["homework_completion_percent"], 50.0)
+        self.assertEqual(row["average_score"], 8.0)
 
-    def test_calculate_attendance_kpi(self):
-        kpi = calculate_attendance_kpi(self.group1, self.date_from, self.date_to)
-        self.assertEqual(kpi.total_records, 4)
-        self.assertEqual(kpi.attendance_percent, 75.0)
+    def test_attendance_section_matches_old_kpiattendance_formula(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        attendance = dashboard["attendance"]
+        self.assertEqual(attendance["total"], 4)
+        self.assertEqual(attendance["present"], 2)
+        self.assertEqual(attendance["absent"], 1)
+        self.assertEqual(attendance["late"], 1)
+        self.assertEqual(attendance["percent"], 75.0)
 
-    def test_calculate_homework_kpi(self):
-        kpi = calculate_homework_kpi(self.group1, self.date_from, self.date_to)
-        self.assertEqual(kpi.total_homeworks, 2)
-        self.assertEqual(kpi.total_results, 1)
-        self.assertEqual(kpi.checked_count, 1)
-        self.assertEqual(kpi.completion_percent, 100.0)
-        self.assertEqual(kpi.average_score, 8.0)
+    def test_homework_section_matches_old_kpihomework_formula(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        homework = dashboard["homework"]
+        self.assertEqual(homework["total_homeworks"], 2)
+        self.assertEqual(homework["total_results"], 1)
+        self.assertEqual(homework["checked"], 1)
+        self.assertEqual(homework["completion_percent"], 100.0)
+        self.assertEqual(homework["average_score"], 8.0)
 
-    def test_kpi_viewsets_are_read_only(self):
-        response = self.admin_client.post(
-            "/api/v1/academy/kpi/groups/",
-            {"group": self.group1.id, "date_from": "2026-09-01", "date_to": "2026-09-30"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+    def test_overview_reflects_group_style_homework_percent(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        overview = dashboard["overview"]
+        self.assertEqual(overview["groups"], 1)
+        self.assertEqual(overview["teachers"], 1)
+        self.assertEqual(overview["students"], 2)
+        self.assertEqual(overview["lessons"], 4)
+        self.assertEqual(overview["attendance_percent"], 75.0)
+        self.assertEqual(overview["homework_completion_percent"], 25.0)
+        self.assertEqual(overview["average_score"], 8.0)
 
-    def test_calculate_endpoint_is_admin_only(self):
-        response = self.teacher1_client.post(
-            f"/api/v1/academy/kpi/groups/{self.group1.id}/calculate/",
-            {"date_from": "2026-09-01", "date_to": "2026-09-30"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+    def test_lesson_stats(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        lessons = dashboard["lessons"]
+        self.assertEqual(lessons["total"], 4)
+        self.assertEqual(lessons["planned"], 4)
+        self.assertEqual(lessons["completed"], 0)
+        self.assertEqual(lessons["cancelled"], 0)
 
-    def test_calculate_endpoint_admin_creates_kpi(self):
-        response = self.admin_client.post(
-            f"/api/v1/academy/kpi/groups/{self.group1.id}/calculate/",
-            {"date_from": "2026-09-01", "date_to": "2026-09-30"},
-            format="json",
+    def test_charts_carry_the_same_numbers_as_the_tables(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        charts = dashboard["charts"]
+        self.assertEqual(charts["group_performance"][0]["attendance_percent"], 75.0)
+        self.assertEqual(charts["students_by_group"][0]["students"], 2)
+        completed = sum(row["count"] for row in charts["lessons_by_status"] if row["status"] == "planned")
+        self.assertEqual(completed, 4)
+
+    def test_group_scoping_excludes_other_groups(self):
+        dashboard = self._dashboard(group_id=self.group1.id)
+        self.assertEqual(len(dashboard["groups"]), 1)
+        self.assertEqual(dashboard["groups"][0]["id"], self.group1.id)
+
+    def test_no_filters_covers_every_group(self):
+        dashboard = self._dashboard()
+        group_ids = {row["id"] for row in dashboard["groups"]}
+        self.assertEqual(group_ids, {self.group1.id, self.group2.id})
+
+    def test_empty_period_returns_zeros_not_errors(self):
+        empty_dashboard = AnalyticsService(dt.date(2020, 1, 1), dt.date(2020, 1, 31)).get_dashboard()
+        self.assertEqual(empty_dashboard["overview"]["lessons"], 0)
+        self.assertEqual(empty_dashboard["overview"]["attendance_percent"], 0.0)
+        self.assertEqual(empty_dashboard["overview"]["homework_completion_percent"], 0.0)
+        self.assertEqual(empty_dashboard["overview"]["average_score"], 0.0)
+        self.assertEqual(empty_dashboard["attendance"]["by_date"], [])
+
+    def test_repeated_calls_reflect_new_data_immediately(self):
+        """The whole point of dropping stored KPI rows: no recalculation step."""
+        before = self._dashboard(group_id=self.group1.id)["attendance"]["percent"]
+        Attendance.objects.create(student=self.student2, lesson=self.lessons[0], status=Attendance.Status.PRESENT)
+        after = self._dashboard(group_id=self.group1.id)["attendance"]["percent"]
+        self.assertNotEqual(before, after)
+        self.assertEqual(after, 80.0)  # 4 attended out of 5 marked now
+
+
+class AnalyticsDashboardAPITests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+        Attendance.objects.create(student=self.student1, lesson=self.lessons[0], status=Attendance.Status.PRESENT)
+        self.params = {"date_from": "2026-09-01", "date_to": "2026-09-30"}
+
+    def test_requires_authentication(self):
+        response = self.anon_client.get("/api/v1/academy/analytics/dashboard/", self.params)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_requires_date_range(self):
+        response = self.admin_client.get("/api/v1/academy/analytics/dashboard/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_sees_every_group(self):
+        response = self.admin_client.get("/api/v1/academy/analytics/dashboard/", self.params)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        group_ids = {row["id"] for row in response.data["groups"]}
+        self.assertEqual(group_ids, {self.group1.id, self.group2.id})
+
+    def test_teacher_is_scoped_to_own_groups_even_if_teacher_param_given(self):
+        response = self.teacher1_client.get(
+            "/api/v1/academy/analytics/dashboard/", {**self.params, "teacher": self.teacher2.id}
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["attendance_percent"], 75.0)
-        self.assertTrue(KPIGroup.objects.filter(group=self.group1).exists())
+        group_ids = {row["id"] for row in response.data["groups"]}
+        self.assertEqual(group_ids, {self.group1.id})
 
-    def test_teacher_kpi_isolation(self):
-        calculate_group_kpi(self.group1, self.date_from, self.date_to)
-        calculate_group_kpi(self.group2, self.date_from, self.date_to)
-        response = self.teacher1_client.get("/api/v1/academy/kpi/groups/")
-        self.assertEqual(response.data["count"], 1)
-        self.assertEqual(response.data["results"][0]["group"], self.group1.id)
+    def test_teacher_requesting_other_teachers_group_gets_empty_dashboard(self):
+        response = self.teacher1_client.get(
+            "/api/v1/academy/analytics/dashboard/", {**self.params, "group": self.group2.id}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["groups"], [])
+        self.assertEqual(response.data["overview"]["lessons"], 0)
 
-    def test_student_kpi_group_isolation(self):
-        calculate_student_kpi(self.student1, self.group1, self.date_from, self.date_to)
-        response = self.teacher2_client.get("/api/v1/academy/kpi/students/")
-        self.assertEqual(response.data["count"], 0)
+    def test_endpoint_is_read_only(self):
+        response = self.admin_client.post("/api/v1/academy/analytics/dashboard/", self.params)
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_old_kpi_endpoints_are_gone(self):
+        response = self.admin_client.get("/api/v1/academy/kpi/groups/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
 class ScheduleAdminViewTests(AcademyTestBase):
