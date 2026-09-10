@@ -24,6 +24,7 @@ from apps.academy.models import (
     Course,
     CourseLessonPlan,
     Group,
+    GroupSchedule,
     Homework,
     HomeworkResult,
     Lesson,
@@ -32,6 +33,12 @@ from apps.academy.models import (
 )
 from apps.academy.services.analytics import AnalyticsService
 from apps.academy.services.attendance_service import bulk_mark_attendance
+from apps.academy.services.group_schedule_conflicts import (
+    find_group_teacher_conflict,
+    find_schedule_room_conflict,
+    find_schedule_teacher_conflict,
+)
+from apps.academy.services.group_schedule_sync import sync_legacy_group_schedule
 from apps.academy.services.homework_service import bulk_upsert_homework_results
 from apps.academy.services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
@@ -1263,3 +1270,450 @@ class StudentAdminImportExportTests(AcademyTestBase):
         response = self.teacher_web.get(url)
         self.assertEqual(response.status_code, 302)
         self.assertIn("/admin/login/", response.url)
+
+
+# ---------------------------------------------------------------------------
+# GroupSchedule — a Group's own primary slot (teacher1, Mon/Wed 15:00-16:30,
+# room1 for group1; teacher2, Tue/Thu 17:00-18:30, room2 for group2, see
+# AcademyTestBase.setUp) is mirrored into GroupSchedule automatically. These
+# tests build on top of that for the multi-teacher/multi-subject/multi-time
+# scenarios GroupSchedule exists for.
+# ---------------------------------------------------------------------------
+
+class GroupScheduleModelTests(AcademyTestBase):
+    def test_group_has_legacy_schedule_mirrored_automatically(self):
+        rows = list(self.group1.schedules.order_by("day_of_week"))
+        self.assertEqual({r.day_of_week for r in rows}, {"mon", "wed"})
+        for row in rows:
+            self.assertEqual(row.teacher_id, self.teacher1.id)
+            self.assertIsNone(row.subject_id)
+            self.assertEqual(row.room_id, self.room1.id)
+            self.assertEqual(row.start_time, self.group1.start_time)
+            self.assertEqual(row.end_time, self.group1.end_time)
+
+    def test_group_can_have_multiple_teachers(self):
+        GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="mon", start_time=dt.time(17, 0), end_time=dt.time(18, 0), room=self.room1,
+        )
+        teacher_ids = set(self.group1.schedules.values_list("teacher_id", flat=True))
+        self.assertEqual(teacher_ids, {self.teacher1.id, self.teacher2.id})
+
+    def test_group_can_have_multiple_subjects(self):
+        GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher1, subject=self.subject_frontend,
+            day_of_week="mon", start_time=dt.time(17, 0), end_time=dt.time(18, 0), room=self.room1,
+        )
+        subject_ids = set(self.group1.schedules.exclude(subject__isnull=True).values_list("subject_id", flat=True))
+        self.assertEqual(subject_ids, {self.subject_frontend.id})
+
+    def test_group_can_have_different_time_ranges(self):
+        slot = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher1, subject=self.subject_python,
+            day_of_week="fri", start_time=dt.time(19, 0), end_time=dt.time(20, 0),
+        )
+        self.assertNotEqual((slot.start_time, slot.end_time), (self.group1.start_time, self.group1.end_time))
+
+    def test_group_can_have_different_days(self):
+        GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher1, subject=self.subject_python,
+            day_of_week="sun", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        self.assertIn("sun", set(self.group1.schedules.values_list("day_of_week", flat=True)))
+
+    def test_another_group_can_stay_single_slot(self):
+        """The other variant §2 requires: a Group can also have just one
+        teacher/subject/time, unaffected by GroupSchedule existing at all."""
+        self.assertEqual(self.group2.schedules.count(), 2)  # tue + wed... actually tue/thu, one row each
+        self.assertTrue(all(row.subject_id is None for row in self.group2.schedules.all()))
+
+    def test_end_time_must_be_after_start_time(self):
+        slot = GroupSchedule(
+            group=self.group1, teacher=self.teacher1, day_of_week="mon",
+            start_time=dt.time(10, 0), end_time=dt.time(9, 0),
+        )
+        with self.assertRaises(Exception):
+            slot.full_clean()
+
+    def test_inactive_teacher_rejected(self):
+        self.teacher2.is_active = False
+        self.teacher2.save(update_fields=["is_active"])
+        slot = GroupSchedule(
+            group=self.group1, teacher=self.teacher2, day_of_week="fri",
+            start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        with self.assertRaises(Exception):
+            slot.full_clean()
+
+
+class GroupScheduleConflictTests(AcademyTestBase):
+    """group1 occupies room1 Mon/Wed 15:00-16:30 with teacher1 (its legacy slot)."""
+
+    def test_teacher_conflict_detected(self):
+        conflict = find_schedule_teacher_conflict(
+            teacher=self.teacher1, day_of_week="mon", start_time=dt.time(15, 30), end_time=dt.time(16, 0),
+        )
+        self.assertIsNotNone(conflict)
+
+    def test_room_conflict_detected(self):
+        conflict = find_schedule_room_conflict(
+            room=self.room1, day_of_week="mon", start_time=dt.time(15, 30), end_time=dt.time(16, 0),
+        )
+        self.assertIsNotNone(conflict)
+
+    def test_adjacent_slots_do_not_conflict(self):
+        # group1 ends at 16:30 — a slot starting exactly then must not clash.
+        conflict = find_schedule_teacher_conflict(
+            teacher=self.teacher1, day_of_week="mon", start_time=dt.time(16, 30), end_time=dt.time(17, 30),
+        )
+        self.assertIsNone(conflict)
+
+    def test_overlapping_slots_conflict(self):
+        conflict = find_schedule_teacher_conflict(
+            teacher=self.teacher1, day_of_week="mon", start_time=dt.time(16, 0), end_time=dt.time(17, 0),
+        )
+        self.assertIsNotNone(conflict)
+
+    def test_different_teacher_same_time_no_conflict(self):
+        conflict = find_schedule_teacher_conflict(
+            teacher=self.teacher2, day_of_week="mon", start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+        )
+        self.assertIsNone(conflict)
+
+    def test_group_level_teacher_conflict_helper(self):
+        conflict = find_group_teacher_conflict(
+            teacher=self.teacher1, days_of_week=["mon"], start_time=dt.time(15, 30), end_time=dt.time(16, 0),
+            start_date=dt.date(2026, 9, 7),
+        )
+        self.assertIsNotNone(conflict)
+
+    def test_api_rejects_teacher_double_booking(self):
+        response = self.admin_client.post(
+            "/api/v1/academy/group-schedules/",
+            {
+                "group": self.group1.id, "teacher": self.teacher1.id, "subject": self.subject_python.id,
+                "day_of_week": "mon", "start_time": "16:00", "end_time": "17:00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("teacher", response.data)
+
+    def test_api_rejects_room_double_booking(self):
+        response = self.admin_client.post(
+            "/api/v1/academy/group-schedules/",
+            {
+                "group": self.group2.id, "teacher": self.teacher2.id, "subject": self.subject_python.id,
+                "day_of_week": "mon", "start_time": "15:30", "end_time": "16:00", "room": self.room1.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("room", response.data)
+
+    def test_api_allows_adjacent_slot(self):
+        response = self.admin_client.post(
+            "/api/v1/academy/group-schedules/",
+            {
+                "group": self.group1.id, "teacher": self.teacher1.id, "subject": self.subject_python.id,
+                "day_of_week": "mon", "start_time": "16:30", "end_time": "17:30",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_teacher_cannot_write_group_schedule(self):
+        response = self.teacher1_client.post(
+            "/api/v1/academy/group-schedules/",
+            {
+                "group": self.group1.id, "teacher": self.teacher1.id, "subject": self.subject_python.id,
+                "day_of_week": "fri", "start_time": "10:00", "end_time": "11:00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AvailabilityAPITests(AcademyTestBase):
+    """group1: teacher1/room1, Mon/Wed 15:00-16:30. group2: teacher2/room2, Tue/Thu 17:00-18:30."""
+
+    def test_free_rooms_excludes_occupied(self):
+        response = self.admin_client.get(
+            "/api/v1/academy/rooms/available/", {"date": "2026-09-07", "start_time": "15:00", "end_time": "16:30"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        available_names = {r["name"] for r in response.data["available"]}
+        self.assertNotIn(self.room1.name, available_names)
+        self.assertIn(self.room2.name, available_names)
+        occupied_names = {o["room_name"] for o in response.data["occupied"]}
+        self.assertIn(self.room1.name, occupied_names)
+
+    def test_free_teachers_excludes_occupied(self):
+        response = self.admin_client.get(
+            "/api/v1/academy/teacher-availability/",
+            {"date": "2026-09-07", "start_time": "15:00", "end_time": "16:30"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        available_usernames = {t["user"]["username"] for t in response.data["available"]}
+        self.assertNotIn(self.teacher1.user.username, available_usernames)
+        self.assertIn(self.teacher2.user.username, available_usernames)
+        occupied_names = {o["teacher_name"] for o in response.data["occupied"]}
+        self.assertIn(str(self.teacher1), occupied_names)
+
+    def test_free_teachers_requires_authentication(self):
+        response = self.anon_client.get("/api/v1/academy/teacher-availability/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ---------------------------------------------------------------------------
+# Multi-schedule Lesson generation — the task's own worked example: a Monday
+# with 3 sessions (IT/Islam, SoftSkills/TeacherX, English/TeacherY), a
+# Thursday with 2 (IT, English), a Friday with 1 (IT only).
+# ---------------------------------------------------------------------------
+
+class MultiScheduleLessonGeneratorTests(TestCase):
+    def setUp(self):
+        self.admin = make_admin("gen_admin")
+        self.islam = make_teacher("islam_gen")
+        self.teacher_x = make_teacher("teacherx_gen")
+        self.teacher_y = make_teacher("teachery_gen")
+
+        self.subject_it = Subject.objects.create(name="GenIT")
+        self.subject_soft = Subject.objects.create(name="GenSoft")
+        self.subject_eng = Subject.objects.create(name="GenEng")
+
+        self.room15 = Room.objects.create(name="GenRoom15", capacity=20)
+        self.room7 = Room.objects.create(name="GenRoom7", capacity=20)
+
+        self.course = Course.objects.create(name="GenCourse", count_lesson=9)
+        self.course.subjects.set([self.subject_it, self.subject_soft, self.subject_eng])
+
+        # Arranged in the same order the schedule below will actually
+        # produce lessons in (see lesson_generator's module docstring).
+        rotation = [
+            self.subject_it, self.subject_soft, self.subject_eng,
+            self.subject_it, self.subject_eng,
+            self.subject_it,
+            self.subject_it, self.subject_soft, self.subject_eng,
+        ]
+        for i, subject in enumerate(rotation, start=1):
+            CourseLessonPlan.objects.create(
+                course=self.course, lesson_number=i, subject=subject, topic=f"Topic {i}",
+                homework_title=(f"HW{i}" if i % 3 == 0 else ""),
+            )
+
+        # 2026-09-14 is a Monday.
+        self.group = Group(
+            name="Prog1-IT", course=self.course, teacher=self.islam, room=self.room15,
+            start_date=dt.date(2026, 9, 14), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+            days_of_week=["mon", "thu", "fri"],
+        )
+        # Set up the whole schedule (primary slot + extra slots) before the
+        # first generation runs — exactly what GroupAdmin's deferred
+        # save_model/save_formset/save_related does for a real admin
+        # submission (see admin.GroupAdmin), simulated here directly.
+        self.group._defer_schedule_sync = True
+        self.group.save()
+
+        for teacher, subject, day, start, end, room in [
+            (self.teacher_x, self.subject_soft, "mon", dt.time(9, 0), dt.time(9, 30), self.room15),
+            (self.teacher_y, self.subject_eng, "mon", dt.time(19, 0), dt.time(20, 0), self.room7),
+            (self.teacher_y, self.subject_eng, "thu", dt.time(19, 0), dt.time(20, 0), self.room7),
+        ]:
+            slot = GroupSchedule(
+                group=self.group, teacher=teacher, subject=subject,
+                day_of_week=day, start_time=start, end_time=end, room=room,
+            )
+            slot._defer_schedule_sync = True
+            slot.save()
+
+        sync_legacy_group_schedule(self.group)
+        generate_lessons_for_group(self.group)
+
+    def test_lesson_numbers_are_strictly_sequential(self):
+        numbers = list(
+            Lesson.objects.filter(group=self.group).order_by("date", "start_time").values_list("lesson_number", flat=True)
+        )
+        self.assertEqual(numbers, list(range(1, 10)))
+
+    def test_monday_has_three_lessons_in_time_order(self):
+        monday_lessons = list(Lesson.objects.filter(group=self.group, date=dt.date(2026, 9, 14)).order_by("start_time"))
+        self.assertEqual([l.subject.name for l in monday_lessons], ["GenIT", "GenSoft", "GenEng"])
+        self.assertEqual(
+            [l.teacher.user.username for l in monday_lessons], ["islam_gen", "teacherx_gen", "teachery_gen"]
+        )
+        self.assertEqual([l.lesson_number for l in monday_lessons], [1, 2, 3])
+
+    def test_thursday_skips_soft_skills(self):
+        thursday_lessons = list(Lesson.objects.filter(group=self.group, date=dt.date(2026, 9, 17)).order_by("start_time"))
+        self.assertEqual([l.subject.name for l in thursday_lessons], ["GenIT", "GenEng"])
+
+    def test_friday_has_only_it(self):
+        friday_lessons = list(Lesson.objects.filter(group=self.group, date=dt.date(2026, 9, 18)))
+        self.assertEqual(len(friday_lessons), 1)
+        self.assertEqual(friday_lessons[0].subject.name, "GenIT")
+
+    def test_next_week_continues_the_same_sequence(self):
+        next_monday = list(Lesson.objects.filter(group=self.group, date=dt.date(2026, 9, 21)).order_by("start_time"))
+        self.assertEqual([l.lesson_number for l in next_monday], [7, 8, 9])
+
+    def test_generator_is_idempotent_on_repeat_calls(self):
+        self.assertEqual(len(generate_lessons_for_group(self.group)), 0)
+        self.assertEqual(len(generate_lessons_for_group(self.group)), 0)
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), 9)
+
+    def test_lesson_teacher_is_set_per_slot(self):
+        soft_lesson = Lesson.objects.get(group=self.group, subject=self.subject_soft, lesson_number=2)
+        self.assertEqual(soft_lesson.teacher_id, self.teacher_x.id)
+        self.assertEqual(soft_lesson.effective_teacher.id, self.teacher_x.id)
+
+    def test_homework_auto_created_from_plan(self):
+        for number in (3, 6, 9):
+            lesson = Lesson.objects.get(group=self.group, lesson_number=number)
+            self.assertTrue(Homework.objects.filter(lesson=lesson, title=f"HW{number}").exists())
+
+    def test_lesson_without_planned_homework_has_none(self):
+        lesson1 = Lesson.objects.get(group=self.group, lesson_number=1)
+        self.assertFalse(Homework.objects.filter(lesson=lesson1).exists())
+
+    def test_lesson_can_have_multiple_homework(self):
+        lesson3 = Lesson.objects.get(group=self.group, lesson_number=3)
+        Homework.objects.create(lesson=lesson3, title="Дополнительное ДЗ")
+        self.assertEqual(Homework.objects.filter(lesson=lesson3).count(), 2)
+
+    def test_past_lesson_untouched_by_regeneration(self):
+        lesson1 = Lesson.objects.get(group=self.group, lesson_number=1)
+        lesson1.topic = "Отредактировано вручную"
+        lesson1.save(update_fields=["topic"])
+        generate_lessons_for_group(self.group)
+        lesson1.refresh_from_db()
+        self.assertEqual(lesson1.topic, "Отредактировано вручную")
+
+    def test_completed_lesson_untouched_by_regeneration(self):
+        lesson1 = Lesson.objects.get(group=self.group, lesson_number=1)
+        lesson1.status = Lesson.Status.COMPLETED
+        lesson1.save(update_fields=["status"])
+        generate_lessons_for_group(self.group)
+        lesson1.refresh_from_db()
+        self.assertEqual(lesson1.status, Lesson.Status.COMPLETED)
+
+    def test_removing_a_slot_does_not_delete_its_lessons(self):
+        soft_slot = GroupSchedule.objects.get(group=self.group, subject=self.subject_soft)
+        soft_lesson_id = Lesson.objects.get(group=self.group, subject=self.subject_soft, lesson_number=2).id
+        soft_slot.delete()
+
+        soft_lesson = Lesson.objects.get(pk=soft_lesson_id)
+        self.assertIsNone(soft_lesson.schedule_id)
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), 9)
+
+
+# ---------------------------------------------------------------------------
+# Data migration: existing (pre-GroupSchedule) Group data is backfilled into
+# GroupSchedule without touching Group/Student data itself.
+# ---------------------------------------------------------------------------
+
+class GroupScheduleBackfillMigrationTests(AcademyTestBase):
+    def test_backfill_recreates_legacy_schedule_from_group_fields(self):
+        # Simulate "before GroupSchedule existed": no schedule rows at all.
+        GroupSchedule.objects.filter(group=self.group1).delete()
+        self.assertEqual(self.group1.schedules.count(), 0)
+
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        migration = importlib.import_module("apps.academy.migrations.0004_backfill_group_schedule")
+        migration.backfill_group_schedule(django_apps, None)
+
+        rows = list(self.group1.schedules.order_by("day_of_week"))
+        self.assertEqual({r.day_of_week for r in rows}, {"mon", "wed"})
+        for row in rows:
+            self.assertEqual(row.teacher_id, self.teacher1.id)
+            self.assertEqual(row.room_id, self.room1.id)
+            self.assertEqual(row.start_time, self.group1.start_time)
+            self.assertEqual(row.end_time, self.group1.end_time)
+            self.assertIsNone(row.subject_id)
+            self.assertTrue(row.is_active)
+
+    def test_existing_group_and_student_data_untouched_by_backfill(self):
+        groups_before = set(Group.objects.values_list("id", "name"))
+        students_before = set(Student.objects.values_list("id", "first_name", "group_id"))
+
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        migration = importlib.import_module("apps.academy.migrations.0004_backfill_group_schedule")
+        migration.backfill_group_schedule(django_apps, None)
+
+        self.assertEqual(set(Group.objects.values_list("id", "name")), groups_before)
+        self.assertEqual(set(Student.objects.values_list("id", "first_name", "group_id")), students_before)
+
+    def test_backfill_skips_cancelled_group_as_inactive(self):
+        self.group1.status = Group.Status.CANCELLED
+        self.group1.save(update_fields=["status"])
+        GroupSchedule.objects.filter(group=self.group1).delete()
+
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        migration = importlib.import_module("apps.academy.migrations.0004_backfill_group_schedule")
+        migration.backfill_group_schedule(django_apps, None)
+
+        self.assertTrue(self.group1.schedules.exists())
+        self.assertFalse(self.group1.schedules.filter(is_active=True).exists())
+
+
+# ---------------------------------------------------------------------------
+# Permissions for a multi-teacher group: a Teacher who only holds a
+# GroupSchedule slot (not `group.teacher`) gets the same access to that
+# group a single teacher always had; an unrelated teacher stays denied.
+# ---------------------------------------------------------------------------
+
+class MultiTeacherPermissionsTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        # teacher2 (who "owns" group2) also teaches a slot in group1, which
+        # teacher1 owns as `group.teacher` — teacher2 has no `group.teacher`
+        # stake in group1 at all, only this schedule slot.
+        GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="mon", start_time=dt.time(17, 0), end_time=dt.time(18, 0), room=self.room1,
+        )
+
+    def test_teacher_with_only_schedule_slot_sees_the_group(self):
+        response = self.teacher2_client.get("/api/v1/academy/groups/")
+        names = {g["name"] for g in response.data["results"]}
+        self.assertIn(self.group1.name, names)
+        self.assertIn(self.group2.name, names)
+
+    def test_teacher_with_only_schedule_slot_can_read_group_detail(self):
+        response = self.teacher2_client.get(f"/api/v1/academy/groups/{self.group1.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_teacher_with_only_schedule_slot_can_access_lessons(self):
+        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        response = self.teacher2_client.get(f"/api/v1/academy/lessons/{lesson.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_teacher_with_only_schedule_slot_can_mark_attendance(self):
+        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        response = self.teacher2_client.post(
+            f"/api/v1/academy/lessons/{lesson.id}/attendance/",
+            [{"student": self.student1.id, "status": "present"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_unrelated_teacher_still_denied(self):
+        outsider = make_teacher("outsider_perm")
+        outsider_client = APIClient()
+        outsider_client.force_authenticate(outsider.user)
+
+        response = outsider_client.get(f"/api/v1/academy/groups/{self.group1.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        response = outsider_client.get(f"/api/v1/academy/lessons/{lesson.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

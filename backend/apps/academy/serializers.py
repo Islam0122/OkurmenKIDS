@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from apps.users.models import Teacher, User
-from apps.users.serializers import SubjectSerializer
+from apps.users.models import Subject, Teacher, User
+from apps.users.serializers import SubjectSerializer, TeacherSerializer
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 from .models import (
@@ -11,11 +11,17 @@ from .models import (
     Course,
     CourseLessonPlan,
     Group,
+    GroupSchedule,
     Homework,
     HomeworkResult,
     Lesson,
     Room,
     Student,
+)
+from .services.group_schedule_conflicts import (
+    find_group_teacher_conflict,
+    find_schedule_room_conflict,
+    find_schedule_teacher_conflict,
 )
 from .services.room_conflicts import find_room_schedule_conflict
 
@@ -28,7 +34,7 @@ def _teacher_group_ids(user):
     teacher = getattr(user, "teacher_profile", None)
     if teacher is None:
         return Group.objects.none().values_list("id", flat=True)
-    return Group.objects.filter(teacher=teacher).values_list("id", flat=True)
+    return Group.objects.for_teacher(teacher).values_list("id", flat=True)
 
 
 class _RequestAwareSerializer(serializers.ModelSerializer):
@@ -166,6 +172,39 @@ class RoomAvailabilitySerializer(serializers.Serializer):
     occupied = RoomOccupancySerializer(many=True)
 
 
+class TeacherAvailabilityRequestSerializer(serializers.Serializer):
+    """Query params for `GET /teacher-availability/`."""
+
+    date = serializers.DateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+
+    def validate(self, attrs):
+        if attrs["end_time"] <= attrs["start_time"]:
+            raise serializers.ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
+        return attrs
+
+
+class TeacherOccupancySerializer(serializers.Serializer):
+    """One occupying Lesson, for the `occupied` list of `GET /teacher-availability/`."""
+
+    teacher = serializers.IntegerField()
+    teacher_name = serializers.CharField()
+    lesson = serializers.IntegerField()
+    group = serializers.IntegerField(allow_null=True)
+    group_name = serializers.CharField(allow_null=True)
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+
+
+class TeacherAvailabilitySerializer(serializers.Serializer):
+    date = serializers.DateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+    available = TeacherSerializer(many=True)
+    occupied = TeacherOccupancySerializer(many=True)
+
+
 class StudentSerializer(_RequestAwareSerializer):
     full_name = serializers.SerializerMethodField()
     group_name = serializers.CharField(source="group.name", read_only=True, default=None)
@@ -201,12 +240,94 @@ class StudentSerializer(_RequestAwareSerializer):
 # Groups
 # ---------------------------------------------------------------------------
 
+class GroupScheduleSlotSerializer(serializers.ModelSerializer):
+    """One recurring weekly slot of a Group's schedule — see models.GroupSchedule.
+
+    Named "...Slot..." on purpose: `GroupScheduleSerializer` below is an
+    unrelated, pre-existing name — the response payload of
+    `GET /groups/{id}/schedule/` (the group's concrete, dated Lessons).
+    """
+
+    teacher_name = serializers.CharField(source="teacher.__str__", read_only=True)
+    subject_name = serializers.CharField(source="subject.name", read_only=True, default=None)
+    room_name = serializers.CharField(source="room.name", read_only=True, default=None)
+    day_of_week_label = serializers.CharField(source="get_day_of_week_display", read_only=True)
+
+    class Meta:
+        model = GroupSchedule
+        fields = [
+            "id",
+            "group",
+            "teacher",
+            "teacher_name",
+            "subject",
+            "subject_name",
+            "day_of_week",
+            "day_of_week_label",
+            "start_time",
+            "end_time",
+            "room",
+            "room_name",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["teacher"].queryset = Teacher.objects.filter(is_active=True)
+        self.fields["subject"].queryset = Subject.objects.filter(is_active=True)
+
+    def validate(self, attrs):
+        start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))
+        end_time = attrs.get("end_time", getattr(self.instance, "end_time", None))
+        if start_time and end_time and end_time <= start_time:
+            raise serializers.ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
+
+        teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
+        subject = attrs.get("subject", getattr(self.instance, "subject", None))
+        room = attrs.get("room", getattr(self.instance, "room", None))
+        day_of_week = attrs.get("day_of_week", getattr(self.instance, "day_of_week", None))
+        exclude_id = getattr(self.instance, "pk", None)
+
+        if teacher and not teacher.is_active:
+            raise serializers.ValidationError({"teacher": "Тренер должен быть активным."})
+        if subject and not subject.is_active:
+            raise serializers.ValidationError({"subject": "Предмет должен быть активным."})
+        if room and not room.is_active:
+            raise serializers.ValidationError({"room": "Аудитория должна быть активной."})
+
+        if teacher and day_of_week and start_time and end_time:
+            conflict = find_schedule_teacher_conflict(
+                teacher=teacher, day_of_week=day_of_week, start_time=start_time, end_time=end_time,
+                exclude_schedule_id=exclude_id,
+            )
+            if conflict is not None:
+                raise serializers.ValidationError(
+                    {"teacher": f"Тренер «{teacher}» уже занят в это время в группе «{conflict.group.name}»."}
+                )
+
+        if room and day_of_week and start_time and end_time:
+            conflict = find_schedule_room_conflict(
+                room=room, day_of_week=day_of_week, start_time=start_time, end_time=end_time,
+                exclude_schedule_id=exclude_id,
+            )
+            if conflict is not None:
+                raise serializers.ValidationError(
+                    {"room": f"Аудитория «{room.name}» уже занята в это время в группе «{conflict.group.name}»."}
+                )
+
+        return attrs
+
+
 class GroupSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source="teacher.__str__", read_only=True)
     room_name = serializers.CharField(source="room.name", read_only=True, default=None)
     course_name = serializers.CharField(source="course.name", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     students_count = serializers.SerializerMethodField()
+    schedules = GroupScheduleSlotSerializer(many=True, read_only=True)
     students = serializers.PrimaryKeyRelatedField(
         queryset=Student.objects.all(),
         many=True,
@@ -231,6 +352,7 @@ class GroupSerializer(serializers.ModelSerializer):
             "start_time",
             "end_time",
             "days_of_week",
+            "schedules",
             "students",
             "students_count",
             "max_students",
@@ -286,6 +408,22 @@ class GroupSerializer(serializers.ModelSerializer):
             if conflict is not None:
                 raise serializers.ValidationError(
                     {"room": f"Аудитория «{room.name}» уже занята в это время группой «{conflict.name}»."}
+                )
+
+        teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
+        if teacher is not None and days_of_week and start_time and end_time and start_date:
+            conflict = find_group_teacher_conflict(
+                teacher=teacher,
+                days_of_week=days_of_week,
+                start_time=start_time,
+                end_time=end_time,
+                start_date=start_date,
+                end_date=end_date,
+                exclude_group_id=getattr(self.instance, "pk", None),
+            )
+            if conflict is not None:
+                raise serializers.ValidationError(
+                    {"teacher": f"Тренер «{teacher}» уже занят в это время группой «{conflict.name}»."}
                 )
 
         return attrs

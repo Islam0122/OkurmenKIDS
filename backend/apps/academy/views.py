@@ -17,7 +17,12 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.users.import_export.formats import UnsupportedFileFormat
 from apps.users.models import Teacher, User
 from apps.users.permissions import IsAdmin
-from apps.users.serializers import ImportFileRequestSerializer, ImportPreviewSerializer, ImportResultSerializer
+from apps.users.serializers import (
+    ImportFileRequestSerializer,
+    ImportPreviewSerializer,
+    ImportResultSerializer,
+    TeacherSerializer,
+)
 
 from .filters import (
     AttendanceFilter,
@@ -32,6 +37,7 @@ from .models import (
     Course,
     CourseLessonPlan,
     Group,
+    GroupSchedule,
     Homework,
     HomeworkResult,
     Lesson,
@@ -50,6 +56,7 @@ from .serializers import (
     GenerateLessonsResponseSerializer,
     GroupScheduleLessonSerializer,
     GroupScheduleSerializer,
+    GroupScheduleSlotSerializer,
     GroupSerializer,
     HomeworkResultSerializer,
     HomeworkSerializer,
@@ -58,6 +65,8 @@ from .serializers import (
     RoomAvailabilitySerializer,
     RoomSerializer,
     StudentSerializer,
+    TeacherAvailabilityRequestSerializer,
+    TeacherAvailabilitySerializer,
 )
 from .services.analytics import AnalyticsService
 from .services.attendance_service import bulk_mark_attendance
@@ -73,6 +82,12 @@ from .services.lesson_generator import LessonGenerationError, generate_lessons_f
 
 def _teacher_profile(request):
     return getattr(request.user, "teacher_profile", None)
+
+
+def _teacher_group_ids(teacher):
+    """IDs of every Group `teacher` has a stake in — as its primary teacher
+    or via any active GroupSchedule slot (see Group.objects.for_teacher)."""
+    return Group.objects.for_teacher(teacher).values_list("id", flat=True)
 
 
 def _is_admin(user) -> bool:
@@ -251,7 +266,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group__teacher=teacher)
+        return qs.filter(group_id__in=_teacher_group_ids(teacher))
 
     @extend_schema(
         tags=["Students"],
@@ -368,7 +383,7 @@ class GroupViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(teacher=teacher)
+        return qs.filter(id__in=_teacher_group_ids(teacher))
 
     @extend_schema(
         tags=["Groups"],
@@ -442,6 +457,45 @@ class GroupViewSet(viewsets.ModelViewSet):
         return Response(StudentSerializer(qs, many=True, context=self.get_serializer_context()).data)
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["Groups"]),
+    retrieve=extend_schema(tags=["Groups"]),
+    create=extend_schema(tags=["Groups"]),
+    update=extend_schema(tags=["Groups"]),
+    partial_update=extend_schema(tags=["Groups"]),
+    destroy=extend_schema(tags=["Groups"]),
+)
+class GroupScheduleViewSet(viewsets.ModelViewSet):
+    """Recurring weekly schedule slots of a Group — see models.GroupSchedule.
+
+    A Group's "primary" slot (its own teacher/room/start_time/end_time/
+    days_of_week) is mirrored here automatically; this viewset is for the
+    *additional* slots that give a Group several teachers, subjects, days
+    or time ranges (see `GroupSerializer.schedules` for the read-only,
+    nested view of all of a group's slots together). Admin manages them —
+    typically through the Group admin page's inline — a Teacher only reads
+    the slots of groups they already have access to.
+    """
+
+    serializer_class = GroupScheduleSlotSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["group", "teacher", "subject", "day_of_week", "room", "is_active"]
+    search_fields = ["group__name"]
+    ordering_fields = ["day_of_week", "start_time"]
+    ordering = ["group", "day_of_week", "start_time"]
+
+    def get_queryset(self):
+        qs = GroupSchedule.objects.select_related("group", "teacher__user", "subject", "room")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+
+
 # ---------------------------------------------------------------------------
 # Lessons — list / retrieve / update only; created exclusively by the generator
 # ---------------------------------------------------------------------------
@@ -467,14 +521,14 @@ class LessonViewSet(
     ordering = ["date", "start_time"]
 
     def get_queryset(self):
-        qs = Lesson.objects.select_related("group__teacher__user", "room", "subject", "plan")
+        qs = Lesson.objects.select_related("group__teacher__user", "teacher__user", "room", "subject", "plan")
         user = self.request.user
         if _is_admin(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group__teacher=teacher)
+        return qs.filter(group_id__in=_teacher_group_ids(teacher))
 
     @extend_schema(
         tags=["Attendance"],
@@ -559,7 +613,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(lesson__group__teacher=teacher)
+        return qs.filter(lesson__group_id__in=_teacher_group_ids(teacher))
 
 
 # ---------------------------------------------------------------------------
@@ -593,7 +647,7 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(lesson__group__teacher=teacher)
+        return qs.filter(lesson__group_id__in=_teacher_group_ids(teacher))
 
     @extend_schema(
         tags=["Homework"],
@@ -676,8 +730,80 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(homework__lesson__group__teacher=teacher)
+        return qs.filter(homework__lesson__group_id__in=_teacher_group_ids(teacher))
 
+
+# ---------------------------------------------------------------------------
+# Teacher availability — the Teacher counterpart of RoomViewSet.available:
+# which active Teachers are free for a given date + time window, based on
+# existing Lesson rows (mirrors the room check exactly, keyed on
+# Lesson.effective_teacher instead of Lesson.room; a cancelled lesson never
+# occupies a teacher, same as it never occupies a room).
+# ---------------------------------------------------------------------------
+
+class TeacherAvailabilityView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Teachers"],
+        parameters=[TeacherAvailabilityRequestSerializer],
+        responses=TeacherAvailabilitySerializer,
+        description=(
+            "Free vs. occupied teachers for a given date + time window, based on "
+            "existing Lesson rows (any Lesson whose [start_time, end_time) "
+            "overlaps the requested window occupies its effective teacher — "
+            "Lesson.teacher if set, else its group's own teacher; cancelled "
+            "lessons never occupy anyone)."
+        ),
+    )
+    def get(self, request):
+        params = TeacherAvailabilityRequestSerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        date_ = params.validated_data["date"]
+        start_time = params.validated_data["start_time"]
+        end_time = params.validated_data["end_time"]
+
+        overlapping_lessons = (
+            Lesson.objects.filter(date=date_)
+            .exclude(status=Lesson.Status.CANCELLED)
+            .filter(start_time__lt=end_time, end_time__gt=start_time)
+            .select_related("teacher__user", "group__teacher__user", "group")
+        )
+
+        occupied_teacher_ids = set()
+        occupied = []
+        for lesson in overlapping_lessons:
+            teacher = lesson.effective_teacher
+            if teacher is None:
+                continue
+            occupied_teacher_ids.add(teacher.id)
+            occupied.append(
+                {
+                    "teacher": teacher.id,
+                    "teacher_name": str(teacher),
+                    "lesson": lesson.id,
+                    "group": lesson.group_id,
+                    "group_name": lesson.group.name,
+                    "start_time": lesson.start_time,
+                    "end_time": lesson.end_time,
+                }
+            )
+
+        available_teachers = (
+            Teacher.objects.filter(is_active=True)
+            .exclude(id__in=occupied_teacher_ids)
+            .select_related("user")
+            .order_by("user__first_name")
+        )
+
+        payload = {
+            "date": date_,
+            "start_time": start_time,
+            "end_time": end_time,
+            "available": TeacherSerializer(available_teachers, many=True).data,
+            "occupied": occupied,
+        }
+        return Response(TeacherAvailabilitySerializer(payload).data)
 
 
 # ---------------------------------------------------------------------------
@@ -712,7 +838,7 @@ class AnalyticsDashboardView(APIView):
             # No id can ever be 0 — forcing this keeps every downstream
             # query empty instead of special-casing "no teacher profile".
             teacher_id = teacher.id if teacher is not None else 0
-            if teacher is not None and group_id is not None and not Group.objects.filter(id=group_id, teacher=teacher).exists():
+            if teacher is not None and group_id is not None and not Group.objects.for_teacher(teacher).filter(id=group_id).exists():
                 group_id = 0
 
         service = AnalyticsService(data["date_from"], data["date_to"], teacher_id=teacher_id, group_id=group_id)

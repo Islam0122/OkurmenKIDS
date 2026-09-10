@@ -3,6 +3,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from ..users.models import Subject, Teacher
+from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +240,18 @@ class Student(models.Model):
 # Groups
 # ---------------------------------------------------------------------------
 
+class GroupQuerySet(models.QuerySet):
+    def for_teacher(self, teacher):
+        """Every Group `teacher` has a real stake in: as the group's own
+        primary teacher, or via any active GroupSchedule slot — a group can
+        now have several teachers across different slots, and any of them
+        gets the same full access to the group a single teacher always had.
+        """
+        return self.filter(
+            models.Q(teacher=teacher) | models.Q(schedules__teacher=teacher, schedules__is_active=True)
+        ).distinct()
+
+
 class Group(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Активна"
@@ -322,6 +335,8 @@ class Group(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
+    objects = GroupQuerySet.as_manager()
+
     class Meta:
         verbose_name = "Группа"
         verbose_name_plural = "Группы"
@@ -373,6 +388,156 @@ class Group(models.Model):
             if conflict is not None:
                 errors["room"] = f"Аудитория «{self.room.name}» уже занята в это время группой «{conflict.name}»."
 
+        if self.teacher_id and self.days_of_week and self.start_time and self.end_time and self.start_date:
+            from .services.group_schedule_conflicts import find_group_teacher_conflict
+
+            conflict = find_group_teacher_conflict(
+                teacher=self.teacher,
+                days_of_week=self.days_of_week,
+                start_time=self.start_time,
+                end_time=self.end_time,
+                start_date=self.start_date,
+                end_date=self.end_date,
+                exclude_group_id=self.pk,
+            )
+            if conflict is not None:
+                errors["teacher"] = f"Тренер «{self.teacher}» уже занят в это время группой «{conflict.name}»."
+
+        if errors:
+            raise ValidationError(errors)
+
+
+# ---------------------------------------------------------------------------
+# GroupSchedule — a Group's recurring weekly timetable, one row per
+# (weekday, time range) taught by one Teacher/Subject/Room. Additive to
+# Group's own teacher/room/start_time/end_time/days_of_week: those legacy
+# fields describe the group's own "primary" slot and keep working exactly
+# as before (a Group with no explicit GroupSchedule rows still generates
+# lessons from them, see services.lesson_generator); GroupSchedule rows are
+# how a Group gains *additional* slots — different teachers, subjects, days
+# or time ranges layered on top of that primary one. Every Group's primary
+# slot is also mirrored here (see services.group_schedule_sync, called from
+# signals.py) so this table is always the single, complete source of truth
+# for conflict-checking and lesson generation, never a second one.
+# ---------------------------------------------------------------------------
+
+class GroupSchedule(models.Model):
+    DAY_CHOICES = [(code, WEEKDAY_LABELS_FULL[code]) for code in WEEKDAY_CODES]
+
+    group = models.ForeignKey(
+        Group,
+        on_delete=models.CASCADE,
+        related_name="schedules",
+        verbose_name="Группа",
+    )
+
+    teacher = models.ForeignKey(
+        Teacher,
+        on_delete=models.PROTECT,
+        related_name="group_schedules",
+        verbose_name="Тренер",
+    )
+
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="group_schedules",
+        verbose_name="Предмет",
+        help_text=(
+            "Предмет этого слота. Пусто — унаследованный слот без явного "
+            "предмета (для него занятия создаются по общему порядку плана курса)."
+        ),
+    )
+
+    day_of_week = models.CharField(
+        max_length=3,
+        choices=DAY_CHOICES,
+        db_index=True,
+        verbose_name="День недели",
+    )
+
+    start_time = models.TimeField(verbose_name="Время начала")
+    end_time = models.TimeField(verbose_name="Время окончания")
+
+    room = models.ForeignKey(
+        Room,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="group_schedules",
+        verbose_name="Аудитория",
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        verbose_name="Активно",
+        help_text="Неактивные слоты игнорируются при генерации занятий и проверке конфликтов.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Слот расписания группы"
+        verbose_name_plural = "Расписание группы"
+        ordering = ["group", "day_of_week", "start_time"]
+        indexes = [
+            models.Index(fields=["group", "day_of_week"], name="ix_gsched_group_day"),
+            models.Index(fields=["teacher", "day_of_week"], name="ix_gsched_teacher_day"),
+            models.Index(fields=["room", "day_of_week"], name="ix_gsched_room_day"),
+        ]
+
+    def __str__(self):
+        return f"{self.group.name} — {self.get_day_of_week_display()} {self.start_time}–{self.end_time}"
+
+    def clean(self):
+        errors = {}
+
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            errors["end_time"] = "Время окончания должно быть позже времени начала."
+
+        if self.teacher_id and not self.teacher.is_active:
+            errors["teacher"] = "Тренер должен быть активным."
+
+        if self.subject_id and not self.subject.is_active:
+            errors["subject"] = "Предмет должен быть активным."
+
+        if self.room_id and not self.room.is_active:
+            errors["room"] = "Аудитория должна быть активной."
+
+        if self.teacher_id and self.day_of_week and self.start_time and self.end_time:
+            from .services.group_schedule_conflicts import find_schedule_teacher_conflict
+
+            conflict = find_schedule_teacher_conflict(
+                teacher=self.teacher,
+                day_of_week=self.day_of_week,
+                start_time=self.start_time,
+                end_time=self.end_time,
+                exclude_schedule_id=self.pk,
+            )
+            if conflict is not None:
+                errors["teacher"] = (
+                    f"Тренер «{self.teacher}» уже занят в это время в группе «{conflict.group.name}»."
+                )
+
+        if self.room_id and self.day_of_week and self.start_time and self.end_time:
+            from .services.group_schedule_conflicts import find_schedule_room_conflict
+
+            conflict = find_schedule_room_conflict(
+                room=self.room,
+                day_of_week=self.day_of_week,
+                start_time=self.start_time,
+                end_time=self.end_time,
+                exclude_schedule_id=self.pk,
+            )
+            if conflict is not None:
+                errors["room"] = (
+                    f"Аудитория «{self.room.name}» уже занята в это время в группе «{conflict.group.name}»."
+                )
+
         if errors:
             raise ValidationError(errors)
 
@@ -409,6 +574,31 @@ class Lesson(models.Model):
         blank=True,
         related_name="lessons",
         verbose_name="План занятия",
+    )
+
+    schedule = models.ForeignKey(
+        GroupSchedule,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lessons",
+        verbose_name="Слот расписания",
+        help_text="Слот GroupSchedule, из которого сгенерировано это занятие (если есть).",
+    )
+
+    teacher = models.ForeignKey(
+        Teacher,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lessons",
+        verbose_name="Тренер",
+        help_text=(
+            "Тренер, который ведёт именно это занятие. Заполняется генератором из "
+            "расписания группы; для занятий, созданных до появления нескольких "
+            "тренеров на группу, может быть пустым — тогда тренером считается "
+            "group.teacher (см. apps.academy.permissions)."
+        ),
     )
 
     lesson_number = models.PositiveSmallIntegerField(
@@ -506,6 +696,18 @@ class Lesson(models.Model):
     def clean(self):
         if self.start_time and self.end_time and self.end_time <= self.start_time:
             raise ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
+
+    @property
+    def effective_teacher(self) -> Teacher | None:
+        """The Teacher who actually gives this lesson.
+
+        `teacher` is set by the generator whenever the lesson came from a
+        GroupSchedule slot; lessons generated before multi-teacher support
+        (or otherwise created without one) fall back to the group's own
+        `teacher` — the same single-teacher assumption the whole app made
+        before this field existed.
+        """
+        return self.teacher or self.group.teacher
 
 
 # ---------------------------------------------------------------------------
