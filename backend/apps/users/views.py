@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from django.http import JsonResponse
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.generics import GenericAPIView
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,9 +15,16 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
+from .import_export.formats import UnsupportedFileFormat
+from .import_export.teachers import (
+    TeacherImportValidationError,
+    export_teachers,
+    import_teachers,
+    preview_teachers_import,
+)
 from .models import Subject, User
 from .permissions import IsAdmin, IsTeacher
-from .serializers import SubjectSerializer
+from .serializers import ImportFileRequestSerializer, ImportPreviewSerializer, ImportResultSerializer, SubjectSerializer
 
 from .models import Teacher
 from .serializers import (
@@ -62,6 +71,11 @@ class TrainerViewSet(viewsets.ModelViewSet):
     queryset = Teacher.objects.select_related("user").prefetch_related("subjects").all()
     serializer_class = TeacherSerializer
     http_method_names = ["get", "post", "delete"]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["is_active", "user__is_verified", "subjects"]
+    search_fields = ["user__username", "user__email", "user__first_name", "user__last_name", "phone"]
+    ordering_fields = ["user__first_name", "user__last_name", "created_at"]
+    ordering = ["-created_at"]
 
     def get_permissions(self):
         if self.action == "me":
@@ -113,6 +127,80 @@ class TrainerViewSet(viewsets.ModelViewSet):
         teacher.user.is_verified = True
         teacher.user.save(update_fields=["is_verified", "updated_at"])
         return Response(TeacherSerializer(teacher).data)
+
+    @extend_schema(
+        tags=["Trainers"],
+        parameters=[
+            OpenApiParameter(name="export_format", type=str, enum=["csv", "xlsx"], required=False, description="csv (по умолчанию) или xlsx."),
+        ],
+        request=None,
+        responses={200: bytes},
+        description=(
+            "Экспорт тренеров (текущего отфильтрованного списка) в CSV или XLSX. Пароль никогда "
+            "не экспортируется. Параметр называется export_format (не format — это имя "
+            "зарезервировано DRF для согласования типа содержимого ответа)."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        fmt = request.query_params.get("export_format", "csv")
+        queryset = self.filter_queryset(self.get_queryset())
+        try:
+            return export_teachers(queryset, fmt)
+        except UnsupportedFileFormat as exc:
+            raise DRFValidationError(str(exc))
+
+    @extend_schema(
+        tags=["Trainers"],
+        request=ImportFileRequestSerializer,
+        responses=ImportPreviewSerializer,
+        description="Проверка файла импорта тренеров без сохранения изменений.",
+    )
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="import/preview",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def import_preview(self, request):
+        file_obj = request.FILES.get("file")
+        if not file_obj:
+            raise DRFValidationError({"file": ["Файл обязателен."]})
+        try:
+            preview = preview_teachers_import(file_obj)
+        except UnsupportedFileFormat as exc:
+            raise DRFValidationError(str(exc))
+        return Response(preview.as_dict())
+
+    @extend_schema(
+        tags=["Trainers"],
+        request=ImportFileRequestSerializer,
+        responses={201: ImportResultSerializer, 400: ImportPreviewSerializer},
+        description=(
+            "Импорт тренеров из CSV/XLSX. Транзакционный: при наличии хотя бы одной "
+            "ошибки ни одна строка не сохраняется."
+        ),
+    )
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="import",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def import_file(self, request):
+        file_obj = request.FILES.get("file")
+        if not file_obj:
+            raise DRFValidationError({"file": ["Файл обязателен."]})
+        try:
+            result = import_teachers(file_obj)
+        except UnsupportedFileFormat as exc:
+            raise DRFValidationError(str(exc))
+        except TeacherImportValidationError as exc:
+            return Response(
+                {"detail": "Импорт не выполнен — найдены ошибки.", **exc.preview.as_dict()},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(result.as_dict(), status=status.HTTP_201_CREATED)
 
 
 class SubjectViewSet(viewsets.ReadOnlyModelViewSet):

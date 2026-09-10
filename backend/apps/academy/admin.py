@@ -3,8 +3,11 @@ from __future__ import annotations
 from django import forms
 from django.contrib import admin, messages
 from django.db.models import Count, Q
+from django.shortcuts import redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
+
+from apps.users.import_export.formats import UnsupportedFileFormat
 
 from .admin_views import analytics_view, generate_lessons_for_group_view, schedule_view
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
@@ -18,6 +21,12 @@ from .models import (
     Lesson,
     Room,
     Student,
+)
+from .services.import_export import (
+    StudentImportValidationError,
+    export_students,
+    import_students,
+    preview_students_import,
 )
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
@@ -128,6 +137,13 @@ class RoomAdmin(admin.ModelAdmin):
         return self.schedule_link(obj)
 
 
+class StudentImportForm(forms.Form):
+    file = forms.FileField(
+        label="Файл (CSV или XLSX)",
+        widget=forms.ClearableFileInput(attrs={"class": "ok-input"}),
+    )
+
+
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
     list_display = ("full_name", "group", "phone", "active_badge", "created_at")
@@ -137,6 +153,8 @@ class StudentAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
     autocomplete_fields = ("group",)
     list_per_page = 25
+    actions = ["export_selected_csv"]
+    change_list_template = "admin/academy/student/change_list.html"
 
     fieldsets = (
         ("Основная информация", {"fields": ("first_name", "last_name", "group", "is_active")}),
@@ -154,6 +172,79 @@ class StudentAdmin(admin.ModelAdmin):
     @admin.display(description="Статус", ordering="is_active")
     def active_badge(self, obj: Student) -> str:
         return _badge("ok-badge-success", "Активен") if obj.is_active else _badge("ok-badge-danger", "Неактивен")
+
+    @admin.action(description="Экспортировать выбранных студентов (CSV)")
+    def export_selected_csv(self, request, queryset):
+        return export_students(queryset, "csv")
+
+    def get_urls(self):
+        custom_urls = [
+            path("import/", self.admin_site.admin_view(self.import_view), name="academy_student_import"),
+            path("export/", self.admin_site.admin_view(self.export_view), name="academy_student_export"),
+        ]
+        return custom_urls + super().get_urls()
+
+    def export_view(self, request):
+        fmt = request.GET.get("format", "csv")
+        # ChangeList treats every unrecognized GET param as a field lookup,
+        # so `?format=` (ours, not a filter) has to be stripped before it
+        # builds the queryset or it 500s trying to filter by a "format" field.
+        original_get = request.GET
+        request.GET = original_get.copy()
+        request.GET.pop("format", None)
+        try:
+            changelist = self.get_changelist_instance(request)
+            queryset = changelist.get_queryset(request)
+        finally:
+            request.GET = original_get
+        try:
+            return export_students(queryset, fmt)
+        except UnsupportedFileFormat as exc:
+            self.message_user(request, str(exc), messages.ERROR)
+            return redirect(reverse("admin:academy_student_changelist"))
+
+    def import_view(self, request):
+        preview = None
+        failed = False
+
+        if request.method == "POST":
+            form = StudentImportForm(request.POST, request.FILES)
+            if form.is_valid():
+                file_obj = form.cleaned_data["file"]
+                if "preview" in request.POST:
+                    try:
+                        preview = preview_students_import(file_obj)
+                    except UnsupportedFileFormat as exc:
+                        messages.error(request, str(exc))
+                else:
+                    try:
+                        result = import_students(file_obj)
+                    except UnsupportedFileFormat as exc:
+                        messages.error(request, str(exc))
+                    except StudentImportValidationError as exc:
+                        preview = exc.preview
+                        failed = True
+                    else:
+                        messages.success(
+                            request,
+                            f"Импорт завершён: создано {result.created}, обновлено {result.updated} "
+                            f"из {result.total} студентов.",
+                        )
+                        return redirect(reverse("admin:academy_student_changelist"))
+        else:
+            form = StudentImportForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Импорт студентов",
+            "opts": self.model._meta,
+            "form": form,
+            "preview": preview,
+            "failed": failed,
+            "export_fields": "id, first_name, last_name, phone, parent_phone, group, is_active",
+            "changelist_url": reverse("admin:academy_student_changelist"),
+        }
+        return render(request, "admin/academy/student_import.html", context)
 
 
 # ---------------------------------------------------------------------------

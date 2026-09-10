@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client as DjangoClient
 from django.test import TestCase
 from django.urls import reverse
@@ -1033,3 +1034,232 @@ class ScheduleAdminViewTests(AcademyTestBase):
         self.assertIn("/admin/login/", response.url)
         # A non-admin's blocked request must not change anything.
         self.assertEqual(Lesson.objects.filter(group=group).count(), lessons_before)
+
+
+# ---------------------------------------------------------------------------
+# Student Import / Export — apps.academy.services.import_export
+# ---------------------------------------------------------------------------
+
+def _csv_file(content: str, name: str = "students.csv") -> SimpleUploadedFile:
+    return SimpleUploadedFile(name, content.encode("utf-8"), content_type="text/csv")
+
+
+class StudentImportExportAPITests(AcademyTestBase):
+    """group1 = "Python Beginner" (teacher1, students Алина/Мансур).
+    group2 = "Frontend Beginner" (teacher2, student Айбек)."""
+
+    def test_export_returns_csv_with_expected_columns(self):
+        response = self.admin_client.get("/api/v1/academy/students/export/?export_format=csv")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        content = response.content.decode("utf-8-sig")
+        header = content.splitlines()[0]
+        self.assertEqual(header, "id,first_name,last_name,phone,parent_phone,group,is_active,created_at")
+        self.assertIn("Python Beginner", content)
+
+    def test_export_xlsx_format(self):
+        response = self.admin_client.get("/api/v1/academy/students/export/?export_format=xlsx")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    def test_export_respects_current_filters(self):
+        response = self.admin_client.get(
+            f"/api/v1/academy/students/export/?export_format=csv&group={self.group1.id}"
+        )
+        content = response.content.decode("utf-8-sig")
+        self.assertIn("Алина", content)
+        self.assertNotIn("Айбек", content)
+
+    def test_teacher_export_scoped_to_own_groups(self):
+        """Teacher permission spec §12: export is limited to the teacher's own groups."""
+        response = self.teacher1_client.get("/api/v1/academy/students/export/?export_format=csv")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        content = response.content.decode("utf-8-sig")
+        self.assertIn("Алина", content)
+        self.assertNotIn("Айбек", content)
+
+    def test_anon_cannot_export(self):
+        response = self.anon_client.get("/api/v1/academy/students/export/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_import_creates_student_with_existing_group(self):
+        csv_content = (
+            "first_name,last_name,phone,parent_phone,group,is_active\n"
+            "Данияр,Сыдыков,+996555000111,+996555000222,Python Beginner,true\n"
+        )
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data, {"created": 1, "updated": 0, "total": 1})
+        student = Student.objects.get(first_name="Данияр")
+        self.assertEqual(student.group, self.group1)
+        self.assertTrue(student.is_active)
+
+    def test_import_with_unknown_group_is_rejected_and_fully_atomic(self):
+        """Spec §7: one bad row rolls back the *whole* file, including valid rows."""
+        csv_content = (
+            "first_name,last_name,group\n"
+            "Валидный,Студент,Python Beginner\n"
+            "Невалидный,Студент,Несуществующая Группа\n"
+        )
+        before = Student.objects.count()
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["invalid"], 1)
+        self.assertIn("Несуществующая Группа", response.data["errors"][0]["errors"][0])
+        self.assertEqual(Student.objects.count(), before)
+        self.assertFalse(Student.objects.filter(first_name="Валидный").exists())
+
+    def test_group_is_never_auto_created(self):
+        csv_content = "first_name,group\nX,Совсем Новая Группа\n"
+        self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertFalse(Group.objects.filter(name="Совсем Новая Группа").exists())
+
+    def test_import_preview_does_not_save_anything(self):
+        csv_content = "first_name,last_name\nПревью,Студент\n"
+        before = Student.objects.count()
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/preview/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"total": 1, "valid": 1, "invalid": 0, "errors": []})
+        self.assertEqual(Student.objects.count(), before)
+
+    def test_import_updates_existing_student_by_id_upsert(self):
+        """Student has no natural unique key besides `id` (spec §13) — updating
+        by name would be unsafe, so `id` is the only supported upsert key."""
+        csv_content = (
+            f"id,first_name,last_name,group,is_active\n"
+            f"{self.student1.id},Алина,Иванова-Петрова,Frontend Beginner,false\n"
+        )
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data, {"created": 0, "updated": 1, "total": 1})
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.last_name, "Иванова-Петрова")
+        self.assertEqual(self.student1.group, self.group2)
+        self.assertFalse(self.student1.is_active)
+        # No duplicate was created.
+        self.assertEqual(Student.objects.filter(first_name="Алина").count(), 1)
+
+    def test_import_unknown_id_is_rejected(self):
+        csv_content = "id,first_name\n999999,Кто-то\n"
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("не найден", response.data["errors"][0]["errors"][0])
+
+    def test_import_missing_first_name_is_rejected(self):
+        csv_content = "first_name,last_name\n,Безымянный\n"
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("first_name", response.data["errors"][0]["errors"][0])
+
+    def test_import_invalid_boolean_is_rejected(self):
+        csv_content = "first_name,is_active\nТест,может_быть\n"
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("is_active", response.data["errors"][0]["errors"][0])
+
+    def test_import_invalid_phone_is_rejected(self):
+        csv_content = "first_name,phone\nТест,not-a-phone!!\n"
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(csv_content)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_unsupported_file_extension_is_rejected(self):
+        bad_file = SimpleUploadedFile("students.txt", b"whatever", content_type="text/plain")
+        response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": bad_file}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_teacher_cannot_import_students(self):
+        response = self.teacher1_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file("first_name\nX\n")}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Student.objects.filter(first_name="X").exists())
+
+    def test_teacher_cannot_use_import_preview_either(self):
+        response = self.teacher1_client.post(
+            "/api/v1/academy/students/import/preview/", {"file": _csv_file("first_name\nX\n")}, format="multipart"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_round_trip_export_then_import_only_updates(self):
+        export_response = self.admin_client.get("/api/v1/academy/students/export/?export_format=csv")
+        content = export_response.content.decode("utf-8-sig")
+        before = Student.objects.count()
+
+        reimport_response = self.admin_client.post(
+            "/api/v1/academy/students/import/", {"file": _csv_file(content)}, format="multipart"
+        )
+        self.assertEqual(reimport_response.status_code, status.HTTP_201_CREATED, reimport_response.data)
+        self.assertEqual(reimport_response.data["created"], 0)
+        self.assertEqual(reimport_response.data["updated"], before)
+        self.assertEqual(Student.objects.count(), before)
+
+
+class StudentAdminImportExportTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    def test_changelist_has_import_export_buttons(self):
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("admin:academy_student_import"))
+        self.assertContains(response, reverse("admin:academy_student_export"))
+
+    def test_export_view_downloads_csv(self):
+        response = self.admin_web.get(reverse("admin:academy_student_export"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+
+    def test_export_view_respects_changelist_filters(self):
+        response = self.admin_web.get(
+            reverse("admin:academy_student_export"), {"group__id__exact": self.group1.id}
+        )
+        content = response.content.decode("utf-8-sig")
+        self.assertIn("Алина", content)
+        self.assertNotIn("Айбек", content)
+
+    def test_import_preview_then_confirm(self):
+        csv_content = "first_name,last_name,group\nЖаңыл,Бекова,Python Beginner\n"
+        url = reverse("admin:academy_student_import")
+
+        preview_response = self.admin_web.post(url, {"file": _csv_file(csv_content), "preview": "1"})
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertFalse(Student.objects.filter(first_name="Жаңыл").exists())
+
+        confirm_response = self.admin_web.post(
+            url, {"file": _csv_file(csv_content), "confirm": "1"}, follow=True
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+        self.assertTrue(Student.objects.filter(first_name="Жаңыл").exists())
+
+    def test_import_view_requires_admin(self):
+        url = reverse("admin:academy_student_import")
+        response = self.teacher_web.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)

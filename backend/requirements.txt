@@ -8,6 +8,7 @@ django-jazzmin==3.0.5
 djangorestframework==3.18.0
 djangorestframework-simplejwt==5.5.1
 drf-spectacular==0.30.0
+openpyxl==3.1.5
 Pillow==11.3.0
 inflection==0.5.1
 jsonschema==4.26.0

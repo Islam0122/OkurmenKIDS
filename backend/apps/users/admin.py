@@ -15,6 +15,13 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
+from .import_export.formats import UnsupportedFileFormat
+from .import_export.teachers import (
+    TeacherImportValidationError,
+    export_teachers,
+    import_teachers,
+    preview_teachers_import,
+)
 from .models import Subject, Teacher, User
 from .services import change_teacher_password_and_send, create_teacher
 
@@ -345,6 +352,13 @@ class ChangeTrainerForm(forms.ModelForm):
             self.fields["subjects"].queryset = active_subjects
 
 
+class TeacherImportForm(forms.Form):
+    file = forms.FileField(
+        label="Файл (CSV или XLSX)",
+        widget=forms.ClearableFileInput(attrs={"class": "ok-input"}),
+    )
+
+
 class ChangeTeacherPasswordForm(forms.Form):
     new_password = forms.CharField(label="Новый пароль", widget=forms.PasswordInput)
     new_password_confirm = forms.CharField(
@@ -386,8 +400,9 @@ class TeacherAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
     list_per_page = 20
-    actions = ["verify_accounts", "deactivate_trainers"]
+    actions = ["verify_accounts", "deactivate_trainers", "export_selected_csv"]
     add_form_template = "admin/users/add_teacher.html"
+    change_list_template = "admin/users/teacher/change_list.html"
 
     def get_queryset(self, request):
         return (
@@ -615,8 +630,79 @@ class TeacherAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.change_password_view),
                 name="users_teacher_change_password",
             ),
+            path("import/", self.admin_site.admin_view(self.import_view), name="users_teacher_import"),
+            path("export/", self.admin_site.admin_view(self.export_view), name="users_teacher_export"),
         ]
         return custom_urls + super().get_urls()
+
+    @admin.action(description="Экспортировать выбранных тренеров (CSV)")
+    def export_selected_csv(self, request, queryset):
+        return export_teachers(queryset, "csv")
+
+    def export_view(self, request):
+        fmt = request.GET.get("format", "csv")
+        # ChangeList treats every unrecognized GET param as a field lookup,
+        # so `?format=` (ours, not a filter) has to be stripped before it
+        # builds the queryset or it 500s trying to filter by a "format" field.
+        original_get = request.GET
+        request.GET = original_get.copy()
+        request.GET.pop("format", None)
+        try:
+            changelist = self.get_changelist_instance(request)
+            queryset = changelist.get_queryset(request)
+        finally:
+            request.GET = original_get
+        try:
+            return export_teachers(queryset, fmt)
+        except UnsupportedFileFormat as exc:
+            self.message_user(request, str(exc), messages.ERROR)
+            return redirect(reverse("admin:users_teacher_changelist"))
+
+    def import_view(self, request):
+        preview = None
+        failed = False
+
+        if request.method == "POST":
+            form = TeacherImportForm(request.POST, request.FILES)
+            if form.is_valid():
+                file_obj = form.cleaned_data["file"]
+                if "preview" in request.POST:
+                    try:
+                        preview = preview_teachers_import(file_obj)
+                    except UnsupportedFileFormat as exc:
+                        messages.error(request, str(exc))
+                else:
+                    try:
+                        result = import_teachers(file_obj)
+                    except UnsupportedFileFormat as exc:
+                        messages.error(request, str(exc))
+                    except TeacherImportValidationError as exc:
+                        preview = exc.preview
+                        failed = True
+                    else:
+                        messages.success(
+                            request,
+                            f"Импорт завершён: создано {result.created}, обновлено {result.updated} "
+                            f"из {result.total} тренеров.",
+                        )
+                        return redirect(reverse("admin:users_teacher_changelist"))
+        else:
+            form = TeacherImportForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Импорт тренеров",
+            "opts": self.model._meta,
+            "form": form,
+            "preview": preview,
+            "failed": failed,
+            "export_fields": (
+                "username, email, first_name, last_name, phone, position, experience_years, "
+                "bio, hire_date, subjects, is_active, is_verified"
+            ),
+            "changelist_url": reverse("admin:users_teacher_changelist"),
+        }
+        return render(request, "admin/users/teacher_import.html", context)
 
     def change_password_view(self, request, teacher_id):
         teacher = get_object_or_404(Teacher.objects.select_related("user"), pk=teacher_id)
