@@ -25,6 +25,8 @@ from apps.academy.models import (
     CourseLessonPlan,
     Group,
     GroupSchedule,
+    GroupTeacher,
+    GroupTeacherLessonPlan,
     Homework,
     HomeworkResult,
     Lesson,
@@ -1043,6 +1045,74 @@ class ScheduleAdminViewTests(AcademyTestBase):
         self.assertEqual(Lesson.objects.filter(group=group).count(), lessons_before)
 
 
+class ScheduleAdminMultiTeacherTests(AcademyTestBase):
+    """Spec item 21: the Расписание page must show each Lesson's *actual*
+    teacher (e.g. Islam vs Aizada), not just the group's own primary
+    teacher — and the teacher filter / conflict detection must key off that
+    same actual teacher too (see admin_views.schedule_view)."""
+
+    def setUp(self):
+        super().setUp()
+        self.multi_group = Group(
+            name="Multi Teacher Group", course=self.course, teacher=self.teacher1, room=self.room1,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+            days_of_week=["mon"],
+        )
+        self.multi_group._defer_schedule_sync = True
+        self.multi_group.save()
+
+        self.extra_slot = GroupSchedule(
+            group=self.multi_group, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="mon", start_time=dt.time(9, 0), end_time=dt.time(9, 30), room=self.room1,
+        )
+        self.extra_slot._defer_schedule_sync = True
+        self.extra_slot.save()
+
+        sync_legacy_group_schedule(self.multi_group)
+        generate_lessons_for_group(self.multi_group)
+
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+    def test_schedule_page_shows_actual_teacher_per_lesson(self):
+        response = self.admin_web.get(
+            reverse("admin:academy_schedule"),
+            {"date_from": "2026-09-07", "date_to": "2026-09-07", "group": self.multi_group.id},
+        )
+        body = response.content.decode()
+        self.assertIn(str(self.teacher1), body)
+        self.assertIn(str(self.teacher2), body)
+
+    def test_teacher_filter_matches_actual_teacher_not_just_group_owner(self):
+        response = self.admin_web.get(
+            reverse("admin:academy_schedule"),
+            {"date_from": "2026-09-07", "date_to": "2026-09-20", "teacher": self.teacher2.id},
+        )
+        shown = [lesson for day in response.context["days"] for lesson in day["lessons"]]
+        self.assertTrue(shown)
+        self.assertTrue(all(lesson.effective_teacher.id == self.teacher2.id for lesson in shown))
+
+    def test_teacher_conflict_uses_actual_teacher_not_group_owner(self):
+        # teacher2 also teaches group2 (from AcademyTestBase) — move group2's
+        # own lesson #1 to overlap with the extra Monday 09:00-09:30 slot
+        # teacher2 also gives here, in a *different* group/room.
+        group2_lesson = Lesson.objects.filter(group=self.group2).order_by("lesson_number").first()
+        group2_lesson.date = dt.date(2026, 9, 7)
+        group2_lesson.start_time = dt.time(9, 0)
+        group2_lesson.end_time = dt.time(9, 30)
+        group2_lesson.save(update_fields=["date", "start_time", "end_time"])
+
+        response = self.admin_web.get(
+            reverse("admin:academy_schedule"), {"date_from": "2026-09-07", "date_to": "2026-09-07"}
+        )
+        self.assertEqual(len(response.context["teacher_conflicts"]), 1)
+        self.assertEqual(len(response.context["room_conflicts"]), 0)
+        conflicting_ids = response.context["conflicting_ids"]
+        extra_lesson = Lesson.objects.get(group=self.multi_group, teacher=self.teacher2, date=dt.date(2026, 9, 7))
+        self.assertIn(extra_lesson.id, conflicting_ids)
+        self.assertIn(group2_lesson.id, conflicting_ids)
+
+
 # ---------------------------------------------------------------------------
 # Student Import / Export — apps.academy.services.import_export
 # ---------------------------------------------------------------------------
@@ -1717,3 +1787,366 @@ class MultiTeacherPermissionsTests(AcademyTestBase):
         lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
         response = outsider_client.get(f"/api/v1/academy/lessons/{lesson.id}/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+# ---------------------------------------------------------------------------
+# GroupTeacher — "this Teacher teaches this Subject in this Group": one
+# teacher's own subject/schedule, independent of every other teacher in the
+# same group (see models.GroupTeacher). Get-or-created automatically from
+# GroupSchedule, never created directly.
+# ---------------------------------------------------------------------------
+
+class GroupTeacherAdminPagesTests(AcademyTestBase):
+    """Regression coverage for GroupAdmin.teachers_summary / the new
+    GroupTeacher admin pages — none of the API-only tests above actually
+    render these Django admin templates, so a template-level bug (e.g. an
+    invalid format_html() call) wouldn't otherwise be caught."""
+
+    def setUp(self):
+        super().setUp()
+        self.django_admin_client = DjangoClient()
+        self.django_admin_client.force_login(self.admin)
+        self.extra_slot = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.extra_slot.group_teacher, lesson_number=1, topic="Own plan lesson 1"
+        )
+
+    def test_group_change_page_renders_teachers_summary(self):
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        self.assertIn("Управлять расписанием и планом", body)
+        self.assertIn("Свой план", body)
+        self.assertIn("Общий план курса", body)
+
+    def test_group_teacher_change_and_list_pages_render(self):
+        for group_teacher in self.group1.teachers.all():
+            response = self.django_admin_client.get(f"/admin/academy/groupteacher/{group_teacher.id}/change/")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = self.django_admin_client.get("/admin/academy/groupteacher/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_lesson_list_page_renders(self):
+        response = self.django_admin_client.get("/admin/academy/lesson/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class GroupTeacherModelTests(AcademyTestBase):
+    def test_group_has_one_legacy_group_teacher_by_default(self):
+        # Group #1 (spec item 1: "Group может иметь одного Teacher").
+        group_teachers = list(self.group1.teachers.all())
+        self.assertEqual(len(group_teachers), 1)
+        gt = group_teachers[0]
+        self.assertEqual(gt.teacher_id, self.teacher1.id)
+        self.assertIsNone(gt.subject_id)
+        self.assertTrue(gt.is_legacy_primary)
+
+    def test_group_can_have_multiple_teachers(self):
+        # Spec item 2.
+        GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        self.assertEqual(self.group1.teachers.count(), 2)
+        self.assertIn(self.teacher2.id, self.group1.teachers.values_list("teacher_id", flat=True))
+
+    def test_each_teacher_has_its_own_subject(self):
+        # Spec item 3.
+        GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        subjects = {gt.subject_id for gt in self.group1.teachers.all()}
+        self.assertEqual(subjects, {None, self.subject_frontend.id})
+
+    def test_each_teacher_has_its_own_schedule(self):
+        # Spec item 4.
+        extra_slot = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        primary = self.group1.teachers.get(subject__isnull=True)
+        secondary = extra_slot.group_teacher
+        self.assertEqual(primary.schedules.count(), 2)  # mon + wed, mirrored from group1
+        self.assertEqual(secondary.schedules.count(), 1)
+        self.assertNotEqual(primary.id, secondary.id)
+
+    def test_group_teacher_is_reused_across_schedule_rows_of_the_same_teacher_and_subject(self):
+        first = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        second = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="sat", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        self.assertEqual(first.group_teacher_id, second.group_teacher_id)
+        self.assertEqual(self.group1.teachers.filter(teacher=self.teacher2).count(), 1)
+
+    def test_editing_schedule_teacher_moves_it_to_the_right_group_teacher(self):
+        slot = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        old_group_teacher_id = slot.group_teacher_id
+        slot.subject = self.subject_python
+        slot.save()
+        self.assertNotEqual(slot.group_teacher_id, old_group_teacher_id)
+        self.assertEqual(slot.group_teacher.subject_id, self.subject_python.id)
+
+
+class GroupTeacherLessonPlanTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.extra_slot = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        self.group_teacher_a = self.group1.teachers.get(subject__isnull=True)
+        self.group_teacher_b = self.extra_slot.group_teacher
+
+    def test_each_teacher_can_have_its_own_lesson_plan(self):
+        # Spec item 5.
+        GroupTeacherLessonPlan.objects.create(group_teacher=self.group_teacher_b, lesson_number=1, topic="HTML basics")
+        self.assertEqual(self.group_teacher_b.lesson_plans.count(), 1)
+        self.assertEqual(self.group_teacher_a.lesson_plans.count(), 0)
+
+    def test_teacher_a_and_teacher_b_plans_are_independent(self):
+        # Spec item 6.
+        GroupTeacherLessonPlan.objects.create(group_teacher=self.group_teacher_a, lesson_number=1, topic="A1")
+        GroupTeacherLessonPlan.objects.create(group_teacher=self.group_teacher_b, lesson_number=1, topic="B1")
+        self.assertEqual(self.group_teacher_a.lesson_plans.get(lesson_number=1).topic, "A1")
+        self.assertEqual(self.group_teacher_b.lesson_plans.get(lesson_number=1).topic, "B1")
+
+    def test_duplicate_lesson_number_within_same_group_teacher_rejected(self):
+        GroupTeacherLessonPlan.objects.create(group_teacher=self.group_teacher_b, lesson_number=1, topic="First")
+        with self.assertRaises(Exception):
+            GroupTeacherLessonPlan.objects.create(group_teacher=self.group_teacher_b, lesson_number=1, topic="Dup")
+
+
+# ---------------------------------------------------------------------------
+# Lesson generation from an individual GroupTeacherLessonPlan — independent
+# plan source and independent lesson_number sequence per GroupTeacher,
+# alongside teachers still using the group's shared CourseLessonPlan.
+# ---------------------------------------------------------------------------
+
+class IndividualGroupTeacherPlanGeneratorTests(TestCase):
+    def setUp(self):
+        self.admin = make_admin("ind_admin")
+        self.islam = make_teacher("islam_ind")
+        self.aizada = make_teacher("aizada_ind")
+
+        self.subject_it = Subject.objects.create(name="IndIT")
+        self.subject_soft = Subject.objects.create(name="IndSoft")
+        self.room = Room.objects.create(name="IndRoom", capacity=20)
+
+        self.course = Course.objects.create(name="IndCourse", count_lesson=2)
+        self.course.subjects.set([self.subject_it])
+        CourseLessonPlan.objects.create(course=self.course, lesson_number=1, subject=self.subject_it, topic="Shared 1")
+        CourseLessonPlan.objects.create(course=self.course, lesson_number=2, subject=self.subject_it, topic="Shared 2")
+
+        # 2026-09-14 is a Monday.
+        self.group = Group(
+            name="Prog1-Ind", course=self.course, teacher=self.islam, room=self.room,
+            start_date=dt.date(2026, 9, 14), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+            days_of_week=["mon"],
+        )
+        self.group._defer_schedule_sync = True
+        self.group.save()
+
+        self.soft_slot = GroupSchedule(
+            group=self.group, teacher=self.aizada, subject=self.subject_soft,
+            day_of_week="mon", start_time=dt.time(9, 0), end_time=dt.time(9, 30), room=self.room,
+        )
+        self.soft_slot._defer_schedule_sync = True
+        self.soft_slot.save()
+
+        sync_legacy_group_schedule(self.group)
+
+        self.islam_group_teacher = self.group.teachers.get(subject__isnull=True)
+        self.aizada_group_teacher = self.group.teachers.get(subject=self.subject_soft)
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.aizada_group_teacher, lesson_number=1, topic="Communication", homework_title="HW-Comm",
+        )
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.aizada_group_teacher, lesson_number=2, topic="Teamwork",
+        )
+
+        generate_lessons_for_group(self.group)
+
+    def test_legacy_teacher_still_uses_shared_course_plan(self):
+        lessons = list(Lesson.objects.filter(group_teacher=self.islam_group_teacher).order_by("lesson_number"))
+        self.assertEqual([l.lesson_number for l in lessons], [1, 2])
+        self.assertEqual([l.topic for l in lessons], ["Shared 1", "Shared 2"])
+        self.assertTrue(all(l.individual_plan_id is None for l in lessons))
+        self.assertTrue(all(l.plan_id is not None for l in lessons))
+
+    def test_individual_teacher_uses_own_plan_and_own_numbering(self):
+        # Spec item 13.
+        lessons = list(Lesson.objects.filter(group_teacher=self.aizada_group_teacher).order_by("lesson_number"))
+        self.assertEqual([l.lesson_number for l in lessons], [1, 2])
+        self.assertEqual([l.topic for l in lessons], ["Communication", "Teamwork"])
+        self.assertTrue(all(l.plan_id is None for l in lessons))
+        self.assertTrue(all(l.individual_plan_id is not None for l in lessons))
+
+    def test_both_teachers_can_have_lesson_number_1_on_the_same_day(self):
+        # Spec item 14: numbering is per-GroupTeacher, not per-Group.
+        islam_lesson1 = Lesson.objects.get(group_teacher=self.islam_group_teacher, lesson_number=1)
+        aizada_lesson1 = Lesson.objects.get(group_teacher=self.aizada_group_teacher, lesson_number=1)
+        self.assertEqual(islam_lesson1.date, aizada_lesson1.date)
+        self.assertNotEqual(islam_lesson1.id, aizada_lesson1.id)
+
+    def test_homework_created_from_individual_plan(self):
+        # Spec item 19.
+        lesson1 = Lesson.objects.get(group_teacher=self.aizada_group_teacher, lesson_number=1)
+        self.assertTrue(Homework.objects.filter(lesson=lesson1, title="HW-Comm").exists())
+        lesson2 = Lesson.objects.get(group_teacher=self.aizada_group_teacher, lesson_number=2)
+        self.assertFalse(Homework.objects.filter(lesson=lesson2).exists())
+
+    def test_individual_plan_generation_is_idempotent(self):
+        # Spec item 15.
+        self.assertEqual(len(generate_lessons_for_group(self.group)), 0)
+        self.assertEqual(len(generate_lessons_for_group(self.group)), 0)
+        self.assertEqual(Lesson.objects.filter(group_teacher=self.aizada_group_teacher).count(), 2)
+
+    def test_adding_more_individual_plan_rows_only_generates_the_new_ones(self):
+        # Spec item 16: existing lessons are never touched/duplicated.
+        existing_ids = set(Lesson.objects.filter(group_teacher=self.aizada_group_teacher).values_list("id", flat=True))
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.aizada_group_teacher, lesson_number=3, topic="Presentation"
+        )
+        created = generate_lessons_for_group(self.group)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].lesson_number, 3)
+        self.assertEqual(created[0].topic, "Presentation")
+        self.assertTrue(existing_ids.issubset(set(Lesson.objects.values_list("id", flat=True))))
+
+    def test_past_and_completed_individual_lessons_untouched_by_regeneration(self):
+        # Spec items 17-18.
+        lesson1 = Lesson.objects.get(group_teacher=self.aizada_group_teacher, lesson_number=1)
+        lesson1.status = Lesson.Status.COMPLETED
+        lesson1.topic = "Отредактировано вручную"
+        lesson1.save(update_fields=["status", "topic"])
+
+        generate_lessons_for_group(self.group)
+
+        lesson1.refresh_from_db()
+        self.assertEqual(lesson1.status, Lesson.Status.COMPLETED)
+        self.assertEqual(lesson1.topic, "Отредактировано вручную")
+
+
+# ---------------------------------------------------------------------------
+# GroupTeacher API permissions — Admin manages everything; a Teacher only
+# reads their own assignments (see views.GroupTeacherViewSet).
+# ---------------------------------------------------------------------------
+
+class GroupTeacherPermissionsTests(AcademyTestBase):
+    def test_teacher_sees_only_own_group_teacher_assignments(self):
+        # Spec item 21.
+        response = self.teacher1_client.get("/api/v1/academy/group-teachers/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        group_ids = {row["group"] for row in response.data["results"]}
+        self.assertEqual(group_ids, {self.group1.id})
+
+    def test_teacher_cannot_write_group_teacher(self):
+        # Spec item 22.
+        group_teacher = self.group1.teachers.get()
+        response = self.teacher1_client.patch(
+            f"/api/v1/academy/group-teachers/{group_teacher.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_cannot_see_other_teachers_group_assignment(self):
+        group_teacher_2 = self.group2.teachers.get()
+        response = self.teacher1_client.get(f"/api/v1/academy/group-teachers/{group_teacher_2.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_has_full_access(self):
+        # Spec item 23.
+        response = self.admin_client.get("/api/v1/academy/group-teachers/")
+        self.assertEqual(response.data["count"], 2)
+
+        group_teacher = self.group1.teachers.get()
+        response = self.admin_client.patch(
+            f"/api/v1/academy/group-teachers/{group_teacher.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        group_teacher.refresh_from_db()
+        self.assertFalse(group_teacher.is_active)
+
+    def test_teacher_can_read_but_not_write_own_lesson_plan(self):
+        group_teacher = self.group1.teachers.get()
+        plan = GroupTeacherLessonPlan.objects.create(group_teacher=group_teacher, lesson_number=1, topic="Intro")
+
+        response = self.teacher1_client.get(f"/api/v1/academy/group-teacher-lesson-plans/{plan.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = self.teacher1_client.patch(
+            f"/api/v1/academy/group-teacher-lesson-plans/{plan.id}/", {"topic": "Hacked"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_group_detail_includes_teachers(self):
+        response = self.admin_client.get(f"/api/v1/academy/groups/{self.group1.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("teachers", response.data)
+        self.assertEqual(len(response.data["teachers"]), 1)
+        self.assertEqual(response.data["teachers"][0]["teacher"], self.teacher1.id)
+
+
+# ---------------------------------------------------------------------------
+# Data migration: existing (pre-GroupTeacher) GroupSchedule/Lesson data is
+# backfilled into GroupTeacher without losing or duplicating anything.
+# ---------------------------------------------------------------------------
+
+class GroupTeacherBackfillMigrationTests(AcademyTestBase):
+    def _run_backfill(self):
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        migration = importlib.import_module("apps.academy.migrations.0006_backfill_group_teacher")
+        migration.backfill_group_teacher(django_apps, None)
+
+    def test_backfill_recreates_group_teacher_from_existing_schedule_rows(self):
+        # Spec item 24: simulate "before GroupTeacher existed".
+        GroupSchedule.objects.filter(group=self.group1).update(group_teacher=None)
+        Lesson.objects.filter(group=self.group1).update(group_teacher=None)
+        GroupTeacher.objects.filter(group=self.group1).delete()
+        self.assertEqual(self.group1.teachers.count(), 0)
+
+        self._run_backfill()
+
+        group_teacher = self.group1.teachers.get()
+        self.assertEqual(group_teacher.teacher_id, self.teacher1.id)
+        self.assertIsNone(group_teacher.subject_id)
+        self.assertTrue(group_teacher.is_legacy_primary)
+        self.assertTrue(
+            GroupSchedule.objects.filter(group=self.group1).exclude(group_teacher=group_teacher).count() == 0
+        )
+
+    def test_backfill_preserves_existing_lessons(self):
+        # Spec item 25: no Lesson is lost or duplicated by the backfill.
+        lesson_ids_before = set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True))
+        self.assertTrue(lesson_ids_before)
+
+        GroupSchedule.objects.filter(group=self.group1).update(group_teacher=None)
+        Lesson.objects.filter(group=self.group1).update(group_teacher=None)
+        GroupTeacher.objects.filter(group=self.group1).delete()
+
+        self._run_backfill()
+
+        lesson_ids_after = set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True))
+        self.assertEqual(lesson_ids_before, lesson_ids_after)
+        for lesson in Lesson.objects.filter(group=self.group1):
+            self.assertIsNotNone(lesson.group_teacher_id)
+
+    def test_backfill_is_idempotent(self):
+        self._run_backfill()
+        count_after_first = GroupTeacher.objects.count()
+        self._run_backfill()
+        self.assertEqual(GroupTeacher.objects.count(), count_after_first)

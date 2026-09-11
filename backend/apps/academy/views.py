@@ -38,6 +38,8 @@ from .models import (
     CourseLessonPlan,
     Group,
     GroupSchedule,
+    GroupTeacher,
+    GroupTeacherLessonPlan,
     Homework,
     HomeworkResult,
     Lesson,
@@ -58,6 +60,8 @@ from .serializers import (
     GroupScheduleSerializer,
     GroupScheduleSlotSerializer,
     GroupSerializer,
+    GroupTeacherLessonPlanSerializer,
+    GroupTeacherSerializer,
     HomeworkResultSerializer,
     HomeworkSerializer,
     LessonSerializer,
@@ -494,6 +498,78 @@ class GroupScheduleViewSet(viewsets.ModelViewSet):
         if teacher is None:
             return qs.none()
         return qs.filter(group_id__in=_teacher_group_ids(teacher))
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["Groups"]),
+    retrieve=extend_schema(tags=["Groups"]),
+    create=extend_schema(tags=["Groups"]),
+    update=extend_schema(tags=["Groups"]),
+    partial_update=extend_schema(tags=["Groups"]),
+    destroy=extend_schema(tags=["Groups"]),
+)
+class GroupTeacherViewSet(viewsets.ModelViewSet):
+    """"This Teacher teaches this Subject in this Group" — see models.GroupTeacher.
+
+    Get-or-created automatically from GroupSchedule (typically via the Group
+    admin page's inline) — this viewset mainly exists to *read* a group's
+    teacher assignments (see `GroupSerializer.teachers`) and to toggle
+    `is_active`; Admin manages it, a Teacher only reads their own.
+    """
+
+    serializer_class = GroupTeacherSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["group", "teacher", "subject", "is_active"]
+    search_fields = ["group__name", "teacher__user__first_name", "teacher__user__last_name"]
+    ordering_fields = ["group", "created_at"]
+    ordering = ["group", "id"]
+
+    def get_queryset(self):
+        qs = GroupTeacher.objects.select_related("group", "teacher__user", "subject").prefetch_related("schedules")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["Groups"]),
+    retrieve=extend_schema(tags=["Groups"]),
+    create=extend_schema(tags=["Groups"]),
+    update=extend_schema(tags=["Groups"]),
+    partial_update=extend_schema(tags=["Groups"]),
+    destroy=extend_schema(tags=["Groups"]),
+)
+class GroupTeacherLessonPlanViewSet(viewsets.ModelViewSet):
+    """A GroupTeacher's own lesson-by-lesson plan — see models.GroupTeacherLessonPlan.
+
+    Admin manages it; a Teacher can only read their own plan(s). Adding rows
+    here (and re-running `generate-lessons`) is what switches a GroupTeacher
+    from the group's shared course plan onto its own independent
+    plan/numbering (see services.lesson_generator).
+    """
+
+    serializer_class = GroupTeacherLessonPlanSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["group_teacher"]
+    search_fields = ["topic", "description"]
+    ordering_fields = ["lesson_number", "created_at"]
+    ordering = ["group_teacher", "lesson_number"]
+
+    def get_queryset(self):
+        qs = GroupTeacherLessonPlan.objects.select_related("group_teacher__group", "group_teacher__teacher__user")
+        user = self.request.user
+        if _is_admin(user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(group_teacher__group_id__in=_teacher_group_ids(teacher))
 
 
 # ---------------------------------------------------------------------------
