@@ -6,6 +6,7 @@ from apps.users.models import Subject, Teacher, User
 from apps.users.serializers import SubjectSerializer, TeacherSerializer
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
+from .services.analytics import PERIOD_CHOICES
 from .models import (
     Attendance,
     Course,
@@ -802,138 +803,64 @@ class BulkHomeworkResultItemSerializer(serializers.Serializer):
 
 # ---------------------------------------------------------------------------
 # Analytics — read-only, computed on demand by apps.academy.services.analytics.
-# Nothing here maps to a model: AnalyticsService returns plain dicts shaped
+# Nothing here maps to a model: get_dashboard() returns a plain dict shaped
 # exactly like these serializers, never a persisted KPI row.
+#
+# AnalyticsDashboardSerializer documents the response shape (drf-spectacular
+# schema) only — the view returns get_dashboard()'s own dict directly rather
+# than running it through `.data`, so int-valued metrics (counts) stay ints
+# instead of being coerced through DRF's FloatField.
 # ---------------------------------------------------------------------------
 
 class AnalyticsQuerySerializer(serializers.Serializer):
-    """Query params for `GET /analytics/dashboard/`."""
+    """Query params for `GET /analytics/dashboard/`.
 
-    date_from = serializers.DateField()
-    date_to = serializers.DateField()
+    `compare` accepts "true" (shorthand for "previous_period"), "false"/blank
+    (no comparison), or one of services.analytics.COMPARE_CHOICES directly —
+    validated against the full set in the view, where the shorthand is
+    resolved (keeps this serializer a plain CharField rather than a
+    ChoiceField that would reject the boolean shorthand spec §5 shows).
+    """
+
+    period = serializers.ChoiceField(choices=list(PERIOD_CHOICES), default="this_month")
+    start_date = serializers.DateField(required=False)
+    end_date = serializers.DateField(required=False)
+    compare = serializers.CharField(required=False, allow_blank=True, default="")
+    compare_start_date = serializers.DateField(required=False)
+    compare_end_date = serializers.DateField(required=False)
     teacher = serializers.PrimaryKeyRelatedField(queryset=Teacher.objects.all(), required=False, allow_null=True)
     group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all(), required=False, allow_null=True)
+    course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all(), required=False, allow_null=True)
+    subject = serializers.PrimaryKeyRelatedField(queryset=Subject.objects.all(), required=False, allow_null=True)
 
     def validate(self, attrs):
-        if attrs["date_to"] < attrs["date_from"]:
-            raise serializers.ValidationError({"date_to": "Дата окончания периода не может быть раньше даты начала."})
+        if attrs["period"] == "custom" and not (attrs.get("start_date") and attrs.get("end_date")):
+            raise serializers.ValidationError(
+                {"start_date": "period=custom требует start_date и end_date."}
+            )
         return attrs
 
 
-class AnalyticsOverviewSerializer(serializers.Serializer):
-    groups = serializers.IntegerField()
-    teachers = serializers.IntegerField()
-    students = serializers.IntegerField()
-    lessons = serializers.IntegerField()
-    attendance_percent = serializers.FloatField()
-    homework_completion_percent = serializers.FloatField()
-    average_score = serializers.FloatField()
+class ComparisonMetricSerializer(serializers.Serializer):
+    """`{value, previous_value, change, change_percent, trend}` — see
+    services.analytics.metrics.build_metric. Every comparable KPI in the
+    dashboard is shaped exactly like this."""
 
-
-class AnalyticsLessonStatsSerializer(serializers.Serializer):
-    total = serializers.IntegerField()
-    completed = serializers.IntegerField()
-    cancelled = serializers.IntegerField()
-    planned = serializers.IntegerField()
-    completion_rate = serializers.FloatField()
-
-
-class AnalyticsTimeSeriesPointSerializer(serializers.Serializer):
-    date = serializers.DateField()
-    percent = serializers.FloatField()
-
-
-class AnalyticsAttendanceStatsSerializer(serializers.Serializer):
-    total = serializers.IntegerField()
-    present = serializers.IntegerField()
-    absent = serializers.IntegerField()
-    late = serializers.IntegerField()
-    excused = serializers.IntegerField()
-    percent = serializers.FloatField()
-    by_date = AnalyticsTimeSeriesPointSerializer(many=True)
-
-
-class AnalyticsHomeworkStatsSerializer(serializers.Serializer):
-    total_homeworks = serializers.IntegerField()
-    total_results = serializers.IntegerField()
-    submitted = serializers.IntegerField()
-    checked = serializers.IntegerField()
-    late = serializers.IntegerField()
-    not_submitted = serializers.IntegerField()
-    completed = serializers.IntegerField()
-    completion_percent = serializers.FloatField()
-    average_score = serializers.FloatField()
-    by_date = AnalyticsTimeSeriesPointSerializer(many=True)
-
-
-class AnalyticsGroupRowSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    teacher = serializers.CharField()
-    students = serializers.IntegerField()
-    lessons = serializers.IntegerField()
-    completed_lessons = serializers.IntegerField()
-    cancelled_lessons = serializers.IntegerField()
-    planned_lessons = serializers.IntegerField()
-    attendance_percent = serializers.FloatField()
-    homework_completion_percent = serializers.FloatField()
-    average_score = serializers.FloatField()
-    status = serializers.CharField()
-    status_display = serializers.CharField()
-
-
-class AnalyticsTeacherRowSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    groups = serializers.IntegerField()
-    students = serializers.IntegerField()
-    lessons = serializers.IntegerField()
-    attendance_percent = serializers.FloatField()
-    homework_completion_percent = serializers.FloatField()
-    average_score = serializers.FloatField()
-
-
-class AnalyticsStudentRowSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    group = serializers.CharField(allow_null=True)
-    lessons = serializers.IntegerField()
-    attendance_percent = serializers.FloatField()
-    homework_completion_percent = serializers.FloatField()
-    average_score = serializers.FloatField()
-
-
-class AnalyticsLessonsByStatusSerializer(serializers.Serializer):
-    status = serializers.CharField()
-    label = serializers.CharField()
-    count = serializers.IntegerField()
-
-
-class AnalyticsGroupPerformanceSerializer(serializers.Serializer):
-    group = serializers.CharField()
-    attendance_percent = serializers.FloatField()
-
-
-class AnalyticsTeacherPerformanceSerializer(serializers.Serializer):
-    teacher = serializers.CharField()
-    attendance_percent = serializers.FloatField()
-
-
-class AnalyticsStudentsByGroupSerializer(serializers.Serializer):
-    group = serializers.CharField()
-    students = serializers.IntegerField()
-
-
-class AnalyticsChartsSerializer(serializers.Serializer):
-    attendance_over_time = AnalyticsTimeSeriesPointSerializer(many=True)
-    lessons_by_status = AnalyticsLessonsByStatusSerializer(many=True)
-    students_by_group = AnalyticsStudentsByGroupSerializer(many=True)
-    homework_completion_over_time = AnalyticsTimeSeriesPointSerializer(many=True)
-    teacher_performance = AnalyticsTeacherPerformanceSerializer(many=True)
-    group_performance = AnalyticsGroupPerformanceSerializer(many=True)
+    value = serializers.FloatField()
+    previous_value = serializers.FloatField(allow_null=True)
+    change = serializers.FloatField(allow_null=True)
+    change_percent = serializers.FloatField(allow_null=True)
+    trend = serializers.ChoiceField(choices=["up", "down", "stable"])
 
 
 class AnalyticsPeriodSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+
+
+class AnalyticsComparisonSerializer(serializers.Serializer):
+    key = serializers.CharField()
     start_date = serializers.DateField()
     end_date = serializers.DateField()
 
@@ -941,19 +868,131 @@ class AnalyticsPeriodSerializer(serializers.Serializer):
 class AnalyticsFiltersSerializer(serializers.Serializer):
     teacher_id = serializers.IntegerField(allow_null=True)
     group_id = serializers.IntegerField(allow_null=True)
+    course_id = serializers.IntegerField(allow_null=True)
+    subject_id = serializers.IntegerField(allow_null=True)
+
+
+class AnalyticsStudentsSectionSerializer(serializers.Serializer):
+    total_students = ComparisonMetricSerializer()
+    active_students = ComparisonMetricSerializer()
+    inactive_students = ComparisonMetricSerializer()
+    new_students = ComparisonMetricSerializer()
+    students_left = ComparisonMetricSerializer()
+    average_students_per_group = ComparisonMetricSerializer()
+    groups_with_free_capacity = ComparisonMetricSerializer()
+    groups_at_capacity = ComparisonMetricSerializer()
+
+
+class AnalyticsTeacherWorkloadRowSerializer(serializers.Serializer):
+    teacher_id = serializers.IntegerField()
+    teacher_name = serializers.CharField()
+    lessons = serializers.IntegerField()
+
+
+class AnalyticsTeachersSectionSerializer(serializers.Serializer):
+    total_teachers = ComparisonMetricSerializer()
+    active_teachers = ComparisonMetricSerializer()
+    teachers_with_lessons = ComparisonMetricSerializer()
+    teachers_without_lessons = ComparisonMetricSerializer()
+    average_lessons_per_teacher = ComparisonMetricSerializer()
+    teacher_workload = AnalyticsTeacherWorkloadRowSerializer(many=True)
+
+
+class AnalyticsGroupsSectionSerializer(serializers.Serializer):
+    total_groups = ComparisonMetricSerializer()
+    active_groups = ComparisonMetricSerializer()
+    paused_groups = ComparisonMetricSerializer()
+    completed_groups = ComparisonMetricSerializer()
+    cancelled_groups = ComparisonMetricSerializer()
+    average_students_per_group = ComparisonMetricSerializer()
+    groups_near_capacity = ComparisonMetricSerializer()
+
+
+class AnalyticsLessonsByTeacherRowSerializer(serializers.Serializer):
+    teacher_id = serializers.IntegerField()
+    teacher_name = serializers.CharField()
+    lessons = serializers.IntegerField()
+
+
+class AnalyticsLessonsBySubjectRowSerializer(serializers.Serializer):
+    subject_id = serializers.IntegerField()
+    subject_name = serializers.CharField()
+    lessons = serializers.IntegerField()
+
+
+class AnalyticsLessonsSectionSerializer(serializers.Serializer):
+    lessons_today = ComparisonMetricSerializer()
+    lessons_scheduled = ComparisonMetricSerializer()
+    lessons_completed = ComparisonMetricSerializer()
+    lessons_cancelled = ComparisonMetricSerializer()
+    lesson_completion_rate = ComparisonMetricSerializer()
+    lessons_by_teacher = AnalyticsLessonsByTeacherRowSerializer(many=True)
+    lessons_by_subject = AnalyticsLessonsBySubjectRowSerializer(many=True)
+
+
+class AnalyticsTrendPointSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    percent = serializers.FloatField()
+
+
+class AnalyticsAttendanceSectionSerializer(serializers.Serializer):
+    attendance_rate = ComparisonMetricSerializer()
+    present_count = ComparisonMetricSerializer()
+    absent_count = ComparisonMetricSerializer()
+    late_count = ComparisonMetricSerializer()
+    excused_count = ComparisonMetricSerializer()
+    students_with_repeated_absences = ComparisonMetricSerializer()
+    attendance_trend = AnalyticsTrendPointSerializer(many=True)
+
+
+class AnalyticsHomeworkSectionSerializer(serializers.Serializer):
+    homework_count = ComparisonMetricSerializer()
+    submitted_count = ComparisonMetricSerializer()
+    not_submitted_count = ComparisonMetricSerializer()
+    checked_count = ComparisonMetricSerializer()
+    late_count = ComparisonMetricSerializer()
+    submission_rate = ComparisonMetricSerializer()
+    average_score = ComparisonMetricSerializer()
+    homework_completion_trend = AnalyticsTrendPointSerializer(many=True)
+
+
+class AnalyticsHealthComponentsSerializer(serializers.Serializer):
+    attendance = serializers.FloatField()
+    homework = serializers.FloatField()
+    lesson_completion = serializers.FloatField()
+    retention = serializers.FloatField()
+    teacher_workload = serializers.FloatField()
+
+
+class AnalyticsHealthSerializer(serializers.Serializer):
+    """See services.analytics.health for the scoring formula — never stored."""
+
+    score = serializers.IntegerField()
+    level = serializers.ChoiceField(choices=["excellent", "good", "fair", "poor"])
+    components = AnalyticsHealthComponentsSerializer()
+
+
+class AnalyticsInsightSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(choices=["warning", "critical", "info"])
+    title = serializers.CharField()
+    message = serializers.CharField()
+    metric = serializers.CharField()
+    severity = serializers.ChoiceField(choices=["low", "medium", "high"])
 
 
 class AnalyticsDashboardSerializer(serializers.Serializer):
     """The full payload of `GET /analytics/dashboard/` — exactly what
-    `AnalyticsService.get_dashboard()` returns, computed fresh on every call."""
+    `services.analytics.get_dashboard()` returns, computed fresh on every
+    call. `comparison` is null whenever no comparison period was requested."""
 
     period = AnalyticsPeriodSerializer()
+    comparison = AnalyticsComparisonSerializer(allow_null=True)
     filters = AnalyticsFiltersSerializer()
-    overview = AnalyticsOverviewSerializer()
-    lessons = AnalyticsLessonStatsSerializer()
-    attendance = AnalyticsAttendanceStatsSerializer()
-    homework = AnalyticsHomeworkStatsSerializer()
-    groups = AnalyticsGroupRowSerializer(many=True)
-    teachers = AnalyticsTeacherRowSerializer(many=True)
-    top_students = AnalyticsStudentRowSerializer(many=True)
-    charts = AnalyticsChartsSerializer()
+    health = AnalyticsHealthSerializer()
+    students = AnalyticsStudentsSectionSerializer()
+    teachers = AnalyticsTeachersSectionSerializer()
+    groups = AnalyticsGroupsSectionSerializer()
+    lessons = AnalyticsLessonsSectionSerializer()
+    attendance = AnalyticsAttendanceSectionSerializer()
+    homework = AnalyticsHomeworkSectionSerializer()
+    insights = AnalyticsInsightSerializer(many=True)

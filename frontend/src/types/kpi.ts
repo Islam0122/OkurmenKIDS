@@ -1,13 +1,45 @@
 /**
  * `apps.academy.serializers.AnalyticsDashboardSerializer` — everything here
- * is computed on demand by `AnalyticsService` from Lesson/Attendance/
- * Homework/HomeworkResult on every request. There is no stored KPI record
- * to go stale: mark attendance, then re-fetch, and the numbers already
- * reflect it.
+ * is computed on demand by `apps.academy.services.analytics.get_dashboard`
+ * from Lesson/Attendance/Homework/HomeworkResult/Student/Group/Teacher on
+ * every request. There is no stored KPI record to go stale, and every
+ * comparable number is `ComparisonMetric`-shaped — never compute
+ * `change_percent` on the frontend, the backend is authoritative.
  */
-import type { GroupStatus } from '@/types/academy'
+
+export type KPIPeriodKey =
+  | 'today'
+  | 'yesterday'
+  | 'last_7_days'
+  | 'this_week'
+  | 'last_week'
+  | 'this_month'
+  | 'last_month'
+  | 'custom'
+
+export type KPICompareMode = 'previous_period' | 'previous_month' | 'previous_week' | 'custom'
+
+export type MetricTrend = 'up' | 'down' | 'stable'
+
+/** `{value, previous_value, change, change_percent, trend}` — see
+ * `services.analytics.metrics.build_metric`. `previous_value`/`change`/
+ * `change_percent` are null whenever no comparison period was requested. */
+export interface ComparisonMetric {
+  value: number
+  previous_value: number | null
+  change: number | null
+  change_percent: number | null
+  trend: MetricTrend
+}
 
 export interface AnalyticsPeriod {
+  key: KPIPeriodKey
+  start_date: string
+  end_date: string
+}
+
+export interface AnalyticsComparison {
+  key: KPICompareMode
   start_date: string
   end_date: string
 }
@@ -15,131 +47,133 @@ export interface AnalyticsPeriod {
 export interface AnalyticsFilters {
   teacher_id: number | null
   group_id: number | null
+  course_id: number | null
+  subject_id: number | null
 }
 
-export interface AnalyticsOverview {
-  groups: number
-  teachers: number
-  students: number
+export interface AnalyticsStudentsSection {
+  total_students: ComparisonMetric
+  active_students: ComparisonMetric
+  inactive_students: ComparisonMetric
+  new_students: ComparisonMetric
+  students_left: ComparisonMetric
+  average_students_per_group: ComparisonMetric
+  groups_with_free_capacity: ComparisonMetric
+  groups_at_capacity: ComparisonMetric
+}
+
+export interface TeacherWorkloadRow {
+  teacher_id: number
+  teacher_name: string
   lessons: number
-  attendance_percent: number
-  homework_completion_percent: number
-  average_score: number
 }
 
-export interface AnalyticsLessonStats {
-  total: number
-  completed: number
-  cancelled: number
-  planned: number
-  completion_rate: number
+export interface AnalyticsTeachersSection {
+  total_teachers: ComparisonMetric
+  active_teachers: ComparisonMetric
+  teachers_with_lessons: ComparisonMetric
+  teachers_without_lessons: ComparisonMetric
+  average_lessons_per_teacher: ComparisonMetric
+  teacher_workload: TeacherWorkloadRow[]
 }
 
-export interface AnalyticsTimeSeriesPoint {
+export interface AnalyticsGroupsSection {
+  total_groups: ComparisonMetric
+  active_groups: ComparisonMetric
+  paused_groups: ComparisonMetric
+  completed_groups: ComparisonMetric
+  cancelled_groups: ComparisonMetric
+  average_students_per_group: ComparisonMetric
+  groups_near_capacity: ComparisonMetric
+}
+
+export interface LessonsByTeacherRow {
+  teacher_id: number
+  teacher_name: string
+  lessons: number
+}
+
+export interface LessonsBySubjectRow {
+  subject_id: number
+  subject_name: string
+  lessons: number
+}
+
+export interface AnalyticsLessonsSection {
+  lessons_today: ComparisonMetric
+  lessons_scheduled: ComparisonMetric
+  lessons_completed: ComparisonMetric
+  lessons_cancelled: ComparisonMetric
+  lesson_completion_rate: ComparisonMetric
+  lessons_by_teacher: LessonsByTeacherRow[]
+  lessons_by_subject: LessonsBySubjectRow[]
+}
+
+export interface AnalyticsTrendPoint {
   date: string
   percent: number
 }
 
-export interface AnalyticsAttendanceStats {
-  total: number
-  present: number
-  absent: number
-  late: number
-  excused: number
-  percent: number
-  by_date: AnalyticsTimeSeriesPoint[]
+export interface AnalyticsAttendanceSection {
+  attendance_rate: ComparisonMetric
+  present_count: ComparisonMetric
+  absent_count: ComparisonMetric
+  late_count: ComparisonMetric
+  excused_count: ComparisonMetric
+  students_with_repeated_absences: ComparisonMetric
+  attendance_trend: AnalyticsTrendPoint[]
 }
 
-export interface AnalyticsHomeworkStats {
-  total_homeworks: number
-  total_results: number
-  submitted: number
-  checked: number
-  late: number
-  not_submitted: number
-  completed: number
-  completion_percent: number
-  average_score: number
-  by_date: AnalyticsTimeSeriesPoint[]
+export interface AnalyticsHomeworkSection {
+  homework_count: ComparisonMetric
+  submitted_count: ComparisonMetric
+  not_submitted_count: ComparisonMetric
+  checked_count: ComparisonMetric
+  late_count: ComparisonMetric
+  submission_rate: ComparisonMetric
+  average_score: ComparisonMetric
+  homework_completion_trend: AnalyticsTrendPoint[]
 }
 
-export interface AnalyticsGroupRow {
-  id: number
-  name: string
-  teacher: string
-  students: number
-  lessons: number
-  completed_lessons: number
-  cancelled_lessons: number
-  planned_lessons: number
-  attendance_percent: number
-  homework_completion_percent: number
-  average_score: number
-  status: GroupStatus
-  status_display: string
+export interface AnalyticsHealthComponents {
+  attendance: number
+  homework: number
+  lesson_completion: number
+  retention: number
+  teacher_workload: number
 }
 
-export interface AnalyticsTeacherRow {
-  id: number
-  name: string
-  groups: number
-  students: number
-  lessons: number
-  attendance_percent: number
-  homework_completion_percent: number
-  average_score: number
+export type AnalyticsHealthLevel = 'excellent' | 'good' | 'fair' | 'poor'
+
+/** Computed fresh on every call — never persisted (see services.analytics.health). */
+export interface AnalyticsHealth {
+  score: number
+  level: AnalyticsHealthLevel
+  components: AnalyticsHealthComponents
 }
 
-export interface AnalyticsStudentRow {
-  id: number
-  name: string
-  group: string | null
-  lessons: number
-  attendance_percent: number
-  homework_completion_percent: number
-  average_score: number
-}
+export type InsightType = 'warning' | 'critical' | 'info'
+export type InsightSeverity = 'low' | 'medium' | 'high'
 
-export interface AnalyticsLessonsByStatusPoint {
-  status: 'completed' | 'planned' | 'cancelled'
-  label: string
-  count: number
-}
-
-export interface AnalyticsGroupPerformancePoint {
-  group: string
-  attendance_percent: number
-}
-
-export interface AnalyticsTeacherPerformancePoint {
-  teacher: string
-  attendance_percent: number
-}
-
-export interface AnalyticsStudentsByGroupPoint {
-  group: string
-  students: number
-}
-
-export interface AnalyticsCharts {
-  attendance_over_time: AnalyticsTimeSeriesPoint[]
-  lessons_by_status: AnalyticsLessonsByStatusPoint[]
-  students_by_group: AnalyticsStudentsByGroupPoint[]
-  homework_completion_over_time: AnalyticsTimeSeriesPoint[]
-  teacher_performance: AnalyticsTeacherPerformancePoint[]
-  group_performance: AnalyticsGroupPerformancePoint[]
+export interface AnalyticsInsight {
+  type: InsightType
+  title: string
+  message: string
+  metric: string
+  severity: InsightSeverity
 }
 
 /** Full response of `GET /academy/analytics/dashboard/`. */
 export interface AnalyticsDashboard {
   period: AnalyticsPeriod
+  comparison: AnalyticsComparison | null
   filters: AnalyticsFilters
-  overview: AnalyticsOverview
-  lessons: AnalyticsLessonStats
-  attendance: AnalyticsAttendanceStats
-  homework: AnalyticsHomeworkStats
-  groups: AnalyticsGroupRow[]
-  teachers: AnalyticsTeacherRow[]
-  top_students: AnalyticsStudentRow[]
-  charts: AnalyticsCharts
+  health: AnalyticsHealth
+  students: AnalyticsStudentsSection
+  teachers: AnalyticsTeachersSection
+  groups: AnalyticsGroupsSection
+  lessons: AnalyticsLessonsSection
+  attendance: AnalyticsAttendanceSection
+  homework: AnalyticsHomeworkSection
+  insights: AnalyticsInsight[]
 }

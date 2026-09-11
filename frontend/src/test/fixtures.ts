@@ -2,7 +2,7 @@ import type { Group, GroupScheduleLesson, Lesson, Subject, Teacher } from '@/typ
 import type { AttendanceRecord } from '@/types/attendance'
 import type { User } from '@/types/auth'
 import type { Homework, HomeworkResult } from '@/types/homework'
-import type { AnalyticsDashboard } from '@/types/kpi'
+import type { AnalyticsDashboard, ComparisonMetric } from '@/types/kpi'
 import type { Paginated } from '@/types/common'
 
 export function paginated<T>(results: T[]): Paginated<T> {
@@ -167,44 +167,78 @@ export function buildHomeworkResult(overrides: Partial<HomeworkResult> = {}): Ho
   }
 }
 
+/** A `ComparisonMetric` with no comparison period requested — the common
+ * case in tests that don't care about trend/previous_value. */
+export function buildMetric(value: number, overrides: Partial<ComparisonMetric> = {}): ComparisonMetric {
+  return { value, previous_value: null, change: null, change_percent: null, trend: 'stable', ...overrides }
+}
+
 export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> = {}): AnalyticsDashboard {
   return {
-    period: { start_date: '2026-09-01', end_date: '2026-09-10' },
-    filters: { teacher_id: null, group_id: null },
-    overview: {
-      groups: 2,
-      teachers: 1,
-      students: 20,
-      lessons: 10,
-      attendance_percent: 92.5,
-      homework_completion_percent: 80,
-      average_score: 8.4,
+    period: { key: 'this_month', start_date: '2026-09-01', end_date: '2026-09-10' },
+    comparison: null,
+    filters: { teacher_id: null, group_id: null, course_id: null, subject_id: null },
+    health: {
+      score: 87,
+      level: 'good',
+      components: { attendance: 91, homework: 87, lesson_completion: 94, retention: 92, teacher_workload: 81 },
     },
-    lessons: { total: 10, completed: 8, cancelled: 1, planned: 1, completion_rate: 80 },
-    attendance: { total: 40, present: 30, absent: 5, late: 5, excused: 0, percent: 92.5, by_date: [] },
+    students: {
+      total_students: buildMetric(20),
+      active_students: buildMetric(18),
+      inactive_students: buildMetric(2),
+      new_students: buildMetric(3),
+      students_left: buildMetric(1),
+      average_students_per_group: buildMetric(10),
+      groups_with_free_capacity: buildMetric(1),
+      groups_at_capacity: buildMetric(1),
+    },
+    teachers: {
+      total_teachers: buildMetric(1),
+      active_teachers: buildMetric(1),
+      teachers_with_lessons: buildMetric(1),
+      teachers_without_lessons: buildMetric(0),
+      average_lessons_per_teacher: buildMetric(10),
+      teacher_workload: [],
+    },
+    groups: {
+      total_groups: buildMetric(2),
+      active_groups: buildMetric(2),
+      paused_groups: buildMetric(0),
+      completed_groups: buildMetric(0),
+      cancelled_groups: buildMetric(0),
+      average_students_per_group: buildMetric(10),
+      groups_near_capacity: buildMetric(0),
+    },
+    lessons: {
+      lessons_today: buildMetric(1),
+      lessons_scheduled: buildMetric(10),
+      lessons_completed: buildMetric(8),
+      lessons_cancelled: buildMetric(1),
+      lesson_completion_rate: buildMetric(80),
+      lessons_by_teacher: [],
+      lessons_by_subject: [],
+    },
+    attendance: {
+      attendance_rate: buildMetric(92.5),
+      present_count: buildMetric(30),
+      absent_count: buildMetric(5),
+      late_count: buildMetric(5),
+      excused_count: buildMetric(0),
+      students_with_repeated_absences: buildMetric(0),
+      attendance_trend: [],
+    },
     homework: {
-      total_homeworks: 10,
-      total_results: 16,
-      submitted: 10,
-      checked: 3,
-      late: 0,
-      not_submitted: 3,
-      completed: 13,
-      completion_percent: 80,
-      average_score: 8.4,
-      by_date: [],
+      homework_count: buildMetric(10),
+      submitted_count: buildMetric(10),
+      not_submitted_count: buildMetric(3),
+      checked_count: buildMetric(3),
+      late_count: buildMetric(0),
+      submission_rate: buildMetric(80),
+      average_score: buildMetric(8.4),
+      homework_completion_trend: [],
     },
-    groups: [],
-    teachers: [],
-    top_students: [],
-    charts: {
-      attendance_over_time: [],
-      lessons_by_status: [],
-      students_by_group: [],
-      homework_completion_over_time: [],
-      teacher_performance: [],
-      group_performance: [],
-    },
+    insights: [],
     ...overrides,
   }
 }

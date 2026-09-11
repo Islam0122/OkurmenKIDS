@@ -15,7 +15,7 @@
 {% block extrastyle %}
     {{ block.super }}
     <style>
-        .okan-toolbar { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
+        .okan-toolbar { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; align-items:center; }
         .okan-toolbar .btn { white-space:nowrap; }
 
         .okan-filters { background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,0.65rem); padding:1rem 1.25rem; margin-bottom:1.25rem; }
@@ -23,19 +23,44 @@
         .okan-field { display:flex; flex-direction:column; gap:0.25rem; min-width:160px; }
         .okan-filters label { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--ok-text-muted,#89938D); }
         .okan-filters select, .okan-filters input[type="date"] { padding:0.4rem 0.55rem; border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius-sm,0.45rem); background:var(--ok-surface,#fff); color:var(--ok-text,#202622); }
+        .okan-check { display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; color:var(--ok-text-secondary,#68736C); }
 
         .okan-section-title { font-size:1rem; font-weight:700; margin:1.6rem 0 0.85rem; color:var(--ok-text,#202622); }
         .okan-mini-stats { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.85rem; }
         .okan-mini-stat { background:var(--ok-surface-hover,#F1F6F2); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius-sm,0.45rem); padding:0.4rem 0.75rem; font-size:0.8rem; color:var(--ok-text-secondary,#68736C); }
         .okan-mini-stat strong { color:var(--ok-text,#202622); font-size:0.9rem; }
+        .okan-mini-stat .trend-up { color:var(--ok-primary,#2F8F5B); }
+        .okan-mini-stat .trend-down { color:var(--ok-danger,#C7402E); }
+        .okan-mini-stat .trend-stable { color:var(--ok-text-muted,#89938D); }
 
         .okan-empty { color:var(--ok-text-muted,#89938D); padding:1rem; text-align:center; }
         .okan-table td, .okan-table th { vertical-align:middle; }
+
+        .okan-health { display:flex; align-items:center; gap:1.5rem; background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,0.65rem); padding:1.25rem; margin-bottom:1.25rem; }
+        .okan-health-score { font-size:2.5rem; font-weight:800; }
+        .okan-health-level { font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; padding:0.15rem 0.6rem; border-radius:999px; }
+        .okan-health-level.excellent, .okan-health-level.good { background:rgba(47,143,91,0.12); color:var(--ok-primary,#2F8F5B); }
+        .okan-health-level.fair { background:rgba(201,138,27,0.12); color:var(--ok-warning,#C98A1B); }
+        .okan-health-level.poor { background:rgba(199,64,46,0.12); color:var(--ok-danger,#C7402E); }
+        .okan-health-components { display:flex; flex-wrap:wrap; gap:1rem; flex:1; }
+        .okan-health-component { min-width:110px; }
+        .okan-health-component .label { font-size:0.72rem; color:var(--ok-text-muted,#89938D); text-transform:uppercase; }
+        .okan-health-component .value { font-size:1.1rem; font-weight:700; }
+
+        .okan-insight { display:flex; gap:0.75rem; padding:0.65rem 0.9rem; border-radius:var(--ok-radius-sm,0.45rem); border:1px solid var(--ok-border,#E1E7E2); margin-bottom:0.5rem; }
+        .okan-insight.severity-high { border-color:var(--ok-danger,#C7402E); background:rgba(199,64,46,0.05); }
+        .okan-insight.severity-medium { border-color:var(--ok-warning,#C98A1B); background:rgba(201,138,27,0.05); }
+        .okan-insight.severity-low { border-color:var(--ok-border,#E1E7E2); }
+        .okan-insight .title { font-weight:700; }
+        .okan-insight .message { color:var(--ok-text-secondary,#68736C); font-size:0.9rem; }
     </style>
 {% endblock %}
 
 {% block content %}
-{{ dashboard.charts|json_script:"okan-charts-data" }}
+{{ dashboard.attendance.attendance_trend|json_script:"okan-attendance-trend" }}
+{{ dashboard.homework.homework_completion_trend|json_script:"okan-homework-trend" }}
+{{ dashboard.teachers.teacher_workload|json_script:"okan-teacher-workload" }}
+{{ dashboard.lessons.lessons_by_subject|json_script:"okan-lessons-by-subject" }}
 
 <div class="okan-toolbar">
     {% for period in quick_periods %}
@@ -73,48 +98,81 @@
             </select>
         </div>
         <div class="okan-field">
+            <label class="okan-check" style="margin-top:1.4rem;">
+                <input type="checkbox" name="compare" value="1" {% if selected.compare %}checked{% endif %}>
+                Сравнить с прошлым периодом
+            </label>
+        </div>
+        <div class="okan-field">
             <button type="submit" class="btn btn-success btn-sm">Применить</button>
             <a class="btn btn-outline-secondary btn-sm" href="{{ reset_url }}">Сбросить</a>
         </div>
     </form>
 </div>
 
+<div class="okan-health">
+    <div>
+        <div class="okan-health-score">{{ dashboard.health.score }}</div>
+        <span class="okan-health-level {{ dashboard.health.level }}">{{ dashboard.health.level }}</span>
+    </div>
+    <div class="okan-health-components">
+        {% for key, value in dashboard.health.components.items %}
+            <div class="okan-health-component">
+                <div class="label">{{ key }}</div>
+                <div class="value">{{ value }}</div>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+<h2 class="okan-section-title">⚠️ Требует внимания</h2>
+{% if dashboard.insights %}
+    {% for insight in dashboard.insights %}
+        <div class="okan-insight severity-{{ insight.severity }}">
+            <div>
+                <div class="title">{{ insight.title }}</div>
+                <div class="message">{{ insight.message }}</div>
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <p class="okan-empty">Ничего не требует внимания за выбранный период.</p>
+{% endif %}
+
 <div class="ok-kpi-grid">
     <div class="ok-kpi-card">
         <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
-        <div class="ok-kpi-value">{{ dashboard.overview.groups }}</div>
+        <div class="ok-kpi-value">{{ dashboard.groups.total_groups.value }}</div>
         <div class="ok-kpi-label">Groups</div>
     </div>
     <div class="ok-kpi-card">
         <div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div>
-        <div class="ok-kpi-value">{{ dashboard.overview.teachers }}</div>
+        <div class="ok-kpi-value">{{ dashboard.teachers.total_teachers.value }}</div>
         <div class="ok-kpi-label">Teachers</div>
     </div>
     <div class="ok-kpi-card">
         <div class="ok-kpi-icon"><i class="bi bi-mortarboard"></i></div>
-        <div class="ok-kpi-value">{{ dashboard.overview.students }}</div>
+        <div class="ok-kpi-value">{{ dashboard.students.total_students.value }}</div>
         <div class="ok-kpi-label">Students</div>
     </div>
     <div class="ok-kpi-card">
         <div class="ok-kpi-icon"><i class="bi bi-calendar-week"></i></div>
-        <div class="ok-kpi-value">{{ dashboard.overview.lessons }}</div>
+        <div class="ok-kpi-value">{{ dashboard.lessons.lessons_scheduled.value }}</div>
         <div class="ok-kpi-label">Lessons</div>
     </div>
     <div class="ok-kpi-card">
         <div class="ok-kpi-icon"><i class="bi bi-clipboard-check"></i></div>
-        <div class="ok-kpi-value">{{ dashboard.overview.attendance_percent }}%</div>
+        <div class="ok-kpi-value">{{ dashboard.attendance.attendance_rate.value }}%</div>
         <div class="ok-kpi-label">Attendance</div>
-        {% if dashboard.attendance.total == 0 %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
     </div>
     <div class="ok-kpi-card">
         <div class="ok-kpi-icon"><i class="bi bi-journal-text"></i></div>
-        <div class="ok-kpi-value">{{ dashboard.overview.homework_completion_percent }}%</div>
+        <div class="ok-kpi-value">{{ dashboard.homework.submission_rate.value }}%</div>
         <div class="ok-kpi-label">Homework</div>
-        {% if dashboard.homework.total_homeworks == 0 %}<span class="ok-kpi-soon-tag">Нет данных</span>{% endif %}
     </div>
     <div class="ok-kpi-card">
         <div class="ok-kpi-icon"><i class="bi bi-star"></i></div>
-        <div class="ok-kpi-value">{{ dashboard.overview.average_score }}/10</div>
+        <div class="ok-kpi-value">{{ dashboard.homework.average_score.value }}/10</div>
         <div class="ok-kpi-label">Average Score</div>
     </div>
 </div>
@@ -128,21 +186,6 @@
     </div>
     <div class="col-md-6 col-12 mb-3">
         <div class="card ok-chart-card">
-            <div class="card-header">📊 Занятия по статусу</div>
-            <div class="card-body"><canvas id="okan-lessons-chart"></canvas></div>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-md-6 col-12 mb-3">
-        <div class="card ok-chart-card">
-            <div class="card-header">👥 Студенты по группам</div>
-            <div class="card-body"><canvas id="okan-students-by-group-chart"></canvas></div>
-        </div>
-    </div>
-    <div class="col-md-6 col-12 mb-3">
-        <div class="card ok-chart-card">
             <div class="card-header">📝 Выполнение ДЗ по датам</div>
             <div class="card-body"><canvas id="okan-homework-chart"></canvas></div>
         </div>
@@ -152,37 +195,33 @@
 <div class="row">
     <div class="col-md-6 col-12 mb-3">
         <div class="card ok-chart-card">
-            <div class="card-header">👨‍🏫 Посещаемость по тренерам</div>
-            <div class="card-body"><canvas id="okan-teacher-performance-chart"></canvas></div>
+            <div class="card-header">👨‍🏫 Загрузка тренеров (занятий)</div>
+            <div class="card-body"><canvas id="okan-teacher-workload-chart"></canvas></div>
         </div>
     </div>
     <div class="col-md-6 col-12 mb-3">
         <div class="card ok-chart-card">
-            <div class="card-header">👥 Посещаемость по группам</div>
-            <div class="card-body"><canvas id="okan-group-performance-chart"></canvas></div>
+            <div class="card-header">📚 Занятия по предметам</div>
+            <div class="card-body"><canvas id="okan-lessons-by-subject-chart"></canvas></div>
         </div>
     </div>
 </div>
 
 <h2 class="okan-section-title">👨‍🏫 Аналитика тренеров</h2>
+<div class="okan-mini-stats">
+    <div class="okan-mini-stat">Активных: <strong>{{ dashboard.teachers.active_teachers.value }}</strong></div>
+    <div class="okan-mini-stat">Вели занятия: <strong>{{ dashboard.teachers.teachers_with_lessons.value }}</strong></div>
+    <div class="okan-mini-stat">Без занятий: <strong>{{ dashboard.teachers.teachers_without_lessons.value }}</strong></div>
+    <div class="okan-mini-stat">Среднее занятий на тренера: <strong>{{ dashboard.teachers.average_lessons_per_teacher.value }}</strong></div>
+</div>
 <div class="card">
     <div class="card-body p-0">
-        {% if dashboard.teachers %}
+        {% if dashboard.teachers.teacher_workload %}
             <table class="table table-sm mb-0 okan-table">
-                <thead>
-                    <tr><th>Тренер</th><th>Группы</th><th>Студенты</th><th>Занятия</th><th>Посещаемость</th><th>ДЗ</th><th>Средний балл</th></tr>
-                </thead>
+                <thead><tr><th>Тренер</th><th>Занятий</th></tr></thead>
                 <tbody>
-                    {% for row in dashboard.teachers %}
-                        <tr>
-                            <td>{{ row.name }}</td>
-                            <td>{{ row.groups }}</td>
-                            <td>{{ row.students }}</td>
-                            <td>{{ row.lessons }}</td>
-                            <td>{{ row.attendance_percent }}%</td>
-                            <td>{{ row.homework_completion_percent }}%</td>
-                            <td>{{ row.average_score }}/10</td>
-                        </tr>
+                    {% for row in dashboard.teachers.teacher_workload %}
+                        <tr><td>{{ row.teacher_name }}</td><td>{{ row.lessons }}</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -193,88 +232,61 @@
 </div>
 
 <h2 class="okan-section-title">👥 Аналитика групп</h2>
-<div class="card">
-    <div class="card-body p-0">
-        {% if dashboard.groups %}
-            <table class="table table-sm mb-0 okan-table">
-                <thead>
-                    <tr><th>Группа</th><th>Тренер</th><th>Студенты</th><th>Занятия</th><th>Посещаемость</th><th>ДЗ</th><th>Средний балл</th><th>Статус</th></tr>
-                </thead>
-                <tbody>
-                    {% for row in dashboard.groups %}
-                        <tr>
-                            <td><a href="{% url 'admin:academy_group_change' row.id %}">{{ row.name }}</a></td>
-                            <td>{{ row.teacher }}</td>
-                            <td>{{ row.students }}</td>
-                            <td>{{ row.lessons }} <span class="text-muted">({{ row.completed_lessons }} проведено, {{ row.cancelled_lessons }} отменено)</span></td>
-                            <td>{{ row.attendance_percent }}%</td>
-                            <td>{{ row.homework_completion_percent }}%</td>
-                            <td>{{ row.average_score }}/10</td>
-                            <td>{{ row.status_display }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p class="okan-empty mb-0">Нет данных за выбранный период.</p>
-        {% endif %}
-    </div>
+<div class="okan-mini-stats">
+    <div class="okan-mini-stat">Активных: <strong>{{ dashboard.groups.active_groups.value }}</strong></div>
+    <div class="okan-mini-stat">Приостановлено: <strong>{{ dashboard.groups.paused_groups.value }}</strong></div>
+    <div class="okan-mini-stat">Завершено: <strong>{{ dashboard.groups.completed_groups.value }}</strong></div>
+    <div class="okan-mini-stat">Отменено: <strong>{{ dashboard.groups.cancelled_groups.value }}</strong></div>
+    <div class="okan-mini-stat">Близки к заполнению: <strong>{{ dashboard.groups.groups_near_capacity.value }}</strong></div>
+    <div class="okan-mini-stat">Среднее студентов на группу: <strong>{{ dashboard.groups.average_students_per_group.value }}</strong></div>
 </div>
 
-<h2 class="okan-section-title">🏆 Top Students</h2>
-<div class="card">
-    <div class="card-body p-0">
-        {% if dashboard.top_students %}
-            <table class="table table-sm mb-0 okan-table">
-                <thead>
-                    <tr><th>Студент</th><th>Группа</th><th>Занятия</th><th>Посещаемость</th><th>ДЗ</th><th>Средний балл</th></tr>
-                </thead>
-                <tbody>
-                    {% for row in dashboard.top_students %}
-                        <tr>
-                            <td><a href="{% url 'admin:academy_student_change' row.id %}">{{ row.name }}</a></td>
-                            <td>{{ row.group|default:"—" }}</td>
-                            <td>{{ row.lessons }}</td>
-                            <td>{{ row.attendance_percent }}%</td>
-                            <td>{{ row.homework_completion_percent }}%</td>
-                            <td>{{ row.average_score }}/10</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p class="okan-empty mb-0">Нет студентов за выбранный период.</p>
-        {% endif %}
-    </div>
+<h2 class="okan-section-title">🎓 Аналитика студентов</h2>
+<div class="okan-mini-stats">
+    <div class="okan-mini-stat">Всего: <strong>{{ dashboard.students.total_students.value }}</strong></div>
+    <div class="okan-mini-stat">Активных: <strong>{{ dashboard.students.active_students.value }}</strong></div>
+    <div class="okan-mini-stat">Неактивных: <strong>{{ dashboard.students.inactive_students.value }}</strong></div>
+    <div class="okan-mini-stat">Новых за период: <strong>{{ dashboard.students.new_students.value }}</strong></div>
+    <div class="okan-mini-stat">Выбыло за период: <strong>{{ dashboard.students.students_left.value }}</strong></div>
+    <div class="okan-mini-stat">Групп с местами: <strong>{{ dashboard.students.groups_with_free_capacity.value }}</strong></div>
+    <div class="okan-mini-stat">Групп заполнено: <strong>{{ dashboard.students.groups_at_capacity.value }}</strong></div>
 </div>
 
 <h2 class="okan-section-title">✅ Аналитика посещаемости</h2>
 <div class="okan-mini-stats">
-    <div class="okan-mini-stat">Присутствовал: <strong>{{ dashboard.attendance.present }}</strong></div>
-    <div class="okan-mini-stat">Отсутствовал: <strong>{{ dashboard.attendance.absent }}</strong></div>
-    <div class="okan-mini-stat">Опоздал: <strong>{{ dashboard.attendance.late }}</strong></div>
-    <div class="okan-mini-stat">Уважительная причина: <strong>{{ dashboard.attendance.excused }}</strong></div>
-    <div class="okan-mini-stat">Посещаемость: <strong>{{ dashboard.attendance.percent }}%</strong></div>
+    <div class="okan-mini-stat">Присутствовал: <strong>{{ dashboard.attendance.present_count.value }}</strong></div>
+    <div class="okan-mini-stat">Отсутствовал: <strong>{{ dashboard.attendance.absent_count.value }}</strong></div>
+    <div class="okan-mini-stat">Опоздал: <strong>{{ dashboard.attendance.late_count.value }}</strong></div>
+    <div class="okan-mini-stat">Уважительная причина: <strong>{{ dashboard.attendance.excused_count.value }}</strong></div>
+    <div class="okan-mini-stat">Посещаемость: <strong>{{ dashboard.attendance.attendance_rate.value }}%</strong>
+        {% if dashboard.attendance.attendance_rate.trend != "stable" %}
+            <span class="trend-{{ dashboard.attendance.attendance_rate.trend }}">
+                {% if dashboard.attendance.attendance_rate.trend == "up" %}▲{% else %}▼{% endif %}
+                {{ dashboard.attendance.attendance_rate.change_percent }}%
+            </span>
+        {% endif %}
+    </div>
+    <div class="okan-mini-stat">Систематические пропуски (3+): <strong>{{ dashboard.attendance.students_with_repeated_absences.value }}</strong></div>
 </div>
 
 <h2 class="okan-section-title">📝 Аналитика домашних заданий</h2>
 <div class="okan-mini-stats">
-    <div class="okan-mini-stat">Всего ДЗ: <strong>{{ dashboard.homework.total_homeworks }}</strong></div>
-    <div class="okan-mini-stat">Сдано: <strong>{{ dashboard.homework.submitted }}</strong></div>
-    <div class="okan-mini-stat">Проверено: <strong>{{ dashboard.homework.checked }}</strong></div>
-    <div class="okan-mini-stat">С опозданием: <strong>{{ dashboard.homework.late }}</strong></div>
-    <div class="okan-mini-stat">Не сдано: <strong>{{ dashboard.homework.not_submitted }}</strong></div>
-    <div class="okan-mini-stat">Выполнение: <strong>{{ dashboard.homework.completion_percent }}%</strong></div>
-    <div class="okan-mini-stat">Средний балл: <strong>{{ dashboard.homework.average_score }}/10</strong></div>
+    <div class="okan-mini-stat">Всего ДЗ: <strong>{{ dashboard.homework.homework_count.value }}</strong></div>
+    <div class="okan-mini-stat">Сдано: <strong>{{ dashboard.homework.submitted_count.value }}</strong></div>
+    <div class="okan-mini-stat">Проверено: <strong>{{ dashboard.homework.checked_count.value }}</strong></div>
+    <div class="okan-mini-stat">С опозданием: <strong>{{ dashboard.homework.late_count.value }}</strong></div>
+    <div class="okan-mini-stat">Не сдано: <strong>{{ dashboard.homework.not_submitted_count.value }}</strong></div>
+    <div class="okan-mini-stat">Сдача: <strong>{{ dashboard.homework.submission_rate.value }}%</strong></div>
+    <div class="okan-mini-stat">Средний балл: <strong>{{ dashboard.homework.average_score.value }}/10</strong></div>
 </div>
 
 <h2 class="okan-section-title">📚 Аналитика занятий</h2>
 <div class="okan-mini-stats">
-    <div class="okan-mini-stat">Всего: <strong>{{ dashboard.lessons.total }}</strong></div>
-    <div class="okan-mini-stat">Проведено: <strong>{{ dashboard.lessons.completed }}</strong></div>
-    <div class="okan-mini-stat">Запланировано: <strong>{{ dashboard.lessons.planned }}</strong></div>
-    <div class="okan-mini-stat">Отменено: <strong>{{ dashboard.lessons.cancelled }}</strong></div>
-    <div class="okan-mini-stat">Completion Rate: <strong>{{ dashboard.lessons.completion_rate }}%</strong></div>
+    <div class="okan-mini-stat">Сегодня: <strong>{{ dashboard.lessons.lessons_today.value }}</strong></div>
+    <div class="okan-mini-stat">Запланировано: <strong>{{ dashboard.lessons.lessons_scheduled.value }}</strong></div>
+    <div class="okan-mini-stat">Проведено: <strong>{{ dashboard.lessons.lessons_completed.value }}</strong></div>
+    <div class="okan-mini-stat">Отменено: <strong>{{ dashboard.lessons.lessons_cancelled.value }}</strong></div>
+    <div class="okan-mini-stat">Completion Rate: <strong>{{ dashboard.lessons.lesson_completion_rate.value }}%</strong></div>
 </div>
 {% endblock %}
 
@@ -285,7 +297,16 @@
         (function () {
             if (typeof Chart === "undefined") return;
 
-            var charts = JSON.parse(document.getElementById("okan-charts-data").textContent) || {};
+            function readJson(id) {
+                var el = document.getElementById(id);
+                if (!el) return [];
+                try { return JSON.parse(el.textContent) || []; } catch (e) { return []; }
+            }
+
+            var attendanceTrend = readJson("okan-attendance-trend");
+            var homeworkTrend = readJson("okan-homework-trend");
+            var teacherWorkload = readJson("okan-teacher-workload");
+            var lessonsBySubject = readJson("okan-lessons-by-subject");
             var instances = [];
 
             function cssVar(name) {
@@ -309,7 +330,7 @@
                 instances = [];
             }
 
-            function lineChart(canvasId, points, valueKey, label, colors) {
+            function lineChart(canvasId, points, label, colors) {
                 var ctx = document.getElementById(canvasId);
                 if (!ctx) return;
                 var chart = new Chart(ctx, {
@@ -318,7 +339,7 @@
                         labels: points.map(function (p) { return p.date; }),
                         datasets: [{
                             label: label,
-                            data: points.map(function (p) { return p[valueKey]; }),
+                            data: points.map(function (p) { return p.percent; }),
                             borderColor: colors.primary,
                             backgroundColor: colors.primary,
                             tension: 0.3,
@@ -364,39 +385,21 @@
                 destroyAll();
                 var colors = palette();
 
-                lineChart("okan-attendance-chart", charts.attendance_over_time || [], "percent", "Посещаемость, %", colors);
-                lineChart("okan-homework-chart", charts.homework_completion_over_time || [], "percent", "Выполнение ДЗ, %", colors);
+                lineChart("okan-attendance-chart", attendanceTrend, "Посещаемость, %", colors);
+                lineChart("okan-homework-chart", homeworkTrend, "Выполнение ДЗ, %", colors);
 
-                var statusCtx = document.getElementById("okan-lessons-chart");
-                if (statusCtx) {
-                    var byStatus = charts.lessons_by_status || [];
-                    var chart = new Chart(statusCtx, {
-                        type: "doughnut",
-                        data: {
-                            labels: byStatus.map(function (s) { return s.label; }),
-                            datasets: [{
-                                data: byStatus.map(function (s) { return s.count; }),
-                                backgroundColor: [colors.primary, colors.muted, colors.danger],
-                                borderWidth: 0
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 }, color: colors.text } } }
-                        }
-                    });
-                    instances.push(chart);
-                }
-
-                var byGroup = charts.students_by_group || [];
-                barChart("okan-students-by-group-chart", byGroup.map(function (g) { return g.group; }), byGroup.map(function (g) { return g.students; }), "Студентов", colors.primary, colors);
-
-                var byTeacher = charts.teacher_performance || [];
-                barChart("okan-teacher-performance-chart", byTeacher.map(function (t) { return t.teacher; }), byTeacher.map(function (t) { return t.attendance_percent; }), "Посещаемость, %", colors.primaryHover, colors);
-
-                var groupPerf = charts.group_performance || [];
-                barChart("okan-group-performance-chart", groupPerf.map(function (g) { return g.group; }), groupPerf.map(function (g) { return g.attendance_percent; }), "Посещаемость, %", colors.primary, colors);
+                barChart(
+                    "okan-teacher-workload-chart",
+                    teacherWorkload.map(function (t) { return t.teacher_name; }),
+                    teacherWorkload.map(function (t) { return t.lessons; }),
+                    "Занятий", colors.primary, colors
+                );
+                barChart(
+                    "okan-lessons-by-subject-chart",
+                    lessonsBySubject.map(function (s) { return s.subject_name; }),
+                    lessonsBySubject.map(function (s) { return s.lessons; }),
+                    "Занятий", colors.primaryHover, colors
+                );
             }
 
             render();

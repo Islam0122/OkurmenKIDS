@@ -15,7 +15,7 @@ import { useHomeworkList } from '@/hooks/useHomework'
 import { useAnalyticsDashboard } from '@/hooks/useKPI'
 import { useStudents } from '@/hooks/useStudents'
 import { getKPIPeriods } from '@/features/kpi/periods'
-import type { KPIPeriodKey } from '@/features/kpi/periods'
+import type { KPIPeriodKey } from '@/types/kpi'
 import type { Group, GroupScheduleLesson, LessonStatus } from '@/types/academy'
 import { ATTENDANCE_STATUS_LABELS } from '@/types/attendance'
 import { DAY_LABELS, WEEKDAY_ORDER } from '@/types/common'
@@ -260,15 +260,16 @@ function KpiTab({ groupId }: { groupId: number }) {
   const period = periods.find((item) => item.key === periodKey) ?? periods[0]
 
   const { data, isPending, isError, refetch } = useAnalyticsDashboard({
-    date_from: period.dateFrom,
-    date_to: period.dateTo,
+    period: periodKey,
+    start_date: period.dateFrom,
+    end_date: period.dateTo,
     group: groupId,
   })
 
   if (isPending) return <LoadingState label="Считаем KPI…" />
   if (isError) return <ErrorState onRetry={() => void refetch()} />
 
-  const row = data.groups[0]
+  const hasData = data.lessons.lessons_scheduled.value > 0
 
   return (
     <div>
@@ -285,7 +286,7 @@ function KpiTab({ groupId }: { groupId: number }) {
         ))}
       </div>
 
-      {!row ? (
+      {!hasData ? (
         <EmptyState title="Нет данных за выбранный период" />
       ) : (
         <div className="rounded-xl border border-border bg-surface p-4">
@@ -293,10 +294,13 @@ function KpiTab({ groupId }: { groupId: number }) {
             {formatDateShort(period.dateFrom)} — {formatDateShort(period.dateTo)}
           </p>
           <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-            <Field label="Занятий" value={`${row.lessons} (${row.completed_lessons} проведено)`} />
-            <Field label="Посещаемость" value={`${row.attendance_percent}%`} />
-            <Field label="Выполнение ДЗ" value={`${row.homework_completion_percent}%`} />
-            <Field label="Средний балл" value={`${row.average_score}/10`} />
+            <Field
+              label="Занятий"
+              value={`${data.lessons.lessons_scheduled.value} (${data.lessons.lessons_completed.value} проведено)`}
+            />
+            <Field label="Посещаемость" value={`${data.attendance.attendance_rate.value}%`} />
+            <Field label="Выполнение ДЗ" value={`${data.homework.submission_rate.value}%`} />
+            <Field label="Средний балл" value={`${data.homework.average_score.value}/10`} />
           </div>
         </div>
       )}

@@ -23,7 +23,7 @@ from apps.users.models import Subject, Teacher, User
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 from .models import Course, Group, Lesson, Room
-from .services.analytics import AnalyticsService
+from .services.analytics import get_dashboard
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
@@ -284,13 +284,17 @@ def analytics_view(request):
 
     teacher_param = request.GET.get("teacher") or ""
     group_param = request.GET.get("group") or ""
+    compare_param = request.GET.get("compare") or ""
 
-    dashboard = AnalyticsService(
-        date_from,
-        date_to,
+    dashboard = get_dashboard(
+        period="custom",
+        start_date=date_from,
+        end_date=date_to,
+        compare="previous_period" if compare_param else None,
         teacher_id=int(teacher_param) if teacher_param else None,
         group_id=int(group_param) if group_param else None,
-    ).get_dashboard()
+        today=today,
+    )
 
     quick_periods = _quick_periods(today)
     active_period_key = next(
@@ -298,7 +302,7 @@ def analytics_view(request):
         "custom",
     )
 
-    filter_params = {"teacher": teacher_param, "group": group_param}
+    filter_params = {"teacher": teacher_param, "group": group_param, "compare": compare_param}
     filter_qs = "&".join(f"{key}={value}" for key, value in filter_params.items() if value)
 
     def _period_url(period: dict) -> str:
@@ -315,7 +319,7 @@ def analytics_view(request):
         "date_to": date_to,
         "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
         "groups": Group.objects.order_by("name"),
-        "selected": {"teacher": teacher_param, "group": group_param},
+        "selected": {"teacher": teacher_param, "group": group_param, "compare": compare_param},
         "quick_periods": [{**period, "url": _period_url(period)} for period in quick_periods],
         "active_period_key": active_period_key,
         "reset_url": reverse("admin:academy_analytics"),
