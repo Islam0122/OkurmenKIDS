@@ -64,17 +64,19 @@ def _detect_conflicts(lessons: Iterable[Lesson]) -> tuple[list[dict], list[dict]
     """
     active = [lesson for lesson in lessons if lesson.status != Lesson.Status.CANCELLED]
 
-    by_teacher: dict[tuple[int, dt.date], list[Lesson]] = defaultdict(list)
+    by_teacher: dict[tuple[int | None, dt.date], list[Lesson]] = defaultdict(list)
     by_room: dict[tuple[int, dt.date], list[Lesson]] = defaultdict(list)
     for lesson in active:
-        # Keyed on the lesson's *actual* teacher (Lesson.teacher when the
-        # generator set one — i.e. a specific GroupTeacher slot — else the
-        # group's own primary teacher), never `group.teacher` alone: a group
-        # with several teachers (see models.GroupTeacher) must not treat two
-        # different teachers' simultaneous lessons in the same group as a
-        # conflict with themselves, nor miss a real conflict between one
-        # teacher's lesson here and their own lesson in another group.
-        by_teacher[(lesson.teacher_id or lesson.group.teacher_id, lesson.date)].append(lesson)
+        # Keyed on the lesson's *actual* teacher (Lesson.effective_teacher —
+        # its own `teacher` when the generator set one, i.e. a specific
+        # GroupTeacher slot, else that GroupTeacher's own teacher; never the
+        # legacy `Group.teacher` field): a group with several teachers (see
+        # models.GroupTeacher) must not treat two different teachers'
+        # simultaneous lessons in the same group as a conflict with
+        # themselves, nor miss a real conflict between one teacher's lesson
+        # here and their own lesson in another group.
+        effective_teacher = lesson.effective_teacher
+        by_teacher[(effective_teacher.id if effective_teacher else None, lesson.date)].append(lesson)
         if lesson.room_id:
             by_room[(lesson.room_id, lesson.date)].append(lesson)
 
@@ -136,19 +138,19 @@ def schedule_view(request):
     lessons_qs = (
         Lesson.objects.filter(date__gte=date_from, date__lte=date_to)
         .select_related(
-            "group", "group__teacher", "group__teacher__user", "group__course",
+            "group", "group_teacher__teacher", "group_teacher__teacher__user", "group__course",
             "teacher", "teacher__user", "room", "subject", "plan",
         )
         .order_by("date", "start_time")
     )
     if teacher_id:
         # A lesson's actual teacher is Lesson.teacher when the generator set
-        # one (a specific GroupTeacher slot), else the group's own primary
+        # one (a specific GroupTeacher slot), else that GroupTeacher's own
         # teacher — see Lesson.effective_teacher. A group with several
         # teachers (models.GroupTeacher) must only match lessons this
         # specific teacher actually gives, not every lesson of the group.
         lessons_qs = lessons_qs.filter(
-            Q(teacher_id=teacher_id) | Q(teacher__isnull=True, group__teacher_id=teacher_id)
+            Q(teacher_id=teacher_id) | Q(teacher__isnull=True, group_teacher__teacher_id=teacher_id)
         )
     if group_id:
         lessons_qs = lessons_qs.filter(group_id=group_id)
@@ -202,7 +204,7 @@ def schedule_view(request):
         "today": today,
         "is_custom_range": bool(date_from_param or date_to_param),
         "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
-        "groups": Group.objects.select_related("teacher__user").order_by("name"),
+        "groups": Group.objects.order_by("name"),
         "courses": Course.objects.order_by("name"),
         "subjects": Subject.objects.filter(is_active=True).order_by("name"),
         "rooms": Room.objects.filter(is_active=True).order_by("name"),

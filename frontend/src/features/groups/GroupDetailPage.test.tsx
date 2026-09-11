@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GroupDetailPage } from '@/features/groups/GroupDetailPage'
-import { buildGroup, buildGroupScheduleLesson } from '@/test/fixtures'
+import { buildGroup, buildGroupScheduleLesson, buildGroupScheduleSlot, buildGroupTeacherSummary } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
 
 vi.mock('@/api/groups', () => ({
@@ -28,12 +28,17 @@ describe('GroupDetailPage', () => {
   })
 
   it('shows the group overview by default', async () => {
-    vi.mocked(groupsApi.get).mockResolvedValue(buildGroup({ name: 'Роботы-1', room_name: 'Кабинет 101' }))
+    vi.mocked(groupsApi.get).mockResolvedValue(
+      buildGroup({
+        name: 'Роботы-1',
+        teachers: [buildGroupTeacherSummary({ schedules: [buildGroupScheduleSlot({ room_name: 'Кабинет 101' })] })],
+      }),
+    )
 
     renderGroupDetail(1)
 
     await waitFor(() => expect(screen.getByText('Роботы-1')).toBeInTheDocument())
-    expect(screen.getByText('Кабинет 101')).toBeInTheDocument()
+    expect(screen.getByText(/Кабинет 101/)).toBeInTheDocument()
   })
 
   it('groups the schedule tab by weekday, not as a flat lesson list', async () => {

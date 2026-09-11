@@ -263,12 +263,12 @@ class StudentAdmin(admin.ModelAdmin):
 # ---------------------------------------------------------------------------
 
 class GroupAdminForm(forms.ModelForm):
-    """The `days_of_week` model field has no form field of its own here on
-    purpose — it's part of the read-only legacy compatibility block (see
-    GroupAdmin.readonly_fields/legacy_days_of_week_display): an admin
-    creating or editing a Group can no longer accidentally configure a new
-    group's schedule through it. Real schedule configuration always goes
-    through a Teaching Program (models.GroupSchedule), added below."""
+    """teacher/room/start_time/end_time/days_of_week are legacy model
+    fields (see their help_text) with no form field here at all — not
+    read-only, not shown anywhere, fully excluded from the form. An admin
+    creating or editing a Group has no way to see or touch them; real
+    schedule configuration always goes through a Teaching Program (models.
+    GroupSchedule), added below."""
 
     students = forms.ModelMultipleChoiceField(
         queryset=Student.objects.filter(is_active=True),
@@ -285,7 +285,7 @@ class GroupAdminForm(forms.ModelForm):
 
     class Meta:
         model = Group
-        fields = "__all__"
+        exclude = ["teacher", "room", "start_time", "end_time", "days_of_week"]
         labels = {
             "name": "Название группы",
             "status": "Статус группы",
@@ -450,9 +450,8 @@ class GroupAdmin(admin.ModelAdmin):
     readonly_fields = (
         "created_at", "updated_at",
         "group_summary", "capacity_summary", "schedule_link_detail", "teaching_programs_summary",
-        "teacher", "room", "start_time", "end_time", "legacy_days_of_week_display",
     )
-    autocomplete_fields = ("course", "teacher", "room")
+    autocomplete_fields = ("course",)
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
     inlines = [GroupScheduleInline]
     list_per_page = 25
@@ -500,20 +499,6 @@ class GroupAdmin(admin.ModelAdmin):
                         "тренеров). Каждая программа полностью равноправна и имеет собственный "
                         "предмет, расписание и, по желанию, собственный индивидуальный план "
                         "занятий, независимый от других программ этой группы."
-                    ),
-                },
-            ),
-            (
-                "Поля для обратной совместимости",
-                {
-                    "fields": ("teacher", "room", "start_time", "end_time", "legacy_days_of_week_display"),
-                    "classes": ("collapse",),
-                    "description": mark_safe(
-                        '<div class="ok-alert ok-alert-warning"><i class="bi bi-exclamation-triangle"></i>'
-                        "<span>Эти поля сохранены только для совместимости со старыми данными. "
-                        "Они не влияют на расписание и генерацию занятий и доступны только для "
-                        "просмотра. Используйте «Тренеры и учебные программы» выше для любой новой "
-                        "настройки.</span></div>"
                     ),
                 },
             ),
@@ -683,13 +668,6 @@ class GroupAdmin(admin.ModelAdmin):
             "</div>",
             selected, selected, obj.max_students, capacity_badge,
         )
-
-    @admin.display(description="Дни недели (устар.)")
-    def legacy_days_of_week_display(self, obj: Group) -> str:
-        if not obj.days_of_week:
-            return "—"
-        day_labels = dict(DAY_CHOICES)
-        return ", ".join(day_labels.get(day, day) for day in obj.days_of_week)
 
     @admin.display(description="")
     def teaching_programs_summary(self, obj: Group) -> str:

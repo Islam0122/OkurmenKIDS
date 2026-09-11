@@ -50,7 +50,6 @@ from apps.academy.services.analytics import (
 )
 from apps.academy.services.attendance_service import bulk_mark_attendance
 from apps.academy.services.group_schedule_conflicts import (
-    find_group_teacher_conflict,
     find_schedule_room_conflict,
     find_schedule_teacher_conflict,
 )
@@ -210,17 +209,10 @@ class GroupTests(AcademyTestBase):
         self.assertIsNone(group.teacher_id)
         self.assertEqual(group.teachers.count(), 0)
 
-    def test_group_capacity_cannot_exceed_room(self):
-        response = self.admin_client.post(
-            "/api/v1/groups/",
-            {
-                "name": "Too big", "course": self.course.id, "teacher": self.teacher1.id, "room": self.room2.id,
-                "start_date": "2026-09-07", "start_time": "10:00", "end_time": "11:00",
-                "days_of_week": ["mon"], "max_students": 99,
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    # Room-vs-max_students capacity validation was tied to the legacy
+    # Group.room field (removed — see LegacyGroupFieldsTests) and had no
+    # GroupSchedule-level equivalent to replace it with; there's nothing
+    # left here to reject a room-mismatched max_students against.
 
     def test_group_end_date_before_start_date_rejected(self):
         response = self.admin_client.post(
@@ -235,86 +227,165 @@ class GroupTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-class GroupRoomConflictTests(AcademyTestBase):
-    """group1 already occupies room1 on Mon/Wed 15:00-16:30 (see AcademyTestBase.setUp)."""
+class LegacyGroupFieldsTests(AcademyTestBase):
+    """Group.teacher/room/start_time/end_time/days_of_week are legacy
+    fields kept only for backward compatibility with data that predates
+    GroupTeacher/GroupSchedule — the DB columns still exist, but nothing in
+    the admin UI, the API, lesson generation, schedule logic, analytics, or
+    permissions may read or write them any more. GroupTeacher/GroupSchedule
+    are the only source of truth (see AcademyTestBase.setUp: group1/group2
+    themselves still carry legacy field values, converted to real
+    GroupSchedule/GroupTeacher rows by `sync_and_generate` — exactly the
+    "old data" scenario these tests must not break)."""
 
-    def _create(self, **overrides):
-        payload = {
-            "name": "New Group",
-            "course": self.course.id,
-            "teacher": self.teacher2.id,
-            "room": self.room1.id,
-            "start_date": "2026-09-07",
-            "start_time": "15:30",
-            "end_time": "17:00",
-            "days_of_week": ["mon"],
-        }
-        payload.update(overrides)
-        return self.admin_client.post("/api/v1/groups/", payload, format="json")
+    def setUp(self):
+        super().setUp()
+        self.django_admin_client = DjangoClient()
+        self.django_admin_client.force_login(self.admin)
 
-    def test_overlapping_room_day_and_time_rejected(self):
-        response = self._create()
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("room", response.data)
+    def test_legacy_fields_absent_from_api_response(self):
+        response = self.admin_client.get(f"/api/v1/groups/{self.group1.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for field in ("teacher", "teacher_name", "room", "room_name", "start_time", "end_time", "days_of_week"):
+            self.assertNotIn(field, response.data)
 
-    def test_same_room_different_day_allowed(self):
-        response = self._create(days_of_week=["tue"])
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-
-    def test_same_room_non_overlapping_time_allowed(self):
-        response = self._create(start_time="09:00", end_time="10:00")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-
-    def test_different_room_same_day_and_time_allowed(self):
-        response = self._create(room=self.room2.id)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-
-    def test_cancelled_group_does_not_block_room(self):
-        self.group1.status = Group.Status.CANCELLED
-        self.group1.save(update_fields=["status"])
-        response = self._create()
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-
-    def test_editing_group_to_conflict_rejected(self):
-        # group2 is room2/Tue,Thu 17:00-18:30 — moving it onto group1's own
-        # room1/Mon slot must be rejected too, not just on create.
-        response = self.admin_client.patch(
-            f"/api/v1/groups/{self.group2.id}/",
-            {"room": self.room1.id, "days_of_week": ["mon"], "start_time": "15:00", "end_time": "16:30"},
+    def test_legacy_fields_in_create_payload_are_silently_ignored(self):
+        response = self.admin_client.post(
+            "/api/v1/groups/",
+            {
+                "name": "New Group — legacy payload ignored",
+                "course": self.course.id,
+                "start_date": "2026-09-07",
+                # Every legacy field an old API client might still send —
+                # none of these may be accepted or stored any more.
+                "teacher": self.teacher2.id,
+                "room": self.room1.id,
+                "start_time": "15:30",
+                "end_time": "17:00",
+                "days_of_week": ["mon"],
+            },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("room", response.data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        for field in ("teacher", "teacher_name", "room", "room_name", "start_time", "end_time", "days_of_week"):
+            self.assertNotIn(field, response.data)
 
-    def test_editing_group_without_touching_its_own_schedule_not_blocked_by_itself(self):
-        # Re-saving group1's own unchanged schedule must not conflict with itself.
-        response = self.admin_client.patch(
-            f"/api/v1/groups/{self.group1.id}/", {"description": "updated"}, format="json"
+        created = Group.objects.get(pk=response.data["id"])
+        self.assertIsNone(created.teacher_id)
+        self.assertIsNone(created.room_id)
+        self.assertIsNone(created.start_time)
+        self.assertIsNone(created.end_time)
+        self.assertEqual(created.days_of_week, [])
+
+    def test_legacy_room_double_booking_no_longer_rejected(self):
+        # Previously this exact payload (group1 already occupies room1 on
+        # Mon 15:00-16:30 via its legacy fields) was rejected as a
+        # room-conflict. Legacy fields are never written any more, so
+        # there's nothing left to conflict over — the request just
+        # succeeds, silently ignoring the legacy keys.
+        response = self.admin_client.post(
+            "/api/v1/groups/",
+            {
+                "name": "Legacy double-booking is a no-op now",
+                "course": self.course.id,
+                "teacher": self.teacher2.id,
+                "room": self.room1.id,
+                "start_date": "2026-09-07",
+                "start_time": "15:30",
+                "end_time": "17:00",
+                "days_of_week": ["mon"],
+            },
+            format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
-    def test_model_clean_also_rejects_conflict(self):
-        # Admin's ModelForm validates via full_clean(), not the DRF serializer —
-        # the same rule must hold there too.
-        conflicting = Group(
-            name="Model-level conflict",
+    def test_group_admin_form_has_no_legacy_fields_or_section(self):
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        self.assertNotIn("Поля для обратной совместимости", body)
+        for field_id in ("id_teacher", "id_room", "id_start_time", "id_end_time", "id_days_of_week"):
+            self.assertNotIn(f'id="{field_id}"', body)
+
+    def test_group_admin_add_form_has_no_legacy_fields(self):
+        response = self.django_admin_client.get("/admin/academy/group/add/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        for field_id in ("id_teacher", "id_room", "id_start_time", "id_end_time", "id_days_of_week"):
+            self.assertNotIn(f'id="{field_id}"', body)
+
+    def test_group_teacher_and_group_schedule_are_the_only_source_of_truth_for_access(self):
+        # group1's legacy `teacher` field points at teacher1 and stays set —
+        # nothing ever clears it (it's simply never read any more). Real
+        # access is gated entirely by GroupSchedule: deactivating every one
+        # of teacher1's schedule slots must revoke their access to group1
+        # even though the legacy field still names them.
+        self.assertEqual(self.group1.teacher_id, self.teacher1.id)
+        self.assertTrue(Group.objects.for_teacher(self.teacher1).filter(pk=self.group1.pk).exists())
+
+        GroupSchedule.objects.filter(group=self.group1, teacher=self.teacher1).update(is_active=False)
+
+        self.assertFalse(Group.objects.for_teacher(self.teacher1).filter(pk=self.group1.pk).exists())
+        response = self.teacher1_client.get(f"/api/v1/groups/{self.group1.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_generation_and_access_follow_group_schedule_even_when_legacy_teacher_points_elsewhere(self):
+        # A Group whose legacy `teacher` field names one teacher, but whose
+        # only real Teaching Program (GroupTeacher/GroupSchedule) belongs to
+        # a completely different one — generation, analytics and permissions
+        # must all follow the real program, never the legacy field.
+        other_course = Course.objects.create(name="Legacy-mismatch course", count_lesson=1)
+        other_course.subjects.add(self.subject_python)
+        CourseLessonPlan.objects.create(
+            course=other_course, lesson_number=1, subject=self.subject_python, topic="Тема",
+        )
+        mismatched_group = Group.objects.create(
+            name="Legacy teacher points elsewhere",
+            course=other_course,
+            teacher=self.teacher1,  # legacy field: teacher1 — but never given a real program
+            start_date=dt.date(2026, 9, 7),
+        )
+        GroupSchedule.objects.create(
+            group=mismatched_group, teacher=self.teacher2, subject=self.subject_python,
+            day_of_week="mon", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        generate_lessons_for_group(mismatched_group)
+
+        lesson = Lesson.objects.get(group=mismatched_group)
+        self.assertEqual(lesson.effective_teacher, self.teacher2)
+
+        # teacher1 (the legacy field's own value) has no real access at all.
+        self.assertFalse(Group.objects.for_teacher(self.teacher1).filter(pk=mismatched_group.pk).exists())
+        response1 = self.teacher1_client.get(f"/api/v1/groups/{mismatched_group.id}/")
+        self.assertEqual(response1.status_code, status.HTTP_404_NOT_FOUND)
+
+        # teacher2 (the real GroupTeacher/GroupSchedule) has full access.
+        self.assertTrue(Group.objects.for_teacher(self.teacher2).filter(pk=mismatched_group.pk).exists())
+        response2 = self.teacher2_client.get(f"/api/v1/groups/{mismatched_group.id}/")
+        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+
+    def test_unsynced_legacy_only_group_does_not_crash_generation_or_analytics(self):
+        # A Group with only its legacy fields ever set, no GroupTeacher/
+        # GroupSchedule at all (the one-off migration was never run for
+        # it — the worst case of "old data"). It's invisible to every
+        # teacher (nothing to grant access through) and can't generate
+        # lessons (no active program), but nothing may raise.
+        legacy_only_group = Group.objects.create(
+            name="Never migrated legacy-only group",
             course=self.course,
-            teacher=self.teacher2,
+            teacher=self.teacher1,
             room=self.room1,
             start_date=dt.date(2026, 9, 7),
-            start_time=dt.time(15, 30),
-            end_time=dt.time(17, 0),
-            days_of_week=["mon"],
+            start_time=dt.time(9, 0),
+            end_time=dt.time(10, 0),
+            days_of_week=["fri"],
         )
-        with self.assertRaises(Exception):
-            conflicting.full_clean()
+        self.assertFalse(Group.objects.for_teacher(self.teacher1).filter(pk=legacy_only_group.pk).exists())
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(legacy_only_group)
 
-    def test_open_ended_group_conflicts_with_future_dated_group(self):
-        # group1 has no end_date (open-ended) — a new group starting well in
-        # the future, same room/day/time, must still be seen as overlapping.
-        response = self._create(start_date="2027-01-04")  # a Monday
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("room", response.data)
+        dashboard = get_dashboard(period="custom", start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+        self.assertIsNotNone(dashboard)
 
 
 class RoomAvailabilityTests(AcademyTestBase):
@@ -1837,13 +1908,6 @@ class GroupScheduleConflictTests(AcademyTestBase):
         )
         self.assertIsNone(conflict)
 
-    def test_group_level_teacher_conflict_helper(self):
-        conflict = find_group_teacher_conflict(
-            teacher=self.teacher1, days_of_week=["mon"], start_time=dt.time(15, 30), end_time=dt.time(16, 0),
-            start_date=dt.date(2026, 9, 7),
-        )
-        self.assertIsNotNone(conflict)
-
     def test_api_rejects_teacher_double_booking(self):
         response = self.admin_client.post(
             "/api/v1/schedules/",
@@ -2300,21 +2364,9 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
         body = response.content.decode()
         self.assertIn("Сначала сохраните группу, затем добавьте учебные программы", body)
 
-    def test_legacy_fieldset_has_warning_and_readonly_fields(self):
-        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        body = response.content.decode()
-        self.assertIn("Поля для обратной совместимости", body)
-        self.assertIn("сохранены только для совместимости", body)
-        # Legacy fields are rendered read-only (no editable widget for
-        # them) — group1's legacy teacher/room are shown as plain text, not
-        # an `id="id_<field>"` input/select (unlike GroupScheduleInline's
-        # own per-row teacher/room fields, which use a "schedules-0-…" id
-        # and must stay editable).
-        self.assertNotIn('id="id_teacher"', body)
-        self.assertNotIn('id="id_room"', body)
-        self.assertNotIn('id="id_start_time"', body)
-        self.assertNotIn('id="id_end_time"', body)
+    # Legacy-fieldset coverage now lives in LegacyGroupFieldsTests — the
+    # section is fully removed, not just read-only, so there's nothing
+    # left to assert here beyond what that class already covers.
 
     def test_group_summary_capacity_warns_when_exceeded(self):
         self.group1.max_students = 1

@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
 import type { Group } from '@/types/academy'
-import { DAY_LABELS } from '@/types/common'
-import { formatTimeRange } from '@/utils/format'
+import { DAY_LABELS, WEEKDAY_ORDER } from '@/types/common'
 
 const STATUS_TONE: Record<Group['status'], BadgeTone> = {
   active: 'success',
@@ -14,7 +13,9 @@ const STATUS_TONE: Record<Group['status'], BadgeTone> = {
 }
 
 export function GroupCard({ group }: { group: Group }) {
-  const days = group.days_of_week.map((day) => DAY_LABELS[day]).join(' / ')
+  const activeSlots = group.schedules.filter((slot) => slot.is_active)
+  const activeDays = WEEKDAY_ORDER.filter((day) => activeSlots.some((slot) => slot.day_of_week === day))
+  const activePrograms = group.teachers.filter((program) => program.is_active).length
 
   return (
     <Link
@@ -36,16 +37,12 @@ export function GroupCard({ group }: { group: Group }) {
           </dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-ink-secondary">Расписание</dt>
-          <dd className="font-medium text-ink">{days || '—'}</dd>
+          <dt className="text-ink-secondary">Учебные программы</dt>
+          <dd className="font-medium text-ink">{activePrograms || '—'}</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-ink-secondary">Время</dt>
-          <dd className="font-medium text-ink">{formatTimeRange(group.start_time, group.end_time)}</dd>
-        </div>
-        <div className="flex justify-between">
-          <dt className="text-ink-secondary">Аудитория</dt>
-          <dd className="font-medium text-ink">{group.room_name ?? '—'}</dd>
+          <dt className="text-ink-secondary">Дни занятий</dt>
+          <dd className="font-medium text-ink">{activeDays.length ? activeDays.map((day) => DAY_LABELS[day]).join(' / ') : '—'}</dd>
         </div>
       </dl>
     </Link>

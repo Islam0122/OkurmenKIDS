@@ -91,19 +91,52 @@ export function GroupDetailPage() {
 }
 
 function OverviewTab({ group }: { group: Group }) {
-  const days = group.days_of_week.map((day) => DAY_LABELS[day]).join(' / ')
-
   return (
-    <dl className="grid grid-cols-1 gap-4 rounded-xl border border-border bg-surface p-5 sm:grid-cols-2">
-      <Field label="Тренер" value={group.teacher_name} />
-      <Field label="Аудитория" value={group.room_name ?? '—'} />
-      <Field label="Дни занятий" value={days || '—'} />
-      <Field label="Время" value={formatTimeRange(group.start_time, group.end_time)} />
-      <Field label="Дата начала" value={formatDateShort(group.start_date)} />
-      <Field label="Дата окончания" value={group.end_date ? formatDateShort(group.end_date) : '—'} />
-      <Field label="Студентов" value={`${group.students_count}${group.max_students ? ` / ${group.max_students}` : ''}`} />
-      {group.description ? <Field label="Описание" value={group.description} className="sm:col-span-2" /> : null}
-    </dl>
+    <div className="space-y-6">
+      <dl className="grid grid-cols-1 gap-4 rounded-xl border border-border bg-surface p-5 sm:grid-cols-2">
+        <Field label="Дата начала" value={formatDateShort(group.start_date)} />
+        <Field label="Дата окончания" value={group.end_date ? formatDateShort(group.end_date) : '—'} />
+        <Field label="Студентов" value={`${group.students_count}${group.max_students ? ` / ${group.max_students}` : ''}`} />
+        <Field label="Учебных программ" value={`${group.teachers.length}`} />
+        {group.description ? <Field label="Описание" value={group.description} className="sm:col-span-2" /> : null}
+      </dl>
+
+      <div>
+        <h3 className="mb-3 text-sm font-semibold text-ink">Учебные программы</h3>
+        {group.teachers.length === 0 ? (
+          <EmptyState title="У группы пока нет учебных программ" />
+        ) : (
+          <div className="space-y-3">
+            {group.teachers.map((program) => {
+              const activeSlots = program.schedules.filter((slot) => slot.is_active)
+              return (
+                <div key={program.id} className="rounded-xl border border-border bg-surface p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-ink">
+                      {program.teacher_detail.user.first_name} {program.teacher_detail.user.last_name}
+                      {program.subject_detail ? ` — ${program.subject_detail.name}` : ''}
+                    </p>
+                    <Badge tone={program.is_active ? 'success' : 'muted'}>{program.is_active ? 'Активна' : 'Неактивна'}</Badge>
+                  </div>
+                  <ul className="mt-2 space-y-1 text-sm text-ink-secondary">
+                    {activeSlots.length === 0 ? (
+                      <li>Нет активных слотов расписания</li>
+                    ) : (
+                      activeSlots.map((slot) => (
+                        <li key={slot.id}>
+                          {slot.day_of_week_label} {formatTimeRange(slot.start_time, slot.end_time)}
+                          {slot.room_name ? ` · ${slot.room_name}` : ''}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
