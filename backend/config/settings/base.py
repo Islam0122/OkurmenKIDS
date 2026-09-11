@@ -224,7 +224,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "Schedules", "description": "Schedule management"},
         {"name": "Attendance", "description": "Attendance management"},
         {"name": "Homework", "description": "Homework management"},
-        {"name": "KPI", "description": "KPI and performance analytics"},
+        {"name": "Analytics", "description": "KPI and performance analytics"},
     ],
 }
 

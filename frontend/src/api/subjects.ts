@@ -10,5 +10,5 @@ export interface SubjectListParams {
 
 export const subjectsApi = {
   list: (params?: SubjectListParams): Promise<Paginated<Subject>> =>
-    apiClient.get<Paginated<Subject>>('/users/subject/', { params }).then((r) => r.data),
+    apiClient.get<Paginated<Subject>>('/subjects/', { params }).then((r) => r.data),
 }

@@ -17,5 +17,5 @@ export interface AttendanceListParams {
 export const attendanceApi = {
   /** Direct CRUD listing — e.g. a single student's attendance history across lessons. */
   list: (params?: AttendanceListParams): Promise<Paginated<AttendanceRecord>> =>
-    apiClient.get<Paginated<AttendanceRecord>>('/academy/attendance/', { params }).then((r) => r.data),
+    apiClient.get<Paginated<AttendanceRecord>>('/attendance/', { params }).then((r) => r.data),
 }

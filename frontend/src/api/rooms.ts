@@ -17,9 +17,9 @@ export interface RoomAvailabilityParams {
 
 export const roomsApi = {
   list: (params?: RoomListParams): Promise<Paginated<Room>> =>
-    apiClient.get<Paginated<Room>>('/academy/rooms/', { params }).then((r) => r.data),
+    apiClient.get<Paginated<Room>>('/rooms/', { params }).then((r) => r.data),
 
   /** Free vs. occupied rooms for a given date + time window (based on existing Lessons). */
   available: (params: RoomAvailabilityParams): Promise<RoomAvailability> =>
-    apiClient.get<RoomAvailability>('/academy/rooms/available/', { params }).then((r) => r.data),
+    apiClient.get<RoomAvailability>('/rooms/available/', { params }).then((r) => r.data),
 }

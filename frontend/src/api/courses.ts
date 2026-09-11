@@ -11,10 +11,10 @@ export interface CourseListParams {
 
 export const coursesApi = {
   list: (params?: CourseListParams): Promise<Paginated<Course>> =>
-    apiClient.get<Paginated<Course>>('/academy/courses/', { params }).then((r) => r.data),
+    apiClient.get<Paginated<Course>>('/courses/', { params }).then((r) => r.data),
 
-  get: (id: number): Promise<Course> => apiClient.get<Course>(`/academy/courses/${id}/`).then((r) => r.data),
+  get: (id: number): Promise<Course> => apiClient.get<Course>(`/courses/${id}/`).then((r) => r.data),
 
   lessonPlans: (id: number): Promise<CourseLessonPlan[]> =>
-    apiClient.get<CourseLessonPlan[]>(`/academy/courses/${id}/lesson-plans/`).then((r) => r.data),
+    apiClient.get<CourseLessonPlan[]>(`/courses/${id}/lesson-plans/`).then((r) => r.data),
 }

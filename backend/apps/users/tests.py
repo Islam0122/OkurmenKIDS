@@ -323,7 +323,7 @@ class TrainerCannotChangeCredentialsTests(APITestCase):
         )
 
     def test_no_change_password_endpoint_exists_for_teacher(self):
-        response = self.client.post("/api/v1/users/auth/change-password/", {})
+        response = self.client.post("/api/v1/auth/change-password/", {})
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
@@ -373,7 +373,7 @@ class EmailVerificationRemovedTests(TestCase):
             self.assertFalse(hasattr(services, name), f"{name} should have been removed")
 
     def test_verify_email_url_does_not_exist(self):
-        response = self.client.get("/api/v1/users/auth/verify-email/abc/def/")
+        response = self.client.get("/api/v1/auth/verify-email/abc/def/")
         self.assertEqual(response.status_code, 404)
 
 
@@ -666,13 +666,13 @@ class SubjectViewSetPermissionTests(APITestCase):
     that default before `DEFAULT_PERMISSION_CLASSES` was set."""
 
     def test_anonymous_request_is_rejected(self):
-        response = self.client.get(reverse("user-list"))
+        response = self.client.get(reverse("subject-list"))
         self.assertIn(response.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
 
     def test_authenticated_teacher_can_list_active_subjects(self):
         teacher, password = make_teacher(username="subject_teacher", email="subject_teacher@okurmenkids.local")
         self.client.force_authenticate(teacher.user)
-        response = self.client.get(reverse("user-list"))
+        response = self.client.get(reverse("subject-list"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 

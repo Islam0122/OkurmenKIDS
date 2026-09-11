@@ -17,15 +17,15 @@ export interface LessonListParams {
 
 export const lessonsApi = {
   list: (params?: LessonListParams): Promise<Paginated<Lesson>> =>
-    apiClient.get<Paginated<Lesson>>('/academy/lessons/', { params }).then((r) => r.data),
+    apiClient.get<Paginated<Lesson>>('/lessons/', { params }).then((r) => r.data),
 
-  get: (id: number): Promise<Lesson> => apiClient.get<Lesson>(`/academy/lessons/${id}/`).then((r) => r.data),
+  get: (id: number): Promise<Lesson> => apiClient.get<Lesson>(`/lessons/${id}/`).then((r) => r.data),
 
   /** Full active-student roster for the lesson, with existing Attendance (or a not-yet-marked placeholder). */
   getAttendanceRoster: (id: number): Promise<AttendanceRecord[]> =>
-    apiClient.get<AttendanceRecord[]>(`/academy/lessons/${id}/attendance/`).then((r) => r.data),
+    apiClient.get<AttendanceRecord[]>(`/lessons/${id}/attendance/`).then((r) => r.data),
 
   /** Bulk create/update Attendance for the given students in one call. */
   saveAttendance: (id: number, items: BulkAttendanceItem[]): Promise<AttendanceRecord[]> =>
-    apiClient.post<AttendanceRecord[]>(`/academy/lessons/${id}/attendance/`, items).then((r) => r.data),
+    apiClient.post<AttendanceRecord[]>(`/lessons/${id}/attendance/`, items).then((r) => r.data),
 }

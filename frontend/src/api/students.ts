@@ -12,7 +12,7 @@ export interface StudentListParams {
 
 export const studentsApi = {
   list: (params?: StudentListParams): Promise<Paginated<Student>> =>
-    apiClient.get<Paginated<Student>>('/academy/students/', { params }).then((r) => r.data),
+    apiClient.get<Paginated<Student>>('/students/', { params }).then((r) => r.data),
 
-  get: (id: number): Promise<Student> => apiClient.get<Student>(`/academy/students/${id}/`).then((r) => r.data),
+  get: (id: number): Promise<Student> => apiClient.get<Student>(`/students/${id}/`).then((r) => r.data),
 }

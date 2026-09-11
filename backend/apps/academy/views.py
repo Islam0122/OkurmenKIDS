@@ -774,14 +774,19 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     @extend_schema(
+        methods=["GET"],
         tags=["Homework"],
+        operation_id="homework_list_own_results",
+        responses=HomeworkResultSerializer(many=True),
+        description="Every active student of the lesson's group with their current result (or a not_submitted placeholder).",
+    )
+    @extend_schema(
+        methods=["POST"],
+        tags=["Homework"],
+        operation_id="homework_bulk_grade_results",
         request=BulkHomeworkResultItemSerializer(many=True),
         responses=HomeworkResultSerializer(many=True),
-        description=(
-            "GET returns every active student of the lesson's group with their "
-            "current result (or a not_submitted placeholder). POST bulk-grades "
-            "the given students in one call."
-        ),
+        description="Bulk-grade the given students' results for this Homework in one call.",
     )
     @action(detail=True, methods=["get", "post"], url_path="results")
     def results(self, request, pk=None):
@@ -966,7 +971,7 @@ def _resolve_compare_mode(raw: str) -> str | None:
 
 
 class AnalyticsDashboardView(APIView):
-    """`GET /analytics/dashboard/?period=&start_date=&end_date=&compare=&teacher=&group=&course=&subject=`
+    """`GET /api/v1/analytics/dashboard/?period=&start_date=&end_date=&compare=&teacher=&group=&course=&subject=`
 
     Admin can see any slice (or everything, with no filters at all). A
     Teacher is always scoped to their own data — a `teacher` query param
