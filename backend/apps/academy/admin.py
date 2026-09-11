@@ -16,12 +16,14 @@ from .models import (
     Course,
     CourseLessonPlan,
     Group,
+    GroupSchedule,
     Homework,
     HomeworkResult,
     Lesson,
     Room,
     Student,
 )
+from .services.group_schedule_sync import sync_legacy_group_schedule
 from .services.import_export import (
     StudentImportValidationError,
     export_students,
@@ -297,6 +299,27 @@ class GroupAdminForm(forms.ModelForm):
         Student.objects.filter(id__in=selected_ids).update(group=self.instance)
 
 
+class GroupScheduleInline(admin.TabularInline):
+    """Additional recurring slots on top of the group's own primary
+    teacher/room/time/days_of_week above — different teachers, subjects,
+    days or time ranges (see models.GroupSchedule). The group's own primary
+    slot is mirrored into GroupSchedule automatically and never needs an
+    inline row of its own."""
+
+    model = GroupSchedule
+    extra = 1
+    fields = ("day_of_week", "start_time", "end_time", "teacher", "subject", "room", "is_active")
+    autocomplete_fields = ("teacher", "subject", "room")
+    verbose_name = "Дополнительный слот расписания"
+    verbose_name_plural = "Дополнительные слоты расписания"
+
+    def get_queryset(self, request):
+        # The group's own auto-mirrored primary slot(s) (subject=None) stay
+        # out of this inline — they're edited via the group's own
+        # teacher/room/time/days_of_week fields above, not as a schedule row.
+        return super().get_queryset(request).filter(subject__isnull=False)
+
+
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
     form = GroupAdminForm
@@ -310,11 +333,23 @@ class GroupAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at", "schedule_link_detail")
     autocomplete_fields = ("course", "teacher", "room")
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
+    inlines = [GroupScheduleInline]
     list_per_page = 25
 
     fieldsets = (
         ("Основная информация", {"fields": ("name", "course", "teacher", "room", "status", "description")}),
-        ("Период и время", {"fields": ("start_date", "end_date", "start_time", "end_time", "days_of_week")}),
+        (
+            "Период и основной слот времени",
+            {
+                "fields": ("start_date", "end_date", "start_time", "end_time", "days_of_week"),
+                "description": (
+                    "Это «основной» слот группы — он всегда ведётся тренером выше и "
+                    "автоматически появляется в расписании группы. Дополнительные "
+                    "тренеры/предметы/дни/аудитории добавляются ниже, в «Дополнительные "
+                    "слоты расписания»."
+                ),
+            },
+        ),
         ("Студенты", {"fields": ("max_students", "students")}),
         ("Расписание", {"fields": ("schedule_link_detail",)}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
@@ -330,9 +365,36 @@ class GroupAdmin(admin.ModelAdmin):
             )
         )
 
+    def save_model(self, request, obj, form, change):
+        # Defer schedule-sync/lesson generation until save_related() below,
+        # once the inline GroupSchedule rows have saved too — otherwise the
+        # group's own primary slot alone would greedily consume the *whole*
+        # course plan the instant Group.save() fires (before this same
+        # request even gets to add the rest of the schedule), leaving
+        # nothing for the additional slots to generate from.
+        obj._defer_schedule_sync = True
+        super().save_model(request, obj, form, change)
+
+    def save_formset(self, request, form, formset, change):
+        # Same deferral as save_model, for each GroupSchedule row the
+        # inline formset saves (see GroupScheduleInline).
+        instances = formset.save(commit=False)
+        for obj in instances:
+            obj._defer_schedule_sync = True
+            obj.save()
+        formset.save_m2m()
+
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         form.save_students()
+        # Now that the group's own fields *and* every inline schedule row
+        # are persisted, sync + generate exactly once for the complete
+        # picture (idempotent either way, see lesson_generator).
+        sync_legacy_group_schedule(form.instance)
+        try:
+            generate_lessons_for_group(form.instance)
+        except LessonGenerationError:
+            pass
 
     @admin.display(description="Студенты", ordering="active_students_count")
     def students_count_display(self, obj: Group) -> str:

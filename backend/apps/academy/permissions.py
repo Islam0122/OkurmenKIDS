@@ -33,6 +33,18 @@ def _group_of(obj):
     return None
 
 
+def _teacher_has_group_access(teacher, group) -> bool:
+    """True if `teacher` has any real stake in `group` — its own primary
+    teacher, or teaching any of its active GroupSchedule slots. A group can
+    now have several teachers across different slots (see
+    apps.academy.models.GroupSchedule); any of them gets the same access a
+    single teacher always had to their own group.
+    """
+    if group.teacher_id == teacher.id:
+        return True
+    return group.schedules.filter(teacher=teacher, is_active=True).exists()
+
+
 class IsAdminOrReadOnly(BasePermission):
     """Any authenticated user may read; only Admin may write.
 
@@ -75,4 +87,4 @@ class IsAdminOrOwningTeacher(BasePermission):
 
         teacher = _teacher_profile(user)
         group = _group_of(obj)
-        return bool(teacher and group and group.teacher_id == teacher.id)
+        return bool(teacher and group and _teacher_has_group_access(teacher, group))
