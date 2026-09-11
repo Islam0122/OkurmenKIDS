@@ -2282,7 +2282,7 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
         response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.content.decode()
-        self.assertIn("Расписание и план занятий", body)
+        self.assertIn("Открыть рабочее пространство", body)
         self.assertIn("Свой план", body)
         self.assertIn("Общий план курса", body)
 
@@ -2354,6 +2354,80 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
         schedule_ids = {form.instance.pk for form in formset_data.forms if form.instance.pk}
         self.assertEqual(schedule_ids, set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True)))
         self.assertTrue(GroupSchedule.objects.filter(group=self.group1, subject__isnull=True).exists())
+
+
+class GroupTeacherWorkspaceViewTests(AcademyTestBase):
+    """`/admin/academy/groupteacher/<id>/workspace/` — the Program Workspace.
+    group1 has two independent Teaching Programs (see AcademyTestBase.setUp
+    + this class's own extra one): the original teacher1/legacy-plan
+    program, and a second teacher2 program with its own individual lesson
+    plan — every stat on one program's workspace page must reflect only
+    that program, never the other's."""
+
+    def setUp(self):
+        super().setUp()
+        self.django_admin_client = DjangoClient()
+        self.django_admin_client.force_login(self.admin)
+        self.django_teacher_client = DjangoClient()
+        self.django_teacher_client.force_login(self.teacher1.user)
+
+        self.program1 = self.group1.teachers.get(teacher=self.teacher1)
+        self.extra_slot = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="fri", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        self.program2 = self.extra_slot.group_teacher
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.program2, lesson_number=1, topic="Own plan lesson 1", homework_title="HW1",
+        )
+        generate_lessons_for_group(self.group1)
+
+    def _workspace_url(self, group_teacher) -> str:
+        return reverse("admin:academy_groupteacher_workspace", args=[group_teacher.id])
+
+    def test_admin_can_open_workspace(self):
+        response = self.django_admin_client.get(self._workspace_url(self.program1))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        self.assertIn("Рабочее пространство программы", body)
+        self.assertIn(str(self.teacher1), body)
+
+    def test_teacher_cannot_open_workspace(self):
+        response = self.django_teacher_client.get(self._workspace_url(self.program1))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_workspace_shows_only_its_own_programs_lessons(self):
+        response = self.django_admin_client.get(self._workspace_url(self.program2))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        stats = response.context["lesson_stats"]
+        expected = Lesson.objects.filter(group_teacher=self.program2).count()
+        self.assertGreater(expected, 0)
+        self.assertEqual(stats["generated"], expected)
+        # program1's own lesson count must not leak into program2's page.
+        self.assertNotEqual(
+            stats["generated"], Lesson.objects.filter(group_teacher=self.program1).count()
+        )
+
+    def test_workspace_has_open_workspace_link_on_group_page(self):
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        body = response.content.decode()
+        self.assertIn(self._workspace_url(self.program1), body)
+        self.assertIn(self._workspace_url(self.program2), body)
+
+    def test_attendance_stats_are_scoped_to_this_program_only(self):
+        lesson1 = Lesson.objects.filter(group_teacher=self.program1).first()
+        lesson2 = Lesson.objects.filter(group_teacher=self.program2).first()
+        Attendance.objects.create(student=self.student1, lesson=lesson1, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student1, lesson=lesson2, status=Attendance.Status.ABSENT)
+
+        response1 = self.django_admin_client.get(self._workspace_url(self.program1))
+        response2 = self.django_admin_client.get(self._workspace_url(self.program2))
+
+        self.assertEqual(response1.context["attendance_stats"]["total"], 1)
+        self.assertEqual(response1.context["attendance_stats"]["present"], 1)
+        self.assertEqual(response2.context["attendance_stats"]["total"], 1)
+        self.assertEqual(response2.context["attendance_stats"]["absent"], 1)
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,12 @@ from django.utils.safestring import mark_safe
 
 from apps.users.import_export.formats import UnsupportedFileFormat
 
-from .admin_views import analytics_view, generate_lessons_for_group_view, schedule_view
+from .admin_views import (
+    analytics_view,
+    generate_lessons_for_group_view,
+    group_teacher_workspace_view,
+    schedule_view,
+)
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
 from .models import (
     Attendance,
@@ -357,22 +362,51 @@ class GroupTeacherAdmin(admin.ModelAdmin):
     is purely historical bookkeeping (see its help_text) and lives in the
     collapsed system-info fieldset, not among the day-to-day fields above."""
 
-    list_display = ("group", "teacher", "subject", "active_badge", "plan_progress", "created_at")
+    list_display = (
+        "group", "teacher", "subject", "active_badge", "plan_progress", "workspace_link", "created_at",
+    )
     list_filter = ("is_active", "group", "teacher", "subject")
     search_fields = ("group__name", "teacher__user__first_name", "teacher__user__last_name", "subject__name")
     autocomplete_fields = ("group", "teacher", "subject")
-    readonly_fields = ("created_at", "updated_at", "is_legacy_primary")
+    readonly_fields = ("created_at", "updated_at", "is_legacy_primary", "workspace_link_detail")
     inlines = [GroupTeacherLessonPlanInline]
     ordering = ("group", "id")
     list_per_page = 30
 
     fieldsets = (
-        ("Тренер / программа", {"fields": ("group", "teacher", "subject", "is_active")}),
+        ("Тренер / программа", {"fields": ("group", "teacher", "subject", "is_active", "workspace_link_detail")}),
         (
             "Системная информация",
             {"fields": ("is_legacy_primary", "created_at", "updated_at"), "classes": ("collapse",)},
         ),
     )
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                "<int:group_teacher_id>/workspace/",
+                self.admin_site.admin_view(group_teacher_workspace_view),
+                name="academy_groupteacher_workspace",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    @admin.display(description="Рабочее пространство")
+    def workspace_link(self, obj: GroupTeacher) -> str:
+        if not obj.pk:
+            return "—"
+        url = reverse("admin:academy_groupteacher_workspace", args=[obj.pk])
+        return format_html(
+            '<a class="btn btn-outline-success btn-sm" href="{}">'
+            '<i class="bi bi-kanban"></i> Открыть →</a>',
+            url,
+        )
+
+    @admin.display(description="Рабочее пространство программы")
+    def workspace_link_detail(self, obj: GroupTeacher) -> str:
+        if not obj.pk:
+            return "Появится после сохранения программы."
+        return self.workspace_link(obj)
 
     def get_queryset(self, request):
         return (
@@ -702,9 +736,14 @@ class GroupAdmin(admin.ModelAdmin):
             status_badge = (
                 _badge("ok-badge-success", "Активна") if group_teacher.is_active else _badge("ok-badge-danger", "Неактивна")
             )
-            lesson_count = Lesson.objects.filter(group_teacher=group_teacher).count()
+            program_lessons = Lesson.objects.filter(group_teacher=group_teacher)
+            lesson_count = program_lessons.count()
+            completed_count = program_lessons.filter(status=Lesson.Status.COMPLETED).count()
+            upcoming_count = program_lessons.filter(
+                status=Lesson.Status.PLANNED, date__gte=timezone.localdate()
+            ).count()
 
-            plan_url = reverse("admin:academy_groupteacher_change", args=[group_teacher.pk])
+            workspace_url = reverse("admin:academy_groupteacher_workspace", args=[group_teacher.pk])
             lessons_url = f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={group_teacher.pk}"
 
             cards.append(
@@ -715,15 +754,20 @@ class GroupAdmin(admin.ModelAdmin):
                     '<div style="margin-bottom:0.5rem;"><strong>Тренер:</strong> {}'
                     '<span style="margin-left:0.75rem;"><strong>Предмет:</strong> {}</span></div>'
                     '<div style="margin-bottom:0.5rem;"><strong>Расписание:</strong>{}</div>'
-                    '<div style="margin-bottom:0.75rem;">{}</div>'
-                    '<a class="btn btn-outline-success btn-sm" href="{}">Расписание и план занятий →</a> '
+                    '<div class="okan-mini-stats" style="margin-bottom:0.75rem;">'
+                    '<div class="okan-mini-stat">{}</div>'
+                    '<div class="okan-mini-stat">Сгенерировано занятий: <strong>{}</strong></div>'
+                    '<div class="okan-mini-stat">Проведено: <strong>{}</strong></div>'
+                    '<div class="okan-mini-stat">Предстоит: <strong>{}</strong></div>'
+                    "</div>"
+                    '<a class="btn btn-success btn-sm" href="{}"><i class="bi bi-kanban"></i> Открыть рабочее пространство →</a> '
                     '<a class="btn btn-outline-success btn-sm" href="{}">Занятия ({}) →</a>'
                     "</div></div>",
                     index, group_teacher.subject.name if group_teacher.subject_id else "без предмета", status_badge,
                     group_teacher.teacher, group_teacher.subject.name if group_teacher.subject_id else "—",
                     mark_safe(schedule_rows) if schedule_rows else " нет активных слотов",
-                    plan_badge,
-                    plan_url, lessons_url, lesson_count,
+                    plan_badge, lesson_count, completed_count, upcoming_count,
+                    workspace_url, lessons_url, lesson_count,
                 )
             )
         return mark_safe("".join(cards))
@@ -851,7 +895,7 @@ class HomeworkResultInline(admin.TabularInline):
 @admin.register(Homework)
 class HomeworkAdmin(admin.ModelAdmin):
     list_display = ("title", "lesson", "deadline", "results_summary")
-    list_filter = ("lesson__group",)
+    list_filter = ("lesson__group", "lesson__group_teacher")
     search_fields = ("title", "description", "lesson__group__name")
     autocomplete_fields = ("lesson",)
     readonly_fields = ("created_at", "updated_at")
@@ -879,7 +923,7 @@ class HomeworkAdmin(admin.ModelAdmin):
 @admin.register(HomeworkResult)
 class HomeworkResultAdmin(admin.ModelAdmin):
     list_display = ("student", "homework", "status_badge", "score_badge", "checked_at")
-    list_filter = ("status", "homework__lesson__group")
+    list_filter = ("status", "homework__lesson__group", "homework__lesson__group_teacher")
     search_fields = ("student__first_name", "student__last_name", "homework__title")
     autocomplete_fields = ("student", "homework")
     readonly_fields = ("created_at", "updated_at")
@@ -919,7 +963,7 @@ class HomeworkResultAdmin(admin.ModelAdmin):
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
     list_display = ("lesson_date", "student", "group", "status_badge", "comment_short")
-    list_filter = ("lesson__date", "lesson__group", "status")
+    list_filter = ("lesson__date", "lesson__group", "lesson__group_teacher", "status")
     search_fields = ("student__first_name", "student__last_name", "lesson__group__name")
     autocomplete_fields = ("student", "lesson")
     readonly_fields = ("created_at", "updated_at")

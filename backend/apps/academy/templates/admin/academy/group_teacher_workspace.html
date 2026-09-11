@@ -1,0 +1,236 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} okws-page{% endblock %}
+
+{% block content_title %}Рабочее пространство программы{% endblock %}
+
+{% block breadcrumbs %}
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'admin:academy_group_changelist' %}">Группы</a></li>
+        <li class="breadcrumb-item"><a href="{{ group_url }}">{{ group.name }}</a></li>
+        <li class="breadcrumb-item">Рабочее пространство</li>
+    </ol>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .okws-header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:0.75rem; margin-bottom:1rem; }
+        .okws-header h1 { margin:0; font-size:1.15rem; }
+        .okws-actions { display:flex; gap:0.5rem; flex-wrap:wrap; }
+
+        .okws-nav { display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:1.25rem; position:sticky; top:0; z-index:5; background:var(--body-bg,#fff); padding:0.5rem 0; }
+        .okws-nav a { padding:0.35rem 0.75rem; border-radius:999px; border:1px solid var(--ok-border,#E1E7E2); font-size:0.8rem; color:var(--ok-text-secondary,#68736C); text-decoration:none; }
+        .okws-nav a:hover { border-color:var(--ok-primary,#2F8F5B); color:var(--ok-primary,#2F8F5B); }
+
+        .okws-section { margin-bottom:1.5rem; }
+        .okws-section h2 { font-size:1rem; font-weight:700; margin:0 0 0.85rem; display:flex; align-items:center; gap:0.5rem; }
+        .okws-section h2 .bi { color:var(--ok-primary,#2F8F5B); }
+
+        .okws-table { width:100%; border-collapse:collapse; }
+        .okws-table th, .okws-table td { padding:0.5rem 0.65rem; border-bottom:1px solid var(--ok-border,#E1E7E2); font-size:0.85rem; text-align:left; vertical-align:middle; }
+        .okws-table th { color:var(--ok-text-muted,#89938D); text-transform:uppercase; font-size:0.7rem; letter-spacing:0.03em; }
+
+        .okws-empty { color:var(--ok-text-muted,#89938D); padding:0.9rem; text-align:center; font-size:0.85rem; }
+        .okws-material { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; padding:0.5rem 0; border-bottom:1px solid var(--ok-border,#E1E7E2); font-size:0.85rem; }
+        .okws-material:last-child { border-bottom:none; }
+        .okws-material .source { color:var(--ok-text-muted,#89938D); font-size:0.75rem; }
+    </style>
+{% endblock %}
+
+{% block content %}
+
+<div class="okws-header">
+    <h1>{{ group.name }} — {{ teacher }} {% if subject %}({{ subject.name }}){% endif %}</h1>
+    <div class="okws-actions">
+        <a class="btn btn-outline-success btn-sm" href="{{ group_url }}"><i class="bi bi-people"></i> К группе</a>
+        <a class="btn btn-outline-success btn-sm" href="{{ group_teacher_url }}"><i class="bi bi-pencil"></i> Редактировать программу</a>
+    </div>
+</div>
+
+<div class="okws-nav">
+    <a href="#overview">Обзор</a>
+    <a href="#schedule">Расписание</a>
+    <a href="#lesson-plan">План занятий</a>
+    <a href="#lessons">Занятия</a>
+    <a href="#attendance">Посещаемость</a>
+    <a href="#homework">Домашние задания</a>
+    <a href="#homework-results">Результаты ДЗ</a>
+    <a href="#materials">Материалы</a>
+    <a href="#analytics">Аналитика</a>
+</div>
+
+<div class="okws-section" id="overview">
+    <h2><i class="bi bi-clipboard-data"></i> Обзор</h2>
+    <div class="ok-kpi-grid">
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-people"></i></div><div class="ok-kpi-value">{{ group.name }}</div><div class="ok-kpi-label">Группа</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div><div class="ok-kpi-value">{{ teacher }}</div><div class="ok-kpi-label">Тренер</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-journal-bookmark"></i></div><div class="ok-kpi-value">{{ subject.name|default:"без предмета" }}</div><div class="ok-kpi-label">Предмет</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-mortarboard"></i></div><div class="ok-kpi-value">{{ students|length }}</div><div class="ok-kpi-label">Студентов в группе</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-calendar-week"></i></div><div class="ok-kpi-value">{{ lesson_stats.generated }} / {{ lesson_stats.planned_total }}</div><div class="ok-kpi-label">Занятий сгенерировано</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div><div class="ok-kpi-value">{{ lesson_stats.completed }}</div><div class="ok-kpi-label">Проведено</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-calendar-check"></i></div><div class="ok-kpi-value">{{ lesson_stats.upcoming }}</div><div class="ok-kpi-label">Предстоит</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-clipboard-check"></i></div><div class="ok-kpi-value">{% if attendance_stats.rate is not None %}{{ attendance_stats.rate }}%{% else %}—{% endif %}</div><div class="ok-kpi-label">Посещаемость</div></div>
+    </div>
+</div>
+
+<div class="okws-section" id="schedule">
+    <h2><i class="bi bi-calendar-week"></i> Расписание</h2>
+    {% if schedules %}
+        <table class="okws-table">
+            <thead><tr><th>День</th><th>Время</th><th>Аудитория</th><th>Статус</th></tr></thead>
+            <tbody>
+            {% for slot in schedules %}
+                <tr>
+                    <td>{{ slot.get_day_of_week_display }}</td>
+                    <td>{{ slot.start_time|time:"H:i" }}–{{ slot.end_time|time:"H:i" }}</td>
+                    <td>{{ slot.room.name|default:"—" }}</td>
+                    <td>{% if slot.is_active %}<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>{% else %}<span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span>{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="okws-empty">У этой программы пока нет ни одного слота расписания.</div>
+    {% endif %}
+</div>
+
+<div class="okws-section" id="lesson-plan">
+    <h2><i class="bi bi-list-check"></i> План занятий</h2>
+    {% if lesson_plans %}
+        <table class="okws-table">
+            <thead><tr><th>№</th><th>Тема</th><th>ДЗ</th></tr></thead>
+            <tbody>
+            {% for plan in lesson_plans %}
+                <tr>
+                    <td>{{ plan.lesson_number }}</td>
+                    <td>{{ plan.topic }}</td>
+                    <td>{{ plan.homework_title|default:"—" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="okws-empty">У программы нет собственного плана — используется общий план курса «{{ group.course.name }}».</div>
+    {% endif %}
+</div>
+
+<div class="okws-section" id="lessons">
+    <h2><i class="bi bi-calendar-week"></i> Занятия <a class="btn btn-outline-success btn-sm" style="margin-left:0.5rem;" href="{{ lessons_url }}">Все занятия →</a></h2>
+    <div class="okan-mini-stats">
+        <div class="okan-mini-stat">Сгенерировано: <strong>{{ lesson_stats.generated }}</strong></div>
+        <div class="okan-mini-stat">Проведено: <strong>{{ lesson_stats.completed }}</strong></div>
+        <div class="okan-mini-stat">Отменено: <strong>{{ lesson_stats.cancelled }}</strong></div>
+        <div class="okan-mini-stat">Предстоит: <strong>{{ lesson_stats.upcoming }}</strong></div>
+    </div>
+    <h3 style="font-size:0.85rem;">Ближайшие занятия</h3>
+    {% if upcoming_lessons %}
+        <table class="okws-table">
+            <thead><tr><th>№</th><th>Дата</th><th>Время</th><th>Тема</th><th>Аудитория</th></tr></thead>
+            <tbody>
+            {% for lesson in upcoming_lessons %}
+                <tr>
+                    <td>{{ lesson.lesson_number }}</td>
+                    <td>{{ lesson.date|date:"d.m.Y" }}</td>
+                    <td>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</td>
+                    <td>{{ lesson.topic|default:"—" }}</td>
+                    <td>{{ lesson.room.name|default:"—" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="okws-empty">Нет предстоящих занятий.</div>
+    {% endif %}
+    <h3 style="font-size:0.85rem;">Последние занятия</h3>
+    {% if past_lessons %}
+        <table class="okws-table">
+            <thead><tr><th>№</th><th>Дата</th><th>Тема</th><th>Статус</th></tr></thead>
+            <tbody>
+            {% for lesson in past_lessons %}
+                <tr>
+                    <td>{{ lesson.lesson_number }}</td>
+                    <td>{{ lesson.date|date:"d.m.Y" }}</td>
+                    <td>{{ lesson.topic|default:"—" }}</td>
+                    <td>{{ lesson.get_status_display }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="okws-empty">Пока нет прошедших занятий.</div>
+    {% endif %}
+</div>
+
+<div class="okws-section" id="attendance">
+    <h2><i class="bi bi-clipboard-check"></i> Посещаемость <a class="btn btn-outline-success btn-sm" style="margin-left:0.5rem;" href="{{ attendance_url }}">Все записи →</a></h2>
+    {% if attendance_stats.total %}
+        <div class="okan-mini-stats">
+            <div class="okan-mini-stat">Всего отметок: <strong>{{ attendance_stats.total }}</strong></div>
+            <div class="okan-mini-stat">Присутствовали: <strong>{{ attendance_stats.present }}</strong></div>
+            <div class="okan-mini-stat">Отсутствовали: <strong>{{ attendance_stats.absent }}</strong></div>
+            <div class="okan-mini-stat">Опоздали: <strong>{{ attendance_stats.late }}</strong></div>
+            <div class="okan-mini-stat">Уважительная причина: <strong>{{ attendance_stats.excused }}</strong></div>
+            <div class="okan-mini-stat">Посещаемость: <strong>{{ attendance_stats.rate }}%</strong></div>
+        </div>
+    {% else %}
+        <div class="okws-empty">Отметок посещаемости пока нет.</div>
+    {% endif %}
+</div>
+
+<div class="okws-section" id="homework">
+    <h2><i class="bi bi-journal-text"></i> Домашние задания <a class="btn btn-outline-success btn-sm" style="margin-left:0.5rem;" href="{{ homework_url }}">Все задания →</a></h2>
+    {% if homework_stats.assignments %}
+        <div class="okan-mini-stats">
+            <div class="okan-mini-stat">Заданий: <strong>{{ homework_stats.assignments }}</strong></div>
+            <div class="okan-mini-stat">Результатов: <strong>{{ homework_stats.results_total }}</strong></div>
+        </div>
+    {% else %}
+        <div class="okws-empty">Домашних заданий пока нет.</div>
+    {% endif %}
+</div>
+
+<div class="okws-section" id="homework-results">
+    <h2><i class="bi bi-check2-square"></i> Результаты ДЗ <a class="btn btn-outline-success btn-sm" style="margin-left:0.5rem;" href="{{ homework_results_url }}">Все результаты →</a></h2>
+    {% if homework_stats.results_total %}
+        <div class="okan-mini-stats">
+            <div class="okan-mini-stat">Проверено: <strong>{{ homework_stats.checked }}</strong></div>
+            <div class="okan-mini-stat">Сдано: <strong>{{ homework_stats.submitted }}</strong></div>
+            <div class="okan-mini-stat">Не сдано: <strong>{{ homework_stats.not_submitted }}</strong></div>
+            <div class="okan-mini-stat">Средний балл: <strong>{% if homework_stats.avg_score is not None %}{{ homework_stats.avg_score }}/10{% else %}—{% endif %}</strong></div>
+        </div>
+    {% else %}
+        <div class="okws-empty">Результатов ДЗ пока нет.</div>
+    {% endif %}
+</div>
+
+<div class="okws-section" id="materials">
+    <h2><i class="bi bi-play-btn"></i> Материалы</h2>
+    {% if materials %}
+        {% for material in materials %}
+            <div class="okws-material">
+                <span class="source">{{ material.source }}</span>
+                <strong>{{ material.topic|default:"—" }}</strong>
+                {% if material.youtube_url %}<a href="{{ material.youtube_url }}" target="_blank" rel="noopener"><i class="bi bi-youtube"></i> Видео</a>{% endif %}
+                {% for url in material.presentation_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-slides"></i> Презентация</a>{% endfor %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="okws-empty">Ни у плана, ни у занятий этой программы пока нет ссылок на материалы.</div>
+    {% endif %}
+</div>
+
+<div class="okws-section" id="analytics">
+    <h2><i class="bi bi-graph-up-arrow"></i> Аналитика</h2>
+    <div class="okan-mini-stats">
+        <div class="okan-mini-stat">Занятий проведено: <strong>{{ lesson_stats.completed }} / {{ lesson_stats.generated }}</strong></div>
+        <div class="okan-mini-stat">Посещаемость: <strong>{% if attendance_stats.rate is not None %}{{ attendance_stats.rate }}%{% else %}—{% endif %}</strong></div>
+        <div class="okan-mini-stat">ДЗ проверено: <strong>{{ homework_stats.checked }} / {{ homework_stats.results_total }}</strong></div>
+        <div class="okan-mini-stat">Средний балл за ДЗ: <strong>{% if homework_stats.avg_score is not None %}{{ homework_stats.avg_score }}/10{% else %}—{% endif %}</strong></div>
+    </div>
+    <p class="ok-help-text">Показатели рассчитаны только по этой учебной программе (Тренер + Предмет в этой группе), независимо от других программ той же группы.</p>
+</div>
+
+{% endblock %}

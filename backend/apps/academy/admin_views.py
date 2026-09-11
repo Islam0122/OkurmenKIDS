@@ -13,7 +13,7 @@ from typing import Iterable
 
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q
+from django.db.models import Avg, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 from apps.users.models import Subject, Teacher, User
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
-from .models import Course, Group, Lesson, Room
+from .models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Room
 from .services.analytics import get_dashboard
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
@@ -325,3 +325,141 @@ def analytics_view(request):
         "reset_url": reverse("admin:academy_analytics"),
     }
     return render(request, "admin/academy/analytics.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Program Workspace — one GroupTeacher's (Teaching Program's) complete
+# picture in one place: overview, schedule, lesson plan, lessons, attendance,
+# homework, homework results, materials, analytics. Every number here is
+# scoped strictly to this one GroupTeacher (`lesson__group_teacher=`, never
+# just `lesson__group=`), so a Group with several independent programs never
+# bleeds one program's figures into another's — the same isolation the
+# REST API and Django admin queryset scoping already enforce everywhere
+# else (see apps.academy.permissions, models.LessonQuerySet.for_teacher).
+#
+# Deliberately doesn't call services.analytics.get_dashboard(): that
+# service's AnalyticsScope only disambiguates by teacher+group+subject, not
+# by GroupTeacher identity, which isn't precise enough for a teacher running
+# two differently-subjected programs in the same group. Every figure below
+# is instead a direct, exactly-scoped aggregate over this GroupTeacher's own
+# Lessons/Attendance/Homework/HomeworkResult — simpler and strictly more
+# correct for this one-program-at-a-time view than reusing that service.
+# ---------------------------------------------------------------------------
+
+def group_teacher_workspace_view(request, group_teacher_id: int):
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Раздел «Рабочее пространство программы» доступен только администратору.")
+
+    group_teacher = get_object_or_404(
+        GroupTeacher.objects.select_related("group__course", "teacher__user", "subject"),
+        pk=group_teacher_id,
+    )
+    group = group_teacher.group
+    today = timezone.localdate()
+
+    schedules = list(group_teacher.schedules.select_related("room").order_by("day_of_week", "start_time"))
+    lesson_plans = list(group_teacher.lesson_plans.order_by("lesson_number"))
+
+    lessons_qs = (
+        Lesson.objects.filter(group_teacher=group_teacher)
+        .select_related("room", "subject", "plan", "individual_plan")
+        .order_by("date", "start_time")
+    )
+    lessons = list(lessons_qs)
+    lesson_stats = {
+        "generated": len(lessons),
+        "planned_total": len(lesson_plans) or group.course.count_lesson,
+        "completed": sum(1 for lesson in lessons if lesson.status == Lesson.Status.COMPLETED),
+        "cancelled": sum(1 for lesson in lessons if lesson.status == Lesson.Status.CANCELLED),
+        "upcoming": sum(
+            1 for lesson in lessons if lesson.status == Lesson.Status.PLANNED and lesson.date >= today
+        ),
+    }
+    upcoming_lessons = [
+        lesson for lesson in lessons if lesson.status == Lesson.Status.PLANNED and lesson.date >= today
+    ][:10]
+    past_lessons = sorted(
+        (lesson for lesson in lessons if lesson.date < today or lesson.status != Lesson.Status.PLANNED),
+        key=lambda lesson: (lesson.date, lesson.start_time),
+        reverse=True,
+    )[:10]
+
+    attendance_qs = Attendance.objects.filter(lesson__group_teacher=group_teacher)
+    attendance_total = attendance_qs.count()
+    attendance_present = attendance_qs.filter(status=Attendance.Status.PRESENT).count()
+    attendance_stats = {
+        "total": attendance_total,
+        "present": attendance_present,
+        "absent": attendance_qs.filter(status=Attendance.Status.ABSENT).count(),
+        "late": attendance_qs.filter(status=Attendance.Status.LATE).count(),
+        "excused": attendance_qs.filter(status=Attendance.Status.EXCUSED).count(),
+        "rate": round(100 * attendance_present / attendance_total, 1) if attendance_total else None,
+    }
+
+    homework_qs = Homework.objects.filter(lesson__group_teacher=group_teacher).select_related("lesson")
+    results_qs = HomeworkResult.objects.filter(homework__lesson__group_teacher=group_teacher)
+    avg_score = results_qs.exclude(score__isnull=True).aggregate(avg=Avg("score"))["avg"]
+    homework_stats = {
+        "assignments": homework_qs.count(),
+        "results_total": results_qs.count(),
+        "checked": results_qs.filter(status=HomeworkResult.Status.CHECKED).count(),
+        "submitted": results_qs.filter(status=HomeworkResult.Status.SUBMITTED).count(),
+        "not_submitted": results_qs.filter(status=HomeworkResult.Status.NOT_SUBMITTED).count(),
+        "avg_score": round(avg_score, 1) if avg_score is not None else None,
+    }
+
+    students = list(group.students.filter(is_active=True).order_by("last_name", "first_name"))
+
+    materials = []
+    for plan in lesson_plans:
+        if plan.youtube_url or plan.presentation_urls:
+            materials.append(
+                {
+                    "source": f"План занятия №{plan.lesson_number}",
+                    "topic": plan.topic,
+                    "youtube_url": plan.youtube_url,
+                    "presentation_urls": plan.presentation_urls,
+                }
+            )
+    for lesson in lessons:
+        if lesson.youtube_url or lesson.presentation_urls:
+            materials.append(
+                {
+                    "source": f"Занятие №{lesson.lesson_number} ({lesson.date:%d.%m.%Y})",
+                    "topic": lesson.topic,
+                    "youtube_url": lesson.youtube_url,
+                    "presentation_urls": lesson.presentation_urls,
+                }
+            )
+
+    context = {
+        **admin.site.each_context(request),
+        "title": f"Рабочее пространство — {group_teacher}",
+        "group_teacher": group_teacher,
+        "group": group,
+        "teacher": group_teacher.teacher,
+        "subject": group_teacher.subject,
+        "students": students,
+        "schedules": schedules,
+        "lesson_plans": lesson_plans,
+        "upcoming_lessons": upcoming_lessons,
+        "past_lessons": past_lessons,
+        "lesson_stats": lesson_stats,
+        "attendance_stats": attendance_stats,
+        "homework_stats": homework_stats,
+        "materials": materials,
+        "group_url": reverse("admin:academy_group_change", args=[group.pk]),
+        "group_teacher_url": reverse("admin:academy_groupteacher_change", args=[group_teacher.pk]),
+        "lessons_url": f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={group_teacher.pk}",
+        "attendance_url": (
+            f"{reverse('admin:academy_attendance_changelist')}?lesson__group_teacher__id__exact={group_teacher.pk}"
+        ),
+        "homework_url": (
+            f"{reverse('admin:academy_homework_changelist')}?lesson__group_teacher__id__exact={group_teacher.pk}"
+        ),
+        "homework_results_url": (
+            f"{reverse('admin:academy_homeworkresult_changelist')}"
+            f"?homework__lesson__group_teacher__id__exact={group_teacher.pk}"
+        ),
+    }
+    return render(request, "admin/academy/group_teacher_workspace.html", context)
