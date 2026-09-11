@@ -456,8 +456,17 @@ class GroupSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Only active teachers can be assigned to a group.
+        # Only active teachers can be assigned to a group. teacher/room/
+        # start_time/end_time/days_of_week are legacy fields (see their
+        # help_text on the model) — kept writable for historical data, but
+        # never required: a Group is fully usable with every one of them
+        # blank, once it has at least one GroupTeacher/GroupSchedule.
         self.fields["teacher"].queryset = Teacher.objects.filter(is_active=True)
+        self.fields["teacher"].required = False
+        self.fields["room"].required = False
+        self.fields["start_time"].required = False
+        self.fields["end_time"].required = False
+        self.fields["days_of_week"].required = False
 
     def get_students_count(self, obj: Group) -> int:
         annotated = getattr(obj, "active_students_count", None)
@@ -475,8 +484,6 @@ class GroupSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
 
         days_of_week = attrs.get("days_of_week", getattr(self.instance, "days_of_week", None))
-        if not days_of_week:
-            raise serializers.ValidationError({"days_of_week": "Укажите хотя бы один день недели."})
 
         room = attrs.get("room", getattr(self.instance, "room", None))
         max_students = attrs.get("max_students", getattr(self.instance, "max_students", None))

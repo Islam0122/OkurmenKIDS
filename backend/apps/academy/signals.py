@@ -1,27 +1,36 @@
 """Automatic Lesson generation, so Admin never has to click "Generate lessons" by hand.
 
-Business flow: Admin creates Course -> CourseLessonPlan -> Group (with a
-schedule — its own primary teacher/room/days_of_week/time, plus optionally
-extra GroupSchedule slots for other teachers/subjects/times). Saving the
-Group, or saving/removing one of its GroupSchedule rows, fires
-`generate_lessons_for_group`, which is idempotent (only fills in missing
-lesson_numbers, never touches or duplicates existing Lesson rows). If the
-course's lesson plan isn't ready yet (common right after creating a Group),
-generation just can't run yet — that's a normal, expected state, not an
-error the Admin needs to see, so it's logged and swallowed rather than
-raised. The manual "Сгенерировать занятия" action/button stays in place as
-an explicit retry once the plan is ready, or after fixing a data issue.
+Business flow: Admin creates Course -> CourseLessonPlan -> Group -> one or
+more GroupTeacher (Teacher Program: teacher + subject + its own
+GroupSchedule rows + optionally its own GroupTeacherLessonPlan) -> generated
+Lessons. Saving a GroupSchedule row (typically via the Group admin page's
+schedule inline) fires `generate_lessons_for_group`, which is idempotent
+(only fills in missing lesson_numbers per GroupTeacher, never touches or
+duplicates existing Lesson rows). If a GroupTeacher's plan isn't ready yet
+(common right after adding a Teacher Program), generation just can't run yet
+for that one — that's a normal, expected state, not an error the Admin
+needs to see, so it's logged and swallowed rather than raised. The manual
+"Сгенерировать занятия" action/button stays in place as an explicit retry
+once the plan is ready, or after fixing a data issue.
 
-Generation reads *every* active GroupSchedule slot of a group at once (see
-services.lesson_generator) — so it deliberately isn't re-run for every
-single intermediate save when a Group + several schedule slots are all
-being set up together in the same request (the Django admin's Group page,
-whose inline schedule rows save *after* the Group itself). Setting
-``instance._defer_schedule_sync = True`` before such a batch of saves, and
-running `generate_lessons_for_group` explicitly once at the end (see
-`GroupAdmin.save_model` / `save_related`), avoids the group's primary slot
-alone greedily consuming the *entire* course plan before the rest of the
-schedule even exists.
+Generation reads *every* active GroupTeacher/GroupSchedule slot of a group
+at once (see services.lesson_generator) — so it deliberately isn't re-run
+for every single intermediate save when a Group + several schedule slots
+(Teacher Programs) are all being set up together in the same request (the
+Django admin's Group page, whose inline schedule rows save *after* the
+Group itself). Setting ``instance._defer_schedule_sync = True`` before such
+a batch of saves, and running `generate_lessons_for_group` explicitly once
+at the end (see `GroupAdmin.save_model` / `save_formset` / `save_related`),
+avoids one Teacher Program's slots alone greedily consuming plan rows meant
+for another one before the rest of the schedule even exists.
+
+Note: despite the flag's name (kept for backward compatibility with
+existing call sites), nothing here "syncs" a Group's own legacy
+teacher/room/start_time/end_time/days_of_week fields into GroupSchedule
+anymore — those are inert historical data now (see their help_text on
+Group), never mirrored automatically. `_defer_schedule_sync` today means
+only one thing: defer the automatic `generate_lessons_for_group` call until
+a whole batch of GroupSchedule saves is done.
 """
 from __future__ import annotations
 
@@ -31,7 +40,6 @@ from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from .models import Group, GroupSchedule
-from .services.group_schedule_sync import sync_legacy_group_schedule
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
 logger = logging.getLogger(__name__)
@@ -54,11 +62,6 @@ def _generate(group: Group, *, source: str) -> None:
 def auto_generate_lessons_for_group(sender, instance: Group, **kwargs) -> None:
     if getattr(instance, "_defer_schedule_sync", False):
         return
-
-    # Mirror the group's own teacher/room/time/days_of_week into GroupSchedule
-    # *before* generating lessons — the generator reads schedule slots only,
-    # never Group's own fields directly (see services.lesson_generator).
-    sync_legacy_group_schedule(instance)
     _generate(instance, source="auto_generate_lessons_for_group")
 
 

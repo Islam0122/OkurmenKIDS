@@ -1,20 +1,28 @@
-"""Keeps a Group's own primary slot (teacher/room/start_time/end_time/
-days_of_week) mirrored into GroupSchedule, so GroupSchedule stays the single
-complete source of truth for lesson generation and conflict-checking — a
-Group created (or edited) the old, simple way never needs a second,
-separate code path.
+"""One-off helper: turns a Group's legacy teacher/room/start_time/end_time/
+days_of_week fields into ordinary GroupSchedule rows (and, via
+GroupSchedule.save(), an ordinary GroupTeacher) — ordinary in the sense that
+once created, such a row is in every way equal to one an admin added by
+hand: same inline, same fields, no "this one is special" flag anywhere.
 
-Called from `signals.py` on every Group save. Only ever touches the rows it
-owns (`subject__isnull=True`, the marker for an auto-mirrored slot) — an
-admin's own explicitly-added GroupSchedule rows (`subject` set) are never
-read or written here.
+Not called automatically anymore (there is deliberately no signal/save()
+hook wired to this — Group's own teacher/room/schedule fields are inert
+legacy data now, kept only for historical continuity, and no longer drive
+GroupSchedule/lesson generation at all; see their help_text on Group). Used
+only by the one-off data migration that captured every pre-existing Group's
+legacy fields into GroupTeacher/GroupSchedule the moment this model was
+introduced (apps.academy.migrations.0004_backfill_group_schedule and
+0008_final_legacy_schedule_sync) and by tests that need the same "recreate
+what the old auto-mirror used to do" setup.
+
+Only ever touches the rows it created before (`subject__isnull=True`, the
+marker `sync_legacy_group_schedule` itself uses) — never an admin's own
+explicitly-added GroupSchedule rows (`subject` set).
 
 Every row this function creates/updates/deletes is tagged
 ``_defer_schedule_sync = True`` first, so GroupSchedule's own post_save/
 post_delete signals (see signals.py) don't each trigger their own
 `generate_lessons_for_group` call mid-loop, against a still-partially-synced
-schedule — the caller (signals.py) generates once, after the whole sync is
-done.
+schedule — the caller generates once, after the whole sync is done.
 """
 from __future__ import annotations
 
