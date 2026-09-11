@@ -659,6 +659,23 @@ class TeacherAdminImportExportTests(TestCase):
 # Management command production guards (reset_dev_db, init_production)
 # ---------------------------------------------------------------------------
 
+class SubjectViewSetPermissionTests(APITestCase):
+    """`SubjectViewSet.get_permissions()` must require authentication
+    explicitly for anonymous requests, not fall through to the project-wide
+    DRF default — this is exactly the view the audit found depending on
+    that default before `DEFAULT_PERMISSION_CLASSES` was set."""
+
+    def test_anonymous_request_is_rejected(self):
+        response = self.client.get(reverse("user-list"))
+        self.assertIn(response.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+    def test_authenticated_teacher_can_list_active_subjects(self):
+        teacher, password = make_teacher(username="subject_teacher", email="subject_teacher@okurmenkids.local")
+        self.client.force_authenticate(teacher.user)
+        response = self.client.get(reverse("user-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
 class ResetDevDbGuardTests(TestCase):
     """`reset_dev_db` must never run against production, and must never run
     without an explicit --confirm even outside production — regardless of

@@ -57,6 +57,11 @@ class LoginView(GenericAPIView):
 class RefreshView(TokenRefreshView):
     """POST /api/v1/users/auth/refresh/ — exchange a refresh token for a new access token."""
 
+    # Deliberately public (simplejwt's own default, same as LoginView above):
+    # the caller has no access token yet at this point, only a refresh token,
+    # which is what this view itself validates.
+    permission_classes = []
+
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
@@ -220,7 +225,12 @@ class SubjectViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
 
         if not user or not user.is_authenticated:
-            return super().get_permissions()
+            # Explicit, not a fall-through to the project-wide default —
+            # this must stay "authentication required" even if that default
+            # ever changes, since get_queryset()'s own anonymous-safe
+            # behavior (Subject.objects.none()) is a second, independent
+            # layer, not a substitute for this one.
+            return [IsAuthenticated()]
 
         if getattr(user, "role", None) == User.Role.ADMIN:
             return [IsAdmin()]

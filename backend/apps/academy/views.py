@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -105,6 +106,25 @@ def _is_admin(user) -> bool:
 
 def _as_drf_validation_error(exc: DjangoValidationError) -> DRFValidationError:
     return DRFValidationError(getattr(exc, "messages", None) or [str(exc)])
+
+
+def _assert_teacher_owns_lesson(request, lesson) -> None:
+    """Defense-in-depth for Attendance/Homework/HomeworkResult creation.
+
+    The serializer's own `lesson`/`homework`/`student` fields are already
+    scoped to the requesting teacher's own lessons (see AttendanceSerializer/
+    HomeworkSerializer/HomeworkResultSerializer `__init__`), so a non-owning
+    teacher's request never validates in the first place — `lesson` here
+    should always already be theirs. This re-checks it anyway, independent
+    of that field-scoping, so a future refactor of the serializers can never
+    silently reopen cross-teacher writes without this also failing.
+    """
+    if _is_admin(request.user):
+        return
+    teacher = _teacher_profile(request)
+    owner = lesson.effective_teacher if lesson is not None else None
+    if not (teacher and owner and owner.id == teacher.id):
+        raise PermissionDenied("Вы можете работать только со своими занятиями.")
 
 
 # ---------------------------------------------------------------------------
@@ -709,6 +729,10 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         # in the same Group is off limits.
         return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
 
+    def perform_create(self, serializer):
+        _assert_teacher_owns_lesson(self.request, serializer.validated_data.get("lesson"))
+        serializer.save()
+
 
 # ---------------------------------------------------------------------------
 # Homework & results
@@ -744,6 +768,10 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         # Only Homework of Lessons this teacher actually gives — a
         # colleague's Homework in the same Group is off limits.
         return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
+
+    def perform_create(self, serializer):
+        _assert_teacher_owns_lesson(self.request, serializer.validated_data.get("lesson"))
+        serializer.save()
 
     @extend_schema(
         tags=["Homework"],
@@ -829,6 +857,12 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
         # Only results of Homework belonging to Lessons this teacher
         # actually gives.
         return qs.filter(homework__lesson__in=Lesson.objects.for_teacher(teacher))
+
+    def perform_create(self, serializer):
+        homework = serializer.validated_data.get("homework")
+        lesson = homework.lesson if homework is not None else None
+        _assert_teacher_owns_lesson(self.request, lesson)
+        serializer.save()
 
 
 # ---------------------------------------------------------------------------

@@ -147,9 +147,14 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
-    # "DEFAULT_PERMISSION_CLASSES": [
-    #     "rest_framework.permissions.IsAuthenticated",
-    # ],
+    # Safe-by-default: any view/action that forgets to declare its own
+    # permission_classes falls back to "must be authenticated" rather than
+    # DRF's own library default (AllowAny). Every view in this project sets
+    # its own permissions explicitly anyway — this is a foot-gun guard for
+    # whatever gets added next, not a behavior change for what exists today.
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
     "DEFAULT_SCHEMA_CLASS": (
         "drf_spectacular.openapi.AutoSchema"
     ),

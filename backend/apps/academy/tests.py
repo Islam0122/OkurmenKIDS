@@ -12,6 +12,7 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
 from apps.users.models import Subject, Teacher, User
@@ -56,6 +57,7 @@ from apps.academy.services.group_schedule_conflicts import (
 from apps.academy.services.group_schedule_sync import sync_legacy_group_schedule
 from apps.academy.services.homework_service import bulk_upsert_homework_results
 from apps.academy.services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+from apps.academy.views import _assert_teacher_owns_lesson
 
 # NOTE: login/verification/permission tests for the underlying auth system
 # (admin login, teacher login, unverified/inactive teacher rejected) already
@@ -2970,6 +2972,44 @@ class MultiTeacherIsolationTests(AcademyTestBase):
         ids = {row["id"] for row in response.data["results"]}
         self.assertIn(self.islam_lesson.id, ids)
         self.assertIn(self.aizada_lesson.id, ids)
+
+
+# ---------------------------------------------------------------------------
+# _assert_teacher_owns_lesson: perform_create's defense-in-depth check
+# ---------------------------------------------------------------------------
+
+class TeacherOwnsLessonGuardTests(AcademyTestBase):
+    """AttendanceViewSet/HomeworkViewSet/HomeworkResultViewSet.perform_create
+    all call `_assert_teacher_owns_lesson` after the serializer has already
+    validated (and scoped) its `lesson`/`homework` field — this is a second,
+    independent check. Exercised directly here (rather than only indirectly
+    through the API, which can never actually reach a mismatched lesson
+    because the serializer's own field-scoping already rejects it first) so
+    a regression in this specific function is caught even if the serializer
+    scoping it backs up is ever weakened."""
+
+    def setUp(self):
+        super().setUp()
+        self.lesson1 = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        self.lesson2 = Lesson.objects.filter(group=self.group2).order_by("lesson_number").first()
+
+    def test_admin_always_passes_regardless_of_lesson(self):
+        request = mock.Mock(user=self.admin)
+        _assert_teacher_owns_lesson(request, self.lesson2)  # must not raise
+
+    def test_owning_teacher_passes(self):
+        request = mock.Mock(user=self.teacher1.user)
+        _assert_teacher_owns_lesson(request, self.lesson1)  # must not raise
+
+    def test_non_owning_teacher_is_rejected(self):
+        request = mock.Mock(user=self.teacher1.user)
+        with self.assertRaises(PermissionDenied):
+            _assert_teacher_owns_lesson(request, self.lesson2)
+
+    def test_missing_lesson_is_rejected(self):
+        request = mock.Mock(user=self.teacher1.user)
+        with self.assertRaises(PermissionDenied):
+            _assert_teacher_owns_lesson(request, None)
 
 
 # ---------------------------------------------------------------------------

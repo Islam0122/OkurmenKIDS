@@ -480,6 +480,12 @@ class GroupSerializer(serializers.ModelSerializer):
         self.fields["start_time"].required = False
         self.fields["end_time"].required = False
         self.fields["days_of_week"].required = False
+        # Defensive scoping to match every other student-accepting field in
+        # this app (e.g. AttendanceSerializer/HomeworkResultSerializer) —
+        # inert today since GroupViewSet writes are admin-only
+        # (IsAdminOrReadOnly), but keeps this field safe by construction if
+        # a teacher-facing roster-edit endpoint is ever added later.
+        self.fields["students"].queryset = Student.objects.filter(is_active=True)
 
     def get_students_count(self, obj: Group) -> int:
         annotated = getattr(obj, "active_students_count", None)
