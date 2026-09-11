@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
+from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connection
 from django.test import Client as DjangoClient
 from django.test import TestCase
@@ -1886,6 +1889,69 @@ class GroupScheduleConflictTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class LessonGeneratorConflictSafetyTests(AcademyTestBase):
+    """`GroupSchedule.clean()` only runs through a ModelForm/serializer
+    `full_clean()` call — a plain `Model.objects.create()` (exactly what a
+    raw `.save()`, `bulk_create`, or a data migration does) never triggers
+    it. These tests persist a conflicting slot exactly that way, bypassing
+    `clean()` entirely, then confirm `generate_lessons_for_group` itself
+    (not just admin/serializer validation) refuses to double-book the
+    teacher/room — the defense-in-depth check added to `lesson_generator`.
+    """
+
+    def test_generation_skips_a_slot_that_double_books_a_teacher(self):
+        # group1 already books teacher1 every Monday 15:00-16:30 (see
+        # AcademyTestBase.setUp). Persist a second, unrelated Group's slot
+        # for the very same teacher/day/time directly via the ORM.
+        other_course = Course.objects.create(name="Conflicting Teacher Course", count_lesson=1)
+        other_course.subjects.add(self.subject_python)
+        CourseLessonPlan.objects.create(
+            course=other_course, lesson_number=1, subject=self.subject_python, topic="Тема",
+        )
+        conflicting_group = Group.objects.create(
+            name="Conflicting Teacher Group", course=other_course, start_date=dt.date(2026, 9, 7),
+        )
+        GroupSchedule.objects.create(
+            group=conflicting_group, teacher=self.teacher1, subject=self.subject_python,
+            day_of_week="mon", start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+        )
+
+        # The post_save signals fired by the two .create() calls above
+        # already attempted generation automatically — confirm they
+        # produced nothing for the conflicting group.
+        self.assertFalse(Lesson.objects.filter(group=conflicting_group).exists())
+
+        # And an explicit, deterministic regeneration call confirms the
+        # same: the conflicting slot is the group's only slot, so once it's
+        # filtered out there's nothing left to generate from.
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(conflicting_group)
+
+        # group1's own, legitimately-scheduled lessons are completely
+        # unaffected by the other group's rejected slot.
+        self.assertTrue(Lesson.objects.filter(group=self.group1).exists())
+
+    def test_generation_skips_a_slot_that_double_books_a_room(self):
+        # group1 already books room1 every Monday 15:00-16:30.
+        other_teacher = make_teacher("conflicting_room_teacher")
+        other_course = Course.objects.create(name="Conflicting Room Course", count_lesson=1)
+        other_course.subjects.add(self.subject_python)
+        CourseLessonPlan.objects.create(
+            course=other_course, lesson_number=1, subject=self.subject_python, topic="Тема",
+        )
+        conflicting_group = Group.objects.create(
+            name="Conflicting Room Group", course=other_course, start_date=dt.date(2026, 9, 7),
+        )
+        GroupSchedule.objects.create(
+            group=conflicting_group, teacher=other_teacher, subject=self.subject_python,
+            day_of_week="mon", start_time=dt.time(15, 0), end_time=dt.time(16, 30), room=self.room1,
+        )
+
+        self.assertFalse(Lesson.objects.filter(group=conflicting_group).exists())
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(conflicting_group)
+
+
 class AvailabilityAPITests(AcademyTestBase):
     """group1: teacher1/room1, Mon/Wed 15:00-16:30. group2: teacher2/room2, Tue/Thu 17:00-18:30."""
 
@@ -2904,3 +2970,57 @@ class MultiTeacherIsolationTests(AcademyTestBase):
         ids = {row["id"] for row in response.data["results"]}
         self.assertIn(self.islam_lesson.id, ids)
         self.assertIn(self.aizada_lesson.id, ids)
+
+
+# ---------------------------------------------------------------------------
+# seed_dev_data: production guard + idempotency
+# ---------------------------------------------------------------------------
+
+class SeedDevDataTests(TestCase):
+    def test_refuses_when_django_env_is_production(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}):
+            with self.assertRaises(CommandError) as ctx:
+                call_command("seed_dev_data")
+        self.assertIn("production", str(ctx.exception).lower())
+        self.assertEqual(User.objects.count(), 0)
+        self.assertEqual(Group.objects.count(), 0)
+
+    def test_production_guard_runs_before_any_seeding_work(self):
+        # Regression guard: the DJANGO_ENV check must run before the
+        # @transaction.atomic-wrapped `_seed` — entering that block opens a
+        # real connection to whatever DATABASES points at, which in
+        # production is a real server, before the command gets a chance to
+        # refuse. `_seed` itself must simply never be reached.
+        from apps.academy.management.commands.seed_dev_data import Command
+
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}):
+            with mock.patch.object(Command, "_seed") as mocked_seed:
+                with self.assertRaises(CommandError):
+                    call_command("seed_dev_data")
+        mocked_seed.assert_not_called()
+
+    def test_creates_two_independent_teaching_programs_in_development(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_dev_data")
+
+        group = Group.objects.get(name="[DEMO] Группа A1")
+        self.assertEqual(group.teachers.count(), 2)
+        self.assertEqual(group.students.count(), 5)
+        for group_teacher in group.teachers.all():
+            self.assertTrue(group_teacher.lessons.exists())
+
+        admin = User.objects.get(username="demo_admin")
+        self.assertEqual(admin.role, User.Role.ADMIN)
+
+    def test_is_idempotent_on_rerun(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_dev_data")
+            first_lesson_count = Lesson.objects.count()
+            first_student_count = Student.objects.count()
+            first_user_count = User.objects.count()
+
+            call_command("seed_dev_data")
+
+        self.assertEqual(Lesson.objects.count(), first_lesson_count)
+        self.assertEqual(Student.objects.count(), first_student_count)
+        self.assertEqual(User.objects.count(), first_user_count)

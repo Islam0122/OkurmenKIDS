@@ -31,12 +31,16 @@ Lessons — only missing future plan rows are filled in.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from collections import defaultdict
 
 from django.db import transaction
 
 from ..constants import WEEKDAY_CODES
 from ..models import Group, GroupSchedule, GroupTeacher, Homework, Lesson
+from .group_schedule_conflicts import find_schedule_room_conflict, find_schedule_teacher_conflict
+
+logger = logging.getLogger(__name__)
 
 # A misconfigured group (an empty days_of_week that somehow bypassed
 # validation, say) must never turn this into an infinite loop.
@@ -47,13 +51,63 @@ class LessonGenerationError(Exception):
     """Raised when a group teacher's course/schedule isn't in a state lessons can be generated from."""
 
 
-def _weekday_slots(schedule_qs) -> dict[int, list[GroupSchedule]]:
-    """Every slot of `schedule_qs`, bucketed by Python weekday index
-    (0=Monday) and ordered by start_time within each day — so a day with
-    several slots (different subjects/teachers) generates its lessons
-    left-to-right through the day, in a stable order."""
+def _without_conflicting_slots(slots: list[GroupSchedule], *, label: str) -> list[GroupSchedule]:
+    """Defense-in-depth against double-booking a teacher/room.
+
+    `GroupSchedule.clean()` already rejects a conflicting slot — but only
+    when something actually calls `full_clean()` (a ModelForm or a DRF
+    serializer). A slot persisted via a raw `.save()`/`bulk_create` (data
+    migrations, `services.group_schedule_sync`, fixtures) can reach
+    generation unchecked. Rather than trust every slot blindly, re-verify
+    each one here and skip — with a logged warning, never a hard failure —
+    any slot that currently clashes with another active GroupSchedule row
+    on the same teacher or room. One bad slot is dropped; the rest of the
+    Teacher Program's schedule still generates normally.
+    """
+    clean_slots = []
+    for slot in slots:
+        conflict = find_schedule_teacher_conflict(
+            teacher=slot.teacher,
+            day_of_week=slot.day_of_week,
+            start_time=slot.start_time,
+            end_time=slot.end_time,
+            exclude_schedule_id=slot.pk,
+        )
+        if conflict is not None:
+            logger.warning(
+                "[lesson_generator] %s: skipping schedule slot id=%s — teacher %r already "
+                "booked at this time by group %r (schedule id=%s).",
+                label, slot.pk, str(slot.teacher), conflict.group.name, conflict.pk,
+            )
+            continue
+
+        if slot.room_id:
+            conflict = find_schedule_room_conflict(
+                room=slot.room,
+                day_of_week=slot.day_of_week,
+                start_time=slot.start_time,
+                end_time=slot.end_time,
+                exclude_schedule_id=slot.pk,
+            )
+            if conflict is not None:
+                logger.warning(
+                    "[lesson_generator] %s: skipping schedule slot id=%s — room %r already "
+                    "booked at this time by group %r (schedule id=%s).",
+                    label, slot.pk, str(slot.room), conflict.group.name, conflict.pk,
+                )
+                continue
+
+        clean_slots.append(slot)
+    return clean_slots
+
+
+def _weekday_slots(slots: list[GroupSchedule]) -> dict[int, list[GroupSchedule]]:
+    """Every slot in `slots`, bucketed by Python weekday index (0=Monday) and
+    ordered by start_time within each day — so a day with several slots
+    (different subjects/teachers) generates its lessons left-to-right
+    through the day, in a stable order."""
     by_weekday: dict[int, list[GroupSchedule]] = defaultdict(list)
-    for slot in schedule_qs.select_related("teacher", "subject", "room"):
+    for slot in slots:
         if slot.day_of_week in WEEKDAY_CODES:
             by_weekday[WEEKDAY_CODES.index(slot.day_of_week)].append(slot)
     for day_slots in by_weekday.values():
@@ -124,7 +178,11 @@ def _generate_from_course_plan(group: Group, group_teachers: list[GroupTeacher])
             f"с полем count_lesson курса ({group.course.count_lesson})."
         )
 
-    slots = GroupSchedule.objects.filter(group_teacher__in=group_teachers, is_active=True)
+    slots = list(
+        GroupSchedule.objects.filter(group_teacher__in=group_teachers, is_active=True)
+        .select_related("teacher", "subject", "room")
+    )
+    slots = _without_conflicting_slots(slots, label=f"group {group.name!r} (shared plan)")
     slots_by_weekday = _weekday_slots(slots)
     if not slots_by_weekday:
         raise LessonGenerationError("У группы не задано расписание (нет активных слотов).")
@@ -167,7 +225,8 @@ def _generate_from_individual_plan(group: Group, group_teacher: GroupTeacher) ->
     if not plans:
         return []
 
-    slots = group_teacher.schedules.filter(is_active=True)
+    slots = list(group_teacher.schedules.filter(is_active=True).select_related("teacher", "subject", "room"))
+    slots = _without_conflicting_slots(slots, label=f"teacher program {group_teacher!r}")
     slots_by_weekday = _weekday_slots(slots)
     if not slots_by_weekday:
         raise LessonGenerationError(f"У тренера «{group_teacher}» нет активного расписания.")
@@ -240,6 +299,19 @@ def generate_lessons_for_group(group: Group) -> list[Lesson]:
             errors.append(str(exc))
 
     if errors and not created:
-        raise LessonGenerationError(" ".join(errors))
+        error_message = " ".join(errors)
+        logger.info("[lesson_generator] Nothing generated for group id=%s: %s", group.pk, error_message)
+        raise LessonGenerationError(error_message)
+
+    if errors:
+        logger.warning(
+            "[lesson_generator] Group id=%s: %s lesson(s) created, but %s program(s) failed: %s",
+            group.pk, len(created), len(errors), " | ".join(errors),
+        )
+    elif created:
+        logger.info(
+            "[lesson_generator] Group id=%s: %s lesson(s) created across %s active program(s).",
+            group.pk, len(created), len(group_teachers),
+        )
 
     return created

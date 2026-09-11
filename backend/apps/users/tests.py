@@ -1,5 +1,9 @@
+from unittest import mock
+
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client as DjangoClient
 from django.test import TestCase
 from django.urls import reverse
@@ -649,3 +653,66 @@ class TeacherAdminImportExportTests(TestCase):
         response = self.teacher_web.get(url)
         self.assertEqual(response.status_code, 302)
         self.assertIn("/admin/login/", response.url)
+
+
+# ---------------------------------------------------------------------------
+# Management command production guards (reset_dev_db, init_production)
+# ---------------------------------------------------------------------------
+
+class ResetDevDbGuardTests(TestCase):
+    """`reset_dev_db` must never run against production, and must never run
+    without an explicit --confirm even outside production — regardless of
+    what a caller passes on the command line."""
+
+    def test_refuses_when_django_env_is_production_even_with_confirm(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}):
+            with self.assertRaises(CommandError) as ctx:
+                call_command("reset_dev_db", "--confirm")
+        self.assertIn("production", str(ctx.exception).lower())
+
+    def test_refuses_without_confirm_flag_in_development(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            with self.assertRaises(CommandError) as ctx:
+                call_command("reset_dev_db")
+        self.assertIn("--confirm", str(ctx.exception))
+
+    def test_proceeds_past_guards_in_development_with_confirm(self):
+        # Verifies the guard lets a correctly-confirmed dev run through to
+        # the actual reset logic, without exercising real file/DB deletion
+        # (that's exercised manually — see the reset/seed documentation).
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            with mock.patch(
+                "apps.users.management.commands.reset_dev_db.call_command"
+            ) as mocked_call_command:
+                call_command("reset_dev_db", "--confirm")
+        mocked_call_command.assert_any_call("migrate", interactive=False)
+
+
+class InitProductionGuardTests(TestCase):
+    """`init_production` is a production-only bootstrap: it must refuse to
+    run under any other DJANGO_ENV, and must never create a user or print a
+    password."""
+
+    def test_refuses_outside_production(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            with self.assertRaises(CommandError) as ctx:
+                call_command("init_production")
+        self.assertIn("production", str(ctx.exception).lower())
+
+    def test_runs_migrate_and_never_creates_a_user_when_env_is_production(self):
+        before = User.objects.count()
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}):
+            with mock.patch(
+                "apps.users.management.commands.init_production.call_command"
+            ) as mocked_call_command:
+                out = self._call_and_capture()
+        mocked_call_command.assert_any_call("migrate", interactive=False)
+        self.assertEqual(User.objects.count(), before)
+        self.assertNotIn("password", out.lower())
+
+    def _call_and_capture(self) -> str:
+        from io import StringIO
+
+        buffer = StringIO()
+        call_command("init_production", stdout=buffer)
+        return buffer.getvalue()
