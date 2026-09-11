@@ -62,6 +62,19 @@ def make_teacher(username: str) -> Teacher:
     return Teacher.objects.create(user=user, position="Тренер")
 
 
+def sync_and_generate(group: Group) -> None:
+    """Test helper: explicitly do what a live auto-sync-on-save signal used
+    to do automatically before this architecture change — Group's legacy
+    teacher/room/start_time/end_time/days_of_week fields no longer drive
+    GroupSchedule/lesson generation on their own (see their help_text on
+    Group, and services.group_schedule_sync's module docstring); a test that
+    wants the equivalent Teacher Program + generated Lessons for a group
+    whose legacy fields are set now asks for it explicitly, the same way an
+    admin would via the one-off migration or by adding a schedule row."""
+    sync_legacy_group_schedule(group)
+    generate_lessons_for_group(group)
+
+
 def make_admin(username: str = "admin") -> User:
     return User.objects.create_superuser(
         username=username,
@@ -126,6 +139,11 @@ class AcademyTestBase(TestCase):
             days_of_week=["tue", "thu"],
             max_students=12,
         )
+        # Legacy teacher/room/time/days_of_week no longer auto-populate
+        # GroupSchedule (see Group's help_text) — do it explicitly, same as
+        # the one-off migration that captures pre-existing data does.
+        sync_and_generate(self.group1)
+        sync_and_generate(self.group2)
 
         self.student1 = Student.objects.create(first_name="Алина", last_name="Иванова", group=self.group1)
         self.student2 = Student.objects.create(first_name="Мансур", last_name="Алиев", group=self.group1)
@@ -163,17 +181,19 @@ class GroupTests(AcademyTestBase):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_group_requires_days_of_week(self):
+    def test_group_can_be_created_with_no_legacy_fields_at_all(self):
+        # teacher/room/start_time/end_time/days_of_week are legacy — a Group
+        # is fully valid with none of them set; teachers/schedule are added
+        # afterwards as equal Teacher Programs (GroupTeacher/GroupSchedule).
         response = self.admin_client.post(
             "/api/v1/academy/groups/",
-            {
-                "name": "No days", "course": self.course.id, "teacher": self.teacher1.id,
-                "start_date": "2026-09-07", "start_time": "10:00", "end_time": "11:00",
-                "days_of_week": [],
-            },
+            {"name": "No legacy fields", "course": self.course.id, "start_date": "2026-09-07"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        group = Group.objects.get(pk=response.data["id"])
+        self.assertIsNone(group.teacher_id)
+        self.assertEqual(group.teachers.count(), 0)
 
     def test_group_capacity_cannot_exceed_room(self):
         response = self.admin_client.post(
@@ -405,30 +425,38 @@ class StudentTests(AcademyTestBase):
 
 
 class LessonGenerationTests(AcademyTestBase):
-    """Group creation (in AcademyTestBase.setUp) already triggers automatic
-    generation via the `post_save` signal — see apps.academy.signals — so
-    group1/group2 arrive with their lessons already made. Tests here either
-    inspect that already-generated state, or spin up a fresh Group to
-    observe generation happening from a clean slate.
+    """group1/group2 (via AcademyTestBase.setUp's explicit sync_and_generate)
+    already arrive with their lessons made. Tests here either inspect that
+    already-generated state, or spin up a fresh Group + Teacher Program
+    (GroupSchedule) to observe generation happening from a clean slate.
     """
 
-    def test_group_creation_automatically_generates_lessons(self):
-        """The core new-workflow guarantee: Admin never has to click anything."""
+    def test_adding_a_teacher_program_automatically_generates_lessons(self):
+        """The core workflow guarantee: Admin never has to click anything —
+        adding a GroupSchedule row (a Teacher Program's slot) is enough; the
+        `post_save` signal (see apps.academy.signals) does the rest. A bare
+        Group with no Teacher Program yet has zero lessons — there is no
+        special "the group's own fields" shortcut anymore (see Group's
+        teacher/room/start_time/end_time/days_of_week help_text)."""
         group = Group.objects.create(
-            name="Auto-generated group",
-            course=self.course,
-            teacher=self.teacher1,
-            room=self.room1,
-            start_date=dt.date(2026, 9, 7),
-            start_time=dt.time(9, 0),
-            end_time=dt.time(10, 30),
-            days_of_week=["mon", "wed"],
+            name="Auto-generated group", course=self.course, start_date=dt.date(2026, 9, 7),
         )
+        self.assertEqual(Lesson.objects.filter(group=group).count(), 0)
+
+        # A single row is enough to prove the point (and avoids the
+        # multi-row-same-request deferral admin.GroupAdmin needs — see
+        # save_model/save_formset/save_related — which doesn't apply here
+        # since nothing else is being added in the same request).
+        GroupSchedule.objects.create(
+            group=group, teacher=self.teacher1, subject=self.subject_python,
+            day_of_week="mon", start_time=dt.time(9, 0), end_time=dt.time(10, 30), room=self.room1,
+        )
+
         lessons = list(Lesson.objects.filter(group=group).order_by("lesson_number"))
         self.assertEqual(len(lessons), 4)
         self.assertEqual(
             [lesson.date for lesson in lessons],
-            [dt.date(2026, 9, 7), dt.date(2026, 9, 9), dt.date(2026, 9, 14), dt.date(2026, 9, 16)],
+            [dt.date(2026, 9, 7), dt.date(2026, 9, 14), dt.date(2026, 9, 21), dt.date(2026, 9, 28)],
         )
         self.assertEqual([lesson.lesson_number for lesson in lessons], [1, 2, 3, 4])
 
@@ -462,14 +490,17 @@ class LessonGenerationTests(AcademyTestBase):
         group = Group.objects.create(
             name="Short group",
             course=self.course,
-            teacher=self.teacher1,
-            room=self.room1,
             start_date=dt.date(2026, 9, 7),
             end_date=dt.date(2026, 9, 10),
-            start_time=dt.time(9, 0),
-            end_time=dt.time(10, 30),
-            days_of_week=["mon", "wed"],
         )
+        for day in ["mon", "wed"]:
+            slot = GroupSchedule(
+                group=group, teacher=self.teacher1, subject=self.subject_python,
+                day_of_week=day, start_time=dt.time(9, 0), end_time=dt.time(10, 30), room=self.room1,
+            )
+            slot._defer_schedule_sync = True
+            slot.save()
+        generate_lessons_for_group(group)
         self.assertEqual(Lesson.objects.filter(group=group).count(), 2)
 
     def test_mismatched_plan_count_raises(self):
@@ -1020,8 +1051,10 @@ class ScheduleAdminViewTests(AcademyTestBase):
             start_date=dt.date(2026, 9, 7), start_time=dt.time(10, 0), end_time=dt.time(11, 0),
             days_of_week=["mon", "wed"],
         )
-        # Lessons were already generated automatically the moment the group
-        # was created — the quick action is now a safe, idempotent retry.
+        sync_and_generate(group)
+        # Lessons were already generated the moment the group's Teacher
+        # Program (GroupSchedule) was set up — the quick action is now a
+        # safe, idempotent retry.
         self.assertEqual(Lesson.objects.filter(group=group).count(), 4)
 
         url = reverse("admin:academy_schedule_generate_lessons", args=[group.id])
@@ -1833,6 +1866,130 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
     def test_lesson_list_page_renders(self):
         response = self.django_admin_client.get("/admin/academy/lesson/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_no_teacher_program_is_labelled_as_primary_or_main(self):
+        # The whole point of this architecture: every Teacher Program is
+        # equal — no "Основной"/"main" business distinction shown anywhere.
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        body = response.content.decode()
+        self.assertNotIn("основной", body.lower())
+        self.assertNotIn("(main)", body.lower())
+
+    def test_schedule_inline_shows_every_row_including_legacy_origin_ones(self):
+        # Previously the legacy-mirrored (subject=None) row was hidden from
+        # this inline; now every GroupSchedule row of the group is an equal,
+        # editable row here — no row is special-cased out.
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        formset_data = response.context["inline_admin_formsets"][0].formset
+        schedule_ids = {form.instance.pk for form in formset_data.forms if form.instance.pk}
+        self.assertEqual(schedule_ids, set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True)))
+        self.assertTrue(GroupSchedule.objects.filter(group=self.group1, subject__isnull=True).exists())
+
+
+# ---------------------------------------------------------------------------
+# No more "primary slot" business rule: Group's legacy teacher/room/
+# start_time/end_time/days_of_week fields are inert historical data — they
+# no longer auto-populate GroupSchedule/GroupTeacher on save, and a Group is
+# fully valid with all of them (and every Teacher Program) blank.
+# ---------------------------------------------------------------------------
+
+class NoLiveLegacySyncTests(AcademyTestBase):
+    def test_group_can_be_created_with_zero_teacher_programs(self):
+        group = Group.objects.create(name="Empty group", course=self.course, start_date=dt.date(2026, 9, 7))
+        self.assertEqual(group.teachers.count(), 0)
+        self.assertEqual(GroupSchedule.objects.filter(group=group).count(), 0)
+        self.assertEqual(Lesson.objects.filter(group=group).count(), 0)
+
+    def test_group_full_clean_does_not_require_any_legacy_field(self):
+        group = Group(name="Also empty", course=self.course, start_date=dt.date(2026, 9, 7))
+        group.full_clean()  # must not raise
+
+    def test_editing_legacy_teacher_field_does_not_touch_groupschedule(self):
+        # Before this change, changing Group.teacher/days_of_week would live-
+        # resync GroupSchedule. Now it's inert — a real, equal Teacher
+        # Program can only be added/changed via GroupSchedule itself.
+        schedule_ids_before = set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True))
+        self.group1.teacher = self.teacher2
+        self.group1.days_of_week = ["fri"]
+        self.group1.save()
+        schedule_ids_after = set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True))
+        self.assertEqual(schedule_ids_before, schedule_ids_after)
+        # And no row actually points at the newly-assigned legacy teacher.
+        self.assertFalse(GroupSchedule.objects.filter(group=self.group1, teacher=self.teacher2).exists())
+
+    def test_clearing_legacy_fields_does_not_delete_existing_lessons(self):
+        lesson_ids_before = set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True))
+        self.group1.teacher = None
+        self.group1.room = None
+        self.group1.start_time = None
+        self.group1.end_time = None
+        self.group1.days_of_week = []
+        self.group1.save()
+        self.assertEqual(
+            set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True)), lesson_ids_before
+        )
+
+
+class FinalLegacyScheduleSyncMigrationTests(AcademyTestBase):
+    """apps.academy.migrations.0008_final_legacy_schedule_sync — the one-off
+    safety net that captures any Group whose legacy fields hadn't been
+    mirrored yet at the moment the live auto-sync was retired."""
+
+    def _run_migration(self):
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        migration = importlib.import_module("apps.academy.migrations.0008_final_legacy_schedule_sync")
+        migration.final_sync(django_apps, None)
+
+    def test_backfills_a_group_whose_legacy_fields_were_never_synced(self):
+        # Simulate data that drifted: legacy fields set directly (bypassing
+        # the old sync signal entirely, e.g. via a bulk .update()), with no
+        # matching GroupTeacher/GroupSchedule at all.
+        drifted = Group.objects.create(
+            name="Drifted group", course=self.course, start_date=dt.date(2026, 9, 7),
+        )
+        Group.objects.filter(pk=drifted.pk).update(
+            teacher=self.teacher1, room=self.room1,
+            start_time=dt.time(12, 0), end_time=dt.time(13, 0), days_of_week=["tue"],
+        )
+        self.assertEqual(GroupSchedule.objects.filter(group=drifted).count(), 0)
+
+        self._run_migration()
+
+        drifted.refresh_from_db()
+        rows = list(GroupSchedule.objects.filter(group=drifted))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].day_of_week, "tue")
+        self.assertEqual(rows[0].teacher_id, self.teacher1.id)
+        self.assertIsNotNone(rows[0].group_teacher_id)
+        self.assertTrue(rows[0].group_teacher.is_legacy_primary)
+
+    def test_never_touches_an_admin_edited_row(self):
+        # An admin's own explicitly-added (subject set) row must never be
+        # touched by this migration, even if it happens to share a teacher
+        # with the group's legacy fields.
+        custom = GroupSchedule.objects.create(
+            group=self.group1, teacher=self.teacher1, subject=self.subject_frontend,
+            day_of_week="sat", start_time=dt.time(8, 0), end_time=dt.time(9, 0), room=self.room1,
+        )
+        self._run_migration()
+        custom.refresh_from_db()
+        self.assertEqual(custom.day_of_week, "sat")
+        self.assertEqual(custom.subject_id, self.subject_frontend.id)
+
+    def test_is_idempotent(self):
+        self._run_migration()
+        count_after_first = GroupSchedule.objects.count()
+        self._run_migration()
+        self.assertEqual(GroupSchedule.objects.count(), count_after_first)
+
+    def test_does_not_lose_or_duplicate_existing_lessons(self):
+        lesson_ids_before = set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True))
+        self._run_migration()
+        self.assertEqual(set(Lesson.objects.filter(group=self.group1).values_list("id", flat=True)), lesson_ids_before)
 
 
 class GroupTeacherModelTests(AcademyTestBase):

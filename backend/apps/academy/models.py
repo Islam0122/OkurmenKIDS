@@ -275,8 +275,15 @@ class Group(models.Model):
     teacher = models.ForeignKey(
         Teacher,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="groups",
-        verbose_name="Тренер",
+        verbose_name="Тренер (устар.)",
+        help_text=(
+            "Устаревшее поле, оставлено только для совместимости со старыми данными. "
+            "Тренеров группы назначайте через «Тренеры / программы» (GroupTeacher) — "
+            "это поле больше не влияет на расписание и генерацию занятий."
+        ),
     )
 
     room = models.ForeignKey(
@@ -285,7 +292,8 @@ class Group(models.Model):
         null=True,
         blank=True,
         related_name="groups",
-        verbose_name="Аудитория",
+        verbose_name="Аудитория (устар.)",
+        help_text="Устаревшее поле — см. help_text поля «Тренер (устар.)».",
     )
 
     start_date = models.DateField(
@@ -299,17 +307,24 @@ class Group(models.Model):
     )
 
     start_time = models.TimeField(
-        verbose_name="Время начала",
+        null=True,
+        blank=True,
+        verbose_name="Время начала (устар.)",
+        help_text="Устаревшее поле — см. help_text поля «Тренер (устар.)».",
     )
 
     end_time = models.TimeField(
-        verbose_name="Время окончания",
+        null=True,
+        blank=True,
+        verbose_name="Время окончания (устар.)",
+        help_text="Устаревшее поле — см. help_text поля «Тренер (устар.)».",
     )
 
     days_of_week = models.JSONField(
         default=list,
-        verbose_name="Дни недели",
-        help_text="Например: ['mon', 'wed', 'fri'].",
+        blank=True,
+        verbose_name="Дни недели (устар.)",
+        help_text="Устаревшее поле, например: ['mon', 'wed', 'fri'] — см. help_text поля «Тренер (устар.)».",
     )
 
     max_students = models.PositiveSmallIntegerField(
@@ -356,6 +371,14 @@ class Group(models.Model):
         return self.students_count >= self.max_students
 
     def clean(self):
+        """Note: none of the checks below are required for a Group to be
+        usable — teacher/room/start_time/end_time/days_of_week are legacy
+        fields (see their help_text) that no longer drive schedule or lesson
+        generation; a Group with every one of them blank is perfectly valid
+        once it has at least one GroupTeacher. These checks only run when an
+        admin still fills them in (for historical/migrated data), as a
+        sanity net on values that would otherwise silently make no sense.
+        """
         errors = {}
 
         if self.end_date and self.start_date and self.end_date < self.start_date:
@@ -363,9 +386,6 @@ class Group(models.Model):
 
         if self.start_time and self.end_time and self.end_time <= self.start_time:
             errors["end_time"] = "Время окончания должно быть позже времени начала."
-
-        if not self.days_of_week:
-            errors["days_of_week"] = "Укажите хотя бы один день недели."
 
         if self.room_id and self.room.capacity and self.max_students and self.max_students > self.room.capacity:
             errors["max_students"] = (
@@ -408,19 +428,24 @@ class Group(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# GroupTeacher — "this Teacher teaches this Subject in this Group": the unit
-# a Group's individual lesson plan and lesson numbering belong to. A Group
-# with several teachers (see GroupSchedule below) has one GroupTeacher per
-# distinct (group, teacher, subject) combination; every GroupSchedule row of
-# that teacher/subject in the group points at the same GroupTeacher (see
+# GroupTeacher — "Teacher Program": one Teacher teaching one Subject on its
+# own Schedule with its own Lesson Plan within one Group. This is the *only*
+# unit a Group's teachers, schedules and lesson plans belong to — every
+# GroupTeacher of a Group is equally a first-class teaching stream; none is
+# more "primary" than another, and there is no separate code path or UI
+# section for "the group's main teacher/schedule/room" as a distinct kind of
+# thing. A Group with several teachers has one GroupTeacher per distinct
+# (group, teacher, subject) combination; every GroupSchedule row of that
+# teacher/subject in the group points at the same GroupTeacher (see
 # GroupSchedule.save()), so it's the single place to hang a teacher's own
-# GroupTeacherLessonPlan and see their own Lessons, independent of any other
-# teacher in the same group.
+# GroupTeacherLessonPlan and see their own Lessons, independent of every
+# other teacher in the same group.
 #
 # Never created directly by an admin/API call — always get-or-created
-# automatically from a GroupSchedule save (or from the legacy-schedule sync,
-# for the group's own primary teacher) so existing workflows that only ever
-# touched GroupSchedule keep working unchanged.
+# automatically from a GroupSchedule save, so adding a Teacher Program is
+# just: add a GroupSchedule row for that (teacher, subject) pair (typically
+# via the Group admin page's schedule inline) — no separate "create the
+# program first" step.
 # ---------------------------------------------------------------------------
 
 class GroupTeacher(models.Model):
@@ -446,9 +471,10 @@ class GroupTeacher(models.Model):
         related_name="group_assignments",
         verbose_name="Предмет",
         help_text=(
-            "Предмет, который этот тренер ведёт в этой группе. Пусто — "
-            "автоматически синхронизированный основной тренер группы "
-            "(Group.teacher), без единого фиксированного предмета."
+            "Предмет, который этот тренер ведёт в этой группе. Пусто — обычно "
+            "означает программу, перенесённую из устаревших полей Group "
+            "(teacher/room/schedule), без единого фиксированного предмета; "
+            "это не влияет на то, как эта программа обрабатывается."
         ),
     )
 
@@ -461,8 +487,13 @@ class GroupTeacher(models.Model):
 
     is_legacy_primary = models.BooleanField(
         default=False,
-        verbose_name="Основной тренер группы",
-        help_text="Автоматически синхронизируется с Group.teacher — не редактируется вручную.",
+        verbose_name="Перенесено из устаревших полей группы",
+        help_text=(
+            "Чисто историческая метка: эта программа была создана переносом старых "
+            "Group.teacher/room/start_time/end_time/days_of_week, а не добавлена вручную. "
+            "Не даёт этой программе никаких особых прав или поведения — она полностью "
+            "равноправна любой другой Teacher Program этой группы."
+        ),
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
@@ -575,16 +606,15 @@ class GroupTeacherLessonPlan(models.Model):
 
 # ---------------------------------------------------------------------------
 # GroupSchedule — a Group's recurring weekly timetable, one row per
-# (weekday, time range) taught by one Teacher/Subject/Room. Additive to
-# Group's own teacher/room/start_time/end_time/days_of_week: those legacy
-# fields describe the group's own "primary" slot and keep working exactly
-# as before (a Group with no explicit GroupSchedule rows still generates
-# lessons from them, see services.lesson_generator); GroupSchedule rows are
-# how a Group gains *additional* slots — different teachers, subjects, days
-# or time ranges layered on top of that primary one. Every Group's primary
-# slot is also mirrored here (see services.group_schedule_sync, called from
-# signals.py) so this table is always the single, complete source of truth
-# for conflict-checking and lesson generation, never a second one.
+# (weekday, time range) taught by one Teacher/Subject/Room — this is the
+# *only* source of a Group's schedule and the *only* thing lesson generation
+# and conflict-checking read (see services.lesson_generator). There is no
+# separate "the group's main slot" concept: every row here is an equal
+# Teacher Program slot, whether it was added by hand or (for data that
+# predates GroupTeacher) migrated once from Group's now-inert legacy
+# teacher/room/start_time/end_time/days_of_week fields — see
+# services.group_schedule_sync, used only by that one-off migration, never
+# called automatically on Group save.
 #
 # Every row belongs to exactly one GroupTeacher (see above) — a row's
 # `group_teacher` is derived and kept in sync automatically from its own

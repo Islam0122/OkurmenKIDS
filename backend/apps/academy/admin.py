@@ -26,7 +26,6 @@ from .models import (
     Room,
     Student,
 )
-from .services.group_schedule_sync import sync_legacy_group_schedule
 from .services.import_export import (
     StudentImportValidationError,
     export_students,
@@ -303,24 +302,20 @@ class GroupAdminForm(forms.ModelForm):
 
 
 class GroupScheduleInline(admin.TabularInline):
-    """Additional recurring slots on top of the group's own primary
-    teacher/room/time/days_of_week above — different teachers, subjects,
-    days or time ranges (see models.GroupSchedule). The group's own primary
-    slot is mirrored into GroupSchedule automatically and never needs an
-    inline row of its own."""
+    """Every recurring schedule slot of the group — each row is one Teacher
+    Program's (teacher + subject, see models.GroupTeacher) time slot, and
+    every row is equally editable/removable here. Add as many teachers as
+    the group needs: several rows with the same teacher+subject are the
+    same Teacher Program's several weekly slots; a new teacher+subject
+    combination is automatically its own, independent Teacher Program (see
+    models.GroupSchedule.save())."""
 
     model = GroupSchedule
     extra = 1
     fields = ("day_of_week", "start_time", "end_time", "teacher", "subject", "room", "is_active")
     autocomplete_fields = ("teacher", "subject", "room")
-    verbose_name = "Дополнительный слот расписания"
-    verbose_name_plural = "Дополнительные слоты расписания"
-
-    def get_queryset(self, request):
-        # The group's own auto-mirrored primary slot(s) (subject=None) stay
-        # out of this inline — they're edited via the group's own
-        # teacher/room/time/days_of_week fields above, not as a schedule row.
-        return super().get_queryset(request).filter(subject__isnull=False)
+    verbose_name = "Слот расписания"
+    verbose_name_plural = "Расписание (тренеры / программы)"
 
 
 class GroupTeacherLessonPlanInline(admin.TabularInline):
@@ -339,8 +334,13 @@ class GroupTeacherLessonPlanInline(admin.TabularInline):
 
 @admin.register(GroupTeacher)
 class GroupTeacherAdmin(admin.ModelAdmin):
-    list_display = ("group", "teacher", "subject", "active_badge", "primary_badge", "plan_progress", "created_at")
-    list_filter = ("is_active", "is_legacy_primary", "group", "teacher", "subject")
+    """Every Teacher Program of every group, all equally: no field here
+    marks one kind of program as more central than another — is_legacy_primary
+    is purely historical bookkeeping (see its help_text) and lives in the
+    collapsed system-info fieldset, not among the day-to-day fields above."""
+
+    list_display = ("group", "teacher", "subject", "active_badge", "plan_progress", "created_at")
+    list_filter = ("is_active", "group", "teacher", "subject")
     search_fields = ("group__name", "teacher__user__first_name", "teacher__user__last_name", "subject__name")
     autocomplete_fields = ("group", "teacher", "subject")
     readonly_fields = ("created_at", "updated_at", "is_legacy_primary")
@@ -349,8 +349,11 @@ class GroupTeacherAdmin(admin.ModelAdmin):
     list_per_page = 30
 
     fieldsets = (
-        ("Назначение", {"fields": ("group", "teacher", "subject", "is_active", "is_legacy_primary")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+        ("Тренер / программа", {"fields": ("group", "teacher", "subject", "is_active")}),
+        (
+            "Системная информация",
+            {"fields": ("is_legacy_primary", "created_at", "updated_at"), "classes": ("collapse",)},
+        ),
     )
 
     def get_queryset(self, request):
@@ -365,10 +368,6 @@ class GroupTeacherAdmin(admin.ModelAdmin):
     def active_badge(self, obj: GroupTeacher) -> str:
         return _badge("ok-badge-success", "Да") if obj.is_active else _badge("ok-badge-danger", "Нет")
 
-    @admin.display(description="Основной", ordering="is_legacy_primary")
-    def primary_badge(self, obj: GroupTeacher) -> str:
-        return _badge("ok-badge-muted", "Да") if obj.is_legacy_primary else "—"
-
     @admin.display(description="План")
     def plan_progress(self, obj: GroupTeacher) -> str:
         count = getattr(obj, "_plan_count", 0)
@@ -381,11 +380,11 @@ class GroupTeacherAdmin(admin.ModelAdmin):
 class GroupAdmin(admin.ModelAdmin):
     form = GroupAdminForm
     list_display = (
-        "name", "course", "teacher", "room", "schedule_summary",
+        "name", "course", "teacher_programs_summary",
         "students_count_display", "status_badge", "start_date", "end_date",
     )
-    list_filter = ("status", "course", "teacher", "room", "start_date")
-    search_fields = ("name", "teacher__user__first_name", "teacher__user__last_name")
+    list_filter = ("status", "course", "start_date")
+    search_fields = ("name", "teachers__teacher__user__first_name", "teachers__teacher__user__last_name")
     ordering = ("-start_date", "name")
     readonly_fields = ("created_at", "updated_at", "schedule_link_detail", "teachers_summary")
     autocomplete_fields = ("course", "teacher", "room")
@@ -394,30 +393,30 @@ class GroupAdmin(admin.ModelAdmin):
     list_per_page = 25
 
     fieldsets = (
-        ("Основная информация", {"fields": ("name", "course", "teacher", "room", "status", "description")}),
-        (
-            "Период и основной слот времени",
-            {
-                "fields": ("start_date", "end_date", "start_time", "end_time", "days_of_week"),
-                "description": (
-                    "Это «основной» слот группы — он всегда ведётся тренером выше и "
-                    "автоматически появляется в расписании группы. Дополнительные "
-                    "тренеры/предметы/дни/аудитории добавляются ниже, в «Дополнительные "
-                    "слоты расписания» — можно добавить сколько угодно тренеров."
-                ),
-            },
-        ),
+        ("Основная информация", {"fields": ("name", "course", "status", "description")}),
+        ("Период", {"fields": ("start_date", "end_date")}),
         ("Студенты", {"fields": ("max_students", "students")}),
-        ("Расписание", {"fields": ("schedule_link_detail",)}),
         (
             "Тренеры и программы",
             {
-                "fields": ("teachers_summary",),
+                "fields": ("schedule_link_detail", "teachers_summary"),
                 "description": (
-                    "Каждый тренер группы (см. «Дополнительные слоты расписания» выше) "
-                    "ведёт свой предмет по своему расписанию и — по желанию — по "
-                    "собственному индивидуальному плану занятий, независимому от других "
-                    "тренеров этой группы."
+                    "Каждый тренер группы — равноправная Teacher Program: свой предмет, "
+                    "своё расписание (см. инлайн ниже — «+ Добавить ещё одну» добавляет "
+                    "любое число тренеров) и, по желанию, собственный индивидуальный план "
+                    "занятий, независимый от других тренеров этой группы."
+                ),
+            },
+        ),
+        (
+            "Устаревшие поля",
+            {
+                "fields": ("teacher", "room", "start_time", "end_time", "days_of_week"),
+                "classes": ("collapse",),
+                "description": (
+                    "Не используются для расписания и генерации занятий — оставлены только "
+                    "для совместимости со старыми данными. Тренеров, расписание и аудитории "
+                    "назначайте через «Тренеры и программы» выше."
                 ),
             },
         ),
@@ -428,19 +427,22 @@ class GroupAdmin(admin.ModelAdmin):
         return (
             super()
             .get_queryset(request)
-            .select_related("teacher__user", "room", "course")
+            .select_related("course")
             .annotate(
-                active_students_count=Count("students", filter=Q(students__is_active=True), distinct=True)
+                active_students_count=Count("students", filter=Q(students__is_active=True), distinct=True),
+                active_teacher_programs_count=Count(
+                    "teachers", filter=Q(teachers__is_active=True), distinct=True
+                ),
             )
         )
 
     def save_model(self, request, obj, form, change):
-        # Defer schedule-sync/lesson generation until save_related() below,
-        # once the inline GroupSchedule rows have saved too — otherwise the
-        # group's own primary slot alone would greedily consume the *whole*
-        # course plan the instant Group.save() fires (before this same
-        # request even gets to add the rest of the schedule), leaving
-        # nothing for the additional slots to generate from.
+        # Defer lesson generation until save_related() below, once every
+        # inline GroupSchedule row (Teacher Program slot) has saved too —
+        # otherwise the first Teacher Program alone would greedily consume
+        # plan rows meant for another one, generated the instant Group.save()
+        # fires and before this same request even gets to add the rest of
+        # the schedule.
         obj._defer_schedule_sync = True
         super().save_model(request, obj, form, change)
 
@@ -456,10 +458,9 @@ class GroupAdmin(admin.ModelAdmin):
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         form.save_students()
-        # Now that the group's own fields *and* every inline schedule row
-        # are persisted, sync + generate exactly once for the complete
-        # picture (idempotent either way, see lesson_generator).
-        sync_legacy_group_schedule(form.instance)
+        # Now that every inline schedule row (Teacher Program slot) is
+        # persisted, generate exactly once for the complete picture
+        # (idempotent either way, see lesson_generator).
         try:
             generate_lessons_for_group(form.instance)
         except LessonGenerationError:
@@ -476,36 +477,22 @@ class GroupAdmin(admin.ModelAdmin):
             label = f"{count} / ∞"
         return _badge(css, label)
 
-    @admin.display(description="Расписание")
-    def schedule_summary(self, obj: Group) -> str:
-        day_labels = dict(DAY_CHOICES)
-        days = ", ".join(day_labels.get(d, d) for d in (obj.days_of_week or []))
-        if not days:
-            return "—"
-        return f"{days} · {obj.start_time.strftime('%H:%M')}–{obj.end_time.strftime('%H:%M')}"
+    @admin.display(description="Тренеры / программы", ordering="active_teacher_programs_count")
+    def teacher_programs_summary(self, obj: Group) -> str:
+        count = getattr(obj, "active_teacher_programs_count", None)
+        if count is None:
+            count = obj.teachers.filter(is_active=True).count()
+        if not count:
+            return _badge("ok-badge-danger", "Нет тренеров")
+        label = "программа" if count == 1 else ("программы" if 2 <= count <= 4 else "программ")
+        return _badge("ok-badge-success", f"{count} {label}")
 
     @admin.display(description="Расписание группы")
     def schedule_link_detail(self, obj: Group) -> str:
         if not obj.pk:
             return "Появится после сохранения группы."
-        day_labels = dict(DAY_CHOICES)
-        days = ", ".join(day_labels.get(d, d) for d in (obj.days_of_week or [])) or "—"
         url = f"{reverse('admin:academy_schedule')}?group={obj.pk}"
-        return format_html(
-            '<div style="margin-bottom:0.5rem;">'
-            "<div>Дни: <strong>{}</strong></div>"
-            "<div>Время: <strong>{}–{}</strong></div>"
-            "<div>Аудитория: <strong>{}</strong></div>"
-            "<div>Тренер: <strong>{}</strong></div>"
-            "</div>"
-            '<a class="btn btn-outline-success btn-sm" href="{}">Открыть расписание группы</a>',
-            days,
-            obj.start_time.strftime("%H:%M"),
-            obj.end_time.strftime("%H:%M"),
-            obj.room or "—",
-            obj.teacher,
-            url,
-        )
+        return format_html('<a class="btn btn-outline-success btn-sm" href="{}">Открыть расписание группы</a>', url)
 
     @admin.display(description="Статус", ordering="status")
     def status_badge(self, obj: Group) -> str:
@@ -539,14 +526,13 @@ class GroupAdmin(admin.ModelAdmin):
                 format_html(
                     '<div style="margin-bottom:0.5rem;padding:0.5rem 0.75rem;border:1px solid rgba(0,0,0,0.1);'
                     'border-radius:6px;">'
-                    "<div><strong>{}</strong> — {}{}</div>"
+                    "<div><strong>{}</strong> — {}</div>"
                     '<div style="opacity:0.7;font-size:0.85em;">{}</div>'
                     '<div style="opacity:0.7;font-size:0.85em;">{}</div>'
                     '<a class="btn btn-outline-success btn-sm" href="{}">Управлять расписанием и планом →</a>'
                     "</div>",
                     group_teacher.teacher,
                     group_teacher.subject.name if group_teacher.subject_id else "—",
-                    " (основной)" if group_teacher.is_legacy_primary else "",
                     schedule_bits or "нет активных слотов",
                     plan_label,
                     url,
