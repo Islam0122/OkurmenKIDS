@@ -36,10 +36,11 @@ from __future__ import annotations
 import datetime as dt
 
 from django.db.models import Avg, Count, Q, QuerySet
+from django.db.models.functions import Coalesce
 
 from apps.users.models import Teacher
 
-from ..models import Attendance, Group, Homework, HomeworkResult, Lesson, Student
+from ..models import Attendance, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Student
 
 _COMPLETED_HOMEWORK_STATUSES = (
     HomeworkResult.Status.SUBMITTED,
@@ -84,7 +85,18 @@ class AnalyticsService:
         # and that must still filter, not be treated as "no filter".
         qs = Group.objects.all()
         if self.teacher_id is not None:
-            qs = qs.filter(teacher_id=self.teacher_id)
+            # Any real stake in the group — its own legacy `teacher`, or an
+            # active Teaching Program (see models.GroupTeacher). A Group can
+            # have several teachers; the roster/group-level sections below
+            # (students, group rows) are shared by every Teaching Program of
+            # a group this teacher has a stake in, same as Group/Student API
+            # access (see models.GroupQuerySet.for_teacher) — only the
+            # Lesson-level figures (see `_effective_teacher_q`) are further
+            # narrowed to this teacher's own Lessons.
+            qs = qs.filter(
+                Q(teacher_id=self.teacher_id)
+                | Q(teachers__teacher_id=self.teacher_id, teachers__is_active=True)
+            ).distinct()
         if self.group_id is not None:
             qs = qs.filter(id=self.group_id)
         return qs
@@ -94,16 +106,43 @@ class AnalyticsService:
         if self.teacher_id is not None:
             qs = qs.filter(id=self.teacher_id)
         if self.group_id is not None:
-            qs = qs.filter(groups__id=self.group_id).distinct()
+            qs = qs.filter(
+                Q(groups__id=self.group_id)
+                | Q(group_assignments__group_id=self.group_id, group_assignments__is_active=True)
+            ).distinct()
         return qs
 
     def _students_qs(self) -> QuerySet[Student]:
         return Student.objects.filter(group__in=self._groups_qs(), is_active=True)
 
+    def _effective_teacher_q(self, prefix: str = "") -> Q | None:
+        """Q object restricting to rows whose Lesson's *effective* teacher
+        (its own `teacher`, or — for older/legacy lessons with none — its
+        group's own `teacher`; see Lesson.effective_teacher) is
+        `self.teacher_id`, for a Lesson reached via `prefix` field lookups
+        (e.g. "lesson__" from Attendance, "homework__lesson__" from
+        HomeworkResult). None when no teacher filter is active.
+
+        This is what keeps one teacher's figures from being mixed with
+        another teacher's, even within a Group they both teach in (see
+        models.GroupTeacher) — unlike `_groups_qs`/`_students_qs` above,
+        which a Group's several independent Teaching Programs legitimately
+        share.
+        """
+        if self.teacher_id is None:
+            return None
+        return Q(**{f"{prefix}teacher_id": self.teacher_id}) | Q(
+            **{f"{prefix}teacher__isnull": True, f"{prefix}group__teacher_id": self.teacher_id}
+        )
+
     def _lessons_qs(self) -> QuerySet[Lesson]:
-        return Lesson.objects.filter(
+        qs = Lesson.objects.filter(
             group__in=self._groups_qs(), date__gte=self.start_date, date__lte=self.end_date
         )
+        teacher_q = self._effective_teacher_q()
+        if teacher_q is not None:
+            qs = qs.filter(teacher_q)
+        return qs
 
     def _attendance_qs(self) -> QuerySet[Attendance]:
         return Attendance.objects.filter(lesson__in=self._lessons_qs())
@@ -276,9 +315,41 @@ class AnalyticsService:
             return []
         group_ids = [group.id for group in groups]
 
+        # A Teacher's own row for a shared Group must reflect only *their*
+        # Teaching Program (see models.GroupTeacher) — not the whole
+        # group's combined figures, which would mix in a colleague's
+        # Lessons/Attendance/Homework in the same Group (spec §39).
+        lesson_teacher_q = self._effective_teacher_q()
+        lesson_q = Q(group_id__in=group_ids, date__gte=self.start_date, date__lte=self.end_date)
+        if lesson_teacher_q is not None:
+            lesson_q &= lesson_teacher_q
+
+        lesson_via_lesson_q = self._effective_teacher_q("lesson__")
+
+        attendance_q = Q(
+            lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
+        )
+        if lesson_via_lesson_q is not None:
+            attendance_q &= lesson_via_lesson_q
+
+        homeworks_q = Q(
+            lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
+        )
+        if lesson_via_lesson_q is not None:
+            homeworks_q &= lesson_via_lesson_q
+
+        results_q = Q(
+            homework__lesson__group_id__in=group_ids,
+            homework__lesson__date__gte=self.start_date,
+            homework__lesson__date__lte=self.end_date,
+        )
+        results_teacher_q = self._effective_teacher_q("homework__lesson__")
+        if results_teacher_q is not None:
+            results_q &= results_teacher_q
+
         lessons_by_group = {
             row["group_id"]: row
-            for row in Lesson.objects.filter(group_id__in=group_ids, date__gte=self.start_date, date__lte=self.end_date)
+            for row in Lesson.objects.filter(lesson_q)
             .values("group_id")
             .annotate(
                 total=Count("id"),
@@ -289,36 +360,35 @@ class AnalyticsService:
         }
         attendance_by_group = {
             row["lesson__group_id"]: row
-            for row in Attendance.objects.filter(
-                lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
-            )
+            for row in Attendance.objects.filter(attendance_q)
             .values("lesson__group_id")
             .annotate(total=Count("id"), attended=Count("id", filter=Q(status__in=_ATTENDED_STATUSES)))
         }
         homeworks_by_group = {
             row["lesson__group_id"]: row["count"]
-            for row in Homework.objects.filter(
-                lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
-            )
+            for row in Homework.objects.filter(homeworks_q)
             .values("lesson__group_id")
             .annotate(count=Count("id"))
         }
         results_by_group = {
             row["homework__lesson__group_id"]: row
-            for row in HomeworkResult.objects.filter(
-                homework__lesson__group_id__in=group_ids,
-                homework__lesson__date__gte=self.start_date,
-                homework__lesson__date__lte=self.end_date,
-            )
+            for row in HomeworkResult.objects.filter(results_q)
             .values("homework__lesson__group_id")
             .annotate(completed=Count("id", filter=Q(status__in=_COMPLETED_HOMEWORK_STATUSES)), avg_score=Avg("score"))
         }
+        # Roster stays whole-group — a student's own membership doesn't
+        # belong to any one Teaching Program (spec §39's Students section).
         students_by_group = {
             row["group_id"]: row["count"]
             for row in Student.objects.filter(group_id__in=group_ids, is_active=True)
             .values("group_id")
             .annotate(count=Count("id"))
         }
+
+        teacher_label = None
+        if self.teacher_id is not None:
+            requested_teacher = Teacher.objects.filter(id=self.teacher_id).select_related("user").first()
+            teacher_label = str(requested_teacher) if requested_teacher else None
 
         rows = []
         for group in groups:
@@ -334,7 +404,7 @@ class AnalyticsService:
                 {
                     "id": group.id,
                     "name": group.name,
-                    "teacher": str(group.teacher),
+                    "teacher": teacher_label if teacher_label is not None else str(group.teacher) if group.teacher_id else "—",
                     "students": total_students,
                     "lessons": lessons.get("total", 0),
                     "completed_lessons": lessons.get("completed", 0),
@@ -350,54 +420,77 @@ class AnalyticsService:
         return rows
 
     def _teacher_analytics(self) -> list[dict]:
+        """One row per Teacher, built from that teacher's own *effective*
+        Lessons only (`Lesson.teacher`, or — for older/legacy lessons with
+        none — the lesson's group's own `teacher`; see
+        Lesson.effective_teacher). Grouping by `group__teacher_id` (a
+        Group's single legacy field) would silently attribute another
+        teacher's Lessons in a shared Group to whoever that field happens to
+        point at — exactly the cross-Teaching-Program mixing spec §39 rules
+        out.
+        """
         teachers = list(self._teachers_qs().select_related("user").order_by("user__first_name"))
         if not teachers:
             return []
         teacher_ids = [teacher.id for teacher in teachers]
         group_ids = list(self._groups_qs().values_list("id", flat=True))
 
-        groups_by_teacher = {
-            row["teacher_id"]: row["count"]
-            for row in Group.objects.filter(id__in=group_ids, teacher_id__in=teacher_ids)
-            .values("teacher_id")
-            .annotate(count=Count("id"))
-        }
-        students_by_teacher = {
-            row["group__teacher_id"]: row["count"]
+        # Which of `group_ids` each teacher has a real stake in — a Group
+        # maps to *several* teachers here, one per independent Teaching
+        # Program (see models.GroupTeacher), never assumed to be just one.
+        legacy_pairs = Group.objects.filter(id__in=group_ids, teacher_id__in=teacher_ids).values_list(
+            "teacher_id", "id"
+        )
+        program_pairs = GroupTeacher.objects.filter(
+            group_id__in=group_ids, teacher_id__in=teacher_ids, is_active=True
+        ).values_list("teacher_id", "group_id")
+        groups_by_teacher_id: dict[int, set[int]] = {}
+        for teacher_id, group_id in list(legacy_pairs) + list(program_pairs):
+            groups_by_teacher_id.setdefault(teacher_id, set()).add(group_id)
+
+        # Roster stays whole-group per Teaching Program's group, same as
+        # `_group_analytics` — a student isn't split by subject.
+        students_by_group = {
+            row["group_id"]: row["count"]
             for row in Student.objects.filter(group_id__in=group_ids, is_active=True)
-            .values("group__teacher_id")
+            .values("group_id")
             .annotate(count=Count("id"))
         }
+
         lessons_by_teacher = {
-            row["group__teacher_id"]: row
+            row["eff_teacher"]: row
             for row in Lesson.objects.filter(group_id__in=group_ids, date__gte=self.start_date, date__lte=self.end_date)
-            .values("group__teacher_id")
+            .annotate(eff_teacher=Coalesce("teacher_id", "group__teacher_id"))
+            .values("eff_teacher")
             .annotate(total=Count("id"))
         }
         attendance_by_teacher = {
-            row["lesson__group__teacher_id"]: row
+            row["eff_teacher"]: row
             for row in Attendance.objects.filter(
                 lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
             )
-            .values("lesson__group__teacher_id")
+            .annotate(eff_teacher=Coalesce("lesson__teacher_id", "lesson__group__teacher_id"))
+            .values("eff_teacher")
             .annotate(total=Count("id"), attended=Count("id", filter=Q(status__in=_ATTENDED_STATUSES)))
         }
         homeworks_by_teacher = {
-            row["lesson__group__teacher_id"]: row["count"]
+            row["eff_teacher"]: row["count"]
             for row in Homework.objects.filter(
                 lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
             )
-            .values("lesson__group__teacher_id")
+            .annotate(eff_teacher=Coalesce("lesson__teacher_id", "lesson__group__teacher_id"))
+            .values("eff_teacher")
             .annotate(count=Count("id"))
         }
         results_by_teacher = {
-            row["homework__lesson__group__teacher_id"]: row
+            row["eff_teacher"]: row
             for row in HomeworkResult.objects.filter(
                 homework__lesson__group_id__in=group_ids,
                 homework__lesson__date__gte=self.start_date,
                 homework__lesson__date__lte=self.end_date,
             )
-            .values("homework__lesson__group__teacher_id")
+            .annotate(eff_teacher=Coalesce("homework__lesson__teacher_id", "homework__lesson__group__teacher_id"))
+            .values("eff_teacher")
             .annotate(completed=Count("id", filter=Q(status__in=_COMPLETED_HOMEWORK_STATUSES)), avg_score=Avg("score"))
         }
 
@@ -406,7 +499,8 @@ class AnalyticsService:
             lessons = lessons_by_teacher.get(teacher.id, {})
             attendance = attendance_by_teacher.get(teacher.id, {})
             results = results_by_teacher.get(teacher.id, {})
-            total_students = students_by_teacher.get(teacher.id, 0)
+            own_group_ids = groups_by_teacher_id.get(teacher.id, set())
+            total_students = sum(students_by_group.get(gid, 0) for gid in own_group_ids)
             total_homeworks = homeworks_by_teacher.get(teacher.id, 0)
             completed_results = results.get("completed", 0)
             possible_results = total_homeworks * total_students
@@ -415,7 +509,7 @@ class AnalyticsService:
                 {
                     "id": teacher.id,
                     "name": str(teacher),
-                    "groups": groups_by_teacher.get(teacher.id, 0),
+                    "groups": len(own_group_ids),
                     "students": total_students,
                     "lessons": lessons.get("total", 0),
                     "attendance_percent": _pct(attendance.get("attended", 0), attendance.get("total", 0)),
@@ -432,39 +526,62 @@ class AnalyticsService:
         student_ids = [student.id for student in students]
         group_ids = list(self._groups_qs().values_list("id", flat=True))
 
+        # A student's row on one teacher's own dashboard must reflect only
+        # that teacher's own Teaching Program (spec §39: the same student
+        # can be PRESENT on one teacher's Lessons and ABSENT on another's,
+        # in the very same Group) — never the whole group's combined figures.
+        lesson_teacher_q = self._effective_teacher_q()
+        lesson_via_lesson_q = self._effective_teacher_q("lesson__")
+        result_teacher_q = self._effective_teacher_q("homework__lesson__")
+
         # "How many lessons/homeworks were possible" is a property of the
-        # student's group + period, shared by every student in it — reuse
-        # one small per-group query rather than repeating it per student.
+        # student's group + period (+ teacher, when scoped), shared by every
+        # student in it — reuse one small per-group query rather than
+        # repeating it per student.
+        lesson_q = Q(group_id__in=group_ids, date__gte=self.start_date, date__lte=self.end_date)
+        if lesson_teacher_q is not None:
+            lesson_q &= lesson_teacher_q
         lessons_by_group = {
             row["group_id"]: row["total"]
-            for row in Lesson.objects.filter(group_id__in=group_ids, date__gte=self.start_date, date__lte=self.end_date)
-            .values("group_id")
-            .annotate(total=Count("id"))
-        }
-        homeworks_by_group = {
-            row["lesson__group_id"]: row["count"]
-            for row in Homework.objects.filter(
-                lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
-            )
-            .values("lesson__group_id")
-            .annotate(count=Count("id"))
+            for row in Lesson.objects.filter(lesson_q).values("group_id").annotate(total=Count("id"))
         }
 
+        homeworks_q = Q(
+            lesson__group_id__in=group_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
+        )
+        if lesson_via_lesson_q is not None:
+            homeworks_q &= lesson_via_lesson_q
+        homeworks_by_group = {
+            row["lesson__group_id"]: row["count"]
+            for row in Homework.objects.filter(homeworks_q).values("lesson__group_id").annotate(count=Count("id"))
+        }
+
+        attendance_q = Q(
+            student_id__in=student_ids,
+            lesson__group_id__in=group_ids,
+            lesson__date__gte=self.start_date,
+            lesson__date__lte=self.end_date,
+        )
+        if lesson_via_lesson_q is not None:
+            attendance_q &= lesson_via_lesson_q
         attendance_by_student = {
             row["student_id"]: row
-            for row in Attendance.objects.filter(
-                student_id__in=student_ids, lesson__date__gte=self.start_date, lesson__date__lte=self.end_date
-            )
+            for row in Attendance.objects.filter(attendance_q)
             .values("student_id")
             .annotate(total=Count("id"), attended=Count("id", filter=Q(status__in=_ATTENDED_STATUSES)))
         }
+
+        results_q = Q(
+            student_id__in=student_ids,
+            homework__lesson__group_id__in=group_ids,
+            homework__lesson__date__gte=self.start_date,
+            homework__lesson__date__lte=self.end_date,
+        )
+        if result_teacher_q is not None:
+            results_q &= result_teacher_q
         results_by_student = {
             row["student_id"]: row
-            for row in HomeworkResult.objects.filter(
-                student_id__in=student_ids,
-                homework__lesson__date__gte=self.start_date,
-                homework__lesson__date__lte=self.end_date,
-            )
+            for row in HomeworkResult.objects.filter(results_q)
             .values("student_id")
             .annotate(completed=Count("id", filter=Q(status__in=_COMPLETED_HOMEWORK_STATUSES)), avg_score=Avg("score"))
         }

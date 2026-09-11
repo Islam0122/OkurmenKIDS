@@ -436,6 +436,14 @@ class GroupViewSet(viewsets.ModelViewSet):
         group = get_object_or_404(self.get_queryset(), pk=pk)
         lessons = group.lessons.select_related("room", "subject", "plan").order_by("date", "start_time")
 
+        # Even within a group they share, one teacher's Lessons must stay
+        # invisible to another teacher of the same group's other Teaching
+        # Programs (see models.GroupTeacher / models.LessonQuerySet.for_teacher) —
+        # Admin still sees every lesson of the group.
+        if not _is_admin(request.user):
+            teacher = _teacher_profile(request)
+            lessons = lessons.for_teacher(teacher) if teacher is not None else lessons.none()
+
         status_param = request.query_params.get("status")
         if status_param:
             lessons = lessons.filter(status=status_param)
@@ -497,7 +505,10 @@ class GroupScheduleViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+        # Own schedule slots only — a Group's other Teaching Programs (see
+        # models.GroupTeacher) belong to other teachers, even within the
+        # same Group.
+        return qs.filter(teacher=teacher)
 
 
 @extend_schema_view(
@@ -533,7 +544,9 @@ class GroupTeacherViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+        # Own Teaching Programs only — another teacher's assignment in the
+        # same Group (e.g. a colleague's Subject) isn't this teacher's to see.
+        return qs.filter(teacher=teacher)
 
 
 @extend_schema_view(
@@ -569,7 +582,7 @@ class GroupTeacherLessonPlanViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_teacher__group_id__in=_teacher_group_ids(teacher))
+        return qs.filter(group_teacher__teacher=teacher)
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +617,9 @@ class LessonViewSet(
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+        # Only Lessons this teacher actually gives — a Group's other Teaching
+        # Programs (see models.GroupTeacher) belong to other teachers.
+        return qs.for_teacher(teacher)
 
     @extend_schema(
         tags=["Attendance"],
@@ -689,7 +704,10 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(lesson__group_id__in=_teacher_group_ids(teacher))
+        # Only Attendance of Lessons this teacher actually gives (see
+        # models.LessonQuerySet.for_teacher) — a colleague's Teaching Program
+        # in the same Group is off limits.
+        return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
 
 
 # ---------------------------------------------------------------------------
@@ -723,7 +741,9 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(lesson__group_id__in=_teacher_group_ids(teacher))
+        # Only Homework of Lessons this teacher actually gives — a
+        # colleague's Homework in the same Group is off limits.
+        return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
 
     @extend_schema(
         tags=["Homework"],
@@ -806,7 +826,9 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(homework__lesson__group_id__in=_teacher_group_ids(teacher))
+        # Only results of Homework belonging to Lessons this teacher
+        # actually gives.
+        return qs.filter(homework__lesson__in=Lesson.objects.for_teacher(teacher))
 
 
 # ---------------------------------------------------------------------------

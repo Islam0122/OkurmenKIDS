@@ -22,27 +22,33 @@ def _teacher_profile(user):
     return getattr(user, "teacher_profile", None)
 
 
-def _group_of(obj):
-    """Best-effort walk from any academy object to the Group it belongs to."""
-    if hasattr(obj, "group_id"):
-        return obj.group
+def _lesson_of(obj):
+    """Best-effort walk from a Lesson/Attendance/Homework/HomeworkResult
+    object to the Lesson it belongs to."""
+    from apps.academy.models import Lesson
+
+    if isinstance(obj, Lesson):
+        return obj
     if hasattr(obj, "lesson_id"):
-        return obj.lesson.group
+        return obj.lesson
     if hasattr(obj, "homework_id"):
-        return obj.homework.lesson.group
+        return obj.homework.lesson
     return None
 
 
-def _teacher_has_group_access(teacher, group) -> bool:
-    """True if `teacher` has any real stake in `group` — its own primary
-    teacher, or teaching any of its active GroupSchedule slots. A group can
-    now have several teachers across different slots (see
-    apps.academy.models.GroupSchedule); any of them gets the same access a
-    single teacher always had to their own group.
+def _teacher_owns_lesson(teacher, lesson) -> bool:
+    """True only if `teacher` is the one actually giving `lesson` — not just
+    any teacher with a stake in the same Group.
+
+    A Group can have several teachers, each running their own independent
+    TeachingAssignment (see apps.academy.models.GroupTeacher): every teacher
+    is isolated to their own Lessons/Attendance/Homework, even within a
+    Group they share with other teachers and the very same students.
     """
-    if group.teacher_id == teacher.id:
-        return True
-    return group.schedules.filter(teacher=teacher, is_active=True).exists()
+    if lesson is None:
+        return False
+    owner = lesson.effective_teacher
+    return owner is not None and owner.id == teacher.id
 
 
 class IsAdminOrReadOnly(BasePermission):
@@ -86,5 +92,5 @@ class IsAdminOrOwningTeacher(BasePermission):
             return True
 
         teacher = _teacher_profile(user)
-        group = _group_of(obj)
-        return bool(teacher and group and _teacher_has_group_access(teacher, group))
+        lesson = _lesson_of(obj)
+        return bool(teacher and _teacher_owns_lesson(teacher, lesson))

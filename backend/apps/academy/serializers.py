@@ -39,6 +39,18 @@ def _teacher_group_ids(user):
     return Group.objects.for_teacher(teacher).values_list("id", flat=True)
 
 
+def _teacher_owned_lessons(user):
+    """Only the Lessons `user`'s Teacher profile actually gives — see
+    models.LessonQuerySet.for_teacher. Used to scope the `lesson`/`homework`
+    FK choices offered to a Teacher on Attendance/Homework/HomeworkResult:
+    a Group's other Teaching Programs (models.GroupTeacher) belong to other
+    teachers, even within the same Group."""
+    teacher = getattr(user, "teacher_profile", None)
+    if teacher is None:
+        return Lesson.objects.none()
+    return Lesson.objects.for_teacher(teacher)
+
+
 class _RequestAwareSerializer(serializers.ModelSerializer):
     """Base for serializers that need to know the requesting user to scope fields."""
 
@@ -666,9 +678,13 @@ class AttendanceSerializer(_RequestAwareSerializer):
         super().__init__(*args, **kwargs)
         user = self._request_user()
         if _is_teacher(user):
-            group_ids = _teacher_group_ids(user)
-            self.fields["lesson"].queryset = Lesson.objects.filter(group_id__in=group_ids)
-            self.fields["student"].queryset = Student.objects.filter(group_id__in=group_ids)
+            # `lesson`: only Lessons the requesting Teacher actually gives —
+            # a colleague's Teaching Program in the same Group is off
+            # limits. `student`: the whole Group roster, since one student
+            # can attend several teachers' Teaching Programs in the same
+            # Group.
+            self.fields["lesson"].queryset = _teacher_owned_lessons(user)
+            self.fields["student"].queryset = Student.objects.filter(group_id__in=_teacher_group_ids(user))
 
     def validate(self, attrs):
         student = attrs.get("student", getattr(self.instance, "student", None))
@@ -721,7 +737,7 @@ class HomeworkSerializer(_RequestAwareSerializer):
         super().__init__(*args, **kwargs)
         user = self._request_user()
         if _is_teacher(user):
-            self.fields["lesson"].queryset = Lesson.objects.filter(group_id__in=_teacher_group_ids(user))
+            self.fields["lesson"].queryset = _teacher_owned_lessons(user)
 
     def get_results_count(self, obj: Homework) -> int:
         return obj.results.count()
@@ -755,9 +771,10 @@ class HomeworkResultSerializer(_RequestAwareSerializer):
         super().__init__(*args, **kwargs)
         user = self._request_user()
         if _is_teacher(user):
-            group_ids = _teacher_group_ids(user)
-            self.fields["homework"].queryset = Homework.objects.filter(lesson__group_id__in=group_ids)
-            self.fields["student"].queryset = Student.objects.filter(group_id__in=group_ids)
+            # `homework`: only Homework of Lessons this Teacher actually
+            # gives. `student`: the whole Group roster (see AttendanceSerializer).
+            self.fields["homework"].queryset = Homework.objects.filter(lesson__in=_teacher_owned_lessons(user))
+            self.fields["student"].queryset = Student.objects.filter(group_id__in=_teacher_group_ids(user))
 
     def validate(self, attrs):
         student = attrs.get("student", getattr(self.instance, "student", None))

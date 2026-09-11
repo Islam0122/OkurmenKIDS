@@ -780,6 +780,26 @@ class GroupSchedule(models.Model):
 # Lessons
 # ---------------------------------------------------------------------------
 
+class LessonQuerySet(models.QuerySet):
+    def for_teacher(self, teacher):
+        """Only the Lessons `teacher` actually gives — its own explicit
+        `teacher` (set by the generator from the GroupSchedule slot), or, for
+        older/legacy lessons with no explicit teacher, the lesson's group's
+        own `teacher` (the same rule as `Lesson.effective_teacher`).
+
+        Deliberately *not* "every Lesson of every Group this teacher has a
+        stake in" (contrast GroupQuerySet.for_teacher, used for Group/Student
+        access, which a Group's several independent Teaching Programs are
+        meant to share) — a Group can have several teachers, each running
+        their own independent TeachingAssignment (see GroupTeacher), and one
+        teacher's Lessons/Attendance/Homework must never be visible to or
+        editable by another teacher of the very same Group.
+        """
+        return self.filter(
+            models.Q(teacher=teacher) | models.Q(teacher__isnull=True, group__teacher=teacher)
+        )
+
+
 class Lesson(models.Model):
     """A concrete, scheduled lesson event for a Group.
 
@@ -788,6 +808,8 @@ class Lesson(models.Model):
     teacher can freely adjust a specific lesson's topic/materials without
     touching the template.
     """
+
+    objects = LessonQuerySet.as_manager()
 
     class Status(models.TextChoices):
         PLANNED = "planned", "Запланирован"

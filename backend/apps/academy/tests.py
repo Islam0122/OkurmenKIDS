@@ -1779,11 +1779,20 @@ class MultiTeacherPermissionsTests(AcademyTestBase):
         super().setUp()
         # teacher2 (who "owns" group2) also teaches a slot in group1, which
         # teacher1 owns as `group.teacher` — teacher2 has no `group.teacher`
-        # stake in group1 at all, only this schedule slot.
-        GroupSchedule.objects.create(
+        # stake in group1 at all, only this schedule slot, running as its
+        # own independent Teaching Program with its own plan (see
+        # models.GroupTeacher/GroupTeacherLessonPlan) — spec §39: a Teaching
+        # Program's Lessons are its own, not "whichever Lesson the group
+        # happens to have".
+        self.extra_slot = GroupSchedule.objects.create(
             group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
             day_of_week="mon", start_time=dt.time(17, 0), end_time=dt.time(18, 0), room=self.room1,
         )
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.extra_slot.group_teacher, lesson_number=1, topic="Intro to Frontend",
+        )
+        generate_lessons_for_group(self.group1)
+        self.teacher2_own_lesson = Lesson.objects.get(group=self.group1, teacher=self.teacher2)
 
     def test_teacher_with_only_schedule_slot_sees_the_group(self):
         response = self.teacher2_client.get("/api/v1/academy/groups/")
@@ -1795,19 +1804,24 @@ class MultiTeacherPermissionsTests(AcademyTestBase):
         response = self.teacher2_client.get(f"/api/v1/academy/groups/{self.group1.id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_teacher_with_only_schedule_slot_can_access_lessons(self):
-        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
-        response = self.teacher2_client.get(f"/api/v1/academy/lessons/{lesson.id}/")
+    def test_teacher_with_only_schedule_slot_can_access_own_lesson(self):
+        response = self.teacher2_client.get(f"/api/v1/academy/lessons/{self.teacher2_own_lesson.id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_teacher_with_only_schedule_slot_can_mark_attendance(self):
-        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+    def test_teacher_with_only_schedule_slot_can_mark_attendance_on_own_lesson(self):
         response = self.teacher2_client.post(
-            f"/api/v1/academy/lessons/{lesson.id}/attendance/",
+            f"/api/v1/academy/lessons/{self.teacher2_own_lesson.id}/attendance/",
             [{"student": self.student1.id, "status": "present"}],
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_teacher_with_only_schedule_slot_cannot_access_colleagues_lesson_in_same_group(self):
+        # Spec §39: teacher2's own slot doesn't grant access to teacher1's
+        # Lessons in the very same Group.
+        colleagues_lesson = Lesson.objects.filter(group=self.group1, teacher=self.teacher1).first()
+        response = self.teacher2_client.get(f"/api/v1/academy/lessons/{colleagues_lesson.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_unrelated_teacher_still_denied(self):
         outsider = make_teacher("outsider_perm")
@@ -2307,3 +2321,196 @@ class GroupTeacherBackfillMigrationTests(AcademyTestBase):
         count_after_first = GroupTeacher.objects.count()
         self._run_backfill()
         self.assertEqual(GroupTeacher.objects.count(), count_after_first)
+
+
+# ---------------------------------------------------------------------------
+# Spec §39: a Group's several independent Teaching Programs (see
+# models.GroupTeacher) must be fully isolated from each other, even though
+# they share the same Group and the same Students — one teacher's
+# Lessons/Attendance/Homework/HomeworkResult (and GroupTeacher/GroupSchedule/
+# GroupTeacherLessonPlan/Analytics rows) must never be visible to or
+# editable by another teacher of the very same Group.
+# ---------------------------------------------------------------------------
+
+class MultiTeacherIsolationTests(AcademyTestBase):
+    """teacher1 ("Islam") gives IT via the group's legacy fields (Mon 08:00-
+    09:00); teacher2 ("Aizada") gives Frontend via an independent
+    GroupSchedule slot + her own GroupTeacherLessonPlan (Tue 09:00-09:30) —
+    both inside the *same* shared_group, teaching the *same* students."""
+
+    def setUp(self):
+        super().setUp()
+        self.shared_group = Group(
+            name="Shared Multi-Teacher Group", course=self.course, teacher=self.teacher1, room=self.room1,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+            days_of_week=["mon"],
+        )
+        self.shared_group._defer_schedule_sync = True
+        self.shared_group.save()
+
+        self.aizada_slot = GroupSchedule(
+            group=self.shared_group, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="tue", start_time=dt.time(9, 0), end_time=dt.time(9, 30), room=self.room1,
+        )
+        self.aizada_slot._defer_schedule_sync = True
+        self.aizada_slot.save()
+        self.aizada_group_teacher = self.aizada_slot.group_teacher
+
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.aizada_group_teacher, lesson_number=1, topic="Communication",
+        )
+
+        sync_legacy_group_schedule(self.shared_group)
+        generate_lessons_for_group(self.shared_group)
+
+        Student.objects.filter(pk=self.student1.pk).update(group=self.shared_group)
+
+        self.islam_lesson = (
+            Lesson.objects.filter(group=self.shared_group, teacher=self.teacher1).order_by("lesson_number").first()
+        )
+        self.aizada_lesson = (
+            Lesson.objects.filter(group_teacher=self.aizada_group_teacher).order_by("lesson_number").first()
+        )
+        self.assertIsNotNone(self.islam_lesson)
+        self.assertIsNotNone(self.aizada_lesson)
+
+        self.islam_client = self.teacher1_client
+        self.aizada_client = self.teacher2_client
+
+    def test_teacher_lesson_list_excludes_colleagues_lesson_in_same_group(self):
+        response = self.islam_client.get("/api/v1/academy/lessons/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertNotIn(self.aizada_lesson.id, ids)
+
+    def test_teacher_cannot_retrieve_colleagues_lesson(self):
+        response = self.islam_client.get(f"/api/v1/academy/lessons/{self.aizada_lesson.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_teacher_cannot_update_colleagues_lesson(self):
+        response = self.aizada_client.patch(
+            f"/api/v1/academy/lessons/{self.islam_lesson.id}/", {"topic": "Hacked"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.islam_lesson.refresh_from_db()
+        self.assertNotEqual(self.islam_lesson.topic, "Hacked")
+
+    def test_teacher_cannot_mark_attendance_on_colleagues_lesson(self):
+        response = self.islam_client.post(
+            f"/api/v1/academy/lessons/{self.aizada_lesson.id}/attendance/",
+            [{"student": self.student1.id, "status": "present"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Attendance.objects.filter(lesson=self.aizada_lesson).count(), 0)
+
+    def test_teacher_can_mark_attendance_on_own_lesson_in_shared_group(self):
+        response = self.aizada_client.post(
+            f"/api/v1/academy/lessons/{self.aizada_lesson.id}/attendance/",
+            [{"student": self.student1.id, "status": "absent"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Attendance.objects.filter(lesson=self.aizada_lesson).count(), 1)
+
+    def test_attendance_list_excludes_colleagues_records(self):
+        Attendance.objects.create(student=self.student1, lesson=self.islam_lesson, status="present")
+        Attendance.objects.create(student=self.student1, lesson=self.aizada_lesson, status="absent")
+
+        response = self.islam_client.get("/api/v1/academy/attendance/")
+        lesson_ids = {row["lesson"] for row in response.data["results"]}
+        self.assertIn(self.islam_lesson.id, lesson_ids)
+        self.assertNotIn(self.aizada_lesson.id, lesson_ids)
+
+    def test_teacher_cannot_create_homework_for_colleagues_lesson(self):
+        response = self.islam_client.post(
+            "/api/v1/academy/homeworks/",
+            {"lesson": self.aizada_lesson.id, "title": "Hack"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Homework.objects.filter(lesson=self.aizada_lesson).count(), 0)
+
+    def test_homework_list_excludes_colleagues_homework(self):
+        own_hw = Homework.objects.create(lesson=self.islam_lesson, title="IT HW")
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+
+        response = self.islam_client.get("/api/v1/academy/homeworks/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertIn(own_hw.id, ids)
+        self.assertNotIn(other_hw.id, ids)
+
+    def test_homework_result_list_excludes_colleagues_results(self):
+        own_hw = Homework.objects.create(lesson=self.islam_lesson, title="IT HW")
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+        HomeworkResult.objects.create(homework=own_hw, student=self.student1, status="submitted")
+        HomeworkResult.objects.create(homework=other_hw, student=self.student1, status="submitted")
+
+        response = self.islam_client.get("/api/v1/academy/homework-results/")
+        homework_ids = {row["homework"] for row in response.data["results"]}
+        self.assertIn(own_hw.id, homework_ids)
+        self.assertNotIn(other_hw.id, homework_ids)
+
+    def test_group_teacher_list_excludes_colleagues_assignment_in_same_group(self):
+        response = self.islam_client.get("/api/v1/academy/group-teachers/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertNotIn(self.aizada_group_teacher.id, ids)
+
+    def test_group_schedule_list_excludes_colleagues_slot_in_same_group(self):
+        response = self.islam_client.get("/api/v1/academy/group-schedules/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertNotIn(self.aizada_slot.id, ids)
+
+    def test_group_teacher_lesson_plan_list_excludes_colleagues_plan(self):
+        response = self.islam_client.get("/api/v1/academy/group-teacher-lesson-plans/")
+        group_teacher_ids = {row["group_teacher"] for row in response.data["results"]}
+        self.assertNotIn(self.aizada_group_teacher.id, group_teacher_ids)
+
+    def test_group_schedule_endpoint_scoped_to_own_lessons_in_shared_group(self):
+        response = self.islam_client.get(f"/api/v1/academy/groups/{self.shared_group.id}/schedule/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {row["id"] for row in response.data["lessons"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertNotIn(self.aizada_lesson.id, ids)
+
+    def test_admin_group_schedule_endpoint_shows_every_teachers_lessons(self):
+        response = self.admin_client.get(f"/api/v1/academy/groups/{self.shared_group.id}/schedule/")
+        ids = {row["id"] for row in response.data["lessons"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertIn(self.aizada_lesson.id, ids)
+
+    def test_analytics_does_not_mix_teachers_in_shared_group(self):
+        Attendance.objects.create(student=self.student1, lesson=self.islam_lesson, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student1, lesson=self.aizada_lesson, status=Attendance.Status.ABSENT)
+
+        islam_dashboard = AnalyticsService(
+            dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+            teacher_id=self.teacher1.id, group_id=self.shared_group.id,
+        ).get_dashboard()
+        aizada_dashboard = AnalyticsService(
+            dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+            teacher_id=self.teacher2.id, group_id=self.shared_group.id,
+        ).get_dashboard()
+
+        self.assertEqual(islam_dashboard["attendance"]["total"], 1)
+        self.assertEqual(islam_dashboard["attendance"]["percent"], 100.0)
+        self.assertEqual(aizada_dashboard["attendance"]["total"], 1)
+        self.assertEqual(aizada_dashboard["attendance"]["percent"], 0.0)
+
+    def test_analytics_teacher_row_lesson_count_is_not_mixed(self):
+        # teacher1's legacy Teaching Program walks the full 4-lesson course
+        # plan on its own Monday slot; teacher2's individual plan has just
+        # the one lesson_number=1 row on her own Tuesday slot (see setUp) —
+        # each teacher's row must reflect only their own count.
+        dashboard = AnalyticsService(
+            dt.date(2026, 9, 1), dt.date(2026, 9, 30), group_id=self.shared_group.id,
+        ).get_dashboard()
+        rows = {row["id"]: row for row in dashboard["teachers"]}
+        self.assertEqual(rows[self.teacher1.id]["lessons"], 4)
+        self.assertEqual(rows[self.teacher2.id]["lessons"], 1)
+
+    def test_admin_has_full_access_to_both_teaching_programs(self):
+        response = self.admin_client.get("/api/v1/academy/lessons/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertIn(self.aizada_lesson.id, ids)
