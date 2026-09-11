@@ -20,7 +20,7 @@ export interface AnalyticsDashboardParams {
 }
 
 export const kpiApi = {
-  /** `GET /academy/analytics/dashboard/` — computed fresh on every call, nothing cached server-side. */
+  /** `GET /analytics/dashboard/` — computed fresh on every call, nothing cached server-side. */
   dashboard: (params: AnalyticsDashboardParams): Promise<AnalyticsDashboard> =>
-    apiClient.get<AnalyticsDashboard>('/academy/analytics/dashboard/', { params }).then((r) => r.data),
+    apiClient.get<AnalyticsDashboard>('/analytics/dashboard/', { params }).then((r) => r.data),
 }

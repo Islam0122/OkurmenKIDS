@@ -41,7 +41,7 @@ async function refreshAccessToken(): Promise<string> {
   if (!refresh) {
     throw new Error('No refresh token available')
   }
-  const { data } = await refreshClient.post<RefreshResponse>('/users/auth/refresh/', { refresh })
+  const { data } = await refreshClient.post<RefreshResponse>('/auth/refresh/', { refresh })
   tokenStorage.setTokens(data.access, data.refresh)
   return data.access
 }

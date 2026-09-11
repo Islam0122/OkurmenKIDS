@@ -14,9 +14,10 @@ urlpatterns = [
     # Admin
     path("admin/", admin.site.urls),
 
-    # API v1
-    path("api/v1/users/", include("apps.users.urls")),
-    path("api/v1/academy/", include("apps.academy.urls")),
+    # API v1 — one flat namespace; apps.users.urls contributes auth/
+    # trainers/subjects, apps.academy.urls contributes everything else.
+    path("api/v1/", include("apps.users.urls")),
+    path("api/v1/", include("apps.academy.urls")),
 
     # API documentation
     path("schema/", SpectacularAPIView.as_view(), name="schema"),

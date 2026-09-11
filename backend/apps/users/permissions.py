@@ -57,16 +57,3 @@ class IsVerifiedTeacher(BasePermission):
             and user.role == User.Role.TEACHER
             and user.is_verified
         )
-
-
-class IsOwnerTeacherOrAdmin(BasePermission):
-    """Object-level check: admins may access any Teacher, a teacher only their own."""
-
-    message = "Вы можете просматривать только свой профиль."
-
-    def has_object_permission(self, request, view, obj) -> bool:
-        user = request.user
-        if user.is_superuser or user.role == User.Role.ADMIN:
-            return True
-        # ``obj`` is a Teacher instance here.
-        return getattr(obj, "user_id", None) == user.id

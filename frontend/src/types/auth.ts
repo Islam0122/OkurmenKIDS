@@ -17,14 +17,14 @@ export interface LoginRequest {
   password: string
 }
 
-/** `POST /api/v1/users/auth/login/` */
+/** `POST /api/v1/auth/login/` */
 export interface LoginResponse {
   access: string
   refresh: string
   user: User
 }
 
-/** `POST /api/v1/users/auth/refresh/` — SimpleJWT with ROTATE_REFRESH_TOKENS,
+/** `POST /api/v1/auth/refresh/` — SimpleJWT with ROTATE_REFRESH_TOKENS,
  * so a fresh refresh token comes back on every call and must be persisted. */
 export interface RefreshResponse {
   access: string

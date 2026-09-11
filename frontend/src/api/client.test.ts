@@ -23,14 +23,14 @@ describe('apiClient auth interceptor', () => {
   it('refreshes the access token on a 401 and retries the original request once', async () => {
     tokenStorage.setTokens('expired-access', 'valid-refresh')
 
-    apiMock.onGet('/academy/lessons/').replyOnce(401)
-    apiMock.onGet('/academy/lessons/').replyOnce((config) => {
+    apiMock.onGet('/lessons/').replyOnce(401)
+    apiMock.onGet('/lessons/').replyOnce((config) => {
       expect(config.headers?.Authorization).toBe('Bearer new-access')
       return [200, { count: 0, next: null, previous: null, results: [] }]
     })
-    refreshMock.onPost('/users/auth/refresh/').replyOnce(200, { access: 'new-access', refresh: 'new-refresh' })
+    refreshMock.onPost('/auth/refresh/').replyOnce(200, { access: 'new-access', refresh: 'new-refresh' })
 
-    const response = await apiClient.get('/academy/lessons/')
+    const response = await apiClient.get('/lessons/')
 
     expect(response.status).toBe(200)
     expect(tokenStorage.getAccess()).toBe('new-access')
@@ -40,18 +40,18 @@ describe('apiClient auth interceptor', () => {
   it('deduplicates concurrent refreshes when several requests 401 at once', async () => {
     tokenStorage.setTokens('expired-access', 'valid-refresh')
 
-    apiMock.onGet('/academy/lessons/').replyOnce(401)
-    apiMock.onGet('/academy/lessons/').replyOnce(200, { count: 0, next: null, previous: null, results: [] })
-    apiMock.onGet('/academy/groups/').replyOnce(401)
-    apiMock.onGet('/academy/groups/').replyOnce(200, { count: 0, next: null, previous: null, results: [] })
+    apiMock.onGet('/lessons/').replyOnce(401)
+    apiMock.onGet('/lessons/').replyOnce(200, { count: 0, next: null, previous: null, results: [] })
+    apiMock.onGet('/groups/').replyOnce(401)
+    apiMock.onGet('/groups/').replyOnce(200, { count: 0, next: null, previous: null, results: [] })
 
     let refreshCalls = 0
-    refreshMock.onPost('/users/auth/refresh/').reply(() => {
+    refreshMock.onPost('/auth/refresh/').reply(() => {
       refreshCalls += 1
       return [200, { access: 'new-access', refresh: 'new-refresh' }]
     })
 
-    await Promise.all([apiClient.get('/academy/lessons/'), apiClient.get('/academy/groups/')])
+    await Promise.all([apiClient.get('/lessons/'), apiClient.get('/groups/')])
 
     expect(refreshCalls).toBe(1)
   })
@@ -61,10 +61,10 @@ describe('apiClient auth interceptor', () => {
     const onSessionExpired = vi.fn()
     registerSessionExpiredHandler(onSessionExpired)
 
-    apiMock.onGet('/academy/lessons/').reply(401)
-    refreshMock.onPost('/users/auth/refresh/').reply(401)
+    apiMock.onGet('/lessons/').reply(401)
+    refreshMock.onPost('/auth/refresh/').reply(401)
 
-    await expect(apiClient.get('/academy/lessons/')).rejects.toBeTruthy()
+    await expect(apiClient.get('/lessons/')).rejects.toBeTruthy()
 
     expect(tokenStorage.getAccess()).toBeNull()
     expect(tokenStorage.getRefresh()).toBeNull()
@@ -72,9 +72,9 @@ describe('apiClient auth interceptor', () => {
   })
 
   it('never retries a 401 coming from the login endpoint itself', async () => {
-    apiMock.onPost('/users/auth/login/').reply(401, { detail: 'Invalid credentials' })
+    apiMock.onPost('/auth/login/').reply(401, { detail: 'Invalid credentials' })
 
-    await expect(apiClient.post('/users/auth/login/', { username: 'x', password: 'y' })).rejects.toBeTruthy()
+    await expect(apiClient.post('/auth/login/', { username: 'x', password: 'y' })).rejects.toBeTruthy()
 
     expect(refreshMock.history.post ?? []).toHaveLength(0)
   })

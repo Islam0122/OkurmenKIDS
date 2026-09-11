@@ -5,7 +5,7 @@ from . import views
 
 router = DefaultRouter()
 router.register("trainers", views.TrainerViewSet, basename="trainer")
-router.register("subject", views.SubjectViewSet, basename="user")
+router.register("subjects", views.SubjectViewSet, basename="subject")
 
 auth_urlpatterns = [
     path("login/", views.LoginView.as_view(), name="auth-login"),
