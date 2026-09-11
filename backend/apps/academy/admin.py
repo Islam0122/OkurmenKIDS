@@ -5,6 +5,7 @@ from django.contrib import admin, messages
 from django.db.models import Count, Q
 from django.shortcuts import redirect, render
 from django.urls import path, reverse
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
@@ -257,18 +258,21 @@ class StudentAdmin(admin.ModelAdmin):
 # ---------------------------------------------------------------------------
 
 class GroupAdminForm(forms.ModelForm):
-    days_of_week = forms.MultipleChoiceField(
-        choices=DAY_CHOICES,
-        required=False,
-        label="Дни недели",
-        widget=forms.CheckboxSelectMultiple,
-    )
+    """The `days_of_week` model field has no form field of its own here on
+    purpose — it's part of the read-only legacy compatibility block (see
+    GroupAdmin.readonly_fields/legacy_days_of_week_display): an admin
+    creating or editing a Group can no longer accidentally configure a new
+    group's schedule through it. Real schedule configuration always goes
+    through a Teaching Program (models.GroupSchedule), added below."""
 
     students = forms.ModelMultipleChoiceField(
         queryset=Student.objects.filter(is_active=True),
         required=False,
-        label="Студенты",
-        help_text="Поиск и выбор студентов этой группы.",
+        label="Выбор студентов",
+        help_text=(
+            "Студенты принадлежат группе и могут посещать разные учебные программы "
+            "внутри этой группы. Начните вводить имя, чтобы найти студента."
+        ),
         widget=forms.SelectMultiple(
             attrs={"class": "ok-multiselect-source", "data-placeholder": "Поиск студента..."}
         ),
@@ -277,11 +281,25 @@ class GroupAdminForm(forms.ModelForm):
     class Meta:
         model = Group
         fields = "__all__"
+        labels = {
+            "name": "Название группы",
+            "status": "Статус группы",
+            "start_date": "Дата начала группы",
+            "end_date": "Дата окончания группы",
+            "max_students": "Максимальное количество студентов",
+        }
+        help_texts = {
+            "start_date": "Общий период существования группы.",
+            "end_date": (
+                "Общий период существования группы. Расписание занятий настраивается "
+                "отдельно для каждой учебной программы ниже."
+            ),
+            "max_students": "Оставьте пустым, если количество студентов не ограничено.",
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk:
-            self.fields["days_of_week"].initial = self.instance.days_of_week
             current_students = Student.objects.filter(group=self.instance)
             self.fields["students"].queryset = (
                 Student.objects.filter(is_active=True) | current_students
@@ -302,20 +320,20 @@ class GroupAdminForm(forms.ModelForm):
 
 
 class GroupScheduleInline(admin.TabularInline):
-    """Every recurring schedule slot of the group — each row is one Teacher
-    Program's (teacher + subject, see models.GroupTeacher) time slot, and
+    """Every recurring schedule slot of the group — each row is one учебной
+    программы (teacher + subject, see models.GroupTeacher) time slot, and
     every row is equally editable/removable here. Add as many teachers as
     the group needs: several rows with the same teacher+subject are the
-    same Teacher Program's several weekly slots; a new teacher+subject
-    combination is automatically its own, independent Teacher Program (see
+    same program's several weekly slots; a new teacher+subject combination
+    is automatically its own, independent program (see
     models.GroupSchedule.save())."""
 
     model = GroupSchedule
     extra = 1
     fields = ("day_of_week", "start_time", "end_time", "teacher", "subject", "room", "is_active")
     autocomplete_fields = ("teacher", "subject", "room")
-    verbose_name = "Слот расписания"
-    verbose_name_plural = "Расписание (тренеры / программы)"
+    verbose_name = "Слот расписания программы"
+    verbose_name_plural = "Расписание учебных программ"
 
 
 class GroupTeacherLessonPlanInline(admin.TabularInline):
@@ -378,6 +396,15 @@ class GroupTeacherAdmin(admin.ModelAdmin):
 
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
+    """A Group is only a container for identity, course, students, status
+    and general period — see module docstring above GroupTeacher in
+    models.py. Every real teaching detail (teacher, subject, schedule,
+    room, individual plan) lives on its учебные программы (models.
+    GroupTeacher/GroupSchedule/GroupTeacherLessonPlan), added below via
+    GroupScheduleInline — there is no "main teacher"/"main schedule": every
+    program is equally first-class.
+    """
+
     form = GroupAdminForm
     list_display = (
         "name", "course", "teacher_programs_summary",
@@ -386,42 +413,79 @@ class GroupAdmin(admin.ModelAdmin):
     list_filter = ("status", "course", "start_date")
     search_fields = ("name", "teachers__teacher__user__first_name", "teachers__teacher__user__last_name")
     ordering = ("-start_date", "name")
-    readonly_fields = ("created_at", "updated_at", "schedule_link_detail", "teachers_summary")
+    readonly_fields = (
+        "created_at", "updated_at",
+        "group_summary", "capacity_summary", "schedule_link_detail", "teaching_programs_summary",
+        "teacher", "room", "start_time", "end_time", "legacy_days_of_week_display",
+    )
     autocomplete_fields = ("course", "teacher", "room")
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
     inlines = [GroupScheduleInline]
     list_per_page = 25
 
-    fieldsets = (
-        ("Основная информация", {"fields": ("name", "course", "status", "description")}),
-        ("Период", {"fields": ("start_date", "end_date")}),
-        ("Студенты", {"fields": ("max_students", "students")}),
-        (
-            "Тренеры и программы",
-            {
-                "fields": ("schedule_link_detail", "teachers_summary"),
-                "description": (
-                    "Каждый тренер группы — равноправная Teacher Program: свой предмет, "
-                    "своё расписание (см. инлайн ниже — «+ Добавить ещё одну» добавляет "
-                    "любое число тренеров) и, по желанию, собственный индивидуальный план "
-                    "занятий, независимый от других тренеров этой группы."
-                ),
-            },
-        ),
-        (
-            "Устаревшие поля",
-            {
-                "fields": ("teacher", "room", "start_time", "end_time", "days_of_week"),
-                "classes": ("collapse",),
-                "description": (
-                    "Не используются для расписания и генерации занятий — оставлены только "
-                    "для совместимости со старыми данными. Тренеров, расписание и аудитории "
-                    "назначайте через «Тренеры и программы» выше."
-                ),
-            },
-        ),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = [
+            (
+                "Основная информация",
+                {
+                    "fields": ("name", "course", "status", "description"),
+                    "description": "Основные данные учебной группы.",
+                },
+            ),
+        ]
+        if obj is not None:
+            fieldsets.append(("Сводка группы", {"fields": ("group_summary",)}))
+        fieldsets += [
+            (
+                "Период обучения группы",
+                {
+                    "fields": ("start_date", "end_date"),
+                    "description": (
+                        "Общий период существования группы. Конкретные даты и время занятий "
+                        "задаются отдельно в учебных программах ниже."
+                    ),
+                },
+            ),
+            (
+                "Студенты",
+                {
+                    "fields": ("capacity_summary", "max_students", "students"),
+                    "description": (
+                        "Студенты принадлежат группе и могут посещать разные учебные программы "
+                        "внутри этой группы."
+                    ),
+                },
+            ),
+            (
+                "Тренеры и учебные программы",
+                {
+                    "fields": ("schedule_link_detail", "teaching_programs_summary"),
+                    "description": (
+                        "Добавьте каждого тренера отдельной учебной программой (см. «Расписание "
+                        "учебных программ» ниже — «+ Добавить ещё одну» добавляет любое число "
+                        "тренеров). Каждая программа полностью равноправна и имеет собственный "
+                        "предмет, расписание и, по желанию, собственный индивидуальный план "
+                        "занятий, независимый от других программ этой группы."
+                    ),
+                },
+            ),
+            (
+                "Поля для обратной совместимости",
+                {
+                    "fields": ("teacher", "room", "start_time", "end_time", "legacy_days_of_week_display"),
+                    "classes": ("collapse",),
+                    "description": mark_safe(
+                        '<div class="ok-alert ok-alert-warning"><i class="bi bi-exclamation-triangle"></i>'
+                        "<span>Эти поля сохранены только для совместимости со старыми данными. "
+                        "Они не влияют на расписание и генерацию занятий и доступны только для "
+                        "просмотра. Используйте «Тренеры и учебные программы» выше для любой новой "
+                        "настройки.</span></div>"
+                    ),
+                },
+            ),
+            ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+        ]
+        return fieldsets
 
     def get_queryset(self, request):
         return (
@@ -487,12 +551,19 @@ class GroupAdmin(admin.ModelAdmin):
         label = "программа" if count == 1 else ("программы" if 2 <= count <= 4 else "программ")
         return _badge("ok-badge-success", f"{count} {label}")
 
-    @admin.display(description="Расписание группы")
+    @admin.display(description="Просмотр расписания")
     def schedule_link_detail(self, obj: Group) -> str:
         if not obj.pk:
-            return "Появится после сохранения группы."
+            # Kept terse here on purpose — the full explanation lives once,
+            # in teaching_programs_summary just below, to avoid repeating
+            # the same callout twice in the same fieldset.
+            return "—"
         url = f"{reverse('admin:academy_schedule')}?group={obj.pk}"
-        return format_html('<a class="btn btn-outline-success btn-sm" href="{}">Открыть расписание группы</a>', url)
+        return format_html(
+            '<a class="btn btn-outline-success btn-sm" href="{}">'
+            '<i class="bi bi-calendar-week"></i> Открыть расписание учебных программ</a>',
+            url,
+        )
 
     @admin.display(description="Статус", ordering="status")
     def status_badge(self, obj: Group) -> str:
@@ -504,44 +575,158 @@ class GroupAdmin(admin.ModelAdmin):
         }
         return _badge(css_map.get(obj.status, "ok-badge-muted"), obj.get_status_display())
 
-    @admin.display(description="Тренеры / программы")
-    def teachers_summary(self, obj: Group) -> str:
+    @admin.display(description="")
+    def group_summary(self, obj: Group) -> str:
+        """Read-only "at a glance" panel (spec: GROUP SUMMARY) — every value
+        is calculated on the fly from the group's own related data, nothing
+        stored or duplicated as a separate KPI record."""
         if not obj.pk:
-            return "Появится после сохранения группы."
+            return "—"
+
+        students_count = obj.students_count
+        capacity_label = f"{students_count} / {obj.max_students}" if obj.max_students else f"{students_count} / ∞"
+        programs_count = obj.teachers.filter(is_active=True).count()
+
+        if obj.end_date:
+            period_label = f"{obj.start_date:%d.%m.%Y} – {obj.end_date:%d.%m.%Y}"
+        else:
+            period_label = f"{obj.start_date:%d.%m.%Y} – …"
+
+        today = timezone.localdate()
+        upcoming_lessons = obj.lessons.filter(date__gte=today, status=Lesson.Status.PLANNED).count()
+
+        cards = [
+            ("bi-mortarboard", "Курс", obj.course.name),
+            ("bi-flag", "Статус", obj.get_status_display()),
+            ("bi-people", "Студенты", capacity_label),
+            ("bi-calendar-range", "Период", period_label),
+            ("bi-person-badge", "Учебные программы", str(programs_count)),
+            ("bi-calendar-check", "Ближайшие занятия", str(upcoming_lessons)),
+        ]
+        cards_html = "".join(
+            format_html(
+                '<div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi {}"></i></div>'
+                '<div class="ok-kpi-value">{}</div><div class="ok-kpi-label">{}</div></div>',
+                icon, value, label,
+            )
+            for icon, label, value in cards
+        )
+        return format_html('<div class="ok-kpi-grid" style="margin-bottom:0;">{}</div>', mark_safe(cards_html))
+
+    @admin.display(description="")
+    def capacity_summary(self, obj: Group) -> str:
+        """Spec §3.C: selected count / capacity used / free places, with a
+        clear warning once capacity is exceeded."""
+        if not obj.pk:
+            return mark_safe(
+                '<p class="ok-help-text" style="margin:0 0 0.5rem;">'
+                "Количество выбранных студентов появится после сохранения группы.</p>"
+            )
+
+        selected = obj.students_count
+        if not obj.max_students:
+            return format_html(
+                '<div class="okan-mini-stats" style="margin:0 0 0.75rem;">'
+                '<div class="okan-mini-stat">Выбрано студентов: <strong>{}</strong></div>'
+                '<div class="okan-mini-stat">Вместимость: <strong>Без ограничения</strong></div>'
+                "</div>",
+                selected,
+            )
+
+        free_places = obj.max_students - selected
+        if free_places < 0:
+            capacity_badge = _badge("ok-badge-danger", f"Превышена на {abs(free_places)}")
+        elif free_places == 0:
+            capacity_badge = _badge("ok-badge-warning", "Мест нет")
+        else:
+            capacity_badge = _badge("ok-badge-success", f"Свободно: {free_places}")
+
+        return format_html(
+            '<div class="okan-mini-stats" style="margin:0 0 0.75rem;">'
+            '<div class="okan-mini-stat">Выбрано студентов: <strong>{}</strong></div>'
+            '<div class="okan-mini-stat">Вместимость: <strong>{} / {}</strong></div>'
+            "<div class=\"okan-mini-stat\">{}</div>"
+            "</div>",
+            selected, selected, obj.max_students, capacity_badge,
+        )
+
+    @admin.display(description="Дни недели (устар.)")
+    def legacy_days_of_week_display(self, obj: Group) -> str:
+        if not obj.days_of_week:
+            return "—"
+        day_labels = dict(DAY_CHOICES)
+        return ", ".join(day_labels.get(day, day) for day in obj.days_of_week)
+
+    @admin.display(description="")
+    def teaching_programs_summary(self, obj: Group) -> str:
+        """Every Teaching Program of this group, rendered as equal-weight
+        cards — no field or ordering here marks one program as more
+        "primary" than another (spec §4/§5)."""
+        if not obj.pk:
+            return mark_safe(
+                '<div class="ok-alert ok-alert-warning"><i class="bi bi-info-circle"></i>'
+                "<span>Сначала сохраните группу, затем добавьте учебные программы ниже.</span></div>"
+            )
 
         day_labels = dict(DAY_CHOICES)
-        rows = []
-        for group_teacher in obj.teachers.select_related("teacher__user", "subject").prefetch_related("schedules"):
-            schedule_bits = "; ".join(
-                f"{day_labels.get(s.day_of_week, s.day_of_week)} {s.start_time:%H:%M}–{s.end_time:%H:%M}"
-                for s in sorted(
-                    (s for s in group_teacher.schedules.all() if s.is_active),
-                    key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
-                )
-            )
-            plan_count = group_teacher.lesson_plans.count()
-            plan_label = f"Свой план: {plan_count} занятий" if plan_count else "Общий план курса"
-            url = reverse("admin:academy_groupteacher_change", args=[group_teacher.pk])
-            rows.append(
-                format_html(
-                    '<div style="margin-bottom:0.5rem;padding:0.5rem 0.75rem;border:1px solid rgba(0,0,0,0.1);'
-                    'border-radius:6px;">'
-                    "<div><strong>{}</strong> — {}</div>"
-                    '<div style="opacity:0.7;font-size:0.85em;">{}</div>'
-                    '<div style="opacity:0.7;font-size:0.85em;">{}</div>'
-                    '<a class="btn btn-outline-success btn-sm" href="{}">Управлять расписанием и планом →</a>'
-                    "</div>",
-                    group_teacher.teacher,
-                    group_teacher.subject.name if group_teacher.subject_id else "—",
-                    schedule_bits or "нет активных слотов",
-                    plan_label,
-                    url,
-                )
+        programs = list(
+            obj.teachers.select_related("teacher__user", "subject").prefetch_related("schedules")
+        )
+        if not programs:
+            return mark_safe(
+                '<div class="ok-alert ok-alert-warning"><i class="bi bi-exclamation-triangle"></i>'
+                "<span>У группы пока нет ни одной учебной программы. Добавьте тренера через "
+                "«Расписание учебных программ» ниже — она появится здесь автоматически.</span></div>"
             )
 
-        if not rows:
-            return "Нет назначенных тренеров."
-        return mark_safe("".join(rows))
+        cards = []
+        for index, group_teacher in enumerate(programs, start=1):
+            active_slots = sorted(
+                (s for s in group_teacher.schedules.all() if s.is_active),
+                key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
+            )
+            schedule_rows = "".join(
+                format_html(
+                    '<div>{} {}–{} · {}</div>',
+                    day_labels.get(s.day_of_week, s.day_of_week), s.start_time.strftime("%H:%M"),
+                    s.end_time.strftime("%H:%M"), s.room.name if s.room_id else "без аудитории",
+                )
+                for s in active_slots
+            )
+            plan_count = group_teacher.lesson_plans.count()
+            plan_badge = (
+                _badge("ok-badge-success", f"Свой план: {plan_count} занятий")
+                if plan_count
+                else _badge("ok-badge-muted", "Общий план курса")
+            )
+            status_badge = (
+                _badge("ok-badge-success", "Активна") if group_teacher.is_active else _badge("ok-badge-danger", "Неактивна")
+            )
+            lesson_count = Lesson.objects.filter(group_teacher=group_teacher).count()
+
+            plan_url = reverse("admin:academy_groupteacher_change", args=[group_teacher.pk])
+            lessons_url = f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={group_teacher.pk}"
+
+            cards.append(
+                format_html(
+                    '<div class="ok-card" style="margin-bottom:0.85rem;">'
+                    '<div class="ok-card-header">Учебная программа №{} — {} {}</div>'
+                    '<div class="ok-card-body">'
+                    '<div style="margin-bottom:0.5rem;"><strong>Тренер:</strong> {}'
+                    '<span style="margin-left:0.75rem;"><strong>Предмет:</strong> {}</span></div>'
+                    '<div style="margin-bottom:0.5rem;"><strong>Расписание:</strong>{}</div>'
+                    '<div style="margin-bottom:0.75rem;">{}</div>'
+                    '<a class="btn btn-outline-success btn-sm" href="{}">Расписание и план занятий →</a> '
+                    '<a class="btn btn-outline-success btn-sm" href="{}">Занятия ({}) →</a>'
+                    "</div></div>",
+                    index, group_teacher.subject.name if group_teacher.subject_id else "без предмета", status_badge,
+                    group_teacher.teacher, group_teacher.subject.name if group_teacher.subject_id else "—",
+                    mark_safe(schedule_rows) if schedule_rows else " нет активных слотов",
+                    plan_badge,
+                    plan_url, lessons_url, lesson_count,
+                )
+            )
+        return mark_safe("".join(cards))
 
     @admin.action(description="Сгенерировать занятия по плану курса")
     def generate_lessons_action(self, request, queryset):
@@ -592,7 +777,7 @@ class AttendanceInline(admin.TabularInline):
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
     list_display = ("date", "time_range", "group", "lesson_teacher", "subject", "status_badge")
-    list_filter = ("date", "group", "subject", "status", "teacher")
+    list_filter = ("date", "group", "subject", "status", "teacher", "group_teacher")
     search_fields = ("topic", "description", "group__name")
     date_hierarchy = "date"
     ordering = ("date", "start_time")

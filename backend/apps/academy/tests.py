@@ -2193,7 +2193,7 @@ class MultiTeacherPermissionsTests(AcademyTestBase):
 # ---------------------------------------------------------------------------
 
 class GroupTeacherAdminPagesTests(AcademyTestBase):
-    """Regression coverage for GroupAdmin.teachers_summary / the new
+    """Regression coverage for GroupAdmin.teaching_programs_summary / the new
     GroupTeacher admin pages — none of the API-only tests above actually
     render these Django admin templates, so a template-level bug (e.g. an
     invalid format_html() call) wouldn't otherwise be caught."""
@@ -2210,13 +2210,51 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
             group_teacher=self.extra_slot.group_teacher, lesson_number=1, topic="Own plan lesson 1"
         )
 
-    def test_group_change_page_renders_teachers_summary(self):
+    def test_group_change_page_renders_teaching_programs_summary(self):
         response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.content.decode()
-        self.assertIn("Управлять расписанием и планом", body)
+        self.assertIn("Расписание и план занятий", body)
         self.assertIn("Свой план", body)
         self.assertIn("Общий план курса", body)
+
+    def test_group_change_page_renders_group_summary_and_capacity(self):
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        self.assertIn("Сводка группы", body)
+        self.assertIn("Ближайшие занятия", body)
+        self.assertIn("Выбрано студентов", body)
+
+    def test_add_group_page_shows_helpful_pre_save_message(self):
+        response = self.django_admin_client.get("/admin/academy/group/add/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        self.assertIn("Сначала сохраните группу, затем добавьте учебные программы", body)
+
+    def test_legacy_fieldset_has_warning_and_readonly_fields(self):
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        self.assertIn("Поля для обратной совместимости", body)
+        self.assertIn("сохранены только для совместимости", body)
+        # Legacy fields are rendered read-only (no editable widget for
+        # them) — group1's legacy teacher/room are shown as plain text, not
+        # an `id="id_<field>"` input/select (unlike GroupScheduleInline's
+        # own per-row teacher/room fields, which use a "schedules-0-…" id
+        # and must stay editable).
+        self.assertNotIn('id="id_teacher"', body)
+        self.assertNotIn('id="id_room"', body)
+        self.assertNotIn('id="id_start_time"', body)
+        self.assertNotIn('id="id_end_time"', body)
+
+    def test_group_summary_capacity_warns_when_exceeded(self):
+        self.group1.max_students = 1
+        self.group1.save(update_fields=["max_students"])
+        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.content.decode()
+        self.assertIn("Превышена на", body)
 
     def test_group_teacher_change_and_list_pages_render(self):
         for group_teacher in self.group1.teachers.all():
