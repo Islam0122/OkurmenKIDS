@@ -408,6 +408,172 @@ class Group(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# GroupTeacher — "this Teacher teaches this Subject in this Group": the unit
+# a Group's individual lesson plan and lesson numbering belong to. A Group
+# with several teachers (see GroupSchedule below) has one GroupTeacher per
+# distinct (group, teacher, subject) combination; every GroupSchedule row of
+# that teacher/subject in the group points at the same GroupTeacher (see
+# GroupSchedule.save()), so it's the single place to hang a teacher's own
+# GroupTeacherLessonPlan and see their own Lessons, independent of any other
+# teacher in the same group.
+#
+# Never created directly by an admin/API call — always get-or-created
+# automatically from a GroupSchedule save (or from the legacy-schedule sync,
+# for the group's own primary teacher) so existing workflows that only ever
+# touched GroupSchedule keep working unchanged.
+# ---------------------------------------------------------------------------
+
+class GroupTeacher(models.Model):
+    group = models.ForeignKey(
+        Group,
+        on_delete=models.CASCADE,
+        related_name="teachers",
+        verbose_name="Группа",
+    )
+
+    teacher = models.ForeignKey(
+        Teacher,
+        on_delete=models.PROTECT,
+        related_name="group_assignments",
+        verbose_name="Тренер",
+    )
+
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="group_assignments",
+        verbose_name="Предмет",
+        help_text=(
+            "Предмет, который этот тренер ведёт в этой группе. Пусто — "
+            "автоматически синхронизированный основной тренер группы "
+            "(Group.teacher), без единого фиксированного предмета."
+        ),
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        verbose_name="Активен",
+        help_text="Неактивные назначения игнорируются при генерации занятий и проверке конфликтов.",
+    )
+
+    is_legacy_primary = models.BooleanField(
+        default=False,
+        verbose_name="Основной тренер группы",
+        help_text="Автоматически синхронизируется с Group.teacher — не редактируется вручную.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Тренер группы"
+        verbose_name_plural = "Тренеры группы"
+        ordering = ["group", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "teacher", "subject"],
+                name="unique_group_teacher_subject",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["group", "is_active"], name="ix_gteacher_group_active"),
+            models.Index(fields=["teacher"], name="ix_gteacher_teacher"),
+        ]
+
+    def __str__(self):
+        subject = self.subject.name if self.subject_id else "—"
+        return f"{self.group.name} — {self.teacher} ({subject})"
+
+    def clean(self):
+        errors = {}
+        if self.teacher_id and not self.teacher.is_active:
+            errors["teacher"] = "Тренер должен быть активным."
+        if self.subject_id and not self.subject.is_active:
+            errors["subject"] = "Предмет должен быть активным."
+        if errors:
+            raise ValidationError(errors)
+
+
+class GroupTeacherLessonPlan(models.Model):
+    """One row of a GroupTeacher's own lesson-by-lesson plan.
+
+    The individual counterpart of CourseLessonPlan: where CourseLessonPlan
+    is a reusable, course-wide template shared by every group of that
+    course, a GroupTeacherLessonPlan belongs to one specific teacher's
+    assignment within one specific group, with its own lesson_number
+    sequence starting at 1. A GroupTeacher with no rows here simply keeps
+    using the group's shared CourseLessonPlan, exactly as every group did
+    before this model existed (see services.lesson_generator) — this table
+    only ever holds plans an admin has explicitly opted a teacher into.
+    """
+
+    group_teacher = models.ForeignKey(
+        GroupTeacher,
+        on_delete=models.CASCADE,
+        related_name="lesson_plans",
+        verbose_name="Тренер группы",
+    )
+
+    lesson_number = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1)],
+        verbose_name="Номер занятия",
+    )
+
+    topic = models.CharField(
+        max_length=255,
+        verbose_name="Тема",
+    )
+
+    description = models.TextField(
+        blank=True,
+        verbose_name="Описание",
+    )
+
+    youtube_url = models.URLField(
+        blank=True,
+        verbose_name="Ссылка на YouTube",
+    )
+
+    presentation_urls = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Ссылки на презентации",
+        help_text="Список URL.",
+    )
+
+    homework_title = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Название домашнего задания",
+    )
+
+    homework_description = models.TextField(
+        blank=True,
+        verbose_name="Описание домашнего задания",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "План занятия тренера"
+        verbose_name_plural = "Планы занятий тренеров"
+        ordering = ["group_teacher", "lesson_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group_teacher", "lesson_number"],
+                name="unique_group_teacher_lesson_number_plan",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.group_teacher} — занятие {self.lesson_number}: {self.topic}"
+
+
+# ---------------------------------------------------------------------------
 # GroupSchedule — a Group's recurring weekly timetable, one row per
 # (weekday, time range) taught by one Teacher/Subject/Room. Additive to
 # Group's own teacher/room/start_time/end_time/days_of_week: those legacy
@@ -419,6 +585,12 @@ class Group(models.Model):
 # slot is also mirrored here (see services.group_schedule_sync, called from
 # signals.py) so this table is always the single, complete source of truth
 # for conflict-checking and lesson generation, never a second one.
+#
+# Every row belongs to exactly one GroupTeacher (see above) — a row's
+# `group_teacher` is derived and kept in sync automatically from its own
+# `teacher`/`subject` on every save(), never set directly by an admin/API
+# call, so the pre-existing teacher/subject-based workflow (inline forms,
+# filters, conflict checks) needs no changes at all.
 # ---------------------------------------------------------------------------
 
 class GroupSchedule(models.Model):
@@ -470,6 +642,16 @@ class GroupSchedule(models.Model):
         verbose_name="Аудитория",
     )
 
+    group_teacher = models.ForeignKey(
+        GroupTeacher,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="schedules",
+        verbose_name="Тренер группы",
+        help_text="Заполняется автоматически из group/teacher/subject при сохранении.",
+    )
+
     is_active = models.BooleanField(
         default=True,
         db_index=True,
@@ -492,6 +674,28 @@ class GroupSchedule(models.Model):
 
     def __str__(self):
         return f"{self.group.name} — {self.get_day_of_week_display()} {self.start_time}–{self.end_time}"
+
+    def save(self, *args, **kwargs):
+        # Keep group_teacher in lockstep with (group, teacher, subject) on
+        # every save — including an edit that changes teacher/subject on an
+        # existing row — so it's never a second, independently-editable
+        # field an admin/API call could set out of sync with the two it's
+        # derived from.
+        group_teacher, _ = GroupTeacher.objects.get_or_create(
+            group_id=self.group_id,
+            teacher_id=self.teacher_id,
+            subject_id=self.subject_id,
+            defaults={"is_legacy_primary": self.subject_id is None},
+        )
+        self.group_teacher = group_teacher
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            update_fields.add("group_teacher")
+            kwargs["update_fields"] = update_fields
+
+        super().save(*args, **kwargs)
 
     def clean(self):
         errors = {}
@@ -584,6 +788,29 @@ class Lesson(models.Model):
         related_name="lessons",
         verbose_name="Слот расписания",
         help_text="Слот GroupSchedule, из которого сгенерировано это занятие (если есть).",
+    )
+
+    group_teacher = models.ForeignKey(
+        GroupTeacher,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lessons",
+        verbose_name="Тренер группы",
+        help_text=(
+            "Тренер группы (GroupTeacher), которому принадлежит это занятие и его "
+            "нумерация. Заполняется автоматически при сохранении, если не указано явно."
+        ),
+    )
+
+    individual_plan = models.ForeignKey(
+        GroupTeacherLessonPlan,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lessons",
+        verbose_name="Индивидуальный план занятия",
+        help_text="Заполняется вместо `plan`, когда тренер использует свой собственный план (GroupTeacherLessonPlan).",
     )
 
     teacher = models.ForeignKey(
@@ -680,18 +907,50 @@ class Lesson(models.Model):
         ordering = ["date", "start_time"]
         constraints = [
             models.UniqueConstraint(
-                fields=["group", "lesson_number"],
-                name="unique_group_lesson_number",
+                fields=["group_teacher", "lesson_number"],
+                name="unique_group_teacher_lesson_number",
             ),
         ]
         indexes = [
             models.Index(fields=["group", "date"], name="ix_lesson_group_date"),
             models.Index(fields=["subject", "date"], name="ix_lesson_subject_date"),
             models.Index(fields=["status", "date"], name="ix_lesson_status_date"),
+            models.Index(fields=["group_teacher", "lesson_number"], name="ix_lesson_gteacher_number"),
         ]
 
     def __str__(self):
         return f"{self.group.name} — занятие {self.lesson_number} ({self.date})"
+
+    def save(self, *args, **kwargs):
+        # Every Lesson belongs to exactly one GroupTeacher, whose own
+        # lesson_number sequence the uniqueness constraint above is scoped
+        # to. The generator always sets it explicitly (see
+        # services.lesson_generator); this fallback only matters for a
+        # Lesson created some other way (e.g. by hand in Admin) — it derives
+        # the same GroupTeacher `schedule.group_teacher` would resolve to,
+        # falling back to the group's own primary teacher, so such a Lesson
+        # still gets correct duplicate protection without the caller having
+        # to know GroupTeacher exists.
+        if self.group_teacher_id is None and self.group_id:
+            if self.schedule_id and self.schedule.group_teacher_id:
+                self.group_teacher_id = self.schedule.group_teacher_id
+            else:
+                teacher_id = self.teacher_id or self.group.teacher_id
+                group_teacher, _ = GroupTeacher.objects.get_or_create(
+                    group_id=self.group_id,
+                    teacher_id=teacher_id,
+                    subject_id=None,
+                    defaults={"is_legacy_primary": True},
+                )
+                self.group_teacher_id = group_teacher.id
+
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                update_fields = set(update_fields)
+                update_fields.add("group_teacher")
+                kwargs["update_fields"] = update_fields
+
+        super().save(*args, **kwargs)
 
     def clean(self):
         if self.start_time and self.end_time and self.end_time <= self.start_time:

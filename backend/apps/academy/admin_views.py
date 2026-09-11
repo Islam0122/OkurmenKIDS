@@ -13,6 +13,7 @@ from typing import Iterable
 
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -66,7 +67,14 @@ def _detect_conflicts(lessons: Iterable[Lesson]) -> tuple[list[dict], list[dict]
     by_teacher: dict[tuple[int, dt.date], list[Lesson]] = defaultdict(list)
     by_room: dict[tuple[int, dt.date], list[Lesson]] = defaultdict(list)
     for lesson in active:
-        by_teacher[(lesson.group.teacher_id, lesson.date)].append(lesson)
+        # Keyed on the lesson's *actual* teacher (Lesson.teacher when the
+        # generator set one — i.e. a specific GroupTeacher slot — else the
+        # group's own primary teacher), never `group.teacher` alone: a group
+        # with several teachers (see models.GroupTeacher) must not treat two
+        # different teachers' simultaneous lessons in the same group as a
+        # conflict with themselves, nor miss a real conflict between one
+        # teacher's lesson here and their own lesson in another group.
+        by_teacher[(lesson.teacher_id or lesson.group.teacher_id, lesson.date)].append(lesson)
         if lesson.room_id:
             by_room[(lesson.room_id, lesson.date)].append(lesson)
 
@@ -92,7 +100,7 @@ def _detect_conflicts(lessons: Iterable[Lesson]) -> tuple[list[dict], list[dict]
                         )
         return found
 
-    teacher_conflicts = _pairwise_conflicts(by_teacher, lambda l: str(l.group.teacher))
+    teacher_conflicts = _pairwise_conflicts(by_teacher, lambda l: str(l.effective_teacher))
     room_conflicts = _pairwise_conflicts(by_room, lambda l: str(l.room))
 
     return teacher_conflicts, room_conflicts, conflicting_ids
@@ -127,11 +135,21 @@ def schedule_view(request):
 
     lessons_qs = (
         Lesson.objects.filter(date__gte=date_from, date__lte=date_to)
-        .select_related("group", "group__teacher", "group__teacher__user", "group__course", "room", "subject", "plan")
+        .select_related(
+            "group", "group__teacher", "group__teacher__user", "group__course",
+            "teacher", "teacher__user", "room", "subject", "plan",
+        )
         .order_by("date", "start_time")
     )
     if teacher_id:
-        lessons_qs = lessons_qs.filter(group__teacher_id=teacher_id)
+        # A lesson's actual teacher is Lesson.teacher when the generator set
+        # one (a specific GroupTeacher slot), else the group's own primary
+        # teacher — see Lesson.effective_teacher. A group with several
+        # teachers (models.GroupTeacher) must only match lessons this
+        # specific teacher actually gives, not every lesson of the group.
+        lessons_qs = lessons_qs.filter(
+            Q(teacher_id=teacher_id) | Q(teacher__isnull=True, group__teacher_id=teacher_id)
+        )
     if group_id:
         lessons_qs = lessons_qs.filter(group_id=group_id)
     if course_id:

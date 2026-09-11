@@ -12,6 +12,8 @@ from .models import (
     CourseLessonPlan,
     Group,
     GroupSchedule,
+    GroupTeacher,
+    GroupTeacherLessonPlan,
     Homework,
     HomeworkResult,
     Lesson,
@@ -321,6 +323,92 @@ class GroupScheduleSlotSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class GroupTeacherLessonPlanSerializer(serializers.ModelSerializer):
+    """One row of a GroupTeacher's own lesson plan — the per-teacher
+    counterpart of CourseLessonPlanSerializer (see models.GroupTeacherLessonPlan)."""
+
+    class Meta:
+        model = GroupTeacherLessonPlan
+        fields = [
+            "id",
+            "group_teacher",
+            "lesson_number",
+            "topic",
+            "description",
+            "youtube_url",
+            "presentation_urls",
+            "homework_title",
+            "homework_description",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_presentation_urls(self, value):
+        if not value:
+            return []
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise serializers.ValidationError("Ожидается список ссылок (строк).")
+        return value
+
+    def validate(self, attrs):
+        group_teacher = attrs.get("group_teacher", getattr(self.instance, "group_teacher", None))
+        lesson_number = attrs.get("lesson_number", getattr(self.instance, "lesson_number", None))
+
+        duplicates = GroupTeacherLessonPlan.objects.filter(group_teacher=group_teacher, lesson_number=lesson_number)
+        if self.instance is not None:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if group_teacher and lesson_number and duplicates.exists():
+            raise serializers.ValidationError(
+                {"lesson_number": "План с таким номером занятия для этого тренера уже существует."}
+            )
+
+        return attrs
+
+
+class GroupTeacherSerializer(serializers.ModelSerializer):
+    """"This Teacher teaches this Subject in this Group" — see models.GroupTeacher.
+
+    `schedules` and `lesson_plans_count` are read-only conveniences: a
+    GroupTeacher's actual schedule slots are managed via
+    GroupScheduleViewSet/GroupScheduleSlotSerializer, and its plan rows via
+    GroupTeacherLessonPlanViewSet — both are always derived from/scoped to
+    this GroupTeacher, never set through this serializer.
+    """
+
+    teacher_detail = TeacherSerializer(source="teacher", read_only=True)
+    subject_detail = SubjectSerializer(source="subject", read_only=True)
+    schedules = GroupScheduleSlotSerializer(many=True, read_only=True)
+    lesson_plans_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GroupTeacher
+        fields = [
+            "id",
+            "group",
+            "teacher",
+            "teacher_detail",
+            "subject",
+            "subject_detail",
+            "is_active",
+            "is_legacy_primary",
+            "schedules",
+            "lesson_plans_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "is_legacy_primary", "created_at", "updated_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["teacher"].queryset = Teacher.objects.filter(is_active=True)
+        self.fields["subject"].queryset = Subject.objects.filter(is_active=True)
+
+    def get_lesson_plans_count(self, obj: GroupTeacher) -> int:
+        annotated = getattr(obj, "_plan_count", None)
+        return annotated if annotated is not None else obj.lesson_plans.count()
+
+
 class GroupSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source="teacher.__str__", read_only=True)
     room_name = serializers.CharField(source="room.name", read_only=True, default=None)
@@ -328,6 +416,7 @@ class GroupSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     students_count = serializers.SerializerMethodField()
     schedules = GroupScheduleSlotSerializer(many=True, read_only=True)
+    teachers = GroupTeacherSerializer(many=True, read_only=True)
     students = serializers.PrimaryKeyRelatedField(
         queryset=Student.objects.all(),
         many=True,
@@ -353,6 +442,7 @@ class GroupSerializer(serializers.ModelSerializer):
             "end_time",
             "days_of_week",
             "schedules",
+            "teachers",
             "students",
             "students_count",
             "max_students",
@@ -462,6 +552,7 @@ class LessonSerializer(serializers.ModelSerializer):
     room_name = serializers.CharField(source="room.name", read_only=True, default=None)
     subject_name = serializers.CharField(source="subject.name", read_only=True, default=None)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    teacher_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
@@ -469,7 +560,9 @@ class LessonSerializer(serializers.ModelSerializer):
             "id",
             "group",
             "group_name",
+            "group_teacher",
             "plan",
+            "individual_plan",
             "lesson_number",
             "date",
             "start_time",
@@ -478,6 +571,8 @@ class LessonSerializer(serializers.ModelSerializer):
             "room_name",
             "subject",
             "subject_name",
+            "teacher",
+            "teacher_name",
             "topic",
             "description",
             "youtube_url",
@@ -490,7 +585,14 @@ class LessonSerializer(serializers.ModelSerializer):
         ]
         # Lessons are only ever created by the generator — the API only
         # updates content/status/scheduling on an already-generated lesson.
-        read_only_fields = ["id", "group", "plan", "lesson_number", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "group", "group_teacher", "plan", "individual_plan", "lesson_number", "teacher",
+            "created_at", "updated_at",
+        ]
+
+    def get_teacher_name(self, obj: Lesson) -> str | None:
+        teacher = obj.effective_teacher
+        return str(teacher) if teacher else None
 
     def validate(self, attrs):
         start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))

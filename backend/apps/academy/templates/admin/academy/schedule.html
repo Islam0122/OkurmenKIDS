@@ -197,7 +197,7 @@
                             <div class="oksch-card-subject">{{ lesson.subject|default:"Без предмета" }}{% if lesson.topic %} — {{ lesson.topic }}{% endif %}</div>
                             <div class="oksch-card-meta">
                                 Группа: {{ lesson.group.name }}<br>
-                                Тренер: {{ lesson.group.teacher }}<br>
+                                Тренер: {{ lesson.effective_teacher|default:"—" }}<br>
                                 Аудитория: {{ lesson.room|default:"—" }}
                             </div>
                             <span class="oksch-card-status">{{ lesson.get_status_display }}</span>
