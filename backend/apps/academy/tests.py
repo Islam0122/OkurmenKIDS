@@ -2980,6 +2980,39 @@ class MultiTeacherIsolationTests(AcademyTestBase):
         self.assertIn(own_hw.id, homework_ids)
         self.assertNotIn(other_hw.id, homework_ids)
 
+    def test_teacher_cannot_retrieve_colleagues_homework_by_id(self):
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+        response = self.islam_client.get(f"/api/v1/homework/{other_hw.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_teacher_cannot_retrieve_colleagues_homework_result_by_id(self):
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+        other_result = HomeworkResult.objects.create(homework=other_hw, student=self.student1, status="submitted")
+        response = self.islam_client.get(f"/api/v1/homework-results/{other_result.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_teacher_cannot_create_homework_result_for_colleagues_homework(self):
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+        response = self.islam_client.post(
+            "/api/v1/homework-results/",
+            {"homework": other_hw.id, "student": self.student1.id, "status": "submitted"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(HomeworkResult.objects.filter(homework=other_hw).count(), 0)
+
+    def test_teacher_cannot_delete_colleagues_homework(self):
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+        response = self.islam_client.delete(f"/api/v1/homework/{other_hw.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(Homework.objects.filter(pk=other_hw.pk).exists())
+
+    def test_teacher_cannot_delete_colleagues_attendance_record(self):
+        other_record = Attendance.objects.create(student=self.student1, lesson=self.aizada_lesson, status="present")
+        response = self.islam_client.delete(f"/api/v1/attendance/{other_record.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(Attendance.objects.filter(pk=other_record.pk).exists())
+
     def test_group_teacher_list_excludes_colleagues_assignment_in_same_group(self):
         response = self.islam_client.get("/api/v1/programs/")
         ids = {row["id"] for row in response.data["results"]}
