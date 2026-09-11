@@ -3,8 +3,10 @@ from __future__ import annotations
 import datetime as dt
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import Client as DjangoClient
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -33,7 +35,15 @@ from apps.academy.models import (
     Room,
     Student,
 )
-from apps.academy.services.analytics import AnalyticsService
+from apps.academy.services.analytics import (
+    COMPARE_CHOICES,
+    PERIOD_CHOICES,
+    DateRange,
+    build_metric,
+    get_dashboard,
+    resolve_comparison,
+    resolve_period,
+)
 from apps.academy.services.attendance_service import bulk_mark_attendance
 from apps.academy.services.group_schedule_conflicts import (
     find_group_teacher_conflict,
@@ -697,18 +707,181 @@ class HomeworkTests(AcademyTestBase):
         self.assertEqual(HomeworkResult.objects.filter(homework=homework).count(), 0)
 
 
-class AnalyticsServiceTests(AcademyTestBase):
-    """Same fixture the old KPITests used (and the same expected numbers) —
-    AnalyticsService must derive the identical figures straight from
-    Lesson/Attendance/Homework/HomeworkResult, with nothing persisted."""
+# ---------------------------------------------------------------------------
+# Period + comparison-period resolution — pure date math, no DB (spec §12:
+# today vs yesterday, this month vs last month, custom range).
+# ---------------------------------------------------------------------------
+
+class PeriodResolutionTests(TestCase):
+    def test_today(self):
+        rng = resolve_period("today", today=dt.date(2026, 9, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 15), dt.date(2026, 9, 15)))
+
+    def test_yesterday(self):
+        rng = resolve_period("yesterday", today=dt.date(2026, 9, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 14), dt.date(2026, 9, 14)))
+
+    def test_today_vs_yesterday_are_adjacent_and_distinct(self):
+        today_range = resolve_period("today", today=dt.date(2026, 9, 15))
+        yesterday_range = resolve_period("yesterday", today=dt.date(2026, 9, 15))
+        self.assertEqual(yesterday_range.end + dt.timedelta(days=1), today_range.start)
+
+    def test_last_7_days(self):
+        rng = resolve_period("last_7_days", today=dt.date(2026, 9, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 9), dt.date(2026, 9, 15)))
+        self.assertEqual(rng.days, 7)
+
+    def test_this_week_monday_start(self):
+        # 2026-09-15 is a Tuesday.
+        rng = resolve_period("this_week", today=dt.date(2026, 9, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 14), dt.date(2026, 9, 20)))
+
+    def test_last_week(self):
+        rng = resolve_period("last_week", today=dt.date(2026, 9, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 7), dt.date(2026, 9, 13)))
+
+    def test_this_month(self):
+        rng = resolve_period("this_month", today=dt.date(2026, 9, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 1), dt.date(2026, 9, 15)))
+
+    def test_last_month(self):
+        rng = resolve_period("last_month", today=dt.date(2026, 9, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 8, 1), dt.date(2026, 8, 31)))
+
+    def test_this_month_vs_last_month_dont_overlap(self):
+        this_month = resolve_period("this_month", today=dt.date(2026, 9, 15))
+        last_month = resolve_period("last_month", today=dt.date(2026, 9, 15))
+        self.assertLess(last_month.end, this_month.start)
+
+    def test_last_month_across_year_boundary(self):
+        rng = resolve_period("last_month", today=dt.date(2026, 1, 15))
+        self.assertEqual((rng.start, rng.end), (dt.date(2025, 12, 1), dt.date(2025, 12, 31)))
+
+    def test_custom_range(self):
+        rng = resolve_period(
+            "custom", today=dt.date(2026, 9, 15), start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 10)
+        )
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 1), dt.date(2026, 9, 10)))
+
+    def test_custom_range_requires_dates(self):
+        with self.assertRaises(ValueError):
+            resolve_period("custom", today=dt.date(2026, 9, 15))
+
+    def test_custom_range_swaps_reversed_dates(self):
+        rng = resolve_period(
+            "custom", today=dt.date(2026, 9, 15), start_date=dt.date(2026, 9, 10), end_date=dt.date(2026, 9, 1)
+        )
+        self.assertEqual((rng.start, rng.end), (dt.date(2026, 9, 1), dt.date(2026, 9, 10)))
+
+    def test_unknown_period_raises(self):
+        with self.assertRaises(ValueError):
+            resolve_period("not_a_period", today=dt.date(2026, 9, 15))
+
+    def test_no_comparison_when_not_requested(self):
+        rng = DateRange(dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+        self.assertIsNone(resolve_comparison(rng, None))
+
+    def test_compare_previous_period(self):
+        rng = DateRange(dt.date(2026, 9, 8), dt.date(2026, 9, 14))  # 7 days
+        cmp = resolve_comparison(rng, "previous_period")
+        self.assertEqual((cmp.start, cmp.end), (dt.date(2026, 9, 1), dt.date(2026, 9, 7)))
+        self.assertEqual(cmp.days, rng.days)
+
+    def test_compare_previous_week(self):
+        rng = DateRange(dt.date(2026, 9, 14), dt.date(2026, 9, 20))
+        cmp = resolve_comparison(rng, "previous_week")
+        self.assertEqual((cmp.start, cmp.end), (dt.date(2026, 9, 7), dt.date(2026, 9, 13)))
+
+    def test_compare_previous_month_full_month(self):
+        rng = DateRange(dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+        cmp = resolve_comparison(rng, "previous_month")
+        self.assertEqual((cmp.start, cmp.end), (dt.date(2026, 8, 1), dt.date(2026, 8, 30)))
+
+    def test_compare_custom(self):
+        rng = DateRange(dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+        cmp = resolve_comparison(rng, "custom", compare_start=dt.date(2025, 9, 1), compare_end=dt.date(2025, 9, 30))
+        self.assertEqual((cmp.start, cmp.end), (dt.date(2025, 9, 1), dt.date(2025, 9, 30)))
+
+    def test_compare_custom_requires_dates(self):
+        rng = DateRange(dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+        with self.assertRaises(ValueError):
+            resolve_comparison(rng, "custom")
+
+    def test_unknown_compare_mode_raises(self):
+        rng = DateRange(dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+        with self.assertRaises(ValueError):
+            resolve_comparison(rng, "not_a_mode")
+
+    def test_all_period_and_compare_choices_are_resolvable(self):
+        today = dt.date(2026, 9, 15)
+        for period in PERIOD_CHOICES:
+            if period == "custom":
+                continue
+            rng = resolve_period(period, today=today)
+            for compare in COMPARE_CHOICES:
+                if compare == "custom":
+                    continue
+                self.assertIsNotNone(resolve_comparison(rng, compare))
+
+
+# ---------------------------------------------------------------------------
+# {value, previous_value, change, change_percent, trend} — spec §4/§12: zero
+# previous value, percentage calculation, positive/negative/stable trend.
+# ---------------------------------------------------------------------------
+
+class BuildMetricTests(TestCase):
+    def test_percentage_calculation(self):
+        metric = build_metric(162, 150)
+        self.assertEqual(metric["change"], 12)
+        self.assertEqual(metric["change_percent"], 8.0)
+        self.assertEqual(metric["trend"], "up")
+
+    def test_zero_previous_value_with_positive_current(self):
+        metric = build_metric(10, 0)
+        self.assertEqual(metric["change"], 10)
+        self.assertEqual(metric["change_percent"], 100.0)
+        self.assertEqual(metric["trend"], "up")
+
+    def test_zero_previous_value_and_zero_current(self):
+        metric = build_metric(0, 0)
+        self.assertEqual(metric["change_percent"], 0.0)
+        self.assertEqual(metric["trend"], "stable")
+
+    def test_positive_trend(self):
+        self.assertEqual(build_metric(20, 10)["trend"], "up")
+
+    def test_negative_trend(self):
+        self.assertEqual(build_metric(5, 10)["trend"], "down")
+
+    def test_stable_trend(self):
+        metric = build_metric(10, 10)
+        self.assertEqual(metric["trend"], "stable")
+        self.assertEqual(metric["change"], 0)
+        self.assertEqual(metric["change_percent"], 0.0)
+
+    def test_no_previous_value_means_no_comparison(self):
+        metric = build_metric(10, None)
+        self.assertIsNone(metric["previous_value"])
+        self.assertIsNone(metric["change"])
+        self.assertIsNone(metric["change_percent"])
+        self.assertEqual(metric["trend"], "stable")
+
+
+# ---------------------------------------------------------------------------
+# services.analytics.get_dashboard — the full redesigned dashboard.
+# ---------------------------------------------------------------------------
+
+class AnalyticsDashboardTests(AcademyTestBase):
+    """group1 = "Python Beginner" (teacher1, students Алина/Мансур, 4
+    Lessons Sep 2026: python/frontend alternating). group2 = "Frontend
+    Beginner" (teacher2, student Айбек)."""
 
     def setUp(self):
         super().setUp()
-        # group1's lessons were already generated automatically on creation
-        # (see AcademyTestBase.setUp / apps.academy.signals).
         self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
         self.date_from = dt.date(2026, 9, 1)
         self.date_to = dt.date(2026, 9, 30)
+        self.today = dt.date(2026, 9, 30)
 
         statuses = [
             Attendance.Status.PRESENT,
@@ -727,103 +900,245 @@ class AnalyticsServiceTests(AcademyTestBase):
         # No result row for homework2 — counts as missed.
 
     def _dashboard(self, **kwargs):
-        return AnalyticsService(self.date_from, self.date_to, **kwargs).get_dashboard()
+        kwargs.setdefault("period", "custom")
+        kwargs.setdefault("start_date", self.date_from)
+        kwargs.setdefault("end_date", self.date_to)
+        kwargs.setdefault("today", self.today)
+        return get_dashboard(**kwargs)
 
-    def test_group_row_matches_old_kpigroup_formula(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        row = dashboard["groups"][0]
-        self.assertEqual(row["students"], 2)
-        self.assertEqual(row["lessons"], 4)
-        self.assertEqual(row["attendance_percent"], 75.0)
-        self.assertEqual(row["homework_completion_percent"], 25.0)
-        self.assertEqual(row["average_score"], 8.0)
+    def test_attendance_calculation(self):
+        attendance = self._dashboard(group_id=self.group1.id)["attendance"]
+        self.assertEqual(attendance["present_count"]["value"], 2)
+        self.assertEqual(attendance["absent_count"]["value"], 1)
+        self.assertEqual(attendance["late_count"]["value"], 1)
+        self.assertEqual(attendance["excused_count"]["value"], 0)
+        self.assertEqual(attendance["attendance_rate"]["value"], 75.0)
 
-    def test_teacher_row_matches_old_kpiteacher_formula(self):
-        dashboard = self._dashboard(teacher_id=self.teacher1.id)
-        row = dashboard["teachers"][0]
-        self.assertEqual(row["groups"], 1)
-        self.assertEqual(row["lessons"], 4)
-        self.assertEqual(row["attendance_percent"], 75.0)
-        self.assertEqual(row["average_score"], 8.0)
+    def test_homework_submission_calculation(self):
+        homework = self._dashboard(group_id=self.group1.id)["homework"]
+        self.assertEqual(homework["homework_count"]["value"], 2)
+        self.assertEqual(homework["checked_count"]["value"], 1)
+        self.assertEqual(homework["not_submitted_count"]["value"], 0)
+        self.assertEqual(homework["submission_rate"]["value"], 100.0)
+        self.assertEqual(homework["average_score"]["value"], 8.0)
 
-    def test_top_student_row_matches_old_kpistudent_formula(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        row = next(r for r in dashboard["top_students"] if r["id"] == self.student1.id)
-        self.assertEqual(row["lessons"], 4)
-        self.assertEqual(row["attendance_percent"], 75.0)
-        self.assertEqual(row["homework_completion_percent"], 50.0)
-        self.assertEqual(row["average_score"], 8.0)
+    def test_lesson_stats_and_cancelled_lesson_metric(self):
+        lessons = self._dashboard(group_id=self.group1.id)["lessons"]
+        self.assertEqual(lessons["lessons_scheduled"]["value"], 4)
+        self.assertEqual(lessons["lessons_completed"]["value"], 0)
+        self.assertEqual(lessons["lessons_cancelled"]["value"], 0)
+        self.assertEqual(lessons["lesson_completion_rate"]["value"], 0.0)
 
-    def test_attendance_section_matches_old_kpiattendance_formula(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        attendance = dashboard["attendance"]
-        self.assertEqual(attendance["total"], 4)
-        self.assertEqual(attendance["present"], 2)
-        self.assertEqual(attendance["absent"], 1)
-        self.assertEqual(attendance["late"], 1)
-        self.assertEqual(attendance["percent"], 75.0)
+        cancelled = self.lessons[0]
+        cancelled.status = Lesson.Status.CANCELLED
+        cancelled.save(update_fields=["status"])
 
-    def test_homework_section_matches_old_kpihomework_formula(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        homework = dashboard["homework"]
-        self.assertEqual(homework["total_homeworks"], 2)
-        self.assertEqual(homework["total_results"], 1)
-        self.assertEqual(homework["checked"], 1)
-        self.assertEqual(homework["completion_percent"], 100.0)
-        self.assertEqual(homework["average_score"], 8.0)
+        lessons = self._dashboard(group_id=self.group1.id)["lessons"]
+        self.assertEqual(lessons["lessons_cancelled"]["value"], 1)
+        self.assertEqual(lessons["lessons_scheduled"]["value"], 3)
 
-    def test_overview_reflects_group_style_homework_percent(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        overview = dashboard["overview"]
-        self.assertEqual(overview["groups"], 1)
-        self.assertEqual(overview["teachers"], 1)
-        self.assertEqual(overview["students"], 2)
-        self.assertEqual(overview["lessons"], 4)
-        self.assertEqual(overview["attendance_percent"], 75.0)
-        self.assertEqual(overview["homework_completion_percent"], 25.0)
-        self.assertEqual(overview["average_score"], 8.0)
+    def test_group_filtering_scopes_students(self):
+        dashboard1 = self._dashboard(group_id=self.group1.id)
+        dashboard2 = self._dashboard(group_id=self.group2.id)
+        self.assertEqual(dashboard1["students"]["total_students"]["value"], 2)
+        self.assertEqual(dashboard2["students"]["total_students"]["value"], 1)
 
-    def test_lesson_stats(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        lessons = dashboard["lessons"]
-        self.assertEqual(lessons["total"], 4)
-        self.assertEqual(lessons["planned"], 4)
-        self.assertEqual(lessons["completed"], 0)
-        self.assertEqual(lessons["cancelled"], 0)
+    def test_teacher_isolation_scopes_to_own_lessons(self):
+        dashboard_t1 = self._dashboard(teacher_id=self.teacher1.id)
+        dashboard_t2 = self._dashboard(teacher_id=self.teacher2.id)
+        self.assertEqual(dashboard_t1["attendance"]["present_count"]["value"], 2)
+        self.assertEqual(dashboard_t2["attendance"]["present_count"]["value"], 0)
+        self.assertEqual(dashboard_t1["lessons"]["lessons_scheduled"]["value"], 4)
 
-    def test_charts_carry_the_same_numbers_as_the_tables(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        charts = dashboard["charts"]
-        self.assertEqual(charts["group_performance"][0]["attendance_percent"], 75.0)
-        self.assertEqual(charts["students_by_group"][0]["students"], 2)
-        completed = sum(row["count"] for row in charts["lessons_by_status"] if row["status"] == "planned")
-        self.assertEqual(completed, 4)
+    def test_subject_filtering(self):
+        # lessons[0] (Переменные) and lessons[2] (Функции) are Python;
+        # lessons[1]/[3] are JavaScript — see AcademyTestBase.setUp's plans.
+        dashboard = self._dashboard(group_id=self.group1.id, subject_id=self.subject_python.id)
+        self.assertEqual(dashboard["lessons"]["lessons_scheduled"]["value"], 2)
+        self.assertTrue(all(row["subject_id"] == self.subject_python.id for row in dashboard["lessons"]["lessons_by_subject"]))
 
-    def test_group_scoping_excludes_other_groups(self):
-        dashboard = self._dashboard(group_id=self.group1.id)
-        self.assertEqual(len(dashboard["groups"]), 1)
-        self.assertEqual(dashboard["groups"][0]["id"], self.group1.id)
+    def test_course_filtering_covers_every_group_of_that_course(self):
+        dashboard = self._dashboard(course_id=self.course.id)
+        self.assertEqual(dashboard["groups"]["total_groups"]["value"], 2)
 
     def test_no_filters_covers_every_group(self):
         dashboard = self._dashboard()
-        group_ids = {row["id"] for row in dashboard["groups"]}
-        self.assertEqual(group_ids, {self.group1.id, self.group2.id})
+        self.assertEqual(dashboard["groups"]["total_groups"]["value"], 2)
+
+    def test_academy_health_formula(self):
+        health = self._dashboard(group_id=self.group1.id)["health"]
+        self.assertEqual(health["components"]["attendance"], 75.0)
+        self.assertEqual(health["components"]["homework"], 100.0)
+        self.assertEqual(health["components"]["lesson_completion"], 0.0)
+        self.assertEqual(health["components"]["retention"], 100.0)
+        self.assertEqual(health["components"]["teacher_workload"], 100.0)
+        self.assertEqual(health["score"], 75)
+        self.assertEqual(health["level"], "good")
 
     def test_empty_period_returns_zeros_not_errors(self):
-        empty_dashboard = AnalyticsService(dt.date(2020, 1, 1), dt.date(2020, 1, 31)).get_dashboard()
-        self.assertEqual(empty_dashboard["overview"]["lessons"], 0)
-        self.assertEqual(empty_dashboard["overview"]["attendance_percent"], 0.0)
-        self.assertEqual(empty_dashboard["overview"]["homework_completion_percent"], 0.0)
-        self.assertEqual(empty_dashboard["overview"]["average_score"], 0.0)
-        self.assertEqual(empty_dashboard["attendance"]["by_date"], [])
+        empty_dashboard = get_dashboard(
+            period="custom", start_date=dt.date(2020, 1, 1), end_date=dt.date(2020, 1, 31), today=dt.date(2020, 1, 31)
+        )
+        self.assertEqual(empty_dashboard["lessons"]["lessons_scheduled"]["value"], 0)
+        self.assertEqual(empty_dashboard["attendance"]["attendance_rate"]["value"], 0.0)
+        self.assertEqual(empty_dashboard["homework"]["submission_rate"]["value"], 0.0)
+        self.assertEqual(empty_dashboard["attendance"]["attendance_trend"], [])
+        # attendance/homework/lesson_completion all default to 0.0 with no
+        # data at all (same "0 denominator -> 0.0" convention used
+        # everywhere else in this package); only retention defaults to 100
+        # (0 students -> nothing to retain). Global teacher_workload is 0.0
+        # here since the fixture's teachers exist but taught nothing in
+        # this empty 2020 period — see health.py's docstring for the formula.
+        self.assertEqual(empty_dashboard["health"]["score"], 20)
 
     def test_repeated_calls_reflect_new_data_immediately(self):
         """The whole point of dropping stored KPI rows: no recalculation step."""
-        before = self._dashboard(group_id=self.group1.id)["attendance"]["percent"]
+        before = self._dashboard(group_id=self.group1.id)["attendance"]["attendance_rate"]["value"]
         Attendance.objects.create(student=self.student2, lesson=self.lessons[0], status=Attendance.Status.PRESENT)
-        after = self._dashboard(group_id=self.group1.id)["attendance"]["percent"]
+        after = self._dashboard(group_id=self.group1.id)["attendance"]["attendance_rate"]["value"]
         self.assertNotEqual(before, after)
         self.assertEqual(after, 80.0)  # 4 attended out of 5 marked now
+
+    def test_period_comparison_positive_trend(self):
+        # August has zero Attendance rows for group1 (no Lessons that
+        # month) — September's 75% must read as a full "up" swing from 0.
+        dashboard = self._dashboard(
+            group_id=self.group1.id, compare="custom",
+            compare_start_date=dt.date(2026, 8, 1), compare_end_date=dt.date(2026, 8, 31),
+        )
+        rate = dashboard["attendance"]["attendance_rate"]
+        self.assertEqual(rate["previous_value"], 0.0)
+        self.assertEqual(rate["value"], 75.0)
+        self.assertEqual(rate["trend"], "up")
+        self.assertIsNotNone(dashboard["comparison"])
+        self.assertEqual(dashboard["comparison"]["key"], "custom")
+
+    def test_no_n_plus_one_query_explosion(self):
+        with CaptureQueriesContext(connection) as ctx:
+            self._dashboard(group_id=self.group1.id, compare="previous_period")
+        # A fixed, small number of queries regardless of how many
+        # students/lessons exist — never one query per row.
+        self.assertLess(len(ctx.captured_queries), 80)
+
+
+class AnalyticsInsightsTests(AcademyTestBase):
+    """Spec §6 — dynamic alerts, recomputed on every call."""
+
+    def setUp(self):
+        super().setUp()
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+
+    def _dashboard(self, **kwargs):
+        kwargs.setdefault("period", "custom")
+        kwargs.setdefault("start_date", dt.date(2026, 9, 1))
+        kwargs.setdefault("end_date", dt.date(2026, 9, 30))
+        kwargs.setdefault("today", dt.date(2026, 9, 30))
+        return get_dashboard(**kwargs)
+
+    def test_consecutive_absences_insight(self):
+        for lesson in self.lessons[:3]:
+            Attendance.objects.create(student=self.student1, lesson=lesson, status=Attendance.Status.ABSENT)
+        insights = self._dashboard(group_id=self.group1.id)["insights"]
+        self.assertIn("attendance", {row["metric"] for row in insights})
+
+    def test_no_insight_for_a_run_shorter_than_threshold(self):
+        Attendance.objects.create(student=self.student1, lesson=self.lessons[0], status=Attendance.Status.ABSENT)
+        Attendance.objects.create(student=self.student1, lesson=self.lessons[1], status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student1, lesson=self.lessons[2], status=Attendance.Status.ABSENT)
+        insights = self._dashboard(group_id=self.group1.id)["insights"]
+        self.assertFalse(any("систематически пропускает" in row["message"] for row in insights))
+
+    def test_overdue_homework_insight(self):
+        homework = Homework.objects.create(lesson=self.lessons[0], title="ДЗ", deadline=dt.date(2026, 9, 5))
+        HomeworkResult.objects.create(homework=homework, student=self.student1, status=HomeworkResult.Status.NOT_SUBMITTED)
+        insights = self._dashboard(group_id=self.group1.id, today=dt.date(2026, 9, 20))["insights"]
+        self.assertIn("homework", {row["metric"] for row in insights})
+
+    def test_group_close_to_capacity_insight(self):
+        self.group1.max_students = 2
+        self.group1.save(update_fields=["max_students"])
+        insights = self._dashboard(group_id=self.group1.id)["insights"]
+        self.assertIn("groups", {row["metric"] for row in insights})
+
+    def test_significant_attendance_decrease_insight(self):
+        past_lesson = Lesson.objects.create(
+            group=self.group1, group_teacher=self.lessons[0].group_teacher, teacher=self.teacher1,
+            lesson_number=101, date=dt.date(2026, 8, 3), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            room=self.room1, subject=self.subject_python, topic="Past lesson",
+        )
+        Attendance.objects.create(student=self.student1, lesson=past_lesson, status=Attendance.Status.PRESENT)
+        for lesson in self.lessons:
+            Attendance.objects.create(student=self.student1, lesson=lesson, status=Attendance.Status.ABSENT)
+
+        dashboard = self._dashboard(
+            group_id=self.group1.id, compare="custom",
+            compare_start_date=dt.date(2026, 8, 1), compare_end_date=dt.date(2026, 8, 31),
+        )
+        self.assertIn("attendance_rate", {row["metric"] for row in dashboard["insights"]})
+
+    def test_no_comparison_insights_without_a_compare_period(self):
+        for lesson in self.lessons:
+            Attendance.objects.create(student=self.student1, lesson=lesson, status=Attendance.Status.ABSENT)
+        insights = self._dashboard(group_id=self.group1.id)["insights"]
+        self.assertNotIn("attendance_rate", {row["metric"] for row in insights})
+
+
+class StudentsAnalyticsTests(AcademyTestBase):
+    """Spec item 19: student active/inactive calculation — and the
+    period-bound new_students/students_left metrics. Student.created_at/
+    updated_at are auto_now[_add], so `.update()` sets them deterministically
+    rather than relying on wall-clock timing at test-run time."""
+
+    def setUp(self):
+        super().setUp()
+        # AcademyTestBase's own student1/student2 are created at real
+        # wall-clock time, which may itself fall inside this class's Sep
+        # 2026 test window — pin them safely outside it so only the
+        # students each test creates on purpose count as "new".
+        Student.objects.filter(pk__in=[self.student1.pk, self.student2.pk]).update(
+            created_at=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+        )
+
+    def _dashboard(self, **kwargs):
+        kwargs.setdefault("period", "custom")
+        kwargs.setdefault("start_date", dt.date(2026, 9, 1))
+        kwargs.setdefault("end_date", dt.date(2026, 9, 30))
+        kwargs.setdefault("today", dt.date(2026, 9, 30))
+        return get_dashboard(**kwargs)
+
+    def test_active_inactive_counts(self):
+        self.student2.is_active = False
+        self.student2.save(update_fields=["is_active"])
+        students = self._dashboard(group_id=self.group1.id)["students"]
+        self.assertEqual(students["total_students"]["value"], 2)
+        self.assertEqual(students["active_students"]["value"], 1)
+        self.assertEqual(students["inactive_students"]["value"], 1)
+
+    def test_new_students_within_period(self):
+        new_student = Student.objects.create(first_name="Новый", last_name="Студент", group=self.group1)
+        Student.objects.filter(pk=new_student.pk).update(created_at=dt.datetime(2026, 9, 15, tzinfo=dt.timezone.utc))
+        students = self._dashboard(group_id=self.group1.id)["students"]
+        self.assertEqual(students["new_students"]["value"], 1)
+
+    def test_new_students_excludes_outside_period(self):
+        old_student = Student.objects.create(first_name="Давний", last_name="Студент", group=self.group1)
+        Student.objects.filter(pk=old_student.pk).update(created_at=dt.datetime(2026, 7, 1, tzinfo=dt.timezone.utc))
+        students = self._dashboard(group_id=self.group1.id)["students"]
+        self.assertEqual(students["new_students"]["value"], 0)
+
+    def test_students_left_within_period(self):
+        self.student1.is_active = False
+        self.student1.save(update_fields=["is_active"])
+        Student.objects.filter(pk=self.student1.pk).update(updated_at=dt.datetime(2026, 9, 10, tzinfo=dt.timezone.utc))
+        students = self._dashboard(group_id=self.group1.id)["students"]
+        self.assertEqual(students["students_left"]["value"], 1)
+
+    def test_groups_at_capacity(self):
+        self.group1.max_students = 2
+        self.group1.save(update_fields=["max_students"])
+        students = self._dashboard(group_id=self.group1.id)["students"]
+        self.assertEqual(students["groups_at_capacity"]["value"], 1)
+        self.assertEqual(students["groups_with_free_capacity"]["value"], 0)
 
 
 class AnalyticsDashboardAPITests(AcademyTestBase):
@@ -831,37 +1146,71 @@ class AnalyticsDashboardAPITests(AcademyTestBase):
         super().setUp()
         self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
         Attendance.objects.create(student=self.student1, lesson=self.lessons[0], status=Attendance.Status.PRESENT)
-        self.params = {"date_from": "2026-09-01", "date_to": "2026-09-30"}
+        self.params = {"period": "custom", "start_date": "2026-09-01", "end_date": "2026-09-30"}
 
     def test_requires_authentication(self):
         response = self.anon_client.get("/api/v1/academy/analytics/dashboard/", self.params)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_requires_date_range(self):
-        response = self.admin_client.get("/api/v1/academy/analytics/dashboard/")
+    def test_custom_period_requires_dates(self):
+        response = self.admin_client.get("/api/v1/academy/analytics/dashboard/", {"period": "custom"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_default_period_is_this_month(self):
+        response = self.admin_client.get("/api/v1/academy/analytics/dashboard/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["period"]["key"], "this_month")
 
     def test_admin_sees_every_group(self):
         response = self.admin_client.get("/api/v1/academy/analytics/dashboard/", self.params)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        group_ids = {row["id"] for row in response.data["groups"]}
-        self.assertEqual(group_ids, {self.group1.id, self.group2.id})
+        self.assertEqual(response.data["groups"]["total_groups"]["value"], 2)
 
     def test_teacher_is_scoped_to_own_groups_even_if_teacher_param_given(self):
         response = self.teacher1_client.get(
             "/api/v1/academy/analytics/dashboard/", {**self.params, "teacher": self.teacher2.id}
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        group_ids = {row["id"] for row in response.data["groups"]}
-        self.assertEqual(group_ids, {self.group1.id})
+        self.assertEqual(response.data["students"]["total_students"]["value"], 2)
 
     def test_teacher_requesting_other_teachers_group_gets_empty_dashboard(self):
         response = self.teacher1_client.get(
             "/api/v1/academy/analytics/dashboard/", {**self.params, "group": self.group2.id}
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["groups"], [])
-        self.assertEqual(response.data["overview"]["lessons"], 0)
+        self.assertEqual(response.data["groups"]["total_groups"]["value"], 0)
+
+    def test_compare_true_shorthand_means_previous_period(self):
+        response = self.admin_client.get("/api/v1/academy/analytics/dashboard/", {**self.params, "compare": "true"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data["comparison"])
+        self.assertEqual(response.data["comparison"]["key"], "previous_period")
+
+    def test_compare_named_mode(self):
+        response = self.admin_client.get(
+            "/api/v1/academy/analytics/dashboard/", {**self.params, "compare": "previous_month"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["comparison"]["key"], "previous_month")
+
+    def test_compare_absent_means_no_comparison(self):
+        response = self.admin_client.get("/api/v1/academy/analytics/dashboard/", self.params)
+        self.assertIsNone(response.data["comparison"])
+
+    def test_invalid_compare_mode_rejected(self):
+        response = self.admin_client.get(
+            "/api/v1/academy/analytics/dashboard/", {**self.params, "compare": "nonsense"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_course_and_subject_filters_accepted(self):
+        response = self.admin_client.get(
+            "/api/v1/academy/analytics/dashboard/",
+            {**self.params, "course": self.course.id, "subject": self.subject_python.id},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["filters"]["course_id"], self.course.id)
+        self.assertEqual(response.data["filters"]["subject_id"], self.subject_python.id)
 
     def test_endpoint_is_read_only(self):
         response = self.admin_client.post("/api/v1/academy/analytics/dashboard/", self.params)
@@ -1779,11 +2128,20 @@ class MultiTeacherPermissionsTests(AcademyTestBase):
         super().setUp()
         # teacher2 (who "owns" group2) also teaches a slot in group1, which
         # teacher1 owns as `group.teacher` — teacher2 has no `group.teacher`
-        # stake in group1 at all, only this schedule slot.
-        GroupSchedule.objects.create(
+        # stake in group1 at all, only this schedule slot, running as its
+        # own independent Teaching Program with its own plan (see
+        # models.GroupTeacher/GroupTeacherLessonPlan) — spec §39: a Teaching
+        # Program's Lessons are its own, not "whichever Lesson the group
+        # happens to have".
+        self.extra_slot = GroupSchedule.objects.create(
             group=self.group1, teacher=self.teacher2, subject=self.subject_frontend,
             day_of_week="mon", start_time=dt.time(17, 0), end_time=dt.time(18, 0), room=self.room1,
         )
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.extra_slot.group_teacher, lesson_number=1, topic="Intro to Frontend",
+        )
+        generate_lessons_for_group(self.group1)
+        self.teacher2_own_lesson = Lesson.objects.get(group=self.group1, teacher=self.teacher2)
 
     def test_teacher_with_only_schedule_slot_sees_the_group(self):
         response = self.teacher2_client.get("/api/v1/academy/groups/")
@@ -1795,19 +2153,24 @@ class MultiTeacherPermissionsTests(AcademyTestBase):
         response = self.teacher2_client.get(f"/api/v1/academy/groups/{self.group1.id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_teacher_with_only_schedule_slot_can_access_lessons(self):
-        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
-        response = self.teacher2_client.get(f"/api/v1/academy/lessons/{lesson.id}/")
+    def test_teacher_with_only_schedule_slot_can_access_own_lesson(self):
+        response = self.teacher2_client.get(f"/api/v1/academy/lessons/{self.teacher2_own_lesson.id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_teacher_with_only_schedule_slot_can_mark_attendance(self):
-        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+    def test_teacher_with_only_schedule_slot_can_mark_attendance_on_own_lesson(self):
         response = self.teacher2_client.post(
-            f"/api/v1/academy/lessons/{lesson.id}/attendance/",
+            f"/api/v1/academy/lessons/{self.teacher2_own_lesson.id}/attendance/",
             [{"student": self.student1.id, "status": "present"}],
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_teacher_with_only_schedule_slot_cannot_access_colleagues_lesson_in_same_group(self):
+        # Spec §39: teacher2's own slot doesn't grant access to teacher1's
+        # Lessons in the very same Group.
+        colleagues_lesson = Lesson.objects.filter(group=self.group1, teacher=self.teacher1).first()
+        response = self.teacher2_client.get(f"/api/v1/academy/lessons/{colleagues_lesson.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_unrelated_teacher_still_denied(self):
         outsider = make_teacher("outsider_perm")
@@ -2307,3 +2670,199 @@ class GroupTeacherBackfillMigrationTests(AcademyTestBase):
         count_after_first = GroupTeacher.objects.count()
         self._run_backfill()
         self.assertEqual(GroupTeacher.objects.count(), count_after_first)
+
+
+# ---------------------------------------------------------------------------
+# Spec §39: a Group's several independent Teaching Programs (see
+# models.GroupTeacher) must be fully isolated from each other, even though
+# they share the same Group and the same Students — one teacher's
+# Lessons/Attendance/Homework/HomeworkResult (and GroupTeacher/GroupSchedule/
+# GroupTeacherLessonPlan/Analytics rows) must never be visible to or
+# editable by another teacher of the very same Group.
+# ---------------------------------------------------------------------------
+
+class MultiTeacherIsolationTests(AcademyTestBase):
+    """teacher1 ("Islam") gives IT via the group's legacy fields (Mon 08:00-
+    09:00); teacher2 ("Aizada") gives Frontend via an independent
+    GroupSchedule slot + her own GroupTeacherLessonPlan (Tue 09:00-09:30) —
+    both inside the *same* shared_group, teaching the *same* students."""
+
+    def setUp(self):
+        super().setUp()
+        self.shared_group = Group(
+            name="Shared Multi-Teacher Group", course=self.course, teacher=self.teacher1, room=self.room1,
+            start_date=dt.date(2026, 9, 7), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+            days_of_week=["mon"],
+        )
+        self.shared_group._defer_schedule_sync = True
+        self.shared_group.save()
+
+        self.aizada_slot = GroupSchedule(
+            group=self.shared_group, teacher=self.teacher2, subject=self.subject_frontend,
+            day_of_week="tue", start_time=dt.time(9, 0), end_time=dt.time(9, 30), room=self.room1,
+        )
+        self.aizada_slot._defer_schedule_sync = True
+        self.aizada_slot.save()
+        self.aizada_group_teacher = self.aizada_slot.group_teacher
+
+        GroupTeacherLessonPlan.objects.create(
+            group_teacher=self.aizada_group_teacher, lesson_number=1, topic="Communication",
+        )
+
+        sync_legacy_group_schedule(self.shared_group)
+        generate_lessons_for_group(self.shared_group)
+
+        Student.objects.filter(pk=self.student1.pk).update(group=self.shared_group)
+
+        self.islam_lesson = (
+            Lesson.objects.filter(group=self.shared_group, teacher=self.teacher1).order_by("lesson_number").first()
+        )
+        self.aizada_lesson = (
+            Lesson.objects.filter(group_teacher=self.aizada_group_teacher).order_by("lesson_number").first()
+        )
+        self.assertIsNotNone(self.islam_lesson)
+        self.assertIsNotNone(self.aizada_lesson)
+
+        self.islam_client = self.teacher1_client
+        self.aizada_client = self.teacher2_client
+
+    def test_teacher_lesson_list_excludes_colleagues_lesson_in_same_group(self):
+        response = self.islam_client.get("/api/v1/academy/lessons/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertNotIn(self.aizada_lesson.id, ids)
+
+    def test_teacher_cannot_retrieve_colleagues_lesson(self):
+        response = self.islam_client.get(f"/api/v1/academy/lessons/{self.aizada_lesson.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_teacher_cannot_update_colleagues_lesson(self):
+        response = self.aizada_client.patch(
+            f"/api/v1/academy/lessons/{self.islam_lesson.id}/", {"topic": "Hacked"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.islam_lesson.refresh_from_db()
+        self.assertNotEqual(self.islam_lesson.topic, "Hacked")
+
+    def test_teacher_cannot_mark_attendance_on_colleagues_lesson(self):
+        response = self.islam_client.post(
+            f"/api/v1/academy/lessons/{self.aizada_lesson.id}/attendance/",
+            [{"student": self.student1.id, "status": "present"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Attendance.objects.filter(lesson=self.aizada_lesson).count(), 0)
+
+    def test_teacher_can_mark_attendance_on_own_lesson_in_shared_group(self):
+        response = self.aizada_client.post(
+            f"/api/v1/academy/lessons/{self.aizada_lesson.id}/attendance/",
+            [{"student": self.student1.id, "status": "absent"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Attendance.objects.filter(lesson=self.aizada_lesson).count(), 1)
+
+    def test_attendance_list_excludes_colleagues_records(self):
+        Attendance.objects.create(student=self.student1, lesson=self.islam_lesson, status="present")
+        Attendance.objects.create(student=self.student1, lesson=self.aizada_lesson, status="absent")
+
+        response = self.islam_client.get("/api/v1/academy/attendance/")
+        lesson_ids = {row["lesson"] for row in response.data["results"]}
+        self.assertIn(self.islam_lesson.id, lesson_ids)
+        self.assertNotIn(self.aizada_lesson.id, lesson_ids)
+
+    def test_teacher_cannot_create_homework_for_colleagues_lesson(self):
+        response = self.islam_client.post(
+            "/api/v1/academy/homeworks/",
+            {"lesson": self.aizada_lesson.id, "title": "Hack"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Homework.objects.filter(lesson=self.aizada_lesson).count(), 0)
+
+    def test_homework_list_excludes_colleagues_homework(self):
+        own_hw = Homework.objects.create(lesson=self.islam_lesson, title="IT HW")
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+
+        response = self.islam_client.get("/api/v1/academy/homeworks/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertIn(own_hw.id, ids)
+        self.assertNotIn(other_hw.id, ids)
+
+    def test_homework_result_list_excludes_colleagues_results(self):
+        own_hw = Homework.objects.create(lesson=self.islam_lesson, title="IT HW")
+        other_hw = Homework.objects.create(lesson=self.aizada_lesson, title="Frontend HW")
+        HomeworkResult.objects.create(homework=own_hw, student=self.student1, status="submitted")
+        HomeworkResult.objects.create(homework=other_hw, student=self.student1, status="submitted")
+
+        response = self.islam_client.get("/api/v1/academy/homework-results/")
+        homework_ids = {row["homework"] for row in response.data["results"]}
+        self.assertIn(own_hw.id, homework_ids)
+        self.assertNotIn(other_hw.id, homework_ids)
+
+    def test_group_teacher_list_excludes_colleagues_assignment_in_same_group(self):
+        response = self.islam_client.get("/api/v1/academy/group-teachers/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertNotIn(self.aizada_group_teacher.id, ids)
+
+    def test_group_schedule_list_excludes_colleagues_slot_in_same_group(self):
+        response = self.islam_client.get("/api/v1/academy/group-schedules/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertNotIn(self.aizada_slot.id, ids)
+
+    def test_group_teacher_lesson_plan_list_excludes_colleagues_plan(self):
+        response = self.islam_client.get("/api/v1/academy/group-teacher-lesson-plans/")
+        group_teacher_ids = {row["group_teacher"] for row in response.data["results"]}
+        self.assertNotIn(self.aizada_group_teacher.id, group_teacher_ids)
+
+    def test_group_schedule_endpoint_scoped_to_own_lessons_in_shared_group(self):
+        response = self.islam_client.get(f"/api/v1/academy/groups/{self.shared_group.id}/schedule/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {row["id"] for row in response.data["lessons"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertNotIn(self.aizada_lesson.id, ids)
+
+    def test_admin_group_schedule_endpoint_shows_every_teachers_lessons(self):
+        response = self.admin_client.get(f"/api/v1/academy/groups/{self.shared_group.id}/schedule/")
+        ids = {row["id"] for row in response.data["lessons"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertIn(self.aizada_lesson.id, ids)
+
+    def test_analytics_does_not_mix_teachers_in_shared_group(self):
+        Attendance.objects.create(student=self.student1, lesson=self.islam_lesson, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student1, lesson=self.aizada_lesson, status=Attendance.Status.ABSENT)
+
+        islam_dashboard = get_dashboard(
+            period="custom", start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30),
+            teacher_id=self.teacher1.id, group_id=self.shared_group.id, today=dt.date(2026, 9, 30),
+        )
+        aizada_dashboard = get_dashboard(
+            period="custom", start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30),
+            teacher_id=self.teacher2.id, group_id=self.shared_group.id, today=dt.date(2026, 9, 30),
+        )
+
+        self.assertEqual(islam_dashboard["attendance"]["present_count"]["value"], 1)
+        self.assertEqual(islam_dashboard["attendance"]["absent_count"]["value"], 0)
+        self.assertEqual(islam_dashboard["attendance"]["attendance_rate"]["value"], 100.0)
+        self.assertEqual(aizada_dashboard["attendance"]["present_count"]["value"], 0)
+        self.assertEqual(aizada_dashboard["attendance"]["absent_count"]["value"], 1)
+        self.assertEqual(aizada_dashboard["attendance"]["attendance_rate"]["value"], 0.0)
+
+    def test_analytics_teacher_row_lesson_count_is_not_mixed(self):
+        # teacher1's legacy Teaching Program walks the full 4-lesson course
+        # plan on its own Monday slot; teacher2's individual plan has just
+        # the one lesson_number=1 row on her own Tuesday slot (see setUp) —
+        # each teacher's row must reflect only their own count.
+        dashboard = get_dashboard(
+            period="custom", start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30),
+            group_id=self.shared_group.id, today=dt.date(2026, 9, 30),
+        )
+        workload = {row["teacher_id"]: row["lessons"] for row in dashboard["teachers"]["teacher_workload"]}
+        self.assertEqual(workload[self.teacher1.id], 4)
+        self.assertEqual(workload[self.teacher2.id], 1)
+
+    def test_admin_has_full_access_to_both_teaching_programs(self):
+        response = self.admin_client.get("/api/v1/academy/lessons/")
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertIn(self.islam_lesson.id, ids)
+        self.assertIn(self.aizada_lesson.id, ids)

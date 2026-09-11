@@ -72,7 +72,7 @@ from .serializers import (
     TeacherAvailabilityRequestSerializer,
     TeacherAvailabilitySerializer,
 )
-from .services.analytics import AnalyticsService
+from .services.analytics import COMPARE_CHOICES, get_dashboard
 from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
 from .services.import_export import (
@@ -436,6 +436,14 @@ class GroupViewSet(viewsets.ModelViewSet):
         group = get_object_or_404(self.get_queryset(), pk=pk)
         lessons = group.lessons.select_related("room", "subject", "plan").order_by("date", "start_time")
 
+        # Even within a group they share, one teacher's Lessons must stay
+        # invisible to another teacher of the same group's other Teaching
+        # Programs (see models.GroupTeacher / models.LessonQuerySet.for_teacher) —
+        # Admin still sees every lesson of the group.
+        if not _is_admin(request.user):
+            teacher = _teacher_profile(request)
+            lessons = lessons.for_teacher(teacher) if teacher is not None else lessons.none()
+
         status_param = request.query_params.get("status")
         if status_param:
             lessons = lessons.filter(status=status_param)
@@ -497,7 +505,10 @@ class GroupScheduleViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+        # Own schedule slots only — a Group's other Teaching Programs (see
+        # models.GroupTeacher) belong to other teachers, even within the
+        # same Group.
+        return qs.filter(teacher=teacher)
 
 
 @extend_schema_view(
@@ -533,7 +544,9 @@ class GroupTeacherViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+        # Own Teaching Programs only — another teacher's assignment in the
+        # same Group (e.g. a colleague's Subject) isn't this teacher's to see.
+        return qs.filter(teacher=teacher)
 
 
 @extend_schema_view(
@@ -569,7 +582,7 @@ class GroupTeacherLessonPlanViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_teacher__group_id__in=_teacher_group_ids(teacher))
+        return qs.filter(group_teacher__teacher=teacher)
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +617,9 @@ class LessonViewSet(
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(group_id__in=_teacher_group_ids(teacher))
+        # Only Lessons this teacher actually gives — a Group's other Teaching
+        # Programs (see models.GroupTeacher) belong to other teachers.
+        return qs.for_teacher(teacher)
 
     @extend_schema(
         tags=["Attendance"],
@@ -689,7 +704,10 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(lesson__group_id__in=_teacher_group_ids(teacher))
+        # Only Attendance of Lessons this teacher actually gives (see
+        # models.LessonQuerySet.for_teacher) — a colleague's Teaching Program
+        # in the same Group is off limits.
+        return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
 
 
 # ---------------------------------------------------------------------------
@@ -723,7 +741,9 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(lesson__group_id__in=_teacher_group_ids(teacher))
+        # Only Homework of Lessons this teacher actually gives — a
+        # colleague's Homework in the same Group is off limits.
+        return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
 
     @extend_schema(
         tags=["Homework"],
@@ -806,7 +826,9 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
         teacher = _teacher_profile(self.request)
         if teacher is None:
             return qs.none()
-        return qs.filter(homework__lesson__group_id__in=_teacher_group_ids(teacher))
+        # Only results of Homework belonging to Lessons this teacher
+        # actually gives.
+        return qs.filter(homework__lesson__in=Lesson.objects.for_teacher(teacher))
 
 
 # ---------------------------------------------------------------------------
@@ -883,16 +905,37 @@ class TeacherAvailabilityView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Analytics — one read-only endpoint backed by AnalyticsService. Every
-# number is computed fresh from Lesson/Attendance/Homework/HomeworkResult on
-# each call; nothing here is persisted or kept in sync with anything.
+# Analytics — one read-only endpoint backed by services.analytics.get_dashboard.
+# Every number is computed fresh from Lesson/Attendance/Homework/
+# HomeworkResult/Student/Group/Teacher on each call; nothing here is
+# persisted or kept in sync with anything (spec: read-only, calculation-based,
+# no KPI tables).
 # ---------------------------------------------------------------------------
 
-class AnalyticsDashboardView(APIView):
-    """`GET /analytics/dashboard/?date_from=&date_to=&teacher=&group=`
+_COMPARE_TRUE_ALIASES = {"true", "1", "yes"}
+_COMPARE_FALSE_ALIASES = {"", "false", "0", "no"}
 
-    Admin can see any slice (or everything, with no teacher/group filter).
-    A Teacher is always scoped to their own data — a `teacher` query param
+
+def _resolve_compare_mode(raw: str) -> str | None:
+    """"true" is shorthand for "previous_period" (spec §5's `compare=true`
+    example); blank/"false" means no comparison; anything else must be one
+    of services.analytics.COMPARE_CHOICES (spec §2's named comparison
+    modes)."""
+    value = (raw or "").strip().lower()
+    if value in _COMPARE_FALSE_ALIASES:
+        return None
+    if value in _COMPARE_TRUE_ALIASES:
+        return "previous_period"
+    if value in COMPARE_CHOICES:
+        return value
+    raise DRFValidationError({"compare": [f"Неизвестный режим сравнения: {raw!r}."]})
+
+
+class AnalyticsDashboardView(APIView):
+    """`GET /analytics/dashboard/?period=&start_date=&end_date=&compare=&teacher=&group=&course=&subject=`
+
+    Admin can see any slice (or everything, with no filters at all). A
+    Teacher is always scoped to their own data — a `teacher` query param
     from a Teacher is ignored in favour of their own profile, and a `group`
     param for a group they don't teach comes back as an empty dashboard
     rather than another teacher's numbers.
@@ -906,8 +949,16 @@ class AnalyticsDashboardView(APIView):
         params.is_valid(raise_exception=True)
         data = params.validated_data
 
+        compare_mode = _resolve_compare_mode(data.get("compare", ""))
+        if compare_mode == "custom" and not (data.get("compare_start_date") and data.get("compare_end_date")):
+            raise DRFValidationError(
+                {"compare_start_date": ["compare=custom требует compare_start_date и compare_end_date."]}
+            )
+
         teacher_id = data["teacher"].id if data.get("teacher") else None
         group_id = data["group"].id if data.get("group") else None
+        course_id = data["course"].id if data.get("course") else None
+        subject_id = data["subject"].id if data.get("subject") else None
 
         if not _is_admin(request.user):
             teacher = _teacher_profile(request)
@@ -917,5 +968,16 @@ class AnalyticsDashboardView(APIView):
             if teacher is not None and group_id is not None and not Group.objects.for_teacher(teacher).filter(id=group_id).exists():
                 group_id = 0
 
-        service = AnalyticsService(data["date_from"], data["date_to"], teacher_id=teacher_id, group_id=group_id)
-        return Response(AnalyticsDashboardSerializer(service.get_dashboard()).data)
+        dashboard = get_dashboard(
+            period=data["period"],
+            start_date=data.get("start_date"),
+            end_date=data.get("end_date"),
+            compare=compare_mode,
+            compare_start_date=data.get("compare_start_date"),
+            compare_end_date=data.get("compare_end_date"),
+            teacher_id=teacher_id,
+            group_id=group_id,
+            course_id=course_id,
+            subject_id=subject_id,
+        )
+        return Response(dashboard)
