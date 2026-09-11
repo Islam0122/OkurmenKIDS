@@ -242,14 +242,16 @@ class Student(models.Model):
 
 class GroupQuerySet(models.QuerySet):
     def for_teacher(self, teacher):
-        """Every Group `teacher` has a real stake in: as the group's own
-        primary teacher, or via any active GroupSchedule slot — a group can
-        now have several teachers across different slots, and any of them
-        gets the same full access to the group a single teacher always had.
+        """Every Group `teacher` has a real stake in, via any of their own
+        active GroupSchedule slots — a group can have several teachers
+        across different slots, and any of them gets full access to the
+        group. Deliberately does *not* also check the legacy `Group.teacher`
+        field: every Group that ever had one already got an equivalent
+        GroupTeacher/GroupSchedule row from the one-off backfill migration
+        (see services.group_schedule_sync), so GroupSchedule alone is a
+        complete, correct source of truth here.
         """
-        return self.filter(
-            models.Q(teacher=teacher) | models.Q(schedules__teacher=teacher, schedules__is_active=True)
-        ).distinct()
+        return self.filter(schedules__teacher=teacher, schedules__is_active=True).distinct()
 
 
 class Group(models.Model):
@@ -281,8 +283,8 @@ class Group(models.Model):
         verbose_name="Тренер (устар.)",
         help_text=(
             "Устаревшее поле, оставлено только для совместимости со старыми данными. "
-            "Тренеров группы назначайте через «Тренеры / программы» (GroupTeacher) — "
-            "это поле больше не влияет на расписание и генерацию занятий."
+            "Не отображается в админке или API и не используется генерацией занятий, "
+            "расписанием, аналитикой или правами доступа — источник истины: GroupTeacher/GroupSchedule."
         ),
     )
 
@@ -293,7 +295,7 @@ class Group(models.Model):
         blank=True,
         related_name="groups",
         verbose_name="Аудитория (устар.)",
-        help_text="Устаревшее поле — см. help_text поля «Тренер (устар.)».",
+        help_text="Устаревшее поле, не используется — см. help_text поля «Тренер (устар.)».",
     )
 
     start_date = models.DateField(
@@ -310,21 +312,21 @@ class Group(models.Model):
         null=True,
         blank=True,
         verbose_name="Время начала (устар.)",
-        help_text="Устаревшее поле — см. help_text поля «Тренер (устар.)».",
+        help_text="Устаревшее поле, не используется — см. help_text поля «Тренер (устар.)».",
     )
 
     end_time = models.TimeField(
         null=True,
         blank=True,
         verbose_name="Время окончания (устар.)",
-        help_text="Устаревшее поле — см. help_text поля «Тренер (устар.)».",
+        help_text="Устаревшее поле, не используется — см. help_text поля «Тренер (устар.)».",
     )
 
     days_of_week = models.JSONField(
         default=list,
         blank=True,
         verbose_name="Дни недели (устар.)",
-        help_text="Устаревшее поле, например: ['mon', 'wed', 'fri'] — см. help_text поля «Тренер (устар.)».",
+        help_text="Устаревшее поле, не используется — см. help_text поля «Тренер (устар.)».",
     )
 
     max_students = models.PositiveSmallIntegerField(
@@ -371,60 +373,19 @@ class Group(models.Model):
         return self.students_count >= self.max_students
 
     def clean(self):
-        """Note: none of the checks below are required for a Group to be
-        usable — teacher/room/start_time/end_time/days_of_week are legacy
-        fields (see their help_text) that no longer drive schedule or lesson
-        generation; a Group with every one of them blank is perfectly valid
-        once it has at least one GroupTeacher. These checks only run when an
-        admin still fills them in (for historical/migrated data), as a
-        sanity net on values that would otherwise silently make no sense.
+        """teacher/room/start_time/end_time/days_of_week are legacy fields
+        (see their help_text), kept only for backward compatibility with
+        data that predates GroupTeacher/GroupSchedule — completely inert,
+        and deliberately not validated here (or anywhere else) any more:
+        they're never shown in the admin UI or the API, so nothing can
+        write a new inconsistent value into them, and validating an old
+        migrated value would only ever produce a confusing error on a
+        record an admin has no way to see or fix. GroupSchedule (via
+        GroupSchedule.clean()) is the only place teacher/room schedule
+        conflicts are checked now.
         """
-        errors = {}
-
         if self.end_date and self.start_date and self.end_date < self.start_date:
-            errors["end_date"] = "Дата окончания не может быть раньше даты начала."
-
-        if self.start_time and self.end_time and self.end_time <= self.start_time:
-            errors["end_time"] = "Время окончания должно быть позже времени начала."
-
-        if self.room_id and self.room.capacity and self.max_students and self.max_students > self.room.capacity:
-            errors["max_students"] = (
-                f"Максимум студентов ({self.max_students}) превышает вместимость "
-                f"аудитории «{self.room.name}» ({self.room.capacity})."
-            )
-
-        if self.room_id and self.days_of_week and self.start_time and self.end_time and self.start_date:
-            from .services.room_conflicts import find_room_schedule_conflict
-
-            conflict = find_room_schedule_conflict(
-                room=self.room,
-                days_of_week=self.days_of_week,
-                start_time=self.start_time,
-                end_time=self.end_time,
-                start_date=self.start_date,
-                end_date=self.end_date,
-                exclude_group_id=self.pk,
-            )
-            if conflict is not None:
-                errors["room"] = f"Аудитория «{self.room.name}» уже занята в это время группой «{conflict.name}»."
-
-        if self.teacher_id and self.days_of_week and self.start_time and self.end_time and self.start_date:
-            from .services.group_schedule_conflicts import find_group_teacher_conflict
-
-            conflict = find_group_teacher_conflict(
-                teacher=self.teacher,
-                days_of_week=self.days_of_week,
-                start_time=self.start_time,
-                end_time=self.end_time,
-                start_date=self.start_date,
-                end_date=self.end_date,
-                exclude_group_id=self.pk,
-            )
-            if conflict is not None:
-                errors["teacher"] = f"Тренер «{self.teacher}» уже занят в это время группой «{conflict.name}»."
-
-        if errors:
-            raise ValidationError(errors)
+            raise ValidationError({"end_date": "Дата окончания не может быть раньше даты начала."})
 
 
 # ---------------------------------------------------------------------------
@@ -784,8 +745,12 @@ class LessonQuerySet(models.QuerySet):
     def for_teacher(self, teacher):
         """Only the Lessons `teacher` actually gives — its own explicit
         `teacher` (set by the generator from the GroupSchedule slot), or, for
-        older/legacy lessons with no explicit teacher, the lesson's group's
-        own `teacher` (the same rule as `Lesson.effective_teacher`).
+        older lessons with no explicit teacher, its GroupTeacher's own
+        `teacher` (the same rule as `Lesson.effective_teacher`). Every Lesson
+        has a `group_teacher` — including ones generated before per-Lesson
+        `teacher` existed, backfilled by the one-off migration (see
+        services.lesson_generator / the 0006 migration) — so this never needs
+        to fall back to the legacy `Group.teacher` field.
 
         Deliberately *not* "every Lesson of every Group this teacher has a
         stake in" (contrast GroupQuerySet.for_teacher, used for Group/Student
@@ -796,7 +761,7 @@ class LessonQuerySet(models.QuerySet):
         editable by another teacher of the very same Group.
         """
         return self.filter(
-            models.Q(teacher=teacher) | models.Q(teacher__isnull=True, group__teacher=teacher)
+            models.Q(teacher=teacher) | models.Q(teacher__isnull=True, group_teacher__teacher=teacher)
         )
 
 
@@ -874,9 +839,8 @@ class Lesson(models.Model):
         verbose_name="Тренер",
         help_text=(
             "Тренер, который ведёт именно это занятие. Заполняется генератором из "
-            "расписания группы; для занятий, созданных до появления нескольких "
-            "тренеров на группу, может быть пустым — тогда тренером считается "
-            "group.teacher (см. apps.academy.permissions)."
+            "расписания группы; может быть пустым — тогда тренером считается тренер "
+            "из group_teacher (см. Lesson.effective_teacher)."
         ),
     )
 
@@ -1013,12 +977,17 @@ class Lesson(models.Model):
         """The Teacher who actually gives this lesson.
 
         `teacher` is set by the generator whenever the lesson came from a
-        GroupSchedule slot; lessons generated before multi-teacher support
-        (or otherwise created without one) fall back to the group's own
-        `teacher` — the same single-teacher assumption the whole app made
-        before this field existed.
+        GroupSchedule slot; lessons created without one (or generated before
+        per-Lesson `teacher` existed) fall back to their own GroupTeacher's
+        `teacher` — never the legacy `Group.teacher` field, which every
+        Lesson's `group_teacher` FK already makes redundant (see
+        `Lesson.save()` and the 0006 backfill migration).
         """
-        return self.teacher or self.group.teacher
+        if self.teacher_id:
+            return self.teacher
+        if self.group_teacher_id:
+            return self.group_teacher.teacher
+        return None
 
 
 # ---------------------------------------------------------------------------

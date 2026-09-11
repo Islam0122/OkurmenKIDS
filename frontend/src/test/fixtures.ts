@@ -1,4 +1,12 @@
-import type { Group, GroupScheduleLesson, Lesson, Subject, Teacher } from '@/types/academy'
+import type {
+  Group,
+  GroupScheduleLesson,
+  GroupScheduleSlot,
+  GroupTeacherSummary,
+  Lesson,
+  Subject,
+  Teacher,
+} from '@/types/academy'
 import type { AttendanceRecord } from '@/types/attendance'
 import type { User } from '@/types/auth'
 import type { Homework, HomeworkResult } from '@/types/homework'
@@ -53,21 +61,55 @@ export function buildTeacher(overrides: Partial<Teacher> = {}): Teacher {
   }
 }
 
+export function buildGroupScheduleSlot(overrides: Partial<GroupScheduleSlot> = {}): GroupScheduleSlot {
+  return {
+    id: 1,
+    group: 1,
+    teacher: 1,
+    teacher_name: 'Айгуль Сатыбалдиева',
+    subject: 1,
+    subject_name: 'Робототехника',
+    day_of_week: 'mon',
+    day_of_week_label: 'Понедельник',
+    start_time: '15:00:00',
+    end_time: '16:30:00',
+    room: 1,
+    room_name: 'Кабинет 101',
+    is_active: true,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+export function buildGroupTeacherSummary(overrides: Partial<GroupTeacherSummary> = {}): GroupTeacherSummary {
+  return {
+    id: 1,
+    group: 1,
+    teacher: 1,
+    teacher_detail: buildTeacher(),
+    subject: 1,
+    subject_detail: buildSubject(),
+    is_active: true,
+    is_legacy_primary: false,
+    schedules: [buildGroupScheduleSlot()],
+    lesson_plans_count: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
 export function buildGroup(overrides: Partial<Group> = {}): Group {
   return {
     id: 1,
     name: 'Роботы-1',
     course: 1,
     course_name: 'Робототехника: базовый курс',
-    teacher: 1,
-    teacher_name: 'Айгуль Сатыбалдиева',
-    room: 1,
-    room_name: 'Кабинет 101',
     start_date: '2026-01-10',
     end_date: null,
-    start_time: '15:00:00',
-    end_time: '16:30:00',
-    days_of_week: ['mon', 'wed'],
+    schedules: [buildGroupScheduleSlot()],
+    teachers: [buildGroupTeacherSummary()],
     students_count: 2,
     max_students: 12,
     status: 'active',

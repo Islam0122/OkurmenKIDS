@@ -1,12 +1,12 @@
 """Teacher KPIs (spec §3 TEACHERS).
 
 `teachers_with_lessons`/`teachers_without_lessons`/workload are all keyed
-on each Lesson's *effective* teacher (its own `teacher`, or — for
-older/legacy lessons with none — its group's own `teacher`; see
-Lesson.effective_teacher), via `Coalesce`, never a Group's single legacy
-`teacher` field alone — a Group can have several teachers, each running
-their own independent Teaching Assignment (models.GroupTeacher), and their
-figures must never be mixed together (spec: Teaching Assignment isolation).
+on each Lesson's *effective* teacher (its own `teacher`, or — for lessons
+with none — its GroupTeacher's own `teacher`; see Lesson.effective_teacher),
+via `Coalesce`, never a Group's single legacy `teacher` field — a Group can
+have several teachers, each running their own independent Teaching
+Assignment (models.GroupTeacher), and their figures must never be mixed
+together (spec: Teaching Assignment isolation).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _workload(scope: AnalyticsScope, date_range: DateRange) -> list[dict]:
 
     rows = (
         scope.lessons_qs(date_range=date_range)
-        .annotate(eff_teacher=Coalesce("teacher_id", "group__teacher_id"))
+        .annotate(eff_teacher=Coalesce("teacher_id", "group_teacher__teacher_id"))
         .values("eff_teacher")
         .annotate(lessons=Count("id"))
         .order_by("-lessons")

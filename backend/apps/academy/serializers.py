@@ -22,11 +22,9 @@ from .models import (
     Student,
 )
 from .services.group_schedule_conflicts import (
-    find_group_teacher_conflict,
     find_schedule_room_conflict,
     find_schedule_teacher_conflict,
 )
-from .services.room_conflicts import find_room_schedule_conflict
 
 
 def _is_teacher(user) -> bool:
@@ -423,8 +421,14 @@ class GroupTeacherSerializer(serializers.ModelSerializer):
 
 
 class GroupSerializer(serializers.ModelSerializer):
-    teacher_name = serializers.CharField(source="teacher.__str__", read_only=True)
-    room_name = serializers.CharField(source="room.name", read_only=True, default=None)
+    """teacher/room/start_time/end_time/days_of_week are legacy fields on
+    the `Group` model, kept only for backward compatibility with data that
+    predates GroupTeacher/GroupSchedule — deliberately not exposed here (or
+    anywhere else in the API). A Group's real teacher/subject/schedule
+    always comes from `teachers` (GroupTeacherSerializer) and `schedules`
+    (GroupScheduleSlotSerializer) below.
+    """
+
     course_name = serializers.CharField(source="course.name", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     students_count = serializers.SerializerMethodField()
@@ -445,15 +449,8 @@ class GroupSerializer(serializers.ModelSerializer):
             "name",
             "course",
             "course_name",
-            "teacher",
-            "teacher_name",
-            "room",
-            "room_name",
             "start_date",
             "end_date",
-            "start_time",
-            "end_time",
-            "days_of_week",
             "schedules",
             "teachers",
             "students",
@@ -469,17 +466,6 @@ class GroupSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Only active teachers can be assigned to a group. teacher/room/
-        # start_time/end_time/days_of_week are legacy fields (see their
-        # help_text on the model) — kept writable for historical data, but
-        # never required: a Group is fully usable with every one of them
-        # blank, once it has at least one GroupTeacher/GroupSchedule.
-        self.fields["teacher"].queryset = Teacher.objects.filter(is_active=True)
-        self.fields["teacher"].required = False
-        self.fields["room"].required = False
-        self.fields["start_time"].required = False
-        self.fields["end_time"].required = False
-        self.fields["days_of_week"].required = False
         # Defensive scoping to match every other student-accepting field in
         # this app (e.g. AttendanceSerializer/HomeworkResultSerializer) —
         # inert today since GroupViewSet writes are admin-only
@@ -496,51 +482,6 @@ class GroupSerializer(serializers.ModelSerializer):
         end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if end_date and start_date and end_date < start_date:
             raise serializers.ValidationError({"end_date": "Дата окончания не может быть раньше даты начала."})
-
-        start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))
-        end_time = attrs.get("end_time", getattr(self.instance, "end_time", None))
-        if start_time and end_time and end_time <= start_time:
-            raise serializers.ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
-
-        days_of_week = attrs.get("days_of_week", getattr(self.instance, "days_of_week", None))
-
-        room = attrs.get("room", getattr(self.instance, "room", None))
-        max_students = attrs.get("max_students", getattr(self.instance, "max_students", None))
-        if room is not None and room.capacity and max_students and max_students > room.capacity:
-            raise serializers.ValidationError(
-                {"max_students": f"Максимум студентов превышает вместимость аудитории «{room.name}» ({room.capacity})."}
-            )
-
-        if room is not None and days_of_week and start_time and end_time and start_date:
-            conflict = find_room_schedule_conflict(
-                room=room,
-                days_of_week=days_of_week,
-                start_time=start_time,
-                end_time=end_time,
-                start_date=start_date,
-                end_date=end_date,
-                exclude_group_id=getattr(self.instance, "pk", None),
-            )
-            if conflict is not None:
-                raise serializers.ValidationError(
-                    {"room": f"Аудитория «{room.name}» уже занята в это время группой «{conflict.name}»."}
-                )
-
-        teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
-        if teacher is not None and days_of_week and start_time and end_time and start_date:
-            conflict = find_group_teacher_conflict(
-                teacher=teacher,
-                days_of_week=days_of_week,
-                start_time=start_time,
-                end_time=end_time,
-                start_date=start_date,
-                end_date=end_date,
-                exclude_group_id=getattr(self.instance, "pk", None),
-            )
-            if conflict is not None:
-                raise serializers.ValidationError(
-                    {"teacher": f"Тренер «{teacher}» уже занят в это время группой «{conflict.name}»."}
-                )
 
         return attrs
 

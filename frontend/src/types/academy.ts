@@ -71,21 +71,60 @@ export interface Room {
 
 export type GroupStatus = 'active' | 'paused' | 'completed' | 'cancelled'
 
-/** `apps.academy.serializers.GroupSerializer` (read shape — `students` is write-only on the API). */
+/** `apps.academy.serializers.GroupScheduleSlotSerializer` — one recurring
+ * weekly slot of a Teaching Program (see `GroupTeacherSummary`). */
+export interface GroupScheduleSlot {
+  id: number
+  group: number
+  teacher: number
+  teacher_name: string
+  subject: number | null
+  subject_name: string | null
+  day_of_week: DayOfWeek
+  day_of_week_label: string
+  start_time: string
+  end_time: string
+  room: number | null
+  room_name: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** `apps.academy.serializers.GroupTeacherSerializer` — one independent
+ * Teaching Program within a Group: one teacher teaching one subject on its
+ * own schedule. A Group can have several of these, each fully equal — none
+ * is a "main" teacher/schedule. */
+export interface GroupTeacherSummary {
+  id: number
+  group: number
+  teacher: number
+  teacher_detail: Teacher
+  subject: number | null
+  subject_detail: Subject | null
+  is_active: boolean
+  is_legacy_primary: boolean
+  schedules: GroupScheduleSlot[]
+  lesson_plans_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** `apps.academy.serializers.GroupSerializer` (read shape — `students` is
+ * write-only on the API). `teacher`/`room`/`start_time`/`end_time`/
+ * `days_of_week` are legacy fields on the backend model, kept only for
+ * historical data — never exposed here; `teachers` (this Group's Teaching
+ * Programs) and `schedules` (every one of their slots, flattened) are the
+ * real source of truth for who teaches what, when, and where. */
 export interface Group {
   id: number
   name: string
   course: number
   course_name: string
-  teacher: number
-  teacher_name: string
-  room: number | null
-  room_name: string | null
   start_date: string
   end_date: string | null
-  start_time: string
-  end_time: string
-  days_of_week: DayOfWeek[]
+  schedules: GroupScheduleSlot[]
+  teachers: GroupTeacherSummary[]
   students_count: number
   max_students: number | null
   status: GroupStatus
@@ -146,8 +185,8 @@ export interface GroupScheduleLesson extends Lesson {
 }
 
 /** `apps.academy.serializers.GroupScheduleSerializer` — response of
- * `GET /academy/groups/{id}/schedule/`: the group's own recurring pattern
- * (days_of_week/start_time/end_time/room) plus every dated Lesson it has. */
+ * `GET /api/v1/groups/{id}/schedule/`: the group itself (with its Teaching
+ * Programs' own recurring schedule slots) plus every dated Lesson it has. */
 export interface GroupSchedule {
   group: Group
   lessons: GroupScheduleLesson[]

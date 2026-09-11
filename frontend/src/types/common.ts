@@ -6,7 +6,7 @@ export interface Paginated<T> {
   results: T[]
 }
 
-/** `Group.days_of_week` / `CourseLessonPlan` weekday codes, as stored by the backend. */
+/** `GroupScheduleSlot.day_of_week` / `CourseLessonPlan` weekday codes, as stored by the backend. */
 export type DayOfWeek = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
 
 export const DAY_LABELS: Record<DayOfWeek, string> = {

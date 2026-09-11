@@ -52,10 +52,7 @@ class AnalyticsScope:
         # each Lesson's own `subject` — the real source of truth.
         qs = Group.objects.all()
         if self.teacher_id is not None:
-            qs = qs.filter(
-                Q(teacher_id=self.teacher_id)
-                | Q(teachers__teacher_id=self.teacher_id, teachers__is_active=True)
-            )
+            qs = qs.filter(teachers__teacher_id=self.teacher_id, teachers__is_active=True)
         if self.group_id is not None:
             qs = qs.filter(id=self.group_id)
         if self.course_id is not None:
@@ -70,15 +67,9 @@ class AnalyticsScope:
         if self.teacher_id is not None:
             qs = qs.filter(id=self.teacher_id)
         if self.group_id is not None:
-            qs = qs.filter(
-                Q(groups__id=self.group_id)
-                | Q(group_assignments__group_id=self.group_id, group_assignments__is_active=True)
-            )
+            qs = qs.filter(group_assignments__group_id=self.group_id, group_assignments__is_active=True)
         if self.course_id is not None:
-            qs = qs.filter(
-                Q(groups__course_id=self.course_id)
-                | Q(group_assignments__group__course_id=self.course_id, group_assignments__is_active=True)
-            )
+            qs = qs.filter(group_assignments__group__course_id=self.course_id, group_assignments__is_active=True)
         if self.group_id is not None or self.course_id is not None:
             qs = qs.distinct()
         return qs
@@ -88,16 +79,18 @@ class AnalyticsScope:
 
     def _effective_teacher_q(self, prefix: str = "") -> Q | None:
         """Q restricting to rows whose Lesson's *effective* teacher (its own
-        `teacher`, or — for older/legacy lessons with none — its group's own
+        `teacher`, or — for lessons with none — its GroupTeacher's own
         `teacher`; see Lesson.effective_teacher) is `self.teacher_id`, for a
         Lesson reached via `prefix` field lookups (e.g. "lesson__" from
-        Attendance, "homework__lesson__" from HomeworkResult). None when no
-        teacher filter is active.
+        Attendance, "homework__lesson__" from HomeworkResult). Never the
+        legacy `Group.teacher` field — every Lesson's `group_teacher` FK
+        already covers that case (see the 0006 backfill migration). None
+        when no teacher filter is active.
         """
         if self.teacher_id is None:
             return None
         return Q(**{f"{prefix}teacher_id": self.teacher_id}) | Q(
-            **{f"{prefix}teacher__isnull": True, f"{prefix}group__teacher_id": self.teacher_id}
+            **{f"{prefix}teacher__isnull": True, f"{prefix}group_teacher__teacher_id": self.teacher_id}
         )
 
     def lessons_qs(self, *, date_range: DateRange | None = None) -> QuerySet[Lesson]:
