@@ -1040,34 +1040,33 @@ button.ok-password-toggle.btn {
   box-shadow: none !important;
 }
 
-/* auto-fill lets this size to the field's real (now full-width) container
-   instead of a fixed viewport breakpoint — 3 columns on a typical laptop
-   width, naturally opening up to 4 on a wide desktop fieldset. Tablet/
-   mobile still get explicit fixed counts since at those widths the sidebar
-   nav is usually collapsed and available width no longer tracks viewport
-   width predictably. */
 .ok-subject-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.625rem;
+  /* Grid items stretch to the tallest one in their row by default — align-
+     items: start turns that off, so a card with no description (shorter)
+     doesn't get inflated to match a taller neighbour sharing its row. */
+  align-items: start;
 }
 @media (max-width: 991px) { .ok-subject-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .ok-subject-cards-grid { grid-template-columns: 1fr; } }
 
-/* A column layout (top row of checkbox/icon/check, title+description
-   below spanning the full card) rather than one long horizontal row —
-   the row's chrome (checkbox+icon+check) no longer eats into the text's
-   width, so cards stay comfortable to read even at 3-4 per row on a
-   typical laptop-width fieldset, instead of forcing single words like
-   "JavaScript" to break mid-word. */
+/* One inline row — checkbox, icon, title, check-badge — with an optional
+   description wrapped onto its own full-width line underneath (flex-wrap +
+   flex-basis: 100% on the description, rather than a separate content
+   block). Compact, dense selection cards, not dashboard panels: no
+   min-height, so a card with no description is naturally shorter than one
+   with — height comes from content + padding alone. */
 .ok-subject-card {
   display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 1rem 1.1rem;
-  min-height: 6.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.625rem 0.75rem;
+  min-height: 0;
   border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius-lg);
+  border-radius: 0.625rem;
   background: var(--ok-surface);
   cursor: pointer;
   user-select: none;
@@ -1088,53 +1087,70 @@ button.ok-password-toggle.btn {
 .ok-subject-card:focus-visible { outline: 2px solid var(--ok-primary); outline-offset: 2px; }
 .ok-subject-card.is-hidden { display: none; }
 
-.ok-subject-card-row { display: flex; align-items: center; gap: 0.6rem; }
-
 .ok-subject-card-checkbox { flex-shrink: 0; display: flex; }
 .ok-subject-card-checkbox input[type="checkbox"] {
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1rem;
+  height: 1rem;
   accent-color: var(--ok-primary);
   pointer-events: none;
 }
 
 .ok-subject-card-icon {
   flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
+  width: 1.75rem;
+  height: 1.75rem;
   border-radius: var(--ok-radius-sm);
   background: var(--ok-surface-hover);
   color: var(--ok-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 .ok-subject-card.selected .ok-subject-card-icon { background: var(--ok-primary); color: var(--ok-on-primary); }
 
-/* check-badge is pushed to the far right of the top row, clear of the
-   checkbox/icon on the left — it never competes with the title/description
-   for width, since those live in their own row below. */
+.ok-subject-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ok-text);
+  overflow-wrap: anywhere;
+}
+
+/* flex-grow: 1 on the title already pushes this to the row's far right,
+   clear of the checkbox/icon on the left. */
 .ok-subject-card-check {
   flex-shrink: 0;
-  margin-left: auto;
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.125rem;
+  height: 1.125rem;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-size: 0.62rem;
   color: transparent;
   background: transparent;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 .ok-subject-card.selected .ok-subject-card-check { color: var(--ok-on-primary); background: var(--ok-primary); }
 
-.ok-subject-card-content { min-width: 0; }
-.ok-subject-card-title { display: block; font-size: 0.95rem; font-weight: 600; color: var(--ok-text); overflow-wrap: anywhere; }
-.ok-subject-card-description { display: block; font-size: 0.8rem; color: var(--ok-text-muted); margin-top: 0.25rem; overflow-wrap: anywhere; }
+/* flex-basis: 100% forces this onto its own line under the row above,
+   indented (via padding, not margin, so it stays inside the flex item's
+   own 100%-of-row width instead of overflowing past it) to line up under
+   the title rather than the checkbox. */
+.ok-subject-card-description {
+  flex: 0 0 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-left: calc(1rem + 1.75rem + 0.4rem * 2);
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: var(--ok-text-muted);
+  overflow-wrap: anywhere;
+}
 
 .ok-subject-cards-empty {
   grid-column: 1 / -1;
