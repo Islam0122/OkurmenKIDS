@@ -965,6 +965,162 @@ button.ok-password-toggle.btn {
 .ok-ms-footer strong { color: var(--ok-text); }
 
 /* ------------------------------------------------------------------ */
+/* Subject picker — checkbox card grid (Course.subjects, replaces the   */
+/* dual-list filter_horizontal widget). The source <select multiple>    */
+/* reuses .ok-ms-native above to hide without leaving the DOM/tabbing.  */
+/* ------------------------------------------------------------------ */
+
+/* Jazzmin lays every field out as a label(col-sm-3) + input(col-sm-9) row,
+   fine for a text input but far too narrow (~230px) for a card grid — make
+   this one field's row stack full-width instead, label above the grid. */
+.form-group.field-subjects > .row { flex-wrap: wrap; }
+.form-group.field-subjects > .row > label.col-sm-3 { flex: 0 0 100%; max-width: 100%; margin-bottom: 0.5rem; }
+.form-group.field-subjects > .row > .col-sm-9 { flex: 0 0 100%; max-width: 100%; }
+
+.ok-subject-cards { border: 1px solid var(--ok-border); border-radius: var(--ok-radius); background: var(--ok-surface); overflow: hidden; }
+
+.ok-subject-cards-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  background: var(--ok-surface-hover);
+  border-bottom: 1px solid var(--ok-border);
+}
+.ok-subject-cards-header > i { color: var(--ok-primary); font-size: 1.1rem; flex-shrink: 0; }
+.ok-subject-cards-title { font-size: 0.9rem; font-weight: 700; color: var(--ok-text); }
+.ok-subject-cards-subtitle { font-size: 0.78rem; color: var(--ok-text-muted); margin-top: 0.1rem; }
+
+.ok-subject-cards-body { padding: 1rem; }
+
+.ok-subject-cards-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-surface);
+}
+.ok-subject-cards-search i { color: var(--ok-text-muted); }
+.ok-subject-cards-search input {
+  border: none !important;
+  outline: none;
+  background: transparent !important;
+  padding: 0.15rem 0 !important;
+  min-height: auto !important;
+  font-size: 0.88rem;
+  flex: 1;
+  color: var(--ok-text);
+  box-shadow: none !important;
+}
+
+.ok-subject-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+@media (max-width: 991px) { .ok-subject-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .ok-subject-cards-grid { grid-template-columns: 1fr; } }
+
+.ok-subject-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.65rem 0.6rem;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  background: var(--ok-surface);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+.ok-subject-card:hover {
+  border-color: var(--ok-border-strong);
+  background: var(--ok-surface-hover);
+  box-shadow: var(--ok-shadow-hover);
+  transform: translateY(-1px);
+}
+.ok-subject-card.selected {
+  border-color: var(--ok-primary);
+  background: var(--ok-primary-soft);
+  box-shadow: 0 0 0 1px var(--ok-primary) inset;
+}
+.ok-subject-card.selected:hover { transform: translateY(-1px); }
+.ok-subject-card:focus-visible { outline: 2px solid var(--ok-primary); outline-offset: 2px; }
+.ok-subject-card.is-hidden { display: none; }
+
+.ok-subject-card-checkbox { flex-shrink: 0; margin-top: 0.15rem; }
+.ok-subject-card-checkbox input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--ok-primary);
+  pointer-events: none;
+}
+
+.ok-subject-card-icon {
+  flex-shrink: 0;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-surface-hover);
+  color: var(--ok-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.ok-subject-card.selected .ok-subject-card-icon { background: var(--ok-primary); color: var(--ok-on-primary); }
+/* At single-column width the card itself is narrow too (phone screens) —
+   drop the purely-decorative icon so the title/description keep a
+   comfortable text column instead of wrapping one word per line. Placed
+   after the base rule above so it actually wins at this width. */
+@media (max-width: 480px) { .ok-subject-card-icon { display: none; } }
+
+.ok-subject-card-content { flex: 1; min-width: 0; }
+.ok-subject-card-title { display: block; font-size: 0.87rem; font-weight: 600; color: var(--ok-text); overflow-wrap: anywhere; }
+.ok-subject-card-description { display: block; font-size: 0.75rem; color: var(--ok-text-muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
+
+.ok-subject-card-check {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  color: transparent;
+  background: transparent;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.ok-subject-card.selected .ok-subject-card-check { color: var(--ok-on-primary); background: var(--ok-primary); }
+
+.ok-subject-cards-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.75rem 0;
+  color: var(--ok-text-muted);
+  font-size: 0.85rem;
+}
+.ok-subject-cards-empty i { font-size: 1.3rem; }
+
+.ok-subject-cards-footer {
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--ok-border);
+  font-size: 0.76rem;
+  color: var(--ok-text-muted);
+}
+.ok-subject-cards-footer strong { color: var(--ok-text); }
+
+/* ------------------------------------------------------------------ */
 /* Filters sidebar                                                     */
 /* ------------------------------------------------------------------ */
 

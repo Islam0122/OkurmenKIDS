@@ -40,6 +40,7 @@ from .services.import_export import (
     preview_students_import,
 )
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+from .widgets import SubjectCardsWidget
 
 DAY_CHOICES = [(code, WEEKDAY_LABELS_SHORT[code]) for code in WEEKDAY_CODES]
 
@@ -52,11 +53,32 @@ def _badge(css: str, label: str) -> str:
 # Course catalogue
 # ---------------------------------------------------------------------------
 
+class CourseAdminForm(forms.ModelForm):
+    """Only swaps the ``subjects`` widget — everything else about the form
+    (validation, ``save()``, the M2M write) stays exactly what
+    ``ModelForm``/``ModelAdmin`` already do for a plain ``ManyToManyField``.
+    """
+
+    class Meta:
+        model = Course
+        fields = "__all__"
+        widgets = {
+            # "select2-hidden-accessible" isn't ours — it's the exact class
+            # Jazzmin's own change_form.js checks for (`noSelect2` in
+            # jazzmin/static/jazzmin/js/change_form.js) to skip a <select>
+            # it would otherwise auto-upgrade with Select2. Setting it
+            # up front (rather than after the fact) stops that from ever
+            # running on this field, since jazzmin's check happens on
+            # page load against whatever classes are already in the HTML.
+            "subjects": SubjectCardsWidget(attrs={"class": "ok-subject-cards-source select2-hidden-accessible"}),
+        }
+
+
 @admin.register(Course)
 class CourseAdmin(TemplatedIOAdminMixin, admin.ModelAdmin):
     io_adapter_key = "academy.course"
+    form = CourseAdminForm
     list_display = ("name", "count_lesson", "subjects_list", "lesson_plans_progress", "created_at")
-    filter_horizontal = ("subjects",)
     search_fields = ("name", "description")
     ordering = ("name",)
     readonly_fields = ("created_at", "updated_at")
@@ -68,6 +90,16 @@ class CourseAdmin(TemplatedIOAdminMixin, admin.ModelAdmin):
         ("Основная информация", {"fields": ("name", "count_lesson", "subjects", "description")}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        # Django admin always appends "Hold down Control..." to any
+        # SelectMultiple-based widget's help text (see ModelAdmin.
+        # formfield_for_dbfield) — meaningless for a click-to-toggle card
+        # grid, so put the model field's own help text back afterwards.
+        formfield = super().formfield_for_manytomany(db_field, request, **kwargs)
+        if db_field.name == "subjects" and formfield is not None:
+            formfield.help_text = db_field.help_text
+        return formfield
 
     def get_queryset(self, request):
         return (
