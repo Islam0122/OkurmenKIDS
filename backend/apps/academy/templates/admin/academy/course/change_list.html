@@ -1,0 +1,16 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  <li>
+    <a href="{% url 'admin:academy_course_export' %}?format=csv&{{ request.GET.urlencode }}" class="btn btn-secondary" style="padding:0.3rem 0.75rem; display:inline-flex; align-items:center; gap:0.35rem;">
+      <i class="bi bi-download"></i> Export CSV
+    </a>
+  </li>
+  <li>
+    <a href="{% url 'admin:academy_course_export' %}?format=xlsx&{{ request.GET.urlencode }}" class="btn btn-secondary" style="padding:0.3rem 0.75rem; display:inline-flex; align-items:center; gap:0.35rem;">
+      <i class="bi bi-download"></i> Export XLSX
+    </a>
+  </li>
+  {{ block.super }}
+{% endblock %}

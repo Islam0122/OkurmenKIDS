@@ -112,22 +112,36 @@ def is_valid_phone(value: str) -> bool:
     return bool(_PHONE_RE.match(value))
 
 
-def build_export_response(rows: list[dict], fieldnames: list[str], fmt: str, base_filename: str) -> HttpResponse:
+def build_export_response(
+    rows: list[dict],
+    fieldnames: list[str],
+    fmt: str,
+    base_filename: str,
+    headers: dict[str, str] | None = None,
+) -> HttpResponse:
+    """Build a CSV/XLSX download from ``rows`` (dicts keyed by ``fieldnames``).
+
+    ``headers`` optionally maps a field name to the column label shown in the
+    file (e.g. ``{"name": "Название курса"}``); fields missing from the map
+    fall back to their raw name, and omitting ``headers`` entirely keeps the
+    original behaviour of using ``fieldnames`` as the header row verbatim.
+    """
     fmt = (fmt or "csv").strip().lower()
+    header_labels = [(headers or {}).get(field, field) for field in fieldnames]
     timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
     if fmt == "xlsx":
-        return _build_xlsx_response(rows, fieldnames, f"{base_filename}_{timestamp}.xlsx")
+        return _build_xlsx_response(rows, fieldnames, header_labels, f"{base_filename}_{timestamp}.xlsx")
     if fmt == "csv":
-        return _build_csv_response(rows, fieldnames, f"{base_filename}_{timestamp}.csv")
+        return _build_csv_response(rows, fieldnames, header_labels, f"{base_filename}_{timestamp}.csv")
     raise UnsupportedFileFormat("Параметр format должен быть 'csv' или 'xlsx'.")
 
 
-def _build_csv_response(rows: list[dict], fieldnames: list[str], filename: str) -> HttpResponse:
+def _build_csv_response(rows: list[dict], fieldnames: list[str], header_labels: list[str], filename: str) -> HttpResponse:
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
-    writer.writeheader()
+    writer = csv.writer(buffer)
+    writer.writerow(header_labels)
     for row in rows:
-        writer.writerow(row)
+        writer.writerow([row.get(field, "") for field in fieldnames])
 
     # Leading BOM keeps Excel from mangling Cyrillic content on Windows.
     response = HttpResponse("﻿" + buffer.getvalue(), content_type="text/csv; charset=utf-8")
@@ -135,10 +149,10 @@ def _build_csv_response(rows: list[dict], fieldnames: list[str], filename: str) 
     return response
 
 
-def _build_xlsx_response(rows: list[dict], fieldnames: list[str], filename: str) -> HttpResponse:
+def _build_xlsx_response(rows: list[dict], fieldnames: list[str], header_labels: list[str], filename: str) -> HttpResponse:
     workbook = Workbook()
     sheet = workbook.active
-    sheet.append(fieldnames)
+    sheet.append(header_labels)
     for row in rows:
         sheet.append([row.get(field, "") for field in fieldnames])
 
