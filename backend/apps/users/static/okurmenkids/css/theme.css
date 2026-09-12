@@ -1322,6 +1322,40 @@ button.ok-password-toggle.btn {
   }
 }
 
+/* Teacher changelist toolbar (/admin/users/teacher/) — Jazzmin already
+   wraps the filters/search form and the "Добавить Тренер" link in a
+   `d-flex justify-content-between` row with `flex-grow-1` on the form,
+   which in principle should already span the full toolbar width. But the
+   Add link ships with only Bootstrap's `float-end` utility (a no-op on a
+   flex item — floats don't apply there) and no flex sizing of its own, so
+   it has nothing pinning it to the true right edge once anything upstream
+   changes the form's effective width. Pin the intended layout explicitly
+   with flex properties (no absolute positioning) instead of relying on
+   that implicit behaviour: the row spans 100% of the toolbar, the
+   filters/search form claims all remaining free space, and `margin-left:
+   auto` — the standard flex idiom for pushing one item to the far end of
+   its row — pins the Add link to the right edge regardless of the form's
+   own width. Scoped to this one page only, via the body classes Jazzmin
+   stamps for the Teacher changelist. */
+body.model-teacher.change-list #change-list-filters,
+body.model-teacher.change-list #change-list-filters > div {
+  width: 100%;
+  max-width: none;
+}
+body.model-teacher.change-list #change-list-filters > div {
+  display: flex;
+  flex-wrap: wrap;
+}
+body.model-teacher.change-list #changelist-search {
+  flex: 1 1 auto;
+  max-width: none;
+}
+body.model-teacher.change-list #change-list-filters > div > a.float-end {
+  float: none;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* Actions row — make "Go" clearly primary, and visually warn when a
    destructive action (name/label containing "удал") is selected. */
 .actions select { min-width: 220px; }
