@@ -1672,6 +1672,12 @@ body.model-teacher.change-list #change-list-filters > div > a.float-end {
   color: var(--ok-text-secondary); font-size: 0.85rem; margin-bottom: 0.6rem;
 }
 .ok-trainer-badges { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.ok-trainer-submeta {
+  display: flex; gap: 1rem; flex-wrap: wrap;
+  margin-top: 0.6rem; font-size: 0.82rem; color: var(--ok-text-muted);
+}
+.ok-trainer-submeta span { display: flex; align-items: center; gap: 0.35rem; }
+.ok-trainer-submeta i { color: var(--ok-text-muted); }
 
 .ok-section-subtitle { color: var(--ok-text-muted); font-size: 0.82rem; margin: -0.25rem 0 1.1rem; }
 
@@ -1696,19 +1702,9 @@ body.model-teacher.change-list #change-list-filters > div > a.float-end {
    validates it unchanged) but isn't shown as a raw account picker. */
 .ok-hidden-field { display: none; }
 
-.ok-mini-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-.ok-mini-stat {
-  text-align: center;
-  padding: 0.85rem 0.5rem;
-  border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius);
-  background: var(--ok-surface-hover);
-}
-.ok-mini-stat-value { font-size: 1.4rem; font-weight: 800; color: var(--ok-primary); line-height: 1; }
-.ok-mini-stat-label { font-size: 0.75rem; color: var(--ok-text-muted); margin-top: 0.25rem; }
-
 .ok-quick-actions { display: flex; flex-direction: column; gap: 0.6rem; }
 .ok-btn-block { width: 100%; justify-content: center; }
+.ok-btn-sm { padding: 0.42rem 0.85rem; font-size: 0.8rem; }
 
 /* System info collapse — native <details>/<summary>, no JS required */
 .ok-collapse summary { cursor: pointer; list-style: none; }
@@ -1718,7 +1714,125 @@ body.model-teacher.change-list #change-list-filters > div > a.float-end {
 .ok-collapse-chevron { color: var(--ok-text-muted); margin-left: auto; transition: transform 0.2s ease; }
 .ok-collapse[open] > .ok-collapse-summary .ok-collapse-chevron { transform: rotate(180deg); }
 
+/* Photo field — preview + styled upload/remove controls, replacing the
+   raw ClearableFileInput's "Currently / Clear / Change: no file chosen" text.
+   Real <input type="file"> stays in the DOM (only its template changed —
+   see widgets.PhotoPreviewWidget), so upload/clear submit exactly as before. */
+.ok-photo-field { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+
+.ok-photo-preview {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--ok-primary-soft); color: var(--ok-primary);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem; flex-shrink: 0; overflow: hidden;
+  border: 1px solid var(--ok-border);
+}
+.ok-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+
+.ok-photo-meta { min-width: 0; flex: 1 1 auto; }
+.ok-photo-current-label { font-size: 0.82rem; font-weight: 600; color: var(--ok-text); }
+.ok-photo-filename {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.76rem; color: var(--ok-text-muted); margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+.ok-photo-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.6rem; }
+
+/* Real file input: kept in the DOM and reachable via the styled <label for>
+   above (a native, no-JS-required way to trigger it), just not shown as the
+   raw browser control. Visually hidden rather than display:none so it stays
+   keyboard-focusable. */
+.ok-photo-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ok-photo-remove-toggle {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.82rem; font-weight: 500; color: var(--ok-danger);
+  cursor: pointer;
+}
+.ok-photo-remove-toggle input { accent-color: var(--ok-danger); }
+.ok-photo-field.ok-photo-marked-removed .ok-photo-preview { opacity: 0.45; }
+
+/* ------------------------------------------------------------------ */
+/* Subjects tag picker — collapsed chips + click-to-open dropdown       */
+/* ------------------------------------------------------------------ */
+
+/* Overrides the base .ok-multiselect's overflow:hidden (needed when the
+   panel rendered inline) — the panel now floats via .ok-ms-dropdown below,
+   which would otherwise get clipped by this same element. */
+.ok-multiselect { position: relative; overflow: visible; }
+
+.ok-ms-chips-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.ok-ms-add-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.6rem 0.24rem 0.5rem;
+  border: 1px dashed var(--ok-border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ok-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ok-ms-add-trigger:hover {
+  border-color: var(--ok-primary);
+  color: var(--ok-primary);
+  background: var(--ok-primary-soft);
+}
+.ok-multiselect.is-open .ok-ms-add-trigger {
+  border-style: solid;
+  border-color: var(--ok-primary);
+  color: var(--ok-primary);
+  background: var(--ok-primary-soft);
+}
+
+.ok-ms-chips { padding: 0; }
+
+/* Collapsed by default: only the dropdown panel is toggled, so the field
+   stays a compact single row until the user actually opens it. Floats over
+   whatever sits below it (position:absolute) instead of pushing the rest of
+   the card down, so it never permanently occupies page space. */
+.ok-ms-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border-strong);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow-hover);
+}
+.ok-multiselect.is-open .ok-ms-dropdown { display: block; }
+
+.ok-multiselect-panel { max-height: 220px; overflow-y: auto; }
+
+/* .ok-card normally clips to its own rounded corners (overflow:hidden) —
+   scoped override so an open subjects dropdown isn't cut off at the card's
+   bottom edge. Only takes effect on the one card that currently has an open
+   picker, so every other card on this and every other admin page keeps its
+   normal corner clipping. */
+.ok-card:has(.ok-multiselect.is-open) { overflow: visible; }
+
 @media (max-width: 640px) {
   .ok-trainer-header-body { justify-content: center; text-align: center; }
-  .ok-trainer-email, .ok-trainer-badges { justify-content: center; }
+  .ok-trainer-email, .ok-trainer-badges, .ok-trainer-submeta { justify-content: center; }
+  .ok-photo-field { justify-content: center; text-align: center; }
 }

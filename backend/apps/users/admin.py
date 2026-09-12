@@ -8,7 +8,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
@@ -19,6 +19,7 @@ from apps.data_io.admin_mixin import TemplatedIOAdminMixin
 
 from .models import Subject, Teacher, User
 from .services import change_teacher_password_and_send, create_teacher
+from .widgets import PhotoPreviewWidget
 
 admin.site.unregister(Group)
 
@@ -254,6 +255,7 @@ class AddTrainerForm(forms.ModelForm):
             "experience_years": forms.NumberInput(attrs={"class": "ok-input", "min": 0}),
             "hire_date": forms.DateInput(attrs={"type": "date", "class": "ok-input"}),
             "bio": forms.Textarea(attrs={"rows": 3, "class": "ok-input", "placeholder": "Краткая биография..."}),
+            "image": PhotoPreviewWidget(attrs={"accept": "image/*"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -338,6 +340,9 @@ class ChangeTrainerForm(forms.ModelForm):
             "hire_date",
             "is_active",
         ]
+        widgets = {
+            "image": PhotoPreviewWidget(attrs={"accept": "image/*"}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -407,12 +412,38 @@ class TeacherAdmin(admin.ModelAdmin):
         teacher = self.get_object(request, object_id)
         if teacher is not None:
             # Imported lazily: apps.academy.models imports Teacher from this
-            # app, so importing Group at module level here would be circular.
-            from apps.academy.models import Group
+            # app, so importing these at module level here would be circular.
+            from apps.academy.models import Attendance, Group, Homework, Lesson, Student
 
             groups = Group.objects.for_teacher(teacher)
-            extra_context["groups_count"] = groups.count()
-            extra_context["programs_count"] = groups.values("course").distinct().count()
+            lessons = Lesson.objects.for_teacher(teacher)
+            today = timezone.now().date()
+
+            # One aggregate query for both lesson counts, one for attendance —
+            # no per-row loops, so this stays O(1) queries regardless of how
+            # many lessons/attendance records the teacher has.
+            lesson_stats = lessons.aggregate(
+                completed=Count("id", filter=Q(status=Lesson.Status.COMPLETED)),
+                upcoming=Count("id", filter=Q(status=Lesson.Status.PLANNED, date__gte=today)),
+            )
+            attendance_stats = Attendance.objects.filter(lesson__in=lessons).aggregate(
+                total=Count("id"),
+                present=Count("id", filter=Q(status=Attendance.Status.PRESENT)),
+            )
+            attendance_pct = None
+            if attendance_stats["total"]:
+                attendance_pct = round(attendance_stats["present"] * 100 / attendance_stats["total"])
+
+            extra_context["kpis"] = {
+                "groups_count": groups.count(),
+                "students_count": Student.objects.filter(
+                    group__in=groups, is_active=True
+                ).distinct().count(),
+                "completed_lessons": lesson_stats["completed"],
+                "upcoming_lessons": lesson_stats["upcoming"],
+                "attendance_pct": attendance_pct,
+                "homework_count": Homework.objects.filter(lesson__in=lessons).count(),
+            }
             extra_context["schedule_url"] = (
                 f"{reverse('admin:academy_schedule')}?teacher={teacher.pk}"
             )

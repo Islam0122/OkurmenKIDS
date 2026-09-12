@@ -1,0 +1,39 @@
+{% load i18n %}
+<div class="ok-photo-field" data-preview-id="{{ widget.attrs.id }}-preview">
+  <div class="ok-photo-preview" id="{{ widget.attrs.id }}-preview">
+    {% if widget.is_initial %}
+      <img src="{{ widget.value.url }}" alt="">
+    {% else %}
+      <i class="bi bi-person-fill"></i>
+    {% endif %}
+  </div>
+
+  <div class="ok-photo-meta">
+    {% if widget.is_initial %}
+      <div class="ok-photo-current-label">Текущая фотография</div>
+      <div class="ok-photo-filename"><i class="bi bi-paperclip"></i>{{ widget.value }}</div>
+    {% else %}
+      <div class="ok-photo-current-label">Фотография не загружена</div>
+    {% endif %}
+
+    <div class="ok-photo-actions">
+      <label class="ok-btn-secondary ok-btn-sm" for="{{ widget.attrs.id }}">
+        <i class="bi bi-upload"></i> Изменить фотографию
+      </label>
+
+      <input
+        type="{{ widget.type }}"
+        name="{{ widget.name }}"
+        class="ok-photo-input"
+        {% include "django/forms/widgets/attrs.html" %}
+      >
+
+      {% if widget.is_initial and not widget.required %}
+        <label class="ok-photo-remove-toggle" for="{{ widget.checkbox_id }}">
+          <input type="checkbox" name="{{ widget.checkbox_name }}" id="{{ widget.checkbox_id }}">
+          <i class="bi bi-trash3"></i> Удалить фотографию
+        </label>
+      {% endif %}
+    </div>
+  </div>
+</div>

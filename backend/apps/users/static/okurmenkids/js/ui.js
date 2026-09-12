@@ -113,9 +113,37 @@ function addPasswordToggle(input) {
     if (options.length === 0) return;
 
     select.classList.add("ok-ms-native");
+    // Jazzmin's own change_form.js auto-inits vanilla Select2 on every
+    // <select> not already marked as handled (its own exclusion list checks
+    // for exactly this class). Without it, this same select gets a second,
+    // competing enhancement — Select2's default gray-tag widget rendered
+    // right alongside our chip UI below, with its oversized dropdown. This
+    // class is normally added *by* Select2 after init; adding it ourselves
+    // first (our script runs before jazzmin's, see change_form.html script
+    // order) makes Jazzmin skip this select entirely, since it never
+    // actually needs Select2 to work — it never leaves this hidden native
+    // <select>, our own UI drives it.
+    select.classList.add("select2-hidden-accessible");
 
     var wrap = document.createElement("div");
     wrap.className = "ok-multiselect";
+
+    var chipsRow = document.createElement("div");
+    chipsRow.className = "ok-ms-chips-row";
+
+    var chips = document.createElement("div");
+    chips.className = "ok-ms-chips";
+
+    var addTrigger = document.createElement("button");
+    addTrigger.type = "button";
+    addTrigger.className = "ok-ms-add-trigger";
+    addTrigger.innerHTML = '<i class="bi bi-plus-lg"></i><span>Добавить предмет</span>';
+
+    chipsRow.appendChild(chips);
+    chipsRow.appendChild(addTrigger);
+
+    var dropdown = document.createElement("div");
+    dropdown.className = "ok-ms-dropdown";
 
     var searchBar = document.createElement("div");
     searchBar.className = "ok-ms-search";
@@ -128,9 +156,6 @@ function addPasswordToggle(input) {
     searchInput.autocomplete = "off";
 
     searchBar.appendChild(searchInput);
-
-    var chips = document.createElement("div");
-    chips.className = "ok-ms-chips";
 
     var panel = document.createElement("div");
     panel.className = "ok-multiselect-panel";
@@ -281,13 +306,50 @@ function addPasswordToggle(input) {
       }
     );
 
-    wrap.appendChild(searchBar);
-    wrap.appendChild(chips);
-    wrap.appendChild(panel);
+    function openDropdown() {
+      wrap.classList.add("is-open");
+      searchInput.value = "";
+      searchInput.dispatchEvent(new Event("input"));
+      window.setTimeout(function () {
+        searchInput.focus();
+      }, 0);
+    }
 
+    function closeDropdown() {
+      wrap.classList.remove("is-open");
+    }
+
+    addTrigger.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+      if (wrap.classList.contains("is-open")) {
+        closeDropdown();
+      } else {
+        openDropdown();
+      }
+    });
+
+    dropdown.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+    });
+
+    document.addEventListener("click", function (evt) {
+      if (!wrap.contains(evt.target)) closeDropdown();
+    });
+
+    wrap.addEventListener("keydown", function (evt) {
+      if (evt.key === "Escape") {
+        closeDropdown();
+        addTrigger.focus();
+      }
+    });
+
+    dropdown.appendChild(searchBar);
+    dropdown.appendChild(panel);
     panel.appendChild(emptyRow);
+    dropdown.appendChild(footer);
 
-    wrap.appendChild(footer);
+    wrap.appendChild(chipsRow);
+    wrap.appendChild(dropdown);
 
     select.parentNode.insertBefore(
       wrap,
@@ -609,6 +671,64 @@ card.dataset.label = label.toLowerCase();
   }
 
   /* ------------------------------------------------------------------ */
+  /* 8. Photo field — instant preview + "remove photo" state              */
+  /* ------------------------------------------------------------------ */
+
+  function enhancePhotoField(field) {
+    if (field.dataset.okEnhanced) return;
+    field.dataset.okEnhanced = "true";
+
+    var input = field.querySelector(".ok-photo-input");
+    var previewId = field.dataset.previewId;
+    var preview = previewId ? document.getElementById(previewId) : null;
+    var removeCheckbox = field.querySelector(".ok-photo-remove-toggle input");
+
+    if (!input || !preview) return;
+
+    function showPlaceholder() {
+      preview.innerHTML = '<i class="bi bi-person-fill"></i>';
+    }
+
+    input.addEventListener("change", function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+
+      if (file.type.indexOf("image/") !== 0) {
+        input.value = "";
+        return;
+      }
+
+      // Uncheck "delete" once a replacement is picked — the two controls
+      // shouldn't fight over which one wins on submit.
+      if (removeCheckbox) removeCheckbox.checked = false;
+      field.classList.remove("ok-photo-marked-removed");
+
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        preview.innerHTML =
+          '<img src="' + evt.target.result + '" alt="">';
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (removeCheckbox) {
+      removeCheckbox.addEventListener("change", function () {
+        field.classList.toggle("ok-photo-marked-removed", removeCheckbox.checked);
+        if (removeCheckbox.checked) {
+          input.value = "";
+          showPlaceholder();
+        }
+      });
+    }
+  }
+
+  function initPhotoFields() {
+    document
+      .querySelectorAll(".ok-photo-field")
+      .forEach(enhancePhotoField);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Initialize                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -619,6 +739,7 @@ card.dataset.label = label.toLowerCase();
       initPasswordToggles();
       initMultiSelects();
       initSubjectCards();
+      initPhotoFields();
       initSearchHint();
       initEmptyState();
       initActionWarning();

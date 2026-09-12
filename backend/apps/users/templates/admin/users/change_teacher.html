@@ -46,12 +46,17 @@
                 <div class="ok-trainer-email"><i class="bi bi-envelope"></i>{{ original.user.email }}</div>
               {% endif %}
               <div class="ok-trainer-badges">
+                <span class="ok-badge ok-badge-muted"><i class="bi bi-person-badge"></i>Тренер</span>
                 <span class="ok-badge {% if original.is_active %}ok-badge-success{% else %}ok-badge-danger{% endif %}">
                   <span class="ok-badge-dot"></span>{% if original.is_active %}Активен{% else %}Деактивирован{% endif %}
                 </span>
                 <span class="ok-badge {% if original.user.is_verified %}ok-badge-success{% else %}ok-badge-warning{% endif %}">
                   <span class="ok-badge-dot"></span>{% if original.user.is_verified %}Подтверждён{% else %}Ожидает подтверждения{% endif %}
                 </span>
+              </div>
+              <div class="ok-trainer-submeta">
+                {% if original.position %}<span><i class="bi bi-briefcase"></i>{{ original.position }}</span>{% endif %}
+                <span><i class="bi bi-journal-bookmark"></i>{{ original.subjects.count }} предмет{{ original.subjects.count|pluralize:",а,ов" }}</span>
               </div>
             </div>
           </div>
@@ -90,7 +95,7 @@
               </div>
 
               <div class="ok-field-group ok-grid-full">
-                <label class="ok-label" for="{{ adminform.form.image.id_for_label }}">{{ adminform.form.image.label }}</label>
+                <label class="ok-label">Фотография</label>
                 {{ adminform.form.image }}
                 {% for error in adminform.form.image.errors %}
                   <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
@@ -180,6 +185,48 @@
           </div>
         </div>
 
+        <!-- Учебная нагрузка -->
+        <div class="ok-card">
+          <div class="ok-card-header"><i class="bi bi-bar-chart-fill"></i><span>Учебная нагрузка</span></div>
+          <div class="ok-card-body">
+            <p class="ok-section-subtitle">Рассчитано по группам и занятиям, закреплённым за тренером.</p>
+            <div class="ok-kpi-grid">
+              <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-diagram-3-fill"></i></div>
+                <div class="ok-kpi-value">{{ kpis.groups_count }}</div>
+                <div class="ok-kpi-label">Активные группы</div>
+              </div>
+              <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-people-fill"></i></div>
+                <div class="ok-kpi-value">{{ kpis.students_count }}</div>
+                <div class="ok-kpi-label">Всего студентов</div>
+              </div>
+              <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div>
+                <div class="ok-kpi-value">{{ kpis.completed_lessons }}</div>
+                <div class="ok-kpi-label">Проведено занятий</div>
+              </div>
+              <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-calendar-event-fill"></i></div>
+                <div class="ok-kpi-value">{{ kpis.upcoming_lessons }}</div>
+                <div class="ok-kpi-label">Запланировано занятий</div>
+              </div>
+              {% if kpis.attendance_pct is not None %}
+                <div class="ok-kpi-card">
+                  <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
+                  <div class="ok-kpi-value">{{ kpis.attendance_pct }}%</div>
+                  <div class="ok-kpi-label">Средняя посещаемость</div>
+                </div>
+              {% endif %}
+              <div class="ok-kpi-card">
+                <div class="ok-kpi-icon"><i class="bi bi-journal-text"></i></div>
+                <div class="ok-kpi-value">{{ kpis.homework_count }}</div>
+                <div class="ok-kpi-label">Домашние задания</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Системная информация -->
         <details class="ok-card ok-collapse">
           <summary class="ok-card-header ok-collapse-summary">
@@ -215,24 +262,6 @@
             {% endif %}
           {% endif %}
         </div>
-
-        {% if groups_count or programs_count %}
-          <div class="ok-card">
-            <div class="ok-card-header"><i class="bi bi-bar-chart-fill"></i><span>Учебная нагрузка</span></div>
-            <div class="ok-card-body">
-              <div class="ok-mini-stats">
-                <div class="ok-mini-stat">
-                  <div class="ok-mini-stat-value">{{ groups_count }}</div>
-                  <div class="ok-mini-stat-label">Групп</div>
-                </div>
-                <div class="ok-mini-stat">
-                  <div class="ok-mini-stat-value">{{ programs_count }}</div>
-                  <div class="ok-mini-stat-label">Программ</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        {% endif %}
 
         <div class="ok-card">
           <div class="ok-card-header"><i class="bi bi-lightning-charge-fill"></i><span>Быстрые действия</span></div>
