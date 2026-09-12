@@ -518,37 +518,22 @@ function addPasswordToggle(input) {
     footer.className = "ok-subject-cards-footer";
 
     var cards = options.map(function (opt) {
-      var description = opt.dataset.description || "";
       var label = opt.text;
 
       var card = document.createElement("div");
       card.className = "ok-subject-card";
       card.setAttribute("role", "checkbox");
       card.tabIndex = 0;
-      card.dataset.label = (label + " " + description).toLowerCase();
-
+card.dataset.label = label.toLowerCase();
       card.innerHTML =
-        '<span class="ok-subject-card-checkbox">' +
-        '<input type="checkbox" tabindex="-1" aria-hidden="true">' +
-        "</span>" +
-        '<span class="ok-subject-card-icon"><i class="bi bi-journal-bookmark"></i></span>' +
-        '<span class="ok-subject-card-title"></span>' +
-        '<span class="ok-subject-card-check"><i class="bi bi-check-lg"></i></span>' +
-        (description
-          ? '<span class="ok-subject-card-description"></span>'
-          : "");
+  '<span class="ok-subject-card-checkbox">' +
+  '<input type="checkbox" tabindex="-1" aria-hidden="true">' +
+  "</span>" +
+  '<span class="ok-subject-card-icon"><i class="bi bi-journal-bookmark"></i></span>' +
+  '<span class="ok-subject-card-title"></span>' +
+  '<span class="ok-subject-card-check"><i class="bi bi-check-lg"></i></span>';
 
       card.querySelector(".ok-subject-card-title").textContent = label;
-      if (description) {
-        var descriptionEl = card.querySelector(
-          ".ok-subject-card-description"
-        );
-        descriptionEl.textContent = description;
-        // The card clamps this to 2 lines (see theme.css) regardless of
-        // how long the underlying text is — the native title tooltip is
-        // how the full description stays reachable on hover.
-        descriptionEl.title = description;
-      }
 
       var checkbox = card.querySelector('input[type="checkbox"]');
 

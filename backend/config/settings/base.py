@@ -273,7 +273,6 @@ JAZZMIN_SETTINGS = {
             {"name": "Курсы", "model": "academy.course", "icon": "bi bi-collection-play"},
             {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-book"},
-            {"name": "Шаблоны экспорта", "model": "data_io.exporttemplate", "icon": "bi bi-file-earmark-ruled"},
         ],
 
         "учебный процесс": [
