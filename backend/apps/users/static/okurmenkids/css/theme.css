@@ -265,110 +265,67 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   box-shadow: none !important;
 }
 
+/* =========================================================
+   OkurmenKIDS — Sidebar brand (single source of truth)
+
+   Real rendered markup (Jazzmin 3.0.5 / AdminLTE app-sidebar):
+     <div class="sidebar-brand">
+       <a class="brand-link" id="jazzy-logo">
+         <img class="brand-image opacity-75 shadow" src=".../logo.png">
+         <span class="brand-text fw-light">OkurmenKids</span>
+       </a>
+     </div>
+
+   AdminLTE's own CSS caps `.brand-image` at max-height:33px and the
+   Jazzmin template hardcodes `opacity-75` + `shadow` on the <img>, which
+   is why the real logo.png rendered tiny and washed out with a faint
+   box behind it. Fixed here by overriding those on the real selectors
+   instead of drawing a second, CSS-only "OK" emblem (a stray, inert
+   leftover of that — .main-sidebar rules that never matched this
+   template's markup, plus a contentless ::before — used to live here).
+   ========================================================= */
+
 .sidebar-brand {
   border-bottom: 1px solid var(--ok-border);
+  height: auto;
+  min-height: 4.75rem;
 }
 
 .sidebar-brand .brand-link {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 1rem 1.1rem;
+  gap: 0.7rem;
+  padding: 0.6rem 1.1rem;
+  text-decoration: none;
 }
 
-/* Hide Jazzmin's bundled default logo image; we draw our own emblem. */
-.ok-hidden-logo { display: none !important; }
-
-/* =========================================================
-   OkurmenKIDS — Sidebar Brand Logo
-   ========================================================= */
-
-/* Header / brand container */
-.main-sidebar .brand-link {
-    display: flex !important;
-    align-items: center !important;
-    gap: 12px !important;
-
-    height: 86px !important;
-    min-height: 86px !important;
-
-    padding: 12px 18px !important;
-
-    background: #ffffff !important;
-    border-bottom: 1px solid #e5e7eb !important;
-
-    overflow: hidden !important;
-}
-
-/* Actual logo image */
-.main-sidebar .brand-link .brand-image {
-    float: none !important;
-
-    width: 62px !important;
-    height: 62px !important;
-
-    max-height: 62px !important;
-    max-width: 62px !important;
-
-    margin: 0 !important;
-
-    object-fit: contain !important;
-    object-position: center !important;
-
-    opacity: 1 !important;
-
-    border-radius: 50% !important;
-    box-shadow: none !important;
-}
-
-/* Brand text */
-.main-sidebar .brand-link .brand-text {
-    display: block !important;
-
-    margin-left: 0 !important;
-
-    font-size: 24px !important;
-    font-weight: 700 !important;
-    letter-spacing: -0.5px !important;
-
-    color: #202124 !important;
-    line-height: 1.2 !important;
-
-    white-space: nowrap !important;
-}
-
-/* Remove custom duplicated OK emblem if it exists */
-.main-sidebar .brand-link::before {
-    content: none !important;
-    display: none !important;
-}
-
-/* Remove any custom pseudo logo */
-.main-sidebar .brand-link::after {
-    content: none !important;
-    display: none !important;
-}
-.sidebar-brand .brand-link::before {
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: var(--ok-primary);
-  color: var(--ok-on-primary);
-  font-weight: 800;
-  font-size: 0.85rem;
-  letter-spacing: 0.02em;
+.sidebar-brand .brand-link .brand-image {
+  float: none;
+  width: 3.5rem;
+  height: 3.5rem;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  object-fit: contain;
+  object-position: center;
+  opacity: 1 !important;
+  box-shadow: none !important;
   flex-shrink: 0;
 }
 
-.sidebar-brand .brand-text {
+.sidebar-brand .brand-link .brand-text {
+  margin-left: 0;
   color: var(--ok-text) !important;
   font-weight: 700;
   font-size: 1.05rem;
+  line-height: 1.2;
   opacity: 1 !important;
+  white-space: nowrap;
+}
+
+@media (max-width: 991px) {
+  .sidebar-brand { min-height: 4.25rem; }
+  .sidebar-brand .brand-link .brand-image { width: 2.75rem; height: 2.75rem; }
 }
 
 .user-panel { border-bottom: 1px solid var(--ok-border); padding: 0.85rem 1.1rem; }
