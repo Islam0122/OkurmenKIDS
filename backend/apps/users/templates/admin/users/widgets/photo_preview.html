@@ -1,20 +1,21 @@
 {% load i18n %}
-<div class="ok-photo-field" data-preview-id="{{ widget.attrs.id }}-preview">
-  <div class="ok-photo-preview" id="{{ widget.attrs.id }}-preview">
+<div class="ok-photo-field{% if widget.is_initial %} ok-photo-has-image{% endif %}">
+  <div class="ok-photo-preview">
+    <div class="ok-photo-placeholder">
+      <i class="bi bi-person-fill"></i>
+    </div>
     {% if widget.is_initial %}
       <img src="{{ widget.value.url }}" alt="">
-    {% else %}
-      <i class="bi bi-person-fill"></i>
     {% endif %}
   </div>
 
-  <div class="ok-photo-meta">
-    {% if widget.is_initial %}
-      <div class="ok-photo-current-label">Текущая фотография</div>
-      <div class="ok-photo-filename"><i class="bi bi-paperclip"></i>{{ widget.value }}</div>
-    {% else %}
-      <div class="ok-photo-current-label">Фотография не загружена</div>
-    {% endif %}
+  <div class="ok-photo-content">
+    <div class="ok-photo-status">
+      {% if widget.is_initial %}Фотография профиля{% else %}Фотография не загружена{% endif %}
+    </div>
+    <div class="ok-photo-filename"{% if not widget.is_initial %} hidden{% endif %}>
+      <i class="bi bi-paperclip"></i><span class="ok-photo-filename-text">{% if widget.is_initial %}{{ widget.value }}{% endif %}</span>
+    </div>
 
     <div class="ok-photo-actions">
       <label class="ok-btn-secondary ok-btn-sm" for="{{ widget.attrs.id }}">

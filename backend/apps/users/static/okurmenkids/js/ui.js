@@ -679,14 +679,59 @@ card.dataset.label = label.toLowerCase();
     field.dataset.okEnhanced = "true";
 
     var input = field.querySelector(".ok-photo-input");
-    var previewId = field.dataset.previewId;
-    var preview = previewId ? document.getElementById(previewId) : null;
+    var preview = field.querySelector(".ok-photo-preview");
+    var status = field.querySelector(".ok-photo-status");
+    var filename = field.querySelector(".ok-photo-filename");
+    var filenameText = field.querySelector(".ok-photo-filename-text");
     var removeCheckbox = field.querySelector(".ok-photo-remove-toggle input");
+    var img = preview ? preview.querySelector("img") : null;
 
-    if (!input || !preview) return;
+    if (!input || !preview || !status) return;
 
-    function showPlaceholder() {
-      preview.innerHTML = '<i class="bi bi-person-fill"></i>';
+    // Snapshot of the server-rendered state, so unchecking "remove" (having
+    // picked nothing new) can put the field back exactly as it was.
+    var original = {
+      hasImage: field.classList.contains("ok-photo-has-image"),
+      status: status.textContent,
+      filenameHidden: filename ? filename.hidden : true,
+      filenameText: filenameText ? filenameText.textContent : "",
+    };
+
+    function ensureImg() {
+      if (!img) {
+        img = document.createElement("img");
+        img.alt = "";
+        preview.appendChild(img);
+      }
+      return img;
+    }
+
+    function showNewImage(dataUrl, name) {
+      ensureImg().src = dataUrl;
+      field.classList.add("ok-photo-has-image");
+      field.classList.remove("ok-photo-marked-removed");
+      status.textContent = "Новое изображение выбрано";
+      if (filename && filenameText) {
+        filenameText.textContent = name;
+        filename.hidden = false;
+      }
+    }
+
+    function showRemoved() {
+      field.classList.remove("ok-photo-has-image");
+      field.classList.add("ok-photo-marked-removed");
+      status.textContent = "Фотография будет удалена после сохранения";
+      if (filename) filename.hidden = true;
+    }
+
+    function restoreOriginal() {
+      field.classList.toggle("ok-photo-has-image", original.hasImage);
+      field.classList.remove("ok-photo-marked-removed");
+      status.textContent = original.status;
+      if (filename) {
+        filename.hidden = original.filenameHidden;
+        if (filenameText) filenameText.textContent = original.filenameText;
+      }
     }
 
     input.addEventListener("change", function () {
@@ -701,22 +746,23 @@ card.dataset.label = label.toLowerCase();
       // Uncheck "delete" once a replacement is picked — the two controls
       // shouldn't fight over which one wins on submit.
       if (removeCheckbox) removeCheckbox.checked = false;
-      field.classList.remove("ok-photo-marked-removed");
 
       var reader = new FileReader();
       reader.onload = function (evt) {
-        preview.innerHTML =
-          '<img src="' + evt.target.result + '" alt="">';
+        showNewImage(evt.target.result, file.name);
       };
       reader.readAsDataURL(file);
     });
 
     if (removeCheckbox) {
       removeCheckbox.addEventListener("change", function () {
-        field.classList.toggle("ok-photo-marked-removed", removeCheckbox.checked);
         if (removeCheckbox.checked) {
+          // A replacement file, if any was pending, is discarded — the
+          // checkbox now means "delete the saved photo", not "keep the new one".
           input.value = "";
-          showPlaceholder();
+          showRemoved();
+        } else {
+          restoreOriginal();
         }
       });
     }
