@@ -1,0 +1,261 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static admin_modify jazzmin %}
+
+{% block content %}
+<div id="content-main" class="col-12">
+  <form {% if has_file_field %}enctype="multipart/form-data" {% endif %}action="{{ form_url }}" method="post" id="{{ opts.model_name }}_form" novalidate>
+    {% csrf_token %}
+    {% block form_top %}{% endblock %}
+
+    {% if errors %}
+      <div class="alert alert-danger">
+        {% if errors|length == 1 %}
+          {% trans "Please correct the error below." %}
+        {% else %}
+          {% trans "Please correct the errors below." %}
+        {% endif %}
+      </div>
+      {% for error in adminform.form.non_field_errors %}
+        <div class="alert alert-danger alert-dismissible">
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          <i class="icon fa fa-ban"></i>{{ error|capfirst }}
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    <div class="row">
+      {% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+      {% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+
+      <div class="col-12 col-lg-8">
+
+        <!-- Профиль тренера -->
+        <div class="ok-card">
+          <div class="ok-card-body ok-trainer-header-body">
+            <div class="ok-trainer-avatar">
+              {% if original.image %}
+                <img src="{{ original.image.url }}" alt="{{ original.user.username }}">
+              {% else %}
+                <i class="bi bi-person-fill"></i>
+              {% endif %}
+            </div>
+            <div class="ok-trainer-identity">
+              <h2 class="ok-trainer-name">{{ original.user.get_full_name|default:original.user.username }}</h2>
+              <div class="ok-trainer-username">@{{ original.user.username }}</div>
+              {% if original.user.email %}
+                <div class="ok-trainer-email"><i class="bi bi-envelope"></i>{{ original.user.email }}</div>
+              {% endif %}
+              <div class="ok-trainer-badges">
+                <span class="ok-badge {% if original.is_active %}ok-badge-success{% else %}ok-badge-danger{% endif %}">
+                  <span class="ok-badge-dot"></span>{% if original.is_active %}Активен{% else %}Деактивирован{% endif %}
+                </span>
+                <span class="ok-badge {% if original.user.is_verified %}ok-badge-success{% else %}ok-badge-warning{% endif %}">
+                  <span class="ok-badge-dot"></span>{% if original.user.is_verified %}Подтверждён{% else %}Ожидает подтверждения{% endif %}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Основная информация -->
+        <div class="ok-card">
+          <div class="ok-card-header"><i class="bi bi-person-lines-fill"></i><span>Основная информация</span></div>
+          <div class="ok-card-body">
+            <p class="ok-section-subtitle">Основные данные и контактная информация тренера.</p>
+            <div class="ok-grid-2">
+              <div class="ok-field-group">
+                <label class="ok-label">Имя</label>
+                <div class="ok-static-value">{{ original.user.first_name|default:"—" }}</div>
+              </div>
+              <div class="ok-field-group">
+                <label class="ok-label">Фамилия</label>
+                <div class="ok-static-value">{{ original.user.last_name|default:"—" }}</div>
+              </div>
+              <div class="ok-field-group">
+                <label class="ok-label">Username</label>
+                <div class="ok-static-value">@{{ original.user.username }}</div>
+              </div>
+              <div class="ok-field-group">
+                <label class="ok-label">Email</label>
+                <div class="ok-static-value">{{ original.user.email|default:"—" }}</div>
+              </div>
+
+              <div class="ok-field-group ok-grid-full">
+                <label class="ok-label" for="{{ adminform.form.phone.id_for_label }}">{{ adminform.form.phone.label }}</label>
+                {{ adminform.form.phone }}
+                {% if adminform.form.phone.help_text %}<span class="ok-help-text">{{ adminform.form.phone.help_text }}</span>{% endif %}
+                {% for error in adminform.form.phone.errors %}
+                  <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                {% endfor %}
+              </div>
+
+              <div class="ok-field-group ok-grid-full">
+                <label class="ok-label" for="{{ adminform.form.image.id_for_label }}">{{ adminform.form.image.label }}</label>
+                {{ adminform.form.image }}
+                {% for error in adminform.form.image.errors %}
+                  <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                {% endfor %}
+              </div>
+            </div>
+
+            <p class="ok-help-text ok-account-hint">
+              <i class="bi bi-info-circle"></i>
+              Имя, фамилия, логин и email управляются в профиле пользователя (раздел «Пользователи»).
+            </p>
+            {# Real FK field kept in the DOM so the form still submits/validates exactly as before — #}
+            {# just not shown as a raw account picker on a profile page. #}
+            <div class="ok-hidden-field">{{ adminform.form.user }}</div>
+          </div>
+        </div>
+
+        <!-- Рабочая информация -->
+        <div class="ok-card">
+          <div class="ok-card-header"><i class="bi bi-briefcase-fill"></i><span>Рабочая информация</span></div>
+          <div class="ok-card-body">
+            <p class="ok-section-subtitle">Настройки доступа и рабочий статус тренера.</p>
+            <div class="ok-grid-2">
+              <div class="ok-field-group">
+                <label class="ok-label">Роль</label>
+                <div class="ok-static-value">{{ original.user.get_role_display }}</div>
+              </div>
+
+              <div class="ok-field-group">
+                <label class="ok-label">Аккаунт подтверждён</label>
+                <div class="ok-static-value">
+                  {% if original.user.is_verified %}
+                    <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Подтверждён</span>
+                  {% else %}
+                    <span class="ok-badge ok-badge-warning"><span class="ok-badge-dot"></span>Ожидает</span>
+                  {% endif %}
+                </div>
+              </div>
+
+              <div class="ok-field-group">
+                <label class="ok-label" for="{{ adminform.form.position.id_for_label }}">{{ adminform.form.position.label }}</label>
+                {{ adminform.form.position }}
+                {% for error in adminform.form.position.errors %}
+                  <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                {% endfor %}
+              </div>
+
+              <div class="ok-field-group">
+                <label class="ok-label" for="{{ adminform.form.is_active.id_for_label }}" style="flex-direction:row; gap:0.5rem;">
+                  {{ adminform.form.is_active }} Активен
+                </label>
+                {% if adminform.form.is_active.help_text %}<span class="ok-help-text">{{ adminform.form.is_active.help_text }}</span>{% endif %}
+              </div>
+
+              <div class="ok-field-group ok-grid-full">
+                <label class="ok-label" for="{{ adminform.form.subjects.id_for_label }}">{{ adminform.form.subjects.label }}</label>
+                {{ adminform.form.subjects }}
+                {% for error in adminform.form.subjects.errors %}
+                  <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                {% endfor %}
+              </div>
+
+              <div class="ok-field-group">
+                <label class="ok-label" for="{{ adminform.form.experience_years.id_for_label }}">{{ adminform.form.experience_years.label }}</label>
+                {{ adminform.form.experience_years }}
+                {% for error in adminform.form.experience_years.errors %}
+                  <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                {% endfor %}
+              </div>
+
+              <div class="ok-field-group">
+                <label class="ok-label" for="{{ adminform.form.hire_date.id_for_label }}">{{ adminform.form.hire_date.label }}</label>
+                {{ adminform.form.hire_date }}
+                {% for error in adminform.form.hire_date.errors %}
+                  <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                {% endfor %}
+              </div>
+
+              <div class="ok-field-group ok-grid-full">
+                <label class="ok-label" for="{{ adminform.form.bio.id_for_label }}">{{ adminform.form.bio.label }}</label>
+                {{ adminform.form.bio }}
+                {% for error in adminform.form.bio.errors %}
+                  <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Системная информация -->
+        <details class="ok-card ok-collapse">
+          <summary class="ok-card-header ok-collapse-summary">
+            <i class="bi bi-clock-history"></i><span>Системная информация</span>
+            <i class="bi bi-chevron-down ok-collapse-chevron"></i>
+          </summary>
+          <div class="ok-card-body">
+            <div class="ok-grid-2">
+              <div class="ok-field-group">
+                <label class="ok-label">Профиль создан</label>
+                <div class="ok-static-value">{{ original.created_at|date:"d.m.Y H:i" }}</div>
+              </div>
+              <div class="ok-field-group">
+                <label class="ok-label">Последнее изменение</label>
+                <div class="ok-static-value">{{ original.updated_at|date:"d.m.Y H:i" }}</div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+      </div>
+
+      <div class="col-12 col-lg-4">
+        <div id="jazzy-actions" class="{{ jazzmin_ui.actions_classes }}">
+          {% submit_row %}
+          {% if change %}
+            {% if not is_popup %}
+              <div class="object-tools d-flex flex-wrap gap-2">
+                {% block object-tools-items %}
+                  {% change_form_object_tools %}
+                {% endblock %}
+              </div>
+            {% endif %}
+          {% endif %}
+        </div>
+
+        {% if groups_count or programs_count %}
+          <div class="ok-card">
+            <div class="ok-card-header"><i class="bi bi-bar-chart-fill"></i><span>Учебная нагрузка</span></div>
+            <div class="ok-card-body">
+              <div class="ok-mini-stats">
+                <div class="ok-mini-stat">
+                  <div class="ok-mini-stat-value">{{ groups_count }}</div>
+                  <div class="ok-mini-stat-label">Групп</div>
+                </div>
+                <div class="ok-mini-stat">
+                  <div class="ok-mini-stat-value">{{ programs_count }}</div>
+                  <div class="ok-mini-stat-label">Программ</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+        <div class="ok-card">
+          <div class="ok-card-header"><i class="bi bi-lightning-charge-fill"></i><span>Быстрые действия</span></div>
+          <div class="ok-card-body ok-quick-actions">
+            <a href="{{ change_password_url }}" class="ok-btn-secondary ok-btn-block">
+              <i class="bi bi-key-fill"></i> Изменить пароль
+            </a>
+            <a href="{{ schedule_url }}" class="ok-btn-secondary ok-btn-block">
+              <i class="bi bi-calendar-week"></i> Открыть расписание
+            </a>
+            <a href="{% url 'admin:users_teacher_changelist' %}" class="ok-btn-secondary ok-btn-block">
+              <i class="bi bi-arrow-left"></i> Назад к списку тренеров
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {% block admin_change_form_document_ready %}
+        <script type="text/javascript" id="django-admin-form-add-constants" src="{% static 'admin/js/change_form.js' %}" {% if adminform and add %}data-model-name="{{ opts.model_name }}"{% endif %}></script>
+      {% endblock %}
+
+      {% prepopulated_fields_js %}
+    </div>
+  </form>
+</div>
+{% endblock %}

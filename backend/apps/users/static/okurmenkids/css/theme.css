@@ -1637,3 +1637,88 @@ body.model-teacher.change-list #change-list-filters > div > a.float-end {
     top: 0 !important;
     right: 8px !important;
 }
+
+/* ------------------------------------------------------------------ */
+/* Trainer Detail (admin/users/change_teacher.html) — profile page    */
+/* ------------------------------------------------------------------ */
+
+.ok-trainer-header-body {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.ok-trainer-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.9rem;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.ok-trainer-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.ok-trainer-identity { min-width: 0; }
+.ok-trainer-name { margin: 0 0 0.15rem; font-size: 1.25rem; font-weight: 700; color: var(--ok-text); }
+.ok-trainer-username { color: var(--ok-text-muted); font-size: 0.85rem; margin-bottom: 0.3rem; }
+.ok-trainer-email {
+  display: flex; align-items: center; gap: 0.4rem;
+  color: var(--ok-text-secondary); font-size: 0.85rem; margin-bottom: 0.6rem;
+}
+.ok-trainer-badges { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.ok-section-subtitle { color: var(--ok-text-muted); font-size: 0.82rem; margin: -0.25rem 0 1.1rem; }
+
+/* Read-only "value" boxes for identity fields sourced from the related
+   User account (name/username/email/role) — same height/rhythm as the
+   real inputs beside them, but visually distinct as non-editable here. */
+.ok-static-value {
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-surface-hover);
+  color: var(--ok-text);
+  font-size: 0.88rem;
+}
+
+.ok-account-hint { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; }
+
+/* The Teacher.user FK select stays in the DOM (form still submits/
+   validates it unchanged) but isn't shown as a raw account picker. */
+.ok-hidden-field { display: none; }
+
+.ok-mini-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.ok-mini-stat {
+  text-align: center;
+  padding: 0.85rem 0.5rem;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  background: var(--ok-surface-hover);
+}
+.ok-mini-stat-value { font-size: 1.4rem; font-weight: 800; color: var(--ok-primary); line-height: 1; }
+.ok-mini-stat-label { font-size: 0.75rem; color: var(--ok-text-muted); margin-top: 0.25rem; }
+
+.ok-quick-actions { display: flex; flex-direction: column; gap: 0.6rem; }
+.ok-btn-block { width: 100%; justify-content: center; }
+
+/* System info collapse — native <details>/<summary>, no JS required */
+.ok-collapse summary { cursor: pointer; list-style: none; }
+.ok-collapse summary::-webkit-details-marker { display: none; }
+.ok-collapse summary::marker { content: ""; }
+.ok-collapse-summary { display: flex; align-items: center; }
+.ok-collapse-chevron { color: var(--ok-text-muted); margin-left: auto; transition: transform 0.2s ease; }
+.ok-collapse[open] > .ok-collapse-summary .ok-collapse-chevron { transform: rotate(180deg); }
+
+@media (max-width: 640px) {
+  .ok-trainer-header-body { justify-content: center; text-align: center; }
+  .ok-trainer-email, .ok-trainer-badges { justify-content: center; }
+}
