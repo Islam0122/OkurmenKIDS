@@ -496,36 +496,51 @@ class GroupAdmin(admin.ModelAdmin):
     list_per_page = 25
 
     def get_fieldsets(self, request, obj=None):
+        # These "ok-admin-group-tab-*" classes carry no visual meaning to
+        # Django/Jazzmin's own fieldset rendering — they're read back out by
+        # templates/admin/academy/group/change_form.html, which groups
+        # fieldsets sharing a tab class into one tab pane (via {% regroup %}).
+        # Fieldsets meant for the same tab must stay contiguous below for
+        # that grouping to work. See that template for the tab shell itself.
+        tab_main = ("ok-admin-group-section", "ok-admin-group-tab-main")
+        tab_students = ("ok-admin-group-section", "ok-admin-group-tab-students")
+        tab_programs = ("ok-admin-group-section", "ok-admin-group-tab-programs")
+        tab_system = ("ok-admin-group-section", "ok-admin-group-tab-system")
+
         fieldsets = [
             (
                 "Основная информация",
                 {
                     "fields": ("name", "course", "status", "description"),
                     "description": "Основные данные учебной группы.",
+                    "classes": tab_main,
                 },
             ),
         ]
         if obj is not None:
-            fieldsets.append(("Сводка группы", {"fields": ("group_summary",)}))
+            fieldsets.append(
+                ("Сводка группы", {"fields": ("group_summary",), "classes": tab_main})
+            )
         fieldsets += [
             (
-                "Период обучения группы",
+                "Период обучения",
                 {
                     "fields": ("start_date", "end_date"),
                     "description": (
-                        "Общий период существования группы. Конкретные даты и время занятий "
-                        "задаются отдельно в учебных программах ниже."
+                        "Общий период существования группы. Конкретное расписание занятий "
+                        "задаётся отдельно в учебных программах."
                     ),
+                    "classes": tab_main,
                 },
             ),
             (
-                "Студенты",
+                "Состав группы",
                 {
                     "fields": ("capacity_summary", "max_students", "students"),
                     "description": (
-                        "Студенты принадлежат группе и могут посещать разные учебные программы "
-                        "внутри этой группы."
+                        "Управление студентами, которые входят в эту учебную группу."
                     ),
+                    "classes": tab_students,
                 },
             ),
             (
@@ -533,15 +548,16 @@ class GroupAdmin(admin.ModelAdmin):
                 {
                     "fields": ("schedule_link_detail", "teaching_programs_summary"),
                     "description": (
-                        "Добавьте каждого тренера отдельной учебной программой (см. «Расписание "
-                        "учебных программ» ниже — «+ Добавить ещё одну» добавляет любое число "
-                        "тренеров). Каждая программа полностью равноправна и имеет собственный "
-                        "предмет, расписание и, по желанию, собственный индивидуальный план "
-                        "занятий, независимый от других программ этой группы."
+                        "Каждый тренер добавляется как отдельная независимая учебная программа. "
+                        "У каждой программы своё расписание, предмет, занятия и учебный план."
                     ),
+                    "classes": tab_programs,
                 },
             ),
-            ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+            (
+                "Системная информация",
+                {"fields": ("created_at", "updated_at"), "classes": tab_system},
+            ),
         ]
         return fieldsets
 

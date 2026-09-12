@@ -1,0 +1,64 @@
+{% load jazzmin %}
+{# Scoped copy of jazzmin/templates/admin/includes/fieldset.html, used only #}
+{# by this app's change_form.html for the Group tabs. The only change from #}
+{# the original is the card header: title and description get their own #}
+{# lines/elements (ok-admin-group-section-title/-desc) instead of one #}
+{# "<strong>title</strong> - <i>description</i>" line, so theme.css can #}
+{# style them as a heading with a small grey description under it. The #}
+{# field/line rendering loop below is untouched — every widget, autocomplete #}
+{# and error/help-text still renders exactly as Django's own admin does. #}
+{% if card %}
+<div class="card ok-admin-group-section-card">
+    {% if fieldset.name or fieldset.description %}
+    <div class="card-header ok-admin-group-section-header">
+        {% if fieldset.name %}
+            <div class="card-title ok-admin-group-section-title">{{ fieldset.name }}</div>
+        {% endif %}
+        {% if fieldset.description %}
+            <div class="ok-admin-group-section-desc">{{ fieldset.description }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="p-3{% if fieldset.name %} card-body{% endif %}">
+{% endif %}
+
+    {% for line in fieldset %}
+    <div class="form-group{% if line.fields|length == 1 and line.errors %} errors{% endif %}{% if not line.has_visible_field %} hidden{% endif %}{% for field in line %}{% if field.field.name %} field-{{ field.field.name }}{% endif %}{% endfor %}">
+        <div class="row">
+            {% for field in line %}
+                <label class="{% if not line.fields|length == 1 and forloop.counter != 1 %}col-auto {% else %}col-sm-3 {% endif %}text-start" for="id_{{ field.field.name }}">
+                    {{ field.field.label|capfirst }}
+                    {% if field.field.field.required %}
+                    <span class="text-red">* </span>
+                    {% endif %}
+                </label>
+                <div class="{% if not line.fields|length == 1 %} col-auto  fieldBox {% else %} col-sm-9 {% endif %}
+                             {% if field.field.name %} field-{{ field.field.name }}{% endif %}
+                             {% if not field.is_readonly and field.errors %} errors{% endif %}
+                             {% if field.field.is_hidden %} hidden {% endif %}
+                             {% if field.is_checkcard %} checkcard-row{% endif %}">
+                    {% if field.is_readonly %}
+                        <div class="readonly">{{ field.contents }}</div>
+                    {% else %}
+                        {{ field.field }}
+                    {% endif %}
+                    <div class="help-block red">
+                        {% if not line.fields|length == 1 and not field.is_readonly %}{{ field.errors }}{% endif %}
+                    </div>
+                    {% if field.field.help_text %}
+                        <div class="help-block">{{ field.field.help_text|safe }}</div>
+                    {% endif %}
+                    <div class="help-block text-red">
+                        {% if line.fields|length == 1 %}{{ line.errors }}{% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+{% if card %}
+    </div>
+</div>
+{% endif %}

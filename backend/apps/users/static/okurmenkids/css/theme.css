@@ -1638,6 +1638,144 @@ body.model-teacher.change-list #change-list-filters > div > a.float-end {
     right: 8px !important;
 }
 
+/* ===========================================================================
+   Group add/change form — tabbed layout (ok-admin-group-*)
+   Scoped to this one admin page only, via the body classes Jazzmin stamps
+   for the Group changeform (body.model-group.change-form). The tab shell
+   itself lives in templates/admin/academy/group/change_form.html (and its
+   _fieldset.html partial) — GroupAdmin.get_fieldsets() only tags each
+   fieldset with an ok-admin-group-tab-* class for that template to group
+   on; nothing here changes any field, fieldset content or admin logic.
+   =========================================================================== */
+body.model-group.change-form .ok-admin-group-tabs {
+  border-bottom: 1px solid var(--ok-border);
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+body.model-group.change-form .ok-admin-group-tabs .nav-link {
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: var(--ok-text-secondary);
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  background: transparent;
+}
+body.model-group.change-form .ok-admin-group-tabs .nav-link:hover {
+  color: var(--ok-text);
+  border-bottom-color: var(--ok-border-strong);
+}
+body.model-group.change-form .ok-admin-group-tabs .nav-link.active {
+  color: var(--ok-primary);
+  border-bottom-color: var(--ok-primary);
+  background: transparent;
+}
+
+body.model-group.change-form .ok-admin-group-tab-content {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body.model-group.change-form .ok-admin-group-section-card {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: none;
+  margin-bottom: 1rem;
+}
+body.model-group.change-form .ok-admin-group-section-header {
+  background: var(--ok-surface-hover);
+  border-bottom: 1px solid var(--ok-border);
+  padding: 0.85rem 1.1rem;
+}
+body.model-group.change-form .ok-admin-group-section-title {
+  /* AdminLTE's own .card-title rule sets float:left (for icon+title
+     headers elsewhere in the admin) — undo it here so this stacks above
+     ok-admin-group-section-desc instead of sitting beside it. */
+  float: none;
+  display: block;
+  width: 100%;
+  color: var(--ok-text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+body.model-group.change-form .ok-admin-group-section-desc {
+  color: var(--ok-text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+/* group_summary/capacity_summary/teaching_programs_summary/schedule_link_detail
+   (see GroupAdmin) are @admin.display(description="") readonly fields —
+   Django still reserves their (empty) label column next to them, exactly as
+   it does in a plain untabbed admin form. Drop that empty column here so
+   each renders as one full-width info block instead of a "boring text
+   field" squeezed into 75% width — display only, the fields/values
+   themselves are untouched. */
+body.model-group.change-form .ok-admin-group-tab-pane .field-group_summary label,
+body.model-group.change-form .ok-admin-group-tab-pane .field-capacity_summary label,
+body.model-group.change-form .ok-admin-group-tab-pane .field-teaching_programs_summary label,
+body.model-group.change-form .ok-admin-group-tab-pane .field-schedule_link_detail label {
+  display: none;
+}
+body.model-group.change-form .ok-admin-group-tab-pane .field-group_summary.col-sm-9,
+body.model-group.change-form .ok-admin-group-tab-pane .field-capacity_summary.col-sm-9,
+body.model-group.change-form .ok-admin-group-tab-pane .field-teaching_programs_summary.col-sm-9,
+body.model-group.change-form .ok-admin-group-tab-pane .field-schedule_link_detail.col-sm-9 {
+  flex: 0 0 100%;
+  max-width: 100%;
+  width: 100%;
+}
+
+/* System tab — secondary/less important, per spec: muted, not hidden. */
+body.model-group.change-form .ok-admin-group-tab-pane-muted .ok-admin-group-section-card {
+  background: var(--ok-surface-hover);
+  opacity: 0.85;
+}
+body.model-group.change-form .ok-admin-group-tab-pane-muted .ok-admin-group-section-title {
+  color: var(--ok-text-secondary);
+}
+
+/* Teaching-programs tab — visually separate GroupScheduleInline (the
+   schedule slots table) from the fieldset above it, with its own heading. */
+body.model-group.change-form .ok-admin-group-inline-header {
+  border-top: 1px dashed var(--ok-border-strong);
+  margin: 1.5rem 0 0.75rem;
+  padding-top: 1.25rem;
+}
+body.model-group.change-form .ok-admin-group-inline-title {
+  color: var(--ok-text);
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.2rem;
+}
+body.model-group.change-form .ok-admin-group-inline-desc {
+  color: var(--ok-text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+body.model-group.change-form .ok-admin-group-inline-block {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  overflow-x: auto;
+  padding: 0.75rem;
+}
+body.model-group.change-form .ok-admin-group-inline-block .select2-container {
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  body.model-group.change-form .ok-admin-group-tabs .nav-link {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.65rem;
+  }
+  body.model-group.change-form .ok-admin-group-section-header,
+  body.model-group.change-form .ok-admin-group-section-card .card-body {
+    padding: 0.75rem;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Trainer Detail (admin/users/change_teacher.html) — profile page    */
 /* ------------------------------------------------------------------ */

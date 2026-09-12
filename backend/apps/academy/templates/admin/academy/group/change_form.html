@@ -1,0 +1,68 @@
+{% extends "admin/change_form.html" %}
+
+{# Tabbed change form for Group only (scoped by this template's own path — #}
+{# admin/academy/group/change_form.html — Django's ModelAdmin template #}
+{# resolution picks this up automatically for Group's add/change view and #}
+{# nothing else). Only the field_sets block is overridden: the right-hand #}
+{# sidebar (Save/Save and continue/Save and add another/Delete/History) is #}
+{# untouched, still coming from Jazzmin's own admin/change_form.html. #}
+{#                                                                         #}
+{# GroupAdmin.get_fieldsets() tags each fieldset with an ok-admin-group-  #}
+{# tab-* class (see admin.py); {% regroup %} below uses that to fold the  #}
+{# existing fieldsets into 4 tabs without changing what fields/fieldsets  #}
+{# actually exist. The nav uses id="jazzy-tabs" and the same markup as    #}
+{# Jazzmin's own built-in horizontal_tabs changeform format, so Jazzmin's #}
+{# already-loaded change_form.js (handleTabs) wires it up for free:      #}
+{# jumping to the tab with the first validation error, remembering the   #}
+{# active tab via the URL hash, and re-running Select2/resize on tab      #}
+{# switch — no extra JS of our own needed.                                #}
+{% block field_sets %}
+<div class="col-12 col-lg-9">
+    <div class="card ok-admin-group-card">
+        <div class="card-body">
+            {% regroup adminform by classes as ok_admin_group_tabs %}
+            <ul class="nav nav-tabs ok-admin-group-tabs mb-3" role="tablist" id="jazzy-tabs">
+                {% for tab in ok_admin_group_tabs %}
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link ok-admin-group-tab-link{% if forloop.first %} active{% endif %}"
+                           data-bs-toggle="pill"
+                           role="tab"
+                           href="#ok-admin-group-tab-{{ forloop.counter }}"
+                           aria-controls="ok-admin-group-tab-{{ forloop.counter }}"
+                           aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+                        >{% if "tab-main" in tab.grouper %}Основное{% elif "tab-students" in tab.grouper %}Студенты{% elif "tab-programs" in tab.grouper %}Учебные программы{% elif "tab-system" in tab.grouper %}Система{% else %}Основное{% endif %}</a>
+                    </li>
+                {% endfor %}
+            </ul>
+
+            <div class="tab-content ok-admin-group-tab-content">
+                {% for tab in ok_admin_group_tabs %}
+                    <div class="tab-pane fade ok-admin-group-tab-pane{% if forloop.first %} active show{% endif %}{% if "tab-system" in tab.grouper %} ok-admin-group-tab-pane-muted{% endif %}"
+                         id="ok-admin-group-tab-{{ forloop.counter }}"
+                         role="tabpanel"
+                    >
+                        {% for fieldset in tab.list %}
+                            {% include "admin/academy/group/_fieldset.html" with card=True %}
+                        {% endfor %}
+
+                        {% if "tab-programs" in tab.grouper %}
+                            <div class="ok-admin-group-inline-header">
+                                <h3 class="ok-admin-group-inline-title">Расписание учебных программ</h3>
+                                <p class="ok-admin-group-inline-desc">
+                                    Добавьте расписание для каждого тренера и предмета. Каждая строка
+                                    создаёт отдельную учебную программу.
+                                </p>
+                            </div>
+                            {% for inline_admin_formset in inline_admin_formsets %}
+                                <div class="ok-admin-group-inline-block">
+                                    {% include inline_admin_formset.opts.template %}
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
