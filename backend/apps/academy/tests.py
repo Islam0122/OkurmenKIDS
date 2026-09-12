@@ -3,6 +3,8 @@ from __future__ import annotations
 import datetime as dt
 from unittest import mock
 
+from django.contrib import admin
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -1798,6 +1800,233 @@ class StudentAdminImportExportTests(AcademyTestBase):
         response = self.teacher_web.get(url)
         self.assertEqual(response.status_code, 302)
         self.assertIn("/admin/login/", response.url)
+
+
+# ---------------------------------------------------------------------------
+# StudentAdmin UX — list/detail pages, the no-hard-delete business rule,
+# activate/deactivate, bulk add and the Excel template download.
+# ---------------------------------------------------------------------------
+
+class StudentAdminUXTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    # -- list page --------------------------------------------------------
+
+    def test_list_page_opens_and_links_to_detail(self):
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("admin:academy_student_detail", args=[self.student1.pk]))
+
+    def test_list_page_has_bulk_add_and_template_links(self):
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
+        self.assertContains(response, reverse("admin:academy_student_bulk_add"))
+        self.assertContains(response, reverse("admin:academy_student_template"))
+
+    def test_filters_and_search_still_work(self):
+        response = self.admin_web.get(
+            reverse("admin:academy_student_changelist"), {"group__id__exact": self.group1.id}
+        )
+        self.assertContains(response, "Алина")
+        self.assertNotContains(response, "Айбек")
+
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"), {"q": "Мансур"})
+        self.assertContains(response, "Мансур")
+        self.assertNotContains(response, "Айбек")
+
+    # -- detail page --------------------------------------------------------
+
+    def test_detail_page_opens(self):
+        response = self.admin_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Алина")
+        self.assertContains(response, "Python Beginner")
+
+    def test_detail_page_requires_admin(self):
+        response = self.teacher_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_detail_page_shows_no_group_state(self):
+        student = Student.objects.create(first_name="Безгрупповой")
+        response = self.admin_web.get(reverse("admin:academy_student_detail", args=[student.pk]))
+        self.assertContains(response, "Без группы")
+
+    # -- no hard delete, ever ------------------------------------------------
+
+    def test_delete_view_is_forbidden(self):
+        url = reverse("admin:academy_student_delete", args=[self.student1.pk])
+        response = self.admin_web.get(url)
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Student.objects.filter(pk=self.student1.pk).exists())
+
+    def test_delete_selected_action_is_not_offered(self):
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
+        self.assertNotContains(response, "delete_selected")
+
+    def test_change_form_has_no_delete_link_for_student_itself(self):
+        response = self.admin_web.get(reverse("admin:academy_student_change", args=[self.student1.pk]))
+        # The only "deletelink" icon on the page belongs to the unrelated
+        # `group` FK's related-widget-wrapper (Django's standard "delete the
+        # related object" affordance) — Student's own object-tools row must
+        # not contain a delete link/button of its own.
+        self.assertNotContains(response, 'class="deletelink"')
+
+    def test_delete_model_and_delete_queryset_refuse_directly(self):
+        admin_instance = admin.site._registry[Student]
+        with self.assertRaises(DjangoPermissionDenied):
+            admin_instance.delete_model(None, self.student1)
+        with self.assertRaises(DjangoPermissionDenied):
+            admin_instance.delete_queryset(None, Student.objects.filter(pk=self.student1.pk))
+        self.assertTrue(Student.objects.filter(pk=self.student1.pk).exists())
+
+    # -- activate / deactivate ------------------------------------------------
+
+    def test_toggle_active_view_deactivates_and_reactivates(self):
+        url = reverse("admin:academy_student_toggle_active", args=[self.student1.pk])
+        self.admin_web.post(url)
+        self.student1.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+
+        self.admin_web.post(url)
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+
+    def test_toggle_active_requires_post(self):
+        url = reverse("admin:academy_student_toggle_active", args=[self.student1.pk])
+        response = self.admin_web.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_bulk_deactivate_and_activate_actions(self):
+        changelist_url = reverse("admin:academy_student_changelist")
+        self.admin_web.post(
+            changelist_url,
+            {"action": "deactivate_students", "_selected_action": [self.student1.pk, self.student2.pk]},
+        )
+        self.student1.refresh_from_db()
+        self.student2.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+        self.assertFalse(self.student2.is_active)
+
+        self.admin_web.post(
+            changelist_url,
+            {"action": "activate_students", "_selected_action": [self.student1.pk, self.student2.pk]},
+        )
+        self.student1.refresh_from_db()
+        self.student2.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+        self.assertTrue(self.student2.is_active)
+
+    def test_deactivated_student_keeps_attendance_and_homework(self):
+        # group1 already has lessons auto-generated in setUp (see
+        # sync_and_generate(self.group1)) — reuse one rather than creating a
+        # second lesson_number=1 for the same GroupTeacher (unique together).
+        lesson = self.group1.lessons.first()
+        Attendance.objects.create(student=self.student1, lesson=lesson, status=Attendance.Status.PRESENT)
+
+        self.admin_web.post(reverse("admin:academy_student_toggle_active", args=[self.student1.pk]))
+        self.student1.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+        self.assertTrue(Attendance.objects.filter(student=self.student1).exists())
+        self.assertEqual(self.student1.group_id, self.group1.id)
+
+    # -- assign group ---------------------------------------------------------
+
+    def test_assign_group_action_updates_selected_students(self):
+        student = Student.objects.create(first_name="БезГруппыДваЖды")
+        changelist_url = reverse("admin:academy_student_changelist")
+        response = self.admin_web.post(
+            changelist_url, {"action": "assign_group_action", "_selected_action": [student.pk]}
+        )
+        self.assertEqual(response.status_code, 302)
+
+        assign_url = reverse("admin:academy_student_assign_group")
+        response = self.admin_web.post(f"{assign_url}?ids={student.pk}", {"ids": str(student.pk), "group": self.group2.pk})
+        self.assertEqual(response.status_code, 302)
+        student.refresh_from_db()
+        self.assertEqual(student.group_id, self.group2.pk)
+
+    # -- Excel template download ----------------------------------------------
+
+    def test_template_download_works(self):
+        response = self.admin_web.get(reverse("admin:academy_student_template"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("okurmenkids_students_template.xlsx", response["Content-Disposition"])
+
+    def test_template_requires_admin(self):
+        response = self.teacher_web.get(reverse("admin:academy_student_template"))
+        self.assertEqual(response.status_code, 302)
+
+    # -- bulk add ---------------------------------------------------------------
+
+    def _bulk_add_payload(self, **overrides):
+        payload = {
+            "form-TOTAL_FORMS": "3",
+            "form-INITIAL_FORMS": "0",
+            "form-MIN_NUM_FORMS": "0",
+            "form-MAX_NUM_FORMS": "1000",
+            "form-0-first_name": "", "form-0-last_name": "", "form-0-phone": "", "form-0-group": "",
+            "form-1-first_name": "", "form-1-last_name": "", "form-1-phone": "", "form-1-group": "",
+            "form-2-first_name": "", "form-2-last_name": "", "form-2-phone": "", "form-2-group": "",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_bulk_add_creates_students_and_skips_blank_rows(self):
+        before = Student.objects.count()
+        payload = self._bulk_add_payload(**{
+            "form-0-first_name": "Жаныбек",
+            "form-0-last_name": "Осмонов",
+            "form-0-group": str(self.group1.pk),
+            "form-0-is_active": "on",
+        })
+        response = self.admin_web.post(reverse("admin:academy_student_bulk_add"), payload, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before + 1)
+        student = Student.objects.get(first_name="Жаныбек")
+        self.assertEqual(student.group_id, self.group1.pk)
+
+    def test_bulk_add_all_blank_rows_creates_nothing(self):
+        before = Student.objects.count()
+        response = self.admin_web.post(
+            reverse("admin:academy_student_bulk_add"), self._bulk_add_payload(), follow=True
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before)
+
+    def test_bulk_add_invalid_row_shows_error_and_creates_nothing(self):
+        before = Student.objects.count()
+        payload = self._bulk_add_payload(**{
+            "form-0-first_name": "Бекзат",
+            "form-0-phone": "not-a-real-phone!!",
+        })
+        response = self.admin_web.post(reverse("admin:academy_student_bulk_add"), payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before)
+        self.assertContains(response, "Некорректный номер телефона")
+
+    def test_bulk_add_duplicate_rows_rejected(self):
+        before = Student.objects.count()
+        payload = self._bulk_add_payload(**{
+            "form-0-first_name": "Дубль", "form-0-last_name": "Студент",
+            "form-1-first_name": "Дубль", "form-1-last_name": "Студент",
+        })
+        response = self.admin_web.post(reverse("admin:academy_student_bulk_add"), payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before)
+        self.assertContains(response, "Повторяющаяся строка")
+
+    def test_bulk_add_requires_admin(self):
+        response = self.teacher_web.get(reverse("admin:academy_student_bulk_add"))
+        self.assertEqual(response.status_code, 302)
 
 
 # ---------------------------------------------------------------------------

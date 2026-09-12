@@ -20,6 +20,10 @@
         </div>
       </div>
 
+      <a href="{{ template_url }}" class="ok-btn-secondary" style="margin-top:1rem; align-self:flex-start;">
+        <i class="bi bi-file-earmark-spreadsheet"></i> Скачать шаблон Excel
+      </a>
+
       <form method="post" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem;">
         {% csrf_token %}
 
@@ -72,7 +76,47 @@
           <div style="color:var(--ok-danger,#C7402E);"><strong>{{ preview.invalid }}</strong> с ошибками</div>
         </div>
 
-        {% if preview.errors %}
+        {% if not preview.errors and not failed %}
+          <div class="ok-alert ok-alert-success">
+            <i class="bi bi-check-circle"></i>
+            <div>Ошибок не найдено. Нажмите «Импортировать», прикрепив тот же файл ещё раз.</div>
+          </div>
+        {% endif %}
+
+        {% if preview_rows %}
+          <div class="ok-student-table-wrap ok-student-preview">
+            <table class="ok-student-table">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Имя</th>
+                  <th>Телефон</th>
+                  <th>Группа</th>
+                  <th>Статус</th>
+                  <th>Результат</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in preview_rows %}
+                  <tr class="{% if not row.ok %}ok-student-preview-row-error{% endif %}">
+                    <td>{{ row.row_number }}</td>
+                    <td>{{ row.first_name }} {{ row.last_name }}</td>
+                    <td>{{ row.phone|default:"—" }}</td>
+                    <td>{{ row.group_name|default:"—" }}</td>
+                    <td>{{ row.is_active_raw|default:"true" }}</td>
+                    <td>
+                      {% if row.ok %}
+                        <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>OK</span>
+                      {% else %}
+                        <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>{{ row.errors|join:"; " }}</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% elif preview.errors %}
           <ul style="margin:0; padding-left:1.2rem;">
             {% for error in preview.errors %}
               <li class="ok-error-text" style="display:list-item; margin-bottom:0.4rem;">
@@ -80,11 +124,6 @@
               </li>
             {% endfor %}
           </ul>
-        {% elif not failed %}
-          <div class="ok-alert ok-alert-success">
-            <i class="bi bi-check-circle"></i>
-            <div>Ошибок не найдено. Нажмите «Импортировать», прикрепив тот же файл ещё раз.</div>
-          </div>
         {% endif %}
       </div>
     </div>

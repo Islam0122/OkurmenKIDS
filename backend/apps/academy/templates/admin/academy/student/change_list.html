@@ -3,18 +3,28 @@
 
 {% block object-tools-items %}
   <li>
-    <a href="{% url 'admin:academy_student_import' %}" class="btn btn-secondary" style="padding:0.3rem 0.75rem; display:inline-flex; align-items:center; gap:0.35rem;">
-      <i class="bi bi-upload"></i> Import
+    <a href="{% url 'admin:academy_student_import' %}" class="btn btn-secondary ok-student-toolbar-btn">
+      <i class="bi bi-upload"></i> Импорт
     </a>
   </li>
   <li>
-    <a href="{% url 'admin:academy_student_export' %}?format=csv&{{ request.GET.urlencode }}" class="btn btn-secondary" style="padding:0.3rem 0.75rem; display:inline-flex; align-items:center; gap:0.35rem;">
-      <i class="bi bi-download"></i> Export CSV
+    <a href="{% url 'admin:academy_student_template' %}" class="btn btn-secondary ok-student-toolbar-btn">
+      <i class="bi bi-file-earmark-spreadsheet"></i> Шаблон Excel
     </a>
   </li>
   <li>
-    <a href="{% url 'admin:academy_student_export' %}?format=xlsx&{{ request.GET.urlencode }}" class="btn btn-secondary" style="padding:0.3rem 0.75rem; display:inline-flex; align-items:center; gap:0.35rem;">
-      <i class="bi bi-download"></i> Export XLSX
+    <a href="{% url 'admin:academy_student_export' %}?format=csv&{{ request.GET.urlencode }}" class="btn btn-secondary ok-student-toolbar-btn">
+      <i class="bi bi-download"></i> CSV
+    </a>
+  </li>
+  <li>
+    <a href="{% url 'admin:academy_student_export' %}?format=xlsx&{{ request.GET.urlencode }}" class="btn btn-secondary ok-student-toolbar-btn">
+      <i class="bi bi-download"></i> XLSX
+    </a>
+  </li>
+  <li>
+    <a href="{% url 'admin:academy_student_bulk_add' %}" class="btn btn-secondary ok-student-toolbar-btn">
+      <i class="bi bi-people"></i> Массовое добавление
     </a>
   </li>
   {{ block.super }}
