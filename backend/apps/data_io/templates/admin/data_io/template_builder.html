@@ -1,0 +1,87 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="ok-form-container" style="max-width: 920px;">
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-sliders"></i>
+      <span>{{ title }}</span>
+    </div>
+    <div class="ok-card-body">
+      {% if error %}
+        <div class="ok-alert ok-alert-danger">
+          <i class="bi bi-x-circle"></i>
+          <div>{{ error }}</div>
+        </div>
+      {% endif %}
+
+      <form method="post" style="display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem;">
+        {% csrf_token %}
+        <input type="hidden" name="model_key" value="{{ adapter.key }}">
+        {% if template %}<input type="hidden" name="id" value="{{ template.pk }}">{% endif %}
+
+        <div class="ok-grid-2">
+          <div class="ok-field-group">
+            <label class="ok-label" for="id_name">Название шаблона <span class="ok-label-required">*</span></label>
+            <input class="ok-input" type="text" id="id_name" name="name" value="{{ name_value }}" placeholder="Например: Для бухгалтерии">
+          </div>
+          <div class="ok-field-group">
+            <label class="ok-label" for="id_fmt">Формат по умолчанию</label>
+            <select class="ok-input" id="id_fmt" name="fmt">
+              <option value="csv" {% if fmt_value == "csv" %}selected{% endif %}>CSV</option>
+              <option value="xlsx" {% if fmt_value == "xlsx" %}selected{% endif %}>XLSX</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="ok-field-group">
+          <label class="ok-label">Поля для экспорта — «{{ adapter.label }}»</label>
+          <span class="ok-help-text">Отметьте нужные поля, при желании задайте своё название колонки и порядок вывода.</span>
+
+          <div class="ok-table-scroll" style="margin-top: 0.5rem;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--ok-border);">
+                  <th style="padding: 0.5rem 0.5rem 0.5rem 0;">Включить</th>
+                  <th style="padding: 0.5rem;">Поле модели</th>
+                  <th style="padding: 0.5rem;">Название колонки</th>
+                  <th style="padding: 0.5rem; width: 90px;">Порядок</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in field_rows %}
+                <tr style="border-bottom: 1px solid var(--ok-border);">
+                  <td style="padding: 0.5rem 0.5rem 0.5rem 0;">
+                    <input type="checkbox" name="include__{{ row.key }}" {% if row.included %}checked{% endif %}>
+                  </td>
+                  <td style="padding: 0.5rem;">
+                    {{ row.spec_label }}
+                    {% if row.help_text %}<div class="ok-help-text">{{ row.help_text }}</div>{% endif %}
+                  </td>
+                  <td style="padding: 0.5rem;">
+                    <input class="ok-input" type="text" name="label__{{ row.key }}" value="{{ row.label }}">
+                  </td>
+                  <td style="padding: 0.5rem;">
+                    <input class="ok-input" type="number" name="order__{{ row.key }}" value="{{ row.order }}" style="width: 70px;">
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="ok-form-actions" style="margin-top: 0; padding: 1rem 0 0; border: none; border-top: 1px solid var(--ok-border); border-radius: 0; background: transparent;">
+          <a href="{{ changelist_url }}" class="ok-btn-secondary">
+            <i class="bi bi-arrow-left"></i> Отмена
+          </a>
+          <button type="submit" class="ok-btn-primary">
+            <i class="bi bi-check2-circle"></i> Сохранить шаблон
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

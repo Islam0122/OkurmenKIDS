@@ -47,6 +47,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "apps.users.apps.UsersConfig",
     "apps.academy.apps.AcademyConfig",
+    "apps.data_io.apps.DataIoConfig",
 
 ]
 
@@ -259,7 +260,7 @@ JAZZMIN_SETTINGS = {
     # grouped the way an academy admin actually thinks about them
     # (teaching staff/students, organisation, day-to-day control, system)
     # rather than by Django app label.
-    "hide_apps": ["users", "academy"],
+    "hide_apps": ["users", "academy", "data_io"],
 
     "custom_links": {
         "академия": [
@@ -272,6 +273,7 @@ JAZZMIN_SETTINGS = {
             {"name": "Курсы", "model": "academy.course", "icon": "bi bi-collection-play"},
             {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-book"},
+            {"name": "Шаблоны экспорта", "model": "data_io.exporttemplate", "icon": "bi bi-file-earmark-ruled"},
         ],
 
         "учебный процесс": [
@@ -322,6 +324,7 @@ JAZZMIN_SETTINGS = {
         "academy.attendance": "bi bi-clipboard-check",
         "academy.homework": "bi bi-journal-text",
         "academy.homeworkresult": "bi bi-check2-square",
+        "data_io.exporttemplate": "bi bi-file-earmark-ruled",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",
