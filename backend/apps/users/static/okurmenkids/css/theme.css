@@ -1224,10 +1224,13 @@ button.ok-password-toggle.btn {
 /* =====================================================
    OkurmenKIDS — Select2 modern styling
    ===================================================== */
-
 .select2-container {
-    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 300px !important;
+    min-width: 180px !important;
+
     font-family: inherit;
+    box-sizing: border-box;
 }
 
 .select2-container--default .select2-selection--single {

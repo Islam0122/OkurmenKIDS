@@ -482,3 +482,22 @@ function addPasswordToggle(input) {
     }
   );
 })();
+ (function () {
+    function translateSelect2() {
+        document.querySelectorAll(".select2-selection__rendered").forEach(function (el) {
+            if (el.textContent.trim() === "- Select an option -") {
+                el.textContent = "- Выберите вариант -";
+            }
+        });
+    }
+
+    translateSelect2();
+
+    const observer = new MutationObserver(translateSelect2);
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+    });
+})();
