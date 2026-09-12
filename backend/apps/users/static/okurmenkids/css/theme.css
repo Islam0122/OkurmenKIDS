@@ -279,8 +279,77 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 /* Hide Jazzmin's bundled default logo image; we draw our own emblem. */
 .ok-hidden-logo { display: none !important; }
 
+/* =========================================================
+   OkurmenKIDS — Sidebar Brand Logo
+   ========================================================= */
+
+/* Header / brand container */
+.main-sidebar .brand-link {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+
+    height: 86px !important;
+    min-height: 86px !important;
+
+    padding: 12px 18px !important;
+
+    background: #ffffff !important;
+    border-bottom: 1px solid #e5e7eb !important;
+
+    overflow: hidden !important;
+}
+
+/* Actual logo image */
+.main-sidebar .brand-link .brand-image {
+    float: none !important;
+
+    width: 62px !important;
+    height: 62px !important;
+
+    max-height: 62px !important;
+    max-width: 62px !important;
+
+    margin: 0 !important;
+
+    object-fit: contain !important;
+    object-position: center !important;
+
+    opacity: 1 !important;
+
+    border-radius: 50% !important;
+    box-shadow: none !important;
+}
+
+/* Brand text */
+.main-sidebar .brand-link .brand-text {
+    display: block !important;
+
+    margin-left: 0 !important;
+
+    font-size: 24px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.5px !important;
+
+    color: #202124 !important;
+    line-height: 1.2 !important;
+
+    white-space: nowrap !important;
+}
+
+/* Remove custom duplicated OK emblem if it exists */
+.main-sidebar .brand-link::before {
+    content: none !important;
+    display: none !important;
+}
+
+/* Remove any custom pseudo logo */
+.main-sidebar .brand-link::after {
+    content: none !important;
+    display: none !important;
+}
 .sidebar-brand .brand-link::before {
-  content: "OK";
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -747,23 +816,95 @@ fieldset.module, .form-row { border-color: var(--ok-border) !important; }
 
 .checkbox-row label, label.vCheckboxLabel { font-weight: 500; }
 
-/* Password visibility toggle (added by okurmenkids/js/ui.js) */
-.ok-password-wrap { position: relative; }
+
+/* =========================================================
+   Password visibility button — Jazzmin login
+   ========================================================= */
+
 .ok-password-toggle {
-  position: absolute;
-  right: 0.6rem;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: var(--ok-text-muted);
-  cursor: pointer;
-  padding: 0.2rem;
-  font-size: 0.95rem;
+  position: static !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  box-sizing: border-box !important;
+
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 44px !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  border: 1px solid #ced4da !important;
+  border-left: 0 !important;
+  border-radius: 0 !important;
+
+  background: #ffffff !important;
+  color: #7b8794 !important;
+
+  box-shadow: none !important;
+  transform: none !important;
+
+  cursor: pointer !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
 }
-.ok-password-toggle:hover { color: var(--ok-primary); }
-.ok-password-wrap input[type="password"],
-.ok-password-wrap input[type="text"] { padding-right: 2.2rem; }
+
+.ok-password-toggle:hover,
+.ok-password-toggle:focus,
+.ok-password-toggle:active {
+  background: #ffffff !important;
+  color: #198754 !important;
+  border-color: #ced4da !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.ok-password-toggle i {
+  display: block !important;
+
+  font-size: 16px !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+}
+
+/* Make password input and eye visually connected */
+input[type="password"],
+input[type="text"] {
+  box-sizing: border-box;
+}
+
+/* Remove Bootstrap button appearance */
+button.ok-password-toggle.btn {
+  font-family: inherit !important;
+  font-weight: 400 !important;
+  text-transform: none !important;
+}
+
+/* Existing Jazzmin lock addon */
+.input-group .input-group-append .input-group-text {
+  height: 44px !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.ok-password-toggle + .input-group-append,
+.ok-password-toggle + .input-group-text {
+  margin-left: -1px !important;
+}
+
+.ok-password-toggle:hover {
+  background: #f8f9fa !important;
+  color: #198754 !important;
+}
+
+.ok-password-toggle i {
+  font-size: 16px;
+  line-height: 1;
+}
 
 /* ------------------------------------------------------------------ */
 /* Comfortable multi-select (subjects, students, …)                    */

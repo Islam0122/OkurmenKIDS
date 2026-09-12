@@ -123,8 +123,12 @@ TIME_ZONE = "Asia/Bishkek"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
 
 # No project-level static/ directory — every static asset (Jazzmin theme
 # CSS/JS, admin templates' assets) lives under its owning app's own
@@ -231,15 +235,18 @@ SPECTACULAR_SETTINGS = {
 from .cors import *
 
 JAZZMIN_SETTINGS = {
-    "site_title": "OkurmenKIDS",
-    "site_header": "OkurmenKIDS",
-    "site_brand": "OkurmenKIDS",
+    "site_title": "OkurmenKids",
+    "site_header": "OkurmenKids",
+    "site_brand": "OkurmenKids",
+    "site_logo": "images/logo.png",
+    # "site_logo_classes": "elevation-2",    # круглая обрезка
+    "site_icon": "images/logo.png",
     # No custom logo asset — the sidebar brand mark is drawn with CSS
     # (an "OK" emblem + wordmark) instead of an <img>; hide Jazzmin's
     # bundled default logo rather than requiring a new binary asset.
-    "site_logo_classes": "ok-hidden-logo",
-
-    "welcome_sign": "Добро пожаловать в OkurmenKIDS 👋",
+    "site_logo_classes": "",
+    "show_ui_builder": False,
+    "welcome_sign": "Добро пожаловать в OkurmenKids ",
     "copyright": "OkurmenKIDS © 2026",
 
     "show_sidebar": True,
