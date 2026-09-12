@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,6 +12,7 @@ from django.test import Client as DjangoClient
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from openpyxl import Workbook, load_workbook
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
@@ -1798,6 +1800,267 @@ class StudentAdminImportExportTests(AcademyTestBase):
         response = self.teacher_web.get(url)
         self.assertEqual(response.status_code, 302)
         self.assertIn("/admin/login/", response.url)
+
+
+# ---------------------------------------------------------------------------
+# "Импорт данных" — the unified admin dashboard (apps.academy.admin_views.
+# import_data_view / download_template_view / export_groups_view /
+# export_schedule_view), and apps.academy.services.group_import_export
+# (Group's own import/export, upsert by the unique Group.name).
+# ---------------------------------------------------------------------------
+
+class ImportDataAdminViewTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+        # A "teacher who is also admin-site staff" is the sharper security
+        # case: is_staff alone must not be enough to pass _is_admin_user.
+        self.staff_teacher = make_teacher("staffteacher")
+        self.staff_teacher.user.is_staff = True
+        self.staff_teacher.user.save(update_fields=["is_staff"])
+        self.staff_teacher_web = DjangoClient()
+        self.staff_teacher_web.force_login(self.staff_teacher.user)
+
+        self.import_url = reverse("admin:academy_import_data")
+        self.template_url = reverse("admin:academy_import_template")
+        self.export_groups_url = reverse("admin:academy_group_export")
+        self.export_schedule_url = reverse("admin:academy_groupschedule_export")
+
+    # -- Access -------------------------------------------------------
+
+    def test_admin_can_open_import_data_page(self):
+        response = self.admin_web.get(self.import_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Импорт данных")
+
+    def test_anonymous_is_redirected_to_login(self):
+        response = DjangoClient().get(self.import_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_non_staff_teacher_is_redirected_to_login(self):
+        response = self.teacher_web.get(self.import_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_staff_teacher_is_forbidden(self):
+        """Spec: 'Teachers must not access admin import/export unless
+        explicitly authorized' — is_staff alone (needed just to pass Django
+        admin's own gate) must not unlock this page for a non-admin role."""
+        response = self.staff_teacher_web.get(self.import_url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_teacher_cannot_download_template(self):
+        response = self.staff_teacher_web.get(self.template_url, {"type": "student"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_teacher_cannot_export_groups(self):
+        response = self.staff_teacher_web.get(self.export_groups_url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_sidebar_link_present_on_dashboard(self):
+        response = self.admin_web.get(reverse("admin:index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.import_url)
+
+    # -- Templates ------------------------------------------------------
+
+    def test_student_template_downloads_valid_workbook(self):
+        response = self.admin_web.get(self.template_url, {"type": "student"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        workbook = load_workbook(io.BytesIO(response.content))
+        self.assertEqual(workbook.sheetnames, ["Данные", "Инструкция"])
+        header = [cell.value for cell in workbook["Данные"][1]]
+        self.assertEqual(
+            header, ["id", "first_name", "last_name", "phone", "parent_phone", "group", "is_active"]
+        )
+
+    def test_teacher_template_downloads_valid_workbook(self):
+        response = self.admin_web.get(self.template_url, {"type": "teacher"})
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(io.BytesIO(response.content))
+        header = [cell.value for cell in workbook["Данные"][1]]
+        self.assertIn("username", header)
+        self.assertIn("email", header)
+        self.assertNotIn("id", header)
+
+    def test_group_template_downloads_valid_workbook(self):
+        response = self.admin_web.get(self.template_url, {"type": "group"})
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(io.BytesIO(response.content))
+        header = [cell.value for cell in workbook["Данные"][1]]
+        self.assertEqual(
+            header, ["name", "course", "status", "start_date", "end_date", "max_students", "description"]
+        )
+        self.assertNotIn("id", header)
+
+    def test_unknown_template_type_redirects_with_message(self):
+        response = self.admin_web.get(self.template_url, {"type": "nonsense"}, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Неизвестный тип шаблона")
+
+    # -- Group import: create / update / validation ---------------------
+
+    def test_group_import_creates_new_group(self):
+        csv_content = "name,course,status,start_date,max_students\nJS-02,Standard,active,2026-10-01,10\n"
+        response = self.admin_web.post(
+            self.import_url, {"entity": "group", "file": _csv_file(csv_content, "groups.csv"), "confirm": "1"},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        group = Group.objects.get(name="JS-02")
+        self.assertEqual(group.course, self.course)
+        self.assertEqual(group.max_students, 10)
+
+    def test_group_import_updates_by_unique_name_not_duplicate(self):
+        """Group.name is a real unique field (unlike Student) — reimporting
+        the same name must update in place, never create a second row."""
+        csv_content = (
+            f"name,course,status,start_date,max_students\n"
+            f"{self.group1.name},Standard,paused,2026-09-07,20\n"
+        )
+        response = self.admin_web.post(
+            self.import_url, {"entity": "group", "file": _csv_file(csv_content, "groups.csv"), "confirm": "1"},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Group.objects.filter(name=self.group1.name).count(), 1)
+        self.group1.refresh_from_db()
+        self.assertEqual(self.group1.status, Group.Status.PAUSED)
+        self.assertEqual(self.group1.max_students, 20)
+
+    def test_group_import_unknown_course_is_rejected_and_atomic(self):
+        csv_content = (
+            "name,course,start_date\n"
+            "Valid-01,Standard,2026-10-01\n"
+            "Invalid-01,No Such Course,2026-10-01\n"
+        )
+        before = Group.objects.count()
+        response = self.admin_web.post(
+            self.import_url, {"entity": "group", "file": _csv_file(csv_content, "groups.csv"), "confirm": "1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "не найден")
+        self.assertEqual(Group.objects.count(), before)
+        self.assertFalse(Group.objects.filter(name="Valid-01").exists())
+
+    def test_group_import_missing_required_column_reports_row_error(self):
+        csv_content = "name,course\nNoDate-01,Standard\n"
+        response = self.admin_web.post(
+            self.import_url, {"entity": "group", "file": _csv_file(csv_content, "groups.csv"), "confirm": "1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "start_date")
+        self.assertFalse(Group.objects.filter(name="NoDate-01").exists())
+
+    def test_group_import_duplicate_name_within_file_is_rejected(self):
+        csv_content = (
+            "name,course,start_date\n"
+            "Dup-01,Standard,2026-10-01\n"
+            "Dup-01,Standard,2026-10-02\n"
+        )
+        response = self.admin_web.post(
+            self.import_url, {"entity": "group", "file": _csv_file(csv_content, "groups.csv"), "confirm": "1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Дублирующееся название")
+        self.assertFalse(Group.objects.filter(name="Dup-01").exists())
+
+    def test_group_import_is_idempotent(self):
+        csv_content = "name,course,start_date\nIdem-01,Standard,2026-10-01\n"
+        url_kwargs = {"entity": "group", "confirm": "1"}
+
+        self.admin_web.post(self.import_url, {**url_kwargs, "file": _csv_file(csv_content, "g1.csv")})
+        self.assertEqual(Group.objects.filter(name="Idem-01").count(), 1)
+
+        self.admin_web.post(self.import_url, {**url_kwargs, "file": _csv_file(csv_content, "g2.csv")})
+        self.assertEqual(Group.objects.filter(name="Idem-01").count(), 1)
+
+    def test_group_import_preview_does_not_save(self):
+        csv_content = "name,course,start_date\nPreviewOnly-01,Standard,2026-10-01\n"
+        response = self.admin_web.post(
+            self.import_url,
+            {"entity": "group", "file": _csv_file(csv_content, "groups.csv"), "preview": "1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Group.objects.filter(name="PreviewOnly-01").exists())
+
+    def test_import_unsupported_extension_is_rejected(self):
+        bad_file = SimpleUploadedFile("groups.txt", b"whatever", content_type="text/plain")
+        response = self.admin_web.post(
+            self.import_url, {"entity": "group", "file": bad_file, "confirm": "1"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Неподдерживаемый формат")
+
+    def test_import_routes_to_student_entity(self):
+        csv_content = "first_name,group\nРоут,Python Beginner\n"
+        response = self.admin_web.post(
+            self.import_url, {"entity": "student", "file": _csv_file(csv_content), "confirm": "1"}, follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Student.objects.filter(first_name="Роут").exists())
+
+    def test_import_routes_to_teacher_entity(self):
+        csv_content = "username,email,first_name\nnewteach,newteach@okurmen.kg,Новый\n"
+        response = self.admin_web.post(
+            self.import_url, {"entity": "teacher", "file": _csv_file(csv_content), "confirm": "1"}, follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(User.objects.filter(username="newteach").exists())
+
+    def test_xlsx_upload_is_accepted(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["name", "course", "start_date"])
+        sheet.append(["XlsxGroup-01", "Standard", "2026-10-01"])
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        xlsx_file = SimpleUploadedFile(
+            "groups.xlsx", buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response = self.admin_web.post(
+            self.import_url, {"entity": "group", "file": xlsx_file, "confirm": "1"}, follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Group.objects.filter(name="XlsxGroup-01").exists())
+
+    # -- Export -----------------------------------------------------------
+
+    def test_export_groups_downloads_xlsx(self):
+        response = self.admin_web.get(self.export_groups_url, {"format": "xlsx"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        workbook = load_workbook(io.BytesIO(response.content))
+        sheet = workbook.active
+        header = [cell.value for cell in sheet[1]]
+        self.assertEqual(header[:3], ["name", "course", "status"])
+        values = [row[0].value for row in sheet.iter_rows(min_row=2)]
+        self.assertIn(self.group1.name, values)
+
+    def test_export_schedule_downloads_xlsx_with_active_status_column(self):
+        response = self.admin_web.get(self.export_schedule_url, {"format": "xlsx"})
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(io.BytesIO(response.content))
+        sheet = workbook.active
+        header = [cell.value for cell in sheet[1]]
+        self.assertEqual(
+            header, ["group", "teacher", "subject", "day_of_week", "start_time", "end_time", "room", "is_active"]
+        )
+        self.assertGreater(sheet.max_row, 1)
 
 
 # ---------------------------------------------------------------------------

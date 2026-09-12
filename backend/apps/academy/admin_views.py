@@ -11,6 +11,7 @@ import datetime as dt
 from collections import defaultdict
 from typing import Iterable
 
+from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.db.models import Avg, Q
@@ -19,12 +20,31 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from apps.users.import_export.formats import UnsupportedFileFormat
+from apps.users.import_export.teachers import (
+    TeacherImportValidationError,
+    import_teachers,
+    preview_teachers_import,
+)
 from apps.users.models import Subject, Teacher, User
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
-from .models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Room
+from .models import Attendance, Course, Group, GroupSchedule, GroupTeacher, Homework, HomeworkResult, Lesson, Room
 from .services.analytics import get_dashboard
+from .services.excel_template_service import UnknownTemplateType, build_template
+from .services.group_import_export import (
+    GroupImportValidationError,
+    export_groups,
+    import_groups,
+    preview_groups_import,
+)
+from .services.import_export import (
+    StudentImportValidationError,
+    import_students,
+    preview_students_import,
+)
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+from .services.schedule_export import export_schedules
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
 
@@ -465,3 +485,163 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
         ),
     }
     return render(request, "admin/academy/group_teacher_workspace.html", context)
+
+
+# ---------------------------------------------------------------------------
+# "Импорт данных" — one dashboard page for template download / import /
+# export across the entities that already have a reliable, well-scoped
+# import path: Students and Teachers (both pre-existing, reused as-is here)
+# plus Groups (new — upsert by its own unique `name`, see
+# services.group_import_export). Group schedules are export-only from this
+# page (see services.schedule_export's module docstring for why an importer
+# isn't built for it) and Courses are out of scope — a course only has a
+# name/count_lesson/subjects, nothing an admin fills in bulk from a
+# spreadsheet in practice, so adding it here would be exactly the kind of
+# unsupported-entity over-engineering the spec warns against.
+#
+# Deliberately its own page rather than three separate ModelAdmin import
+# screens: the spec asks for one place with three cards (import/template/
+# export), and Student/Teacher already have their own dedicated import
+# screens (see StudentAdmin/TeacherAdmin.import_view) that this page reuses
+# by calling straight into the same service functions — no logic is
+# duplicated, only the presentation is unified.
+# ---------------------------------------------------------------------------
+
+_IMPORT_ENTITIES = {
+    "student": {
+        "label": "Студенты",
+        "preview": preview_students_import,
+        "import": import_students,
+        "error_cls": StudentImportValidationError,
+    },
+    "teacher": {
+        "label": "Тренеры",
+        "preview": preview_teachers_import,
+        "import": import_teachers,
+        "error_cls": TeacherImportValidationError,
+    },
+    "group": {
+        "label": "Группы",
+        "preview": preview_groups_import,
+        "import": import_groups,
+        "error_cls": GroupImportValidationError,
+    },
+}
+
+_ENTITY_CHOICES = [(key, meta["label"]) for key, meta in _IMPORT_ENTITIES.items()]
+
+
+class ImportDataForm(forms.Form):
+    entity = forms.ChoiceField(
+        label="Тип данных",
+        choices=_ENTITY_CHOICES,
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    file = forms.FileField(
+        label="Файл (XLSX или CSV)",
+        widget=forms.ClearableFileInput(attrs={"class": "ok-input", "accept": ".xlsx,.xls,.csv"}),
+    )
+
+    def clean_file(self):
+        uploaded = self.cleaned_data["file"]
+        name = (uploaded.name or "").lower()
+        if not name.endswith((".xlsx", ".xls", ".csv")):
+            raise forms.ValidationError(
+                "Неподдерживаемый формат файла. Загрузите файл с расширением .xlsx или .csv."
+            )
+        return uploaded
+
+
+def import_data_view(request):
+    """GET renders the "Импорт данных" dashboard; POST handles one entity's
+    upload (preview or confirm), routed to the matching existing import
+    service — see _IMPORT_ENTITIES above."""
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Раздел «Импорт данных» доступен только администратору.")
+
+    preview = None
+    failed = False
+    selected_entity = request.POST.get("entity") or "student"
+    if selected_entity not in _IMPORT_ENTITIES:
+        selected_entity = "student"
+
+    if request.method == "POST":
+        form = ImportDataForm(request.POST, request.FILES)
+        if form.is_valid():
+            selected_entity = form.cleaned_data["entity"]
+            entity_meta = _IMPORT_ENTITIES[selected_entity]
+            uploaded_file = form.cleaned_data["file"]
+
+            if "preview" in request.POST:
+                try:
+                    preview = entity_meta["preview"](uploaded_file)
+                except UnsupportedFileFormat as exc:
+                    messages.error(request, str(exc))
+            else:
+                try:
+                    result = entity_meta["import"](uploaded_file)
+                except UnsupportedFileFormat as exc:
+                    messages.error(request, str(exc))
+                except entity_meta["error_cls"] as exc:
+                    preview = exc.preview
+                    failed = True
+                else:
+                    messages.success(
+                        request,
+                        f"Импорт «{entity_meta['label']}» завершён: создано {result.created}, "
+                        f"обновлено {result.updated} из {result.total}.",
+                    )
+                    return redirect(reverse("admin:academy_import_data"))
+    else:
+        form = ImportDataForm(initial={"entity": selected_entity})
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Импорт данных",
+        "form": form,
+        "preview": preview,
+        "failed": failed,
+        "selected_entity": selected_entity,
+        "entity_choices": _ENTITY_CHOICES,
+        "template_url": reverse("admin:academy_import_template"),
+        "export_students_url": f"{reverse('admin:academy_student_export')}?format=xlsx",
+        "export_groups_url": f"{reverse('admin:academy_group_export')}?format=xlsx",
+        "export_schedule_url": f"{reverse('admin:academy_groupschedule_export')}?format=xlsx",
+    }
+    return render(request, "admin/academy/import_data.html", context)
+
+
+def download_template_view(request):
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Раздел «Импорт данных» доступен только администратору.")
+
+    entity = request.GET.get("type", "student")
+    try:
+        return build_template(entity)
+    except UnknownTemplateType as exc:
+        messages.error(request, str(exc))
+        return redirect(reverse("admin:academy_import_data"))
+
+
+def export_groups_view(request):
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Раздел «Импорт данных» доступен только администратору.")
+
+    fmt = request.GET.get("format", "xlsx")
+    try:
+        return export_groups(Group.objects.select_related("course"), fmt)
+    except UnsupportedFileFormat as exc:
+        messages.error(request, str(exc))
+        return redirect(reverse("admin:academy_import_data"))
+
+
+def export_schedule_view(request):
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Раздел «Импорт данных» доступен только администратору.")
+
+    fmt = request.GET.get("format", "xlsx")
+    try:
+        return export_schedules(GroupSchedule.objects.all(), fmt)
+    except UnsupportedFileFormat as exc:
+        messages.error(request, str(exc))
+        return redirect(reverse("admin:academy_import_data"))

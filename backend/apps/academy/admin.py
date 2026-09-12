@@ -13,8 +13,12 @@ from apps.users.import_export.formats import UnsupportedFileFormat
 
 from .admin_views import (
     analytics_view,
+    download_template_view,
+    export_groups_view,
+    export_schedule_view,
     generate_lessons_for_group_view,
     group_teacher_workspace_view,
+    import_data_view,
     schedule_view,
 )
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
@@ -1003,6 +1007,22 @@ def _get_urls_with_schedule():
             name="academy_schedule_generate_lessons",
         ),
         path("academy/analytics/", admin.site.admin_view(analytics_view), name="academy_analytics"),
+        path("academy/import-data/", admin.site.admin_view(import_data_view), name="academy_import_data"),
+        path(
+            "academy/import-data/template/",
+            admin.site.admin_view(download_template_view),
+            name="academy_import_template",
+        ),
+        path(
+            "academy/import-data/export/groups/",
+            admin.site.admin_view(export_groups_view),
+            name="academy_group_export",
+        ),
+        path(
+            "academy/import-data/export/schedule/",
+            admin.site.admin_view(export_schedule_view),
+            name="academy_groupschedule_export",
+        ),
     ]
     return custom_urls + _original_get_urls()
 
