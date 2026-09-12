@@ -14,6 +14,7 @@
  *   7. SubjectCards — checkbox card grid (Course.subjects picker)
  *   8. PhotoField — instant preview + "remove photo" state
  *   9. StudentBulkAdd — dynamic add/remove rows for the bulk-add formset
+ *   10. Group Workspace — search/select-all for the "add existing students" modal
  */
 
 (function () {
@@ -848,6 +849,29 @@ card.dataset.label = label.toLowerCase();
       if (row) row.remove();
     });
   }
+
+  /* ------------------------------------------------------------------ */
+  /* 10. Group Workspace — "Добавить существующих студентов" modal        */
+  /* ------------------------------------------------------------------ */
+
+  // Global (not just inside this IIFE) because the modal's search input/
+  // "select all" checkbox call these directly via inline on*= attributes —
+  // simplest wiring for a small, single-purpose modal with no other JS.
+  window.okFilterModalStudents = function (query) {
+    var needle = (query || "").trim().toLowerCase();
+    document.querySelectorAll(".ok-modal-student-row").forEach(function (row) {
+      var haystack = row.getAttribute("data-name") || "";
+      row.hidden = needle.length > 0 && haystack.indexOf(needle) === -1;
+    });
+  };
+
+  window.okToggleAllModalStudents = function (checked) {
+    document.querySelectorAll(".ok-modal-student-row:not([hidden]) input[type=checkbox]").forEach(
+      function (checkbox) {
+        checkbox.checked = checked;
+      }
+    );
+  };
 
   /* ------------------------------------------------------------------ */
   /* Initialize                                                          */

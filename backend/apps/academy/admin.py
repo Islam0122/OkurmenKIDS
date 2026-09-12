@@ -18,9 +18,11 @@ from .admin_views import (
     analytics_view,
     generate_lessons_for_group_view,
     group_teacher_workspace_view,
+    group_workspace_add_existing_students_view,
     group_workspace_add_program_view,
     group_workspace_add_schedule_view,
     group_workspace_add_student_view,
+    group_workspace_add_teacher_view,
     group_workspace_analytics_view,
     group_workspace_attendance_view,
     group_workspace_generate_lessons_view,
@@ -30,8 +32,10 @@ from .admin_views import (
     group_workspace_programs_view,
     group_workspace_remove_schedule_view,
     group_workspace_remove_student_view,
+    group_workspace_remove_teacher_view,
     group_workspace_schedule_view,
     group_workspace_students_view,
+    group_workspace_teachers_view,
     schedule_view,
 )
 from .models import (
@@ -859,6 +863,18 @@ class GroupAdmin(admin.ModelAdmin):
             )
         )
 
+    def response_add(self, request, obj, post_url_continue=None):
+        # Spec: after creating a Group, go straight to its Workspace instead
+        # of the usual changelist/"add another" screen — "Save and continue
+        # editing" and "Save and add another" are left alone (they're
+        # explicit admin intent to keep working the plain form).
+        if "_continue" not in request.POST and "_addanother" not in request.POST:
+            self.message_user(
+                request, f"Группа «{obj}» создана. Открыто рабочее пространство.", messages.SUCCESS
+            )
+            return redirect(reverse("admin:academy_group_workspace", args=[obj.pk]))
+        return super().response_add(request, obj, post_url_continue)
+
     @admin.display(description="Студенты", ordering="active_students_count")
     def students_count_display(self, obj: Group) -> str:
         count = getattr(obj, "active_students_count", None) or 0
@@ -1005,9 +1021,29 @@ class GroupAdmin(admin.ModelAdmin):
                 name="academy_group_workspace_students_add",
             ),
             path(
+                "<int:group_id>/workspace/students/add-existing/",
+                self.admin_site.admin_view(group_workspace_add_existing_students_view),
+                name="academy_group_workspace_students_add_existing",
+            ),
+            path(
                 "<int:group_id>/workspace/students/<int:student_id>/remove/",
                 self.admin_site.admin_view(group_workspace_remove_student_view),
                 name="academy_group_workspace_students_remove",
+            ),
+            path(
+                "<int:group_id>/workspace/teachers/",
+                self.admin_site.admin_view(group_workspace_teachers_view),
+                name="academy_group_workspace_teachers",
+            ),
+            path(
+                "<int:group_id>/workspace/teachers/add/",
+                self.admin_site.admin_view(group_workspace_add_teacher_view),
+                name="academy_group_workspace_teachers_add",
+            ),
+            path(
+                "<int:group_id>/workspace/teachers/<int:group_teacher_id>/remove/",
+                self.admin_site.admin_view(group_workspace_remove_teacher_view),
+                name="academy_group_workspace_teachers_remove",
             ),
             path(
                 "<int:group_id>/workspace/programs/",

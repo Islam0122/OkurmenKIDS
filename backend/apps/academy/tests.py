@@ -2639,8 +2639,8 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
             reverse("admin:academy_group_workspace_schedule", args=[self.group1.id])
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        rows = response.context["rows"]
-        schedule_ids = {row["obj"].pk for row in rows}
+        days = response.context["days"]
+        schedule_ids = {row["obj"].pk for day in days for row in day["slots"]}
         self.assertEqual(schedule_ids, set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True)))
         self.assertTrue(GroupSchedule.objects.filter(group=self.group1, subject__isnull=True).exists())
 
@@ -2779,28 +2779,38 @@ class GroupWorkspaceViewTests(AcademyTestBase):
     def test_overview_empty_programs_state(self):
         empty_group = Group.objects.create(name="Empty Group", course=self.course, start_date=dt.date(2026, 9, 7))
         response = self.admin_web.get(reverse("admin:academy_group_workspace", args=[empty_group.id]))
-        self.assertContains(response, "Учебные программы ещё не добавлены")
+        self.assertContains(response, "Пока нет учебных программ")
 
     # -- students tab ---------------------------------------------------------
 
     def test_students_tab_lists_group_students_only(self):
         response = self.admin_web.get(self._url("_students"))
-        self.assertContains(response, "Алина")
-        self.assertContains(response, "Мансур")
-        self.assertNotContains(response, "Айбек")  # belongs to group2
+        # Scoped to the roster itself (response.context["students"]) rather
+        # than raw page text — Айбек legitimately appears elsewhere on the
+        # same page now, as a candidate in the "Добавить существующих" modal.
+        names = {str(s) for s in response.context["students"]}
+        self.assertIn(str(self.student1), names)
+        self.assertIn(str(self.student2), names)
+        self.assertNotIn(str(self.student3), names)  # belongs to group2
 
     def test_students_tab_search_filters(self):
         response = self.admin_web.get(self._url("_students"), {"q": "Алина"})
         self.assertContains(response, "Алина")
         self.assertNotContains(response, "Мансур")
 
-    def test_add_existing_student_moves_them_into_group(self):
+    def test_add_existing_students_bulk_moves_them_into_group(self):
         response = self.admin_web.post(
-            self._url("_students_add"), {"add_existing": "1", "student": self.student3.pk}
+            self._url("_students_add_existing"), {"students": [str(self.student3.pk)]}
         )
         self.assertEqual(response.status_code, 302)
         self.student3.refresh_from_db()
         self.assertEqual(self.student3.group_id, self.group1.id)
+
+    def test_add_existing_students_modal_lists_candidates_not_in_group(self):
+        response = self.admin_web.get(self._url("_students"))
+        candidate_names = {str(s) for s in response.context["candidate_students"]}
+        self.assertIn(str(self.student3), candidate_names)
+        self.assertNotIn(str(self.student1), candidate_names)  # already in group1
 
     def test_create_new_student_adds_to_group(self):
         response = self.admin_web.post(
@@ -2834,6 +2844,7 @@ class GroupWorkspaceViewTests(AcademyTestBase):
             {
                 "teacher": self.teacher2.pk, "subject": self.subject_frontend.pk,
                 "day_of_week": ["mon", "wed"], "start_time": "18:00", "end_time": "19:30",
+                "lesson_plan_source": "course",
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -2852,6 +2863,7 @@ class GroupWorkspaceViewTests(AcademyTestBase):
             {
                 "teacher": self.teacher1.pk, "subject": self.subject_python.pk,
                 "day_of_week": ["fri"], "start_time": "20:00", "end_time": "21:00",
+                "lesson_plan_source": "course",
             },
         )
         after = GroupTeacher.objects.filter(group=self.group1, teacher=self.teacher1, subject=self.subject_python).count()
@@ -2864,6 +2876,7 @@ class GroupWorkspaceViewTests(AcademyTestBase):
             {
                 "teacher": self.teacher1.pk, "subject": self.subject_python.pk,
                 "day_of_week": ["mon"], "start_time": "15:30", "end_time": "16:00",
+                "lesson_plan_source": "course",
             },
         )
         self.assertEqual(response.status_code, 200)  # re-rendered with errors, no redirect
@@ -2877,9 +2890,9 @@ class GroupWorkspaceViewTests(AcademyTestBase):
 
     def test_schedule_tab_lists_every_slot(self):
         response = self.admin_web.get(self._url("_schedule"))
-        rows = response.context["rows"]
+        days = response.context["days"]
         self.assertEqual(
-            {row["obj"].pk for row in rows},
+            {row["obj"].pk for day in days for row in day["slots"]},
             set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True)),
         )
 
@@ -2959,6 +2972,105 @@ class GroupWorkspaceViewTests(AcademyTestBase):
         response = self.admin_web.get(self._url("_analytics"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["stats"]["students_count"], self.group1.students_count)
+
+    # -- group create redirects straight into the Workspace ------------------
+
+    def test_group_add_redirects_to_workspace(self):
+        response = self.admin_web.post(
+            reverse("admin:academy_group_add"),
+            {"name": "Freshly Created", "course": self.course.pk, "status": "active", "start_date": "2026-09-07"},
+        )
+        group = Group.objects.get(name="Freshly Created")
+        self.assertRedirects(response, reverse("admin:academy_group_workspace", args=[group.pk]))
+
+    def test_group_add_save_and_continue_keeps_normal_admin_flow(self):
+        response = self.admin_web.post(
+            reverse("admin:academy_group_add"),
+            {
+                "name": "Continue Editing", "course": self.course.pk, "status": "active",
+                "start_date": "2026-09-07", "_continue": "Save and continue editing",
+            },
+        )
+        group = Group.objects.get(name="Continue Editing")
+        self.assertRedirects(response, reverse("admin:academy_group_change", args=[group.pk]))
+
+    # -- Teachers tab -----------------------------------------------------------
+
+    def test_teachers_tab_lists_existing_assignments(self):
+        response = self.admin_web.get(self._url("_teachers"))
+        self.assertContains(response, str(self.teacher1))
+
+    def test_add_teacher_creates_bare_group_teacher_with_no_schedule(self):
+        response = self.admin_web.post(
+            self._url("_teachers_add"), {"teacher": self.teacher2.pk, "subject": self.subject_frontend.pk}
+        )
+        self.assertEqual(response.status_code, 302)
+        gt = GroupTeacher.objects.get(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        self.assertEqual(gt.schedules.count(), 0)
+
+    def test_add_teacher_does_not_duplicate_existing_assignment(self):
+        self.admin_web.post(
+            self._url("_teachers_add"), {"teacher": self.teacher2.pk, "subject": self.subject_frontend.pk}
+        )
+        before = GroupTeacher.objects.count()
+        response = self.admin_web.post(
+            self._url("_teachers_add"), {"teacher": self.teacher2.pk, "subject": self.subject_frontend.pk}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(GroupTeacher.objects.count(), before)
+
+    def test_remove_teacher_deletes_assignment_but_preserves_lessons(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        lesson = Lesson.objects.filter(group_teacher=program).first()
+        self.assertIsNotNone(lesson)
+
+        response = self.admin_web.post(self._url("_teachers_remove", program.pk))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(GroupTeacher.objects.filter(pk=program.pk).exists())
+
+        lesson.refresh_from_db()
+        self.assertIsNone(lesson.group_teacher_id)
+        self.assertTrue(Lesson.objects.filter(pk=lesson.pk).exists())
+
+    def test_remove_teacher_requires_post(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        response = self.admin_web.get(self._url("_teachers_remove", program.pk))
+        self.assertEqual(response.status_code, 403)
+
+    def test_remove_teacher_requires_admin(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        response = self.teacher_web.post(self._url("_teachers_remove", program.pk))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    # -- Programs tab: individual lesson-plan redirect ------------------------
+
+    def test_add_program_with_individual_plan_redirects_to_group_teacher_change(self):
+        response = self.admin_web.post(
+            self._url("_programs_add"),
+            {
+                "teacher": self.teacher2.pk, "subject": self.subject_frontend.pk,
+                "day_of_week": ["fri"], "start_time": "10:00", "end_time": "11:00",
+                "lesson_plan_source": "individual",
+            },
+        )
+        gt = GroupTeacher.objects.get(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        self.assertRedirects(response, reverse("admin:academy_groupteacher_change", args=[gt.pk]))
+
+    # -- Weekly Schedule: pre-selected program + day grouping -----------------
+
+    def test_add_schedule_preselects_program_from_query_param(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        response = self.admin_web.get(self._url("_schedule_add"), {"program": program.pk})
+        self.assertEqual(response.context["form"].initial.get("group_teacher"), str(program.pk))
+
+    def test_schedule_tab_groups_slots_by_weekday(self):
+        response = self.admin_web.get(self._url("_schedule"))
+        days = response.context["days"]
+        self.assertEqual(len(days), 7)
+        monday = next(d for d in days if d["code"] == "mon")
+        self.assertTrue(all(row["obj"].day_of_week == "mon" for row in monday["slots"]))
+        self.assertGreater(len(monday["slots"]), 0)
 
 
 # ---------------------------------------------------------------------------

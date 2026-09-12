@@ -4,43 +4,42 @@
 {% block workspace_content %}
 <div class="ok-card">
   <div class="ok-card-header">
-    <i class="bi bi-calendar-week"></i><span>Расписание группы</span>
+    <i class="bi bi-calendar-week"></i><span>Недельное расписание</span>
     <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_schedule_url }}">
       <i class="bi bi-plus-lg"></i> Добавить расписание
     </a>
   </div>
   <div class="ok-card-body">
-    {% if rows %}
-      <div class="ok-student-table-wrap">
-        <table class="ok-student-table ok-group-schedule">
-          <thead>
-            <tr><th>Программа</th><th>Преподаватель</th><th>День</th><th>Время</th><th>Кабинет</th><th>Статус</th><th></th></tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-              <tr>
-                <td>{{ row.program_label }}</td>
-                <td>{{ row.teacher }}</td>
-                <td>{{ row.day_label }}</td>
-                <td>{{ row.time_label }}</td>
-                <td>{{ row.room }}</td>
-                <td>
-                  {% if row.is_active %}
-                    <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>
-                  {% else %}
-                    <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span>
-                  {% endif %}
-                </td>
-                <td>
-                  <form method="post" action="{{ row.remove_url }}" onsubmit="return confirm('Удалить этот слот расписания?');">
-                    {% csrf_token %}
-                    <button type="submit" class="ok-btn-secondary ok-btn-sm" title="Удалить"><i class="bi bi-trash3"></i></button>
-                  </form>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    {% if has_any_slot %}
+      <div class="ok-group-weekly-schedule">
+        {% for day in days %}
+          <div class="ok-group-day-column">
+            <div class="ok-group-day-heading">{{ day.label }}</div>
+            {% if day.slots %}
+              {% for row in day.slots %}
+                <div class="ok-group-schedule-block{% if not row.is_active %} ok-group-schedule-block-inactive{% endif %}">
+                  <div class="ok-group-schedule-time">{{ row.time_label }}</div>
+                  <div class="ok-group-schedule-subject">{{ row.program_label }}</div>
+                  <div class="ok-group-schedule-teacher">{{ row.teacher }}</div>
+                  <div class="ok-group-schedule-room"><i class="bi bi-door-open"></i> {{ row.room }}</div>
+                  <div class="ok-group-schedule-footer">
+                    {% if row.is_active %}
+                      <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span>
+                    {% endif %}
+                    <form method="post" action="{{ row.remove_url }}" onsubmit="return confirm('Удалить этот слот расписания?');">
+                      {% csrf_token %}
+                      <button type="submit" class="ok-btn-secondary ok-btn-sm" title="Удалить"><i class="bi bi-trash3"></i></button>
+                    </form>
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="ok-group-day-empty">—</div>
+            {% endif %}
+          </div>
+        {% endfor %}
       </div>
     {% else %}
       <div class="ok-group-empty-state">

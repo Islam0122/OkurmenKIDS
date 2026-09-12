@@ -2182,6 +2182,18 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
 .ok-group-overview-program-row:last-child { border-bottom: none; }
 .ok-group-overview-program-slot { color: var(--ok-text-muted); font-size: 0.82rem; }
 
+.ok-group-overview-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 1.1rem;
+  align-items: start;
+}
+.ok-group-overview-col { display: flex; flex-direction: column; gap: 1.1rem; }
+
+@media (max-width: 900px) {
+  .ok-group-overview-columns { grid-template-columns: 1fr; }
+}
+
 .ok-group-program-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem;
 }
@@ -2206,6 +2218,111 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   gap: 1rem; flex-wrap: wrap;
 }
 
+.ok-group-breadcrumb {
+  display: flex; align-items: center; gap: 0.4rem;
+  color: var(--ok-text-secondary); font-size: 0.8rem; margin-bottom: 0.75rem;
+}
+.ok-group-breadcrumb a { color: var(--ok-text-secondary); }
+.ok-group-breadcrumb a:hover { color: var(--ok-primary); }
+.ok-group-breadcrumb i { font-size: 0.65rem; color: var(--ok-text-muted); }
+.ok-group-breadcrumb span { color: var(--ok-text); font-weight: 600; }
+
+.ok-group-teacher-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+
+/* -- Weekly Schedule — day columns (spec §9) ---------------------------- */
+
+.ok-group-weekly-schedule {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 0.75rem;
+  overflow-x: auto;
+}
+.ok-group-day-column {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  background: var(--ok-surface);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 150px;
+}
+.ok-group-day-heading {
+  font-size: 0.8rem; font-weight: 700; color: var(--ok-text);
+  text-transform: uppercase; letter-spacing: 0.02em;
+  padding-bottom: 0.5rem; border-bottom: 1px solid var(--ok-border);
+}
+.ok-group-day-empty { color: var(--ok-text-muted); font-size: 0.78rem; text-align: center; padding: 0.5rem 0; }
+
+.ok-group-schedule-block {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-primary-soft);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.8rem;
+}
+.ok-group-schedule-block-inactive { background: var(--ok-surface-hover); opacity: 0.7; }
+.ok-group-schedule-time { font-weight: 700; color: var(--ok-primary); margin-bottom: 0.2rem; }
+.ok-group-schedule-block-inactive .ok-group-schedule-time { color: var(--ok-text-muted); }
+.ok-group-schedule-subject { font-weight: 600; color: var(--ok-text); }
+.ok-group-schedule-teacher { color: var(--ok-text-secondary); }
+.ok-group-schedule-room { color: var(--ok-text-muted); font-size: 0.75rem; margin-top: 0.15rem; }
+.ok-group-schedule-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.4rem; margin-top: 0.5rem;
+}
+.ok-group-schedule-footer form { display: inline-flex; }
+
+/* -- Modals (native <dialog>, no JS framework) -------------------------- */
+
+.ok-modal {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+  padding: 0;
+  width: min(560px, 92vw);
+  max-height: 85vh;
+  box-shadow: var(--ok-shadow-hover);
+  background: var(--ok-surface);
+  color: var(--ok-text);
+}
+.ok-modal::backdrop { background: rgba(20, 30, 24, 0.45); }
+.ok-modal-form { display: flex; flex-direction: column; max-height: 85vh; }
+.ok-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--ok-border);
+  font-weight: 700; font-size: 0.95rem;
+}
+.ok-modal-header span { display: flex; align-items: center; gap: 0.5rem; }
+.ok-modal-close {
+  background: none; border: none; color: var(--ok-text-muted); cursor: pointer;
+  padding: 0.2rem; line-height: 1;
+}
+.ok-modal-close:hover { color: var(--ok-text); }
+.ok-modal-body { padding: 1rem 1.25rem; overflow-y: auto; flex: 1 1 auto; }
+.ok-modal-search { margin-bottom: 0.6rem; }
+.ok-modal-select-all {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.82rem; font-weight: 600; color: var(--ok-text-secondary);
+  margin-bottom: 0.6rem; cursor: pointer;
+}
+.ok-modal-student-list {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  max-height: 340px; overflow-y: auto;
+  border: 1px solid var(--ok-border); border-radius: var(--ok-radius-sm);
+  padding: 0.4rem;
+}
+.ok-modal-student-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 0.6rem; border-radius: var(--ok-radius-sm);
+  cursor: pointer;
+}
+.ok-modal-student-row:hover { background: var(--ok-surface-hover); }
+.ok-modal-student-info { display: flex; flex-direction: column; min-width: 0; }
+.ok-modal-footer {
+  display: flex; justify-content: flex-end; gap: 0.6rem;
+  padding: 1rem 1.25rem; border-top: 1px solid var(--ok-border);
+}
+
 @media (max-width: 640px) {
   .ok-group-header-main { flex-direction: column; align-items: stretch; }
   .ok-group-actions { justify-content: center; }
@@ -2213,4 +2330,5 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   .ok-group-toolbar, .ok-group-lesson-filters { justify-content: center; }
   .ok-group-program-grid { grid-template-columns: 1fr; }
   .ok-group-form-summary { flex-direction: column; align-items: stretch; text-align: center; }
+  .ok-group-weekly-schedule { grid-template-columns: 1fr; }
 }

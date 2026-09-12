@@ -45,10 +45,15 @@
         </div>
       </div>
 
-      <p class="ok-help-text">
-        Шаг 3 — план занятий: после сохранения программы откройте её рабочее пространство, чтобы
-        задать индивидуальный план, иначе используется общий план курса «{{ group.course.name }}».
-      </p>
+      <p class="ok-section-subtitle">Шаг 3 — план занятий</p>
+      <div class="ok-field-group">
+        <div class="ok-group-day-checkboxes">{{ form.lesson_plan_source }}</div>
+        <span class="ok-help-text">
+          Общий план курса «{{ group.course.name }}» используется по умолчанию. Выберите
+          индивидуальный план, если у этой программы будут свои темы/занятия — вы заполните
+          его сразу после сохранения.
+        </span>
+      </div>
 
       <div class="ok-form-actions">
         <a href="{% url 'admin:academy_group_workspace_programs' group.pk %}" class="ok-btn-secondary">Отмена</a>
