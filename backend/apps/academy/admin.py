@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count, Q
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from apps.data_io.admin_mixin import TemplatedIOAdminMixin
-from apps.users.import_export.formats import UnsupportedFileFormat
+from apps.users.import_export.formats import UnsupportedFileFormat, is_valid_phone
 
 from .admin_views import (
     analytics_view,
@@ -35,9 +37,10 @@ from .models import (
 )
 from .services.import_export import (
     StudentImportValidationError,
+    build_student_import_template,
     export_students,
     import_students,
-    preview_students_import,
+    preview_students_import_rows,
 )
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 from .widgets import SubjectCardsWidget
@@ -193,16 +196,97 @@ class StudentImportForm(forms.Form):
     )
 
 
+class StudentBulkRowForm(forms.Form):
+    """One row of the bulk-add table (spec §10). Every field is optional at
+    the Django field level on purpose: a required first_name would make
+    Django reject a trailing blank row before clean() ever gets a chance to
+    tell "intentionally empty" apart from "filled in but invalid" — the
+    distinction the whole feature depends on (empty rows are silently
+    skipped, filled-but-broken rows are a real, row-numbered error)."""
+
+    first_name = forms.CharField(
+        max_length=100, required=False, label="Имя студента",
+        widget=forms.TextInput(attrs={"class": "ok-input", "placeholder": "Имя"}),
+    )
+    last_name = forms.CharField(
+        max_length=100, required=False, label="Фамилия",
+        widget=forms.TextInput(attrs={"class": "ok-input", "placeholder": "Фамилия"}),
+    )
+    phone = forms.CharField(
+        max_length=30, required=False, label="Телефон",
+        widget=forms.TextInput(attrs={"class": "ok-input", "placeholder": "Телефон"}),
+    )
+    group = forms.ModelChoiceField(
+        queryset=Group.objects.all(), required=False, label="Группа",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    is_active = forms.BooleanField(required=False, initial=True, label="Активен")
+
+    def clean(self):
+        cleaned = super().clean()
+        first_name = (cleaned.get("first_name") or "").strip()
+        last_name = (cleaned.get("last_name") or "").strip()
+        phone = (cleaned.get("phone") or "").strip()
+        group = cleaned.get("group")
+        cleaned["first_name"] = first_name
+        cleaned["last_name"] = last_name
+        cleaned["phone"] = phone
+
+        if not first_name and not last_name and not phone and group is None:
+            cleaned["_blank"] = True
+            return cleaned
+        cleaned["_blank"] = False
+
+        if not first_name:
+            raise forms.ValidationError("Имя обязательно для заполненной строки.")
+        if phone and not is_valid_phone(phone):
+            raise forms.ValidationError(f"Некорректный номер телефона «{phone}».")
+        return cleaned
+
+
+class StudentBulkFormSet(forms.BaseFormSet):
+    def clean(self):
+        if any(self.errors):
+            return
+        seen = set()
+        for form in self.forms:
+            data = getattr(form, "cleaned_data", None) or {}
+            if data.get("_blank", True):
+                continue
+            key = (data["first_name"].lower(), data["last_name"].lower(), data["phone"])
+            if key in seen:
+                raise forms.ValidationError(
+                    f'Повторяющаяся строка: «{data["first_name"]} {data["last_name"]}». '
+                    "Уберите дубликат или измените данные, чтобы продолжить."
+                )
+            seen.add(key)
+
+
+StudentBulkFormSetFactory = forms.formset_factory(
+    StudentBulkRowForm, formset=StudentBulkFormSet, extra=3, can_delete=False
+)
+
+
+class StudentAssignGroupForm(forms.Form):
+    group = forms.ModelChoiceField(
+        queryset=Group.objects.all(),
+        required=False,
+        label="Группа",
+        help_text="Оставьте пустым, чтобы снять выбранных студентов с текущей группы.",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+
+
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ("full_name", "group", "phone", "active_badge", "created_at")
+    list_display = ("student_column", "group_column", "phone", "active_badge", "created_at", "row_actions")
     list_filter = ("group", "is_active")
     search_fields = ("first_name", "last_name", "phone", "parent_phone")
     ordering = ("last_name", "first_name")
     readonly_fields = ("created_at", "updated_at")
     autocomplete_fields = ("group",)
     list_per_page = 25
-    actions = ["export_selected_csv"]
+    actions = ["activate_students", "deactivate_students", "assign_group_action", "export_selected_csv"]
     change_list_template = "admin/academy/student/change_list.html"
 
     fieldsets = (
@@ -211,25 +295,114 @@ class StudentAdmin(admin.ModelAdmin):
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
+    # -- students are never hard-deleted from the Admin UI ---------------
+    # Attendance/Homework/history must survive forever — see models.Student
+    # docstring context in the task spec. Deactivation (is_active=False) is
+    # the only supported removal path; has_delete_permission=False alone
+    # already makes Django hide every delete surface it renders (the
+    # "Delete" object-tool, the delete_selected bulk action, and the
+    # /delete/ confirmation route itself all gate on this one check) — the
+    # two method overrides below are pure defense in depth in case anything
+    # ever calls them directly.
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def delete_model(self, request, obj):
+        raise PermissionDenied("Удаление студентов запрещено. Используйте деактивацию.")
+
+    def delete_queryset(self, request, queryset):
+        raise PermissionDenied("Удаление студентов запрещено. Используйте деактивацию.")
+
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("group")
 
+    # -- list columns -----------------------------------------------------
+
     @admin.display(description="Студент", ordering="last_name")
-    def full_name(self, obj: Student) -> str:
-        return f"{obj.first_name} {obj.last_name}".strip()
+    def student_column(self, obj: Student) -> str:
+        initials = (
+            (obj.first_name[:1] if obj.first_name else "") + (obj.last_name[:1] if obj.last_name else "")
+        ).upper() or "?"
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        url = reverse("admin:academy_student_detail", args=[obj.pk])
+        return format_html(
+            '<a class="ok-student-row-link" href="{}">'
+            '<span class="ok-student-avatar ok-person-avatar">{}</span>'
+            '<span class="ok-student-name">{}</span>'
+            "</a>",
+            url, initials, name,
+        )
+
+    @admin.display(description="Группа", ordering="group__name")
+    def group_column(self, obj: Student) -> str:
+        if not obj.group_id:
+            return _badge("ok-badge-muted", "Без группы")
+        url = reverse("admin:academy_group_change", args=[obj.group_id])
+        return format_html('<a class="ok-student-group" href="{}">{}</a>', url, obj.group.name)
 
     @admin.display(description="Статус", ordering="is_active")
     def active_badge(self, obj: Student) -> str:
         return _badge("ok-badge-success", "Активен") if obj.is_active else _badge("ok-badge-danger", "Неактивен")
 
+    @admin.display(description="")
+    def row_actions(self, obj: Student) -> str:
+        detail_url = reverse("admin:academy_student_detail", args=[obj.pk])
+        edit_url = reverse("admin:academy_student_change", args=[obj.pk])
+        return format_html(
+            '<div class="ok-student-actions">'
+            '<a class="ok-btn-secondary ok-btn-sm" href="{}" title="Профиль"><i class="bi bi-eye"></i></a>'
+            '<a class="ok-btn-secondary ok-btn-sm" href="{}" title="Изменить"><i class="bi bi-pencil"></i></a>'
+            "</div>",
+            detail_url, edit_url,
+        )
+
+    # -- bulk actions (safe: no hard delete among them) -------------------
+
     @admin.action(description="Экспортировать выбранных студентов (CSV)")
     def export_selected_csv(self, request, queryset):
         return export_students(queryset, "csv")
+
+    @admin.action(description="Активировать выбранных студентов")
+    def activate_students(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f"Активировано студентов: {updated}.", messages.SUCCESS)
+
+    @admin.action(description="Деактивировать выбранных студентов")
+    def deactivate_students(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(
+            request,
+            f"Деактивировано студентов: {updated}. Посещаемость, домашние задания и история сохранены.",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Назначить группу выбранным студентам")
+    def assign_group_action(self, request, queryset):
+        ids = ",".join(str(pk) for pk in queryset.values_list("pk", flat=True))
+        return redirect(f"{reverse('admin:academy_student_assign_group')}?ids={ids}")
 
     def get_urls(self):
         custom_urls = [
             path("import/", self.admin_site.admin_view(self.import_view), name="academy_student_import"),
             path("export/", self.admin_site.admin_view(self.export_view), name="academy_student_export"),
+            path("template/", self.admin_site.admin_view(self.template_view), name="academy_student_template"),
+            path("bulk-add/", self.admin_site.admin_view(self.bulk_add_view), name="academy_student_bulk_add"),
+            path(
+                "assign-group/",
+                self.admin_site.admin_view(self.assign_group_view),
+                name="academy_student_assign_group",
+            ),
+            path(
+                "<int:student_id>/detail/",
+                self.admin_site.admin_view(self.detail_view),
+                name="academy_student_detail",
+            ),
+            path(
+                "<int:student_id>/toggle-active/",
+                self.admin_site.admin_view(self.toggle_active_view),
+                name="academy_student_toggle_active",
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -252,8 +425,12 @@ class StudentAdmin(admin.ModelAdmin):
             self.message_user(request, str(exc), messages.ERROR)
             return redirect(reverse("admin:academy_student_changelist"))
 
+    def template_view(self, request):
+        return build_student_import_template()
+
     def import_view(self, request):
         preview = None
+        preview_rows = None
         failed = False
 
         if request.method == "POST":
@@ -262,17 +439,23 @@ class StudentAdmin(admin.ModelAdmin):
                 file_obj = form.cleaned_data["file"]
                 if "preview" in request.POST:
                     try:
-                        preview = preview_students_import(file_obj)
+                        preview_rows, preview = preview_students_import_rows(file_obj)
                     except UnsupportedFileFormat as exc:
                         messages.error(request, str(exc))
                 else:
                     try:
+                        file_obj.seek(0)
                         result = import_students(file_obj)
                     except UnsupportedFileFormat as exc:
                         messages.error(request, str(exc))
                     except StudentImportValidationError as exc:
                         preview = exc.preview
                         failed = True
+                        try:
+                            file_obj.seek(0)
+                            preview_rows, _ = preview_students_import_rows(file_obj)
+                        except UnsupportedFileFormat:
+                            preview_rows = None
                     else:
                         messages.success(
                             request,
@@ -289,11 +472,159 @@ class StudentAdmin(admin.ModelAdmin):
             "opts": self.model._meta,
             "form": form,
             "preview": preview,
+            "preview_rows": preview_rows,
             "failed": failed,
             "export_fields": "id, first_name, last_name, phone, parent_phone, group, is_active",
             "changelist_url": reverse("admin:academy_student_changelist"),
+            "template_url": reverse("admin:academy_student_template"),
         }
         return render(request, "admin/academy/student_import.html", context)
+
+    def bulk_add_view(self, request):
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        created_count = None
+        if request.method == "POST":
+            formset = StudentBulkFormSetFactory(request.POST)
+            if formset.is_valid():
+                rows_to_create = [
+                    form.cleaned_data for form in formset.forms if not form.cleaned_data.get("_blank", True)
+                ]
+                if rows_to_create:
+                    with transaction.atomic():
+                        for data in rows_to_create:
+                            student = Student(
+                                first_name=data["first_name"],
+                                last_name=data["last_name"],
+                                phone=data["phone"],
+                                group=data.get("group"),
+                                is_active=data.get("is_active", True),
+                            )
+                            student.full_clean()
+                            student.save()
+                    self.message_user(
+                        request, f"Добавлено студентов: {len(rows_to_create)}.", messages.SUCCESS
+                    )
+                    return redirect(reverse("admin:academy_student_changelist"))
+                messages.warning(request, "Не добавлено ни одного студента — все строки были пустыми.")
+        else:
+            formset = StudentBulkFormSetFactory()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Массовое добавление студентов",
+            "opts": self.model._meta,
+            "formset": formset,
+            "created_count": created_count,
+            "changelist_url": reverse("admin:academy_student_changelist"),
+        }
+        return render(request, "admin/academy/student/bulk_add.html", context)
+
+    def assign_group_view(self, request):
+        ids_param = request.GET.get("ids") or request.POST.get("ids") or ""
+        student_ids = [int(pk) for pk in ids_param.split(",") if pk.strip().isdigit()]
+        students = Student.objects.filter(pk__in=student_ids).select_related("group")
+
+        if not students.exists():
+            self.message_user(request, "Не выбрано ни одного студента.", messages.WARNING)
+            return redirect(reverse("admin:academy_student_changelist"))
+
+        if request.method == "POST":
+            form = StudentAssignGroupForm(request.POST)
+            if form.is_valid():
+                group = form.cleaned_data["group"]
+                updated = students.update(group=group)
+                label = group.name if group else "Без группы"
+                self.message_user(request, f'Группа «{label}» назначена студентам: {updated}.', messages.SUCCESS)
+                return redirect(reverse("admin:academy_student_changelist"))
+        else:
+            form = StudentAssignGroupForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Назначить группу",
+            "opts": self.model._meta,
+            "form": form,
+            "students": students,
+            "ids": ids_param,
+            "changelist_url": reverse("admin:academy_student_changelist"),
+        }
+        return render(request, "admin/academy/student/assign_group.html", context)
+
+    def detail_view(self, request, student_id):
+        student = get_object_or_404(Student.objects.select_related("group__course"), pk=student_id)
+
+        attendance_qs = Attendance.objects.filter(student=student)
+        attendance_total = attendance_qs.count()
+        attendance_present = attendance_qs.filter(status=Attendance.Status.PRESENT).count()
+        attendance_pct = round(100 * attendance_present / attendance_total, 1) if attendance_total else None
+
+        homework_results_qs = HomeworkResult.objects.filter(student=student)
+        homework_submitted = homework_results_qs.filter(
+            status__in=[
+                HomeworkResult.Status.SUBMITTED,
+                HomeworkResult.Status.LATE,
+                HomeworkResult.Status.CHECKED,
+            ]
+        ).count()
+        homework_checked = homework_results_qs.filter(status=HomeworkResult.Status.CHECKED).count()
+        homework_assigned = (
+            Homework.objects.filter(lesson__group_id=student.group_id).count() if student.group_id else 0
+        )
+        homework_pending = max(homework_assigned - homework_submitted, 0) if student.group_id else None
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(student),
+            "opts": self.model._meta,
+            "student": student,
+            "attendance_stats": {
+                "total": attendance_total,
+                "present": attendance_present,
+                "absent": attendance_qs.filter(status=Attendance.Status.ABSENT).count(),
+                "late": attendance_qs.filter(status=Attendance.Status.LATE).count(),
+                "excused": attendance_qs.filter(status=Attendance.Status.EXCUSED).count(),
+                "rate": attendance_pct,
+            },
+            "homework_stats": {
+                "assigned": homework_assigned,
+                "submitted": homework_submitted,
+                "checked": homework_checked,
+                "pending": homework_pending,
+            },
+            "change_url": reverse("admin:academy_student_change", args=[student.pk]),
+            "changelist_url": reverse("admin:academy_student_changelist"),
+            "toggle_active_url": reverse("admin:academy_student_toggle_active", args=[student.pk]),
+            "attendance_url": (
+                f"{reverse('admin:academy_attendance_changelist')}?student__id__exact={student.pk}"
+            ),
+            "homework_results_url": (
+                f"{reverse('admin:academy_homeworkresult_changelist')}?student__id__exact={student.pk}"
+            ),
+            "group_url": (
+                reverse("admin:academy_group_change", args=[student.group_id]) if student.group_id else None
+            ),
+        }
+        return render(request, "admin/academy/student/detail.html", context)
+
+    def toggle_active_view(self, request, student_id):
+        student = get_object_or_404(Student, pk=student_id)
+        if request.method != "POST" or not self.has_change_permission(request, student):
+            raise PermissionDenied
+
+        student.is_active = not student.is_active
+        student.save(update_fields=["is_active", "updated_at"])
+        if student.is_active:
+            self.message_user(request, f"«{student}» активирован.", messages.SUCCESS)
+        else:
+            self.message_user(
+                request,
+                f"«{student}» деактивирован. Посещаемость, домашние задания и история сохранены.",
+                messages.SUCCESS,
+            )
+        next_url = request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id])
+        return redirect(next_url)
 
 
 # ---------------------------------------------------------------------------

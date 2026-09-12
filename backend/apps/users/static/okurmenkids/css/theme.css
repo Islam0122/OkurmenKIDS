@@ -2002,3 +2002,97 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   .ok-photo-content { align-items: center; width: 100%; }
   .ok-photo-filename, .ok-photo-actions { justify-content: center; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Students — changelist row, toolbar, detail profile, bulk-add and     */
+/* import-preview tables (admin/academy/student/*.html).                */
+/* Reuses the same tokens/cards/badges/kpi-grid as everywhere else —    */
+/* only the pieces genuinely unique to Students get their own class.   */
+/* ------------------------------------------------------------------ */
+
+.ok-student-row-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ok-text);
+  font-weight: 600;
+}
+.ok-student-row-link:hover { color: var(--ok-primary); }
+
+.ok-student-avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ok-student-name { white-space: nowrap; }
+
+.ok-student-group { color: var(--ok-text-secondary); font-weight: 500; }
+.ok-student-group:hover { color: var(--ok-primary); }
+
+.ok-student-actions { display: flex; align-items: center; gap: 0.4rem; }
+.ok-student-actions .ok-btn-secondary { padding: 0.32rem 0.55rem; }
+
+.ok-student-toolbar-btn {
+  padding: 0.35rem 0.8rem !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2.1rem;
+}
+
+.ok-empty-state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1.1rem;
+}
+
+/* -- Detail profile ---------------------------------------------------- */
+
+.ok-student-avatar-lg {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.ok-student-kpi .ok-kpi-value { font-size: 1.4rem; }
+
+.ok-student-danger-action { color: var(--ok-danger); border-color: var(--ok-danger); }
+.ok-student-danger-action:hover { background: var(--ok-danger-soft); color: var(--ok-danger); }
+
+/* -- Bulk-add / import-preview tables ----------------------------------- */
+
+.ok-student-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  margin-bottom: 1.1rem;
+}
+
+.ok-student-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.ok-student-table thead th {
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  background: var(--ok-surface-hover);
+  color: var(--ok-text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--ok-border);
+  white-space: nowrap;
+}
+.ok-student-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--ok-border);
+  vertical-align: middle;
+}
+.ok-student-table tbody tr:last-child td { border-bottom: none; }
+.ok-student-table input.ok-input, .ok-student-table select.ok-input { min-height: 2.1rem; padding: 0.4rem 0.6rem; }
+.ok-student-table .ok-student-active-cell { text-align: center; }
+.ok-student-preview-row-error { background: var(--ok-danger-soft); }
+.ok-student-row-index { color: var(--ok-text-muted); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+  .ok-student-table { font-size: 0.78rem; }
+}

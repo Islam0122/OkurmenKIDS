@@ -12,6 +12,8 @@
  *   5. EmptyState — friendly message instead of a bare "0 results"
  *   6. Actions — visually warn when a destructive bulk action is picked
  *   7. SubjectCards — checkbox card grid (Course.subjects picker)
+ *   8. PhotoField — instant preview + "remove photo" state
+ *   9. StudentBulkAdd — dynamic add/remove rows for the bulk-add formset
  */
 
 (function () {
@@ -430,6 +432,18 @@ function addPasswordToggle(input) {
       text:
         "Добавьте учётную запись администратора.",
     },
+    {
+      match: "/academy/student/",
+      icon: "bi-people",
+      title: "Пока нет студентов",
+      text:
+        "Добавьте первого студента вручную или импортируйте список из Excel.",
+      links: [
+        { href: "/admin/academy/student/add/", icon: "bi-plus-lg", label: "Добавить студента" },
+        { href: "/admin/academy/student/import/", icon: "bi-upload", label: "Импортировать Excel" },
+        { href: "/admin/academy/student/template/", icon: "bi-download", label: "Скачать шаблон" },
+      ],
+    },
   ];
 
   function initEmptyState() {
@@ -478,6 +492,26 @@ function addPasswordToggle(input) {
     var box = document.createElement("div");
     box.className = "ok-empty-state";
 
+    var linksHtml = "";
+    if (state.links && state.links.length) {
+      linksHtml =
+        '<div class="ok-empty-state-actions">' +
+        state.links
+          .map(function (link) {
+            return (
+              '<a class="ok-btn-secondary ok-btn-sm" href="' +
+              link.href +
+              '"><i class="bi ' +
+              link.icon +
+              '"></i> ' +
+              link.label +
+              "</a>"
+            );
+          })
+          .join("") +
+        "</div>";
+    }
+
     box.innerHTML =
       '<i class="bi ' +
       state.icon +
@@ -487,7 +521,8 @@ function addPasswordToggle(input) {
       "</h4>" +
       "<p>" +
       state.text +
-      "</p>";
+      "</p>" +
+      linksHtml;
 
     if (paginator) {
       paginator.replaceWith(box);
@@ -775,6 +810,46 @@ card.dataset.label = label.toLowerCase();
   }
 
   /* ------------------------------------------------------------------ */
+  /* 9. Student bulk-add — dynamic formset rows                          */
+  /* ------------------------------------------------------------------ */
+
+  function initStudentBulkAdd() {
+    var table = document.getElementById("ok-student-bulk-table");
+    var template = document.getElementById("ok-student-bulk-row-template");
+    var addButton = document.getElementById("ok-student-add-row");
+    if (!table || !template || !addButton) return;
+
+    var body = table.querySelector("tbody");
+    var totalForms = document.querySelector('input[name="form-TOTAL_FORMS"]');
+    if (!body || !totalForms) return;
+
+    addButton.addEventListener("click", function () {
+      var index = parseInt(totalForms.value, 10) || 0;
+      var row = template.content.firstElementChild.cloneNode(true);
+
+      row.querySelectorAll("[name]").forEach(function (field) {
+        field.name = field.name.replace("__prefix__", index);
+      });
+      var indexCell = row.querySelector(".ok-student-row-index");
+      if (indexCell) indexCell.textContent = index + 1;
+
+      body.appendChild(row);
+      totalForms.value = index + 1;
+    });
+
+    // Removing a row just drops its inputs from the DOM (and so from the
+    // POST body) instead of touching TOTAL_FORMS — the server treats a
+    // missing index exactly like an all-blank row and silently skips it,
+    // so indices never need to stay contiguous.
+    body.addEventListener("click", function (event) {
+      var button = event.target.closest(".ok-student-remove-row");
+      if (!button) return;
+      var row = button.closest(".ok-student-bulk-row");
+      if (row) row.remove();
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Initialize                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -786,6 +861,7 @@ card.dataset.label = label.toLowerCase();
       initMultiSelects();
       initSubjectCards();
       initPhotoFields();
+      initStudentBulkAdd();
       initSearchHint();
       initEmptyState();
       initActionWarning();
