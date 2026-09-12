@@ -239,11 +239,9 @@ JAZZMIN_SETTINGS = {
     "site_header": "OkurmenKids",
     "site_brand": "OkurmenKids",
     "site_logo": "images/logo.png",
-    # "site_logo_classes": "elevation-2",    # круглая обрезка
     "site_icon": "images/logo.png",
-    # No custom logo asset — the sidebar brand mark is drawn with CSS
-    # (an "OK" emblem + wordmark) instead of an <img>; hide Jazzmin's
-    # bundled default logo rather than requiring a new binary asset.
+    # No extra Bootstrap classes needed — sizing/visibility for the real
+    # logo.png is handled by the .sidebar-brand rules in theme.css.
     "site_logo_classes": "",
     "show_ui_builder": False,
     "welcome_sign": "Добро пожаловать в OkurmenKids ",
