@@ -1,0 +1,11 @@
+{% if page_obj.has_other_pages %}
+<div class="ok-group-pagination">
+  {% if page_obj.has_previous %}
+    <a href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}"><i class="bi bi-chevron-left"></i> Назад</a>
+  {% endif %}
+  <span>Стр. {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}
+    <a href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}">Вперёд <i class="bi bi-chevron-right"></i></a>
+  {% endif %}
+</div>
+{% endif %}

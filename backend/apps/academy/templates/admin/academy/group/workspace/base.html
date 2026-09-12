@@ -1,0 +1,42 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="ok-group-workspace">
+  <div class="ok-group-header">
+    <a class="ok-group-back" href="{{ changelist_url }}"><i class="bi bi-arrow-left"></i> Назад к группам</a>
+
+    <div class="ok-group-header-main">
+      <div class="ok-group-header-identity">
+        <h1 class="ok-group-title">{{ group.name }}</h1>
+        <div class="ok-group-subtitle">
+          {{ group.course.name }} · {{ group.get_status_display }} ·
+          {% if group.end_date %}{{ group.start_date|date:"d.m.Y" }} – {{ group.end_date|date:"d.m.Y" }}{% else %}{{ group.start_date|date:"d.m.Y" }} – …{% endif %}
+        </div>
+      </div>
+      <div class="ok-group-actions">
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ change_url }}"><i class="bi bi-pencil"></i> Редактировать группу</a>
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ add_student_url }}"><i class="bi bi-person-plus"></i> Добавить студента</a>
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ add_program_url }}"><i class="bi bi-plus-circle"></i> Добавить программу</a>
+        <form method="post" action="{{ generate_lessons_url }}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-magic"></i> Сгенерировать занятия</button>
+        </form>
+      </div>
+    </div>
+
+    <nav class="ok-group-tabs">
+      {% for tab in tabs %}
+        <a class="ok-group-tab{% if tab.key == active_tab %} active{% endif %}" href="{{ tab.url }}">
+          <i class="bi {{ tab.icon }}"></i> {{ tab.label }}
+        </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <div class="ok-group-section">
+    {% block workspace_content %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

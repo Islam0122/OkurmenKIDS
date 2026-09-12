@@ -1,0 +1,91 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-kpi-grid ok-group-kpi">
+  <div class="ok-kpi-card">
+    <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
+    <div class="ok-kpi-value">{{ kpi.students }}</div>
+    <div class="ok-kpi-label">Студенты</div>
+  </div>
+  <div class="ok-kpi-card">
+    <div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div>
+    <div class="ok-kpi-value">{{ kpi.programs }}</div>
+    <div class="ok-kpi-label">Учебные программы</div>
+  </div>
+  <div class="ok-kpi-card">
+    <div class="ok-kpi-icon"><i class="bi bi-calendar-check"></i></div>
+    <div class="ok-kpi-value">{{ kpi.upcoming_lessons }}</div>
+    <div class="ok-kpi-label">Предстоящие занятия</div>
+  </div>
+  <div class="ok-kpi-card">
+    <div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div>
+    <div class="ok-kpi-value">{{ kpi.completed_lessons }}</div>
+    <div class="ok-kpi-label">Завершённые занятия</div>
+  </div>
+  {% if kpi.attendance_rate is not None %}
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
+      <div class="ok-kpi-value">{{ kpi.attendance_rate }}%</div>
+      <div class="ok-kpi-label">Посещаемость</div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-info-circle"></i><span>Общая информация</span></div>
+  <div class="ok-card-body">
+    <div class="ok-grid-2">
+      <div class="ok-field-group">
+        <label class="ok-label">Курс</label>
+        <div class="ok-static-value">{{ group.course.name }}</div>
+      </div>
+      <div class="ok-field-group">
+        <label class="ok-label">Статус</label>
+        <div class="ok-static-value">{{ group.get_status_display }}</div>
+      </div>
+      <div class="ok-field-group ok-grid-full">
+        <label class="ok-label">Период</label>
+        <div class="ok-static-value">{{ period_label }}</div>
+      </div>
+      <div class="ok-field-group ok-grid-full">
+        <label class="ok-label">Описание</label>
+        <div class="ok-static-value">{{ group.description|default:"—" }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ok-card">
+  <div class="ok-card-header">
+    <i class="bi bi-person-badge"></i><span>Учебные программы</span>
+    <a class="ok-btn-secondary ok-btn-sm ok-card-header-action" href="{% url 'admin:academy_group_workspace_programs' group.pk %}">Все программы →</a>
+  </div>
+  <div class="ok-card-body">
+    {% if program_rows %}
+      {% for row in program_rows %}
+        <div class="ok-group-overview-program-row">
+          <div class="ok-group-overview-program-info">
+            <strong>{{ row.teacher }}</strong>
+            <span class="ok-help-text" style="display:inline;">{{ row.subject.name|default:"без предмета" }}</span>
+          </div>
+          <div class="ok-group-overview-program-slot">
+            {% if row.next_slot %}
+              {{ row.day_label }} {{ row.next_slot.start_time|time:"H:i" }}–{{ row.next_slot.end_time|time:"H:i" }}
+            {% else %}
+              нет активных слотов
+            {% endif %}
+          </div>
+          <a class="ok-btn-secondary ok-btn-sm" href="{{ row.workspace_url }}">Открыть →</a>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-person-badge"></i>
+        <h4>Учебные программы ещё не добавлены</h4>
+        <a class="ok-btn-primary ok-btn-sm" href="{{ add_program_url }}"><i class="bi bi-plus-lg"></i> Добавить программу</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

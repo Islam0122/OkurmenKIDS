@@ -1,0 +1,60 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-plus-circle"></i><span>Добавить учебную программу</span></div>
+  <div class="ok-card-body">
+    <form method="post" class="ok-group-inline-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="ok-alert ok-alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+      <p class="ok-section-subtitle">Шаг 1 — тренер и предмет</p>
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label">{{ form.teacher.label }}</label>
+          {{ form.teacher }}
+          {% for error in form.teacher.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">{{ form.subject.label }}</label>
+          {{ form.subject }}
+          {% for error in form.subject.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+      </div>
+
+      <p class="ok-section-subtitle">Шаг 2 — расписание</p>
+      <div class="ok-field-group">
+        <label class="ok-label">{{ form.day_of_week.label }}</label>
+        <div class="ok-group-day-checkboxes">{{ form.day_of_week }}</div>
+        {% for error in form.day_of_week.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+      </div>
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label">{{ form.start_time.label }}</label>
+          {{ form.start_time }}
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">{{ form.end_time.label }}</label>
+          {{ form.end_time }}
+          {% for error in form.end_time.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+        <div class="ok-field-group ok-grid-full">
+          <label class="ok-label">{{ form.room.label }}</label>
+          {{ form.room }}
+        </div>
+      </div>
+
+      <p class="ok-help-text">
+        Шаг 3 — план занятий: после сохранения программы откройте её рабочее пространство, чтобы
+        задать индивидуальный план, иначе используется общий план курса «{{ group.course.name }}».
+      </p>
+
+      <div class="ok-form-actions">
+        <a href="{% url 'admin:academy_group_workspace_programs' group.pk %}" class="ok-btn-secondary">Отмена</a>
+        <button type="submit" class="ok-btn-primary">Добавить программу</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header">
+    <i class="bi bi-people"></i><span>Студенты группы</span>
+    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_student_url }}">
+      <i class="bi bi-person-plus"></i> Добавить студентов
+    </a>
+  </div>
+  <div class="ok-card-body">
+    <form method="get" class="ok-group-toolbar">
+      <input type="text" name="q" class="ok-input" placeholder="Поиск студента..." value="{{ search }}">
+      <select name="status" class="ok-input">
+        <option value="">Все статусы</option>
+        <option value="active" {% if status_filter == "active" %}selected{% endif %}>Активные</option>
+        <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>Неактивные</option>
+      </select>
+      <button type="submit" class="ok-btn-secondary ok-btn-sm">Найти</button>
+    </form>
+
+    <div class="ok-group-toolbar ok-group-toolbar-secondary">
+      <a class="ok-btn-secondary ok-btn-sm" href="{{ bulk_add_url }}"><i class="bi bi-people"></i> Массовое добавление</a>
+      <a class="ok-btn-secondary ok-btn-sm" href="{{ import_url }}"><i class="bi bi-upload"></i> Импорт Excel</a>
+      <a class="ok-btn-secondary ok-btn-sm" href="{{ export_url }}"><i class="bi bi-download"></i> Экспорт студентов</a>
+    </div>
+
+    {% if students %}
+      <div class="ok-student-table-wrap">
+        <table class="ok-student-table ok-group-student-table">
+          <thead>
+            <tr><th></th><th>Имя</th><th>Телефон</th><th>Статус</th><th>Добавлен</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for student in students %}
+              <tr>
+                <td><span class="ok-person-avatar ok-group-student-avatar">{{ student.first_name|first|upper }}{{ student.last_name|first|upper }}</span></td>
+                <td><a href="{% url 'admin:academy_student_detail' student.pk %}">{{ student }}</a></td>
+                <td>{{ student.phone|default:"—" }}</td>
+                <td>
+                  {% if student.is_active %}
+                    <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>
+                  {% else %}
+                    <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span>
+                  {% endif %}
+                </td>
+                <td>{{ student.created_at|date:"d.m.Y" }}</td>
+                <td>
+                  <form method="post" action="{% url 'admin:academy_group_workspace_students_remove' group.pk student.pk %}"
+                        onsubmit="return confirm('Убрать студента из группы? Сам студент не будет удалён.');">
+                    {% csrf_token %}
+                    <button type="submit" class="ok-btn-secondary ok-btn-sm" title="Убрать из группы">
+                      <i class="bi bi-person-dash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "admin/academy/group/workspace/_pagination.html" with page_obj=students %}
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-people"></i>
+        <h4>В группе пока нет студентов</h4>
+        <div class="ok-empty-state-actions">
+          <a class="ok-btn-primary ok-btn-sm" href="{{ add_student_url }}">Добавить студента</a>
+          <a class="ok-btn-secondary ok-btn-sm" href="{{ import_url }}">Импортировать Excel</a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
