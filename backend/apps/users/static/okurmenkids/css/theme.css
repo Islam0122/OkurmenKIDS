@@ -484,6 +484,20 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .ok-grid-full { grid-column: 1 / -1; }
 @media (max-width: 640px) { .ok-grid-2 { grid-template-columns: 1fr; } }
 
+.ok-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  align-items: stretch;
+}
+.ok-grid-3 .ok-card { margin-bottom: 0; display: flex; flex-direction: column; }
+.ok-grid-3 .ok-card-body { flex: 1; display: flex; flex-direction: column; }
+
+.ok-card-desc { color: var(--ok-text-muted); font-size: 0.86rem; margin: 0 0 1rem; }
+.ok-export-actions { display: flex; flex-direction: column; gap: 0.6rem; margin-top: auto; }
+.ok-export-actions .ok-btn-primary, .ok-export-actions .ok-btn-secondary { justify-content: center; width: 100%; }
+.ok-filename-hint { font-size: 0.78rem; color: var(--ok-text-muted); margin-top: 0.25rem; }
+
 .ok-field-group { display: flex; flex-direction: column; gap: 0.4rem; }
 
 .ok-label {

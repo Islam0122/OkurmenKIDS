@@ -1,0 +1,171 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} okan-page{% endblock %}
+
+{% block content_title %}Импорт данных{% endblock %}
+
+{% block breadcrumbs %}
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+        <li class="breadcrumb-item">Импорт данных</li>
+    </ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-form-container" style="max-width: 1180px;">
+
+  <p class="ok-help-text" style="font-size:0.92rem; margin: -0.5rem 0 1.4rem;">
+    Управление импортом, шаблонами и экспортом учебной информации.
+  </p>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="ok-alert {% if message.tags == 'error' %}ok-alert-danger{% elif message.tags == 'warning' %}ok-alert-warning{% else %}ok-alert-success{% endif %}">
+        {% if message.tags == 'error' %}<i class="bi bi-x-circle"></i>{% elif message.tags == 'warning' %}<i class="bi bi-exclamation-triangle"></i>{% else %}<i class="bi bi-check-circle"></i>{% endif %}
+        <div>{{ message }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="ok-grid-3">
+
+    <!-- Card 1: Импорт из Excel -->
+    <div class="ok-card">
+      <div class="ok-card-header">
+        <i class="bi bi-upload"></i>
+        <span>Импорт из Excel</span>
+      </div>
+      <div class="ok-card-body">
+        <p class="ok-card-desc">Загрузите Excel-файл для добавления или обновления учебных данных.</p>
+
+        <form method="post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:1rem;">
+          {% csrf_token %}
+
+          {% if form.non_field_errors %}
+            <div class="ok-alert ok-alert-danger">{{ form.non_field_errors }}</div>
+          {% endif %}
+
+          <div class="ok-field-group">
+            <label class="ok-label" for="{{ form.entity.id_for_label }}">{{ form.entity.label }}</label>
+            {{ form.entity }}
+          </div>
+
+          <div class="ok-field-group">
+            <label class="ok-label" for="{{ form.file.id_for_label }}">
+              {{ form.file.label }} <span class="ok-label-required">*</span>
+            </label>
+            {{ form.file }}
+            <span class="ok-filename-hint">Поддерживаемые форматы: .xlsx, .xls, .csv.</span>
+            {% for error in form.file.errors %}
+              <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+            {% endfor %}
+          </div>
+
+          <div style="display:flex; gap:0.6rem; margin-top:0.25rem;">
+            <button type="submit" name="preview" value="1" class="ok-btn-secondary" style="flex:1; justify-content:center;">
+              <i class="bi bi-eye"></i> Предпросмотр
+            </button>
+            <button type="submit" name="confirm" value="1" class="ok-btn-primary" style="flex:1; justify-content:center;">
+              <i class="bi bi-check2-circle"></i> Импортировать данные
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Card 2: Шаблон Excel -->
+    <div class="ok-card">
+      <div class="ok-card-header">
+        <i class="bi bi-file-earmark-spreadsheet"></i>
+        <span>Шаблон Excel</span>
+      </div>
+      <div class="ok-card-body">
+        <p class="ok-card-desc">Скачайте готовый шаблон и заполните его перед импортом.</p>
+
+        <form method="get" action="{{ template_url }}" style="display:flex; flex-direction:column; gap:1rem; margin-top:auto;">
+          <div class="ok-field-group">
+            <label class="ok-label" for="template-type">Тип данных</label>
+            <select id="template-type" name="type" class="ok-input">
+              {% for value, label in entity_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="ok-btn-primary" style="justify-content:center;">
+            <i class="bi bi-download"></i> Скачать шаблон
+          </button>
+        </form>
+
+        <div class="ok-alert ok-alert-warning" style="margin-top:1rem; margin-bottom:0;">
+          <i class="bi bi-info-circle"></i>
+          <div>Шаблон содержит лист «Данные» с примером заполнения и лист «Инструкция» с описанием каждой колонки.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3: Экспорт данных -->
+    <div class="ok-card">
+      <div class="ok-card-header">
+        <i class="bi bi-download"></i>
+        <span>Экспорт данных</span>
+      </div>
+      <div class="ok-card-body">
+        <p class="ok-card-desc">Выгрузите существующие данные академии в Excel-файл.</p>
+
+        <div class="ok-export-actions">
+          <a href="{{ export_students_url }}" class="ok-btn-primary">
+            <i class="bi bi-mortarboard"></i> Экспорт студентов
+          </a>
+          <a href="{{ export_groups_url }}" class="ok-btn-secondary">
+            <i class="bi bi-people"></i> Экспорт групп
+          </a>
+          <a href="{{ export_schedule_url }}" class="ok-btn-secondary">
+            <i class="bi bi-calendar-week"></i> Экспорт расписания
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  {% if preview %}
+    <div class="ok-card" style="margin-top:1.25rem;">
+      <div class="ok-card-header">
+        <i class="bi bi-clipboard-data"></i>
+        <span>{% if failed %}Импорт не выполнен{% else %}Результат предпросмотра{% endif %}</span>
+      </div>
+      <div class="ok-card-body">
+        {% if failed %}
+          <div class="ok-alert ok-alert-danger">
+            <i class="bi bi-x-circle"></i>
+            <div>Найдены ошибки — ни одна запись не была сохранена (импорт транзакционный).</div>
+          </div>
+        {% endif %}
+
+        <div style="display:flex; gap:1.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+          <div><strong>{{ preview.total }}</strong> строк всего</div>
+          <div style="color:var(--ok-success,#2F8F5B);"><strong>{{ preview.valid }}</strong> валидных</div>
+          <div style="color:var(--ok-danger,#C7402E);"><strong>{{ preview.invalid }}</strong> с ошибками</div>
+        </div>
+
+        {% if preview.errors %}
+          <ul style="margin:0; padding-left:1.2rem;">
+            {% for error in preview.errors %}
+              <li class="ok-error-text" style="display:list-item; margin-bottom:0.4rem;">
+                Строка {{ error.row }} — {{ error.errors|join:"; " }}
+              </li>
+            {% endfor %}
+          </ul>
+        {% elif not failed %}
+          <div class="ok-alert ok-alert-success">
+            <i class="bi bi-check-circle"></i>
+            <div>Ошибок не найдено. Нажмите «Импортировать данные», прикрепив тот же файл ещё раз.</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -290,9 +290,13 @@ JAZZMIN_SETTINGS = {
             {"name": "Аналитика", "url": "admin:academy_analytics", "icon": "bi bi-graph-up-arrow"},
         ],
 
-        # "система": [
-        #     {"name": "Администраторы", "model": "users.user", "icon": "bi bi-shield-lock"},
-        # ],
+        "система": [
+            {
+                "name": "Импорт данных",
+                "url": "admin:academy_import_data",
+                "icon": "bi bi-file-earmark-spreadsheet",
+            },
+        ],
     },
 
     # NOTE: Jazzmin lower-cases every key in "icons" internally, so custom
