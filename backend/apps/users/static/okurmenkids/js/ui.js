@@ -11,6 +11,7 @@
  *   4. SearchHint — Russian, model-specific search placeholders
  *   5. EmptyState — friendly message instead of a bare "0 results"
  *   6. Actions — visually warn when a destructive bulk action is picked
+ *   7. SubjectCards — checkbox card grid (Course.subjects picker)
  */
 
 (function () {
@@ -467,6 +468,158 @@ function addPasswordToggle(input) {
   }
 
   /* ------------------------------------------------------------------ */
+  /* 7. Subject picker — checkbox card grid (Course.subjects)            */
+  /* ------------------------------------------------------------------ */
+
+  function enhanceSubjectCards(select) {
+    if (select.dataset.okCardsEnhanced) return;
+    select.dataset.okCardsEnhanced = "true";
+
+    var options = Array.prototype.slice.call(select.options);
+    if (options.length === 0) return;
+
+    select.classList.add("ok-ms-native");
+
+    var wrap = document.createElement("div");
+    wrap.className = "ok-subject-cards";
+
+    var header = document.createElement("div");
+    header.className = "ok-subject-cards-header";
+    header.innerHTML =
+      '<i class="bi bi-journal-bookmark"></i>' +
+      "<div>" +
+      '<div class="ok-subject-cards-title">Выберите предметы курса</div>' +
+      '<div class="ok-subject-cards-subtitle">Предметы, которые входят в курс</div>' +
+      "</div>";
+
+    var body = document.createElement("div");
+    body.className = "ok-subject-cards-body";
+
+    var searchWrap = document.createElement("div");
+    searchWrap.className = "ok-subject-cards-search";
+    searchWrap.innerHTML = '<i class="bi bi-search"></i>';
+
+    var searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.placeholder = "Поиск предмета...";
+    searchInput.autocomplete = "off";
+    searchWrap.appendChild(searchInput);
+
+    var grid = document.createElement("div");
+    grid.className = "ok-subject-cards-grid";
+
+    var emptyRow = document.createElement("div");
+    emptyRow.className = "ok-subject-cards-empty";
+    emptyRow.innerHTML =
+      '<i class="bi bi-search"></i><span>Ничего не найдено</span>';
+    emptyRow.hidden = true;
+
+    var footer = document.createElement("div");
+    footer.className = "ok-subject-cards-footer";
+
+    var cards = options.map(function (opt) {
+      var description = opt.dataset.description || "";
+      var label = opt.text;
+
+      var card = document.createElement("div");
+      card.className = "ok-subject-card";
+      card.setAttribute("role", "checkbox");
+      card.tabIndex = 0;
+      card.dataset.label = (label + " " + description).toLowerCase();
+
+      card.innerHTML =
+        '<span class="ok-subject-card-checkbox">' +
+        '<input type="checkbox" tabindex="-1" aria-hidden="true">' +
+        "</span>" +
+        '<span class="ok-subject-card-icon"><i class="bi bi-journal-bookmark"></i></span>' +
+        '<span class="ok-subject-card-content">' +
+        '<span class="ok-subject-card-title"></span>' +
+        (description
+          ? '<span class="ok-subject-card-description"></span>'
+          : "") +
+        "</span>" +
+        '<span class="ok-subject-card-check"><i class="bi bi-check-lg"></i></span>';
+
+      card.querySelector(".ok-subject-card-title").textContent = label;
+      if (description) {
+        card.querySelector(".ok-subject-card-description").textContent =
+          description;
+      }
+
+      var checkbox = card.querySelector('input[type="checkbox"]');
+
+      function toggle() {
+        opt.selected = !opt.selected;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        sync();
+      }
+
+      card.addEventListener("click", toggle);
+      card.addEventListener("keydown", function (evt) {
+        if (evt.key === "Enter" || evt.key === " ") {
+          evt.preventDefault();
+          toggle();
+        }
+      });
+
+      grid.appendChild(card);
+
+      return { opt: opt, card: card, checkbox: checkbox };
+    });
+
+    function sync() {
+      var selectedCount = 0;
+
+      cards.forEach(function (item) {
+        var selected = item.opt.selected;
+
+        item.card.classList.toggle("selected", selected);
+        item.card.setAttribute("aria-checked", selected ? "true" : "false");
+        item.checkbox.checked = selected;
+
+        if (selected) selectedCount += 1;
+      });
+
+      footer.innerHTML =
+        "Выбрано: <strong>" +
+        selectedCount +
+        "</strong> из " +
+        cards.length;
+    }
+
+    searchInput.addEventListener("input", function () {
+      var q = searchInput.value.trim().toLowerCase();
+      var visible = 0;
+
+      cards.forEach(function (item) {
+        var match = !q || item.card.dataset.label.indexOf(q) !== -1;
+        item.card.classList.toggle("is-hidden", !match);
+        if (match) visible += 1;
+      });
+
+      emptyRow.hidden = visible !== 0;
+    });
+
+    body.appendChild(searchWrap);
+    body.appendChild(grid);
+    grid.appendChild(emptyRow);
+    body.appendChild(footer);
+
+    wrap.appendChild(header);
+    wrap.appendChild(body);
+
+    select.parentNode.insertBefore(wrap, select.nextSibling);
+
+    sync();
+  }
+
+  function initSubjectCards() {
+    document
+      .querySelectorAll("select[multiple].ok-subject-cards-source")
+      .forEach(enhanceSubjectCards);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Initialize                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -476,6 +629,7 @@ function addPasswordToggle(input) {
       initLightTheme();
       initPasswordToggles();
       initMultiSelects();
+      initSubjectCards();
       initSearchHint();
       initEmptyState();
       initActionWarning();
