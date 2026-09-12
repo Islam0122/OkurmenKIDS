@@ -1022,6 +1022,46 @@ button.ok-password-toggle.btn {
 }
 #changelist-search .search-button-wrapper { display: flex; gap: 0.5rem; }
 
+/* Changelist filter/search toolbar — align the Select2 filters (Role,
+   Account verified, Active) with the search input and submit button.
+   Two things stack up to push them ~15-20px "higher" than the rest of
+   the row: Jazzmin's own main.css sets `.form-group { margin-bottom:
+   1rem }` (the wrapper each Select2 filter renders in), which — inside
+   #changelist-search's `d-flex align-items-center` — inflates that
+   filter's margin box and shifts its visible content upward when
+   centred; and Select2's default closed-state box is only 28px tall,
+   well under the ~2.5rem .form-control height used everywhere else.
+   Dropping the phantom margin and matching the Select2 box height (with
+   flex-centered label text, so it works for any content height) fixes
+   both without touching layout structure or Select2's own dropdown. */
+#changelist-search .form-group {
+  margin: 0;
+}
+
+#changelist-search .select2-selection--single {
+  display: flex;
+  align-items: center;
+  height: auto;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-surface);
+}
+
+#changelist-search .select2-selection--single .select2-selection__rendered {
+  line-height: normal;
+  padding-left: 0.8rem;
+  padding-right: 1.75rem;
+  color: var(--ok-text);
+}
+
+#changelist-search .select2-selection--single .select2-selection__arrow {
+  height: 100%;
+  top: 0;
+  right: 0.4rem;
+}
+
 /* Actions row — make "Go" clearly primary, and visually warn when a
    destructive action (name/label containing "удал") is selected. */
 .actions select { min-width: 220px; }
