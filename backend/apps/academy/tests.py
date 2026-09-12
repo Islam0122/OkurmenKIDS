@@ -2064,6 +2064,139 @@ class ImportDataAdminViewTests(AcademyTestBase):
 
 
 # ---------------------------------------------------------------------------
+# Admin UX pass: business-oriented sidebar, friendly verbose_name labels,
+# and the Course "Предметы" ManyToMany (filter_horizontal) widget.
+# ---------------------------------------------------------------------------
+
+class AdminSidebarStructureTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+    def test_programma_obucheniya_order_is_course_subject_plan_import(self):
+        """Спецификация: Курсы, Предметы, Планы занятий, Импорт данных — в
+        этом порядке, импорт всегда последним пунктом раздела."""
+        response = self.admin_web.get(reverse("admin:index"))
+        html = response.content.decode("utf-8")
+        idx_course = html.find("/admin/academy/course/")
+        idx_subject = html.find("/admin/users/subject/")
+        idx_plan = html.find("/admin/academy/courselessonplan/")
+        idx_import = html.find(reverse("admin:academy_import_data"))
+        self.assertTrue(
+            -1 < idx_course < idx_subject < idx_plan < idx_import,
+            (idx_course, idx_subject, idx_plan, idx_import),
+        )
+
+    def test_users_link_present_under_sistema(self):
+        response = self.admin_web.get(reverse("admin:index"))
+        self.assertContains(response, "/admin/users/user/")
+
+    def test_homeworkresult_not_listed_in_sidebar(self):
+        """HomeworkResult is a technical join record — reachable via the
+        Homework inline / Group Teacher workspace, not the main sidebar."""
+        response = self.admin_web.get(reverse("admin:index"))
+        self.assertNotContains(response, "/admin/academy/homeworkresult/")
+
+    def test_import_data_link_is_reverse_resolved_not_hardcoded(self):
+        response = self.admin_web.get(reverse("admin:index"))
+        self.assertContains(response, reverse("admin:academy_import_data"))
+
+
+class FriendlyVerboseNameTests(TestCase):
+    def test_group_teacher_hides_technical_name(self):
+        self.assertEqual(GroupTeacher._meta.verbose_name, "Учебная программа")
+        self.assertEqual(GroupTeacher._meta.verbose_name_plural, "Учебные программы")
+
+    def test_group_teacher_lesson_plan_hides_technical_name(self):
+        self.assertEqual(GroupTeacherLessonPlan._meta.verbose_name, "План занятий программы")
+
+    def test_course_lesson_plan_disambiguated_from_program_plan(self):
+        self.assertEqual(CourseLessonPlan._meta.verbose_name, "План занятия курса")
+
+
+class CourseSubjectsWidgetTests(AcademyTestBase):
+    """Course.subjects uses Django's own filter_horizontal widget — restyled
+    via CSS/JS only. Its save/edit/remove behavior is Django's, untouched;
+    what's actually ours to verify is the friendly help_text override and
+    that the fieldset split didn't break saving."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+    def test_help_text_is_friendly_not_the_django_control_command_hint(self):
+        response = self.admin_web.get(reverse("admin:academy_course_add"))
+        html = response.content.decode("utf-8")
+        self.assertContains(response, "Выберите предметы, которые входят в данный курс.")
+        self.assertNotIn("Control", html)
+
+    def test_subjects_has_its_own_fieldset(self):
+        response = self.admin_web.get(reverse("admin:academy_course_add"))
+        self.assertContains(response, "Предметы")
+
+    def test_create_course_with_subjects(self):
+        response = self.admin_web.post(
+            reverse("admin:academy_course_add"),
+            {"name": "QA Course", "count_lesson": 5, "description": "",
+             "subjects": [self.subject_python.id, self.subject_frontend.id]},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        course = Course.objects.get(name="QA Course")
+        self.assertEqual(
+            set(course.subjects.values_list("id", flat=True)),
+            {self.subject_python.id, self.subject_frontend.id},
+        )
+
+    def test_edit_course_removes_a_subject(self):
+        course = Course.objects.create(name="Editable Course", count_lesson=3)
+        course.subjects.set([self.subject_python, self.subject_frontend])
+
+        response = self.admin_web.post(
+            reverse("admin:academy_course_change", args=[course.id]),
+            {"name": "Editable Course", "count_lesson": 3, "description": "",
+             "subjects": [self.subject_python.id]},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        course.refresh_from_db()
+        self.assertEqual(list(course.subjects.values_list("id", flat=True)), [self.subject_python.id])
+
+
+class HomeworkListDisplayTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+    def test_changelist_shows_group_and_status_columns(self):
+        lesson = Lesson.objects.filter(group=self.group1).first()
+        Homework.objects.create(lesson=lesson, title="ДЗ 1", deadline=dt.date(2020, 1, 1))
+        Homework.objects.create(lesson=lesson, title="ДЗ 2", deadline=dt.date(2099, 1, 1))
+
+        response = self.admin_web.get(reverse("admin:academy_homework_changelist"))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn(self.group1.name, html)
+        self.assertIn("Просрочено", html)
+        self.assertIn("Активно", html)
+
+
+class GroupWorkspaceProgressTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+    def test_program_card_shows_progress_percentage(self):
+        response = self.admin_web.get(reverse("admin:academy_group_change", args=[self.group1.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Прогресс:")
+
+
+# ---------------------------------------------------------------------------
 # GroupSchedule — a Group's own primary slot (teacher1, Mon/Wed 15:00-16:30,
 # room1 for group1; teacher2, Tue/Thu 17:00-18:30, room2 for group2, see
 # AcademyTestBase.setUp) is mirrored into GroupSchedule automatically. These

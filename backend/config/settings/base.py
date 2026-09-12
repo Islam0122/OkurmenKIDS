@@ -268,18 +268,32 @@ JAZZMIN_SETTINGS = {
             {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
         ],
 
+        # Order matters here and mirrors how an academy admin actually works
+        # through this section: pick a Курс, see what Предметы make it up,
+        # lay out its Планы занятий, then (only once that's set up) use
+        # Импорт данных for bulk changes — so import is deliberately last,
+        # never the first thing an admin sees in this group.
         "программа обучения": [
             {"name": "Курсы", "model": "academy.course", "icon": "bi bi-collection-play"},
-            {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-book"},
+            {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
+            {
+                "name": "Импорт данных",
+                "url": "admin:academy_import_data",
+                "icon": "bi bi-file-earmark-spreadsheet",
+            },
         ],
 
+        # HomeworkResult ("Результаты ДЗ") is deliberately not listed here —
+        # it's a technical per-student/per-homework join record, not
+        # something an admin browses on its own; it's reachable in context
+        # from a Homework's own inline (see HomeworkResultInline) and from
+        # the Group Teacher workspace instead.
         "учебный процесс": [
             {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar3"},
             {"name": "Занятия", "model": "academy.lesson", "icon": "bi bi-easel"},
             {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
             {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-check"},
-            {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-circle"},
         ],
 
         "ресурсы": [
@@ -291,11 +305,7 @@ JAZZMIN_SETTINGS = {
         ],
 
         "система": [
-            {
-                "name": "Импорт данных",
-                "url": "admin:academy_import_data",
-                "icon": "bi bi-file-earmark-spreadsheet",
-            },
+            {"name": "Пользователи", "model": "users.user", "icon": "bi bi-shield-lock"},
         ],
     },
 

@@ -1,6 +1,13 @@
 {% extends "admin/change_list.html" %}
 {% load i18n %}
 
+{% block content %}
+  <p class="ok-help-text" style="font-size:0.92rem; margin:-0.5rem 0 1.1rem;">
+    Список студентов, их контакты и распределение по группам.
+  </p>
+  {{ block.super }}
+{% endblock %}
+
 {% block object-tools-items %}
   <li>
     <a href="{% url 'admin:academy_student_import' %}" class="btn btn-secondary" style="padding:0.3rem 0.75rem; display:inline-flex; align-items:center; gap:0.35rem;">
