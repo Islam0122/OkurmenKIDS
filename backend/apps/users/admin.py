@@ -16,6 +16,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from .import_export.formats import UnsupportedFileFormat
+from .import_export.subjects import export_subjects
 from .import_export.teachers import (
     TeacherImportValidationError,
     export_teachers,
@@ -115,7 +116,9 @@ class SubjectAdmin(admin.ModelAdmin):
     actions = (
         "activate_subjects",
         "deactivate_subjects",
+        "export_selected_csv",
     )
+    change_list_template = "admin/users/subject/change_list.html"
 
     fieldsets = (
         (
@@ -196,6 +199,35 @@ class SubjectAdmin(admin.ModelAdmin):
     def deactivate_subjects(self, request, queryset):
         updated = queryset.update(is_active=False)
         self.message_user(request, f"Деактивировано предметов: {updated}.")
+
+    @admin.action(description="Экспортировать выбранные предметы (CSV)")
+    def export_selected_csv(self, request, queryset):
+        return export_subjects(queryset, "csv")
+
+    def get_urls(self):
+        custom_urls = [
+            path("export/", self.admin_site.admin_view(self.export_view), name="users_subject_export"),
+        ]
+        return custom_urls + super().get_urls()
+
+    def export_view(self, request):
+        fmt = request.GET.get("format", "csv")
+        # ChangeList treats every unrecognized GET param as a field lookup,
+        # so `?format=` (ours, not a filter) has to be stripped before it
+        # builds the queryset or it 500s trying to filter by a "format" field.
+        original_get = request.GET
+        request.GET = original_get.copy()
+        request.GET.pop("format", None)
+        try:
+            changelist = self.get_changelist_instance(request)
+            queryset = changelist.get_queryset(request)
+        finally:
+            request.GET = original_get
+        try:
+            return export_subjects(queryset, fmt)
+        except UnsupportedFileFormat as exc:
+            self.message_user(request, str(exc), messages.ERROR)
+            return redirect(reverse("admin:users_subject_changelist"))
 
 
 class AddTrainerForm(forms.ModelForm):
