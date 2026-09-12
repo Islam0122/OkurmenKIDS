@@ -512,9 +512,32 @@ function addPasswordToggle(input) {
       initActionWarning();
     }
   );
+  );
 
   // Django's SelectFilter2.js builds the .selector widget's DOM on the
   // window "load" event (not DOMContentLoaded) — its own inline init
   // script registers first, so ours runs right after the widget exists.
   window.addEventListener("load", initSelectorFilterHints);
-})();
+
+  // Translate Select2 placeholder text
+  (function () {
+      function translateSelect2() {
+          document
+              .querySelectorAll(".select2-selection__rendered")
+              .forEach(function (el) {
+                  if (el.textContent.trim() === "- Select an option -") {
+                      el.textContent = "- Выберите вариант -";
+                  }
+              });
+      }
+
+      translateSelect2();
+
+      const observer = new MutationObserver(translateSelect2);
+
+      observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+      });
+  })();
