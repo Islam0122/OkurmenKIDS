@@ -4,7 +4,13 @@
 {% block content %}
 <div class="ok-group-workspace">
   <div class="ok-group-header">
-    <a class="ok-group-back" href="{{ changelist_url }}"><i class="bi bi-arrow-left"></i> Назад к группам</a>
+    <nav class="ok-group-breadcrumb" aria-label="breadcrumb">
+      <a href="{% url 'admin:index' %}">Academy</a>
+      <i class="bi bi-chevron-right"></i>
+      <a href="{{ changelist_url }}">Groups</a>
+      <i class="bi bi-chevron-right"></i>
+      <span>{{ group.name }}</span>
+    </nav>
 
     <div class="ok-group-header-main">
       <div class="ok-group-header-identity">
@@ -15,14 +21,16 @@
         </div>
       </div>
       <div class="ok-group-actions">
-        <a class="ok-btn-secondary ok-btn-sm" href="{{ change_url }}"><i class="bi bi-pencil"></i> Редактировать группу</a>
         <a class="ok-btn-secondary ok-btn-sm" href="{{ add_student_url }}"><i class="bi bi-person-plus"></i> Добавить студента</a>
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ add_teacher_url }}"><i class="bi bi-person-badge"></i> Добавить преподавателя</a>
         <a class="ok-btn-secondary ok-btn-sm" href="{{ add_program_url }}"><i class="bi bi-plus-circle"></i> Добавить программу</a>
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ add_schedule_url }}"><i class="bi bi-calendar-plus"></i> Добавить расписание</a>
         <form method="post" action="{{ generate_lessons_url }}">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ request.path }}">
           <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-magic"></i> Сгенерировать занятия</button>
         </form>
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ change_url }}"><i class="bi bi-pencil"></i> Редактировать группу</a>
       </div>
     </div>
 

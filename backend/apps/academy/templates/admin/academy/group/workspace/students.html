@@ -5,9 +5,12 @@
 <div class="ok-card">
   <div class="ok-card-header">
     <i class="bi bi-people"></i><span>Студенты группы</span>
-    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_student_url }}">
-      <i class="bi bi-person-plus"></i> Добавить студентов
-    </a>
+    <div class="ok-card-header-action" style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <a class="ok-btn-secondary ok-btn-sm" href="{{ add_student_url }}"><i class="bi bi-person-plus"></i> + Добавить студента</a>
+      <button type="button" class="ok-btn-primary ok-btn-sm" onclick="document.getElementById('ok-modal-add-existing').showModal()">
+        <i class="bi bi-people"></i> Добавить существующих
+      </button>
+    </div>
   </div>
   <div class="ok-card-body">
     <form method="get" class="ok-group-toolbar">
@@ -30,7 +33,7 @@
       <div class="ok-student-table-wrap">
         <table class="ok-student-table ok-group-student-table">
           <thead>
-            <tr><th></th><th>Имя</th><th>Телефон</th><th>Статус</th><th>Добавлен</th><th></th></tr>
+            <tr><th></th><th>Имя</th><th>Телефон</th><th>Телефон родителя</th><th>Статус</th><th>Добавлен</th><th></th></tr>
           </thead>
           <tbody>
             {% for student in students %}
@@ -38,6 +41,7 @@
                 <td><span class="ok-person-avatar ok-group-student-avatar">{{ student.first_name|first|upper }}{{ student.last_name|first|upper }}</span></td>
                 <td><a href="{% url 'admin:academy_student_detail' student.pk %}">{{ student }}</a></td>
                 <td>{{ student.phone|default:"—" }}</td>
+                <td>{{ student.parent_phone|default:"—" }}</td>
                 <td>
                   {% if student.is_active %}
                     <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>
@@ -46,7 +50,15 @@
                   {% endif %}
                 </td>
                 <td>{{ student.created_at|date:"d.m.Y" }}</td>
-                <td>
+                <td class="ok-student-actions">
+                  <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_student_detail' student.pk %}" title="Открыть профиль"><i class="bi bi-eye"></i></a>
+                  <form method="post" action="{% url 'admin:academy_student_toggle_active' student.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.path }}?{{ request.GET.urlencode }}">
+                    <button type="submit" class="ok-btn-secondary ok-btn-sm" title="{% if student.is_active %}Деактивировать{% else %}Активировать{% endif %}">
+                      <i class="bi {% if student.is_active %}bi-slash-circle{% else %}bi-check2-circle{% endif %}"></i>
+                    </button>
+                  </form>
                   <form method="post" action="{% url 'admin:academy_group_workspace_students_remove' group.pk student.pk %}"
                         onsubmit="return confirm('Убрать студента из группы? Сам студент не будет удалён.');">
                     {% csrf_token %}
@@ -73,4 +85,50 @@
     {% endif %}
   </div>
 </div>
+
+<dialog id="ok-modal-add-existing" class="ok-modal">
+  <form method="post" action="{{ add_existing_students_url }}" class="ok-modal-form">
+    {% csrf_token %}
+    <div class="ok-modal-header">
+      <span><i class="bi bi-people"></i> Добавить существующих студентов</span>
+      <button type="button" class="ok-modal-close" onclick="document.getElementById('ok-modal-add-existing').close()" aria-label="Закрыть">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="ok-modal-body">
+      <input
+        type="text"
+        class="ok-input ok-modal-search"
+        placeholder="Поиск студента..."
+        oninput="okFilterModalStudents(this.value)"
+        autocomplete="off"
+      >
+      <label class="ok-modal-select-all">
+        <input type="checkbox" id="ok-modal-select-all" onchange="okToggleAllModalStudents(this.checked)">
+        Выбрать всех
+      </label>
+      <div class="ok-modal-student-list" id="ok-modal-student-list">
+        {% for candidate in candidate_students %}
+          <label class="ok-modal-student-row" data-name="{{ candidate.first_name|lower }} {{ candidate.last_name|lower }} {{ candidate.phone }}">
+            <input type="checkbox" name="students" value="{{ candidate.pk }}">
+            <span class="ok-person-avatar ok-group-student-avatar">{{ candidate.first_name|first|upper }}{{ candidate.last_name|first|upper }}</span>
+            <span class="ok-modal-student-info">
+              <strong>{{ candidate }}</strong>
+              <span class="ok-help-text">{{ candidate.phone|default:"без телефона" }}{% if candidate.group %} · сейчас в «{{ candidate.group.name }}»{% endif %}</span>
+            </span>
+          </label>
+        {% empty %}
+          <div class="ok-group-empty-state" style="padding:1.5rem;">
+            <i class="bi bi-people"></i>
+            <h4>Нет доступных студентов</h4>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary" onclick="document.getElementById('ok-modal-add-existing').close()">Отмена</button>
+      <button type="submit" class="ok-btn-primary"><i class="bi bi-check2-circle"></i> Добавить выбранных</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}

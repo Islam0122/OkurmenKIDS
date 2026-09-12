@@ -4,7 +4,7 @@
 {% block workspace_content %}
 <div class="ok-card">
   <div class="ok-card-header">
-    <i class="bi bi-person-badge"></i><span>Учебные программы</span>
+    <i class="bi bi-kanban"></i><span>Программы</span>
     <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_program_url }}">
       <i class="bi bi-plus-lg"></i> Добавить программу
     </a>
@@ -15,7 +15,7 @@
         {% for card in cards %}
           <div class="ok-group-program-card">
             <div class="ok-group-program-title">{{ card.obj.subject.name|default:"Без предмета" }}</div>
-            <div class="ok-group-program-teacher">{{ card.obj.teacher }}</div>
+            <div class="ok-group-program-teacher">Тренер: {{ card.obj.teacher }}</div>
             <div class="ok-group-program-slots">
               {% for slot in card.slots %}
                 <div>{{ slot.day_label }} · {{ slot.time_label }} · {{ slot.room }}</div>
@@ -24,24 +24,32 @@
               {% endfor %}
             </div>
             <div class="okan-mini-stats">
-              <div class="okan-mini-stat">{{ card.lesson_count }} занятий</div>
-              <div class="okan-mini-stat">{{ card.completed_count }} завершено</div>
-              <div class="okan-mini-stat">{{ card.upcoming_count }} предстоящих</div>
+              <div class="okan-mini-stat">Занятий: {{ card.lesson_count }}</div>
+              <div class="okan-mini-stat">Завершено: {{ card.completed_count }}</div>
+              <div class="okan-mini-stat">Предстоит: {{ card.upcoming_count }}</div>
+              <div class="okan-mini-stat">План занятий: {{ card.plan_filled }}/{{ card.plan_total }}</div>
             </div>
             <div class="ok-badge {% if card.obj.is_active %}ok-badge-success{% else %}ok-badge-danger{% endif %}" style="margin-bottom:0.5rem;">
               <span class="ok-badge-dot"></span>{% if card.obj.is_active %}Активна{% else %}Неактивна{% endif %}
             </div>
             <div class="ok-group-program-actions">
-              <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Открыть рабочее пространство</a>
-              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.edit_url }}"><i class="bi bi-pencil"></i> Изменить</a>
+              <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Open Workspace</a>
+              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.lesson_plan_url }}"><i class="bi bi-list-check"></i> Lesson Plan</a>
+              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.schedule_url }}"><i class="bi bi-calendar-week"></i> Schedule</a>
+              <form method="post" action="{{ generate_lessons_url }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <button type="submit" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-magic"></i> Generate Lessons</button>
+              </form>
             </div>
           </div>
         {% endfor %}
       </div>
     {% else %}
       <div class="ok-group-empty-state">
-        <i class="bi bi-person-badge"></i>
+        <i class="bi bi-kanban"></i>
         <h4>Учебные программы ещё не добавлены</h4>
+        <p>Добавьте преподавателя и расписание, чтобы начать.</p>
         <a class="ok-btn-primary ok-btn-sm" href="{{ add_program_url }}">Добавить программу</a>
       </div>
     {% endif %}

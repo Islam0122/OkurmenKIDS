@@ -500,21 +500,23 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
 # ---------------------------------------------------------------------------
 
 def _workspace_tabs(group: Group) -> list[dict]:
+    # Attendance/Homework kept as their own URLs/views (still reachable, still
+    # tested) but folded out of the primary tab bar — this spec's tab list is
+    # exactly Overview/Students/Teachers/Programs/Weekly Schedule/Lessons/
+    # Analytics; their numbers already surface on Analytics.
     return [
         {"key": "overview", "label": "Обзор", "icon": "bi-clipboard-data",
          "url": reverse("admin:academy_group_workspace", args=[group.pk])},
         {"key": "students", "label": "Студенты", "icon": "bi-people",
          "url": reverse("admin:academy_group_workspace_students", args=[group.pk])},
-        {"key": "programs", "label": "Учебные программы", "icon": "bi-person-badge",
+        {"key": "teachers", "label": "Преподаватели", "icon": "bi-person-badge",
+         "url": reverse("admin:academy_group_workspace_teachers", args=[group.pk])},
+        {"key": "programs", "label": "Программы", "icon": "bi-kanban",
          "url": reverse("admin:academy_group_workspace_programs", args=[group.pk])},
         {"key": "schedule", "label": "Расписание", "icon": "bi-calendar-week",
          "url": reverse("admin:academy_group_workspace_schedule", args=[group.pk])},
         {"key": "lessons", "label": "Занятия", "icon": "bi-calendar-check",
          "url": reverse("admin:academy_group_workspace_lessons", args=[group.pk])},
-        {"key": "attendance", "label": "Посещаемость", "icon": "bi-clipboard-check",
-         "url": reverse("admin:academy_group_workspace_attendance", args=[group.pk])},
-        {"key": "homework", "label": "Домашние задания", "icon": "bi-journal-text",
-         "url": reverse("admin:academy_group_workspace_homework", args=[group.pk])},
         {"key": "analytics", "label": "Аналитика", "icon": "bi-graph-up-arrow",
          "url": reverse("admin:academy_group_workspace_analytics", args=[group.pk])},
     ]
@@ -529,6 +531,10 @@ def _workspace_context(request, group: Group, active_tab: str) -> dict:
         "change_url": reverse("admin:academy_group_change", args=[group.pk]),
         "changelist_url": reverse("admin:academy_group_changelist"),
         "add_student_url": reverse("admin:academy_group_workspace_students_add", args=[group.pk]),
+        "add_existing_students_url": reverse(
+            "admin:academy_group_workspace_students_add_existing", args=[group.pk]
+        ),
+        "add_teacher_url": reverse("admin:academy_group_workspace_teachers_add", args=[group.pk]),
         "add_program_url": reverse("admin:academy_group_workspace_programs_add", args=[group.pk]),
         "add_schedule_url": reverse("admin:academy_group_workspace_schedule_add", args=[group.pk]),
         "generate_lessons_url": reverse("admin:academy_group_workspace_generate_lessons", args=[group.pk]),
@@ -591,6 +597,7 @@ def group_workspace_overview_view(request, group_id):
             "title": group.name,
             "kpi": {
                 "students": group.students_count,
+                "teachers": len({gt.teacher_id for gt in programs}),
                 "programs": len(programs),
                 "upcoming_lessons": upcoming_count,
                 "completed_lessons": completed_count,
@@ -625,6 +632,16 @@ def group_workspace_students_view(request, group_id):
     paginator = Paginator(students_qs, 25)
     page_obj = paginator.get_page(request.GET.get("page"))
 
+    # Candidates for the "Добавить существующих" modal — every other active
+    # student, rendered server-side with a client-side search/select-all
+    # filter (see ui.js) rather than a second page/endpoint.
+    candidate_students = (
+        Student.objects.filter(is_active=True)
+        .exclude(group=group)
+        .select_related("group")
+        .order_by("last_name", "first_name")
+    )
+
     context = _workspace_context(request, group, "students")
     context.update(
         {
@@ -632,28 +649,13 @@ def group_workspace_students_view(request, group_id):
             "students": page_obj,
             "search": search,
             "status_filter": status_filter,
+            "candidate_students": candidate_students,
             "export_url": f"{reverse('admin:academy_student_export')}?group__id__exact={group.pk}",
             "bulk_add_url": reverse("admin:academy_student_bulk_add"),
             "import_url": reverse("admin:academy_student_import"),
         }
     )
     return render(request, "admin/academy/group/workspace/students.html", context)
-
-
-class GroupAddExistingStudentForm(forms.Form):
-    student = forms.ModelChoiceField(
-        queryset=Student.objects.none(),
-        label="Студент",
-        widget=forms.Select(attrs={"class": "ok-input"}),
-        help_text="Если студент уже состоит в другой группе, он будет переведён в эту.",
-    )
-
-    def __init__(self, *args, group=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        queryset = Student.objects.filter(is_active=True).select_related("group")
-        if group is not None:
-            queryset = queryset.exclude(group=group)
-        self.fields["student"].queryset = queryset.order_by("last_name", "first_name")
 
 
 class GroupCreateStudentForm(forms.ModelForm):
@@ -669,39 +671,50 @@ class GroupCreateStudentForm(forms.ModelForm):
 
 
 def group_workspace_add_student_view(request, group_id):
+    """The compact "+ Добавить студента" quick-create form (spec §6) — a
+    single new Student, auto-attached to this group, admin stays in the
+    Workspace afterwards. Picking from *existing* students is a separate,
+    modal-based bulk flow on the Students tab itself (see
+    group_workspace_add_existing_students_view)."""
     _require_admin(request)
     group = get_object_or_404(Group, pk=group_id)
 
-    existing_form = GroupAddExistingStudentForm(group=group)
-    create_form = GroupCreateStudentForm(initial={"is_active": True})
-
     if request.method == "POST":
-        if "add_existing" in request.POST:
-            existing_form = GroupAddExistingStudentForm(request.POST, group=group)
-            if existing_form.is_valid():
-                student = existing_form.cleaned_data["student"]
-                student.group = group
-                student.save(update_fields=["group", "updated_at"])
-                messages.success(request, f"«{student}» добавлен(а) в группу «{group.name}».")
-                return redirect(reverse("admin:academy_group_workspace_students", args=[group.pk]))
-        elif "create_new" in request.POST:
-            create_form = GroupCreateStudentForm(request.POST)
-            if create_form.is_valid():
-                student = create_form.save(commit=False)
-                student.group = group
-                student.save()
-                messages.success(request, f"Студент «{student}» создан и добавлен в группу «{group.name}».")
-                return redirect(reverse("admin:academy_group_workspace_students", args=[group.pk]))
+        create_form = GroupCreateStudentForm(request.POST)
+        if create_form.is_valid():
+            student = create_form.save(commit=False)
+            student.group = group
+            student.save()
+            messages.success(request, f"Студент «{student}» создан и добавлен в группу «{group.name}».")
+            return redirect(reverse("admin:academy_group_workspace_students", args=[group.pk]))
+    else:
+        create_form = GroupCreateStudentForm(initial={"is_active": True})
 
     context = _workspace_context(request, group, "students")
-    context.update(
-        {
-            "title": f"{group.name} — Добавить студента",
-            "existing_form": existing_form,
-            "create_form": create_form,
-        }
-    )
+    context.update({"title": f"{group.name} — Добавить студента", "create_form": create_form})
     return render(request, "admin/academy/group/workspace/add_student.html", context)
+
+
+def group_workspace_add_existing_students_view(request, group_id):
+    """POST target of the Students tab's "Добавить существующих" modal
+    (spec §5): checkbox multi-select + search + select-all, all rendered
+    server-side on students.html — this view only ever receives the final
+    submit. Moving an already-grouped student here re-assigns them (Student.
+    group is a single FK — see models.Student), matching how the rest of
+    the app already treats "add to a group"."""
+    _require_admin(request)
+    if request.method != "POST":
+        raise PermissionDenied
+    group = get_object_or_404(Group, pk=group_id)
+
+    student_ids = [pk for pk in request.POST.getlist("students") if pk.isdigit()]
+    if not student_ids:
+        messages.warning(request, "Не выбрано ни одного студента.")
+    else:
+        updated = Student.objects.filter(pk__in=student_ids).update(group=group)
+        messages.success(request, f"Добавлено студентов в группу «{group.name}»: {updated}.")
+
+    return redirect(reverse("admin:academy_group_workspace_students", args=[group.pk]))
 
 
 def group_workspace_remove_student_view(request, group_id, student_id):
@@ -724,8 +737,19 @@ def group_workspace_remove_student_view(request, group_id, student_id):
 def group_workspace_programs_view(request, group_id):
     _require_admin(request)
     group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
-    today = timezone.localdate()
 
+    context = _workspace_context(request, group, "programs")
+    context.update({"title": f"{group.name} — Программы", "cards": _teaching_program_cards(group)})
+    return render(request, "admin/academy/group/workspace/programs.html", context)
+
+
+def _teaching_program_cards(group: Group) -> list[dict]:
+    """One dict per GroupTeacher (Teaching Program) of `group` — shared by
+    both the Teachers tab (roster: add/remove the assignment) and the
+    Programs tab (business view: schedule/lesson-plan progress/generate),
+    so the same query runs once and both tabs render the same real numbers.
+    """
+    today = timezone.localdate()
     programs = list(
         group.teachers.select_related("teacher__user", "subject")
         .prefetch_related("schedules__room")
@@ -739,6 +763,8 @@ def group_workspace_programs_view(request, group_id):
             key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
         )
         lessons = Lesson.objects.filter(group_teacher=gt)
+        has_individual_plan = gt._plan_count > 0
+        plan_filled = gt._plan_count if has_individual_plan else group.course.lesson_plans.count()
         cards.append(
             {
                 "obj": gt,
@@ -754,14 +780,99 @@ def group_workspace_programs_view(request, group_id):
                 "completed_count": lessons.filter(status=Lesson.Status.COMPLETED).count(),
                 "upcoming_count": lessons.filter(status=Lesson.Status.PLANNED, date__gte=today).count(),
                 "plan_count": gt._plan_count,
+                "has_individual_plan": has_individual_plan,
+                "plan_filled": plan_filled,
+                "plan_total": group.course.count_lesson,
                 "workspace_url": reverse("admin:academy_groupteacher_workspace", args=[gt.pk]),
                 "edit_url": reverse("admin:academy_groupteacher_change", args=[gt.pk]),
+                "lesson_plan_url": (
+                    reverse("admin:academy_groupteacher_change", args=[gt.pk])
+                    if has_individual_plan
+                    else f"{reverse('admin:academy_courselessonplan_changelist')}?course__id__exact={group.course_id}"
+                ),
+                "schedule_url": reverse("admin:academy_group_workspace_schedule", args=[group.pk]),
+                "remove_url": reverse("admin:academy_group_workspace_teachers_remove", args=[group.pk, gt.pk]),
             }
         )
+    return cards
 
-    context = _workspace_context(request, group, "programs")
-    context.update({"title": f"{group.name} — Учебные программы", "cards": cards})
-    return render(request, "admin/academy/group/workspace/programs.html", context)
+
+# -- Teachers ---------------------------------------------------------------
+
+def group_workspace_teachers_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+
+    context = _workspace_context(request, group, "teachers")
+    context.update({"title": f"{group.name} — Преподаватели", "cards": _teaching_program_cards(group)})
+    return render(request, "admin/academy/group/workspace/teachers.html", context)
+
+
+class AddTeacherAssignmentForm(forms.Form):
+    teacher = forms.ModelChoiceField(
+        queryset=Teacher.objects.filter(is_active=True).select_related("user"),
+        label="Тренер",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    subject = forms.ModelChoiceField(
+        queryset=Subject.objects.none(), label="Предмет", widget=forms.Select(attrs={"class": "ok-input"})
+    )
+
+    def __init__(self, *args, group=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if group is not None:
+            self.fields["subject"].queryset = group.course.subjects.filter(is_active=True)
+
+
+def group_workspace_add_teacher_view(request, group_id):
+    """Lightweight assignment (spec §7): just Teacher + Subject, no schedule
+    required up front — creates a bare GroupTeacher directly (the same
+    model GroupSchedule.save() would derive one into, just without a slot
+    yet). The admin adds a weekly schedule for it afterwards, from the
+    Teachers or Weekly Schedule tab."""
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+
+    if request.method == "POST":
+        form = AddTeacherAssignmentForm(request.POST, group=group)
+        if form.is_valid():
+            teacher = form.cleaned_data["teacher"]
+            subject = form.cleaned_data["subject"]
+            group_teacher, created = GroupTeacher.objects.get_or_create(
+                group=group, teacher=teacher, subject=subject
+            )
+            if created:
+                messages.success(
+                    request,
+                    f"Преподаватель «{teacher}» добавлен ({subject.name}). "
+                    "Теперь добавьте для него расписание.",
+                )
+            else:
+                messages.warning(request, f"«{teacher}» уже преподаёт «{subject.name}» в этой группе.")
+            return redirect(reverse("admin:academy_group_workspace_teachers", args=[group.pk]))
+    else:
+        form = AddTeacherAssignmentForm(group=group)
+
+    context = _workspace_context(request, group, "teachers")
+    context.update({"title": f"{group.name} — Добавить преподавателя", "form": form})
+    return render(request, "admin/academy/group/workspace/add_teacher.html", context)
+
+
+def group_workspace_remove_teacher_view(request, group_id, group_teacher_id):
+    """Removes the assignment itself (spec §7 "Удалить назначение"), not a
+    student — GroupSchedule rows of this GroupTeacher cascade-delete with
+    it (models.GroupSchedule.group_teacher, on_delete=CASCADE); Lessons/
+    Attendance/Homework already generated keep their history and just lose
+    the program link (models.Lesson.group_teacher, on_delete=SET_NULL)."""
+    _require_admin(request)
+    if request.method != "POST":
+        raise PermissionDenied
+    group = get_object_or_404(Group, pk=group_id)
+    group_teacher = get_object_or_404(GroupTeacher, pk=group_teacher_id, group=group)
+    label = f"{group_teacher.teacher} — {group_teacher.subject.name if group_teacher.subject_id else 'без предмета'}"
+    group_teacher.delete()
+    messages.success(request, f"Назначение «{label}» удалено.")
+    return redirect(reverse("admin:academy_group_workspace_teachers", args=[group.pk]))
 
 
 class AddTeachingProgramForm(forms.Form):
@@ -787,6 +898,12 @@ class AddTeachingProgramForm(forms.Form):
     room = forms.ModelChoiceField(
         queryset=Room.objects.filter(is_active=True), required=False, label="Кабинет",
         widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    lesson_plan_source = forms.ChoiceField(
+        choices=[("course", "Общий план курса"), ("individual", "Индивидуальный план программы")],
+        initial="course",
+        label="План занятий",
+        widget=forms.RadioSelect,
     )
 
     def __init__(self, *args, group=None, **kwargs):
@@ -815,6 +932,7 @@ def group_workspace_add_program_view(request, group_id):
             start_time = form.cleaned_data["start_time"]
             end_time = form.cleaned_data["end_time"]
             room = form.cleaned_data.get("room")
+            wants_individual_plan = form.cleaned_data["lesson_plan_source"] == "individual"
             day_labels = dict(GroupSchedule.DAY_CHOICES)
 
             new_slots = []
@@ -842,6 +960,13 @@ def group_workspace_add_program_view(request, group_id):
                     f"Учебная программа добавлена: {teacher} — {subject.name} "
                     f"({len(new_slots)} слот(ов) расписания).",
                 )
+                if wants_individual_plan:
+                    # Reuses the existing GroupTeacherLessonPlanInline on
+                    # GroupTeacherAdmin's own change page — no new
+                    # lesson-plan editor built here.
+                    group_teacher = new_slots[0].group_teacher
+                    messages.info(request, "Заполните индивидуальный план занятий для этой программы ниже.")
+                    return redirect(reverse("admin:academy_groupteacher_change", args=[group_teacher.pk]))
                 return redirect(reverse("admin:academy_group_workspace_programs", args=[group.pk]))
     else:
         form = AddTeachingProgramForm(group=group)
@@ -854,15 +979,19 @@ def group_workspace_add_program_view(request, group_id):
 # -- Schedule ---------------------------------------------------------------
 
 def group_workspace_schedule_view(request, group_id):
+    """Weekly Schedule tab (spec §9): day-grouped blocks — Monday through
+    Sunday, each holding every slot that falls on it, sorted by start
+    time — rather than one flat, hard-to-scan table."""
     _require_admin(request)
     group = get_object_or_404(Group, pk=group_id)
 
-    slots = (
+    slots = list(
         GroupSchedule.objects.filter(group=group)
         .select_related("teacher__user", "group_teacher__subject", "room")
     )
-    rows = [
-        {
+
+    def _row(slot: GroupSchedule) -> dict:
+        return {
             "obj": slot,
             "program_label": (
                 slot.group_teacher.subject.name
@@ -870,7 +999,6 @@ def group_workspace_schedule_view(request, group_id):
                 else "Без предмета"
             ),
             "teacher": slot.teacher,
-            "day_label": WEEKDAY_SHORT_LABELS.get(slot.day_of_week, slot.day_of_week),
             "time_label": f"{slot.start_time:%H:%M}–{slot.end_time:%H:%M}",
             "room": slot.room.name if slot.room_id else "—",
             "is_active": slot.is_active,
@@ -878,11 +1006,20 @@ def group_workspace_schedule_view(request, group_id):
                 "admin:academy_group_workspace_schedule_remove", args=[group.pk, slot.pk]
             ),
         }
-        for slot in slots
+
+    days = [
+        {
+            "code": code,
+            "label": WEEKDAY_LABELS_FULL[code],
+            "slots": sorted(
+                (_row(s) for s in slots if s.day_of_week == code), key=lambda r: r["obj"].start_time
+            ),
+        }
+        for code in WEEKDAY_CODES
     ]
 
     context = _workspace_context(request, group, "schedule")
-    context.update({"title": f"{group.name} — Расписание", "rows": rows})
+    context.update({"title": f"{group.name} — Расписание", "days": days, "has_any_slot": bool(slots)})
     return render(request, "admin/academy/group/workspace/schedule.html", context)
 
 
@@ -948,7 +1085,11 @@ def group_workspace_add_schedule_view(request, group_id):
                 messages.success(request, "Слот расписания добавлен.")
                 return redirect(reverse("admin:academy_group_workspace_schedule", args=[group.pk]))
     else:
-        form = AddScheduleSlotForm(group=group)
+        initial = {}
+        program_id = request.GET.get("program")
+        if program_id and program_id.isdigit():
+            initial["group_teacher"] = program_id
+        form = AddScheduleSlotForm(group=group, initial=initial)
 
     context = _workspace_context(request, group, "schedule")
     context.update({"title": f"{group.name} — Добавить расписание", "form": form})

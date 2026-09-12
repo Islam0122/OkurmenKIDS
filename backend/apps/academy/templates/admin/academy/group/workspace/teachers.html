@@ -1,0 +1,55 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header">
+    <i class="bi bi-person-badge"></i><span>Преподаватели группы</span>
+    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_teacher_url }}">
+      <i class="bi bi-person-plus"></i> Добавить преподавателя
+    </a>
+  </div>
+  <div class="ok-card-body">
+    {% if cards %}
+      <div class="ok-group-program-grid">
+        {% for card in cards %}
+          <div class="ok-group-program-card">
+            <div class="ok-group-teacher-row">
+              <span class="ok-person-avatar ok-group-student-avatar">{{ card.obj.teacher.user.first_name|first|upper }}{{ card.obj.teacher.user.last_name|first|upper }}</span>
+              <div>
+                <div class="ok-group-program-teacher" style="margin-bottom:0;">{{ card.obj.teacher }}</div>
+                <div class="ok-help-text" style="margin:0;">{{ card.obj.subject.name|default:"Без предмета" }}</div>
+              </div>
+            </div>
+            <div class="ok-badge {% if card.obj.is_active %}ok-badge-success{% else %}ok-badge-danger{% endif %}" style="margin:0.6rem 0;">
+              <span class="ok-badge-dot"></span>{% if card.obj.is_active %}Активна{% else %}Неактивна{% endif %}
+            </div>
+            <div class="okan-mini-stats">
+              <div class="okan-mini-stat">{{ card.slots|length }} слот(ов) расписания</div>
+              <div class="okan-mini-stat">{{ card.lesson_count }} занятий</div>
+              <div class="okan-mini-stat">Прогресс: {{ card.completed_count }}/{{ card.lesson_count }}</div>
+            </div>
+            <div class="ok-group-program-actions">
+              <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Открыть программу</a>
+              <a class="ok-btn-secondary ok-btn-sm" href="{{ add_schedule_url }}?program={{ card.obj.pk }}"><i class="bi bi-calendar-plus"></i> Расписание</a>
+              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.edit_url }}"><i class="bi bi-pencil"></i> Изменить</a>
+              <form method="post" action="{{ card.remove_url }}" onsubmit="return confirm('Удалить это назначение? Расписание программы будет удалено, но занятия/посещаемость/ДЗ сохранятся.');">
+                {% csrf_token %}
+                <button type="submit" class="ok-btn-secondary ok-btn-sm ok-student-danger-action" title="Удалить назначение">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-person-badge"></i>
+        <h4>Преподаватели ещё не добавлены</h4>
+        <a class="ok-btn-primary ok-btn-sm" href="{{ add_teacher_url }}">Добавить преподавателя</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
