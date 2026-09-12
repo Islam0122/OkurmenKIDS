@@ -11,9 +11,13 @@ import datetime as dt
 from collections import defaultdict
 from typing import Iterable
 
+from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
-from django.db.models import Avg, Q
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Avg, Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -21,12 +25,28 @@ from django.views.decorators.http import require_POST
 
 from apps.users.models import Subject, Teacher, User
 
-from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
-from .models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Room
+from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL, WEEKDAY_LABELS_SHORT
+from .models import (
+    Attendance,
+    Course,
+    Group,
+    GroupSchedule,
+    GroupTeacher,
+    Homework,
+    HomeworkResult,
+    Lesson,
+    Room,
+    Student,
+)
 from .services.analytics import get_dashboard
-from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+from .services.lesson_generator import (
+    LessonGenerationError,
+    generate_lessons_for_group,
+    generate_lessons_for_group_with_report,
+)
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
+WEEKDAY_SHORT_LABELS = {code: WEEKDAY_LABELS_SHORT[code] for code in WEEKDAY_CODES}
 
 
 def _is_admin_user(user) -> bool:
@@ -465,3 +485,694 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
         ),
     }
     return render(request, "admin/academy/group_teacher_workspace.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Group Workspace — a Group's own complete control center: Overview,
+# Students, Teaching Programs, Schedule, Lessons, Attendance, Homework,
+# Analytics. Each tab is a real Django view/URL (not an anchor-scrolled
+# section) so Students/Lessons can have real search/filters/pagination and
+# Programs/Schedule can have real add/remove forms — GroupAdmin.get_urls()
+# wires every path below under /admin/academy/group/<id>/workspace/...,
+# following the exact same admin_site.admin_view()/named-URL pattern the
+# GroupTeacher workspace and the "Расписание"/"Аналитика" pages above
+# already use. Every view is admin-only (spec §18), matching those.
+# ---------------------------------------------------------------------------
+
+def _workspace_tabs(group: Group) -> list[dict]:
+    return [
+        {"key": "overview", "label": "Обзор", "icon": "bi-clipboard-data",
+         "url": reverse("admin:academy_group_workspace", args=[group.pk])},
+        {"key": "students", "label": "Студенты", "icon": "bi-people",
+         "url": reverse("admin:academy_group_workspace_students", args=[group.pk])},
+        {"key": "programs", "label": "Учебные программы", "icon": "bi-person-badge",
+         "url": reverse("admin:academy_group_workspace_programs", args=[group.pk])},
+        {"key": "schedule", "label": "Расписание", "icon": "bi-calendar-week",
+         "url": reverse("admin:academy_group_workspace_schedule", args=[group.pk])},
+        {"key": "lessons", "label": "Занятия", "icon": "bi-calendar-check",
+         "url": reverse("admin:academy_group_workspace_lessons", args=[group.pk])},
+        {"key": "attendance", "label": "Посещаемость", "icon": "bi-clipboard-check",
+         "url": reverse("admin:academy_group_workspace_attendance", args=[group.pk])},
+        {"key": "homework", "label": "Домашние задания", "icon": "bi-journal-text",
+         "url": reverse("admin:academy_group_workspace_homework", args=[group.pk])},
+        {"key": "analytics", "label": "Аналитика", "icon": "bi-graph-up-arrow",
+         "url": reverse("admin:academy_group_workspace_analytics", args=[group.pk])},
+    ]
+
+
+def _workspace_context(request, group: Group, active_tab: str) -> dict:
+    return {
+        **admin.site.each_context(request),
+        "group": group,
+        "active_tab": active_tab,
+        "tabs": _workspace_tabs(group),
+        "change_url": reverse("admin:academy_group_change", args=[group.pk]),
+        "changelist_url": reverse("admin:academy_group_changelist"),
+        "add_student_url": reverse("admin:academy_group_workspace_students_add", args=[group.pk]),
+        "add_program_url": reverse("admin:academy_group_workspace_programs_add", args=[group.pk]),
+        "add_schedule_url": reverse("admin:academy_group_workspace_schedule_add", args=[group.pk]),
+        "generate_lessons_url": reverse("admin:academy_group_workspace_generate_lessons", args=[group.pk]),
+    }
+
+
+def _require_admin(request) -> None:
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Рабочее пространство группы доступно только администратору.")
+
+
+# -- Overview -----------------------------------------------------------
+
+def group_workspace_overview_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    today = timezone.localdate()
+
+    lessons_qs = Lesson.objects.filter(group=group)
+    completed_count = lessons_qs.filter(status=Lesson.Status.COMPLETED).count()
+    upcoming_count = lessons_qs.filter(status=Lesson.Status.PLANNED, date__gte=today).count()
+
+    attendance_qs = Attendance.objects.filter(lesson__group=group)
+    attendance_total = attendance_qs.count()
+    attendance_present = attendance_qs.filter(
+        status__in=[Attendance.Status.PRESENT, Attendance.Status.LATE]
+    ).count()
+    attendance_rate = round(100 * attendance_present / attendance_total, 1) if attendance_total else None
+
+    programs = list(
+        group.teachers.filter(is_active=True)
+        .select_related("teacher__user", "subject")
+        .prefetch_related("schedules__room")
+    )
+    program_rows = []
+    for gt in programs:
+        next_slot = min(
+            (s for s in gt.schedules.all() if s.is_active),
+            key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
+            default=None,
+        )
+        program_rows.append(
+            {
+                "teacher": gt.teacher,
+                "subject": gt.subject,
+                "next_slot": next_slot,
+                "day_label": WEEKDAY_SHORT_LABELS.get(next_slot.day_of_week) if next_slot else None,
+                "workspace_url": reverse("admin:academy_groupteacher_workspace", args=[gt.pk]),
+            }
+        )
+
+    if group.end_date:
+        period_label = f"{group.start_date:%d.%m.%Y} – {group.end_date:%d.%m.%Y}"
+    else:
+        period_label = f"{group.start_date:%d.%m.%Y} – …"
+
+    context = _workspace_context(request, group, "overview")
+    context.update(
+        {
+            "title": group.name,
+            "kpi": {
+                "students": group.students_count,
+                "programs": len(programs),
+                "upcoming_lessons": upcoming_count,
+                "completed_lessons": completed_count,
+                "attendance_rate": attendance_rate,
+            },
+            "period_label": period_label,
+            "program_rows": program_rows,
+        }
+    )
+    return render(request, "admin/academy/group/workspace/overview.html", context)
+
+
+# -- Students -------------------------------------------------------------
+
+def group_workspace_students_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+
+    search = (request.GET.get("q") or "").strip()
+    status_filter = request.GET.get("status") or ""
+
+    students_qs = Student.objects.filter(group=group).order_by("last_name", "first_name")
+    if search:
+        students_qs = students_qs.filter(
+            Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(phone__icontains=search)
+        )
+    if status_filter == "active":
+        students_qs = students_qs.filter(is_active=True)
+    elif status_filter == "inactive":
+        students_qs = students_qs.filter(is_active=False)
+
+    paginator = Paginator(students_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = _workspace_context(request, group, "students")
+    context.update(
+        {
+            "title": f"{group.name} — Студенты",
+            "students": page_obj,
+            "search": search,
+            "status_filter": status_filter,
+            "export_url": f"{reverse('admin:academy_student_export')}?group__id__exact={group.pk}",
+            "bulk_add_url": reverse("admin:academy_student_bulk_add"),
+            "import_url": reverse("admin:academy_student_import"),
+        }
+    )
+    return render(request, "admin/academy/group/workspace/students.html", context)
+
+
+class GroupAddExistingStudentForm(forms.Form):
+    student = forms.ModelChoiceField(
+        queryset=Student.objects.none(),
+        label="Студент",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+        help_text="Если студент уже состоит в другой группе, он будет переведён в эту.",
+    )
+
+    def __init__(self, *args, group=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        queryset = Student.objects.filter(is_active=True).select_related("group")
+        if group is not None:
+            queryset = queryset.exclude(group=group)
+        self.fields["student"].queryset = queryset.order_by("last_name", "first_name")
+
+
+class GroupCreateStudentForm(forms.ModelForm):
+    class Meta:
+        model = Student
+        fields = ["first_name", "last_name", "phone", "parent_phone", "is_active"]
+        widgets = {
+            "first_name": forms.TextInput(attrs={"class": "ok-input"}),
+            "last_name": forms.TextInput(attrs={"class": "ok-input"}),
+            "phone": forms.TextInput(attrs={"class": "ok-input"}),
+            "parent_phone": forms.TextInput(attrs={"class": "ok-input"}),
+        }
+
+
+def group_workspace_add_student_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+
+    existing_form = GroupAddExistingStudentForm(group=group)
+    create_form = GroupCreateStudentForm(initial={"is_active": True})
+
+    if request.method == "POST":
+        if "add_existing" in request.POST:
+            existing_form = GroupAddExistingStudentForm(request.POST, group=group)
+            if existing_form.is_valid():
+                student = existing_form.cleaned_data["student"]
+                student.group = group
+                student.save(update_fields=["group", "updated_at"])
+                messages.success(request, f"«{student}» добавлен(а) в группу «{group.name}».")
+                return redirect(reverse("admin:academy_group_workspace_students", args=[group.pk]))
+        elif "create_new" in request.POST:
+            create_form = GroupCreateStudentForm(request.POST)
+            if create_form.is_valid():
+                student = create_form.save(commit=False)
+                student.group = group
+                student.save()
+                messages.success(request, f"Студент «{student}» создан и добавлен в группу «{group.name}».")
+                return redirect(reverse("admin:academy_group_workspace_students", args=[group.pk]))
+
+    context = _workspace_context(request, group, "students")
+    context.update(
+        {
+            "title": f"{group.name} — Добавить студента",
+            "existing_form": existing_form,
+            "create_form": create_form,
+        }
+    )
+    return render(request, "admin/academy/group/workspace/add_student.html", context)
+
+
+def group_workspace_remove_student_view(request, group_id, student_id):
+    _require_admin(request)
+    if request.method != "POST":
+        raise PermissionDenied
+    group = get_object_or_404(Group, pk=group_id)
+    student = get_object_or_404(Student, pk=student_id, group=group)
+    student.group = None
+    student.save(update_fields=["group", "updated_at"])
+    messages.success(
+        request,
+        f"«{student}» удалён(а) из группы «{group.name}». Студент не удалён — история сохранена.",
+    )
+    return redirect(reverse("admin:academy_group_workspace_students", args=[group.pk]))
+
+
+# -- Teaching Programs ------------------------------------------------------
+
+def group_workspace_programs_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    today = timezone.localdate()
+
+    programs = list(
+        group.teachers.select_related("teacher__user", "subject")
+        .prefetch_related("schedules__room")
+        .annotate(_plan_count=Count("lesson_plans", distinct=True))
+    )
+
+    cards = []
+    for gt in programs:
+        active_slots = sorted(
+            (s for s in gt.schedules.all() if s.is_active),
+            key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
+        )
+        lessons = Lesson.objects.filter(group_teacher=gt)
+        cards.append(
+            {
+                "obj": gt,
+                "slots": [
+                    {
+                        "day_label": WEEKDAY_SHORT_LABELS.get(s.day_of_week, s.day_of_week),
+                        "time_label": f"{s.start_time:%H:%M}–{s.end_time:%H:%M}",
+                        "room": s.room.name if s.room_id else "без кабинета",
+                    }
+                    for s in active_slots
+                ],
+                "lesson_count": lessons.count(),
+                "completed_count": lessons.filter(status=Lesson.Status.COMPLETED).count(),
+                "upcoming_count": lessons.filter(status=Lesson.Status.PLANNED, date__gte=today).count(),
+                "plan_count": gt._plan_count,
+                "workspace_url": reverse("admin:academy_groupteacher_workspace", args=[gt.pk]),
+                "edit_url": reverse("admin:academy_groupteacher_change", args=[gt.pk]),
+            }
+        )
+
+    context = _workspace_context(request, group, "programs")
+    context.update({"title": f"{group.name} — Учебные программы", "cards": cards})
+    return render(request, "admin/academy/group/workspace/programs.html", context)
+
+
+class AddTeachingProgramForm(forms.Form):
+    teacher = forms.ModelChoiceField(
+        queryset=Teacher.objects.filter(is_active=True).select_related("user"),
+        label="Тренер",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    subject = forms.ModelChoiceField(
+        queryset=Subject.objects.none(), label="Предмет", widget=forms.Select(attrs={"class": "ok-input"})
+    )
+    day_of_week = forms.MultipleChoiceField(
+        choices=GroupSchedule.DAY_CHOICES,
+        label="Дни недели",
+        widget=forms.CheckboxSelectMultiple,
+    )
+    start_time = forms.TimeField(
+        label="Время начала", widget=forms.TimeInput(attrs={"class": "ok-input", "type": "time"})
+    )
+    end_time = forms.TimeField(
+        label="Время окончания", widget=forms.TimeInput(attrs={"class": "ok-input", "type": "time"})
+    )
+    room = forms.ModelChoiceField(
+        queryset=Room.objects.filter(is_active=True), required=False, label="Кабинет",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+
+    def __init__(self, *args, group=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if group is not None:
+            self.fields["subject"].queryset = group.course.subjects.filter(is_active=True)
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("start_time"), cleaned.get("end_time")
+        if start and end and end <= start:
+            self.add_error("end_time", "Время окончания должно быть позже времени начала.")
+        return cleaned
+
+
+def group_workspace_add_program_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+
+    if request.method == "POST":
+        form = AddTeachingProgramForm(request.POST, group=group)
+        if form.is_valid():
+            teacher = form.cleaned_data["teacher"]
+            subject = form.cleaned_data["subject"]
+            days = form.cleaned_data["day_of_week"]
+            start_time = form.cleaned_data["start_time"]
+            end_time = form.cleaned_data["end_time"]
+            room = form.cleaned_data.get("room")
+            day_labels = dict(GroupSchedule.DAY_CHOICES)
+
+            new_slots = []
+            has_errors = False
+            for day in days:
+                slot = GroupSchedule(
+                    group=group, teacher=teacher, subject=subject,
+                    day_of_week=day, start_time=start_time, end_time=end_time, room=room,
+                )
+                try:
+                    slot.full_clean()
+                except DjangoValidationError as exc:
+                    has_errors = True
+                    for message in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                        messages.error(request, f"{day_labels.get(day, day)}: {message}")
+                else:
+                    new_slots.append(slot)
+
+            if not has_errors:
+                with transaction.atomic():
+                    for slot in new_slots:
+                        slot.save()
+                messages.success(
+                    request,
+                    f"Учебная программа добавлена: {teacher} — {subject.name} "
+                    f"({len(new_slots)} слот(ов) расписания).",
+                )
+                return redirect(reverse("admin:academy_group_workspace_programs", args=[group.pk]))
+    else:
+        form = AddTeachingProgramForm(group=group)
+
+    context = _workspace_context(request, group, "programs")
+    context.update({"title": f"{group.name} — Добавить учебную программу", "form": form})
+    return render(request, "admin/academy/group/workspace/add_program.html", context)
+
+
+# -- Schedule ---------------------------------------------------------------
+
+def group_workspace_schedule_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+
+    slots = (
+        GroupSchedule.objects.filter(group=group)
+        .select_related("teacher__user", "group_teacher__subject", "room")
+    )
+    rows = [
+        {
+            "obj": slot,
+            "program_label": (
+                slot.group_teacher.subject.name
+                if slot.group_teacher_id and slot.group_teacher.subject_id
+                else "Без предмета"
+            ),
+            "teacher": slot.teacher,
+            "day_label": WEEKDAY_SHORT_LABELS.get(slot.day_of_week, slot.day_of_week),
+            "time_label": f"{slot.start_time:%H:%M}–{slot.end_time:%H:%M}",
+            "room": slot.room.name if slot.room_id else "—",
+            "is_active": slot.is_active,
+            "remove_url": reverse(
+                "admin:academy_group_workspace_schedule_remove", args=[group.pk, slot.pk]
+            ),
+        }
+        for slot in slots
+    ]
+
+    context = _workspace_context(request, group, "schedule")
+    context.update({"title": f"{group.name} — Расписание", "rows": rows})
+    return render(request, "admin/academy/group/workspace/schedule.html", context)
+
+
+class AddScheduleSlotForm(forms.Form):
+    group_teacher = forms.ModelChoiceField(
+        queryset=GroupTeacher.objects.none(),
+        label="Учебная программа",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    day_of_week = forms.ChoiceField(
+        choices=GroupSchedule.DAY_CHOICES, label="День недели", widget=forms.Select(attrs={"class": "ok-input"})
+    )
+    start_time = forms.TimeField(
+        label="Время начала", widget=forms.TimeInput(attrs={"class": "ok-input", "type": "time"})
+    )
+    end_time = forms.TimeField(
+        label="Время окончания", widget=forms.TimeInput(attrs={"class": "ok-input", "type": "time"})
+    )
+    room = forms.ModelChoiceField(
+        queryset=Room.objects.filter(is_active=True), required=False, label="Кабинет",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+
+    def __init__(self, *args, group=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if group is not None:
+            self.fields["group_teacher"].queryset = (
+                group.teachers.filter(is_active=True).select_related("teacher__user", "subject")
+            )
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("start_time"), cleaned.get("end_time")
+        if start and end and end <= start:
+            self.add_error("end_time", "Время окончания должно быть позже времени начала.")
+        return cleaned
+
+
+def group_workspace_add_schedule_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+
+    if not group.teachers.filter(is_active=True).exists():
+        messages.warning(request, "Сначала добавьте хотя бы одну учебную программу.")
+        return redirect(reverse("admin:academy_group_workspace_programs", args=[group.pk]))
+
+    if request.method == "POST":
+        form = AddScheduleSlotForm(request.POST, group=group)
+        if form.is_valid():
+            group_teacher = form.cleaned_data["group_teacher"]
+            slot = GroupSchedule(
+                group=group, teacher=group_teacher.teacher, subject=group_teacher.subject,
+                day_of_week=form.cleaned_data["day_of_week"], start_time=form.cleaned_data["start_time"],
+                end_time=form.cleaned_data["end_time"], room=form.cleaned_data.get("room"),
+            )
+            try:
+                slot.full_clean()
+            except DjangoValidationError as exc:
+                for message in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                    messages.error(request, message)
+            else:
+                slot.save()
+                messages.success(request, "Слот расписания добавлен.")
+                return redirect(reverse("admin:academy_group_workspace_schedule", args=[group.pk]))
+    else:
+        form = AddScheduleSlotForm(group=group)
+
+    context = _workspace_context(request, group, "schedule")
+    context.update({"title": f"{group.name} — Добавить расписание", "form": form})
+    return render(request, "admin/academy/group/workspace/add_schedule.html", context)
+
+
+def group_workspace_remove_schedule_view(request, group_id, schedule_id):
+    _require_admin(request)
+    if request.method != "POST":
+        raise PermissionDenied
+    group = get_object_or_404(Group, pk=group_id)
+    slot = get_object_or_404(GroupSchedule, pk=schedule_id, group=group)
+    slot.delete()
+    messages.success(request, "Слот расписания удалён.")
+    return redirect(reverse("admin:academy_group_workspace_schedule", args=[group.pk]))
+
+
+# -- Lessons ------------------------------------------------------------
+
+def group_workspace_lessons_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+
+    lessons_qs = (
+        Lesson.objects.filter(group=group)
+        .select_related("group_teacher__teacher__user", "group_teacher__subject", "teacher__user", "subject", "room")
+        .annotate(
+            attendance_count=Count("attendance_records", distinct=True),
+            homework_count=Count("homeworks", distinct=True),
+        )
+        .order_by("-date", "-start_time")
+    )
+
+    program_id = request.GET.get("program") or ""
+    teacher_id = request.GET.get("teacher") or ""
+    subject_id = request.GET.get("subject") or ""
+    status = request.GET.get("status") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
+
+    if program_id:
+        lessons_qs = lessons_qs.filter(group_teacher_id=program_id)
+    if teacher_id:
+        lessons_qs = lessons_qs.filter(
+            Q(teacher_id=teacher_id) | Q(teacher__isnull=True, group_teacher__teacher_id=teacher_id)
+        )
+    if subject_id:
+        lessons_qs = lessons_qs.filter(subject_id=subject_id)
+    if status:
+        lessons_qs = lessons_qs.filter(status=status)
+    if date_from:
+        parsed = _parse_date(date_from, None)
+        if parsed:
+            lessons_qs = lessons_qs.filter(date__gte=parsed)
+    if date_to:
+        parsed = _parse_date(date_to, None)
+        if parsed:
+            lessons_qs = lessons_qs.filter(date__lte=parsed)
+
+    paginator = Paginator(lessons_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = _workspace_context(request, group, "lessons")
+    context.update(
+        {
+            "title": f"{group.name} — Занятия",
+            "lessons": page_obj,
+            "programs": group.teachers.filter(is_active=True).select_related("teacher__user", "subject"),
+            "teachers": Teacher.objects.filter(group_assignments__group=group).distinct(),
+            "subjects": Subject.objects.filter(group_assignments__group=group).distinct(),
+            "status_choices": Lesson.Status.choices,
+            "selected": {
+                "program": program_id, "teacher": teacher_id, "subject": subject_id, "status": status,
+                "date_from": date_from, "date_to": date_to,
+            },
+        }
+    )
+    return render(request, "admin/academy/group/workspace/lessons.html", context)
+
+
+# -- Attendance ---------------------------------------------------------
+
+def group_workspace_attendance_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+
+    attendance_qs = (
+        Attendance.objects.filter(lesson__group=group)
+        .select_related("student", "lesson")
+        .order_by("-lesson__date")
+    )
+    status_filter = request.GET.get("status") or ""
+    all_qs = attendance_qs
+    if status_filter:
+        attendance_qs = attendance_qs.filter(status=status_filter)
+
+    total = all_qs.count()
+    present = all_qs.filter(status=Attendance.Status.PRESENT).count()
+    rate = (
+        round(100 * all_qs.filter(status__in=[Attendance.Status.PRESENT, Attendance.Status.LATE]).count() / total, 1)
+        if total
+        else None
+    )
+
+    paginator = Paginator(attendance_qs, 30)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = _workspace_context(request, group, "attendance")
+    context.update(
+        {
+            "title": f"{group.name} — Посещаемость",
+            "records": page_obj,
+            "stats": {
+                "total": total,
+                "present": present,
+                "absent": all_qs.filter(status=Attendance.Status.ABSENT).count(),
+                "late": all_qs.filter(status=Attendance.Status.LATE).count(),
+                "excused": all_qs.filter(status=Attendance.Status.EXCUSED).count(),
+                "rate": rate,
+            },
+            "status_choices": Attendance.Status.choices,
+            "selected_status": status_filter,
+        }
+    )
+    return render(request, "admin/academy/group/workspace/attendance.html", context)
+
+
+# -- Homework -------------------------------------------------------------
+
+def group_workspace_homework_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+
+    homework_qs = (
+        Homework.objects.filter(lesson__group=group)
+        .select_related("lesson")
+        .annotate(results_count=Count("results", distinct=True))
+        .order_by("-created_at")
+    )
+    results_qs = HomeworkResult.objects.filter(homework__lesson__group=group)
+
+    paginator = Paginator(homework_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = _workspace_context(request, group, "homework")
+    context.update(
+        {
+            "title": f"{group.name} — Домашние задания",
+            "homeworks": page_obj,
+            "stats": {
+                "assignments": homework_qs.count(),
+                "results_total": results_qs.count(),
+                "checked": results_qs.filter(status=HomeworkResult.Status.CHECKED).count(),
+                "submitted": results_qs.filter(
+                    status__in=[
+                        HomeworkResult.Status.SUBMITTED,
+                        HomeworkResult.Status.LATE,
+                        HomeworkResult.Status.CHECKED,
+                    ]
+                ).count(),
+            },
+        }
+    )
+    return render(request, "admin/academy/group/workspace/homework.html", context)
+
+
+# -- Analytics ------------------------------------------------------------
+
+def group_workspace_analytics_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+    today = timezone.localdate()
+
+    lessons_qs = Lesson.objects.filter(group=group)
+    attendance_qs = Attendance.objects.filter(lesson__group=group)
+    attendance_total = attendance_qs.count()
+    attendance_present = attendance_qs.filter(
+        status__in=[Attendance.Status.PRESENT, Attendance.Status.LATE]
+    ).count()
+
+    results_qs = HomeworkResult.objects.filter(homework__lesson__group=group)
+    results_total = results_qs.count()
+    results_checked = results_qs.filter(status=HomeworkResult.Status.CHECKED).count()
+
+    context = _workspace_context(request, group, "analytics")
+    context.update(
+        {
+            "title": f"{group.name} — Аналитика",
+            "stats": {
+                "students_count": group.students_count,
+                "programs_count": group.teachers.filter(is_active=True).count(),
+                "completed_lessons": lessons_qs.filter(status=Lesson.Status.COMPLETED).count(),
+                "upcoming_lessons": lessons_qs.filter(
+                    status=Lesson.Status.PLANNED, date__gte=today
+                ).count(),
+                "attendance_rate": (
+                    round(100 * attendance_present / attendance_total, 1) if attendance_total else None
+                ),
+                "homework_completion_rate": (
+                    round(100 * results_checked / results_total, 1) if results_total else None
+                ),
+            },
+        }
+    )
+    return render(request, "admin/academy/group/workspace/analytics.html", context)
+
+
+# -- Generate lessons -----------------------------------------------------
+
+@require_POST
+def group_workspace_generate_lessons_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group, pk=group_id)
+    report = generate_lessons_for_group_with_report(group)
+
+    summary_parts = [f"Создано: {report.created}", f"Уже существовало: {report.already_existed}"]
+    if report.conflicts_skipped:
+        summary_parts.append(f"Конфликтов пропущено: {report.conflicts_skipped}")
+    summary_parts.append(f"Ошибок: {len(report.errors)}")
+
+    level = messages.SUCCESS if report.created or not report.errors else messages.WARNING
+    messages.add_message(request, level, " · ".join(summary_parts))
+    for error in report.errors:
+        messages.error(request, error)
+
+    next_url = request.POST.get("next") or reverse("admin:academy_group_workspace", args=[group.pk])
+    return redirect(next_url)

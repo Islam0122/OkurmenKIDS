@@ -2096,3 +2096,121 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
 @media (max-width: 640px) {
   .ok-student-table { font-size: 0.78rem; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Group Workspace — header/tabs shell + Overview/Students/Programs/    */
+/* Schedule/Lessons/Attendance/Homework/Analytics tabs                  */
+/* (admin/academy/group/workspace/*.html). Reuses .ok-card/.ok-kpi-*/   */
+/* .ok-badge/.okan-mini-stats/.ok-student-table everywhere it can —     */
+/* only the pieces genuinely unique to the workspace get their own     */
+/* scoped class.                                                        */
+/* ------------------------------------------------------------------ */
+
+.ok-group-workspace { max-width: 1180px; margin: 0 auto 2rem; }
+
+.ok-group-back {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  color: var(--ok-text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;
+}
+.ok-group-back:hover { color: var(--ok-primary); }
+
+.ok-group-header {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+  padding: 1.1rem 1.35rem;
+  margin-bottom: 1.25rem;
+}
+
+.ok-group-header-main {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;
+}
+
+.ok-group-title { margin: 0 0 0.2rem; font-size: 1.3rem; font-weight: 700; color: var(--ok-text); }
+.ok-group-subtitle { color: var(--ok-text-muted); font-size: 0.85rem; }
+
+.ok-group-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ok-group-actions form { display: inline-flex; }
+
+.ok-group-tabs {
+  display: flex; flex-wrap: wrap; gap: 0.35rem;
+  border-top: 1px solid var(--ok-border); padding-top: 0.85rem;
+}
+.ok-group-tab {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.85rem; border-radius: 999px;
+  font-size: 0.82rem; font-weight: 600; color: var(--ok-text-secondary);
+  border: 1px solid transparent;
+}
+.ok-group-tab:hover { color: var(--ok-primary); background: var(--ok-primary-soft); }
+.ok-group-tab.active { color: var(--ok-primary); background: var(--ok-primary-soft); border-color: var(--ok-primary); }
+
+.ok-group-section { display: flex; flex-direction: column; gap: 1.1rem; }
+
+.ok-group-kpi .ok-kpi-value { font-size: 1.5rem; }
+
+.ok-card-header-action { margin-left: auto; }
+
+.ok-group-toolbar {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.ok-group-toolbar-secondary { margin-top: -0.4rem; }
+.ok-group-lesson-filters .ok-input { min-width: 150px; }
+
+.ok-group-student-avatar { width: 32px; height: 32px; font-size: 0.75rem; }
+
+.ok-group-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 1rem;
+  margin-top: 0.9rem; font-size: 0.82rem; color: var(--ok-text-muted);
+}
+.ok-group-pagination a { color: var(--ok-primary); font-weight: 600; }
+
+.ok-group-empty-state {
+  text-align: center; padding: 2.5rem 1.25rem;
+  border: 1px dashed var(--ok-border); border-radius: var(--ok-radius-lg);
+  background: var(--ok-surface); color: var(--ok-text-muted);
+}
+.ok-group-empty-state i { display: block; font-size: 1.8rem; color: var(--ok-primary); margin-bottom: 0.6rem; opacity: 0.8; }
+.ok-group-empty-state h4 { color: var(--ok-text); font-size: 1rem; margin: 0 0 0.75rem; }
+
+.ok-group-overview-program-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.65rem 0; border-bottom: 1px solid var(--ok-border); flex-wrap: wrap;
+}
+.ok-group-overview-program-row:last-child { border-bottom: none; }
+.ok-group-overview-program-slot { color: var(--ok-text-muted); font-size: 0.82rem; }
+
+.ok-group-program-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem;
+}
+.ok-group-program-card {
+  border: 1px solid var(--ok-border); border-radius: var(--ok-radius);
+  padding: 1rem; background: var(--ok-surface); display: flex; flex-direction: column;
+}
+.ok-group-program-title { font-size: 1rem; font-weight: 700; color: var(--ok-text); }
+.ok-group-program-teacher { color: var(--ok-text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem; }
+.ok-group-program-slots { font-size: 0.8rem; color: var(--ok-text-muted); margin-bottom: 0.6rem; }
+.ok-group-program-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: auto; padding-top: 0.5rem; }
+
+.ok-group-schedule td { white-space: nowrap; }
+
+.ok-group-inline-form { display: flex; flex-direction: column; gap: 1rem; max-width: 640px; }
+
+.ok-group-day-checkboxes { display: flex; flex-wrap: wrap; gap: 0.9rem; }
+.ok-group-day-checkboxes label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 500; }
+
+.ok-group-form-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .ok-group-header-main { flex-direction: column; align-items: stretch; }
+  .ok-group-actions { justify-content: center; }
+  .ok-group-tabs { justify-content: center; }
+  .ok-group-toolbar, .ok-group-lesson-filters { justify-content: center; }
+  .ok-group-program-grid { grid-template-columns: 1fr; }
+  .ok-group-form-summary { flex-direction: column; align-items: stretch; text-align: center; }
+}

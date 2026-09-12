@@ -1,0 +1,50 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header">
+    <i class="bi bi-person-badge"></i><span>Учебные программы</span>
+    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_program_url }}">
+      <i class="bi bi-plus-lg"></i> Добавить программу
+    </a>
+  </div>
+  <div class="ok-card-body">
+    {% if cards %}
+      <div class="ok-group-program-grid">
+        {% for card in cards %}
+          <div class="ok-group-program-card">
+            <div class="ok-group-program-title">{{ card.obj.subject.name|default:"Без предмета" }}</div>
+            <div class="ok-group-program-teacher">{{ card.obj.teacher }}</div>
+            <div class="ok-group-program-slots">
+              {% for slot in card.slots %}
+                <div>{{ slot.day_label }} · {{ slot.time_label }} · {{ slot.room }}</div>
+              {% empty %}
+                <div class="ok-help-text">нет активных слотов</div>
+              {% endfor %}
+            </div>
+            <div class="okan-mini-stats">
+              <div class="okan-mini-stat">{{ card.lesson_count }} занятий</div>
+              <div class="okan-mini-stat">{{ card.completed_count }} завершено</div>
+              <div class="okan-mini-stat">{{ card.upcoming_count }} предстоящих</div>
+            </div>
+            <div class="ok-badge {% if card.obj.is_active %}ok-badge-success{% else %}ok-badge-danger{% endif %}" style="margin-bottom:0.5rem;">
+              <span class="ok-badge-dot"></span>{% if card.obj.is_active %}Активна{% else %}Неактивна{% endif %}
+            </div>
+            <div class="ok-group-program-actions">
+              <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Открыть рабочее пространство</a>
+              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.edit_url }}"><i class="bi bi-pencil"></i> Изменить</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-person-badge"></i>
+        <h4>Учебные программы ещё не добавлены</h4>
+        <a class="ok-btn-primary ok-btn-sm" href="{{ add_program_url }}">Добавить программу</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -9,8 +9,11 @@
 {#                                                                         #}
 {# GroupAdmin.get_fieldsets() tags each fieldset with an ok-admin-group-  #}
 {# tab-* class (see admin.py); {% regroup %} below uses that to fold the  #}
-{# existing fieldsets into 4 tabs without changing what fields/fieldsets  #}
-{# actually exist. The nav uses id="jazzy-tabs" and the same markup as    #}
+{# existing fieldsets into 3 tabs (Основное/Ограничения/Система) without  #}
+{# changing what fields/fieldsets actually exist — Students/Teaching      #}
+{# Programs/Schedule all moved to the Group Workspace instead (see        #}
+{# admin/academy/group/workspace/). The nav uses id="jazzy-tabs" and the  #}
+{# same markup as                                                         #}
 {# Jazzmin's own built-in horizontal_tabs changeform format, so Jazzmin's #}
 {# already-loaded change_form.js (handleTabs) wires it up for free:      #}
 {# jumping to the tab with the first validation error, remembering the   #}
@@ -30,7 +33,7 @@
                            href="#ok-admin-group-tab-{{ forloop.counter }}"
                            aria-controls="ok-admin-group-tab-{{ forloop.counter }}"
                            aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
-                        >{% if "tab-main" in tab.grouper %}Основное{% elif "tab-students" in tab.grouper %}Студенты{% elif "tab-programs" in tab.grouper %}Учебные программы{% elif "tab-system" in tab.grouper %}Система{% else %}Основное{% endif %}</a>
+                        >{% if "tab-main" in tab.grouper %}Основное{% elif "tab-limits" in tab.grouper %}Ограничения{% elif "tab-system" in tab.grouper %}Система{% else %}Основное{% endif %}</a>
                     </li>
                 {% endfor %}
             </ul>
@@ -44,21 +47,6 @@
                         {% for fieldset in tab.list %}
                             {% include "admin/academy/group/_fieldset.html" with card=True %}
                         {% endfor %}
-
-                        {% if "tab-programs" in tab.grouper %}
-                            <div class="ok-admin-group-inline-header">
-                                <h3 class="ok-admin-group-inline-title">Расписание учебных программ</h3>
-                                <p class="ok-admin-group-inline-desc">
-                                    Добавьте расписание для каждого тренера и предмета. Каждая строка
-                                    создаёт отдельную учебную программу.
-                                </p>
-                            </div>
-                            {% for inline_admin_formset in inline_admin_formsets %}
-                                <div class="ok-admin-group-inline-block">
-                                    {% include inline_admin_formset.opts.template %}
-                                </div>
-                            {% endfor %}
-                        {% endif %}
                     </div>
                 {% endfor %}
             </div>
