@@ -1855,26 +1855,53 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
 /* Photo field — preview + styled upload/remove controls, replacing the
    raw ClearableFileInput's "Currently / Clear / Change: no file chosen" text.
    Real <input type="file"> stays in the DOM (only its template changed —
-   see widgets.PhotoPreviewWidget), so upload/clear submit exactly as before. */
-.ok-photo-field { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+   see widgets.PhotoPreviewWidget), so upload/clear submit exactly as before.
+   Two states, driven by the .ok-photo-has-image modifier: the widget template
+   sets it on load from widget.is_initial, ui.js toggles it afterwards as the
+   admin picks or clears a file — the placeholder icon and the <img> are both
+   always in the DOM and CSS shows exactly one of them. */
+.ok-photo-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
 
 .ok-photo-preview {
-  width: 64px; height: 64px; border-radius: 50%;
-  background: var(--ok-primary-soft); color: var(--ok-primary);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.5rem; flex-shrink: 0; overflow: hidden;
+  width: 112px; height: 112px; border-radius: 50%;
+  background: var(--ok-primary-soft);
+  flex-shrink: 0; overflow: hidden;
   border: 1px solid var(--ok-border);
 }
-.ok-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
 
-.ok-photo-meta { min-width: 0; flex: 1 1 auto; }
-.ok-photo-current-label { font-size: 0.82rem; font-weight: 600; color: var(--ok-text); }
+.ok-photo-placeholder {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ok-primary); font-size: 2.5rem;
+}
+
+.ok-photo-preview img { display: none; width: 100%; height: 100%; object-fit: cover; }
+
+.ok-photo-field.ok-photo-has-image .ok-photo-placeholder { display: none; }
+.ok-photo-field.ok-photo-has-image .ok-photo-preview img { display: block; }
+
+.ok-photo-content {
+  min-width: 0; flex: 1 1 220px;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.ok-photo-status { font-size: 0.86rem; font-weight: 600; color: var(--ok-text); }
+.ok-photo-field.ok-photo-marked-removed .ok-photo-status { color: var(--ok-danger); }
+
 .ok-photo-filename {
   display: flex; align-items: center; gap: 0.35rem;
-  font-size: 0.76rem; color: var(--ok-text-muted); margin-top: 0.15rem;
+  font-size: 0.76rem; color: var(--ok-text-muted);
   overflow-wrap: anywhere;
 }
-.ok-photo-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.6rem; }
+/* Beats the browser's own [hidden]{display:none} rule, which shares its
+   specificity and would otherwise lose to the class rule above. */
+.ok-photo-filename[hidden] { display: none; }
+
+.ok-photo-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.3rem; }
 
 /* Real file input: kept in the DOM and reachable via the styled <label for>
    above (a native, no-JS-required way to trigger it), just not shown as the
@@ -1896,7 +1923,6 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   cursor: pointer;
 }
 .ok-photo-remove-toggle input { accent-color: var(--ok-danger); }
-.ok-photo-field.ok-photo-marked-removed .ok-photo-preview { opacity: 0.45; }
 
 /* ------------------------------------------------------------------ */
 /* Subjects tag picker — collapsed chips + click-to-open dropdown       */
@@ -1972,5 +1998,7 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
 @media (max-width: 640px) {
   .ok-trainer-header-body { justify-content: center; text-align: center; }
   .ok-trainer-email, .ok-trainer-badges, .ok-trainer-submeta { justify-content: center; }
-  .ok-photo-field { justify-content: center; text-align: center; }
+  .ok-photo-field { flex-direction: column; align-items: center; text-align: center; }
+  .ok-photo-content { align-items: center; width: 100%; }
+  .ok-photo-filename, .ok-photo-actions { justify-content: center; }
 }

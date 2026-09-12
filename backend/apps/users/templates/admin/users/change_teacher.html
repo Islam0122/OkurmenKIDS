@@ -97,6 +97,7 @@
               <div class="ok-field-group ok-grid-full">
                 <label class="ok-label">Фотография</label>
                 {{ adminform.form.image }}
+                {% if adminform.form.image.help_text %}<span class="ok-help-text">{{ adminform.form.image.help_text }}</span>{% endif %}
                 {% for error in adminform.form.image.errors %}
                   <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
                 {% endfor %}
