@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
+from apps.data_io.admin_mixin import TemplatedIOAdminMixin
 from apps.users.import_export.formats import UnsupportedFileFormat
 
 from .admin_views import (
@@ -32,7 +33,6 @@ from .models import (
     Room,
     Student,
 )
-from .services.curriculum_export import export_courses, export_lesson_plans
 from .services.import_export import (
     StudentImportValidationError,
     export_students,
@@ -53,7 +53,8 @@ def _badge(css: str, label: str) -> str:
 # ---------------------------------------------------------------------------
 
 @admin.register(Course)
-class CourseAdmin(admin.ModelAdmin):
+class CourseAdmin(TemplatedIOAdminMixin, admin.ModelAdmin):
+    io_adapter_key = "academy.course"
     list_display = ("name", "count_lesson", "subjects_list", "lesson_plans_progress", "created_at")
     filter_horizontal = ("subjects",)
     search_fields = ("name", "description")
@@ -87,38 +88,10 @@ class CourseAdmin(admin.ModelAdmin):
         css = "ok-badge-success" if planned == obj.count_lesson and planned > 0 else "ok-badge-warning"
         return _badge(css, f"{planned} / {obj.count_lesson}")
 
-    @admin.action(description="Экспортировать выбранные курсы (CSV)")
-    def export_selected_csv(self, request, queryset):
-        return export_courses(queryset, "csv")
-
-    def get_urls(self):
-        custom_urls = [
-            path("export/", self.admin_site.admin_view(self.export_view), name="academy_course_export"),
-        ]
-        return custom_urls + super().get_urls()
-
-    def export_view(self, request):
-        fmt = request.GET.get("format", "csv")
-        # ChangeList treats every unrecognized GET param as a field lookup,
-        # so `?format=` (ours, not a filter) has to be stripped before it
-        # builds the queryset or it 500s trying to filter by a "format" field.
-        original_get = request.GET
-        request.GET = original_get.copy()
-        request.GET.pop("format", None)
-        try:
-            changelist = self.get_changelist_instance(request)
-            queryset = changelist.get_queryset(request)
-        finally:
-            request.GET = original_get
-        try:
-            return export_courses(queryset, fmt)
-        except UnsupportedFileFormat as exc:
-            self.message_user(request, str(exc), messages.ERROR)
-            return redirect(reverse("admin:academy_course_changelist"))
-
 
 @admin.register(CourseLessonPlan)
-class CourseLessonPlanAdmin(admin.ModelAdmin):
+class CourseLessonPlanAdmin(TemplatedIOAdminMixin, admin.ModelAdmin):
+    io_adapter_key = "academy.courselessonplan"
     list_display = ("course", "lesson_number", "subject", "topic", "homework_badge")
     list_filter = ("course", "subject")
     search_fields = ("topic", "description", "course__name")
@@ -142,39 +115,6 @@ class CourseLessonPlanAdmin(admin.ModelAdmin):
     @admin.display(description="ДЗ задано")
     def homework_badge(self, obj: CourseLessonPlan) -> str:
         return _badge("ok-badge-success", "Да") if obj.homework_title else _badge("ok-badge-muted", "Нет")
-
-    @admin.action(description="Экспортировать выбранные планы занятий (CSV)")
-    def export_selected_csv(self, request, queryset):
-        return export_lesson_plans(queryset, "csv")
-
-    def get_urls(self):
-        custom_urls = [
-            path(
-                "export/",
-                self.admin_site.admin_view(self.export_view),
-                name="academy_courselessonplan_export",
-            ),
-        ]
-        return custom_urls + super().get_urls()
-
-    def export_view(self, request):
-        fmt = request.GET.get("format", "csv")
-        # ChangeList treats every unrecognized GET param as a field lookup,
-        # so `?format=` (ours, not a filter) has to be stripped before it
-        # builds the queryset or it 500s trying to filter by a "format" field.
-        original_get = request.GET
-        request.GET = original_get.copy()
-        request.GET.pop("format", None)
-        try:
-            changelist = self.get_changelist_instance(request)
-            queryset = changelist.get_queryset(request)
-        finally:
-            request.GET = original_get
-        try:
-            return export_lesson_plans(queryset, fmt)
-        except UnsupportedFileFormat as exc:
-            self.message_user(request, str(exc), messages.ERROR)
-            return redirect(reverse("admin:academy_courselessonplan_changelist"))
 
 
 # ---------------------------------------------------------------------------

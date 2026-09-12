@@ -1,0 +1,101 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="ok-form-container" style="max-width: 780px;">
+
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-download"></i>
+      <span>Экспорт: {{ adapter.label }}</span>
+    </div>
+    <div class="ok-card-body">
+      <div class="ok-alert ok-alert-warning">
+        <i class="bi bi-info-circle"></i>
+        <div>
+          Экспортируются записи с учётом текущих фильтров и поиска списка. Выберите
+          сохранённый шаблон колонок или используйте быстрый экспорт со стандартным набором полей.
+        </div>
+      </div>
+
+      <form method="get" action="{{ download_url }}" style="display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem;">
+        {% for key, value in preserved_params %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+
+        <div class="ok-grid-2">
+          <div class="ok-field-group">
+            <label class="ok-label" for="id_template">Шаблон колонок</label>
+            <select name="template" id="id_template" class="ok-input">
+              <option value="">Быстрый экспорт (стандартные поля)</option>
+              {% for t in templates %}
+                <option value="{{ t.pk }}">{{ t.name }} ({{ t.columns|length }} кол.)</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="ok-field-group">
+            <label class="ok-label" for="id_format">Формат файла</label>
+            <select name="format" id="id_format" class="ok-input">
+              <option value="csv">CSV</option>
+              <option value="xlsx">XLSX</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="ok-form-actions" style="margin-top: 0; padding: 1rem 0 0; border: none; border-top: 1px solid var(--ok-border); border-radius: 0; background: transparent; flex-wrap: wrap;">
+          <a href="{{ changelist_url }}" class="ok-btn-secondary">
+            <i class="bi bi-arrow-left"></i> Отмена
+          </a>
+          <a href="{{ create_template_url }}" class="ok-btn-secondary">
+            <i class="bi bi-plus-lg"></i> Создать шаблон
+          </a>
+          <a href="{{ manage_templates_url }}" class="ok-btn-secondary">
+            <i class="bi bi-sliders"></i> Управление шаблонами
+          </a>
+          <button type="submit" class="ok-btn-primary">
+            <i class="bi bi-download"></i> Скачать
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if templates %}
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-collection"></i>
+      <span>Сохранённые шаблоны для «{{ adapter.label }}»</span>
+    </div>
+    <div class="ok-card-body">
+      <div class="ok-table-scroll">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="text-align: left; border-bottom: 1px solid var(--ok-border);">
+              <th style="padding: 0.5rem 0.75rem 0.5rem 0;">Название</th>
+              <th style="padding: 0.5rem 0.75rem;">Колонок</th>
+              <th style="padding: 0.5rem 0.75rem;">Формат</th>
+              <th style="padding: 0.5rem 0 0.5rem 0.75rem; text-align: right;">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in templates %}
+            <tr style="border-bottom: 1px solid var(--ok-border);">
+              <td style="padding: 0.6rem 0.75rem 0.6rem 0;">{{ t.name }}</td>
+              <td style="padding: 0.6rem 0.75rem;">{{ t.columns|length }}</td>
+              <td style="padding: 0.6rem 0.75rem;">{{ t.get_fmt_display }}</td>
+              <td style="padding: 0.6rem 0 0.6rem 0.75rem; text-align: right;">
+                <a class="ok-btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.8rem;"
+                   href="{% url 'admin:data_io_exporttemplate_builder' %}?id={{ t.pk }}">
+                  <i class="bi bi-pencil"></i> Изменить
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
