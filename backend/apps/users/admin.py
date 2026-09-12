@@ -392,6 +392,7 @@ class TeacherAdmin(admin.ModelAdmin):
     list_per_page = 20
     actions = ["verify_accounts", "deactivate_trainers"]
     add_form_template = "admin/users/add_teacher.html"
+    change_form_template = "admin/users/change_teacher.html"
 
     def get_queryset(self, request):
         return (
@@ -400,6 +401,25 @@ class TeacherAdmin(admin.ModelAdmin):
             .select_related("user")
             .prefetch_related("subjects")
         )
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        teacher = self.get_object(request, object_id)
+        if teacher is not None:
+            # Imported lazily: apps.academy.models imports Teacher from this
+            # app, so importing Group at module level here would be circular.
+            from apps.academy.models import Group
+
+            groups = Group.objects.for_teacher(teacher)
+            extra_context["groups_count"] = groups.count()
+            extra_context["programs_count"] = groups.values("course").distinct().count()
+            extra_context["schedule_url"] = (
+                f"{reverse('admin:academy_schedule')}?teacher={teacher.pk}"
+            )
+            extra_context["change_password_url"] = reverse(
+                "admin:users_teacher_change_password", args=[teacher.pk]
+            )
+        return super().change_view(request, object_id, form_url, extra_context=extra_context)
 
     add_fieldsets = (
         (
