@@ -111,7 +111,7 @@ class CourseLessonPlan(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
     class Meta:
-        verbose_name = "План занятия"
+        verbose_name = "План занятия курса"
         verbose_name_plural = "Планы занятий"
         ordering = ["course", "lesson_number"]
         constraints = [
@@ -461,8 +461,12 @@ class GroupTeacher(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
     class Meta:
-        verbose_name = "Тренер группы"
-        verbose_name_plural = "Тренеры группы"
+        # User-facing label deliberately avoids the technical "GroupTeacher"
+        # name — see the class docstring above for what this model actually
+        # represents (one Teacher + Subject + Schedule + Lesson Plan +
+        # Lessons stream within a Group).
+        verbose_name = "Учебная программа"
+        verbose_name_plural = "Учебные программы"
         ordering = ["group", "id"]
         constraints = [
             models.UniqueConstraint(
@@ -506,7 +510,7 @@ class GroupTeacherLessonPlan(models.Model):
         GroupTeacher,
         on_delete=models.CASCADE,
         related_name="lesson_plans",
-        verbose_name="Тренер группы",
+        verbose_name="Учебная программа",
     )
 
     lesson_number = models.PositiveSmallIntegerField(
@@ -551,8 +555,8 @@ class GroupTeacherLessonPlan(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
     class Meta:
-        verbose_name = "План занятия тренера"
-        verbose_name_plural = "Планы занятий тренеров"
+        verbose_name = "План занятий программы"
+        verbose_name_plural = "Планы занятий программ"
         ordering = ["group_teacher", "lesson_number"]
         constraints = [
             models.UniqueConstraint(
@@ -639,7 +643,7 @@ class GroupSchedule(models.Model):
         null=True,
         blank=True,
         related_name="schedules",
-        verbose_name="Тренер группы",
+        verbose_name="Учебная программа",
         help_text="Заполняется автоматически из group/teacher/subject при сохранении.",
     )
 
@@ -813,7 +817,7 @@ class Lesson(models.Model):
         null=True,
         blank=True,
         related_name="lessons",
-        verbose_name="Тренер группы",
+        verbose_name="Учебная программа",
         help_text=(
             "Тренер группы (GroupTeacher), которому принадлежит это занятие и его "
             "нумерация. Заполняется автоматически при сохранении, если не указано явно."

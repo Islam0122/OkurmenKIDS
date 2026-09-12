@@ -11,6 +11,8 @@
  *   4. SearchHint — Russian, model-specific search placeholders
  *   5. EmptyState — friendly message instead of a bare "0 results"
  *   6. Actions — visually warn when a destructive bulk action is picked
+ *   7. SelectorFilterHint — friendlier placeholder on the ManyToMany
+ *      dual-list widget's search box (e.g. Course → Предметы)
  */
 
 (function () {
@@ -467,6 +469,35 @@ function addPasswordToggle(input) {
   }
 
   /* ------------------------------------------------------------------ */
+  /* 7. ManyToMany dual-list widget — friendlier filter placeholder       */
+  /* ------------------------------------------------------------------ */
+
+  // Only the field(s) actually using Django's filter_horizontal/vertical
+  // widget need an entry here (currently just Course.subjects) — any
+  // other field falls back to a generic hint rather than guessing at
+  // Russian grammatical case from the widget's own translated label.
+  var SELECTOR_FILTER_HINTS = {
+    subjects: "Поиск предметов",
+  };
+
+  function initSelectorFilterHints() {
+    document
+      .querySelectorAll('.selector-filter input[type="text"]')
+      .forEach(function (input) {
+        if (input.dataset.okHinted) return;
+        input.dataset.okHinted = "true";
+
+        var match = input.id.match(/^id_(.+?)_(?:selected_)?input$/);
+        var fieldName = match ? match[1] : null;
+        var hint =
+          (fieldName && SELECTOR_FILTER_HINTS[fieldName]) || "Поиск...";
+
+        input.placeholder = hint;
+        input.title = hint;
+      });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Initialize                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -481,4 +512,9 @@ function addPasswordToggle(input) {
       initActionWarning();
     }
   );
+
+  // Django's SelectFilter2.js builds the .selector widget's DOM on the
+  // window "load" event (not DOMContentLoaded) — its own inline init
+  // script registers first, so ours runs right after the widget exists.
+  window.addEventListener("load", initSelectorFilterHints);
 })();

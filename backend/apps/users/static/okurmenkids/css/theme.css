@@ -1383,3 +1383,116 @@ button.ok-password-toggle.btn {
     top: 0 !important;
     right: 8px !important;
 }
+
+/* ------------------------------------------------------------------ */
+/* ManyToMany dual-list selector (Django's filter_horizontal widget,    */
+/* e.g. Course → Предметы). Django's own SelectFilter2.js still drives  */
+/* every behavior — choose/remove/choose all/remove all/filter/keyboard */
+/* — and its labels come from Django's own ru translation catalog       */
+/* (this project runs with LANGUAGE_CODE="ru-ru"); only the visuals are */
+/* restyled here to match the white/green design system's own tokens.   */
+/* ------------------------------------------------------------------ */
+
+.selector {
+  display: flex;
+  align-items: stretch;
+  gap: 0.85rem;
+  max-width: 100%;
+}
+
+.selector-available,
+.selector-chosen {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.selector-available-title,
+.selector-chosen-title {
+  padding: 0.65rem 0.9rem;
+  background: var(--ok-surface-hover);
+  border-bottom: 1px solid var(--ok-border);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ok-text);
+}
+.selector-available-title label,
+.selector-chosen-title label { color: inherit; font-weight: 600; }
+/* Django appends a translated "Hold down Control/Command..." hint as a
+   small icon+tooltip here for a plain multi-select — filter_horizontal
+   already has explicit Add/Remove buttons instead, so the hint is noise. */
+.selector .help-icon { display: none !important; }
+
+.selector .selector-filter {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--ok-border);
+  background: var(--ok-surface);
+}
+.selector-filter input[type="text"] {
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-sm);
+  font-size: 0.85rem;
+  color: var(--ok-text);
+  background: var(--ok-surface);
+}
+.selector-filter input[type="text"]:focus {
+  outline: none;
+  border-color: var(--ok-primary);
+  box-shadow: 0 0 0 3px var(--ok-primary-soft);
+}
+
+.selector select {
+  flex: 1;
+  min-height: 260px;
+  border: none !important;
+  border-radius: 0 !important;
+  font-size: 0.86rem;
+  color: var(--ok-text);
+  background: var(--ok-surface);
+}
+.selector select option:checked {
+  background: var(--ok-primary-soft) linear-gradient(0deg, var(--ok-primary-soft) 0%, var(--ok-primary-soft) 100%);
+  color: var(--ok-text);
+}
+
+.selector ul.selector-chooser {
+  width: 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.selector-add,
+.selector-remove {
+  border-radius: var(--ok-radius-sm) !important;
+  border: 1px solid var(--ok-border) !important;
+  background-color: var(--ok-surface) !important;
+}
+:enabled.selector-add:hover,
+:enabled.selector-remove:hover,
+:enabled.selector-add:focus,
+:enabled.selector-remove:focus {
+  background-color: var(--ok-primary-soft) !important;
+  border-color: var(--ok-primary) !important;
+}
+
+.selector-chooseall,
+.selector-clearall {
+  font-size: 0.78rem !important;
+  font-weight: 600;
+  color: var(--ok-primary) !important;
+}
+.selector-chosen .list-footer-display { color: var(--ok-text-muted); font-size: 0.78rem; }
+
+@media (max-width: 768px) {
+  .selector { flex-direction: column; }
+  .selector ul.selector-chooser { flex-direction: row; width: auto; }
+}

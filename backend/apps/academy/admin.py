@@ -63,11 +63,27 @@ class CourseAdmin(admin.ModelAdmin):
     ordering = ("name",)
     readonly_fields = ("created_at", "updated_at")
     list_per_page = 25
+    change_list_template = "admin/academy/course/change_list.html"
 
     fieldsets = (
-        ("Основная информация", {"fields": ("name", "count_lesson", "subjects", "description")}),
+        ("Основная информация", {"fields": ("name", "count_lesson", "description")}),
+        ("Предметы", {"fields": ("subjects",)}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        # Django's own ModelAdmin.formfield_for_manytomany appends a
+        # translated but irrelevant-here "Hold down Control/Command..."
+        # hint to every filter_horizontal field's help_text (it only makes
+        # sense for a plain OS multi-select — filter_horizontal already has
+        # explicit Add/Remove buttons instead), see
+        # django.contrib.admin.options.ModelAdmin.formfield_for_manytomany.
+        # Replacing it here with one plain sentence is a display-only
+        # change — the field's real validation/save behavior is untouched.
+        formfield = super().formfield_for_manytomany(db_field, request, **kwargs)
+        if db_field.name == "subjects":
+            formfield.help_text = "Выберите предметы, которые входят в данный курс."
+        return formfield
 
     def get_queryset(self, request):
         return (
@@ -725,6 +741,18 @@ class GroupAdmin(admin.ModelAdmin):
                 status=Lesson.Status.PLANNED, date__gte=timezone.localdate()
             ).count()
 
+            # Same "planned total" fallback as group_teacher_workspace_view's
+            # own lesson_stats: this program's own plan if it has one,
+            # otherwise the group's shared course plan length.
+            planned_total = plan_count or obj.course.count_lesson
+            progress_percent = round(100 * completed_count / planned_total) if planned_total else 0
+            progress_css = (
+                "ok-badge-success" if progress_percent == 100
+                else "ok-badge-warning" if progress_percent > 0
+                else "ok-badge-muted"
+            )
+            progress_badge = _badge(progress_css, f"Прогресс: {progress_percent}%")
+
             workspace_url = reverse("admin:academy_groupteacher_workspace", args=[group_teacher.pk])
             lessons_url = f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={group_teacher.pk}"
 
@@ -738,6 +766,7 @@ class GroupAdmin(admin.ModelAdmin):
                     '<div style="margin-bottom:0.5rem;"><strong>Расписание:</strong>{}</div>'
                     '<div class="okan-mini-stats" style="margin-bottom:0.75rem;">'
                     '<div class="okan-mini-stat">{}</div>'
+                    '<div class="okan-mini-stat">{}</div>'
                     '<div class="okan-mini-stat">Сгенерировано занятий: <strong>{}</strong></div>'
                     '<div class="okan-mini-stat">Проведено: <strong>{}</strong></div>'
                     '<div class="okan-mini-stat">Предстоит: <strong>{}</strong></div>'
@@ -748,7 +777,7 @@ class GroupAdmin(admin.ModelAdmin):
                     index, group_teacher.subject.name if group_teacher.subject_id else "без предмета", status_badge,
                     group_teacher.teacher, group_teacher.subject.name if group_teacher.subject_id else "—",
                     mark_safe(schedule_rows) if schedule_rows else " нет активных слотов",
-                    plan_badge, lesson_count, completed_count, upcoming_count,
+                    plan_badge, progress_badge, lesson_count, completed_count, upcoming_count,
                     workspace_url, lessons_url, lesson_count,
                 )
             )
@@ -876,7 +905,7 @@ class HomeworkResultInline(admin.TabularInline):
 
 @admin.register(Homework)
 class HomeworkAdmin(admin.ModelAdmin):
-    list_display = ("title", "lesson", "deadline", "results_summary")
+    list_display = ("title", "lesson", "group_display", "deadline", "status_badge", "results_summary")
     list_filter = ("lesson__group", "lesson__group_teacher")
     search_fields = ("title", "description", "lesson__group__name")
     autocomplete_fields = ("lesson",)
@@ -900,6 +929,16 @@ class HomeworkAdmin(admin.ModelAdmin):
     @admin.display(description="Результатов")
     def results_summary(self, obj: Homework) -> int:
         return getattr(obj, "_results_count", 0)
+
+    @admin.display(description="Группа", ordering="lesson__group")
+    def group_display(self, obj: Homework):
+        return obj.lesson.group
+
+    @admin.display(description="Статус", ordering="deadline")
+    def status_badge(self, obj: Homework) -> str:
+        if obj.deadline and obj.deadline < timezone.localdate():
+            return _badge("ok-badge-danger", "Просрочено")
+        return _badge("ok-badge-success", "Активно")
 
 
 @admin.register(HomeworkResult)
