@@ -262,26 +262,37 @@ JAZZMIN_SETTINGS = {
     "hide_apps": ["users", "academy"],
 
     "custom_links": {
-        "обучение": [
-            {"name": "Курсы", "model": "academy.course", "icon": "bi bi-collection-play"},
-            {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
+        "академия": [
             {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
             {"name": "Студенты", "model": "academy.student", "icon": "bi bi-mortarboard"},
             {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
-            {"name": "Предметы", "model": "users.subject", "icon": "bi bi-journal-bookmark"},
-            {"name": "Аудитории", "model": "academy.room", "icon": "bi bi-door-open"},
-            {"name": "Занятия", "model": "academy.lesson", "icon": "bi bi-calendar-week"},
-            {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar-week"},
+        ],
+
+        "программа обучения": [
+            {"name": "Курсы", "model": "academy.course", "icon": "bi bi-collection-play"},
+            {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
+            {"name": "Предметы", "model": "users.subject", "icon": "bi bi-book"},
+        ],
+
+        "учебный процесс": [
+            {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar3"},
+            {"name": "Занятия", "model": "academy.lesson", "icon": "bi bi-easel"},
             {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
-            {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-text"},
-            {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-square"},
+            {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-check"},
+            {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-circle"},
         ],
+
+        "ресурсы": [
+            {"name": "Аудитории", "model": "academy.room", "icon": "bi bi-door-open"},
+        ],
+
         "аналитика": [
-            {"name": "Dashboard", "url": "admin:academy_analytics", "icon": "bi bi-graph-up-arrow"},
+            {"name": "Аналитика", "url": "admin:academy_analytics", "icon": "bi bi-graph-up-arrow"},
         ],
-        "система": [
-            {"name": "Администраторы", "model": "users.user", "icon": "bi bi-shield-lock"},
-        ],
+
+        # "система": [
+        #     {"name": "Администраторы", "model": "users.user", "icon": "bi bi-shield-lock"},
+        # ],
     },
 
     # NOTE: Jazzmin lower-cases every key in "icons" internally, so custom
