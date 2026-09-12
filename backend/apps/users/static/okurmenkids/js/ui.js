@@ -540,8 +540,14 @@ function addPasswordToggle(input) {
 
       card.querySelector(".ok-subject-card-title").textContent = label;
       if (description) {
-        card.querySelector(".ok-subject-card-description").textContent =
-          description;
+        var descriptionEl = card.querySelector(
+          ".ok-subject-card-description"
+        );
+        descriptionEl.textContent = description;
+        // The card clamps this to 2 lines (see theme.css) regardless of
+        // how long the underlying text is — the native title tooltip is
+        // how the full description stays reachable on hover.
+        descriptionEl.title = description;
       }
 
       var checkbox = card.querySelector('input[type="checkbox"]');

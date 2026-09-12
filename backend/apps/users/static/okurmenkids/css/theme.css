@@ -1046,8 +1046,14 @@ button.ok-password-toggle.btn {
   gap: 0.625rem;
   /* Grid items stretch to the tallest one in their row by default — align-
      items: start turns that off, so a card with no description (shorter)
-     doesn't get inflated to match a taller neighbour sharing its row. */
+     doesn't get inflated to match a taller neighbour sharing its row.
+     grid-auto-rows: min-content is belt-and-suspenders for the same thing
+     at the row-track level, so one long-description card can't expand its
+     whole row's track height either — combined with the line-clamp below,
+     no card can grow past its own ~2-line-description cap regardless of
+     how long the underlying text actually is. */
   align-items: start;
+  grid-auto-rows: min-content;
 }
 @media (max-width: 991px) { .ok-subject-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .ok-subject-cards-grid { grid-template-columns: 1fr; } }
@@ -1140,7 +1146,11 @@ button.ok-password-toggle.btn {
 /* flex-basis: 100% forces this onto its own line under the row above,
    indented (via padding, not margin, so it stays inside the flex item's
    own 100%-of-row width instead of overflowing past it) to line up under
-   the title rather than the checkbox. */
+   the title rather than the checkbox. Clamped to 2 lines via -webkit-
+   line-clamp regardless of the underlying text's actual length, so a
+   subject with a long description can't blow up its card's (or its grid
+   row's) height — the full text is still available as a native tooltip
+   (see the `title` attribute ui.js sets on this element). */
 .ok-subject-card-description {
   flex: 0 0 100%;
   min-width: 0;
@@ -1150,6 +1160,10 @@ button.ok-password-toggle.btn {
   line-height: 1.2;
   color: var(--ok-text-muted);
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ok-subject-cards-empty {
