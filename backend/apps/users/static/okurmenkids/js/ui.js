@@ -528,17 +528,19 @@ function addPasswordToggle(input) {
       card.dataset.label = (label + " " + description).toLowerCase();
 
       card.innerHTML =
+        '<span class="ok-subject-card-row">' +
         '<span class="ok-subject-card-checkbox">' +
         '<input type="checkbox" tabindex="-1" aria-hidden="true">' +
         "</span>" +
         '<span class="ok-subject-card-icon"><i class="bi bi-journal-bookmark"></i></span>' +
+        '<span class="ok-subject-card-check"><i class="bi bi-check-lg"></i></span>' +
+        "</span>" +
         '<span class="ok-subject-card-content">' +
         '<span class="ok-subject-card-title"></span>' +
         (description
           ? '<span class="ok-subject-card-description"></span>'
           : "") +
-        "</span>" +
-        '<span class="ok-subject-card-check"><i class="bi bi-check-lg"></i></span>';
+        "</span>";
 
       card.querySelector(".ok-subject-card-title").textContent = label;
       if (description) {
@@ -581,7 +583,7 @@ function addPasswordToggle(input) {
       });
 
       footer.innerHTML =
-        "Выбрано: <strong>" +
+        '<i class="bi bi-check2-circle"></i>Выбрано: <strong>' +
         selectedCount +
         "</strong> из " +
         cards.length;

@@ -977,60 +977,97 @@ button.ok-password-toggle.btn {
 .form-group.field-subjects > .row > label.col-sm-3 { flex: 0 0 100%; max-width: 100%; margin-bottom: 0.5rem; }
 .form-group.field-subjects > .row > .col-sm-9 { flex: 0 0 100%; max-width: 100%; }
 
-.ok-subject-cards { border: 1px solid var(--ok-border); border-radius: var(--ok-radius); background: var(--ok-surface); overflow: hidden; }
+/* Root cause of the widget looking "narrow": .related-widget-wrapper (the
+   div Django wraps every FK/M2M select in, for the "+" add-related icon) is
+   display:flex, and a flex item with no explicit width only ever grows to
+   fit its own content — so .ok-subject-cards was shrink-wrapping to
+   whatever the grid happened to compute, not filling the ~700-900px the
+   field row actually has available. Telling it to grow/fill explicitly
+   (both the flex case and, defensively, the plain-block case) is the fix;
+   min-width: 0 keeps a flex item from refusing to shrink below its
+   content's intrinsic width, which is what would otherwise cause overflow.
+   The field row and .form-group above already do the equivalent for
+   their own layer, so together the full chain — .form-group.field-subjects
+   → .col-sm-9 → .related-widget-wrapper → .ok-subject-cards — actually
+   reaches 100% instead of stopping partway up. */
+.form-group.field-subjects .related-widget-wrapper { display: flex; align-items: stretch; }
+.ok-subject-cards {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+  background: var(--ok-surface);
+  overflow: hidden;
+}
 
 .ok-subject-cards-header {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.9rem 1rem;
+  gap: 0.85rem;
+  padding: 1.15rem 1.35rem;
   background: var(--ok-surface-hover);
   border-bottom: 1px solid var(--ok-border);
 }
-.ok-subject-cards-header > i { color: var(--ok-primary); font-size: 1.1rem; flex-shrink: 0; }
-.ok-subject-cards-title { font-size: 0.9rem; font-weight: 700; color: var(--ok-text); }
-.ok-subject-cards-subtitle { font-size: 0.78rem; color: var(--ok-text-muted); margin-top: 0.1rem; }
+.ok-subject-cards-header > i { color: var(--ok-primary); font-size: 1.4rem; flex-shrink: 0; }
+.ok-subject-cards-title { font-size: 1.08rem; font-weight: 700; color: var(--ok-text); }
+.ok-subject-cards-subtitle { font-size: 0.85rem; color: var(--ok-text-muted); margin-top: 0.15rem; }
 
-.ok-subject-cards-body { padding: 1rem; }
+.ok-subject-cards-body { padding: 1.5rem; }
 
 .ok-subject-cards-search {
   display: flex;
+  width: 100%;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem 0.8rem;
-  margin-bottom: 0.9rem;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.1rem;
   border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius-sm);
+  border-radius: var(--ok-radius);
   background: var(--ok-surface);
 }
-.ok-subject-cards-search i { color: var(--ok-text-muted); }
+.ok-subject-cards-search i { color: var(--ok-text-muted); font-size: 1rem; }
 .ok-subject-cards-search input {
   border: none !important;
   outline: none;
   background: transparent !important;
   padding: 0.15rem 0 !important;
   min-height: auto !important;
-  font-size: 0.88rem;
+  font-size: 0.95rem;
   flex: 1;
+  width: 100%;
   color: var(--ok-text);
   box-shadow: none !important;
 }
 
+/* auto-fill lets this size to the field's real (now full-width) container
+   instead of a fixed viewport breakpoint — 3 columns on a typical laptop
+   width, naturally opening up to 4 on a wide desktop fieldset. Tablet/
+   mobile still get explicit fixed counts since at those widths the sidebar
+   nav is usually collapsed and available width no longer tracks viewport
+   width predictably. */
 .ok-subject-cards-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 1rem;
 }
 @media (max-width: 991px) { .ok-subject-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .ok-subject-cards-grid { grid-template-columns: 1fr; } }
 
+/* A column layout (top row of checkbox/icon/check, title+description
+   below spanning the full card) rather than one long horizontal row —
+   the row's chrome (checkbox+icon+check) no longer eats into the text's
+   width, so cards stay comfortable to read even at 3-4 per row on a
+   typical laptop-width fieldset, instead of forcing single words like
+   "JavaScript" to break mid-word. */
 .ok-subject-card {
   display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
-  padding: 0.65rem 0.6rem;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem;
+  min-height: 6.5rem;
   border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius);
+  border-radius: var(--ok-radius-lg);
   background: var(--ok-surface);
   cursor: pointer;
   user-select: none;
@@ -1051,53 +1088,53 @@ button.ok-password-toggle.btn {
 .ok-subject-card:focus-visible { outline: 2px solid var(--ok-primary); outline-offset: 2px; }
 .ok-subject-card.is-hidden { display: none; }
 
-.ok-subject-card-checkbox { flex-shrink: 0; margin-top: 0.15rem; }
+.ok-subject-card-row { display: flex; align-items: center; gap: 0.6rem; }
+
+.ok-subject-card-checkbox { flex-shrink: 0; display: flex; }
 .ok-subject-card-checkbox input[type="checkbox"] {
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 1.2rem;
+  height: 1.2rem;
   accent-color: var(--ok-primary);
   pointer-events: none;
 }
 
 .ok-subject-card-icon {
   flex-shrink: 0;
-  width: 1.55rem;
-  height: 1.55rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: var(--ok-radius-sm);
   background: var(--ok-surface-hover);
   color: var(--ok-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.78rem;
+  font-size: 0.95rem;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 .ok-subject-card.selected .ok-subject-card-icon { background: var(--ok-primary); color: var(--ok-on-primary); }
-/* At single-column width the card itself is narrow too (phone screens) —
-   drop the purely-decorative icon so the title/description keep a
-   comfortable text column instead of wrapping one word per line. Placed
-   after the base rule above so it actually wins at this width. */
-@media (max-width: 480px) { .ok-subject-card-icon { display: none; } }
 
-.ok-subject-card-content { flex: 1; min-width: 0; }
-.ok-subject-card-title { display: block; font-size: 0.87rem; font-weight: 600; color: var(--ok-text); overflow-wrap: anywhere; }
-.ok-subject-card-description { display: block; font-size: 0.75rem; color: var(--ok-text-muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
-
+/* check-badge is pushed to the far right of the top row, clear of the
+   checkbox/icon on the left — it never competes with the title/description
+   for width, since those live in their own row below. */
 .ok-subject-card-check {
   flex-shrink: 0;
-  width: 1rem;
-  height: 1rem;
-  margin-top: 0.15rem;
+  margin-left: auto;
+  width: 1.35rem;
+  height: 1.35rem;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   color: transparent;
   background: transparent;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 .ok-subject-card.selected .ok-subject-card-check { color: var(--ok-on-primary); background: var(--ok-primary); }
+
+.ok-subject-card-content { min-width: 0; }
+.ok-subject-card-title { display: block; font-size: 0.95rem; font-weight: 600; color: var(--ok-text); overflow-wrap: anywhere; }
+.ok-subject-card-description { display: block; font-size: 0.8rem; color: var(--ok-text-muted); margin-top: 0.25rem; overflow-wrap: anywhere; }
 
 .ok-subject-cards-empty {
   grid-column: 1 / -1;
@@ -1105,20 +1142,28 @@ button.ok-password-toggle.btn {
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
-  padding: 1.75rem 0;
+  padding: 2.5rem 0;
   color: var(--ok-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
-.ok-subject-cards-empty i { font-size: 1.3rem; }
+.ok-subject-cards-empty i { font-size: 1.5rem; }
 
+/* The selection count is the one bit of feedback the whole widget exists
+   to surface — give it its own highlighted status bar instead of a muted
+   footnote. */
 .ok-subject-cards-footer {
-  margin-top: 0.9rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--ok-border);
-  font-size: 0.76rem;
-  color: var(--ok-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+  padding: 0.65rem 1rem;
+  border-radius: var(--ok-radius);
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
 }
-.ok-subject-cards-footer strong { color: var(--ok-text); }
+.ok-subject-cards-footer strong { font-size: 1rem; }
 
 /* ------------------------------------------------------------------ */
 /* Filters sidebar                                                     */
