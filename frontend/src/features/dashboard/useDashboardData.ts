@@ -4,6 +4,7 @@ import { attendanceApi } from '@/api/attendance'
 import { groupsApi } from '@/api/groups'
 import { homeworkResultsApi } from '@/api/homework'
 import { lessonsApi } from '@/api/lessons'
+import { hasLessonPassed, tomorrowISO, upcomingWindow } from '@/features/lessons/lessonViews'
 import { fetchAllPages } from '@/lib/fetchAllPages'
 import type { Group, Lesson } from '@/types/academy'
 import type { AttendanceRecord } from '@/types/attendance'
@@ -19,10 +20,16 @@ export interface DashboardData {
   today: string
   lessonsToday: Lesson[]
   nextLesson: Lesson | null
+  /** Up to 5, for the dashboard's "Завтра" section — the full day lives at `/app/lessons?view=tomorrow`. */
+  tomorrowLessons: Lesson[]
+  /** Up to 5 nearest lessons from now on (today's remaining + future days) — the rest live at `/app/lessons?view=upcoming`. */
+  upcomingLessons: Lesson[]
   studentsToday: number
   attendancePercentToday: number | null
   pendingHomeworkCount: number
 }
+
+const DASHBOARD_PREVIEW_COUNT = 5
 
 /** Every number here comes straight from real endpoints — nothing computed on invented data. */
 export function useDashboardData() {
@@ -31,12 +38,17 @@ export function useDashboardData() {
   return useQuery<DashboardData>({
     queryKey: ['dashboard', today],
     queryFn: async () => {
-      const [lessonsTodayResponse, groups, attendanceToday, pendingHomework] = await Promise.all([
-        lessonsApi.list({ date: today, ordering: 'start_time' }),
-        fetchAllPages<Group>((page) => groupsApi.list({ page })),
-        fetchAllPages<AttendanceRecord>((page) => attendanceApi.list({ date: today, page })),
-        homeworkResultsApi.list({ status: 'submitted', page: 1 }),
-      ])
+      const [lessonsTodayResponse, tomorrowResponse, upcomingLessonsRaw, groups, attendanceToday, pendingHomework] =
+        await Promise.all([
+          lessonsApi.list({ date: today, ordering: 'start_time' }),
+          lessonsApi.list({ date: tomorrowISO(), ordering: 'start_time' }),
+          fetchAllPages<Lesson>((page) =>
+            lessonsApi.list({ date_from: today, date_to: upcomingWindow().to, ordering: 'date,start_time', page }),
+          ),
+          fetchAllPages<Group>((page) => groupsApi.list({ page })),
+          fetchAllPages<AttendanceRecord>((page) => attendanceApi.list({ date: today, page })),
+          homeworkResultsApi.list({ status: 'submitted', page: 1 }),
+        ])
 
       const lessonsToday = lessonsTodayResponse.results
       const groupIdsToday = new Set(lessonsToday.map((lesson) => lesson.group))
@@ -59,10 +71,16 @@ export function useDashboardData() {
           return hours * 60 + minutes >= nowMinutes
         }) ?? null
 
+      const upcomingLessons = upcomingLessonsRaw
+        .filter((lesson) => lesson.status !== 'cancelled' && !hasLessonPassed(lesson, now))
+        .slice(0, DASHBOARD_PREVIEW_COUNT)
+
       return {
         today,
         lessonsToday,
         nextLesson,
+        tomorrowLessons: tomorrowResponse.results.slice(0, DASHBOARD_PREVIEW_COUNT),
+        upcomingLessons,
         studentsToday,
         attendancePercentToday,
         pendingHomeworkCount: pendingHomework.count,
