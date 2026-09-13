@@ -47,4 +47,12 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('Login page')).not.toBeInTheDocument()
     expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
   })
+
+  it('shows an offline screen instead of signing the user out when the backend is unreachable', () => {
+    mockUseAuth.mockReturnValue({ status: 'offline', retry: vi.fn() })
+    renderProtected()
+    expect(screen.getByText('Сервер недоступен')).toBeInTheDocument()
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument()
+    expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
+  })
 })

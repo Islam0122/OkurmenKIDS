@@ -6,14 +6,16 @@ import { LoginPage } from '@/features/auth/LoginPage'
 
 import { NotFoundPage } from './NotFoundPage'
 import { ProtectedRoute } from './ProtectedRoute'
+import { RouteErrorPage } from './RouteErrorPage'
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/app/dashboard" replace /> },
-  { path: '/login', element: <LoginPage /> },
-  { path: '/access-denied', element: <AccessDeniedPage /> },
+  { path: '/', element: <Navigate to="/app/dashboard" replace />, errorElement: <RouteErrorPage /> },
+  { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
+  { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {
     path: '/app',
     element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         element: <AppLayout />,

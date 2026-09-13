@@ -1,6 +1,7 @@
 import { ShieldAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
+import { FullScreenStatus } from '@/components/ui/FullScreenStatus'
 import { useAuth } from '@/hooks/useAuth'
 
 export function AccessDeniedPage() {
@@ -14,17 +15,16 @@ export function AccessDeniedPage() {
         : 'Ваш аккаунт деактивирован.'
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface-muted px-4 text-center">
-      <span className="flex size-14 items-center justify-center rounded-full bg-warning-soft text-warning">
-        <ShieldAlert className="size-6" aria-hidden />
-      </span>
-      <div>
-        <h1 className="text-lg font-semibold text-ink">Доступ ограничен</h1>
-        <p className="mt-1 max-w-sm text-sm text-ink-secondary">{reason}</p>
-      </div>
-      <Button variant="secondary" onClick={logout}>
-        Выйти и вернуться ко входу
-      </Button>
-    </div>
+    <FullScreenStatus
+      icon={ShieldAlert}
+      tone="warning"
+      title="Доступ ограничен"
+      description={reason}
+      actions={
+        <Button variant="secondary" onClick={logout}>
+          Выйти и вернуться ко входу
+        </Button>
+      }
+    />
   )
 }

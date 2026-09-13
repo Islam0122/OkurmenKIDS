@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
 import { LoadingState } from '@/components/ui/LoadingState'
+import { OfflinePage } from '@/features/auth/OfflinePage'
 import { useAuth } from '@/hooks/useAuth'
 
 /**
@@ -10,11 +11,15 @@ import { useAuth } from '@/hooks/useAuth'
  * enforces role/ownership itself regardless of what this component renders.
  */
 export function ProtectedRoute() {
-  const { status } = useAuth()
+  const { status, retry } = useAuth()
   const location = useLocation()
 
   if (status === 'loading') {
     return <LoadingState label="Проверяем сессию…" fullScreen />
+  }
+
+  if (status === 'offline') {
+    return <OfflinePage onRetry={retry} />
   }
 
   if (status === 'guest') {

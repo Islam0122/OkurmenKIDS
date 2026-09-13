@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { authApi } from '@/api/auth'
 import { registerSessionExpiredHandler } from '@/api/client'
+import { isNetworkOrServerError } from '@/lib/apiError'
 import { tokenStorage } from '@/lib/tokenStorage'
 import type { User } from '@/types/auth'
 
@@ -24,6 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const [user, setUser] = useState<User | null>(null)
   const [status, setStatus] = useState<AuthStatus>('loading')
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
 
   const logout = useCallback(() => {
     tokenStorage.clear()
@@ -31,6 +33,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     setStatus('guest')
   }, [queryClient])
+
+  const retry = useCallback(() => {
+    setStatus('loading')
+    setBootstrapAttempt((attempt) => attempt + 1)
+  }, [])
 
   useEffect(() => {
     registerSessionExpiredHandler(logout)
@@ -49,8 +56,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return
         setUser(me)
         setStatus(isEligibleTeacher(me) ? 'authenticated' : 'forbidden')
-      } catch {
+      } catch (error) {
         if (cancelled) return
+        // The backend being unreachable (down, offline, CORS misconfigured)
+        // is not the same thing as "your token is invalid" — only the
+        // latter should sign the user out. Otherwise a brief outage would
+        // force everyone to log back in for no reason.
+        if (isNetworkOrServerError(error)) {
+          setStatus('offline')
+          return
+        }
         tokenStorage.clear()
         setStatus('guest')
       }
@@ -60,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [bootstrapAttempt])
 
   const login = useCallback(async (username: string, password: string) => {
     const response = await authApi.login({ username, password })
@@ -83,7 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     status: AuthStatus
     login: typeof login
     logout: typeof logout
-  }>(() => ({ user, status, login, logout }), [user, status, login, logout])
+    retry: typeof retry
+  }>(() => ({ user, status, login, logout, retry }), [user, status, login, logout, retry])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
