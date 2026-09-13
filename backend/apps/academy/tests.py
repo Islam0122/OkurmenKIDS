@@ -13,6 +13,7 @@ from django.test import Client as DjangoClient
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
@@ -3814,3 +3815,174 @@ class SeedDevDataTests(TestCase):
         self.assertEqual(Lesson.objects.count(), first_lesson_count)
         self.assertEqual(Student.objects.count(), first_student_count)
         self.assertEqual(User.objects.count(), first_user_count)
+
+
+# ---------------------------------------------------------------------------
+# Read-only monitoring admin — Посещаемость / Домашние задания / Результаты
+# ДЗ. Admin only watches/searches/filters/drills down into related objects
+# here; a Teacher is the one who actually records this data, through their
+# own lesson/homework-checking screens (services.attendance_service.
+# bulk_mark_attendance, services.homework_service.bulk_upsert_homework_
+# results) — never through Django admin. See admin.py's AttendanceAdmin/
+# HomeworkAdmin/HomeworkResultAdmin and admin_views.py's six monitor/detail
+# view functions.
+# ---------------------------------------------------------------------------
+
+class ReadOnlyMonitoringAdminTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+        # group1's lessons were already generated automatically on creation
+        # (see AcademyTestBase.setUp / apps.academy.signals).
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+        self.lesson1 = self.lessons[0]
+
+        self.attendance_present = Attendance.objects.create(
+            student=self.student1, lesson=self.lesson1, status=Attendance.Status.PRESENT
+        )
+        self.attendance_absent = Attendance.objects.create(
+            student=self.student2, lesson=self.lesson1, status=Attendance.Status.ABSENT
+        )
+
+        self.homework = Homework.objects.create(
+            lesson=self.lesson1, title="ДЗ 1", deadline=timezone.localdate() + dt.timedelta(days=5)
+        )
+        self.result_checked = HomeworkResult.objects.create(
+            homework=self.homework, student=self.student1, status=HomeworkResult.Status.CHECKED, score=9
+        )
+        # student2 deliberately gets no HomeworkResult row — "not submitted"
+        # is the absence of a row, not a stored status (see
+        # services.homework_service.bulk_upsert_homework_results) — the
+        # detail page must synthesize a "Не сдано" row for them.
+
+    # -- backend-level permission lockdown --------------------------------
+
+    def test_add_change_delete_forbidden_at_backend_level(self):
+        registry = {
+            "attendance": (Attendance, self.attendance_present),
+            "homework": (Homework, self.homework),
+            "homeworkresult": (HomeworkResult, self.result_checked),
+        }
+        for model_name, (model, obj) in registry.items():
+            with self.subTest(model=model_name):
+                admin_instance = admin.site._registry[model]
+                self.assertFalse(admin_instance.has_add_permission(None))
+                self.assertFalse(admin_instance.has_change_permission(None, obj))
+                self.assertFalse(admin_instance.has_delete_permission(None, obj))
+
+                response = self.admin_web.get(f"/admin/academy/{model_name}/add/")
+                self.assertEqual(response.status_code, 403)
+
+    def test_delete_selected_action_not_offered(self):
+        for url_name in (
+            "admin:academy_attendance_changelist",
+            "admin:academy_homework_changelist",
+            "admin:academy_homeworkresult_changelist",
+        ):
+            response = self.admin_web.get(reverse(url_name))
+            self.assertNotContains(response, "delete_selected")
+
+    # -- list pages ---------------------------------------------------------
+
+    def test_attendance_list_shows_kpi_and_records(self):
+        response = self.admin_web.get(reverse("admin:academy_attendance_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Присутствуют")
+        self.assertContains(response, "Алина Иванова")
+        self.assertContains(
+            response, reverse("admin:academy_attendance_change", args=[self.attendance_present.pk])
+        )
+
+    def test_attendance_kpi_reflects_filtered_queryset(self):
+        response = self.admin_web.get(reverse("admin:academy_attendance_changelist"), {"status": "present"})
+        self.assertContains(response, "<div class=\"ok-kpi-value\">1</div>", html=False)
+
+    def test_attendance_status_filter_narrows_table(self):
+        response = self.admin_web.get(reverse("admin:academy_attendance_changelist"), {"status": "present"})
+        body = response.content.decode()
+        table = body[body.find("<tbody>") : body.find("</tbody>")]
+        self.assertIn("Алина Иванова", table)
+        self.assertNotIn("Мансур Алиев", table)
+
+    def test_attendance_empty_state(self):
+        response = self.admin_web.get(reverse("admin:academy_attendance_changelist"), {"status": "late"})
+        self.assertContains(response, "Записей посещаемости пока нет")
+
+    def test_homework_list_shows_kpi_and_records(self):
+        response = self.admin_web.get(reverse("admin:academy_homework_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Активные дедлайны")
+        self.assertContains(response, "ДЗ 1")
+
+    def test_homeworkresult_list_shows_kpi_and_records(self):
+        response = self.admin_web.get(reverse("admin:academy_homeworkresult_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Средний балл")
+        self.assertContains(response, "Алина Иванова")
+
+    # -- detail pages + related navigation ----------------------------------
+
+    def test_attendance_detail_shows_related_links(self):
+        response = self.admin_web.get(
+            reverse("admin:academy_attendance_change", args=[self.attendance_present.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        self.assertContains(response, reverse("admin:academy_group_workspace", args=[self.group1.pk]))
+        self.assertContains(response, reverse("admin:academy_lesson_change", args=[self.lesson1.pk]))
+        self.assertContains(response, reverse("admin:users_teacher_change", args=[self.teacher1.pk]))
+
+    def test_homework_detail_shows_submission_table_including_unsubmitted(self):
+        response = self.admin_web.get(reverse("admin:academy_homework_change", args=[self.homework.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Алина Иванова")
+        self.assertContains(response, "Мансур Алиев")
+        self.assertContains(response, "Не сдано")
+
+    def test_homeworkresult_detail_shows_related_links(self):
+        response = self.admin_web.get(
+            reverse("admin:academy_homeworkresult_change", args=[self.result_checked.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        self.assertContains(response, reverse("admin:academy_homework_change", args=[self.homework.pk]))
+
+    # -- Teacher never reaches these Django-admin pages ----------------------
+
+    def test_teacher_cannot_access_monitoring_pages(self):
+        teacher_web = DjangoClient()
+        teacher_web.force_login(self.teacher1.user)
+        response = teacher_web.get(reverse("admin:academy_attendance_changelist"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    # -- cross-links from other admin pages keep working ---------------------
+
+    def test_student_detail_cross_link_uses_new_query_param(self):
+        response = self.admin_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        self.assertContains(response, f"?student={self.student1.pk}")
+
+        filtered = self.admin_web.get(
+            reverse("admin:academy_attendance_changelist"), {"student": self.student1.pk}
+        )
+        body = filtered.content.decode()
+        table = body[body.find("<tbody>") : body.find("</tbody>")]
+        self.assertIn("Алина Иванова", table)
+        self.assertNotIn("Мансур Алиев", table)
+
+    def test_group_teacher_workspace_cross_links_use_new_query_param(self):
+        group_teacher = self.group1.teachers.get()
+        response = self.admin_web.get(
+            reverse("admin:academy_groupteacher_workspace", args=[group_teacher.pk])
+        )
+        self.assertContains(response, f"?group_teacher={group_teacher.pk}")
+
+        for url_name in (
+            "admin:academy_attendance_changelist",
+            "admin:academy_homework_changelist",
+            "admin:academy_homeworkresult_changelist",
+        ):
+            filtered = self.admin_web.get(reverse(url_name), {"group_teacher": group_teacher.pk})
+            self.assertEqual(filtered.status_code, 200)

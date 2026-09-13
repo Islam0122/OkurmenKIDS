@@ -16,6 +16,8 @@ from apps.users.import_export.formats import UnsupportedFileFormat, is_valid_pho
 
 from .admin_views import (
     analytics_view,
+    attendance_detail_view,
+    attendance_monitor_view,
     generate_lessons_for_group_view,
     group_teacher_workspace_view,
     group_workspace_add_existing_students_view,
@@ -36,6 +38,10 @@ from .admin_views import (
     group_workspace_schedule_view,
     group_workspace_students_view,
     group_workspace_teachers_view,
+    homework_detail_view,
+    homework_monitor_view,
+    homeworkresult_detail_view,
+    homeworkresult_monitor_view,
     schedule_view,
 )
 from .models import (
@@ -611,10 +617,10 @@ class StudentAdmin(admin.ModelAdmin):
             "changelist_url": reverse("admin:academy_student_changelist"),
             "toggle_active_url": reverse("admin:academy_student_toggle_active", args=[student.pk]),
             "attendance_url": (
-                f"{reverse('admin:academy_attendance_changelist')}?student__id__exact={student.pk}"
+                f"{reverse('admin:academy_attendance_changelist')}?student={student.pk}"
             ),
             "homework_results_url": (
-                f"{reverse('admin:academy_homeworkresult_changelist')}?student__id__exact={student.pk}"
+                f"{reverse('admin:academy_homeworkresult_changelist')}?student={student.pk}"
             ),
             "group_url": (
                 reverse("admin:academy_group_change", args=[student.group_id]) if student.group_id else None
@@ -1175,124 +1181,76 @@ class LessonAdmin(admin.ModelAdmin):
 
 
 # ---------------------------------------------------------------------------
-# Homework & results
+# Homework, its results, and Attendance — Admin's read-only control center
+# (spec: Admin controls/watches/analyses/searches/drills-down here, never
+# creates or edits directly; a Teacher records this data themselves, through
+# their own lesson/homework-checking screens — see
+# services.attendance_service.bulk_mark_attendance and
+# services.homework_service.bulk_upsert_homework_results). Both the
+# changelist and the change view are fully replaced by admin_views.py's
+# monitor/detail views (KPIs, filters, search, related-object navigation);
+# these three ModelAdmin classes exist only to own the URLs and to lock the
+# permission checks down at the backend, not just hide buttons with CSS.
 # ---------------------------------------------------------------------------
-
-class HomeworkResultInline(admin.TabularInline):
-    model = HomeworkResult
-    extra = 0
-    fields = ("student", "status", "score", "comment")
-    autocomplete_fields = ("student",)
-
 
 @admin.register(Homework)
 class HomeworkAdmin(admin.ModelAdmin):
-    list_display = ("title", "lesson", "deadline", "results_summary")
-    list_filter = ("lesson__group", "lesson__group_teacher")
-    search_fields = ("title", "description", "lesson__group__name")
-    autocomplete_fields = ("lesson",)
-    readonly_fields = ("created_at", "updated_at")
-    inlines = [HomeworkResultInline]
-    list_per_page = 25
+    def has_add_permission(self, request):
+        return False
 
-    fieldsets = (
-        ("Основное", {"fields": ("lesson", "title", "description", "deadline")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
+    def has_change_permission(self, request, obj=None):
+        return False
 
-    def get_queryset(self, request):
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("lesson__group")
-            .annotate(_results_count=Count("results", distinct=True))
-        )
+    def has_delete_permission(self, request, obj=None):
+        return False
 
-    @admin.display(description="Результатов")
-    def results_summary(self, obj: Homework) -> int:
-        return getattr(obj, "_results_count", 0)
+    actions = None
+
+    def changelist_view(self, request, extra_context=None):
+        return homework_monitor_view(request)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        return homework_detail_view(request, object_id)
 
 
 @admin.register(HomeworkResult)
 class HomeworkResultAdmin(admin.ModelAdmin):
-    list_display = ("student", "homework", "status_badge", "score_badge", "checked_at")
-    list_filter = ("status", "homework__lesson__group", "homework__lesson__group_teacher")
-    search_fields = ("student__first_name", "student__last_name", "homework__title")
-    autocomplete_fields = ("student", "homework")
-    readonly_fields = ("created_at", "updated_at")
-    list_per_page = 30
+    def has_add_permission(self, request):
+        return False
 
-    fieldsets = (
-        ("Результат", {"fields": ("homework", "student", "status", "score", "comment")}),
-        ("Даты", {"fields": ("submitted_at", "checked_at")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
+    def has_change_permission(self, request, obj=None):
+        return False
 
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("student", "homework__lesson__group")
+    def has_delete_permission(self, request, obj=None):
+        return False
 
-    @admin.display(description="Статус", ordering="status")
-    def status_badge(self, obj: HomeworkResult) -> str:
-        css_map = {
-            HomeworkResult.Status.NOT_SUBMITTED: "ok-badge-muted",
-            HomeworkResult.Status.SUBMITTED: "ok-badge-warning",
-            HomeworkResult.Status.CHECKED: "ok-badge-success",
-            HomeworkResult.Status.LATE: "ok-badge-danger",
-        }
-        return _badge(css_map.get(obj.status, "ok-badge-muted"), obj.get_status_display())
+    actions = None
 
-    @admin.display(description="Балл", ordering="score")
-    def score_badge(self, obj: HomeworkResult) -> str:
-        if obj.score is None:
-            return "—"
-        css = "ok-badge-success" if obj.score >= 8 else "ok-badge-warning" if obj.score >= 5 else "ok-badge-danger"
-        return _badge(css, f"{obj.score}/10")
+    def changelist_view(self, request, extra_context=None):
+        return homeworkresult_monitor_view(request)
 
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        return homeworkresult_detail_view(request, object_id)
 
-# ---------------------------------------------------------------------------
-# Attendance
-# ---------------------------------------------------------------------------
 
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ("lesson_date", "student", "group", "status_badge", "comment_short")
-    list_filter = ("lesson__date", "lesson__group", "lesson__group_teacher", "status")
-    search_fields = ("student__first_name", "student__last_name", "lesson__group__name")
-    autocomplete_fields = ("student", "lesson")
-    readonly_fields = ("created_at", "updated_at")
-    list_per_page = 30
+    def has_add_permission(self, request):
+        return False
 
-    fieldsets = (
-        ("Запись", {"fields": ("lesson", "student", "status", "comment")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
+    def has_change_permission(self, request, obj=None):
+        return False
 
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("student", "lesson__group")
+    def has_delete_permission(self, request, obj=None):
+        return False
 
-    @admin.display(description="Дата", ordering="lesson__date")
-    def lesson_date(self, obj: Attendance):
-        return obj.lesson.date
+    actions = None
 
-    @admin.display(description="Группа", ordering="lesson__group")
-    def group(self, obj: Attendance):
-        return obj.lesson.group
+    def changelist_view(self, request, extra_context=None):
+        return attendance_monitor_view(request)
 
-    @admin.display(description="Комментарий")
-    def comment_short(self, obj: Attendance) -> str:
-        if not obj.comment:
-            return "—"
-        return obj.comment if len(obj.comment) <= 40 else f"{obj.comment[:40]}..."
-
-    @admin.display(description="Статус", ordering="status")
-    def status_badge(self, obj: Attendance) -> str:
-        css_map = {
-            Attendance.Status.PRESENT: "ok-badge-success",
-            Attendance.Status.ABSENT: "ok-badge-danger",
-            Attendance.Status.LATE: "ok-badge-warning",
-            Attendance.Status.EXCUSED: "ok-badge-muted",
-        }
-        return _badge(css_map.get(obj.status, "ok-badge-muted"), obj.get_status_display())
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        return attendance_detail_view(request, object_id)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,156 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} ok-mon-page-body{% endblock %}
+
+{% block content_title %}Посещаемость{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item">Посещаемость</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <p class="ok-page-subtitle">{{ subtitle }}</p>
+
+  <div class="ok-kpi-grid">
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-list-ul"></i></div>
+      <div class="ok-kpi-value">{{ kpi.total }}</div>
+      <div class="ok-kpi-label">Всего записей</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.present }}</div>
+      <div class="ok-kpi-label">Присутствуют</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.absent }}</div>
+      <div class="ok-kpi-label">Отсутствуют</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-clock-history"></i></div>
+      <div class="ok-kpi-value">{{ kpi.late }}</div>
+      <div class="ok-kpi-label">Опоздали</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-shield-check"></i></div>
+      <div class="ok-kpi-value">{{ kpi.excused }}</div>
+      <div class="ok-kpi-label">Уважительная причина</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
+      <div class="ok-kpi-value">{% if kpi.rate is not None %}{{ kpi.rate }}%{% else %}—{% endif %}</div>
+      <div class="ok-kpi-label">Посещаемость</div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-funnel"></i><span>Фильтры</span></div>
+    <div class="ok-card-body">
+      <form method="get" class="ok-group-toolbar">
+        <input type="text" name="q" class="ok-input" placeholder="Студент, группа, преподаватель..." value="{{ selected.q }}">
+        <select name="group" class="ok-input">
+          <option value="">Все группы</option>
+          {% for g in groups %}
+            <option value="{{ g.pk }}" {% if selected.group == g.pk|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="student" class="ok-input">
+          <option value="">Все студенты</option>
+          {% for s in students %}
+            <option value="{{ s.pk }}" {% if selected.student == s.pk|stringformat:"s" %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <select name="teacher" class="ok-input">
+          <option value="">Все преподаватели</option>
+          {% for t in teachers %}
+            <option value="{{ t.pk }}" {% if selected.teacher == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        <select name="subject" class="ok-input">
+          <option value="">Все предметы</option>
+          {% for subj in subjects %}
+            <option value="{{ subj.pk }}" {% if selected.subject == subj.pk|stringformat:"s" %}selected{% endif %}>{{ subj.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="course" class="ok-input">
+          <option value="">Все курсы</option>
+          {% for c in courses %}
+            <option value="{{ c.pk }}" {% if selected.course == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="status" class="ok-input">
+          <option value="">Все статусы</option>
+          {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}">
+        <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}">
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-clipboard-check"></i><span>Записи посещаемости</span></div>
+    <div class="ok-card-body">
+      {% if records %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Студент</th><th>Группа</th><th>Занятие</th><th>Предмет</th><th>Преподаватель</th>
+                <th>Дата</th><th>Время</th><th>Статус</th><th>Комментарий</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in records %}
+                <tr>
+                  <td><a href="{% url 'admin:academy_student_detail' record.student.pk %}">{{ record.student }}</a></td>
+                  <td>{{ record.lesson.group.name }}</td>
+                  <td>№{{ record.lesson.lesson_number }}{% if record.lesson.topic %} — {{ record.lesson.topic }}{% endif %}</td>
+                  <td>{{ record.lesson.subject.name|default:"—" }}</td>
+                  <td>{{ record.lesson.effective_teacher|default:"—" }}</td>
+                  <td>{{ record.lesson.date|date:"d.m.Y" }}</td>
+                  <td>{{ record.lesson.start_time|time:"H:i" }}–{{ record.lesson.end_time|time:"H:i" }}</td>
+                  <td>
+                    {% if record.status == "present" %}
+                      <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Присутствовал</span>
+                    {% elif record.status == "absent" %}
+                      <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Отсутствовал</span>
+                    {% elif record.status == "late" %}
+                      <span class="ok-badge ok-badge-warning"><span class="ok-badge-dot"></span>Опоздал</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Уважительная причина</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ record.comment|default:"—"|truncatechars:40 }}</td>
+                  <td>
+                    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_attendance_change' record.pk %}" title="Открыть">
+                      <i class="bi bi-eye"></i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "admin/academy/group/workspace/_pagination.html" with page_obj=records %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-clipboard-check"></i>
+          <h4>Записей посещаемости пока нет</h4>
+          <p>Преподаватель отмечает посещаемость на своей странице занятия — записи появятся здесь автоматически.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

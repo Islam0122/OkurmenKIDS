@@ -473,15 +473,10 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
         "group_url": reverse("admin:academy_group_change", args=[group.pk]),
         "group_teacher_url": reverse("admin:academy_groupteacher_change", args=[group_teacher.pk]),
         "lessons_url": f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={group_teacher.pk}",
-        "attendance_url": (
-            f"{reverse('admin:academy_attendance_changelist')}?lesson__group_teacher__id__exact={group_teacher.pk}"
-        ),
-        "homework_url": (
-            f"{reverse('admin:academy_homework_changelist')}?lesson__group_teacher__id__exact={group_teacher.pk}"
-        ),
+        "attendance_url": f"{reverse('admin:academy_attendance_changelist')}?group_teacher={group_teacher.pk}",
+        "homework_url": f"{reverse('admin:academy_homework_changelist')}?group_teacher={group_teacher.pk}",
         "homework_results_url": (
-            f"{reverse('admin:academy_homeworkresult_changelist')}"
-            f"?homework__lesson__group_teacher__id__exact={group_teacher.pk}"
+            f"{reverse('admin:academy_homeworkresult_changelist')}?group_teacher={group_teacher.pk}"
         ),
     }
     return render(request, "admin/academy/group_teacher_workspace.html", context)
@@ -1322,3 +1317,553 @@ def group_workspace_generate_lessons_view(request, group_id):
 
     next_url = request.POST.get("next") or reverse("admin:academy_group_workspace", args=[group.pk])
     return redirect(next_url)
+
+
+# ---------------------------------------------------------------------------
+# Read-only monitoring center — Посещаемость / Домашние задания / Результаты
+# ДЗ. Admin only ever *watches* this data here (search/filter/drill down/
+# jump to the related Group/Student/Lesson/Teacher); a Teacher is the one
+# who actually records it, through their own lesson/homework-checking
+# screens (services.attendance_service.bulk_mark_attendance,
+# services.homework_service.bulk_upsert_homework_results) — never through
+# Django admin. AttendanceAdmin/HomeworkAdmin/HomeworkResultAdmin (see
+# admin.py) replace both their changelist_view and change_view with the six
+# views below and lock has_add/change/delete_permission to False, so the
+# read-only behaviour holds at the permission layer, not just in the UI.
+# ---------------------------------------------------------------------------
+
+def _effective_teacher_q(prefix: str, teacher_id) -> "Q":
+    """Q matching the Lesson `teacher_id` actually gives, reached through
+    `prefix` (e.g. "lesson" or "homework__lesson") — the same effective-
+    teacher rule as Lesson.effective_teacher / LessonQuerySet.for_teacher:
+    the lesson's own explicit teacher when the generator set one, else its
+    GroupTeacher's own teacher.
+    """
+    return Q(**{f"{prefix}__teacher_id": teacher_id}) | Q(
+        **{f"{prefix}__teacher__isnull": True, f"{prefix}__group_teacher__teacher_id": teacher_id}
+    )
+
+
+def attendance_monitor_view(request):
+    _require_admin(request)
+
+    search = (request.GET.get("q") or "").strip()
+    group_id = request.GET.get("group") or ""
+    student_id = request.GET.get("student") or ""
+    teacher_id = request.GET.get("teacher") or ""
+    subject_id = request.GET.get("subject") or ""
+    course_id = request.GET.get("course") or ""
+    status_filter = request.GET.get("status") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
+    group_teacher_id = request.GET.get("group_teacher") or ""
+
+    records_qs = Attendance.objects.select_related(
+        "student",
+        "lesson",
+        "lesson__group",
+        "lesson__group__course",
+        "lesson__subject",
+        "lesson__room",
+        "lesson__teacher__user",
+        "lesson__group_teacher__teacher__user",
+        "lesson__group_teacher__subject",
+    )
+
+    if search:
+        records_qs = records_qs.filter(
+            Q(student__first_name__icontains=search)
+            | Q(student__last_name__icontains=search)
+            | Q(lesson__group__name__icontains=search)
+            | Q(lesson__teacher__user__first_name__icontains=search)
+            | Q(lesson__teacher__user__last_name__icontains=search)
+            | Q(lesson__group_teacher__teacher__user__first_name__icontains=search)
+            | Q(lesson__group_teacher__teacher__user__last_name__icontains=search)
+        )
+    if group_id:
+        records_qs = records_qs.filter(lesson__group_id=group_id)
+    if student_id:
+        records_qs = records_qs.filter(student_id=student_id)
+    if teacher_id:
+        records_qs = records_qs.filter(_effective_teacher_q("lesson", teacher_id))
+    if subject_id:
+        records_qs = records_qs.filter(lesson__subject_id=subject_id)
+    if course_id:
+        records_qs = records_qs.filter(lesson__group__course_id=course_id)
+    if status_filter:
+        records_qs = records_qs.filter(status=status_filter)
+    if group_teacher_id:
+        records_qs = records_qs.filter(lesson__group_teacher_id=group_teacher_id)
+    parsed = _parse_date(date_from, None)
+    if parsed:
+        records_qs = records_qs.filter(lesson__date__gte=parsed)
+    parsed = _parse_date(date_to, None)
+    if parsed:
+        records_qs = records_qs.filter(lesson__date__lte=parsed)
+
+    records_qs = records_qs.order_by("-lesson__date", "-lesson__start_time")
+
+    total = records_qs.count()
+    present = records_qs.filter(status=Attendance.Status.PRESENT).count()
+    absent = records_qs.filter(status=Attendance.Status.ABSENT).count()
+    late = records_qs.filter(status=Attendance.Status.LATE).count()
+    excused = records_qs.filter(status=Attendance.Status.EXCUSED).count()
+    rate = round(100 * (present + late) / total, 1) if total else None
+
+    paginator = Paginator(records_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Посещаемость",
+        "subtitle": "Просмотр посещаемости студентов по группам, занятиям и преподавателям.",
+        "records": page_obj,
+        "kpi": {"total": total, "present": present, "absent": absent, "late": late, "excused": excused, "rate": rate},
+        "groups": Group.objects.order_by("name"),
+        "students": Student.objects.filter(is_active=True).select_related("group").order_by("last_name", "first_name"),
+        "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
+        "subjects": Subject.objects.filter(is_active=True).order_by("name"),
+        "courses": Course.objects.order_by("name"),
+        "status_choices": Attendance.Status.choices,
+        "selected": {
+            "q": search, "group": group_id, "student": student_id, "teacher": teacher_id,
+            "subject": subject_id, "course": course_id, "status": status_filter,
+            "date_from": date_from, "date_to": date_to,
+        },
+        "reset_url": reverse("admin:academy_attendance_changelist"),
+    }
+    return render(request, "admin/academy/attendance/change_list.html", context)
+
+
+def attendance_detail_view(request, object_id):
+    _require_admin(request)
+    record = get_object_or_404(
+        Attendance.objects.select_related(
+            "student",
+            "student__group",
+            "lesson",
+            "lesson__group",
+            "lesson__group__course",
+            "lesson__subject",
+            "lesson__room",
+            "lesson__teacher__user",
+            "lesson__group_teacher__teacher__user",
+            "lesson__group_teacher__subject",
+        ),
+        pk=object_id,
+    )
+    lesson = record.lesson
+    group = lesson.group
+    subject = lesson.subject or (lesson.group_teacher.subject if lesson.group_teacher_id else None)
+    teacher = lesson.effective_teacher
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Посещаемость",
+        "record": record,
+        "student": record.student,
+        "lesson": lesson,
+        "group": group,
+        "subject": subject,
+        "teacher": teacher,
+        "changelist_url": reverse("admin:academy_attendance_changelist"),
+        "student_url": reverse("admin:academy_student_detail", args=[record.student_id]),
+        "group_url": reverse("admin:academy_group_workspace", args=[group.pk]),
+        "lesson_url": reverse("admin:academy_lesson_change", args=[lesson.pk]),
+        "teacher_url": reverse("admin:users_teacher_change", args=[teacher.pk]) if teacher else None,
+    }
+    return render(request, "admin/academy/attendance/detail.html", context)
+
+
+def homework_monitor_view(request):
+    _require_admin(request)
+    today = timezone.localdate()
+
+    search = (request.GET.get("q") or "").strip()
+    group_id = request.GET.get("group") or ""
+    subject_id = request.GET.get("subject") or ""
+    teacher_id = request.GET.get("teacher") or ""
+    course_id = request.GET.get("course") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
+    deadline_from = request.GET.get("deadline_from") or ""
+    deadline_to = request.GET.get("deadline_to") or ""
+    group_teacher_id = request.GET.get("group_teacher") or ""
+
+    homeworks_qs = (
+        Homework.objects.select_related(
+            "lesson",
+            "lesson__group",
+            "lesson__group__course",
+            "lesson__subject",
+            "lesson__teacher__user",
+            "lesson__group_teacher__teacher__user",
+            "lesson__group_teacher__subject",
+        )
+        .annotate(
+            results_total=Count("results", distinct=True),
+            results_checked=Count(
+                "results", filter=Q(results__status=HomeworkResult.Status.CHECKED), distinct=True
+            ),
+            results_submitted=Count(
+                "results",
+                filter=Q(
+                    results__status__in=[
+                        HomeworkResult.Status.SUBMITTED,
+                        HomeworkResult.Status.LATE,
+                        HomeworkResult.Status.CHECKED,
+                    ]
+                ),
+                distinct=True,
+            ),
+            students_total=Count(
+                "lesson__group__students",
+                filter=Q(lesson__group__students__is_active=True),
+                distinct=True,
+            ),
+        )
+    )
+
+    if search:
+        homeworks_qs = homeworks_qs.filter(
+            Q(title__icontains=search)
+            | Q(description__icontains=search)
+            | Q(lesson__group__name__icontains=search)
+            | Q(lesson__subject__name__icontains=search)
+            | Q(lesson__teacher__user__first_name__icontains=search)
+            | Q(lesson__teacher__user__last_name__icontains=search)
+            | Q(lesson__group_teacher__teacher__user__first_name__icontains=search)
+            | Q(lesson__group_teacher__teacher__user__last_name__icontains=search)
+        )
+    if group_id:
+        homeworks_qs = homeworks_qs.filter(lesson__group_id=group_id)
+    if subject_id:
+        homeworks_qs = homeworks_qs.filter(lesson__subject_id=subject_id)
+    if teacher_id:
+        homeworks_qs = homeworks_qs.filter(_effective_teacher_q("lesson", teacher_id))
+    if course_id:
+        homeworks_qs = homeworks_qs.filter(lesson__group__course_id=course_id)
+    if group_teacher_id:
+        homeworks_qs = homeworks_qs.filter(lesson__group_teacher_id=group_teacher_id)
+    parsed = _parse_date(date_from, None)
+    if parsed:
+        homeworks_qs = homeworks_qs.filter(lesson__date__gte=parsed)
+    parsed = _parse_date(date_to, None)
+    if parsed:
+        homeworks_qs = homeworks_qs.filter(lesson__date__lte=parsed)
+    parsed = _parse_date(deadline_from, None)
+    if parsed:
+        homeworks_qs = homeworks_qs.filter(deadline__gte=parsed)
+    parsed = _parse_date(deadline_to, None)
+    if parsed:
+        homeworks_qs = homeworks_qs.filter(deadline__lte=parsed)
+
+    homeworks = list(homeworks_qs.order_by("-created_at"))
+
+    def _status_of(hw) -> dict:
+        if hw.results_total and hw.results_checked == hw.results_total:
+            return {"label": "Проверено", "css": "ok-badge-success"}
+        if hw.deadline and hw.deadline < today:
+            return {"label": "Просрочено", "css": "ok-badge-danger"}
+        if hw.deadline == today:
+            return {"label": "Дедлайн сегодня", "css": "ok-badge-warning"}
+        if hw.results_submitted:
+            return {"label": "В процессе", "css": "ok-badge-warning"}
+        return {"label": "Новое", "css": "ok-badge-muted"}
+
+    rows = []
+    for hw in homeworks:
+        status_info = _status_of(hw)
+        rows.append(
+            {
+                "obj": hw,
+                "group": hw.lesson.group,
+                "subject": hw.lesson.subject,
+                "teacher": hw.lesson.effective_teacher,
+                "students_total": hw.students_total,
+                "submitted": hw.results_submitted,
+                "checked": hw.results_checked,
+                "status_label": status_info["label"],
+                "status_css": status_info["css"],
+                "detail_url": reverse("admin:academy_homework_change", args=[hw.pk]),
+            }
+        )
+
+    total = len(homeworks)
+    active_deadlines = sum(1 for hw in homeworks if hw.deadline and hw.deadline >= today)
+    overdue = sum(1 for hw in homeworks if hw.deadline and hw.deadline < today)
+    checked_complete = sum(1 for hw in homeworks if hw.results_total and hw.results_checked == hw.results_total)
+    completion_rates = [100 * hw.results_checked / hw.results_total for hw in homeworks if hw.results_total]
+    avg_completion = round(sum(completion_rates) / len(completion_rates), 1) if completion_rates else None
+    students_count = (
+        HomeworkResult.objects.filter(homework_id__in=[hw.pk for hw in homeworks]).values("student_id").distinct().count()
+        if homeworks
+        else 0
+    )
+
+    paginator = Paginator(rows, 20)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Домашние задания",
+        "subtitle": "Просмотр домашних заданий, связанных с занятиями и учебными программами.",
+        "rows": page_obj,
+        "kpi": {
+            "total": total,
+            "active_deadlines": active_deadlines,
+            "overdue": overdue,
+            "checked_complete": checked_complete,
+            "avg_completion": avg_completion,
+            "students_count": students_count,
+        },
+        "groups": Group.objects.order_by("name"),
+        "subjects": Subject.objects.filter(is_active=True).order_by("name"),
+        "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
+        "courses": Course.objects.order_by("name"),
+        "selected": {
+            "q": search, "group": group_id, "subject": subject_id, "teacher": teacher_id, "course": course_id,
+            "date_from": date_from, "date_to": date_to, "deadline_from": deadline_from, "deadline_to": deadline_to,
+        },
+        "reset_url": reverse("admin:academy_homework_changelist"),
+    }
+    return render(request, "admin/academy/homework/change_list.html", context)
+
+
+def homework_detail_view(request, object_id):
+    _require_admin(request)
+    homework = get_object_or_404(
+        Homework.objects.select_related(
+            "lesson",
+            "lesson__group",
+            "lesson__group__course",
+            "lesson__subject",
+            "lesson__teacher__user",
+            "lesson__group_teacher__teacher__user",
+            "lesson__group_teacher__subject",
+        ),
+        pk=object_id,
+    )
+    lesson = homework.lesson
+    group = lesson.group
+    subject = lesson.subject or (lesson.group_teacher.subject if lesson.group_teacher_id else None)
+    teacher = lesson.effective_teacher
+    today = timezone.localdate()
+
+    students = list(group.students.filter(is_active=True).order_by("last_name", "first_name"))
+    results_by_student = {
+        r.student_id: r for r in HomeworkResult.objects.filter(homework=homework).select_related("student")
+    }
+
+    submission_rows = []
+    submitted_count = 0
+    checked_count = 0
+    scores = []
+    for student in students:
+        result = results_by_student.get(student.id)
+        status_value = result.status if result else HomeworkResult.Status.NOT_SUBMITTED
+        if status_value in (
+            HomeworkResult.Status.SUBMITTED,
+            HomeworkResult.Status.LATE,
+            HomeworkResult.Status.CHECKED,
+        ):
+            submitted_count += 1
+        if status_value == HomeworkResult.Status.CHECKED:
+            checked_count += 1
+        if result and result.score is not None:
+            scores.append(result.score)
+        submission_rows.append(
+            {
+                "student": student,
+                "student_url": reverse("admin:academy_student_detail", args=[student.pk]),
+                "status_display": result.get_status_display() if result else HomeworkResult.Status.NOT_SUBMITTED.label,
+                "status_value": status_value,
+                "score": result.score if result else None,
+                "comment": result.comment if result else "",
+                "submitted_at": result.submitted_at if result else None,
+                "checked_at": result.checked_at if result else None,
+            }
+        )
+
+    total_students = len(students)
+    not_submitted = max(total_students - submitted_count, 0)
+    avg_score = round(sum(scores) / len(scores), 1) if scores else None
+
+    if homework.deadline and homework.deadline < today:
+        deadline_badge = {"label": f"Просрочено ({homework.deadline:%d.%m.%Y})", "css": "ok-badge-danger"}
+    elif homework.deadline == today:
+        deadline_badge = {"label": "Дедлайн сегодня", "css": "ok-badge-warning"}
+    elif homework.deadline:
+        deadline_badge = {"label": f"До {homework.deadline:%d.%m.%Y}", "css": "ok-badge-muted"}
+    else:
+        deadline_badge = {"label": "Без срока", "css": "ok-badge-muted"}
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Домашние задания",
+        "homework": homework,
+        "lesson": lesson,
+        "group": group,
+        "subject": subject,
+        "teacher": teacher,
+        "deadline_badge": deadline_badge,
+        "kpi": {
+            "total_students": total_students,
+            "submitted": submitted_count,
+            "not_submitted": not_submitted,
+            "checked": checked_count,
+            "avg_score": avg_score,
+        },
+        "submission_rows": submission_rows,
+        "changelist_url": reverse("admin:academy_homework_changelist"),
+        "group_url": reverse("admin:academy_group_workspace", args=[group.pk]),
+        "lesson_url": reverse("admin:academy_lesson_change", args=[lesson.pk]),
+        "teacher_url": reverse("admin:users_teacher_change", args=[teacher.pk]) if teacher else None,
+    }
+    return render(request, "admin/academy/homework/detail.html", context)
+
+
+def homeworkresult_monitor_view(request):
+    _require_admin(request)
+
+    search = (request.GET.get("q") or "").strip()
+    group_id = request.GET.get("group") or ""
+    student_id = request.GET.get("student") or ""
+    teacher_id = request.GET.get("teacher") or ""
+    subject_id = request.GET.get("subject") or ""
+    homework_id = request.GET.get("homework") or ""
+    status_filter = request.GET.get("status") or ""
+    score_min = request.GET.get("score_min") or ""
+    score_max = request.GET.get("score_max") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
+    group_teacher_id = request.GET.get("group_teacher") or ""
+
+    results_qs = HomeworkResult.objects.select_related(
+        "student",
+        "homework",
+        "homework__lesson",
+        "homework__lesson__group",
+        "homework__lesson__group__course",
+        "homework__lesson__subject",
+        "homework__lesson__teacher__user",
+        "homework__lesson__group_teacher__teacher__user",
+        "homework__lesson__group_teacher__subject",
+    )
+
+    if search:
+        results_qs = results_qs.filter(
+            Q(student__first_name__icontains=search)
+            | Q(student__last_name__icontains=search)
+            | Q(homework__title__icontains=search)
+            | Q(homework__lesson__group__name__icontains=search)
+        )
+    if group_id:
+        results_qs = results_qs.filter(homework__lesson__group_id=group_id)
+    if student_id:
+        results_qs = results_qs.filter(student_id=student_id)
+    if teacher_id:
+        results_qs = results_qs.filter(_effective_teacher_q("homework__lesson", teacher_id))
+    if subject_id:
+        results_qs = results_qs.filter(homework__lesson__subject_id=subject_id)
+    if homework_id:
+        results_qs = results_qs.filter(homework_id=homework_id)
+    if status_filter:
+        results_qs = results_qs.filter(status=status_filter)
+    if group_teacher_id:
+        results_qs = results_qs.filter(homework__lesson__group_teacher_id=group_teacher_id)
+    if score_min:
+        results_qs = results_qs.filter(score__gte=score_min)
+    if score_max:
+        results_qs = results_qs.filter(score__lte=score_max)
+    parsed = _parse_date(date_from, None)
+    if parsed:
+        results_qs = results_qs.filter(homework__lesson__date__gte=parsed)
+    parsed = _parse_date(date_to, None)
+    if parsed:
+        results_qs = results_qs.filter(homework__lesson__date__lte=parsed)
+
+    results_qs = results_qs.order_by("-created_at")
+
+    total = results_qs.count()
+    checked = results_qs.filter(status=HomeworkResult.Status.CHECKED).count()
+    not_checked = total - checked
+    submitted = results_qs.filter(
+        status__in=[HomeworkResult.Status.SUBMITTED, HomeworkResult.Status.LATE, HomeworkResult.Status.CHECKED]
+    ).count()
+    not_submitted = results_qs.filter(status=HomeworkResult.Status.NOT_SUBMITTED).count()
+    avg_score = results_qs.exclude(score__isnull=True).aggregate(avg=Avg("score"))["avg"]
+
+    paginator = Paginator(results_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Результаты домашних заданий",
+        "subtitle": "Контроль выполнения и результатов домашних заданий студентов.",
+        "records": page_obj,
+        "kpi": {
+            "total": total,
+            "checked": checked,
+            "not_checked": not_checked,
+            "submitted": submitted,
+            "not_submitted": not_submitted,
+            "avg_score": round(avg_score, 1) if avg_score is not None else None,
+        },
+        "groups": Group.objects.order_by("name"),
+        "students": Student.objects.filter(is_active=True).select_related("group").order_by("last_name", "first_name"),
+        "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
+        "subjects": Subject.objects.filter(is_active=True).order_by("name"),
+        "homeworks": Homework.objects.select_related("lesson__group").order_by("-created_at")[:200],
+        "status_choices": HomeworkResult.Status.choices,
+        "selected": {
+            "q": search, "group": group_id, "student": student_id, "teacher": teacher_id, "subject": subject_id,
+            "homework": homework_id, "status": status_filter, "score_min": score_min, "score_max": score_max,
+            "date_from": date_from, "date_to": date_to,
+        },
+        "reset_url": reverse("admin:academy_homeworkresult_changelist"),
+    }
+    return render(request, "admin/academy/homeworkresult/change_list.html", context)
+
+
+def homeworkresult_detail_view(request, object_id):
+    _require_admin(request)
+    result = get_object_or_404(
+        HomeworkResult.objects.select_related(
+            "student",
+            "student__group",
+            "homework",
+            "homework__lesson",
+            "homework__lesson__group",
+            "homework__lesson__group__course",
+            "homework__lesson__subject",
+            "homework__lesson__teacher__user",
+            "homework__lesson__group_teacher__teacher__user",
+            "homework__lesson__group_teacher__subject",
+        ),
+        pk=object_id,
+    )
+    homework = result.homework
+    lesson = homework.lesson
+    group = lesson.group
+    subject = lesson.subject or (lesson.group_teacher.subject if lesson.group_teacher_id else None)
+    teacher = lesson.effective_teacher
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Результаты домашних заданий",
+        "result": result,
+        "student": result.student,
+        "homework": homework,
+        "lesson": lesson,
+        "group": group,
+        "subject": subject,
+        "teacher": teacher,
+        "changelist_url": reverse("admin:academy_homeworkresult_changelist"),
+        "student_url": reverse("admin:academy_student_detail", args=[result.student_id]),
+        "group_url": reverse("admin:academy_group_workspace", args=[group.pk]),
+        "homework_url": reverse("admin:academy_homework_change", args=[homework.pk]),
+        "lesson_url": reverse("admin:academy_lesson_change", args=[lesson.pk]),
+        "teacher_url": reverse("admin:users_teacher_change", args=[teacher.pk]) if teacher else None,
+    }
+    return render(request, "admin/academy/homeworkresult/detail.html", context)

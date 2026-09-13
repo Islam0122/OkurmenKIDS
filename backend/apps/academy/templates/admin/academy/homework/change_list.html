@@ -1,0 +1,147 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} ok-mon-page-body{% endblock %}
+
+{% block content_title %}Домашние задания{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item">Домашние задания</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <p class="ok-page-subtitle">{{ subtitle }}</p>
+
+  <div class="ok-kpi-grid">
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-journal-text"></i></div>
+      <div class="ok-kpi-value">{{ kpi.total }}</div>
+      <div class="ok-kpi-label">Всего домашних заданий</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+      <div class="ok-kpi-value">{{ kpi.active_deadlines }}</div>
+      <div class="ok-kpi-label">Активные дедлайны</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-exclamation-triangle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.overdue }}</div>
+      <div class="ok-kpi-label">Просроченные</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-patch-check"></i></div>
+      <div class="ok-kpi-value">{{ kpi.checked_complete }}</div>
+      <div class="ok-kpi-label">Завершённые / проверенные</div>
+    </div>
+    {% if kpi.avg_completion is not None %}
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
+        <div class="ok-kpi-value">{{ kpi.avg_completion }}%</div>
+        <div class="ok-kpi-label">Средний процент выполнения</div>
+      </div>
+    {% endif %}
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
+      <div class="ok-kpi-value">{{ kpi.students_count }}</div>
+      <div class="ok-kpi-label">Студентов затронуто</div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-funnel"></i><span>Фильтры</span></div>
+    <div class="ok-card-body">
+      <form method="get" class="ok-group-toolbar">
+        <input type="text" name="q" class="ok-input" placeholder="Название, группа, предмет, преподаватель..." value="{{ selected.q }}">
+        <select name="group" class="ok-input">
+          <option value="">Все группы</option>
+          {% for g in groups %}
+            <option value="{{ g.pk }}" {% if selected.group == g.pk|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="subject" class="ok-input">
+          <option value="">Все предметы</option>
+          {% for subj in subjects %}
+            <option value="{{ subj.pk }}" {% if selected.subject == subj.pk|stringformat:"s" %}selected{% endif %}>{{ subj.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="teacher" class="ok-input">
+          <option value="">Все преподаватели</option>
+          {% for t in teachers %}
+            <option value="{{ t.pk }}" {% if selected.teacher == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        <select name="course" class="ok-input">
+          <option value="">Все курсы</option>
+          {% for c in courses %}
+            <option value="{{ c.pk }}" {% if selected.course == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <label class="ok-mon-filter-label">Дата занятия
+          <span class="ok-mon-filter-range">
+            <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}">
+            <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}">
+          </span>
+        </label>
+        <label class="ok-mon-filter-label">Дедлайн
+          <span class="ok-mon-filter-range">
+            <input type="date" name="deadline_from" class="ok-input" value="{{ selected.deadline_from }}">
+            <input type="date" name="deadline_to" class="ok-input" value="{{ selected.deadline_to }}">
+          </span>
+        </label>
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-journal-check"></i><span>Домашние задания</span></div>
+    <div class="ok-card-body">
+      {% if rows %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Название</th><th>Группа</th><th>Предмет</th><th>Преподаватель</th>
+                <th>Создано</th><th>Дедлайн</th><th>Студентов</th><th>Сдали</th><th>Проверено</th><th>Статус</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  <td>{{ row.obj.title }}</td>
+                  <td>{{ row.group.name }}</td>
+                  <td>{{ row.subject.name|default:"—" }}</td>
+                  <td>{{ row.teacher|default:"—" }}</td>
+                  <td>{{ row.obj.created_at|date:"d.m.Y" }}</td>
+                  <td>{{ row.obj.deadline|date:"d.m.Y"|default:"—" }}</td>
+                  <td>{{ row.students_total }}</td>
+                  <td>{{ row.submitted }}</td>
+                  <td>{{ row.checked }}</td>
+                  <td><span class="ok-badge {{ row.status_css }}"><span class="ok-badge-dot"></span>{{ row.status_label }}</span></td>
+                  <td>
+                    <a class="ok-btn-secondary ok-btn-sm" href="{{ row.detail_url }}" title="Открыть">
+                      <i class="bi bi-eye"></i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "admin/academy/group/workspace/_pagination.html" with page_obj=rows %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-journal-text"></i>
+          <h4>Домашние задания пока не созданы</h4>
+          <p>Преподаватель создаёт домашние задания на странице своего занятия — они появятся здесь автоматически.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
