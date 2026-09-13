@@ -1,0 +1,258 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content_title %}Занятия{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{{ changelist_url }}">Занятия</a></li>
+    <li class="breadcrumb-item">№{{ lesson.lesson_number }} — {{ group.name }}</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <div class="ok-card">
+    <div class="ok-card-body ok-mon-detail-header">
+      <div>
+        <div class="ok-mon-detail-title">Занятие №{{ lesson.lesson_number }} — {{ group.name }}</div>
+        <div class="ok-help-text" style="margin:0.2rem 0 0;">
+          {{ subject.name|default:"без предмета" }} · {{ lesson.date|date:"d.m.Y" }} · {{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}
+        </div>
+      </div>
+      {% if lesson.status == "completed" %}
+        <span class="ok-badge ok-badge-success ok-mon-detail-badge"><span class="ok-badge-dot"></span>Завершено</span>
+      {% elif lesson.status == "cancelled" %}
+        <span class="ok-badge ok-badge-danger ok-mon-detail-badge"><span class="ok-badge-dot"></span>Отменено</span>
+      {% else %}
+        <span class="ok-badge ok-badge-muted ok-mon-detail-badge"><span class="ok-badge-dot"></span>Запланировано</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ok-kpi-grid">
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
+      <div class="ok-kpi-value">{{ kpi.students_count }}</div>
+      <div class="ok-kpi-label">Студентов в группе</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.present_count }}</div>
+      <div class="ok-kpi-label">Присутствовали</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.absent_count }}</div>
+      <div class="ok-kpi-label">Отсутствовали</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-journal-text"></i></div>
+      <div class="ok-kpi-value">{{ kpi.homework_count }}</div>
+      <div class="ok-kpi-label">Домашних заданий</div>
+    </div>
+    {% if kpi.checked_results_total is not None %}
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-patch-check"></i></div>
+        <div class="ok-kpi-value">{{ kpi.checked_results_total }}</div>
+        <div class="ok-kpi-label">Проверено результатов</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-info-circle"></i><span>Информация о занятии</span></div>
+    <div class="ok-card-body">
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label">Группа</label>
+          <div class="ok-static-value">{{ group.name }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Курс</label>
+          <div class="ok-static-value">{{ group.course.name|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Программа</label>
+          <div class="ok-static-value">{{ teacher|default:"—" }} — {{ subject.name|default:"без предмета" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Предмет</label>
+          <div class="ok-static-value">{{ subject.name|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Преподаватель</label>
+          <div class="ok-static-value">{{ teacher|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Номер занятия</label>
+          <div class="ok-static-value">№{{ lesson.lesson_number }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Дата</label>
+          <div class="ok-static-value">{{ lesson.date|date:"d.m.Y" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Время</label>
+          <div class="ok-static-value">{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Аудитория</label>
+          <div class="ok-static-value">{{ lesson.room.name|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Статус</label>
+          <div class="ok-static-value">{{ lesson.get_status_display }}</div>
+        </div>
+        {% if lesson.status == "cancelled" and lesson.cancellation_reason %}
+          <div class="ok-field-group ok-grid-full">
+            <label class="ok-label">Причина отмены</label>
+            <div class="ok-static-value">{{ lesson.cancellation_reason }}</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-journal-richtext"></i><span>Учебное содержание</span></div>
+    <div class="ok-card-body">
+      <div class="ok-grid-2">
+        <div class="ok-field-group ok-grid-full">
+          <label class="ok-label">Тема</label>
+          <div class="ok-static-value">{{ lesson.topic|default:"Не указано" }}</div>
+        </div>
+        <div class="ok-field-group ok-grid-full">
+          <label class="ok-label">Описание</label>
+          <div class="ok-static-value">{{ lesson.description|default:"Не указано"|linebreaksbr }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">YouTube</label>
+          <div class="ok-static-value">
+            {% if lesson.youtube_url %}
+              <a href="{{ lesson.youtube_url }}" target="_blank" rel="noopener"><i class="bi bi-youtube"></i> Открыть видео</a>
+            {% else %}Не указано{% endif %}
+          </div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Презентации</label>
+          <div class="ok-static-value">
+            {% if lesson.presentation_urls %}
+              {% for url in lesson.presentation_urls %}
+                <div><a href="{{ url }}" target="_blank" rel="noopener"><i class="bi bi-easel2"></i> Презентация {{ forloop.counter }}</a></div>
+              {% endfor %}
+            {% else %}Не указано{% endif %}
+          </div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">План курса</label>
+          <div class="ok-static-value">
+            {% if lesson.plan %}
+              {% if course_lesson_plan_url %}<a href="{{ course_lesson_plan_url }}">№{{ lesson.plan.lesson_number }} — {{ lesson.plan.topic }}</a>{% else %}№{{ lesson.plan.lesson_number }} — {{ lesson.plan.topic }}{% endif %}
+            {% else %}Не указано{% endif %}
+          </div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Индивидуальный план программы</label>
+          <div class="ok-static-value">
+            {% if lesson.individual_plan %}
+              {% if individual_plan_program_url %}<a href="{{ individual_plan_program_url }}">№{{ lesson.individual_plan.lesson_number }} — {{ lesson.individual_plan.topic }}</a>{% else %}№{{ lesson.individual_plan.lesson_number }} — {{ lesson.individual_plan.topic }}{% endif %}
+            {% else %}Не указано{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-clipboard-check"></i><span>Посещаемость</span>
+      <a class="ok-btn-secondary ok-btn-sm ok-card-header-action" href="{{ attendance_url }}">Открыть всю посещаемость →</a>
+    </div>
+    <div class="ok-card-body">
+      {% if attendance_records %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead><tr><th>Студент</th><th>Статус</th><th>Комментарий</th></tr></thead>
+            <tbody>
+              {% for record in attendance_records %}
+                <tr>
+                  <td>{{ record.student }}</td>
+                  <td>
+                    {% if record.status == "present" %}
+                      <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Присутствовал</span>
+                    {% elif record.status == "absent" %}
+                      <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Отсутствовал</span>
+                    {% elif record.status == "late" %}
+                      <span class="ok-badge ok-badge-warning"><span class="ok-badge-dot"></span>Опоздал</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Уважительная причина</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ record.comment|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-clipboard-check"></i>
+          <h4>Посещаемость ещё не отмечена</h4>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-journal-text"></i><span>Домашнее задание</span></div>
+    <div class="ok-card-body">
+      {% if homework_rows %}
+        {% for row in homework_rows %}
+          <div class="ok-mon-homework-row">
+            <div>
+              <div class="ok-mon-homework-title">{{ row.obj.title }}</div>
+              <div class="ok-help-text" style="margin:0.15rem 0 0;">
+                {{ row.obj.description|default:"Без описания"|truncatechars:80 }}
+              </div>
+              <div class="okan-mini-stats" style="margin-top:0.5rem;">
+                <div class="okan-mini-stat">Дедлайн: <strong>{{ row.obj.deadline|date:"d.m.Y"|default:"без срока" }}</strong></div>
+                <div class="okan-mini-stat">Студентов: <strong>{{ row.students_total }}</strong></div>
+                <div class="okan-mini-stat">Сдали: <strong>{{ row.submitted }}</strong></div>
+                <div class="okan-mini-stat">Проверено: <strong>{{ row.checked }}</strong></div>
+                {% if row.avg_score is not None %}
+                  <div class="okan-mini-stat">Средний балл: <strong>{{ row.avg_score }}/10</strong></div>
+                {% endif %}
+              </div>
+            </div>
+            <a class="ok-btn-secondary ok-btn-sm" href="{{ row.detail_url }}">Открыть домашнее задание →</a>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-journal-text"></i>
+          <h4>Для этого занятия домашнее задание ещё не создано</h4>
+          <p>Домашнее задание создаёт преподаватель на странице своего занятия.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-signpost-split"></i><span>Переходы</span></div>
+    <div class="ok-card-body ok-quick-actions">
+      <a href="{{ group_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-people"></i> Открыть группу</a>
+      {% if program_url %}
+        <a href="{{ program_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-kanban"></i> Открыть программу</a>
+      {% endif %}
+      <a href="{{ schedule_tab_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-calendar-week"></i> Открыть расписание</a>
+      {% if teacher_url %}
+        <a href="{{ teacher_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-person-badge"></i> Открыть преподавателя</a>
+      {% endif %}
+      <a href="{{ attendance_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-clipboard-check"></i> Открыть посещаемость</a>
+      <a href="{{ changelist_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-arrow-left"></i> Назад к занятиям</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

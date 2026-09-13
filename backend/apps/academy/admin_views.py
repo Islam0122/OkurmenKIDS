@@ -472,7 +472,7 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
         "materials": materials,
         "group_url": reverse("admin:academy_group_change", args=[group.pk]),
         "group_teacher_url": reverse("admin:academy_groupteacher_change", args=[group_teacher.pk]),
-        "lessons_url": f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={group_teacher.pk}",
+        "lessons_url": f"{reverse('admin:academy_lesson_changelist')}?group_teacher={group_teacher.pk}",
         "attendance_url": f"{reverse('admin:academy_attendance_changelist')}?group_teacher={group_teacher.pk}",
         "homework_url": f"{reverse('admin:academy_homework_changelist')}?group_teacher={group_teacher.pk}",
         "homework_results_url": (
@@ -1334,13 +1334,17 @@ def group_workspace_generate_lessons_view(request, group_id):
 
 def _effective_teacher_q(prefix: str, teacher_id) -> "Q":
     """Q matching the Lesson `teacher_id` actually gives, reached through
-    `prefix` (e.g. "lesson" or "homework__lesson") — the same effective-
-    teacher rule as Lesson.effective_teacher / LessonQuerySet.for_teacher:
-    the lesson's own explicit teacher when the generator set one, else its
-    GroupTeacher's own teacher.
+    `prefix` (e.g. "lesson", "homework__lesson", or "" for a queryset of
+    Lesson itself) — the same effective-teacher rule as
+    Lesson.effective_teacher / LessonQuerySet.for_teacher: the lesson's own
+    explicit teacher when the generator set one, else its GroupTeacher's
+    own teacher.
     """
-    return Q(**{f"{prefix}__teacher_id": teacher_id}) | Q(
-        **{f"{prefix}__teacher__isnull": True, f"{prefix}__group_teacher__teacher_id": teacher_id}
+    def field(name: str) -> str:
+        return f"{prefix}__{name}" if prefix else name
+
+    return Q(**{field("teacher_id"): teacher_id}) | Q(
+        **{field("teacher__isnull"): True, field("group_teacher__teacher_id"): teacher_id}
     )
 
 
@@ -1357,6 +1361,7 @@ def attendance_monitor_view(request):
     date_from = request.GET.get("date_from") or ""
     date_to = request.GET.get("date_to") or ""
     group_teacher_id = request.GET.get("group_teacher") or ""
+    lesson_id = request.GET.get("lesson") or ""
 
     records_qs = Attendance.objects.select_related(
         "student",
@@ -1394,6 +1399,8 @@ def attendance_monitor_view(request):
         records_qs = records_qs.filter(status=status_filter)
     if group_teacher_id:
         records_qs = records_qs.filter(lesson__group_teacher_id=group_teacher_id)
+    if lesson_id:
+        records_qs = records_qs.filter(lesson_id=lesson_id)
     parsed = _parse_date(date_from, None)
     if parsed:
         records_qs = records_qs.filter(lesson__date__gte=parsed)
@@ -1867,3 +1874,226 @@ def homeworkresult_detail_view(request, object_id):
         "teacher_url": reverse("admin:users_teacher_change", args=[teacher.pk]) if teacher else None,
     }
     return render(request, "admin/academy/homeworkresult/detail.html", context)
+
+
+def lesson_monitor_view(request):
+    _require_admin(request)
+    today = timezone.localdate()
+    week_start = _week_start(today)
+    week_end = week_start + dt.timedelta(days=6)
+
+    search = (request.GET.get("q") or "").strip()
+    group_id = request.GET.get("group") or ""
+    subject_id = request.GET.get("subject") or ""
+    teacher_id = request.GET.get("teacher") or ""
+    room_id = request.GET.get("room") or ""
+    status_filter = request.GET.get("status") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
+    group_teacher_id = request.GET.get("group_teacher") or ""
+
+    lessons_qs = Lesson.objects.select_related(
+        "group",
+        "group__course",
+        "room",
+        "subject",
+        "teacher__user",
+        "group_teacher__teacher__user",
+        "group_teacher__subject",
+    )
+
+    if search:
+        lessons_qs = lessons_qs.filter(
+            Q(group__name__icontains=search)
+            | Q(topic__icontains=search)
+            | Q(subject__name__icontains=search)
+            | Q(teacher__user__first_name__icontains=search)
+            | Q(teacher__user__last_name__icontains=search)
+            | Q(group_teacher__teacher__user__first_name__icontains=search)
+            | Q(group_teacher__teacher__user__last_name__icontains=search)
+        )
+    if group_id:
+        lessons_qs = lessons_qs.filter(group_id=group_id)
+    if subject_id:
+        lessons_qs = lessons_qs.filter(subject_id=subject_id)
+    if teacher_id:
+        lessons_qs = lessons_qs.filter(_effective_teacher_q("", teacher_id))
+    if room_id:
+        lessons_qs = lessons_qs.filter(room_id=room_id)
+    if status_filter:
+        lessons_qs = lessons_qs.filter(status=status_filter)
+    if group_teacher_id:
+        lessons_qs = lessons_qs.filter(group_teacher_id=group_teacher_id)
+    parsed = _parse_date(date_from, None)
+    if parsed:
+        lessons_qs = lessons_qs.filter(date__gte=parsed)
+    parsed = _parse_date(date_to, None)
+    if parsed:
+        lessons_qs = lessons_qs.filter(date__lte=parsed)
+
+    lessons_qs = lessons_qs.order_by("-date", "-start_time")
+
+    total = lessons_qs.count()
+    today_count = lessons_qs.filter(date=today).count()
+    upcoming = lessons_qs.filter(status=Lesson.Status.PLANNED, date__gte=today).count()
+    completed = lessons_qs.filter(status=Lesson.Status.COMPLETED).count()
+    cancelled = lessons_qs.filter(status=Lesson.Status.CANCELLED).count()
+    this_week = lessons_qs.filter(date__gte=week_start, date__lte=week_end).count()
+
+    paginator = Paginator(lessons_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    selected = {
+        "q": search, "group": group_id, "subject": subject_id, "teacher": teacher_id, "room": room_id,
+        "status": status_filter, "date_from": date_from, "date_to": date_to,
+    }
+
+    def _quick_url(params: dict) -> str:
+        qs = "&".join(f"{key}={value}" for key, value in params.items() if value)
+        return f"{reverse('admin:academy_lesson_changelist')}{'?' + qs if qs else ''}"
+
+    quick_presets = [
+        {"label": "Все", "params": {}},
+        {"label": "Сегодня", "params": {"date_from": today.isoformat(), "date_to": today.isoformat()}},
+        {"label": "Предстоящие", "params": {"status": Lesson.Status.PLANNED, "date_from": today.isoformat()}},
+        {"label": "Завершённые", "params": {"status": Lesson.Status.COMPLETED}},
+        {"label": "Отменённые", "params": {"status": Lesson.Status.CANCELLED}},
+    ]
+    quick_filters = [
+        {
+            "label": preset["label"],
+            "url": _quick_url(preset["params"]),
+            "active": (
+                selected["status"] == preset["params"].get("status", "")
+                and selected["date_from"] == preset["params"].get("date_from", "")
+                and selected["date_to"] == preset["params"].get("date_to", "")
+            ),
+        }
+        for preset in quick_presets
+    ]
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Занятия",
+        "subtitle": "Просмотр и контроль учебных занятий академии.",
+        "lessons": page_obj,
+        "kpi": {
+            "total": total,
+            "today": today_count,
+            "upcoming": upcoming,
+            "completed": completed,
+            "cancelled": cancelled,
+            "this_week": this_week,
+        },
+        "quick_filters": quick_filters,
+        "groups": Group.objects.order_by("name"),
+        "subjects": Subject.objects.filter(is_active=True).order_by("name"),
+        "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
+        "rooms": Room.objects.filter(is_active=True).order_by("name"),
+        "status_choices": Lesson.Status.choices,
+        "selected": selected,
+        "reset_url": reverse("admin:academy_lesson_changelist"),
+        "schedule_url": reverse("admin:academy_schedule"),
+    }
+    return render(request, "admin/academy/lesson/change_list.html", context)
+
+
+def lesson_detail_view(request, object_id):
+    _require_admin(request)
+    lesson = get_object_or_404(
+        Lesson.objects.select_related(
+            "group",
+            "group__course",
+            "room",
+            "subject",
+            "plan",
+            "individual_plan",
+            "teacher__user",
+            "group_teacher__teacher__user",
+            "group_teacher__subject",
+        ),
+        pk=object_id,
+    )
+    group = lesson.group
+    subject = lesson.subject or (lesson.group_teacher.subject if lesson.group_teacher_id else None)
+    teacher = lesson.effective_teacher
+
+    students_count = group.students_count
+    attendance_qs = Attendance.objects.filter(lesson=lesson).select_related("student")
+    present_count = attendance_qs.filter(status=Attendance.Status.PRESENT).count()
+    absent_count = attendance_qs.filter(status=Attendance.Status.ABSENT).count()
+
+    homeworks = list(
+        Homework.objects.filter(lesson=lesson).annotate(
+            results_total=Count("results", distinct=True),
+            results_checked=Count(
+                "results", filter=Q(results__status=HomeworkResult.Status.CHECKED), distinct=True
+            ),
+            results_submitted=Count(
+                "results",
+                filter=Q(
+                    results__status__in=[
+                        HomeworkResult.Status.SUBMITTED,
+                        HomeworkResult.Status.LATE,
+                        HomeworkResult.Status.CHECKED,
+                    ]
+                ),
+                distinct=True,
+            ),
+        )
+    )
+    homework_rows = []
+    for hw in homeworks:
+        avg_score = (
+            HomeworkResult.objects.filter(homework=hw).exclude(score__isnull=True).aggregate(avg=Avg("score"))["avg"]
+        )
+        homework_rows.append(
+            {
+                "obj": hw,
+                "students_total": students_count,
+                "submitted": hw.results_submitted,
+                "checked": hw.results_checked,
+                "avg_score": round(avg_score, 1) if avg_score is not None else None,
+                "detail_url": reverse("admin:academy_homework_change", args=[hw.pk]),
+            }
+        )
+    checked_results_total = sum(hw.results_checked for hw in homeworks) if homeworks else None
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Занятия",
+        "lesson": lesson,
+        "group": group,
+        "subject": subject,
+        "teacher": teacher,
+        "kpi": {
+            "students_count": students_count,
+            "present_count": present_count,
+            "absent_count": absent_count,
+            "homework_count": len(homeworks),
+            "checked_results_total": checked_results_total,
+        },
+        "attendance_records": list(
+            attendance_qs.order_by("student__last_name", "student__first_name")
+        ),
+        "homework_rows": homework_rows,
+        "changelist_url": reverse("admin:academy_lesson_changelist"),
+        "group_url": reverse("admin:academy_group_workspace", args=[group.pk]),
+        "program_url": (
+            reverse("admin:academy_groupteacher_workspace", args=[lesson.group_teacher_id])
+            if lesson.group_teacher_id
+            else None
+        ),
+        "schedule_tab_url": reverse("admin:academy_group_workspace_schedule", args=[group.pk]),
+        "teacher_url": reverse("admin:users_teacher_change", args=[teacher.pk]) if teacher else None,
+        "attendance_url": f"{reverse('admin:academy_attendance_changelist')}?lesson={lesson.pk}",
+        "course_lesson_plan_url": (
+            reverse("admin:academy_courselessonplan_change", args=[lesson.plan_id]) if lesson.plan_id else None
+        ),
+        "individual_plan_program_url": (
+            reverse("admin:academy_groupteacher_change", args=[lesson.individual_plan.group_teacher_id])
+            if lesson.individual_plan_id
+            else None
+        ),
+    }
+    return render(request, "admin/academy/lesson/detail.html", context)

@@ -63,7 +63,6 @@
         <span class="oksch-range">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span>
     </div>
     <div class="oksch-quick-actions">
-        <a class="btn btn-success btn-sm" href="{% url 'admin:academy_lesson_add' %}">+ Создать занятие</a>
         {% if selected_group %}
             <form method="post" action="{% url 'admin:academy_schedule_generate_lessons' selected_group.id %}" style="display:inline;">
                 {% csrf_token %}

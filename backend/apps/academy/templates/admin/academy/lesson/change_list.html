@@ -1,0 +1,156 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} ok-mon-page-body{% endblock %}
+
+{% block content_title %}Занятия{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item">Занятия</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <div class="ok-mon-page-head">
+    <p class="ok-page-subtitle">{{ subtitle }}</p>
+    <a href="{{ schedule_url }}" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-calendar3"></i> Перейти к расписанию</a>
+  </div>
+
+  <div class="ok-kpi-grid">
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-list-ul"></i></div>
+      <div class="ok-kpi-value">{{ kpi.total }}</div>
+      <div class="ok-kpi-label">Всего занятий</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-calendar-day"></i></div>
+      <div class="ok-kpi-value">{{ kpi.today }}</div>
+      <div class="ok-kpi-label">Сегодня</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+      <div class="ok-kpi-value">{{ kpi.upcoming }}</div>
+      <div class="ok-kpi-label">Предстоящие</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.completed }}</div>
+      <div class="ok-kpi-label">Завершённые</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.cancelled }}</div>
+      <div class="ok-kpi-label">Отменённые</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-calendar-week"></i></div>
+      <div class="ok-kpi-value">{{ kpi.this_week }}</div>
+      <div class="ok-kpi-label">На этой неделе</div>
+    </div>
+  </div>
+
+  <div class="ok-mon-quick-filters">
+    {% for chip in quick_filters %}
+      <a class="ok-mon-chip{% if chip.active %} active{% endif %}" href="{{ chip.url }}">{{ chip.label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-funnel"></i><span>Фильтры</span></div>
+    <div class="ok-card-body">
+      <form method="get" class="ok-group-toolbar">
+        <input type="text" name="q" class="ok-input" placeholder="Группа, тема, преподаватель, предмет..." value="{{ selected.q }}">
+        <select name="group" class="ok-input">
+          <option value="">Все группы</option>
+          {% for g in groups %}
+            <option value="{{ g.pk }}" {% if selected.group == g.pk|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="subject" class="ok-input">
+          <option value="">Все предметы</option>
+          {% for subj in subjects %}
+            <option value="{{ subj.pk }}" {% if selected.subject == subj.pk|stringformat:"s" %}selected{% endif %}>{{ subj.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="teacher" class="ok-input">
+          <option value="">Все преподаватели</option>
+          {% for t in teachers %}
+            <option value="{{ t.pk }}" {% if selected.teacher == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        <select name="room" class="ok-input">
+          <option value="">Все аудитории</option>
+          {% for r in rooms %}
+            <option value="{{ r.pk }}" {% if selected.room == r.pk|stringformat:"s" %}selected{% endif %}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="status" class="ok-input">
+          <option value="">Все статусы</option>
+          {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}">
+        <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}">
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-easel"></i><span>Занятия</span></div>
+    <div class="ok-card-body">
+      {% if lessons %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Дата</th><th>Время</th><th>Группа</th><th>Предмет</th><th>Преподаватель</th>
+                <th>Аудитория</th><th>Тема</th><th>Статус</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for lesson in lessons %}
+                <tr>
+                  <td>{{ lesson.date|date:"d.m.Y" }}</td>
+                  <td>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</td>
+                  <td>{{ lesson.group.name }}</td>
+                  <td>{{ lesson.subject.name|default:"—" }}</td>
+                  <td>{{ lesson.effective_teacher|default:"—" }}</td>
+                  <td>{{ lesson.room.name|default:"—" }}</td>
+                  <td>{{ lesson.topic|default:"—"|truncatechars:40 }}</td>
+                  <td>
+                    {% if lesson.status == "completed" %}
+                      <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Завершено</span>
+                    {% elif lesson.status == "cancelled" %}
+                      <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Отменено</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Запланировано</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_lesson_change' lesson.pk %}" title="Открыть">
+                      <i class="bi bi-eye"></i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "admin/academy/group/workspace/_pagination.html" with page_obj=lessons %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-easel"></i>
+          <h4>Занятий пока нет</h4>
+          <p>Занятия создаются генератором на странице группы — Программы → Сгенерировать занятия.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
