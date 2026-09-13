@@ -842,20 +842,6 @@ class GroupAdmin(admin.ModelAdmin):
                 {"fields": ("created_at", "updated_at"), "classes": tab_system},
             ),
         ]
-        if obj is not None:
-            fieldsets.append(
-                (
-                    "Устаревшие поля",
-                    {
-                        "fields": ("teacher", "room", "start_time", "end_time", "days_of_week"),
-                        "description": (
-                            "Оставлены только для совместимости со старыми данными. Не используются "
-                            "и не редактируются — реальное расписание задаётся в рабочем пространстве группы."
-                        ),
-                        "classes": tab_system,
-                    },
-                )
-            )
         return fieldsets
 
     def get_queryset(self, request):
