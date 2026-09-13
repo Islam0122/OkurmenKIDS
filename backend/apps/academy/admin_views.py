@@ -39,6 +39,7 @@ from .models import (
     Student,
 )
 from .services.analytics import get_dashboard
+from .services.group_schedule_conflicts import overlapping_groups
 from .services.lesson_generator import (
     LessonGenerationError,
     generate_lessons_for_group,
@@ -70,22 +71,48 @@ def _week_start(day: dt.date) -> dt.date:
     return day - dt.timedelta(days=day.weekday())
 
 
-def _time_ranges_overlap(a: Lesson, b: Lesson) -> bool:
-    return a.start_time < b.end_time and b.start_time < a.end_time
+def _lesson_status_kpi(lessons_qs, today: dt.date) -> dict:
+    """The one, shared definition of "how many lessons are total/today/
+    upcoming/completed/cancelled/this week" for a given (already filtered)
+    Lesson queryset — used by both the Group Workspace overview and the
+    Lessons monitoring page, so the same underlying data never reports two
+    different numbers in two different places (spec: no duplicate source of
+    truth for lesson statistics).
+
+    Status-based, not date-based: "completed"/"cancelled" reflect the real
+    `Lesson.status` value only — a lesson is never inferred as completed
+    just because its date has passed, since status requires an explicit
+    transition (by the teacher, through their own workspace/API). "Upcoming"
+    is the complement: still planned, and not yet in the past.
+    """
+    week_start = _week_start(today)
+    week_end = week_start + dt.timedelta(days=6)
+    return {
+        "total": lessons_qs.count(),
+        "today": lessons_qs.filter(date=today).count(),
+        "upcoming": lessons_qs.filter(status=Lesson.Status.PLANNED, date__gte=today).count(),
+        "completed": lessons_qs.filter(status=Lesson.Status.COMPLETED).count(),
+        "cancelled": lessons_qs.filter(status=Lesson.Status.CANCELLED).count(),
+        "this_week": lessons_qs.filter(date__gte=week_start, date__lte=week_end).count(),
+    }
 
 
-def _detect_conflicts(lessons: Iterable[Lesson]) -> tuple[list[dict], list[dict], set[int]]:
-    """Pairwise-overlap check within the lessons currently on screen.
+def _detect_conflicts(lessons: Iterable[Lesson]) -> tuple[list[dict], list[dict], list[dict], set[int]]:
+    """Group-overlap check within the lessons currently on screen.
 
-    Cancelled lessons never conflict with anything — a room/teacher freed up
-    by a cancellation isn't a clash. Returns (teacher_conflicts,
-    room_conflicts, conflicting_lesson_ids) so the template can both list
-    the conflicts and flag the individual cards.
+    Cancelled lessons never conflict with anything — a room/teacher/group
+    slot freed up by a cancellation isn't a clash. Returns (teacher_conflicts,
+    room_conflicts, group_conflicts, conflicting_lesson_ids) so the template
+    can both list the conflicts and flag the individual cards. Each of the
+    three lists holds *one* entry per genuinely conflicting cluster (see
+    services.group_schedule_conflicts.overlapping_groups) — never one entry
+    per pair.
     """
     active = [lesson for lesson in lessons if lesson.status != Lesson.Status.CANCELLED]
 
     by_teacher: dict[tuple[int | None, dt.date], list[Lesson]] = defaultdict(list)
     by_room: dict[tuple[int, dt.date], list[Lesson]] = defaultdict(list)
+    by_group: dict[tuple[int, dt.date], list[Lesson]] = defaultdict(list)
     for lesson in active:
         # Keyed on the lesson's *actual* teacher (Lesson.effective_teacher —
         # its own `teacher` when the generator set one, i.e. a specific
@@ -99,33 +126,27 @@ def _detect_conflicts(lessons: Iterable[Lesson]) -> tuple[list[dict], list[dict]
         by_teacher[(effective_teacher.id if effective_teacher else None, lesson.date)].append(lesson)
         if lesson.room_id:
             by_room[(lesson.room_id, lesson.date)].append(lesson)
+        # A Group cannot physically attend two programs at once — checked
+        # even when teacher and room both differ (see
+        # services.group_schedule_conflicts.find_schedule_group_conflict).
+        by_group[(lesson.group_id, lesson.date)].append(lesson)
 
     conflicting_ids: set[int] = set()
 
-    def _pairwise_conflicts(buckets, label_fn):
+    def _grouped_conflicts(buckets, label_fn):
         found = []
         for key, bucket in buckets.items():
-            if len(bucket) < 2:
-                continue
-            bucket = sorted(bucket, key=lambda l: l.start_time)
-            for i in range(len(bucket)):
-                for j in range(i + 1, len(bucket)):
-                    if _time_ranges_overlap(bucket[i], bucket[j]):
-                        conflicting_ids.add(bucket[i].id)
-                        conflicting_ids.add(bucket[j].id)
-                        found.append(
-                            {
-                                "label": label_fn(bucket[i]),
-                                "date": key[1],
-                                "lessons": [bucket[i], bucket[j]],
-                            }
-                        )
+            for group in overlapping_groups(bucket):
+                for lesson in group:
+                    conflicting_ids.add(lesson.id)
+                found.append({"label": label_fn(group[0]), "date": key[1], "lessons": group})
         return found
 
-    teacher_conflicts = _pairwise_conflicts(by_teacher, lambda l: str(l.effective_teacher))
-    room_conflicts = _pairwise_conflicts(by_room, lambda l: str(l.room))
+    teacher_conflicts = _grouped_conflicts(by_teacher, lambda l: str(l.effective_teacher))
+    room_conflicts = _grouped_conflicts(by_room, lambda l: str(l.room))
+    group_conflicts = _grouped_conflicts(by_group, lambda l: str(l.group))
 
-    return teacher_conflicts, room_conflicts, conflicting_ids
+    return teacher_conflicts, room_conflicts, group_conflicts, conflicting_ids
 
 
 def schedule_view(request):
@@ -184,7 +205,7 @@ def schedule_view(request):
         lessons_qs = lessons_qs.filter(status=status)
 
     lessons = list(lessons_qs)
-    teacher_conflicts, room_conflicts, conflicting_ids = _detect_conflicts(lessons)
+    teacher_conflicts, room_conflicts, group_conflicts, conflicting_ids = _detect_conflicts(lessons)
 
     days = []
     cursor = date_from
@@ -236,6 +257,7 @@ def schedule_view(request):
         },
         "teacher_conflicts": teacher_conflicts,
         "room_conflicts": room_conflicts,
+        "group_conflicts": group_conflicts,
         "conflicting_ids": conflicting_ids,
         "prev_week_url": _nav_url(week_start - dt.timedelta(days=7)),
         "next_week_url": _nav_url(week_start + dt.timedelta(days=7)),
@@ -548,9 +570,7 @@ def group_workspace_overview_view(request, group_id):
     group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
     today = timezone.localdate()
 
-    lessons_qs = Lesson.objects.filter(group=group)
-    completed_count = lessons_qs.filter(status=Lesson.Status.COMPLETED).count()
-    upcoming_count = lessons_qs.filter(status=Lesson.Status.PLANNED, date__gte=today).count()
+    lesson_kpi = _lesson_status_kpi(Lesson.objects.filter(group=group), today)
 
     attendance_qs = Attendance.objects.filter(lesson__group=group)
     attendance_total = attendance_qs.count()
@@ -594,8 +614,9 @@ def group_workspace_overview_view(request, group_id):
                 "students": group.students_count,
                 "teachers": len({gt.teacher_id for gt in programs}),
                 "programs": len(programs),
-                "upcoming_lessons": upcoming_count,
-                "completed_lessons": completed_count,
+                "upcoming_lessons": lesson_kpi["upcoming"],
+                "completed_lessons": lesson_kpi["completed"],
+                "cancelled_lessons": lesson_kpi["cancelled"],
                 "attendance_rate": attendance_rate,
             },
             "period_label": period_label,
@@ -1263,7 +1284,7 @@ def group_workspace_analytics_view(request, group_id):
     group = get_object_or_404(Group, pk=group_id)
     today = timezone.localdate()
 
-    lessons_qs = Lesson.objects.filter(group=group)
+    lesson_kpi = _lesson_status_kpi(Lesson.objects.filter(group=group), today)
     attendance_qs = Attendance.objects.filter(lesson__group=group)
     attendance_total = attendance_qs.count()
     attendance_present = attendance_qs.filter(
@@ -1281,10 +1302,9 @@ def group_workspace_analytics_view(request, group_id):
             "stats": {
                 "students_count": group.students_count,
                 "programs_count": group.teachers.filter(is_active=True).count(),
-                "completed_lessons": lessons_qs.filter(status=Lesson.Status.COMPLETED).count(),
-                "upcoming_lessons": lessons_qs.filter(
-                    status=Lesson.Status.PLANNED, date__gte=today
-                ).count(),
+                "completed_lessons": lesson_kpi["completed"],
+                "cancelled_lessons": lesson_kpi["cancelled"],
+                "upcoming_lessons": lesson_kpi["upcoming"],
                 "attendance_rate": (
                     round(100 * attendance_present / attendance_total, 1) if attendance_total else None
                 ),
@@ -1306,8 +1326,10 @@ def group_workspace_generate_lessons_view(request, group_id):
     report = generate_lessons_for_group_with_report(group)
 
     summary_parts = [f"Создано: {report.created}", f"Уже существовало: {report.already_existed}"]
-    if report.conflicts_skipped:
-        summary_parts.append(f"Конфликтов пропущено: {report.conflicts_skipped}")
+    if report.skipped:
+        summary_parts.append(f"Пропущено: {report.skipped}")
+    if report.conflicts:
+        summary_parts.append(f"Конфликтов: {report.conflicts}")
     summary_parts.append(f"Ошибок: {len(report.errors)}")
 
     level = messages.SUCCESS if report.created or not report.errors else messages.WARNING
@@ -1879,8 +1901,6 @@ def homeworkresult_detail_view(request, object_id):
 def lesson_monitor_view(request):
     _require_admin(request)
     today = timezone.localdate()
-    week_start = _week_start(today)
-    week_end = week_start + dt.timedelta(days=6)
 
     search = (request.GET.get("q") or "").strip()
     group_id = request.GET.get("group") or ""
@@ -1932,13 +1952,7 @@ def lesson_monitor_view(request):
         lessons_qs = lessons_qs.filter(date__lte=parsed)
 
     lessons_qs = lessons_qs.order_by("-date", "-start_time")
-
-    total = lessons_qs.count()
-    today_count = lessons_qs.filter(date=today).count()
-    upcoming = lessons_qs.filter(status=Lesson.Status.PLANNED, date__gte=today).count()
-    completed = lessons_qs.filter(status=Lesson.Status.COMPLETED).count()
-    cancelled = lessons_qs.filter(status=Lesson.Status.CANCELLED).count()
-    this_week = lessons_qs.filter(date__gte=week_start, date__lte=week_end).count()
+    kpi = _lesson_status_kpi(lessons_qs, today)
 
     paginator = Paginator(lessons_qs, 25)
     page_obj = paginator.get_page(request.GET.get("page"))
@@ -1977,14 +1991,7 @@ def lesson_monitor_view(request):
         "title": "Занятия",
         "subtitle": "Просмотр и контроль учебных занятий академии.",
         "lessons": page_obj,
-        "kpi": {
-            "total": total,
-            "today": today_count,
-            "upcoming": upcoming,
-            "completed": completed,
-            "cancelled": cancelled,
-            "this_week": this_week,
-        },
+        "kpi": kpi,
         "quick_filters": quick_filters,
         "groups": Group.objects.order_by("name"),
         "subjects": Subject.objects.filter(is_active=True).order_by("name"),

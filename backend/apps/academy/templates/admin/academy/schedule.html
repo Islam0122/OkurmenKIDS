@@ -145,7 +145,7 @@
     </form>
 </div>
 
-{% if teacher_conflicts or room_conflicts %}
+{% if teacher_conflicts or room_conflicts or group_conflicts %}
 <div class="oksch-conflicts">
     {% for conflict in teacher_conflicts %}
         <div class="oksch-conflict-box">
@@ -167,6 +167,18 @@
                 <div class="oksch-conflict-item">
                     <strong>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</strong>
                     {{ lesson.group.name }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+    {% for conflict in group_conflicts %}
+        <div class="oksch-conflict-box">
+            <h4>⚠ Конфликт группы</h4>
+            <div class="oksch-conflict-item"><strong>{{ conflict.label }}</strong> ({{ conflict.date|date:"d.m.Y" }})</div>
+            {% for lesson in conflict.lessons %}
+                <div class="oksch-conflict-item">
+                    <strong>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</strong>
+                    {{ lesson.subject|default:"—" }} · {{ lesson.effective_teacher|default:"—" }}
                 </div>
             {% endfor %}
         </div>

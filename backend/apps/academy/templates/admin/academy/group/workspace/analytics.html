@@ -26,6 +26,11 @@
         <div class="ok-kpi-value">{{ stats.upcoming_lessons }}</div>
         <div class="ok-kpi-label">Предстоящие занятия</div>
       </div>
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div>
+        <div class="ok-kpi-value">{{ stats.cancelled_lessons }}</div>
+        <div class="ok-kpi-label">Отменённые занятия</div>
+      </div>
       {% if stats.attendance_rate is not None %}
         <div class="ok-kpi-card">
           <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
