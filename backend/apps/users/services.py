@@ -112,7 +112,7 @@ def send_teacher_credentials(user: User, password: str) -> None:
     context = {
         "user": user,
         "password": password,
-        "login_url": f"{settings.SITE_URL}/login/",
+        "login_url": f"{settings.SITE_URL}",
         "logo_url":"https://encrypted-tbn0.gstatic.com/images",
     }
 
@@ -126,7 +126,7 @@ def send_teacher_credentials(user: User, password: str) -> None:
         "Ваш аккаунт тренера в системе OkurmenKIDS был создан.\n\n"
         f"Логин: {user.username}\n"
         f"Пароль: {password}\n\n"
-        f"Вход: {settings.SITE_URL}/login/"
+        f"Вход: {settings.SITE_URL}"
     )
 
     email = EmailMultiAlternatives(
