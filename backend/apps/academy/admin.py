@@ -42,6 +42,8 @@ from .admin_views import (
     homework_monitor_view,
     homeworkresult_detail_view,
     homeworkresult_monitor_view,
+    lesson_detail_view,
+    lesson_monitor_view,
     schedule_view,
 )
 from .models import (
@@ -1100,84 +1102,38 @@ class GroupAdmin(admin.ModelAdmin):
 
 
 # ---------------------------------------------------------------------------
-# Lessons — with inline Homework and Attendance, per spec
+# Lessons — Admin's read-only monitoring center (spec: a Lesson is never a
+# standalone CRUD entity for Admin — it only ever comes out of the lesson
+# generator, via Group -> GroupTeacher -> GroupSchedule -> "Сгенерировать
+# занятия"; see services.lesson_generator). Admin watches/searches/filters/
+# drills down and jumps to the related Group/Program/Teacher; a Teacher
+# marks a lesson completed/cancelled and records attendance/homework
+# themselves, through their own lesson workspace (IsAdminOrOwningTeacher —
+# see permissions.py — already lets a Teacher update their own Lessons via
+# the API). Both the changelist and the change view are fully replaced by
+# admin_views.py's lesson_monitor_view/lesson_detail_view; this ModelAdmin
+# exists only to own the URLs and lock the permission checks down at the
+# backend, not just hide buttons with CSS.
 # ---------------------------------------------------------------------------
-
-class HomeworkInline(admin.TabularInline):
-    model = Homework
-    extra = 0
-    fields = ("title", "deadline")
-    show_change_link = True
-
-
-class AttendanceInline(admin.TabularInline):
-    model = Attendance
-    extra = 0
-    fields = ("student", "status", "comment")
-    autocomplete_fields = ("student",)
-
 
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
-    list_display = ("date", "time_range", "group", "lesson_teacher", "subject", "status_badge")
-    list_filter = ("date", "group", "subject", "status", "teacher", "group_teacher")
-    search_fields = ("topic", "description", "group__name")
-    date_hierarchy = "date"
-    ordering = ("date", "start_time")
-    readonly_fields = ("created_at", "updated_at")
-    autocomplete_fields = ("group", "room", "subject", "teacher", "group_teacher")
-    inlines = [HomeworkInline, AttendanceInline]
-    actions = ["mark_completed", "mark_cancelled"]
-    list_per_page = 30
+    def has_add_permission(self, request):
+        return False
 
-    fieldsets = (
-        (
-            "Основное",
-            {
-                "fields": (
-                    "group", "group_teacher", "teacher", "plan", "individual_plan", "lesson_number",
-                    "date", "start_time", "end_time", "room", "subject",
-                )
-            },
-        ),
-        ("Содержание урока", {"fields": ("topic", "description", "youtube_url", "presentation_urls")}),
-        ("Статус", {"fields": ("status", "cancellation_reason")}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
+    def has_change_permission(self, request, obj=None):
+        return False
 
-    def get_queryset(self, request):
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("group__teacher__user", "teacher__user", "room", "subject")
-        )
+    def has_delete_permission(self, request, obj=None):
+        return False
 
-    @admin.display(description="Время")
-    def time_range(self, obj: Lesson) -> str:
-        return f"{obj.start_time.strftime('%H:%M')}–{obj.end_time.strftime('%H:%M')}"
+    actions = None
 
-    @admin.display(description="Тренер", ordering="teacher")
-    def lesson_teacher(self, obj: Lesson):
-        return obj.effective_teacher
+    def changelist_view(self, request, extra_context=None):
+        return lesson_monitor_view(request)
 
-    @admin.display(description="Статус", ordering="status")
-    def status_badge(self, obj: Lesson) -> str:
-        css_map = {
-            Lesson.Status.PLANNED: "ok-badge-muted",
-            Lesson.Status.COMPLETED: "ok-badge-success",
-            Lesson.Status.CANCELLED: "ok-badge-danger",
-        }
-        return _badge(css_map.get(obj.status, "ok-badge-muted"), obj.get_status_display())
-
-    @admin.action(description="Отметить как проведённые")
-    def mark_completed(self, request, queryset):
-        updated = queryset.update(status=Lesson.Status.COMPLETED)
-        self.message_user(request, f"Отмечено проведёнными: {updated}.", messages.SUCCESS)
-
-    @admin.action(description="Отменить выбранные занятия")
-    def mark_cancelled(self, request, queryset):
-        updated = queryset.update(status=Lesson.Status.CANCELLED)
-        self.message_user(request, f"Отменено занятий: {updated}.", messages.SUCCESS)
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        return lesson_detail_view(request, object_id)
 
 
 # ---------------------------------------------------------------------------
