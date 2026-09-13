@@ -14,8 +14,6 @@
 {% block extrastyle %}
     {{ block.super }}
     <style>
-        :root { --okhelp-scroll-offset: 4.5rem; }
-
         .okhelp-page #content { max-width: 1320px; }
 
         .okhelp-hero {
@@ -78,7 +76,16 @@
         @media (max-width: 991px) { .okhelp-nav-wrap { display: none; } .okhelp-mobile-nav { display: block; } }
 
         .okhelp-content { min-width: 0; }
-        .okhelp-section { background: var(--ok-surface, #fff); border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius-lg, .9rem); padding: 1.5rem 1.75rem; margin-bottom: 1.25rem; scroll-margin-top: var(--okhelp-scroll-offset, 4.5rem); }
+        /* Only the section matching the current hash is ever shown — the
+           sidebar is a real navigation, not a scroll-spy over one long
+           page. [hidden] already means display:none via the UA
+           stylesheet; the rule below only adds the reveal animation. */
+        .okhelp-section:not([hidden]) { animation: okhelp-section-in 0.18s ease; }
+        @keyframes okhelp-section-in {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: none; }
+        }
+        .okhelp-section { background: var(--ok-surface, #fff); border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius-lg, .9rem); padding: 1.5rem 1.75rem; margin-bottom: 1.25rem; }
         .okhelp-section h2 { display: flex; align-items: center; gap: 0.6rem; font-size: 1.2rem; font-weight: 700; color: var(--ok-text, #202622); margin: 0 0 0.35rem; }
         .okhelp-section h2 i { color: var(--ok-primary, #2F8F5B); }
         .okhelp-section > p.okhelp-lead { color: var(--ok-text-secondary, #68736C); margin: 0 0 1.1rem; }
@@ -841,94 +848,83 @@
 
     var entryById = {};
     entries.forEach(function (entry) { entryById[entry.id] = entry; });
+    var defaultId = entries[0].id;
 
     // ------------------------------------------------------------------
-    // Scroll offset: Jazzmin's top navbar (.main-header) is fixed, so a
-    // section scrolled flush to the very top would end up hidden behind
-    // it. Measure the header's real rendered height and drive
-    // `scroll-margin-top` from it via a CSS variable — this is what both
-    // scrollIntoView() and the browser's own native "jump to #hash on
-    // load" behavior read, so a single number fixes both.
+    // This is a real "one section at a time" documentation view, not a
+    // scroll-spy over one long page: exactly one <section> is ever
+    // visible, matching the sidebar's active item. Switching sections
+    // never requires scrolling through the other sixteen to get there.
     // ------------------------------------------------------------------
-    function measureHeaderOffset() {
-        var header = document.querySelector(".main-header");
-        var height = header ? Math.ceil(header.getBoundingClientRect().height) : 0;
-        return (height > 0 ? height : 56) + 16;
-    }
+    function showSection(id) {
+        var entry = entryById[id];
+        if (!entry) { return false; }
 
-    function applyScrollOffset() {
-        document.documentElement.style.setProperty("--okhelp-scroll-offset", measureHeaderOffset() + "px");
-    }
-
-    applyScrollOffset();
-    window.addEventListener("resize", applyScrollOffset);
-
-    // ------------------------------------------------------------------
-    // Active-state helpers.
-    // ------------------------------------------------------------------
-    function setActive(id) {
-        entries.forEach(function (entry) {
-            entry.link.classList.toggle("is-active", entry.id === id);
+        entries.forEach(function (e) {
+            e.section.hidden = e.id !== id;
+            e.link.classList.toggle("is-active", e.id === id);
         });
+        mobileSelect.value = id;
+        return true;
     }
 
-    // Suppresses scrollspy updates while a click-triggered smooth scroll
-    // is in flight, so the observer never fights the just-clicked link
-    // (it would otherwise flash through every section the scroll passes).
-    var suspended = false;
-    var suspendTimer = null;
-    function suspendScrollspy() {
-        suspended = true;
-        clearTimeout(suspendTimer);
-        suspendTimer = setTimeout(function () { suspended = false; }, 700);
+    function scrollContentToTop(smooth) {
+        // The hero banner sits right above the layout, so bringing it
+        // into view is a reliable "scroll to top" regardless of whether
+        // Jazzmin's fixed layout scrolls the window or a nested
+        // `.content-wrapper` — scrollIntoView() finds the real scrolling
+        // ancestor either way.
+        if (!hero) { return; }
+        hero.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     }
 
     // ------------------------------------------------------------------
     // The single navigation entry point — used by sidebar clicks, the
-    // mobile <select>, search, hash changes (back/forward) and the
-    // initial load-with-hash correction. scrollIntoView() is used
-    // (rather than manual scrollTop math) because it correctly finds
-    // whichever element actually scrolls — the window, or a nested
-    // AdminLTE `.content-wrapper` — and it honours `scroll-margin-top`.
+    // hero's own "Начать обучение" link, the mobile <select>, search,
+    // hash changes (back/forward) and the initial load.
     // ------------------------------------------------------------------
     function navigateTo(id, options) {
-        var entry = entryById[id];
-        if (!entry) { return false; }
+        if (!showSection(id)) { return false; }
 
-        var smooth = !options || options.smooth !== false;
         var updateHash = !options || options.updateHash !== false;
-
         if (updateHash && window.location.hash !== "#" + id) {
-            window.history.pushState(null, "", "#" + id);
+            var method = options && options.replace ? "replaceState" : "pushState";
+            window.history[method](null, "", "#" + id);
         }
 
-        suspendScrollspy();
-        entry.section.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
-        setActive(id);
+        if (!options || options.scroll !== false) {
+            scrollContentToTop(!(options && options.instant));
+        }
         return true;
     }
 
-    // Desktop sidebar: one delegated click handler for every <a href="#...">.
-    navList.addEventListener("click", function (event) {
-        var link = event.target.closest("a[href^='#']");
+    // One delegated click handler for every in-page `href="#id"` link —
+    // the sidebar items, and the hero's "Начать обучение" button, which
+    // must still work even after the visitor has switched to another
+    // section (its target would otherwise be `hidden` and the browser's
+    // own anchor jump would silently do nothing).
+    document.addEventListener("click", function (event) {
+        var link = event.target.closest('a[href^="#"]');
         if (!link) { return; }
+        var id = link.getAttribute("href").slice(1);
+        if (!entryById[id]) { return; }
         // Let modified clicks (open in new tab/window, middle-click) fall
         // through to the browser's own default behaviour.
         if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
             return;
         }
-        var id = link.getAttribute("href").slice(1);
-        if (navigateTo(id, { smooth: true, updateHash: true })) {
-            event.preventDefault();
-        }
+        event.preventDefault();
+        navigateTo(id, { updateHash: true });
     });
 
     // Mobile <select>.
     mobileSelect.addEventListener("change", function () {
-        navigateTo(this.value, { smooth: true, updateHash: true });
+        navigateTo(this.value, { updateHash: true });
     });
 
-    // Search: filters the left navigation (desktop + mobile) to matching sections.
+    // Search: filters the left navigation (desktop + mobile) to matching
+    // sections, and switches straight to the first match — replacing the
+    // current history entry rather than pushing one per keystroke.
     searchInput.addEventListener("input", function () {
         var query = this.value.trim().toLowerCase();
         var visibleCount = 0;
@@ -944,53 +940,33 @@
 
         if (query && visibleCount > 0) {
             var firstMatch = entries.filter(function (e) { return !e.li.hidden; })[0];
-            if (firstMatch) { navigateTo(firstMatch.id, { smooth: true, updateHash: false }); }
+            if (firstMatch) { navigateTo(firstMatch.id, { updateHash: true, replace: true }); }
         }
     });
 
-    // Back/forward and any other same-page hash change (e.g. a link from
-    // one section to another via href="#id") — re-run the same
-    // navigation, but never push a *new* history entry for it.
+    // Back/forward (and any manual edit of the URL's fragment) — re-show
+    // the matching section without pushing a *new* history entry for it.
     window.addEventListener("hashchange", function () {
         var id = decodeURIComponent(window.location.hash.replace(/^#/, ""));
-        if (id) { navigateTo(id, { smooth: true, updateHash: false }); }
+        if (id && entryById[id]) { navigateTo(id, { updateHash: false }); }
     });
 
-    // Opening the page directly on a hash (or refreshing on one): the
-    // browser already jumps there natively on load using
-    // `scroll-margin-top`, but do one corrective, non-smooth pass once
-    // layout has settled, in case fonts/icons shifted things slightly.
-    if (window.location.hash) {
-        var initialId = decodeURIComponent(window.location.hash.replace(/^#/, ""));
-        window.requestAnimationFrame(function () {
-            navigateTo(initialId, { smooth: false, updateHash: false });
-        });
+    // Initial load / refresh: show whatever the URL's hash points to, so
+    // a direct link like /admin/academy/help/#groups (and a refresh on
+    // one) lands straight on that section — falling back to the first
+    // section when there's no hash or it doesn't match a real one, and
+    // writing that back into the URL so it stays consistent on refresh.
+    var initialId = decodeURIComponent(window.location.hash.replace(/^#/, "")) || defaultId;
+    if (!entryById[initialId]) { initialId = defaultId; }
+    showSection(initialId);
+    if (window.location.hash !== "#" + initialId) {
+        window.history.replaceState(null, "", "#" + initialId);
     }
+    scrollContentToTop(false);
 
-    // Scrollspy: highlights the current section in the nav while scrolling.
-    if ("IntersectionObserver" in window) {
-        var observer = null;
-
-        function createObserver() {
-            if (observer) { observer.disconnect(); }
-            var topMargin = measureHeaderOffset() + 8;
-            observer = new IntersectionObserver(function (visibleEntries) {
-                if (suspended) { return; }
-                visibleEntries.forEach(function (visibleEntry) {
-                    if (!visibleEntry.isIntersecting) { return; }
-                    setActive(visibleEntry.target.id);
-                });
-            }, { rootMargin: "-" + topMargin + "px 0px -60% 0px" });
-            sections.forEach(function (section) { observer.observe(section); });
-        }
-
-        createObserver();
-        window.addEventListener("resize", createObserver);
-    }
-
-    // Back to top: scroll the hero back into view (works regardless of
-    // which element actually scrolls) and drop the hash so the URL
-    // reflects the top of the page.
+    // Back to top: scroll the hero back into view — useful for the
+    // longer individual sections (e.g. "Быстрый старт") — and drop the
+    // hash back to the default section.
     if (hero && backToTop) {
         if ("IntersectionObserver" in window) {
             var topSentinelObserver = new IntersectionObserver(function (visibleEntries) {
@@ -1002,10 +978,7 @@
         }
 
         backToTop.addEventListener("click", function () {
-            if (window.location.hash) {
-                window.history.pushState(null, "", window.location.pathname + window.location.search);
-            }
-            hero.scrollIntoView({ behavior: "smooth", block: "start" });
+            scrollContentToTop(true);
         });
     }
 })();
