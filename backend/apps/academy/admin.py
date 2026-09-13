@@ -788,6 +788,14 @@ class GroupAdmin(admin.ModelAdmin):
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
     list_per_page = 25
 
+    def has_delete_permission(self, request, obj=None):
+        # A Group is never deleted — Completed/Cancelled status is the only
+        # way to retire one, so its history (Lessons, Attendance, Homework)
+        # always stays intact. This alone also drops "delete_selected" from
+        # the bulk actions dropdown and the Delete button from the change
+        # form (Django checks has_delete_permission for both).
+        return False
+
     def get_fieldsets(self, request, obj=None):
         # These "ok-admin-group-tab-*" classes carry no visual meaning to
         # Django/Jazzmin's own fieldset rendering — they're read back out by
