@@ -263,6 +263,10 @@ JAZZMIN_SETTINGS = {
     "hide_apps": ["users", "academy", "data_io"],
 
     "custom_links": {
+        "центр помощи": [
+            {"name": "Центр помощи", "url": "admin:academy_help", "icon": "bi bi-question-circle"},
+        ],
+
         "академия": [
             {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
             {"name": "Студенты", "model": "academy.student", "icon": "bi bi-mortarboard"},
@@ -302,6 +306,7 @@ JAZZMIN_SETTINGS = {
     # (.nav-header { text-transform: uppercase }), which is also just the
     # more typical look for section labels in a premium dashboard.
     "icons": {
+        "центр помощи": "bi bi-question-circle",
         "обучение": "bi bi-mortarboard-fill",
         "аналитика": "bi bi-clipboard-data",
         "система": "bi bi-gear",

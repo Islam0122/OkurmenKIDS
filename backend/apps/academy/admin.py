@@ -46,6 +46,7 @@ from .admin_views import (
     lesson_monitor_view,
     schedule_view,
 )
+from .help_center import help_center_view
 from .models import (
     Attendance,
     Course,
@@ -1210,14 +1211,15 @@ class AttendanceAdmin(admin.ModelAdmin):
 
 
 # ---------------------------------------------------------------------------
-# "Расписание" и "Аналитика" — custom admin pages (no model of their own),
-# built on Lesson and on AnalyticsService respectively.
+# "Расписание", "Аналитика" и "Центр помощи" — custom admin pages (no model
+# of their own), built on Lesson, on AnalyticsService, and on static
+# documentation content respectively.
 #
 # Django admin only lets a ModelAdmin nest extra URLs under its own
-# <app_label>/<model_name>/ prefix, and neither screen is tied to a single
-# model — so both are added directly onto the admin site's own URLconf
-# instead, the same approach Django's own docs use for a site-wide custom
-# admin view.
+# <app_label>/<model_name>/ prefix, and none of these screens is tied to a
+# single model — so all three are added directly onto the admin site's own
+# URLconf instead, the same approach Django's own docs use for a site-wide
+# custom admin view.
 # ---------------------------------------------------------------------------
 
 _original_get_urls = admin.site.get_urls
@@ -1232,6 +1234,7 @@ def _get_urls_with_schedule():
             name="academy_schedule_generate_lessons",
         ),
         path("academy/analytics/", admin.site.admin_view(analytics_view), name="academy_analytics"),
+        path("academy/help/", admin.site.admin_view(help_center_view), name="academy_help"),
     ]
     return custom_urls + _original_get_urls()
 

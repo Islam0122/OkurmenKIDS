@@ -1,0 +1,880 @@
+{% extends "admin/base_site.html" %}
+
+{% block bodyclass %}{{ block.super }} okhelp-page{% endblock %}
+
+{% block content_title %}Центр помощи{% endblock %}
+
+{% block breadcrumbs %}
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+        <li class="breadcrumb-item">Центр помощи</li>
+    </ol>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .okhelp-page #content { max-width: 1320px; }
+
+        .okhelp-hero {
+            background: linear-gradient(135deg, var(--ok-primary, #2F8F5B) 0%, var(--ok-primary-hover, #287A4D) 100%);
+            color: var(--ok-on-primary, #fff);
+            border-radius: var(--ok-radius-lg, 0.9rem);
+            padding: 1.75rem 2rem;
+            margin-bottom: 1.25rem;
+        }
+        .okhelp-hero h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.35rem; color: #fff; }
+        .okhelp-hero p { margin: 0; opacity: 0.92; max-width: 62ch; }
+        .okhelp-hero-actions { margin-top: 1rem; display: flex; gap: 0.6rem; flex-wrap: wrap; }
+        .okhelp-hero-actions .btn-light { font-weight: 600; }
+
+        .okhelp-search-wrap { margin-bottom: 1.25rem; position: relative; }
+        .okhelp-search { position: relative; }
+        .okhelp-search i { position: absolute; left: 0.9rem; top: 50%; transform: translateY(-50%); color: var(--ok-text-muted, #89938D); }
+        .okhelp-search input {
+            width: 100%; padding: 0.7rem 1rem 0.7rem 2.4rem; font-size: 0.95rem;
+            border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius, 0.65rem);
+            background: var(--ok-surface, #fff); color: var(--ok-text, #202622);
+            box-shadow: var(--ok-shadow, 0 1px 2px rgba(20,30,24,.04));
+        }
+        .okhelp-search input:focus { outline: none; border-color: var(--ok-primary, #2F8F5B); box-shadow: 0 0 0 3px var(--ok-primary-soft, #E7F3EC); }
+        .okhelp-search-empty {
+            display: none; margin-top: 0.5rem; padding: 0.6rem 0.9rem; border-radius: var(--ok-radius-sm, .45rem);
+            background: var(--ok-warning-soft, #FBF1DF); color: var(--ok-warning, #B4790F); font-size: 0.85rem;
+        }
+
+        .okhelp-layout { display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem; align-items: start; }
+        @media (max-width: 991px) { .okhelp-layout { grid-template-columns: 1fr; } }
+
+        .okhelp-nav-wrap { position: sticky; top: 1rem; }
+        .okhelp-nav {
+            background: var(--ok-surface, #fff); border: 1px solid var(--ok-border, #E1E7E2);
+            border-radius: var(--ok-radius, .65rem); padding: 0.6rem; max-height: calc(100vh - 2rem); overflow-y: auto;
+        }
+        .okhelp-nav ul { list-style: none; margin: 0; padding: 0; }
+        .okhelp-nav li { margin: 0; }
+        .okhelp-nav a {
+            display: flex; align-items: center; gap: 0.55rem; padding: 0.5rem 0.65rem; border-radius: var(--ok-radius-sm, .45rem);
+            color: var(--ok-text-secondary, #68736C); text-decoration: none; font-size: 0.86rem; font-weight: 500;
+        }
+        .okhelp-nav a .okhelp-nav-num {
+            display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem;
+            font-size: 0.7rem; border-radius: 50%; background: var(--ok-surface-hover, #F1F6F2); color: var(--ok-text-muted, #89938D); flex: none;
+        }
+        .okhelp-nav a:hover { background: var(--ok-surface-hover, #F1F6F2); color: var(--ok-text, #202622); }
+        .okhelp-nav a.is-active { background: var(--ok-primary-soft, #E7F3EC); color: var(--ok-primary, #2F8F5B); }
+        .okhelp-nav a.is-active .okhelp-nav-num { background: var(--ok-primary, #2F8F5B); color: #fff; }
+        .okhelp-nav li[hidden] { display: none; }
+
+        .okhelp-mobile-nav { display: none; margin-bottom: 1.25rem; }
+        .okhelp-mobile-nav select {
+            width: 100%; padding: 0.6rem 0.8rem; border-radius: var(--ok-radius, .65rem);
+            border: 1px solid var(--ok-border, #E1E7E2); background: var(--ok-surface, #fff); color: var(--ok-text, #202622); font-weight: 600;
+        }
+        @media (max-width: 991px) { .okhelp-nav-wrap { display: none; } .okhelp-mobile-nav { display: block; } }
+
+        .okhelp-content { min-width: 0; }
+        .okhelp-section { background: var(--ok-surface, #fff); border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius-lg, .9rem); padding: 1.5rem 1.75rem; margin-bottom: 1.25rem; scroll-margin-top: 1rem; }
+        .okhelp-section h2 { display: flex; align-items: center; gap: 0.6rem; font-size: 1.2rem; font-weight: 700; color: var(--ok-text, #202622); margin: 0 0 0.35rem; }
+        .okhelp-section h2 i { color: var(--ok-primary, #2F8F5B); }
+        .okhelp-section > p.okhelp-lead { color: var(--ok-text-secondary, #68736C); margin: 0 0 1.1rem; }
+        .okhelp-section h3 { font-size: 0.98rem; font-weight: 700; margin: 1.1rem 0 0.5rem; color: var(--ok-text, #202622); }
+        .okhelp-section p { color: var(--ok-text, #202622); line-height: 1.55; }
+        .okhelp-section ul, .okhelp-section ol { color: var(--ok-text, #202622); line-height: 1.6; padding-left: 1.2rem; }
+        .okhelp-section table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.88rem; }
+        .okhelp-section table th, .okhelp-section table td { border: 1px solid var(--ok-border, #E1E7E2); padding: 0.55rem 0.7rem; text-align: left; vertical-align: top; }
+        .okhelp-section table th { background: var(--ok-surface-hover, #F1F6F2); }
+
+        .okhelp-badge { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; padding: 0.2rem 0.55rem; border-radius: 999px; }
+        .okhelp-badge--admin { background: var(--ok-primary-soft, #E7F3EC); color: var(--ok-primary, #2F8F5B); }
+        .okhelp-badge--teacher { background: var(--ok-warning-soft, #FBF1DF); color: var(--ok-warning, #B4790F); }
+        .okhelp-badge--dev { background: #E9ECEF; color: #495057; }
+
+        .okhelp-callout { display: flex; gap: 0.7rem; padding: 0.85rem 1rem; border-radius: var(--ok-radius, .65rem); margin: 0.9rem 0; border: 1px solid transparent; }
+        .okhelp-callout i { font-size: 1.05rem; flex: none; margin-top: 0.1rem; }
+        .okhelp-callout p, .okhelp-callout div { margin: 0; font-size: 0.88rem; }
+        .okhelp-callout--info { background: var(--ok-primary-soft, #E7F3EC); color: #1f4d34; border-color: rgba(47,143,91,.25); }
+        .okhelp-callout--info i { color: var(--ok-primary, #2F8F5B); }
+        .okhelp-callout--warning { background: var(--ok-warning-soft, #FBF1DF); color: #6b4c0d; border-color: rgba(180,121,15,.25); }
+        .okhelp-callout--warning i { color: var(--ok-warning, #B4790F); }
+        .okhelp-callout--danger { background: var(--ok-danger-soft, #FBEAE7); color: #7a2a1e; border-color: rgba(199,64,46,.25); }
+        .okhelp-callout--danger i { color: var(--ok-danger, #C7402E); }
+
+        .okhelp-steps { display: flex; flex-direction: column; gap: 0; margin: 1rem 0; }
+        .okhelp-step { display: flex; gap: 1rem; position: relative; padding-bottom: 1.1rem; }
+        .okhelp-step:last-child { padding-bottom: 0; }
+        .okhelp-step::before { content: ""; position: absolute; left: 1.1rem; top: 2.4rem; bottom: 0; width: 2px; background: var(--ok-border, #E1E7E2); }
+        .okhelp-step:last-child::before { display: none; }
+        .okhelp-step-num {
+            flex: none; width: 2.25rem; height: 2.25rem; border-radius: 50%; background: var(--ok-primary, #2F8F5B); color: #fff;
+            display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; z-index: 1;
+        }
+        .okhelp-step-body { padding-top: 0.15rem; }
+        .okhelp-step-body h4 { margin: 0 0 0.2rem; font-size: 0.95rem; font-weight: 700; }
+        .okhelp-step-body p { margin: 0; font-size: 0.87rem; color: var(--ok-text-secondary, #68736C); }
+
+        .okhelp-mini-steps { counter-reset: okhelp-mini; list-style: none; padding-left: 0; }
+        .okhelp-mini-steps li { counter-increment: okhelp-mini; position: relative; padding-left: 2.1rem; margin-bottom: 0.5rem; }
+        .okhelp-mini-steps li::before {
+            content: counter(okhelp-mini); position: absolute; left: 0; top: 0; width: 1.5rem; height: 1.5rem; border-radius: 50%;
+            background: var(--ok-primary-soft, #E7F3EC); color: var(--ok-primary, #2F8F5B); font-weight: 700; font-size: 0.78rem;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        .okhelp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.85rem; margin: 1rem 0; }
+        .okhelp-card { border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius, .65rem); padding: 0.9rem 1rem; background: var(--ok-surface-hover, #F1F6F2); }
+        .okhelp-card i { color: var(--ok-primary, #2F8F5B); font-size: 1.15rem; }
+        .okhelp-card h4 { margin: 0.4rem 0 0.25rem; font-size: 0.92rem; font-weight: 700; }
+        .okhelp-card p { margin: 0; font-size: 0.82rem; color: var(--ok-text-secondary, #68736C); }
+
+        .okhelp-diagram { background: var(--ok-surface-hover, #F1F6F2); border: 1px dashed var(--ok-border-strong, #CBD6CF); border-radius: var(--ok-radius, .65rem); padding: 1.25rem; margin: 1rem 0; }
+        .okhelp-diagram-node { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--ok-surface, #fff); border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius-sm, .45rem); padding: 0.4rem 0.85rem; font-weight: 700; font-size: 0.85rem; box-shadow: var(--ok-shadow, 0 1px 2px rgba(20,30,24,.04)); }
+        .okhelp-diagram-arrow { text-align: center; color: var(--ok-text-muted, #89938D); font-size: 1.1rem; margin: 0.15rem 0; }
+        .okhelp-diagram-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.6rem; margin: 0.3rem 0; }
+        .okhelp-diagram-branch { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+        .okhelp-diagram-sub { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; margin-top: 0.3rem; }
+        .okhelp-diagram-sub .okhelp-diagram-node { font-weight: 500; font-size: 0.78rem; background: var(--ok-primary-soft, #E7F3EC); border-color: transparent; color: #1f4d34; }
+        .okhelp-diagram-center { display: flex; flex-direction: column; align-items: center; }
+
+        .okhelp-faq { border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius, .65rem); margin-bottom: 0.6rem; overflow: hidden; }
+        .okhelp-faq summary {
+            cursor: pointer; list-style: none; padding: 0.85rem 1.1rem; font-weight: 600; font-size: 0.9rem;
+            display: flex; justify-content: space-between; align-items: center; background: var(--ok-surface, #fff); color: var(--ok-text, #202622);
+        }
+        .okhelp-faq summary::-webkit-details-marker { display: none; }
+        .okhelp-faq summary::after { content: "\f282"; font-family: "bootstrap-icons"; color: var(--ok-text-muted, #89938D); transition: transform .15s ease; }
+        .okhelp-faq[open] summary::after { transform: rotate(180deg); }
+        .okhelp-faq .okhelp-faq-body { padding: 0 1.1rem 1rem; font-size: 0.88rem; color: var(--ok-text-secondary, #68736C); }
+
+        .okhelp-role-badge { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; }
+        .okhelp-yes { color: var(--ok-primary, #2F8F5B); }
+        .okhelp-no { color: var(--ok-text-muted, #89938D); }
+
+        .okhelp-quicklinks { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+
+        .okhelp-back-to-top {
+            position: fixed; right: 1.5rem; bottom: 1.5rem; width: 2.6rem; height: 2.6rem; border-radius: 50%;
+            background: var(--ok-primary, #2F8F5B); color: #fff; display: none; align-items: center; justify-content: center;
+            box-shadow: var(--ok-shadow-hover, 0 6px 20px rgba(20,30,24,.08)); border: none; z-index: 1000; cursor: pointer; font-size: 1.1rem;
+        }
+        .okhelp-back-to-top.is-visible { display: flex; }
+
+        @media print {
+            .okhelp-nav-wrap, .okhelp-mobile-nav, .okhelp-search-wrap, .okhelp-hero-actions, .okhelp-back-to-top, #nav-sidebar, .main-header, .main-sidebar { display: none !important; }
+            .okhelp-layout { grid-template-columns: 1fr; }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="okhelp-hero">
+    <h1><i class="bi bi-question-circle-fill"></i> Центр помощи OkurmenKIDS</h1>
+    <p>Полная инструкция по работе с системой: с чего начать, как вести группы, студентов, преподавателей, расписание,
+        занятия и учебный процесс — простым языком, шаг за шагом.</p>
+    <p style="margin-top:.5rem;">Здесь вы найдёте пошаговые инструкции по управлению группами, студентами,
+        преподавателями, расписанием, занятиями и учебным процессом.</p>
+    <div class="okhelp-hero-actions">
+        <a href="#quickstart" class="btn btn-light btn-sm"><i class="bi bi-rocket-takeoff"></i> Начать обучение</a>
+        <a href="{{ quick_links.groups }}" class="btn btn-outline-light btn-sm"><i class="bi bi-people"></i> Перейти к группам</a>
+        <button type="button" class="btn btn-outline-light btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Версия для печати</button>
+    </div>
+</div>
+
+<div class="okhelp-search-wrap">
+    <div class="okhelp-search">
+        <i class="bi bi-search"></i>
+        <input type="text" id="okhelp-search-input" placeholder="Что вы хотите найти? Например: расписание, посещаемость, импорт Excel…" autocomplete="off">
+    </div>
+    <div class="okhelp-search-empty" id="okhelp-search-empty">Ничего не найдено. Попробуйте другой запрос.</div>
+</div>
+
+<div class="okhelp-mobile-nav">
+    <select id="okhelp-mobile-select" aria-label="Разделы инструкции"></select>
+</div>
+
+<div class="okhelp-layout">
+    <div class="okhelp-nav-wrap">
+        <nav class="okhelp-nav" id="okhelp-nav" aria-label="Оглавление"></nav>
+    </div>
+
+    <div class="okhelp-content">
+
+        <section class="okhelp-section" id="quickstart" data-title="Быстрый старт" data-keywords="быстрый старт с чего начать первые шаги настройка академии порядок действий">
+            <h2><i class="bi bi-rocket-takeoff"></i> Быстрый старт для администратора</h2>
+            <p class="okhelp-lead">Если вы впервые работаете в системе — следуйте этому порядку. Он повторяет
+                реальную структуру данных OkurmenKIDS: сначала настраивается программа обучения, затем группа
+                наполняется людьми и расписанием, и только потом система генерирует сами занятия.</p>
+
+            <div class="okhelp-steps">
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">01</div>
+                    <div class="okhelp-step-body"><h4>Создайте курс</h4><p>Раздел «Курсы» — название образовательной программы, количество занятий и список предметов, которые в неё входят.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">02</div>
+                    <div class="okhelp-step-body"><h4>Добавьте предметы и план занятий</h4><p>В «Предметах» заведите нужные дисциплины, а в «Планах занятий» распишите курс по урокам: тема, описание, домашнее задание на каждый урок.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">03</div>
+                    <div class="okhelp-step-body"><h4>Добавьте преподавателей</h4><p>Раздел «Тренеры» — создайте учётную запись преподавателя и привяжите к нему предметы, которые он ведёт.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">04</div>
+                    <div class="okhelp-step-body"><h4>Создайте группу</h4><p>Раздел «Группы» — название, курс, даты начала и окончания, вместимость и статус.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">05</div>
+                    <div class="okhelp-step-body"><h4>Добавьте студентов в группу</h4><p>Через рабочее пространство группы (Group Workspace) — по одному или списком.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">06</div>
+                    <div class="okhelp-step-body"><h4>Добавьте учебную программу</h4><p>Внутри группы: предмет + преподаватель. Это и есть связка, которую в системе называют «GroupTeacher».</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">07</div>
+                    <div class="okhelp-step-body"><h4>Настройте расписание программы</h4><p>Для каждой учебной программы укажите день недели, время и аудиторию — можно несколько слотов в неделю.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">08</div>
+                    <div class="okhelp-step-body"><h4>Проверьте расписание на конфликты</h4><p>Убедитесь, что преподаватель, аудитория и сама группа не заняты в это же время чем-то другим.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">09</div>
+                    <div class="okhelp-step-body"><h4>Сгенерируйте занятия</h4><p>Кнопка «Сгенерировать занятия» — система сама создаст уроки на даты группы по расписанию и плану занятий.</p></div>
+                </div>
+                <div class="okhelp-step">
+                    <div class="okhelp-step-num">10</div>
+                    <div class="okhelp-step-body"><h4>Контролируйте процесс</h4><p>Проверяйте занятия, посещаемость, домашние задания и аналитику по мере того, как группа учится.</p></div>
+                </div>
+            </div>
+
+            <div class="okhelp-callout okhelp-callout--info">
+                <i class="bi bi-check-circle"></i>
+                <p>После выполнения этих шагов группа полностью готова к работе: занятия появятся в расписании
+                    автоматически, а посещаемость и домашние задания можно будет вести по каждому уроку.</p>
+            </div>
+
+            <div class="okhelp-quicklinks">
+                <a href="{{ quick_links.courses }}" class="btn btn-outline-success btn-sm">Открыть курсы</a>
+                <a href="{{ quick_links.groups }}" class="btn btn-outline-success btn-sm">Открыть группы</a>
+                <a href="{{ quick_links.schedule }}" class="btn btn-outline-success btn-sm">Открыть расписание</a>
+                <a href="{{ quick_links.lessons }}" class="btn btn-outline-success btn-sm">Открыть занятия</a>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="concepts" data-title="Основные понятия" data-keywords="понятия термины курс группа студент преподаватель программа расписание занятие посещаемость домашнее задание">
+            <h2><i class="bi bi-lightbulb"></i> Основные понятия</h2>
+            <p class="okhelp-lead">Простыми словами о том, из чего состоит система, — без сложных терминов.</p>
+
+            <div class="okhelp-cards">
+                <div class="okhelp-card"><i class="bi bi-collection-play"></i><h4>Курс</h4><p>Образовательная программа целиком: например «Python для детей». Определяет предметы и количество занятий.</p></div>
+                <div class="okhelp-card"><i class="bi bi-people"></i><h4>Группа</h4><p>Набор студентов, которые обучаются вместе по одному курсу, в одни даты.</p></div>
+                <div class="okhelp-card"><i class="bi bi-mortarboard"></i><h4>Студент</h4><p>Ученик академии, привязанный к конкретной группе.</p></div>
+                <div class="okhelp-card"><i class="bi bi-person-badge"></i><h4>Преподаватель</h4><p>Сотрудник, который ведёт занятия по одному или нескольким предметам.</p></div>
+                <div class="okhelp-card"><i class="bi bi-diagram-3"></i><h4>Учебная программа</h4><p>Связка «предмет + преподаватель» внутри группы. В системе называется <code>GroupTeacher</code>. У группы может быть несколько таких программ.</p></div>
+                <div class="okhelp-card"><i class="bi bi-calendar3"></i><h4>Расписание</h4><p>Еженедельные слоты (день недели, время, аудитория) для конкретной учебной программы.</p></div>
+                <div class="okhelp-card"><i class="bi bi-easel"></i><h4>Занятие</h4><p>Конкретный урок с датой, временем и статусом — появляется после генерации занятий.</p></div>
+                <div class="okhelp-card"><i class="bi bi-clipboard-check"></i><h4>Посещаемость</h4><p>Отметки студентов (был/не был/опоздал) по конкретному занятию.</p></div>
+                <div class="okhelp-card"><i class="bi bi-journal-check"></i><h4>Домашнее задание</h4><p>Задание, привязанное к конкретному занятию.</p></div>
+                <div class="okhelp-card"><i class="bi bi-check2-circle"></i><h4>Результат ДЗ</h4><p>Оценка и статус выполнения домашнего задания конкретным студентом.</p></div>
+            </div>
+
+            <h3>Как это связано между собой</h3>
+            <div class="okhelp-diagram">
+                <div class="okhelp-diagram-center">
+                    <div class="okhelp-diagram-node"><i class="bi bi-collection-play"></i> Курс</div>
+                    <div class="okhelp-diagram-arrow">↓</div>
+                    <div class="okhelp-diagram-node"><i class="bi bi-people"></i> Группа</div>
+                    <div class="okhelp-diagram-arrow">↓</div>
+                    <div class="okhelp-diagram-node"><i class="bi bi-diagram-3"></i> Учебная программа (GroupTeacher)</div>
+                </div>
+                <div class="okhelp-diagram-row">
+                    <div class="okhelp-diagram-branch"><div class="okhelp-diagram-node">Преподаватель</div></div>
+                    <div class="okhelp-diagram-branch"><div class="okhelp-diagram-node">Предмет</div></div>
+                    <div class="okhelp-diagram-branch"><div class="okhelp-diagram-node">Расписание</div></div>
+                    <div class="okhelp-diagram-branch">
+                        <div class="okhelp-diagram-node">Занятия</div>
+                        <div class="okhelp-diagram-sub">
+                            <div class="okhelp-diagram-node">Посещаемость</div>
+                            <div class="okhelp-diagram-node">Домашнее задание</div>
+                            <div class="okhelp-diagram-sub" style="margin-top:.15rem;">
+                                <div class="okhelp-diagram-node" style="font-size:.72rem;">Результаты ДЗ</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="groups" data-title="Группы" data-keywords="создание группы группа добавить группу group workspace рабочее пространство группы">
+            <h2><i class="bi bi-people"></i> Как работать с группами</h2>
+            <p class="okhelp-lead">Группа — это точка входа во всю дальнейшую работу: студенты, программы,
+                расписание и занятия настраиваются именно внутри неё, в её «рабочем пространстве» (Group Workspace).</p>
+
+            <h3>Как создать группу</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Откройте раздел «Группы».</li>
+                <li>Нажмите «Добавить группу».</li>
+                <li>Заполните: название, курс, дату начала и окончания, статус, максимальное количество студентов, описание.</li>
+                <li>Сохраните.</li>
+                <li>Откройте карточку группы — вы попадёте в её рабочее пространство с вкладками «Обзор», «Студенты», «Преподаватели», «Программы», «Расписание», «Занятия», «Аналитика».</li>
+            </ol>
+
+            <div class="okhelp-callout okhelp-callout--info">
+                <i class="bi bi-info-circle"></i>
+                <p><strong>Важно:</strong> при создании группы не нужно вручную создавать занятия, посещаемость или
+                    домашние задания — всё это появляется позже, автоматически, после генерации занятий.</p>
+            </div>
+
+            <h3>Что делать после создания</h3>
+            <ul>
+                <li>Добавить студентов;</li>
+                <li>Добавить одну или несколько учебных программ (предмет + преподаватель);</li>
+                <li>Настроить расписание для каждой программы;</li>
+                <li>Сгенерировать занятия.</li>
+            </ul>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <p><strong>Не создавайте одну и ту же группу повторно</strong>, если она уже существует — проверьте
+                    список групп через поиск, прежде чем добавлять новую.</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="students" data-title="Студенты" data-keywords="добавление студента студент ученики bulk add массовое добавление импорт excel студентов дубликаты архив">
+            <h2><i class="bi bi-mortarboard"></i> Студенты</h2>
+
+            <h3>Как добавить одного студента</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Откройте группу — рабочее пространство → вкладка «Студенты».</li>
+                <li>Нажмите «Добавить студента».</li>
+                <li>Выберите уже существующего студента (например, при переводе из другой группы) или создайте нового.</li>
+                <li>Сохраните.</li>
+            </ol>
+
+            <h3>Как добавить много студентов сразу</h3>
+            <ul>
+                <li>Массовое добавление (bulk add) прямо в группе — если студенты ещё не заведены в системе;</li>
+                <li>Импорт из Excel — если список студентов уже есть в таблице;</li>
+                <li>Перед подтверждением импорта обязательно проверяйте предпросмотр (preview) — система покажет, какие строки будут добавлены, а какие содержат ошибки.</li>
+            </ul>
+
+            <h3>Основные поля студента</h3>
+            <table>
+                <tr><th>Поле</th><th>Описание</th></tr>
+                <tr><td>Имя / Фамилия</td><td>ФИО студента</td></tr>
+                <tr><td>Телефон</td><td>Контактный номер студента</td></tr>
+                <tr><td>Телефон родителя</td><td>Контакт для связи с родителями</td></tr>
+                <tr><td>Группа</td><td>Группа, к которой привязан студент</td></tr>
+                <tr><td>Статус (активен/неактивен)</td><td>Определяет, продолжает ли студент обучение</td></tr>
+            </table>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <div>
+                    <p><strong>Рекомендации:</strong></p>
+                    <ul style="margin-bottom:0;">
+                        <li>Проверяйте, нет ли уже такого студента в системе, прежде чем создавать нового — избегайте дубликатов;</li>
+                        <li>Не удаляйте студентов физически — используйте статус «неактивен», если студент больше не учится;</li>
+                        <li>История посещаемости и домашних заданий сохраняется даже для неактивных студентов.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="teachers" data-title="Преподаватели" data-keywords="преподаватели тренер добавить преподавателя учётная запись пароль доступ">
+            <h2><i class="bi bi-person-badge"></i> Преподаватели</h2>
+
+            <h3>Как создать преподавателя</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Откройте раздел «Тренеры».</li>
+                <li>Нажмите «Добавить».</li>
+                <li>Заполните имя, имя пользователя (username), email и остальные поля профиля.</li>
+                <li>Отметьте предметы, которые преподаватель будет вести.</li>
+                <li>Сохраните — система создаст учётную запись преподавателя.</li>
+            </ol>
+
+            <div class="okhelp-callout okhelp-callout--info">
+                <i class="bi bi-info-circle"></i>
+                <div>
+                    <p>Преподаватель не регистрируется самостоятельно — учётную запись всегда создаёт администратор.
+                        Преподаватели работают не в этой админ-панели, а в отдельном приложении/личном кабинете
+                        системы (см. раздел «Роли и права доступа»), где видят только свои группы, программы и уроки.</p>
+                </div>
+            </div>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <div>
+                    <p>Учётная запись преподавателя должна быть активной, чтобы он мог пользоваться системой.
+                        Пароль передавайте безопасным способом (лично или в защищённом канале) — никогда не храните
+                        пароли в заметках, чатах или таблицах Excel.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="programs" data-title="Учебные программы" data-keywords="учебная программа программа предмет преподаватель расписание день недели время аудитория groupteacher">
+            <h2><i class="bi bi-diagram-3"></i> Учебные программы</h2>
+            <p class="okhelp-lead">Один из самых важных разделов системы. Учебная программа — это связка:</p>
+            <div class="okhelp-diagram" style="text-align:center;">
+                <span class="okhelp-diagram-node">Предмет</span> + <span class="okhelp-diagram-node">Преподаватель</span> + <span class="okhelp-diagram-node">Еженедельное расписание</span> + <span class="okhelp-diagram-node">Аудитория</span>
+                <p style="margin-top:.75rem; color:var(--ok-text-secondary,#68736C); font-size:.85rem;">Например: Python + Ислам + понедельник 18:00–19:30 + аудитория 22</p>
+            </div>
+
+            <h3>Как добавить программу</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Откройте нужную группу → вкладка «Программы».</li>
+                <li>Нажмите «Добавить программу».</li>
+                <li>Выберите предмет.</li>
+                <li>Выберите преподавателя.</li>
+                <li>Добавьте один или несколько дней недели с временем занятия.</li>
+                <li>Выберите аудиторию.</li>
+                <li>Сохраните.</li>
+            </ol>
+
+            <ul>
+                <li>У одной группы может быть несколько учебных программ (например, отдельно Python и отдельно English);</li>
+                <li>Все программы группы равнозначны — нет «главной» и «дополнительной»;</li>
+                <li>У каждой программы своя, независимая нумерация занятий;</li>
+                <li>Расписание всегда добавляется через программу, а не отдельно от неё.</li>
+            </ul>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <p><strong>Не создавайте расписание в отрыве от учебной программы</strong> — оно должно принадлежать
+                    конкретной связке «предмет + преподаватель» внутри группы, иначе занятия не будут сгенерированы
+                    корректно.</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="schedule" data-title="Расписание" data-keywords="расписание день недели время конфликт преподавателя конфликт аудитории конфликт группы">
+            <h2><i class="bi bi-calendar3"></i> Расписание</h2>
+            <p class="okhelp-lead">Расписание формируется по цепочке: <strong>Группа → Учебная программа → Еженедельные слоты</strong>. Раздел «Расписание» в меню показывает все занятия недели по всем группам сразу.</p>
+
+            <h3>Что обязательно проверять</h3>
+            <ul>
+                <li>Нет ли пересечения времени у преподавателя (он не может вести два занятия одновременно);</li>
+                <li>Нет ли пересечения по аудитории;</li>
+                <li>Нет ли пересечения у самой группы — группа не может одновременно быть на двух занятиях, даже если это разные преподаватели и аудитории;</li>
+                <li>Правильно указан день недели и время;</li>
+                <li>Указана верная аудитория.</li>
+            </ul>
+
+            <h3>Пример правильного расписания</h3>
+            <table>
+                <tr><th>Предмет</th><th>День</th><th>Время</th></tr>
+                <tr><td>Python</td><td>Понедельник</td><td>18:00–19:30</td></tr>
+                <tr><td>English</td><td>Вторник</td><td>18:00–19:00</td></tr>
+            </table>
+
+            <h3>Пример ошибки — конфликт расписания</h3>
+            <table>
+                <tr><th>Предмет</th><th>День</th><th>Время</th></tr>
+                <tr><td>Python</td><td>Понедельник</td><td>18:00–19:00</td></tr>
+                <tr><td>English</td><td>Понедельник</td><td>18:00–19:00</td></tr>
+            </table>
+
+            <div class="okhelp-callout okhelp-callout--danger">
+                <i class="bi bi-x-octagon"></i>
+                <p>Одна группа не может одновременно учиться по двум программам. Система проверяет такие конфликты
+                    при сохранении расписания и при генерации занятий — конфликтующие слоты в генерацию не попадут,
+                    поэтому их нужно исправить заранее.</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="generation" data-title="Генерация занятий" data-keywords="генерация занятий сгенерировать занятия lesson plan план занятий дубликаты идемпотентность">
+            <h2><i class="bi bi-magic"></i> Генерация занятий</h2>
+            <p class="okhelp-lead">Кнопка «Сгенерировать занятия» — ключевое действие, которое превращает расписание в реальные уроки с датами.</p>
+
+            <h3>Что делает генерация</h3>
+            <ul>
+                <li>Берёт еженедельное расписание каждой учебной программы группы;</li>
+                <li>Проходит по датам группы (от даты начала до даты окончания) и создаёт занятия на нужные дни недели;</li>
+                <li>Заполняет темы уроков из плана занятий курса (или из отдельного плана программы, если он задан);</li>
+                <li>Автоматически создаёт домашнее задание к уроку, если оно указано в плане;</li>
+                <li>Не создаёт дубликаты — генерацию можно запускать повторно, уже созданные занятия не задвоятся.</li>
+            </ul>
+
+            <h3>Правильный порядок действий</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Сначала создайте учебную программу (предмет + преподаватель).</li>
+                <li>Настройте её еженедельное расписание.</li>
+                <li>Убедитесь, что нет конфликтов расписания.</li>
+                <li>Проверьте, что у курса (или у программы) есть план занятий.</li>
+                <li>Нажмите «Сгенерировать занятия».</li>
+                <li>Проверьте результат во вкладке «Занятия».</li>
+            </ol>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <div>
+                    <ul style="margin-bottom:0;">
+                        <li>Повторный запуск не создаёт дубликаты, но не стоит нажимать кнопку много раз подряд без необходимости;</li>
+                        <li>Если в расписании есть конфликт — сначала исправьте расписание, такие слоты пропускаются при генерации;</li>
+                        <li>Уже проведённые (completed) или отменённые (cancelled) занятия не меняются повторной генерацией без необходимости — не редактируйте их вручную без причины.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>Если занятия не создались — проверьте:</h3>
+            <ul>
+                <li>Даты начала и окончания группы;</li>
+                <li>Активно ли расписание (не выключено ли оно);</li>
+                <li>Правильно ли указан день недели в слоте;</li>
+                <li>Есть ли план занятий у курса или у программы;</li>
+                <li>Нет ли конфликтов по преподавателю, аудитории или группе;</li>
+                <li>Активен ли статус группы и учебной программы (не отменена ли группа).</li>
+            </ul>
+        </section>
+
+        <section class="okhelp-section" id="lessons" data-title="Занятия" data-keywords="занятия урок статус upcoming completed cancelled отменённые уроки">
+            <h2><i class="bi bi-easel"></i> Занятия</h2>
+            <p class="okhelp-lead">Занятие — это уже конкретный урок с датой, временем, группой, предметом,
+                преподавателем, аудиторией, темой и статусом.</p>
+
+            <h3>Для чего администратор использует раздел «Занятия»</h3>
+            <ul>
+                <li>Контроль хода учебного процесса;</li>
+                <li>Просмотр и поиск конкретных уроков;</li>
+                <li>Поиск отменённых занятий;</li>
+                <li>Переход к посещаемости и домашнему заданию конкретного урока.</li>
+            </ul>
+
+            <h3>Статусы занятий</h3>
+            <p>
+                <span class="okhelp-badge okhelp-badge--admin">Запланировано</span>
+                <span class="okhelp-badge" style="background:#E9ECEF;color:#495057;">Проведено</span>
+                <span class="okhelp-badge okhelp-badge--teacher">Отменено</span>
+            </p>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <p>Занятия не рекомендуется создавать вручную — они должны появляться через генерацию занятий на
+                    основе расписания и плана. Ручное создание нарушает нумерацию уроков программы.</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="attendance" data-title="Посещаемость" data-keywords="посещаемость attendance present absent late excused отметить присутствие">
+            <h2><i class="bi bi-clipboard-check"></i> Посещаемость</h2>
+            <p class="okhelp-lead">Посещаемость всегда заполняется внутри конкретного занятия — отдельной,
+                независимой формы для этого нет.</p>
+
+            <h3>Порядок работы</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Откройте раздел «Занятия».</li>
+                <li>Откройте нужное занятие.</li>
+                <li>Перейдите к списку посещаемости.</li>
+                <li>Проверьте список студентов группы.</li>
+                <li>Укажите статус каждого: присутствовал, отсутствовал, опоздал, уважительная причина.</li>
+                <li>Сохраните.</li>
+            </ol>
+
+            <table>
+                <tr><th>Роль</th><th>Что делает с посещаемостью</th></tr>
+                <tr><td><span class="okhelp-badge okhelp-badge--admin">Admin</span></td><td>Контролирует и просматривает; исправляет записи при необходимости.</td></tr>
+                <tr><td><span class="okhelp-badge okhelp-badge--teacher">Teacher</span></td><td>Заполняет посещаемость по своим занятиям.</td></tr>
+            </table>
+
+            <div class="okhelp-callout okhelp-callout--info">
+                <i class="bi bi-info-circle"></i>
+                <p>Отметки посещаемости привязаны к конкретным студентам группы этого занятия — если студент не
+                    отображается в списке, скорее всего он не назначен в нужную группу (см. «Частые ошибки»).</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="homework" data-title="Домашние задания" data-keywords="домашнее задание homework создать дз deadline срок сдачи">
+            <h2><i class="bi bi-journal-check"></i> Домашние задания</h2>
+            <p class="okhelp-lead">Домашнее задание всегда создаётся из конкретного занятия — так система понимает,
+                к какому уроку оно относится.</p>
+
+            <h3>Порядок работы</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Откройте нужное занятие.</li>
+                <li>Нажмите «Добавить домашнее задание».</li>
+                <li>Заполните название.</li>
+                <li>Добавьте описание задания.</li>
+                <li>Укажите срок сдачи (дедлайн).</li>
+                <li>Сохраните.</li>
+            </ol>
+
+            <p>После сохранения студенты группы автоматически получают возможность сдать это задание, а
+                преподаватель — проверить их работы (результаты ДЗ).</p>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <p>Не создавайте домашнее задание «отдельно от урока» — оно обязательно должно быть привязано к
+                    конкретному занятию, иначе оно не появится там, где его ожидают увидеть студенты и преподаватель.</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="homework-results" data-title="Результаты ДЗ" data-keywords="результаты домашнего задания оценка score проверка checked submitted">
+            <h2><i class="bi bi-check2-circle"></i> Результаты домашних заданий</h2>
+            <p class="okhelp-lead">Результат ДЗ — это то, как конкретный студент справился с конкретным домашним заданием.</p>
+
+            <h3>Статусы</h3>
+            <p>
+                <span class="okhelp-badge" style="background:#E9ECEF;color:#495057;">Не сдано</span>
+                <span class="okhelp-badge okhelp-badge--teacher">Сдано</span>
+                <span class="okhelp-badge okhelp-badge--admin">Проверено</span>
+            </p>
+
+            <table>
+                <tr><th>Роль</th><th>Что делает</th></tr>
+                <tr><td><span class="okhelp-badge okhelp-badge--teacher">Teacher</span></td><td>Проверяет работу, ставит оценку, оставляет комментарий, сохраняет результат.</td></tr>
+                <tr><td><span class="okhelp-badge okhelp-badge--admin">Admin</span></td><td>Просматривает результаты и сводную аналитику по домашним заданиям.</td></tr>
+            </table>
+        </section>
+
+        <section class="okhelp-section" id="analytics" data-title="Аналитика" data-keywords="аналитика статистика посещаемость completion rate прогресс нагрузка преподавателя">
+            <h2><i class="bi bi-graph-up-arrow"></i> Аналитика</h2>
+            <p class="okhelp-lead">Раздел «Аналитика» строится на реальных данных занятий, посещаемости и домашних заданий:</p>
+            <ul>
+                <li>Количество занятий: запланированных, проведённых, отменённых;</li>
+                <li>Процент посещаемости (attendance rate);</li>
+                <li>Выполнение домашних заданий;</li>
+                <li>Прогресс студентов;</li>
+                <li>Загрузка преподавателей;</li>
+                <li>Незакрытые (pending) домашние задания.</li>
+            </ul>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <p><strong>Важно:</strong> если посещаемость или домашние задания не заполнены, аналитика будет
+                    неполной — пустая посещаемость и незаполненное ДЗ напрямую влияют на точность всех показателей.</p>
+            </div>
+
+            <div class="okhelp-quicklinks">
+                <a href="{{ quick_links.analytics }}" class="btn btn-outline-success btn-sm">Открыть аналитику</a>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="import-export" data-title="Импорт и экспорт" data-keywords="импорт excel экспорт csv xlsx шаблон preview предпросмотр загрузить файл">
+            <h2><i class="bi bi-file-earmark-arrow-up"></i> Импорт и экспорт</h2>
+            <p class="okhelp-lead">В системе есть две независимые возможности импорта/экспорта — они относятся к
+                разным разделам, не путайте их.</p>
+
+            <h3>Студенты и преподаватели — импорт из Excel</h3>
+            <ol class="okhelp-mini-steps">
+                <li>Скачайте шаблон Excel в разделе «Студенты» (или «Тренеры»).</li>
+                <li>Заполните обязательные поля по образцу.</li>
+                <li>Сохраните файл в формате XLSX.</li>
+                <li>Загрузите файл через кнопку «Импорт».</li>
+                <li>Проверьте предпросмотр (preview) — система покажет, какие строки корректны, а какие с ошибками.</li>
+                <li>Исправьте ошибки в файле при необходимости и загрузите заново.</li>
+                <li>Подтвердите импорт.</li>
+            </ol>
+
+            <h3>Частые ошибки в файле импорта</h3>
+            <ul>
+                <li>Отсутствует имя или фамилия;</li>
+                <li>Неправильный формат номера телефона;</li>
+                <li>Указана неизвестная группа;</li>
+                <li>Дубликат уже существующего студента/преподавателя;</li>
+                <li>Неправильное значение статуса.</li>
+            </ul>
+
+            <h3>Курсы, планы занятий и предметы — экспорт/импорт по шаблонам</h3>
+            <p>Для этих разделов используется конструктор шаблонов экспорта: можно выбрать нужные столбцы,
+                выгрузить данные в CSV или XLSX для отчётности, а также загрузить данные обратно по тому же шаблону.</p>
+
+            <div class="okhelp-callout okhelp-callout--info">
+                <i class="bi bi-info-circle"></i>
+                <p>Для групп, занятий, посещаемости и домашних заданий импорт/экспорт <strong>не предусмотрен</strong> — эти
+                    данные ведутся только внутри системы.</p>
+            </div>
+
+            <div class="okhelp-callout okhelp-callout--warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <p>Не изменяйте выгруженный (экспортированный) файл вручную и не загружайте его обратно без
+                    проверки — всегда сверяйтесь с предпросмотром перед подтверждением импорта.</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="roles" data-title="Роли и права доступа" data-keywords="роли права доступа admin teacher администратор преподаватель permissions">
+            <h2><i class="bi bi-shield-lock"></i> Роли и права доступа</h2>
+            <p class="okhelp-lead">В системе есть две роли: <span class="okhelp-badge okhelp-badge--admin">Admin</span>
+                и <span class="okhelp-badge okhelp-badge--teacher">Teacher</span>. У них принципиально разный доступ.</p>
+
+            <table>
+                <tr><th>Admin</th><th>Teacher</th></tr>
+                <tr>
+                    <td>
+                        <ul style="margin:0;">
+                            <li>Управляет группами, студентами, преподавателями;</li>
+                            <li>Управляет курсами, программами и расписанием;</li>
+                            <li>Запускает генерацию занятий;</li>
+                            <li>Видит общую аналитику по всей академии;</li>
+                            <li>Управляет системой в целом — работает в этой панели администратора.</li>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul style="margin:0;">
+                            <li>Видит только свои группы и свои учебные программы;</li>
+                            <li>Видит только свои занятия;</li>
+                            <li>Заполняет посещаемость по своим урокам;</li>
+                            <li>Создаёт и проверяет домашние задания своих студентов;</li>
+                            <li>Не управляет системой в целом.</li>
+                        </ul>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="okhelp-callout okhelp-callout--info">
+                <i class="bi bi-info-circle"></i>
+                <p>Эта панель администратора предназначена только для роли Admin. Преподаватели работают в отдельном
+                    приложении/личном кабинете системы — там они видят исключительно свои группы, программы, уроки и
+                    студентов, что и объясняет, почему остальные разделы им недоступны.</p>
+            </div>
+        </section>
+
+        <section class="okhelp-section" id="faq" data-title="Частые ошибки" data-keywords="ошибки faq почему не работает не генерируются дубликаты не отображается студент teacher не видит урок конфликт расписания">
+            <h2><i class="bi bi-question-diamond"></i> Частые ошибки</h2>
+            <p class="okhelp-lead">Ответы на вопросы, которые чаще всего возникают в первые недели работы с системой.</p>
+
+            <details class="okhelp-faq">
+                <summary>Почему занятия не генерируются?</summary>
+                <div class="okhelp-faq-body">Проверьте даты группы, активность расписания, правильность дня недели,
+                    наличие плана занятий и отсутствие конфликтов по преподавателю, аудитории или группе.</div>
+            </details>
+            <details class="okhelp-faq">
+                <summary>Почему появились дубликаты уроков?</summary>
+                <div class="okhelp-faq-body">Не запускайте генерацию повторно до проверки данных. Система защищена
+                    от дублирования занятий, но если дубликаты всё же обнаружены — проведите аудит расписания и
+                    занятий этой группы, прежде чем запускать генерацию снова.</div>
+            </details>
+            <details class="okhelp-faq">
+                <summary>Почему не отображается студент в группе?</summary>
+                <div class="okhelp-faq-body">Скорее всего студент создан в системе, но не назначен в нужную группу —
+                    проверьте карточку студента и поле «Группа».</div>
+            </details>
+            <details class="okhelp-faq">
+                <summary>Почему преподаватель не видит урок?</summary>
+                <div class="okhelp-faq-body">Проверьте, что преподаватель действительно привязан к этой учебной
+                    программе (связка группа + преподаватель + предмет) и что его учётная запись активна.</div>
+            </details>
+            <details class="okhelp-faq">
+                <summary>Почему посещаемость не отображается?</summary>
+                <div class="okhelp-faq-body">Проверьте, что занятие действительно существует и что студент привязан
+                    к группе этого занятия.</div>
+            </details>
+            <details class="okhelp-faq">
+                <summary>Почему домашнее задание не отображается?</summary>
+                <div class="okhelp-faq-body">Проверьте, что домашнее задание создано именно для этого занятия, а не
+                    для другого урока той же программы.</div>
+            </details>
+            <details class="okhelp-faq">
+                <summary>Почему возник конфликт расписания?</summary>
+                <div class="okhelp-faq-body">Один и тот же преподаватель, аудитория или группа не могут иметь два
+                    пересекающихся по времени занятия — исправьте день недели или время одного из слотов.</div>
+            </details>
+        </section>
+
+        <section class="okhelp-section" id="best-practices" data-title="Рекомендации по работе" data-keywords="рекомендации лучшие практики советы best practices">
+            <h2><i class="bi bi-star"></i> Рекомендации по работе</h2>
+            <ul>
+                <li>Сначала настройте структуру (курс → группа → программа → расписание), потом генерируйте занятия;</li>
+                <li>Не создавайте дублирующие группы;</li>
+                <li>Не создавайте расписание вручную в отрыве от учебной программы;</li>
+                <li>Всегда проверяйте конфликты расписания перед генерацией;</li>
+                <li>После генерации откройте несколько первых занятий и проверьте, что всё верно;</li>
+                <li>Не удаляйте исторические данные — для неактивных студентов используйте статус «неактивен»;</li>
+                <li>Регулярно проверяйте незаполненную посещаемость;</li>
+                <li>Регулярно проверяйте незакрытые (pending) домашние задания;</li>
+                <li>Не меняйте структуру учебной программы после того, как занятия уже проведены, без крайней необходимости;</li>
+                <li>Не подтверждайте массовый импорт без проверки предпросмотра.</li>
+            </ul>
+        </section>
+
+    </div>
+</div>
+
+<button type="button" class="okhelp-back-to-top" id="okhelp-back-to-top" title="Наверх"><i class="bi bi-arrow-up"></i></button>
+{% endblock %}
+
+{% block extrajs %}
+{{ block.super }}
+<script>
+(function () {
+    "use strict";
+
+    var sections = Array.prototype.slice.call(document.querySelectorAll(".okhelp-section"));
+    var nav = document.getElementById("okhelp-nav");
+    var mobileSelect = document.getElementById("okhelp-mobile-select");
+    var searchInput = document.getElementById("okhelp-search-input");
+    var searchEmpty = document.getElementById("okhelp-search-empty");
+
+    if (!sections.length || !nav) { return; }
+
+    var navList = document.createElement("ul");
+    nav.appendChild(navList);
+
+    var entries = sections.map(function (section, index) {
+        var title = section.getAttribute("data-title") || section.id;
+        var keywords = ((section.getAttribute("data-keywords") || "") + " " + title).toLowerCase();
+
+        var li = document.createElement("li");
+        var a = document.createElement("a");
+        a.href = "#" + section.id;
+        a.innerHTML = '<span class="okhelp-nav-num">' + (index + 1) + '</span><span>' + title + "</span>";
+        li.appendChild(a);
+        navList.appendChild(li);
+
+        var option = document.createElement("option");
+        option.value = "#" + section.id;
+        option.textContent = (index + 1) + ". " + title;
+        mobileSelect.appendChild(option);
+
+        return { section: section, link: a, li: li, keywords: keywords, title: title };
+    });
+
+    mobileSelect.addEventListener("change", function () {
+        var target = document.querySelector(this.value);
+        if (target) { target.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    });
+
+    // Search: filters the left navigation (desktop + mobile) to matching sections.
+    searchInput.addEventListener("input", function () {
+        var query = this.value.trim().toLowerCase();
+        var visibleCount = 0;
+
+        entries.forEach(function (entry) {
+            var matches = !query || entry.keywords.indexOf(query) !== -1;
+            entry.li.hidden = !matches;
+            Array.prototype.forEach.call(mobileSelect.options, function (opt) {
+                if (opt.value === "#" + entry.section.id) { opt.hidden = !matches; }
+            });
+            if (matches) { visibleCount += 1; }
+        });
+
+        searchEmpty.style.display = (query && visibleCount === 0) ? "block" : "none";
+
+        if (query && visibleCount > 0) {
+            var firstMatch = entries.filter(function (e) { return !e.li.hidden; })[0];
+            if (firstMatch) { firstMatch.section.scrollIntoView({ behavior: "smooth", block: "start" }); }
+        }
+    });
+
+    // Scrollspy: highlights the current section in the nav while scrolling.
+    if ("IntersectionObserver" in window) {
+        var observer = new IntersectionObserver(function (visibleEntries) {
+            visibleEntries.forEach(function (visibleEntry) {
+                if (!visibleEntry.isIntersecting) { return; }
+                entries.forEach(function (entry) {
+                    entry.link.classList.toggle("is-active", entry.section === visibleEntry.target);
+                });
+            });
+        }, { rootMargin: "-20% 0px -70% 0px" });
+        sections.forEach(function (section) { observer.observe(section); });
+    }
+
+    // Back to top button.
+    var backToTop = document.getElementById("okhelp-back-to-top");
+    window.addEventListener("scroll", function () {
+        backToTop.classList.toggle("is-visible", window.scrollY > 400);
+    });
+    backToTop.addEventListener("click", function () {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+})();
+</script>
+{% endblock %}
