@@ -2333,3 +2333,34 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   .ok-group-form-summary { flex-direction: column; align-items: stretch; text-align: center; }
   .ok-group-weekly-schedule { grid-template-columns: 1fr; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Read-only monitoring pages — Посещаемость / Домашние задания /       */
+/* Результаты ДЗ (admin/academy/{attendance,homework,homeworkresult}/  */
+/* *.html). Reuses .ok-card/.ok-kpi-*/.ok-badge/.ok-group-toolbar/      */
+/* .ok-student-table/.ok-empty-state — only the handful of bits unique  */
+/* to these pages (page subtitle, detail header, filter range fields)  */
+/* get their own class here.                                            */
+/* ------------------------------------------------------------------ */
+
+.ok-mon-page { max-width: 1180px; margin: 0 auto 2rem; display: flex; flex-direction: column; gap: 1.1rem; }
+.ok-page-subtitle { color: var(--ok-text-secondary); margin: -0.5rem 0 0; font-size: 0.92rem; }
+
+.ok-mon-detail-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+}
+.ok-mon-detail-title { font-size: 1.2rem; font-weight: 700; color: var(--ok-text); }
+.ok-mon-detail-badge { font-size: 0.82rem; padding: 0.35rem 0.75rem; }
+
+.ok-mon-filter-label {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--ok-text-muted);
+}
+.ok-mon-filter-range { display: flex; gap: 0.4rem; }
+.ok-mon-filter-range .ok-input { min-width: 120px; }
+
+@media (max-width: 640px) {
+  .ok-mon-detail-header { flex-direction: column; align-items: stretch; text-align: center; }
+}

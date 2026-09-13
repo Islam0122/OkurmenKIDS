@@ -1,0 +1,171 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} ok-mon-page-body{% endblock %}
+
+{% block content_title %}Результаты домашних заданий{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item">Результаты домашних заданий</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <p class="ok-page-subtitle">{{ subtitle }}</p>
+
+  <div class="ok-kpi-grid">
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-list-ul"></i></div>
+      <div class="ok-kpi-value">{{ kpi.total }}</div>
+      <div class="ok-kpi-label">Всего результатов</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-patch-check"></i></div>
+      <div class="ok-kpi-value">{{ kpi.checked }}</div>
+      <div class="ok-kpi-label">Проверено</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+      <div class="ok-kpi-value">{{ kpi.not_checked }}</div>
+      <div class="ok-kpi-label">Не проверено</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-send-check"></i></div>
+      <div class="ok-kpi-value">{{ kpi.submitted }}</div>
+      <div class="ok-kpi-label">Сдано</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.not_submitted }}</div>
+      <div class="ok-kpi-label">Не сдано</div>
+    </div>
+    {% if kpi.avg_score is not None %}
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-star"></i></div>
+        <div class="ok-kpi-value">{{ kpi.avg_score }}/10</div>
+        <div class="ok-kpi-label">Средний балл</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-funnel"></i><span>Фильтры</span></div>
+    <div class="ok-card-body">
+      <form method="get" class="ok-group-toolbar">
+        <input type="text" name="q" class="ok-input" placeholder="Студент, ДЗ, группа..." value="{{ selected.q }}">
+        <select name="group" class="ok-input">
+          <option value="">Все группы</option>
+          {% for g in groups %}
+            <option value="{{ g.pk }}" {% if selected.group == g.pk|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="student" class="ok-input">
+          <option value="">Все студенты</option>
+          {% for s in students %}
+            <option value="{{ s.pk }}" {% if selected.student == s.pk|stringformat:"s" %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <select name="teacher" class="ok-input">
+          <option value="">Все преподаватели</option>
+          {% for t in teachers %}
+            <option value="{{ t.pk }}" {% if selected.teacher == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        <select name="subject" class="ok-input">
+          <option value="">Все предметы</option>
+          {% for subj in subjects %}
+            <option value="{{ subj.pk }}" {% if selected.subject == subj.pk|stringformat:"s" %}selected{% endif %}>{{ subj.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="homework" class="ok-input">
+          <option value="">Все домашние задания</option>
+          {% for hw in homeworks %}
+            <option value="{{ hw.pk }}" {% if selected.homework == hw.pk|stringformat:"s" %}selected{% endif %}>{{ hw.title }} ({{ hw.lesson.group.name }})</option>
+          {% endfor %}
+        </select>
+        <select name="status" class="ok-input">
+          <option value="">Все статусы</option>
+          {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <label class="ok-mon-filter-label">Балл
+          <span class="ok-mon-filter-range">
+            <input type="number" name="score_min" class="ok-input" min="0" max="10" placeholder="от" value="{{ selected.score_min }}">
+            <input type="number" name="score_max" class="ok-input" min="0" max="10" placeholder="до" value="{{ selected.score_max }}">
+          </span>
+        </label>
+        <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}">
+        <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}">
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-check2-square"></i><span>Результаты</span></div>
+    <div class="ok-card-body">
+      {% if records %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Студент</th><th>Группа</th><th>Домашнее задание</th><th>Предмет</th><th>Преподаватель</th>
+                <th>Статус</th><th>Балл</th><th>Сдано</th><th>Проверено</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in records %}
+                <tr>
+                  <td>{{ record.student }}</td>
+                  <td>{{ record.homework.lesson.group.name }}</td>
+                  <td>{{ record.homework.title }}</td>
+                  <td>{{ record.homework.lesson.subject.name|default:"—" }}</td>
+                  <td>{{ record.homework.lesson.effective_teacher|default:"—" }}</td>
+                  <td>
+                    {% if record.status == "checked" %}
+                      <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Проверено</span>
+                    {% elif record.status == "submitted" %}
+                      <span class="ok-badge ok-badge-warning"><span class="ok-badge-dot"></span>Сдано</span>
+                    {% elif record.status == "late" %}
+                      <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Сдано с опозданием</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Не сдано</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if record.score is not None %}
+                      {% if record.score >= 9 %}<span class="ok-badge ok-badge-success">{{ record.score }}/10</span>
+                      {% elif record.score >= 7 %}<span class="ok-badge ok-badge-muted">{{ record.score }}/10</span>
+                      {% elif record.score >= 4 %}<span class="ok-badge ok-badge-warning">{{ record.score }}/10</span>
+                      {% else %}<span class="ok-badge ok-badge-danger">{{ record.score }}/10</span>{% endif %}
+                    {% else %}—{% endif %}
+                  </td>
+                  <td>{{ record.submitted_at|date:"d.m.Y H:i"|default:"—" }}</td>
+                  <td>{{ record.checked_at|date:"d.m.Y H:i"|default:"—" }}</td>
+                  <td>
+                    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_homeworkresult_change' record.pk %}" title="Открыть">
+                      <i class="bi bi-eye"></i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "admin/academy/group/workspace/_pagination.html" with page_obj=records %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-check2-square"></i>
+          <h4>Результаты домашних заданий пока отсутствуют</h4>
+          <p>Преподаватель проверяет домашние задания на своей странице занятия — результаты появятся здесь автоматически.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

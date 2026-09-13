@@ -1,0 +1,153 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content_title %}Результаты домашних заданий{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{{ changelist_url }}">Результаты домашних заданий</a></li>
+    <li class="breadcrumb-item">{{ student }}</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <div class="ok-card">
+    <div class="ok-card-body ok-mon-detail-header">
+      <div>
+        <div class="ok-mon-detail-title">{{ student }}</div>
+        <div class="ok-help-text" style="margin:0.2rem 0 0;">
+          {{ homework.title }} · {{ group.name }} · {{ subject.name|default:"без предмета" }}
+        </div>
+      </div>
+      {% if result.status == "checked" %}
+        <span class="ok-badge ok-badge-success ok-mon-detail-badge"><span class="ok-badge-dot"></span>Проверено</span>
+      {% elif result.status == "submitted" %}
+        <span class="ok-badge ok-badge-warning ok-mon-detail-badge"><span class="ok-badge-dot"></span>Сдано</span>
+      {% elif result.status == "late" %}
+        <span class="ok-badge ok-badge-danger ok-mon-detail-badge"><span class="ok-badge-dot"></span>Сдано с опозданием</span>
+      {% else %}
+        <span class="ok-badge ok-badge-muted ok-mon-detail-badge"><span class="ok-badge-dot"></span>Не сдано</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ok-kpi-grid">
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-star"></i></div>
+      <div class="ok-kpi-value">{% if result.score is not None %}{{ result.score }}/10{% else %}—{% endif %}</div>
+      <div class="ok-kpi-label">Балл</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-send-check"></i></div>
+      <div class="ok-kpi-value">{{ result.get_status_display }}</div>
+      <div class="ok-kpi-label">Статус сдачи</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-calendar-check"></i></div>
+      <div class="ok-kpi-value">{{ result.submitted_at|date:"d.m.Y"|default:"—" }}</div>
+      <div class="ok-kpi-label">Дата сдачи</div>
+    </div>
+    <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-patch-check"></i></div>
+      <div class="ok-kpi-value">{{ result.checked_at|date:"d.m.Y"|default:"—" }}</div>
+      <div class="ok-kpi-label">Дата проверки</div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-person-lines-fill"></i><span>Студент</span></div>
+    <div class="ok-card-body">
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label">ФИО</label>
+          <div class="ok-static-value">{{ student }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Телефон</label>
+          <div class="ok-static-value">{{ student.phone|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Группа</label>
+          <div class="ok-static-value">{{ group.name }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-journal-text"></i><span>Домашнее задание</span></div>
+    <div class="ok-card-body">
+      <div class="ok-grid-2">
+        <div class="ok-field-group ok-grid-full">
+          <label class="ok-label">Название</label>
+          <div class="ok-static-value">{{ homework.title }}</div>
+        </div>
+        <div class="ok-field-group ok-grid-full">
+          <label class="ok-label">Описание</label>
+          <div class="ok-static-value">{{ homework.description|default:"—"|linebreaksbr }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Занятие</label>
+          <div class="ok-static-value">№{{ lesson.lesson_number }} — {{ lesson.date|date:"d.m.Y" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Преподаватель</label>
+          <div class="ok-static-value">{{ teacher|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Предмет</label>
+          <div class="ok-static-value">{{ subject.name|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Дедлайн</label>
+          <div class="ok-static-value">{{ homework.deadline|date:"d.m.Y"|default:"без срока" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-check2-square"></i><span>Результат</span></div>
+    <div class="ok-card-body">
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label">Статус</label>
+          <div class="ok-static-value">{{ result.get_status_display }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Балл</label>
+          <div class="ok-static-value">{% if result.score is not None %}{{ result.score }}/10{% else %}—{% endif %}</div>
+        </div>
+        <div class="ok-field-group ok-grid-full">
+          <label class="ok-label">Комментарий</label>
+          <div class="ok-static-value">{{ result.comment|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Сдано</label>
+          <div class="ok-static-value">{{ result.submitted_at|date:"d.m.Y H:i"|default:"—" }}</div>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">Проверено</label>
+          <div class="ok-static-value">{{ result.checked_at|date:"d.m.Y H:i"|default:"—" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-signpost-split"></i><span>Переходы</span></div>
+    <div class="ok-card-body ok-quick-actions">
+      <a href="{{ student_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-mortarboard"></i> Открыть студента</a>
+      <a href="{{ group_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-people"></i> Открыть группу</a>
+      <a href="{{ homework_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-journal-text"></i> Открыть домашнее задание</a>
+      <a href="{{ lesson_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-easel"></i> Открыть занятие</a>
+      {% if teacher_url %}
+        <a href="{{ teacher_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-person-badge"></i> Открыть преподавателя</a>
+      {% endif %}
+      <a href="{{ changelist_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-arrow-left"></i> Назад к списку</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
