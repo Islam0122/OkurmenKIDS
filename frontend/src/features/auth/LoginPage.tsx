@@ -4,6 +4,7 @@ import { AlertCircle, Lock, User as UserIcon } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 
+import logo from '@/assets/logo.png'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -40,9 +41,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-surface-muted px-4">
       <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8 shadow-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <span className="flex size-12 items-center justify-center rounded-xl bg-brand-500 text-lg font-bold text-white">
-            OK
-          </span>
+          <img src={logo} alt="OkurmenKIDS" className="size-20 shrink-0 object-contain" />
           <h1 className="mt-4 text-lg font-semibold text-ink">OkurmenKIDS</h1>
           <p className="mt-1 text-sm text-ink-secondary">Кабинет тренера</p>
         </div>
