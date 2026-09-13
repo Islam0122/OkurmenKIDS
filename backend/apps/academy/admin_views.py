@@ -1002,6 +1002,11 @@ def group_workspace_schedule_view(request, group_id):
             "time_label": f"{slot.start_time:%H:%M}–{slot.end_time:%H:%M}",
             "room": slot.room.name if slot.room_id else "—",
             "is_active": slot.is_active,
+            "edit_program_url": (
+                reverse("admin:academy_groupteacher_change", args=[slot.group_teacher_id])
+                if slot.group_teacher_id
+                else None
+            ),
             "remove_url": reverse(
                 "admin:academy_group_workspace_schedule_remove", args=[group.pk, slot.pk]
             ),

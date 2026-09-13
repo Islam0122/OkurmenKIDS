@@ -22,15 +22,13 @@
       </div>
       <div class="ok-group-actions">
         <a class="ok-btn-secondary ok-btn-sm" href="{{ add_student_url }}"><i class="bi bi-person-plus"></i> Добавить студента</a>
-        <a class="ok-btn-secondary ok-btn-sm" href="{{ add_teacher_url }}"><i class="bi bi-person-badge"></i> Добавить преподавателя</a>
         <a class="ok-btn-secondary ok-btn-sm" href="{{ add_program_url }}"><i class="bi bi-plus-circle"></i> Добавить программу</a>
-        <a class="ok-btn-secondary ok-btn-sm" href="{{ add_schedule_url }}"><i class="bi bi-calendar-plus"></i> Добавить расписание</a>
         <form method="post" action="{{ generate_lessons_url }}">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ request.path }}">
           <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-magic"></i> Сгенерировать занятия</button>
         </form>
-        <a class="ok-btn-secondary ok-btn-sm" href="{{ change_url }}"><i class="bi bi-pencil"></i> Редактировать группу</a>
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ change_url }}"><i class="bi bi-pencil"></i> Изменить группу</a>
       </div>
     </div>
 

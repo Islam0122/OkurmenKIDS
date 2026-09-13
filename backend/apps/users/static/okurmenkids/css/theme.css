@@ -2272,6 +2272,7 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   gap: 0.4rem; margin-top: 0.5rem;
 }
 .ok-group-schedule-footer form { display: inline-flex; }
+.ok-group-schedule-row-actions { display: flex; align-items: center; gap: 0.3rem; }
 
 /* -- Modals (native <dialog>, no JS framework) -------------------------- */
 

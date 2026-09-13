@@ -33,14 +33,8 @@
               <span class="ok-badge-dot"></span>{% if card.obj.is_active %}Активна{% else %}Неактивна{% endif %}
             </div>
             <div class="ok-group-program-actions">
-              <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Open Workspace</a>
-              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.lesson_plan_url }}"><i class="bi bi-list-check"></i> Lesson Plan</a>
-              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.schedule_url }}"><i class="bi bi-calendar-week"></i> Schedule</a>
-              <form method="post" action="{{ generate_lessons_url }}">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{{ request.path }}">
-                <button type="submit" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-magic"></i> Generate Lessons</button>
-              </form>
+              <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Открыть</a>
+              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.edit_url }}"><i class="bi bi-pencil"></i> Изменить программу</a>
             </div>
           </div>
         {% endfor %}
@@ -49,7 +43,7 @@
       <div class="ok-group-empty-state">
         <i class="bi bi-kanban"></i>
         <h4>Учебные программы ещё не добавлены</h4>
-        <p>Добавьте преподавателя и расписание, чтобы начать.</p>
+        <p>Программа — это предмет, тренер и расписание. Добавьте первую, чтобы начать.</p>
         <a class="ok-btn-primary ok-btn-sm" href="{{ add_program_url }}">Добавить программу</a>
       </div>
     {% endif %}
