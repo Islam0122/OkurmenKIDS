@@ -5,8 +5,8 @@
 <div class="ok-card">
   <div class="ok-card-header">
     <i class="bi bi-person-badge"></i><span>Преподаватели группы</span>
-    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_teacher_url }}">
-      <i class="bi bi-person-plus"></i> Добавить преподавателя
+    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_program_url }}">
+      <i class="bi bi-plus-circle"></i> Добавить программу
     </a>
   </div>
   <div class="ok-card-body">
@@ -31,7 +31,6 @@
             </div>
             <div class="ok-group-program-actions">
               <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Открыть программу</a>
-              <a class="ok-btn-secondary ok-btn-sm" href="{{ add_schedule_url }}?program={{ card.obj.pk }}"><i class="bi bi-calendar-plus"></i> Расписание</a>
               <a class="ok-btn-secondary ok-btn-sm" href="{{ card.edit_url }}"><i class="bi bi-pencil"></i> Изменить</a>
               <form method="post" action="{{ card.remove_url }}" onsubmit="return confirm('Удалить это назначение? Расписание программы будет удалено, но занятия/посещаемость/ДЗ сохранятся.');">
                 {% csrf_token %}
@@ -47,7 +46,8 @@
       <div class="ok-group-empty-state">
         <i class="bi bi-person-badge"></i>
         <h4>Преподаватели ещё не добавлены</h4>
-        <a class="ok-btn-primary ok-btn-sm" href="{{ add_teacher_url }}">Добавить преподавателя</a>
+        <p>Преподаватель назначается через учебную программу (предмет + расписание).</p>
+        <a class="ok-btn-primary ok-btn-sm" href="{{ add_program_url }}">Добавить программу</a>
       </div>
     {% endif %}
   </div>

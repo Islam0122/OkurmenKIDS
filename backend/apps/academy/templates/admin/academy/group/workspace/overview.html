@@ -90,8 +90,8 @@
           <div class="ok-group-empty-state">
             <i class="bi bi-person-badge"></i>
             <h4>Пока нет учебных программ</h4>
-            <p>Добавьте преподавателя и расписание, чтобы начать</p>
-            <a class="ok-btn-primary ok-btn-sm" href="{{ add_teacher_url }}"><i class="bi bi-plus-lg"></i> Добавить преподавателя</a>
+            <p>Добавьте программу — тренер, предмет и расписание — чтобы начать</p>
+            <a class="ok-btn-primary ok-btn-sm" href="{{ add_program_url }}"><i class="bi bi-plus-lg"></i> Добавить программу</a>
           </div>
         {% endif %}
       </div>
@@ -101,9 +101,7 @@
       <div class="ok-card-header"><i class="bi bi-lightning-charge-fill"></i><span>Быстрые действия</span></div>
       <div class="ok-card-body ok-quick-actions">
         <a href="{{ add_student_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-person-plus"></i> Добавить студента</a>
-        <a href="{{ add_teacher_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-person-badge"></i> Добавить преподавателя</a>
         <a href="{{ add_program_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-plus-circle"></i> Добавить программу</a>
-        <a href="{{ add_schedule_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-calendar-plus"></i> Добавить расписание</a>
         <form method="post" action="{{ generate_lessons_url }}">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ request.path }}">

@@ -5,8 +5,8 @@
 <div class="ok-card">
   <div class="ok-card-header">
     <i class="bi bi-calendar-week"></i><span>Недельное расписание</span>
-    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_schedule_url }}">
-      <i class="bi bi-plus-lg"></i> Добавить расписание
+    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_program_url }}">
+      <i class="bi bi-plus-circle"></i> Добавить программу
     </a>
   </div>
   <div class="ok-card-body">
@@ -28,10 +28,15 @@
                     {% else %}
                       <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span>
                     {% endif %}
-                    <form method="post" action="{{ row.remove_url }}" onsubmit="return confirm('Удалить этот слот расписания?');">
-                      {% csrf_token %}
-                      <button type="submit" class="ok-btn-secondary ok-btn-sm" title="Удалить"><i class="bi bi-trash3"></i></button>
-                    </form>
+                    <div class="ok-group-schedule-row-actions">
+                      {% if row.edit_program_url %}
+                        <a class="ok-btn-secondary ok-btn-sm" href="{{ row.edit_program_url }}" title="Изменить программу"><i class="bi bi-pencil"></i></a>
+                      {% endif %}
+                      <form method="post" action="{{ row.remove_url }}" onsubmit="return confirm('Удалить этот слот расписания?');">
+                        {% csrf_token %}
+                        <button type="submit" class="ok-btn-secondary ok-btn-sm" title="Удалить"><i class="bi bi-trash3"></i></button>
+                      </form>
+                    </div>
                   </div>
                 </div>
               {% endfor %}
@@ -45,7 +50,8 @@
       <div class="ok-group-empty-state">
         <i class="bi bi-calendar-week"></i>
         <h4>Расписание ещё не настроено</h4>
-        <a class="ok-btn-primary ok-btn-sm" href="{{ add_schedule_url }}">Добавить расписание</a>
+        <p>Расписание создаётся вместе с учебной программой.</p>
+        <a class="ok-btn-primary ok-btn-sm" href="{{ add_program_url }}">Добавить программу</a>
       </div>
     {% endif %}
   </div>
