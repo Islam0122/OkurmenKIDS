@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import datetime as dt
+from io import StringIO
 from unittest import mock
 
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -52,13 +54,20 @@ from apps.academy.services.analytics import (
     resolve_period,
 )
 from apps.academy.services.attendance_service import bulk_mark_attendance
+from apps.academy.admin_views import _detect_conflicts, _lesson_status_kpi
 from apps.academy.services.group_schedule_conflicts import (
+    find_schedule_group_conflict,
     find_schedule_room_conflict,
     find_schedule_teacher_conflict,
+    overlapping_groups,
 )
 from apps.academy.services.group_schedule_sync import sync_legacy_group_schedule
 from apps.academy.services.homework_service import bulk_upsert_homework_results
-from apps.academy.services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+from apps.academy.services.lesson_generator import (
+    LessonGenerationError,
+    generate_lessons_for_group,
+    generate_lessons_for_group_with_report,
+)
 from apps.academy.views import _assert_teacher_owns_lesson
 
 # NOTE: login/verification/permission tests for the underlying auth system
@@ -2138,6 +2147,62 @@ class GroupScheduleConflictTests(AcademyTestBase):
         )
         self.assertIsNone(conflict)
 
+    # -- group conflict: one group cannot attend two programs at once ------
+
+    def test_group_conflict_detected_even_with_different_teacher_and_room(self):
+        # group1 already has a slot Mon 15:00-16:30 (teacher1/room1) — a
+        # second, overlapping slot for group1 with a *different* teacher and
+        # room must still be flagged: the group itself can't be in two
+        # places at once.
+        conflict = find_schedule_group_conflict(
+            group=self.group1, day_of_week="mon", start_time=dt.time(15, 30), end_time=dt.time(16, 0),
+        )
+        self.assertIsNotNone(conflict)
+
+    def test_group_conflict_adjacent_slots_do_not_conflict(self):
+        conflict = find_schedule_group_conflict(
+            group=self.group1, day_of_week="mon", start_time=dt.time(16, 30), end_time=dt.time(17, 30),
+        )
+        self.assertIsNone(conflict)
+
+    def test_different_group_same_time_no_group_conflict(self):
+        conflict = find_schedule_group_conflict(
+            group=self.group2, day_of_week="mon", start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+        )
+        self.assertIsNone(conflict)
+
+    def test_api_rejects_group_double_booking_with_different_teacher_and_room(self):
+        response = self.admin_client.post(
+            "/api/v1/schedules/",
+            {
+                "group": self.group1.id, "teacher": self.teacher2.id, "subject": self.subject_python.id,
+                "day_of_week": "mon", "start_time": "15:30", "end_time": "16:00", "room": self.room2.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("group", response.data)
+
+    def test_api_allows_group_adjacent_slot(self):
+        response = self.admin_client.post(
+            "/api/v1/schedules/",
+            {
+                "group": self.group1.id, "teacher": self.teacher2.id, "subject": self.subject_python.id,
+                "day_of_week": "mon", "start_time": "16:30", "end_time": "17:30", "room": self.room2.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_model_clean_rejects_group_double_booking(self):
+        slot = GroupSchedule(
+            group=self.group1, teacher=self.teacher2, subject=self.subject_python,
+            day_of_week="mon", start_time=dt.time(15, 30), end_time=dt.time(16, 0), room=self.room2,
+        )
+        with self.assertRaises(DjangoValidationError) as ctx:
+            slot.full_clean()
+        self.assertIn("group", ctx.exception.message_dict)
+
     def test_api_rejects_teacher_double_booking(self):
         response = self.admin_client.post(
             "/api/v1/schedules/",
@@ -2246,6 +2311,35 @@ class LessonGeneratorConflictSafetyTests(AcademyTestBase):
         self.assertFalse(Lesson.objects.filter(group=conflicting_group).exists())
         with self.assertRaises(LessonGenerationError):
             generate_lessons_for_group(conflicting_group)
+
+    def test_generation_skips_slots_that_double_book_a_group(self):
+        # One group, two independent programs (different teacher, different
+        # room, own individual lesson plans) whose schedules overlap — the
+        # group itself physically can't attend both at once, even though
+        # neither the teacher nor the room conflict check would catch it.
+        course = Course.objects.create(name="Conflicting Group Course", count_lesson=1)
+        course.subjects.add(self.subject_python, self.subject_frontend)
+        teacher_a = make_teacher("group_conflict_teacher_a")
+        teacher_b = make_teacher("group_conflict_teacher_b")
+        conflicting_group = Group.objects.create(
+            name="Conflicting Group Group", course=course, start_date=dt.date(2026, 9, 7),
+        )
+        slot_a = GroupSchedule.objects.create(
+            group=conflicting_group, teacher=teacher_a, subject=self.subject_python,
+            day_of_week="mon", start_time=dt.time(8, 0), end_time=dt.time(9, 0), room=self.room1,
+        )
+        slot_b = GroupSchedule.objects.create(
+            group=conflicting_group, teacher=teacher_b, subject=self.subject_frontend,
+            day_of_week="mon", start_time=dt.time(8, 30), end_time=dt.time(9, 30), room=self.room2,
+        )
+        GroupTeacherLessonPlan.objects.create(group_teacher=slot_a.group_teacher, lesson_number=1, topic="A Тема")
+        GroupTeacherLessonPlan.objects.create(group_teacher=slot_b.group_teacher, lesson_number=1, topic="B Тема")
+
+        # Both programs' only slot conflicts with the other — neither can
+        # generate a lesson without putting the group in two places at once.
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(conflicting_group)
+        self.assertEqual(Lesson.objects.filter(group=conflicting_group).count(), 0)
 
 
 class AvailabilityAPITests(AcademyTestBase):
@@ -4132,3 +4226,380 @@ class LessonMonitoringAdminTests(AcademyTestBase):
     def test_schedule_page_has_no_manual_add_lesson_button(self):
         response = self.admin_web.get(reverse("admin:academy_schedule"))
         self.assertNotContains(response, "Создать занятие")
+
+
+# ---------------------------------------------------------------------------
+# Conflict/generation critical-bugfix suite — the exact scenarios called out
+# when fixing the group-conflict gap, the pairwise-duplicate conflict report,
+# and generator idempotency/status-KPI correctness.
+# ---------------------------------------------------------------------------
+
+class ConflictReportGroupingTests(AcademyTestBase):
+    """`_detect_conflicts` must emit *one* entry per genuinely conflicting
+    cluster of lessons, never one entry per pair — the "same conflict shown
+    three times" bug."""
+
+    def _make_lesson(self, *, group_teacher, teacher, subject, lesson_number, start_time, end_time, room=None,
+                      date=dt.date(2026, 9, 9)):
+        return Lesson.objects.create(
+            group=self.group1, group_teacher=group_teacher, teacher=teacher, subject=subject,
+            lesson_number=lesson_number, date=date, start_time=start_time, end_time=end_time,
+            room=room, status=Lesson.Status.PLANNED,
+        )
+
+    def test_three_mutually_overlapping_lessons_produce_one_group_conflict(self):
+        teacher_c = make_teacher("conflict_teacher_c")
+        subject_c = Subject.objects.create(name="ConflictSubjectC")
+        gt_a = GroupTeacher.objects.create(group=self.group1, teacher=self.teacher1, subject=self.subject_python)
+        gt_b = GroupTeacher.objects.create(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        gt_c = GroupTeacher.objects.create(group=self.group1, teacher=teacher_c, subject=subject_c)
+
+        lesson_a = self._make_lesson(
+            group_teacher=gt_a, teacher=self.teacher1, subject=self.subject_python,
+            lesson_number=101, start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+        )
+        lesson_b = self._make_lesson(
+            group_teacher=gt_b, teacher=self.teacher2, subject=self.subject_frontend,
+            lesson_number=101, start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+        )
+        lesson_c = self._make_lesson(
+            group_teacher=gt_c, teacher=teacher_c, subject=subject_c,
+            lesson_number=101, start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+        )
+
+        teacher_conflicts, room_conflicts, group_conflicts, conflicting_ids = _detect_conflicts(
+            Lesson.objects.filter(pk__in=[lesson_a.pk, lesson_b.pk, lesson_c.pk])
+        )
+
+        self.assertEqual(len(group_conflicts), 1)
+        self.assertEqual({l.id for l in group_conflicts[0]["lessons"]}, {lesson_a.id, lesson_b.id, lesson_c.id})
+        self.assertEqual(conflicting_ids, {lesson_a.id, lesson_b.id, lesson_c.id})
+        # Three different teachers, no room assigned — no teacher/room
+        # conflict, only the group conflict.
+        self.assertEqual(teacher_conflicts, [])
+        self.assertEqual(room_conflicts, [])
+
+    def test_transitive_overlap_chain_is_one_group_not_two(self):
+        # A: 08:00-09:00, B: 08:30-09:30, C: 09:15-10:15 — A overlaps B, B
+        # overlaps C, but A does NOT directly overlap C. Still one group of
+        # three: the room can't host any two of them at once.
+        gt_a = GroupTeacher.objects.create(group=self.group1, teacher=self.teacher1, subject=self.subject_python)
+        gt_b = GroupTeacher.objects.create(group=self.group2, teacher=self.teacher2, subject=self.subject_frontend)
+        teacher_c = make_teacher("chain_teacher_c")
+        gt_c = GroupTeacher.objects.create(group=self.group2, teacher=teacher_c, subject=self.subject_frontend)
+
+        room = self.room1
+        lesson_a = Lesson.objects.create(
+            group=self.group1, group_teacher=gt_a, teacher=self.teacher1, subject=self.subject_python,
+            lesson_number=201, date=dt.date(2026, 9, 9), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+            room=room, status=Lesson.Status.PLANNED,
+        )
+        lesson_b = Lesson.objects.create(
+            group=self.group2, group_teacher=gt_b, teacher=self.teacher2, subject=self.subject_frontend,
+            lesson_number=201, date=dt.date(2026, 9, 9), start_time=dt.time(8, 30), end_time=dt.time(9, 30),
+            room=room, status=Lesson.Status.PLANNED,
+        )
+        lesson_c = Lesson.objects.create(
+            group=self.group2, group_teacher=gt_c, teacher=teacher_c, subject=self.subject_frontend,
+            lesson_number=201, date=dt.date(2026, 9, 9), start_time=dt.time(9, 15), end_time=dt.time(10, 15),
+            room=room, status=Lesson.Status.PLANNED,
+        )
+
+        _, room_conflicts, _, conflicting_ids = _detect_conflicts(
+            Lesson.objects.filter(pk__in=[lesson_a.pk, lesson_b.pk, lesson_c.pk])
+        )
+
+        self.assertEqual(len(room_conflicts), 1)
+        self.assertEqual({l.id for l in room_conflicts[0]["lessons"]}, {lesson_a.id, lesson_b.id, lesson_c.id})
+        self.assertEqual(conflicting_ids, {lesson_a.id, lesson_b.id, lesson_c.id})
+
+    def test_non_overlapping_same_day_lessons_are_not_flagged(self):
+        gt_a = GroupTeacher.objects.create(group=self.group1, teacher=self.teacher1, subject=self.subject_python)
+        lesson_morning = self._make_lesson(
+            group_teacher=gt_a, teacher=self.teacher1, subject=self.subject_python,
+            lesson_number=301, start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+        )
+        lesson_afternoon = self._make_lesson(
+            group_teacher=gt_a, teacher=self.teacher1, subject=self.subject_python,
+            lesson_number=302, start_time=dt.time(9, 0), end_time=dt.time(10, 0),
+        )
+        _, _, group_conflicts, conflicting_ids = _detect_conflicts(
+            Lesson.objects.filter(pk__in=[lesson_morning.pk, lesson_afternoon.pk])
+        )
+        self.assertEqual(group_conflicts, [])
+        self.assertEqual(conflicting_ids, set())
+
+
+class ScheduleViewGroupConflictDisplayTests(AcademyTestBase):
+    """The Schedule admin page must actually render the new grouped
+    "Конфликт группы" section — once per conflicting cluster."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+        teacher_c = make_teacher("display_conflict_teacher_c")
+        subject_c = Subject.objects.create(name="DisplayConflictSubjectC")
+        gt_a = GroupTeacher.objects.create(group=self.group1, teacher=self.teacher1, subject=self.subject_python)
+        gt_b = GroupTeacher.objects.create(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        gt_c = GroupTeacher.objects.create(group=self.group1, teacher=teacher_c, subject=subject_c)
+
+        common = dict(
+            group=self.group1, date=dt.date(2026, 9, 9), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+            status=Lesson.Status.PLANNED,
+        )
+        Lesson.objects.create(group_teacher=gt_a, teacher=self.teacher1, subject=self.subject_python, lesson_number=401, **common)
+        Lesson.objects.create(group_teacher=gt_b, teacher=self.teacher2, subject=self.subject_frontend, lesson_number=401, **common)
+        Lesson.objects.create(group_teacher=gt_c, teacher=teacher_c, subject=subject_c, lesson_number=401, **common)
+
+    def test_group_conflict_shown_exactly_once(self):
+        response = self.admin_web.get(reverse("admin:academy_schedule"), {"week": "2026-09-07"})
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertEqual(body.count("Конфликт группы"), 1)
+
+
+class LessonGenerationIdempotencyTests(AcademyTestBase):
+    """Repeated/concurrent generation calls, and edits to already-generated
+    Lessons, must never be duplicated or overwritten."""
+
+    def setUp(self):
+        super().setUp()
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+        self.lesson1 = self.lessons[0]
+
+    def test_repeated_generation_creates_no_duplicates(self):
+        before = Lesson.objects.filter(group=self.group1).count()
+        report1 = generate_lessons_for_group_with_report(self.group1)
+        report2 = generate_lessons_for_group_with_report(self.group1)
+
+        self.assertEqual(report1.created, 0)
+        self.assertEqual(report2.created, 0)
+        self.assertEqual(report2.already_existed, before)
+        self.assertEqual(Lesson.objects.filter(group=self.group1).count(), before)
+
+    def test_concurrent_generation_race_resolves_to_one_row_not_a_duplicate(self):
+        # Simulate a second, concurrent request having already inserted this
+        # exact (group_teacher, lesson_number) row a moment before this call
+        # even starts — the pre-filtering in _generate_from_course_plan
+        # would normally skip it, but get_or_create's own identity check is
+        # what actually guarantees no duplicate/no crash regardless.
+        group_teacher = self.group1.teachers.get()
+        before_count = Lesson.objects.filter(group=self.group1).count()
+
+        generate_lessons_for_group(self.group1)  # fully generated once already (see setUp)
+        self.assertEqual(Lesson.objects.filter(group=self.group1).count(), before_count)
+
+        # Directly exercise the generator's own identity-safe creation path
+        # against a pre-existing row for the same (group_teacher, lesson_number).
+        from apps.academy.services.lesson_generator import _get_or_create_lesson
+
+        lesson, created = _get_or_create_lesson(
+            {
+                "group": self.group1, "group_teacher": group_teacher, "plan": None,
+                "schedule": None, "teacher": self.teacher1, "lesson_number": self.lesson1.lesson_number,
+                "date": self.lesson1.date, "start_time": self.lesson1.start_time, "end_time": self.lesson1.end_time,
+                "room": self.room1, "subject": self.subject_python, "topic": "Другая тема (гонка)",
+                "description": "", "youtube_url": "", "presentation_urls": [],
+            }
+        )
+        self.assertFalse(created)
+        self.assertEqual(lesson.id, self.lesson1.id)
+        self.assertEqual(lesson.topic, self.lesson1.topic)  # untouched, not overwritten by the race loser
+        self.assertEqual(Lesson.objects.filter(group=self.group1).count(), before_count)
+
+    def test_cancelled_lesson_untouched_by_regeneration(self):
+        self.lesson1.status = Lesson.Status.CANCELLED
+        self.lesson1.cancellation_reason = "Праздник"
+        self.lesson1.save(update_fields=["status", "cancellation_reason"])
+
+        generate_lessons_for_group(self.group1)
+
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.CANCELLED)
+        self.assertEqual(self.lesson1.cancellation_reason, "Праздник")
+
+    def test_attendance_and_homework_survive_regeneration(self):
+        Attendance.objects.create(student=self.student1, lesson=self.lesson1, status=Attendance.Status.PRESENT)
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ на закрепление")
+
+        generate_lessons_for_group(self.group1)
+
+        self.assertTrue(Attendance.objects.filter(student=self.student1, lesson=self.lesson1).exists())
+        self.assertTrue(Homework.objects.filter(pk=homework.pk, lesson=self.lesson1).exists())
+
+
+class GenerationReportFieldsTests(AcademyTestBase):
+    """generate_lessons_for_group_with_report's counters (created/already_
+    existed/skipped/conflicts/errors) must reflect what actually happened —
+    §6/§7 of the spec."""
+
+    def test_report_counts_conflicts_from_a_pre_existing_bad_slot(self):
+        # A raw-saved conflicting slot for an unrelated group (bypassing
+        # clean()) is skipped by the generator's own defense-in-depth check
+        # and must show up as a counted conflict, not silently vanish.
+        other_course = Course.objects.create(name="Report Conflict Course", count_lesson=1)
+        other_course.subjects.add(self.subject_python)
+        CourseLessonPlan.objects.create(course=other_course, lesson_number=1, subject=self.subject_python, topic="Тема")
+        conflicting_group = Group.objects.create(
+            name="Report Conflict Group", course=other_course, start_date=dt.date(2026, 9, 7),
+        )
+        GroupSchedule.objects.create(
+            group=conflicting_group, teacher=self.teacher1, subject=self.subject_python,
+            day_of_week="mon", start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+        )
+
+        report = generate_lessons_for_group_with_report(conflicting_group)
+        self.assertEqual(report.created, 0)
+        self.assertGreaterEqual(report.conflicts, 1)
+        self.assertTrue(report.errors)
+
+    def test_report_created_and_already_existed_across_two_calls(self):
+        report1 = generate_lessons_for_group_with_report(self.group1)
+        total_after_first = Lesson.objects.filter(group=self.group1).count()
+        self.assertEqual(report1.already_existed + report1.created, total_after_first)
+
+        report2 = generate_lessons_for_group_with_report(self.group1)
+        self.assertEqual(report2.created, 0)
+        self.assertEqual(report2.already_existed, total_after_first)
+
+
+class GeneratorSkipsInvalidSlotsTests(AcademyTestBase):
+    """Generation must not create Lessons from a Teacher/Room that's no
+    longer active, or a slot with an invalid time range — even if such a
+    row already exists in the database (bypassing clean() at save time)."""
+
+    def test_generation_skips_slot_for_inactive_teacher(self):
+        other_course = Course.objects.create(name="Inactive Teacher Course", count_lesson=1)
+        other_course.subjects.add(self.subject_python)
+        CourseLessonPlan.objects.create(course=other_course, lesson_number=1, subject=self.subject_python, topic="Тема")
+        inactive_teacher = make_teacher("inactive_teacher_gen")
+        group = Group.objects.create(name="Inactive Teacher Group", course=other_course, start_date=dt.date(2026, 9, 7))
+        slot = GroupSchedule(
+            group=group, teacher=inactive_teacher, subject=self.subject_python,
+            day_of_week="tue", start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        # Deactivate the teacher *before* the slot ever triggers the
+        # auto-generate-on-save signal, so we're testing generation's own
+        # active-resource check — not just that lessons already generated
+        # earlier (while the teacher was still active) survive untouched.
+        slot._defer_schedule_sync = True
+        slot.save()
+        inactive_teacher.is_active = False
+        inactive_teacher.save(update_fields=["is_active"])
+
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(group)
+        self.assertFalse(Lesson.objects.filter(group=group).exists())
+
+    def test_generation_skips_slot_for_inactive_room(self):
+        other_course = Course.objects.create(name="Inactive Room Course", count_lesson=1)
+        other_course.subjects.add(self.subject_python)
+        CourseLessonPlan.objects.create(course=other_course, lesson_number=1, subject=self.subject_python, topic="Тема")
+        other_teacher = make_teacher("inactive_room_teacher_gen")
+        inactive_room = Room.objects.create(name="Inactive Room", is_active=True)
+        group = Group.objects.create(name="Inactive Room Group", course=other_course, start_date=dt.date(2026, 9, 7))
+        slot = GroupSchedule(
+            group=group, teacher=other_teacher, subject=self.subject_python,
+            day_of_week="tue", start_time=dt.time(10, 0), end_time=dt.time(11, 0), room=inactive_room,
+        )
+        slot._defer_schedule_sync = True
+        slot.save()
+        inactive_room.is_active = False
+        inactive_room.save(update_fields=["is_active"])
+
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(group)
+        self.assertFalse(Lesson.objects.filter(group=group).exists())
+
+    def test_generation_refuses_a_cancelled_group(self):
+        self.group1.status = Group.Status.CANCELLED
+        self.group1.save(update_fields=["status"])
+        with self.assertRaises(LessonGenerationError):
+            generate_lessons_for_group(self.group1)
+
+
+class LessonStatusKPITests(AcademyTestBase):
+    """Completed/Cancelled/Upcoming must reflect the real `Lesson.status`
+    value only, never date-based inference — and the same underlying data
+    must report the same numbers everywhere it's shown."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.today = timezone.localdate()
+
+        gt = self.group1.teachers.get()
+        Lesson.objects.filter(group=self.group1).delete()  # start from a clean, controlled slate
+
+        def make(number, date, status):
+            return Lesson.objects.create(
+                group=self.group1, group_teacher=gt, teacher=self.teacher1, subject=self.subject_python,
+                lesson_number=number, date=date, start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+                status=status,
+            )
+
+        self.past_completed = make(1, self.today - dt.timedelta(days=10), Lesson.Status.COMPLETED)
+        self.past_cancelled = make(2, self.today - dt.timedelta(days=5), Lesson.Status.CANCELLED)
+        # A PLANNED lesson whose date has already passed but was never
+        # confirmed completed — must NOT count as completed just because
+        # the date is in the past (spec §12).
+        self.past_still_planned = make(3, self.today - dt.timedelta(days=1), Lesson.Status.PLANNED)
+        self.upcoming_planned = make(4, self.today + dt.timedelta(days=1), Lesson.Status.PLANNED)
+
+    def test_kpi_helper_counts_real_statuses_only(self):
+        kpi = _lesson_status_kpi(Lesson.objects.filter(group=self.group1), self.today)
+        self.assertEqual(kpi["completed"], 1)
+        self.assertEqual(kpi["cancelled"], 1)
+        # Upcoming excludes completed, cancelled, AND the past-but-still-
+        # planned lesson (it's not "upcoming" — it's in the past).
+        self.assertEqual(kpi["upcoming"], 1)
+        self.assertEqual(kpi["total"], 4)
+
+    def test_group_overview_and_lesson_monitor_report_the_same_numbers(self):
+        overview = self.admin_web.get(reverse("admin:academy_group_workspace", args=[self.group1.pk]))
+        monitor = self.admin_web.get(reverse("admin:academy_lesson_changelist"), {"group": self.group1.pk})
+
+        overview_body = overview.content.decode()
+        monitor_body = monitor.content.decode()
+
+        # Both pages must agree that this group has exactly 1 completed and
+        # 1 cancelled lesson — the same underlying data, the same shared
+        # _lesson_status_kpi() call, never two different numbers.
+        self.assertIn('<div class="ok-kpi-value">1</div>\n    <div class="ok-kpi-label">Завершённые занятия</div>', overview_body)
+        self.assertIn('<div class="ok-kpi-value">1</div>\n    <div class="ok-kpi-label">Отменённые занятия</div>', overview_body)
+        self.assertIn('<div class="ok-kpi-value">1</div>\n      <div class="ok-kpi-label">Завершённые</div>', monitor_body)
+        self.assertIn('<div class="ok-kpi-value">1</div>\n      <div class="ok-kpi-label">Отменённые</div>', monitor_body)
+
+
+class AuditScheduleConflictsCommandTests(AcademyTestBase):
+    """The audit command reports existing bad schedule data without
+    modifying anything (spec §15: no automatic cleanup)."""
+
+    def test_reports_existing_group_conflict_without_modifying_data(self):
+        other_teacher = make_teacher("audit_conflict_teacher")
+        GroupSchedule.objects.create(
+            group=self.group1, teacher=other_teacher, subject=self.subject_frontend,
+            day_of_week="mon", start_time=dt.time(15, 30), end_time=dt.time(16, 0), room=self.room2,
+        )
+        schedule_count_before = GroupSchedule.objects.count()
+        lesson_count_before = Lesson.objects.count()
+
+        out = StringIO()
+        call_command("audit_schedule_conflicts", stdout=out)
+        output = out.getvalue()
+
+        self.assertIn("Группа", output)
+        self.assertIn(self.group1.name, output)
+        self.assertEqual(GroupSchedule.objects.count(), schedule_count_before)
+        self.assertEqual(Lesson.objects.count(), lesson_count_before)
+
+    def test_reports_no_conflicts_when_schedule_is_clean(self):
+        # group2 has its own, non-conflicting slot only.
+        out = StringIO()
+        call_command("audit_schedule_conflicts", stdout=out)
+        # group1/group2 alone (no manually-introduced conflict) must not be
+        # reported as conflicting with each other.
+        self.assertNotIn("Frontend Beginner", out.getvalue().split("Python Beginner")[0])

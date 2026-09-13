@@ -22,6 +22,7 @@ from .models import (
     Student,
 )
 from .services.group_schedule_conflicts import (
+    find_schedule_group_conflict,
     find_schedule_room_conflict,
     find_schedule_teacher_conflict,
 )
@@ -301,6 +302,7 @@ class GroupScheduleSlotSerializer(serializers.ModelSerializer):
         teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
         subject = attrs.get("subject", getattr(self.instance, "subject", None))
         room = attrs.get("room", getattr(self.instance, "room", None))
+        group = attrs.get("group", getattr(self.instance, "group", None))
         day_of_week = attrs.get("day_of_week", getattr(self.instance, "day_of_week", None))
         exclude_id = getattr(self.instance, "pk", None)
 
@@ -329,6 +331,19 @@ class GroupScheduleSlotSerializer(serializers.ModelSerializer):
             if conflict is not None:
                 raise serializers.ValidationError(
                     {"room": f"Аудитория «{room.name}» уже занята в это время в группе «{conflict.group.name}»."}
+                )
+
+        if group and day_of_week and start_time and end_time:
+            # A Group cannot physically attend two programs at once — even
+            # when the teacher and room are both different (see
+            # find_schedule_group_conflict's own docstring).
+            conflict = find_schedule_group_conflict(
+                group=group, day_of_week=day_of_week, start_time=start_time, end_time=end_time,
+                exclude_schedule_id=exclude_id,
+            )
+            if conflict is not None:
+                raise serializers.ValidationError(
+                    {"group": f"Группа «{group.name}» уже занята в это время программой «{conflict.group_teacher}»."}
                 )
 
         return attrs

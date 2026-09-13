@@ -733,6 +733,25 @@ class GroupSchedule(models.Model):
                     f"Аудитория «{self.room.name}» уже занята в это время в группе «{conflict.group.name}»."
                 )
 
+        if self.group_id and self.day_of_week and self.start_time and self.end_time:
+            from .services.group_schedule_conflicts import find_schedule_group_conflict
+
+            # A Group cannot physically attend two programs at once, even
+            # when the teacher and room are both different (e.g. CyberSecurity
+            # and English both Monday 08:00-09:00 for the same group) — see
+            # find_schedule_group_conflict's own docstring.
+            conflict = find_schedule_group_conflict(
+                group=self.group,
+                day_of_week=self.day_of_week,
+                start_time=self.start_time,
+                end_time=self.end_time,
+                exclude_schedule_id=self.pk,
+            )
+            if conflict is not None:
+                errors["group"] = (
+                    f"Группа «{self.group.name}» уже занята в это время программой «{conflict.group_teacher}»."
+                )
+
         if errors:
             raise ValidationError(errors)
 

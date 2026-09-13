@@ -39,7 +39,11 @@ from django.db import transaction
 
 from ..constants import WEEKDAY_CODES
 from ..models import Group, GroupSchedule, GroupTeacher, Homework, Lesson
-from .group_schedule_conflicts import find_schedule_room_conflict, find_schedule_teacher_conflict
+from .group_schedule_conflicts import (
+    find_schedule_group_conflict,
+    find_schedule_room_conflict,
+    find_schedule_teacher_conflict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,20 +57,50 @@ class LessonGenerationError(Exception):
 
 
 def _without_conflicting_slots(slots: list[GroupSchedule], *, label: str) -> list[GroupSchedule]:
-    """Defense-in-depth against double-booking a teacher/room.
+    """Defense-in-depth against invalid or double-booked slots.
 
-    `GroupSchedule.clean()` already rejects a conflicting slot — but only
-    when something actually calls `full_clean()` (a ModelForm or a DRF
-    serializer). A slot persisted via a raw `.save()`/`bulk_create` (data
-    migrations, `services.group_schedule_sync`, fixtures) can reach
-    generation unchecked. Rather than trust every slot blindly, re-verify
-    each one here and skip — with a logged warning, never a hard failure —
-    any slot that currently clashes with another active GroupSchedule row
-    on the same teacher or room. One bad slot is dropped; the rest of the
-    Teacher Program's schedule still generates normally.
+    `GroupSchedule.clean()` already rejects a conflicting or invalid slot —
+    but only when something actually calls `full_clean()` (a ModelForm or a
+    DRF serializer). A slot persisted via a raw `.save()`/`bulk_create` (data
+    migrations, `services.group_schedule_sync`, fixtures), or one that
+    became invalid *after* being saved (a Teacher/Room deactivated later),
+    can reach generation unchecked. Rather than trust every slot blindly,
+    re-verify each one here and skip — with a logged warning, never a hard
+    failure — any slot that currently:
+
+    - clashes with another active GroupSchedule row on the same teacher,
+      room, *or group* (a Group cannot physically attend two programs at
+      once, even with different teachers/rooms — see
+      find_schedule_group_conflict); or
+    - references a Teacher/Room that is no longer active; or
+    - has an invalid time range (end <= start).
+
+    One bad slot is dropped; the rest of the Teacher Program's schedule
+    still generates normally.
     """
     clean_slots = []
     for slot in slots:
+        if slot.end_time <= slot.start_time:
+            logger.warning(
+                "[lesson_generator] %s: skipping schedule slot id=%s — invalid time range (%s-%s).",
+                label, slot.pk, slot.start_time, slot.end_time,
+            )
+            continue
+
+        if not slot.teacher.is_active:
+            logger.warning(
+                "[lesson_generator] %s: skipping schedule slot id=%s — teacher %r is not active.",
+                label, slot.pk, str(slot.teacher),
+            )
+            continue
+
+        if slot.room_id and not slot.room.is_active:
+            logger.warning(
+                "[lesson_generator] %s: skipping schedule slot id=%s — room %r is not active.",
+                label, slot.pk, str(slot.room),
+            )
+            continue
+
         conflict = find_schedule_teacher_conflict(
             teacher=slot.teacher,
             day_of_week=slot.day_of_week,
@@ -97,6 +131,21 @@ def _without_conflicting_slots(slots: list[GroupSchedule], *, label: str) -> lis
                     label, slot.pk, str(slot.room), conflict.group.name, conflict.pk,
                 )
                 continue
+
+        conflict = find_schedule_group_conflict(
+            group=slot.group,
+            day_of_week=slot.day_of_week,
+            start_time=slot.start_time,
+            end_time=slot.end_time,
+            exclude_schedule_id=slot.pk,
+        )
+        if conflict is not None:
+            logger.warning(
+                "[lesson_generator] %s: skipping schedule slot id=%s — group %r already has an "
+                "overlapping program at this time (schedule id=%s, program %r).",
+                label, slot.pk, str(slot.group), conflict.pk, str(conflict.group_teacher),
+            )
+            continue
 
         clean_slots.append(slot)
     return clean_slots
@@ -131,13 +180,36 @@ def _create_homework_if_planned(lesson: Lesson, plan) -> None:
         )
 
 
+def _get_or_create_lesson(kwargs: dict) -> tuple[Lesson, bool]:
+    """Deterministic identity: `(group_teacher, lesson_number)` — the exact
+    pair the database's own `unique_group_teacher_lesson_number` constraint
+    enforces (see models.Lesson.Meta.constraints) — is the one and only
+    thing that identifies "this Lesson" for idempotency purposes.
+
+    Using `get_or_create` (backed by that constraint) instead of a blind
+    `create()` means a repeat call, a race between two simultaneous
+    generation requests (a double-click, two open tabs, the post_save
+    signal in signals.py firing while a manual "Сгенерировать занятия" call
+    is already in flight), or a retry after a partial failure all safely
+    resolve to the *same* row instead of raising or duplicating —
+    `get_or_create` already opens its own savepoint around the INSERT and
+    falls back to a plain re-fetch on `IntegrityError`, so a lost race never
+    poisons the outer (already-atomic) generation call.
+    """
+    lookup = {"group_teacher": kwargs["group_teacher"], "lesson_number": kwargs["lesson_number"]}
+    defaults = {key: value for key, value in kwargs.items() if key not in lookup}
+    return Lesson.objects.get_or_create(defaults=defaults, **lookup)
+
+
 def _walk_and_generate(*, group: Group, slots_by_weekday, plans_to_generate, lesson_kwargs_for) -> list[Lesson]:
     """Shared walk-forward-by-calendar-day loop: consumes `plans_to_generate`
     in order, one per active slot encountered (in weekday/start_time order),
     from `group.start_date` up to `group.end_date` (or a hard scan cap).
-    `lesson_kwargs_for(slot, plan, date)` builds the concrete Lesson.objects.create()
-    kwargs for one (slot, plan) pairing — the two generation modes below only
-    differ in that.
+    `lesson_kwargs_for(slot, plan, date)` builds the concrete Lesson
+    identity/content for one (slot, plan) pairing — the two generation modes
+    below only differ in that. Lesson rows are created via
+    `_get_or_create_lesson` (never a blind `.create()`) so a repeat run,
+    concurrent request, or retry-after-error never duplicates a row.
     """
     created: list[Lesson] = []
     current_date = group.start_date
@@ -153,9 +225,10 @@ def _walk_and_generate(*, group: Group, slots_by_weekday, plans_to_generate, les
             if plan is None:
                 break
 
-            lesson = Lesson.objects.create(**lesson_kwargs_for(slot, plan, current_date))
-            created.append(lesson)
-            _create_homework_if_planned(lesson, plan)
+            lesson, was_created = _get_or_create_lesson(lesson_kwargs_for(slot, plan, current_date))
+            if was_created:
+                created.append(lesson)
+                _create_homework_if_planned(lesson, plan)
             plan = next(plan_iter, None)
 
         current_date += dt.timedelta(days=1)
@@ -277,6 +350,9 @@ def generate_lessons_for_group(group: Group) -> list[Lesson]:
     still returns whatever the other teachers' assignments produced, so one
     misconfigured teacher never blocks the rest of the group.
     """
+    if group.status == Group.Status.CANCELLED:
+        raise LessonGenerationError(f"Группа «{group.name}» отменена — занятия не генерируются.")
+
     group_teachers = list(group.teachers.filter(is_active=True).select_related("teacher", "subject"))
     if not group_teachers:
         raise LessonGenerationError("У группы нет ни одного тренера.")
@@ -324,11 +400,19 @@ class LessonGenerationReport:
     the Group Workspace's "Сгенерировать занятия" button. Built entirely
     from that function's own return value and its own logging output
     (already emitted above) — see generate_lessons_for_group_with_report()
-    below. Never re-implements any generation/conflict-detection logic."""
+    below. Never re-implements any generation/conflict-detection logic.
+
+    `conflicts` counts slots skipped specifically because of a teacher/room/
+    group double-booking; `skipped` counts every other precondition skip
+    (an inactive teacher/room, an invalid time range) — both come from
+    `_without_conflicting_slots`'s own WARNING log lines, distinguished by
+    whether the message says a resource is already booked ("already...").
+    """
 
     created: int
     already_existed: int
-    conflicts_skipped: int
+    skipped: int
+    conflicts: int
     errors: list[str] = field(default_factory=list)
 
 
@@ -365,9 +449,12 @@ def generate_lessons_for_group_with_report(group: Group) -> LessonGenerationRepo
     finally:
         logger.removeHandler(collector)
 
-    conflicts_skipped = sum(
-        1 for record in collector.records if "skipping schedule slot" in record.getMessage()
-    )
+    skip_messages = [
+        record.getMessage() for record in collector.records if "skipping schedule slot" in record.getMessage()
+    ]
+    conflicts = sum(1 for message in skip_messages if "already" in message)
+    skipped = len(skip_messages) - conflicts
+
     for record in collector.records:
         if isinstance(record.msg, str) and "program(s) failed" in record.msg and record.args:
             joined = record.args[-1]
@@ -377,6 +464,7 @@ def generate_lessons_for_group_with_report(group: Group) -> LessonGenerationRepo
     return LessonGenerationReport(
         created=created_count,
         already_existed=already_existed,
-        conflicts_skipped=conflicts_skipped,
+        skipped=skipped,
+        conflicts=conflicts,
         errors=errors,
     )
