@@ -14,6 +14,8 @@
 {% block extrastyle %}
     {{ block.super }}
     <style>
+        :root { --okhelp-scroll-offset: 4.5rem; }
+
         .okhelp-page #content { max-width: 1320px; }
 
         .okhelp-hero {
@@ -56,11 +58,13 @@
         .okhelp-nav a {
             display: flex; align-items: center; gap: 0.55rem; padding: 0.5rem 0.65rem; border-radius: var(--ok-radius-sm, .45rem);
             color: var(--ok-text-secondary, #68736C); text-decoration: none; font-size: 0.86rem; font-weight: 500;
+            white-space: normal; line-height: 1.3;
         }
         .okhelp-nav a .okhelp-nav-num {
             display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem;
             font-size: 0.7rem; border-radius: 50%; background: var(--ok-surface-hover, #F1F6F2); color: var(--ok-text-muted, #89938D); flex: none;
         }
+        .okhelp-nav a .okhelp-nav-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
         .okhelp-nav a:hover { background: var(--ok-surface-hover, #F1F6F2); color: var(--ok-text, #202622); }
         .okhelp-nav a.is-active { background: var(--ok-primary-soft, #E7F3EC); color: var(--ok-primary, #2F8F5B); }
         .okhelp-nav a.is-active .okhelp-nav-num { background: var(--ok-primary, #2F8F5B); color: #fff; }
@@ -74,7 +78,7 @@
         @media (max-width: 991px) { .okhelp-nav-wrap { display: none; } .okhelp-mobile-nav { display: block; } }
 
         .okhelp-content { min-width: 0; }
-        .okhelp-section { background: var(--ok-surface, #fff); border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius-lg, .9rem); padding: 1.5rem 1.75rem; margin-bottom: 1.25rem; scroll-margin-top: 1rem; }
+        .okhelp-section { background: var(--ok-surface, #fff); border: 1px solid var(--ok-border, #E1E7E2); border-radius: var(--ok-radius-lg, .9rem); padding: 1.5rem 1.75rem; margin-bottom: 1.25rem; scroll-margin-top: var(--okhelp-scroll-offset, 4.5rem); }
         .okhelp-section h2 { display: flex; align-items: center; gap: 0.6rem; font-size: 1.2rem; font-weight: 700; color: var(--ok-text, #202622); margin: 0 0 0.35rem; }
         .okhelp-section h2 i { color: var(--ok-primary, #2F8F5B); }
         .okhelp-section > p.okhelp-lead { color: var(--ok-text-secondary, #68736C); margin: 0 0 1.1rem; }
@@ -769,8 +773,8 @@
             </details>
         </section>
 
-        <section class="okhelp-section" id="best-practices" data-title="Рекомендации по работе" data-keywords="рекомендации лучшие практики советы best practices">
-            <h2><i class="bi bi-star"></i> Рекомендации по работе</h2>
+        <section class="okhelp-section" id="best-practices" data-title="Лучшие практики" data-keywords="лучшие практики рекомендации советы best practices">
+            <h2><i class="bi bi-star"></i> Лучшие практики</h2>
             <ul>
                 <li>Сначала настройте структуру (курс → группа → программа → расписание), потом генерируйте занятия;</li>
                 <li>Не создавайте дублирующие группы;</li>
@@ -802,9 +806,15 @@
     var mobileSelect = document.getElementById("okhelp-mobile-select");
     var searchInput = document.getElementById("okhelp-search-input");
     var searchEmpty = document.getElementById("okhelp-search-empty");
+    var hero = document.querySelector(".okhelp-hero");
+    var backToTop = document.getElementById("okhelp-back-to-top");
 
     if (!sections.length || !nav) { return; }
 
+    // ------------------------------------------------------------------
+    // Build the desktop <ul> and the mobile <select> from the sections
+    // themselves, so the two navs and the content can never drift apart.
+    // ------------------------------------------------------------------
     var navList = document.createElement("ul");
     nav.appendChild(navList);
 
@@ -815,21 +825,107 @@
         var li = document.createElement("li");
         var a = document.createElement("a");
         a.href = "#" + section.id;
-        a.innerHTML = '<span class="okhelp-nav-num">' + (index + 1) + '</span><span>' + title + "</span>";
+        a.innerHTML =
+            '<span class="okhelp-nav-num">' + (index + 1) + "</span>" +
+            '<span class="okhelp-nav-label">' + title + "</span>";
         li.appendChild(a);
         navList.appendChild(li);
 
         var option = document.createElement("option");
-        option.value = "#" + section.id;
+        option.value = section.id;
         option.textContent = (index + 1) + ". " + title;
         mobileSelect.appendChild(option);
 
-        return { section: section, link: a, li: li, keywords: keywords, title: title };
+        return { id: section.id, section: section, link: a, li: li, option: option, keywords: keywords, title: title };
     });
 
+    var entryById = {};
+    entries.forEach(function (entry) { entryById[entry.id] = entry; });
+
+    // ------------------------------------------------------------------
+    // Scroll offset: Jazzmin's top navbar (.main-header) is fixed, so a
+    // section scrolled flush to the very top would end up hidden behind
+    // it. Measure the header's real rendered height and drive
+    // `scroll-margin-top` from it via a CSS variable — this is what both
+    // scrollIntoView() and the browser's own native "jump to #hash on
+    // load" behavior read, so a single number fixes both.
+    // ------------------------------------------------------------------
+    function measureHeaderOffset() {
+        var header = document.querySelector(".main-header");
+        var height = header ? Math.ceil(header.getBoundingClientRect().height) : 0;
+        return (height > 0 ? height : 56) + 16;
+    }
+
+    function applyScrollOffset() {
+        document.documentElement.style.setProperty("--okhelp-scroll-offset", measureHeaderOffset() + "px");
+    }
+
+    applyScrollOffset();
+    window.addEventListener("resize", applyScrollOffset);
+
+    // ------------------------------------------------------------------
+    // Active-state helpers.
+    // ------------------------------------------------------------------
+    function setActive(id) {
+        entries.forEach(function (entry) {
+            entry.link.classList.toggle("is-active", entry.id === id);
+        });
+    }
+
+    // Suppresses scrollspy updates while a click-triggered smooth scroll
+    // is in flight, so the observer never fights the just-clicked link
+    // (it would otherwise flash through every section the scroll passes).
+    var suspended = false;
+    var suspendTimer = null;
+    function suspendScrollspy() {
+        suspended = true;
+        clearTimeout(suspendTimer);
+        suspendTimer = setTimeout(function () { suspended = false; }, 700);
+    }
+
+    // ------------------------------------------------------------------
+    // The single navigation entry point — used by sidebar clicks, the
+    // mobile <select>, search, hash changes (back/forward) and the
+    // initial load-with-hash correction. scrollIntoView() is used
+    // (rather than manual scrollTop math) because it correctly finds
+    // whichever element actually scrolls — the window, or a nested
+    // AdminLTE `.content-wrapper` — and it honours `scroll-margin-top`.
+    // ------------------------------------------------------------------
+    function navigateTo(id, options) {
+        var entry = entryById[id];
+        if (!entry) { return false; }
+
+        var smooth = !options || options.smooth !== false;
+        var updateHash = !options || options.updateHash !== false;
+
+        if (updateHash && window.location.hash !== "#" + id) {
+            window.history.pushState(null, "", "#" + id);
+        }
+
+        suspendScrollspy();
+        entry.section.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+        setActive(id);
+        return true;
+    }
+
+    // Desktop sidebar: one delegated click handler for every <a href="#...">.
+    navList.addEventListener("click", function (event) {
+        var link = event.target.closest("a[href^='#']");
+        if (!link) { return; }
+        // Let modified clicks (open in new tab/window, middle-click) fall
+        // through to the browser's own default behaviour.
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+        }
+        var id = link.getAttribute("href").slice(1);
+        if (navigateTo(id, { smooth: true, updateHash: true })) {
+            event.preventDefault();
+        }
+    });
+
+    // Mobile <select>.
     mobileSelect.addEventListener("change", function () {
-        var target = document.querySelector(this.value);
-        if (target) { target.scrollIntoView({ behavior: "smooth", block: "start" }); }
+        navigateTo(this.value, { smooth: true, updateHash: true });
     });
 
     // Search: filters the left navigation (desktop + mobile) to matching sections.
@@ -840,9 +936,7 @@
         entries.forEach(function (entry) {
             var matches = !query || entry.keywords.indexOf(query) !== -1;
             entry.li.hidden = !matches;
-            Array.prototype.forEach.call(mobileSelect.options, function (opt) {
-                if (opt.value === "#" + entry.section.id) { opt.hidden = !matches; }
-            });
+            entry.option.hidden = !matches;
             if (matches) { visibleCount += 1; }
         });
 
@@ -850,31 +944,70 @@
 
         if (query && visibleCount > 0) {
             var firstMatch = entries.filter(function (e) { return !e.li.hidden; })[0];
-            if (firstMatch) { firstMatch.section.scrollIntoView({ behavior: "smooth", block: "start" }); }
+            if (firstMatch) { navigateTo(firstMatch.id, { smooth: true, updateHash: false }); }
         }
     });
 
-    // Scrollspy: highlights the current section in the nav while scrolling.
-    if ("IntersectionObserver" in window) {
-        var observer = new IntersectionObserver(function (visibleEntries) {
-            visibleEntries.forEach(function (visibleEntry) {
-                if (!visibleEntry.isIntersecting) { return; }
-                entries.forEach(function (entry) {
-                    entry.link.classList.toggle("is-active", entry.section === visibleEntry.target);
-                });
-            });
-        }, { rootMargin: "-20% 0px -70% 0px" });
-        sections.forEach(function (section) { observer.observe(section); });
+    // Back/forward and any other same-page hash change (e.g. a link from
+    // one section to another via href="#id") — re-run the same
+    // navigation, but never push a *new* history entry for it.
+    window.addEventListener("hashchange", function () {
+        var id = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+        if (id) { navigateTo(id, { smooth: true, updateHash: false }); }
+    });
+
+    // Opening the page directly on a hash (or refreshing on one): the
+    // browser already jumps there natively on load using
+    // `scroll-margin-top`, but do one corrective, non-smooth pass once
+    // layout has settled, in case fonts/icons shifted things slightly.
+    if (window.location.hash) {
+        var initialId = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+        window.requestAnimationFrame(function () {
+            navigateTo(initialId, { smooth: false, updateHash: false });
+        });
     }
 
-    // Back to top button.
-    var backToTop = document.getElementById("okhelp-back-to-top");
-    window.addEventListener("scroll", function () {
-        backToTop.classList.toggle("is-visible", window.scrollY > 400);
-    });
-    backToTop.addEventListener("click", function () {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    });
+    // Scrollspy: highlights the current section in the nav while scrolling.
+    if ("IntersectionObserver" in window) {
+        var observer = null;
+
+        function createObserver() {
+            if (observer) { observer.disconnect(); }
+            var topMargin = measureHeaderOffset() + 8;
+            observer = new IntersectionObserver(function (visibleEntries) {
+                if (suspended) { return; }
+                visibleEntries.forEach(function (visibleEntry) {
+                    if (!visibleEntry.isIntersecting) { return; }
+                    setActive(visibleEntry.target.id);
+                });
+            }, { rootMargin: "-" + topMargin + "px 0px -60% 0px" });
+            sections.forEach(function (section) { observer.observe(section); });
+        }
+
+        createObserver();
+        window.addEventListener("resize", createObserver);
+    }
+
+    // Back to top: scroll the hero back into view (works regardless of
+    // which element actually scrolls) and drop the hash so the URL
+    // reflects the top of the page.
+    if (hero && backToTop) {
+        if ("IntersectionObserver" in window) {
+            var topSentinelObserver = new IntersectionObserver(function (visibleEntries) {
+                visibleEntries.forEach(function (entry) {
+                    backToTop.classList.toggle("is-visible", !entry.isIntersecting);
+                });
+            }, { threshold: 0 });
+            topSentinelObserver.observe(hero);
+        }
+
+        backToTop.addEventListener("click", function () {
+            if (window.location.hash) {
+                window.history.pushState(null, "", window.location.pathname + window.location.search);
+            }
+            hero.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+    }
 })();
 </script>
 {% endblock %}
