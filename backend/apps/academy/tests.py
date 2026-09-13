@@ -3,6 +3,8 @@ from __future__ import annotations
 import datetime as dt
 from unittest import mock
 
+from django.contrib import admin
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -1801,6 +1803,233 @@ class StudentAdminImportExportTests(AcademyTestBase):
 
 
 # ---------------------------------------------------------------------------
+# StudentAdmin UX — list/detail pages, the no-hard-delete business rule,
+# activate/deactivate, bulk add and the Excel template download.
+# ---------------------------------------------------------------------------
+
+class StudentAdminUXTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    # -- list page --------------------------------------------------------
+
+    def test_list_page_opens_and_links_to_detail(self):
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("admin:academy_student_detail", args=[self.student1.pk]))
+
+    def test_list_page_has_bulk_add_and_template_links(self):
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
+        self.assertContains(response, reverse("admin:academy_student_bulk_add"))
+        self.assertContains(response, reverse("admin:academy_student_template"))
+
+    def test_filters_and_search_still_work(self):
+        response = self.admin_web.get(
+            reverse("admin:academy_student_changelist"), {"group__id__exact": self.group1.id}
+        )
+        self.assertContains(response, "Алина")
+        self.assertNotContains(response, "Айбек")
+
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"), {"q": "Мансур"})
+        self.assertContains(response, "Мансур")
+        self.assertNotContains(response, "Айбек")
+
+    # -- detail page --------------------------------------------------------
+
+    def test_detail_page_opens(self):
+        response = self.admin_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Алина")
+        self.assertContains(response, "Python Beginner")
+
+    def test_detail_page_requires_admin(self):
+        response = self.teacher_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_detail_page_shows_no_group_state(self):
+        student = Student.objects.create(first_name="Безгрупповой")
+        response = self.admin_web.get(reverse("admin:academy_student_detail", args=[student.pk]))
+        self.assertContains(response, "Без группы")
+
+    # -- no hard delete, ever ------------------------------------------------
+
+    def test_delete_view_is_forbidden(self):
+        url = reverse("admin:academy_student_delete", args=[self.student1.pk])
+        response = self.admin_web.get(url)
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Student.objects.filter(pk=self.student1.pk).exists())
+
+    def test_delete_selected_action_is_not_offered(self):
+        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
+        self.assertNotContains(response, "delete_selected")
+
+    def test_change_form_has_no_delete_link_for_student_itself(self):
+        response = self.admin_web.get(reverse("admin:academy_student_change", args=[self.student1.pk]))
+        # The only "deletelink" icon on the page belongs to the unrelated
+        # `group` FK's related-widget-wrapper (Django's standard "delete the
+        # related object" affordance) — Student's own object-tools row must
+        # not contain a delete link/button of its own.
+        self.assertNotContains(response, 'class="deletelink"')
+
+    def test_delete_model_and_delete_queryset_refuse_directly(self):
+        admin_instance = admin.site._registry[Student]
+        with self.assertRaises(DjangoPermissionDenied):
+            admin_instance.delete_model(None, self.student1)
+        with self.assertRaises(DjangoPermissionDenied):
+            admin_instance.delete_queryset(None, Student.objects.filter(pk=self.student1.pk))
+        self.assertTrue(Student.objects.filter(pk=self.student1.pk).exists())
+
+    # -- activate / deactivate ------------------------------------------------
+
+    def test_toggle_active_view_deactivates_and_reactivates(self):
+        url = reverse("admin:academy_student_toggle_active", args=[self.student1.pk])
+        self.admin_web.post(url)
+        self.student1.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+
+        self.admin_web.post(url)
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+
+    def test_toggle_active_requires_post(self):
+        url = reverse("admin:academy_student_toggle_active", args=[self.student1.pk])
+        response = self.admin_web.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_bulk_deactivate_and_activate_actions(self):
+        changelist_url = reverse("admin:academy_student_changelist")
+        self.admin_web.post(
+            changelist_url,
+            {"action": "deactivate_students", "_selected_action": [self.student1.pk, self.student2.pk]},
+        )
+        self.student1.refresh_from_db()
+        self.student2.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+        self.assertFalse(self.student2.is_active)
+
+        self.admin_web.post(
+            changelist_url,
+            {"action": "activate_students", "_selected_action": [self.student1.pk, self.student2.pk]},
+        )
+        self.student1.refresh_from_db()
+        self.student2.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+        self.assertTrue(self.student2.is_active)
+
+    def test_deactivated_student_keeps_attendance_and_homework(self):
+        # group1 already has lessons auto-generated in setUp (see
+        # sync_and_generate(self.group1)) — reuse one rather than creating a
+        # second lesson_number=1 for the same GroupTeacher (unique together).
+        lesson = self.group1.lessons.first()
+        Attendance.objects.create(student=self.student1, lesson=lesson, status=Attendance.Status.PRESENT)
+
+        self.admin_web.post(reverse("admin:academy_student_toggle_active", args=[self.student1.pk]))
+        self.student1.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+        self.assertTrue(Attendance.objects.filter(student=self.student1).exists())
+        self.assertEqual(self.student1.group_id, self.group1.id)
+
+    # -- assign group ---------------------------------------------------------
+
+    def test_assign_group_action_updates_selected_students(self):
+        student = Student.objects.create(first_name="БезГруппыДваЖды")
+        changelist_url = reverse("admin:academy_student_changelist")
+        response = self.admin_web.post(
+            changelist_url, {"action": "assign_group_action", "_selected_action": [student.pk]}
+        )
+        self.assertEqual(response.status_code, 302)
+
+        assign_url = reverse("admin:academy_student_assign_group")
+        response = self.admin_web.post(f"{assign_url}?ids={student.pk}", {"ids": str(student.pk), "group": self.group2.pk})
+        self.assertEqual(response.status_code, 302)
+        student.refresh_from_db()
+        self.assertEqual(student.group_id, self.group2.pk)
+
+    # -- Excel template download ----------------------------------------------
+
+    def test_template_download_works(self):
+        response = self.admin_web.get(reverse("admin:academy_student_template"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("okurmenkids_students_template.xlsx", response["Content-Disposition"])
+
+    def test_template_requires_admin(self):
+        response = self.teacher_web.get(reverse("admin:academy_student_template"))
+        self.assertEqual(response.status_code, 302)
+
+    # -- bulk add ---------------------------------------------------------------
+
+    def _bulk_add_payload(self, **overrides):
+        payload = {
+            "form-TOTAL_FORMS": "3",
+            "form-INITIAL_FORMS": "0",
+            "form-MIN_NUM_FORMS": "0",
+            "form-MAX_NUM_FORMS": "1000",
+            "form-0-first_name": "", "form-0-last_name": "", "form-0-phone": "", "form-0-group": "",
+            "form-1-first_name": "", "form-1-last_name": "", "form-1-phone": "", "form-1-group": "",
+            "form-2-first_name": "", "form-2-last_name": "", "form-2-phone": "", "form-2-group": "",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_bulk_add_creates_students_and_skips_blank_rows(self):
+        before = Student.objects.count()
+        payload = self._bulk_add_payload(**{
+            "form-0-first_name": "Жаныбек",
+            "form-0-last_name": "Осмонов",
+            "form-0-group": str(self.group1.pk),
+            "form-0-is_active": "on",
+        })
+        response = self.admin_web.post(reverse("admin:academy_student_bulk_add"), payload, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before + 1)
+        student = Student.objects.get(first_name="Жаныбек")
+        self.assertEqual(student.group_id, self.group1.pk)
+
+    def test_bulk_add_all_blank_rows_creates_nothing(self):
+        before = Student.objects.count()
+        response = self.admin_web.post(
+            reverse("admin:academy_student_bulk_add"), self._bulk_add_payload(), follow=True
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before)
+
+    def test_bulk_add_invalid_row_shows_error_and_creates_nothing(self):
+        before = Student.objects.count()
+        payload = self._bulk_add_payload(**{
+            "form-0-first_name": "Бекзат",
+            "form-0-phone": "not-a-real-phone!!",
+        })
+        response = self.admin_web.post(reverse("admin:academy_student_bulk_add"), payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before)
+        self.assertContains(response, "Некорректный номер телефона")
+
+    def test_bulk_add_duplicate_rows_rejected(self):
+        before = Student.objects.count()
+        payload = self._bulk_add_payload(**{
+            "form-0-first_name": "Дубль", "form-0-last_name": "Студент",
+            "form-1-first_name": "Дубль", "form-1-last_name": "Студент",
+        })
+        response = self.admin_web.post(reverse("admin:academy_student_bulk_add"), payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Student.objects.count(), before)
+        self.assertContains(response, "Повторяющаяся строка")
+
+    def test_bulk_add_requires_admin(self):
+        response = self.teacher_web.get(reverse("admin:academy_student_bulk_add"))
+        self.assertEqual(response.status_code, 302)
+
+
+# ---------------------------------------------------------------------------
 # GroupSchedule — a Group's own primary slot (teacher1, Mon/Wed 15:00-16:30,
 # room1 for group1; teacher2, Tue/Thu 17:00-18:30, room2 for group2, see
 # AcademyTestBase.setUp) is mirrored into GroupSchedule automatically. These
@@ -2342,27 +2571,30 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
             group_teacher=self.extra_slot.group_teacher, lesson_number=1, topic="Own plan lesson 1"
         )
 
-    def test_group_change_page_renders_teaching_programs_summary(self):
+    def test_group_change_page_renders_workspace_summary(self):
+        # Teaching-program detail (per-program cards, plan badges) moved to
+        # the Group Workspace's own Programs tab — the change form now only
+        # keeps a compact link into it (see GroupAdmin.workspace_summary).
         response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.content.decode()
         self.assertIn("Открыть рабочее пространство", body)
-        self.assertIn("Свой план", body)
-        self.assertIn("Общий план курса", body)
+        self.assertIn(reverse("admin:academy_group_workspace", args=[self.group1.id]), body)
 
-    def test_group_change_page_renders_group_summary_and_capacity(self):
+    def test_group_change_page_renders_capacity_summary(self):
+        # The heavy "Сводка группы" 6-card block moved to the Workspace
+        # Overview tab (see GroupWorkspaceOverviewTests) — the change form
+        # keeps only the compact capacity summary in "Ограничения".
         response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.content.decode()
-        self.assertIn("Сводка группы", body)
-        self.assertIn("Ближайшие занятия", body)
-        self.assertIn("Выбрано студентов", body)
+        self.assertIn("Студентов сейчас", body)
 
     def test_add_group_page_shows_helpful_pre_save_message(self):
         response = self.django_admin_client.get("/admin/academy/group/add/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.content.decode()
-        self.assertIn("Сначала сохраните группу, затем добавьте учебные программы", body)
+        self.assertIn("Рабочее пространство появится после сохранения группы", body)
 
     # Legacy-fieldset coverage now lives in LegacyGroupFieldsTests — the
     # section is fully removed, not just read-only, so there's nothing
@@ -2391,19 +2623,24 @@ class GroupTeacherAdminPagesTests(AcademyTestBase):
     def test_no_teacher_program_is_labelled_as_primary_or_main(self):
         # The whole point of this architecture: every Teacher Program is
         # equal — no "Основной"/"main" business distinction shown anywhere.
-        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        response = self.django_admin_client.get(
+            reverse("admin:academy_group_workspace_programs", args=[self.group1.id])
+        )
         body = response.content.decode()
         self.assertNotIn("основной", body.lower())
         self.assertNotIn("(main)", body.lower())
 
-    def test_schedule_inline_shows_every_row_including_legacy_origin_ones(self):
+    def test_workspace_schedule_tab_shows_every_row_including_legacy_origin_ones(self):
         # Previously the legacy-mirrored (subject=None) row was hidden from
-        # this inline; now every GroupSchedule row of the group is an equal,
-        # editable row here — no row is special-cased out.
-        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        # the Group form's schedule inline; the Workspace Schedule tab keeps
+        # every GroupSchedule row of the group as an equal row — no row is
+        # special-cased out.
+        response = self.django_admin_client.get(
+            reverse("admin:academy_group_workspace_schedule", args=[self.group1.id])
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        formset_data = response.context["inline_admin_formsets"][0].formset
-        schedule_ids = {form.instance.pk for form in formset_data.forms if form.instance.pk}
+        days = response.context["days"]
+        schedule_ids = {row["obj"].pk for day in days for row in day["slots"]}
         self.assertEqual(schedule_ids, set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True)))
         self.assertTrue(GroupSchedule.objects.filter(group=self.group1, subject__isnull=True).exists())
 
@@ -2462,7 +2699,11 @@ class GroupTeacherWorkspaceViewTests(AcademyTestBase):
         )
 
     def test_workspace_has_open_workspace_link_on_group_page(self):
-        response = self.django_admin_client.get(f"/admin/academy/group/{self.group1.id}/change/")
+        # Per-program "Открыть рабочее пространство" links moved from the
+        # Group change form to the Group Workspace's own Programs tab.
+        response = self.django_admin_client.get(
+            reverse("admin:academy_group_workspace_programs", args=[self.group1.id])
+        )
         body = response.content.decode()
         self.assertIn(self._workspace_url(self.program1), body)
         self.assertIn(self._workspace_url(self.program2), body)
@@ -2480,6 +2721,356 @@ class GroupTeacherWorkspaceViewTests(AcademyTestBase):
         self.assertEqual(response1.context["attendance_stats"]["present"], 1)
         self.assertEqual(response2.context["attendance_stats"]["total"], 1)
         self.assertEqual(response2.context["attendance_stats"]["absent"], 1)
+
+
+# ---------------------------------------------------------------------------
+# Group Workspace — /admin/academy/group/<id>/workspace/... . group1/group2
+# (see AcademyTestBase.setUp) already have students, a legacy-plan Teaching
+# Program and generated lessons, so most tabs exercise real, non-empty data;
+# a fresh Group covers the empty states.
+# ---------------------------------------------------------------------------
+
+class GroupWorkspaceViewTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    def _url(self, name, *args):
+        return reverse(f"admin:academy_group_workspace{name}", args=[self.group1.id, *args])
+
+    # -- access control -----------------------------------------------------
+
+    def test_workspace_requires_admin_non_staff_teacher_redirected_to_login(self):
+        # teacher1 (see AcademyTestBase.make_teacher) isn't Django `is_staff`
+        # at all, so admin_site.admin_view()'s own login gate redirects
+        # before _require_admin ever runs — same pattern as every other
+        # admin-only view in this app (e.g. StudentAdmin's import/template).
+        response = self.teacher_web.get(self._url(""))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_workspace_requires_login_anon_redirects(self):
+        response = DjangoClient().get(self._url(""))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_workspace_forbidden_for_staff_non_admin_role(self):
+        # A user who *is* Django is_staff (so admin_site.admin_view() lets
+        # them past the login gate) but isn't Admin-role/superuser must
+        # still be refused by _require_admin() itself.
+        self.teacher1.user.is_staff = True
+        self.teacher1.user.save(update_fields=["is_staff"])
+        staff_teacher_web = DjangoClient()
+        staff_teacher_web.force_login(self.teacher1.user)
+        response = staff_teacher_web.get(self._url(""))
+        self.assertEqual(response.status_code, 403)
+
+    # -- overview -------------------------------------------------------------
+
+    def test_overview_shows_real_kpis(self):
+        response = self.admin_web.get(self._url(""))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["kpi"]["students"], self.group1.students_count)
+        self.assertEqual(response.context["kpi"]["programs"], self.group1.teachers.filter(is_active=True).count())
+
+    def test_overview_empty_programs_state(self):
+        empty_group = Group.objects.create(name="Empty Group", course=self.course, start_date=dt.date(2026, 9, 7))
+        response = self.admin_web.get(reverse("admin:academy_group_workspace", args=[empty_group.id]))
+        self.assertContains(response, "Пока нет учебных программ")
+
+    # -- students tab ---------------------------------------------------------
+
+    def test_students_tab_lists_group_students_only(self):
+        response = self.admin_web.get(self._url("_students"))
+        # Scoped to the roster itself (response.context["students"]) rather
+        # than raw page text — Айбек legitimately appears elsewhere on the
+        # same page now, as a candidate in the "Добавить существующих" modal.
+        names = {str(s) for s in response.context["students"]}
+        self.assertIn(str(self.student1), names)
+        self.assertIn(str(self.student2), names)
+        self.assertNotIn(str(self.student3), names)  # belongs to group2
+
+    def test_students_tab_search_filters(self):
+        response = self.admin_web.get(self._url("_students"), {"q": "Алина"})
+        self.assertContains(response, "Алина")
+        self.assertNotContains(response, "Мансур")
+
+    def test_add_existing_students_bulk_moves_them_into_group(self):
+        response = self.admin_web.post(
+            self._url("_students_add_existing"), {"students": [str(self.student3.pk)]}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.student3.refresh_from_db()
+        self.assertEqual(self.student3.group_id, self.group1.id)
+
+    def test_add_existing_students_modal_lists_candidates_not_in_group(self):
+        response = self.admin_web.get(self._url("_students"))
+        candidate_names = {str(s) for s in response.context["candidate_students"]}
+        self.assertIn(str(self.student3), candidate_names)
+        self.assertNotIn(str(self.student1), candidate_names)  # already in group1
+
+    def test_create_new_student_adds_to_group(self):
+        response = self.admin_web.post(
+            self._url("_students_add"),
+            {"create_new": "1", "first_name": "Жаныл", "last_name": "Осмонова", "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 302)
+        student = Student.objects.get(first_name="Жаныл")
+        self.assertEqual(student.group_id, self.group1.id)
+
+    def test_remove_student_clears_group_but_keeps_student(self):
+        response = self.admin_web.post(self._url("_students_remove", self.student1.pk))
+        self.assertEqual(response.status_code, 302)
+        self.student1.refresh_from_db()
+        self.assertIsNone(self.student1.group_id)
+        self.assertTrue(Student.objects.filter(pk=self.student1.pk).exists())
+
+    def test_remove_student_requires_post(self):
+        response = self.admin_web.get(self._url("_students_remove", self.student1.pk))
+        self.assertEqual(response.status_code, 403)
+
+    # -- programs tab -----------------------------------------------------------
+
+    def test_programs_tab_lists_existing_programs(self):
+        response = self.admin_web.get(self._url("_programs"))
+        self.assertContains(response, str(self.teacher1))
+
+    def test_add_program_creates_group_teacher_and_schedule_slots(self):
+        response = self.admin_web.post(
+            self._url("_programs_add"),
+            {
+                "teacher": self.teacher2.pk, "subject": self.subject_frontend.pk,
+                "day_of_week": ["mon", "wed"], "start_time": "18:00", "end_time": "19:30",
+                "lesson_plan_source": "course",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            GroupTeacher.objects.filter(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend).exists()
+        )
+        gt = GroupTeacher.objects.get(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        self.assertEqual(gt.schedules.count(), 2)
+
+    def test_add_program_does_not_duplicate_existing_group_teacher(self):
+        # teacher1 already has a program in group1 (legacy slot) — adding
+        # another schedule for the exact same teacher+subject must reuse it.
+        before = GroupTeacher.objects.filter(group=self.group1, teacher=self.teacher1).count()
+        self.admin_web.post(
+            self._url("_programs_add"),
+            {
+                "teacher": self.teacher1.pk, "subject": self.subject_python.pk,
+                "day_of_week": ["fri"], "start_time": "20:00", "end_time": "21:00",
+                "lesson_plan_source": "course",
+            },
+        )
+        after = GroupTeacher.objects.filter(group=self.group1, teacher=self.teacher1, subject=self.subject_python).count()
+        self.assertEqual(after, 1)
+
+    def test_add_program_rejects_conflicting_slot(self):
+        # teacher1 is already booked Mon 15:00-16:30 in group1 itself.
+        response = self.admin_web.post(
+            self._url("_programs_add"),
+            {
+                "teacher": self.teacher1.pk, "subject": self.subject_python.pk,
+                "day_of_week": ["mon"], "start_time": "15:30", "end_time": "16:00",
+                "lesson_plan_source": "course",
+            },
+        )
+        self.assertEqual(response.status_code, 200)  # re-rendered with errors, no redirect
+        self.assertFalse(
+            GroupSchedule.objects.filter(
+                group=self.group1, teacher=self.teacher1, day_of_week="mon", start_time=dt.time(15, 30)
+            ).exists()
+        )
+
+    # -- schedule tab -----------------------------------------------------------
+
+    def test_schedule_tab_lists_every_slot(self):
+        response = self.admin_web.get(self._url("_schedule"))
+        days = response.context["days"]
+        self.assertEqual(
+            {row["obj"].pk for day in days for row in day["slots"]},
+            set(GroupSchedule.objects.filter(group=self.group1).values_list("id", flat=True)),
+        )
+
+    def test_add_schedule_slot_for_existing_program(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        response = self.admin_web.post(
+            self._url("_schedule_add"),
+            {"group_teacher": program.pk, "day_of_week": "fri", "start_time": "10:00", "end_time": "11:00"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            GroupSchedule.objects.filter(group=self.group1, group_teacher=program, day_of_week="fri").exists()
+        )
+
+    def test_remove_schedule_slot(self):
+        slot = self.group1.schedules.first()
+        response = self.admin_web.post(self._url("_schedule_remove", slot.pk))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(GroupSchedule.objects.filter(pk=slot.pk).exists())
+
+    def test_schedule_empty_state(self):
+        empty_group = Group.objects.create(name="No Schedule Group", course=self.course, start_date=dt.date(2026, 9, 7))
+        response = self.admin_web.get(reverse("admin:academy_group_workspace_schedule", args=[empty_group.id]))
+        self.assertContains(response, "Расписание ещё не настроено")
+
+    # -- lessons tab -----------------------------------------------------------
+
+    def test_lessons_tab_paginates_and_filters_by_status(self):
+        generate_lessons_for_group(self.group1)
+        response = self.admin_web.get(self._url("_lessons"))
+        self.assertEqual(response.status_code, 200)
+        self.assertGreater(response.context["lessons"].paginator.count, 0)
+
+        response = self.admin_web.get(self._url("_lessons"), {"status": Lesson.Status.CANCELLED})
+        self.assertEqual(response.context["lessons"].paginator.count, 0)
+
+    # -- generate lessons -----------------------------------------------------
+
+    def test_generate_lessons_reports_created_and_idempotent_rerun(self):
+        response = self.admin_web.post(self._url("_generate_lessons"), follow=True)
+        self.assertEqual(response.status_code, 200)
+        created_total = Lesson.objects.filter(group=self.group1).count()
+        self.assertGreater(created_total, 0)
+
+        response = self.admin_web.post(self._url("_generate_lessons"), follow=True)
+        self.assertEqual(Lesson.objects.filter(group=self.group1).count(), created_total)
+        self.assertContains(response, "Уже существовало")
+
+    def test_generate_lessons_requires_post(self):
+        response = self.admin_web.get(self._url("_generate_lessons"))
+        self.assertEqual(response.status_code, 405)
+
+    # -- attendance / homework / analytics tabs ------------------------------
+
+    def test_attendance_tab_scoped_to_group(self):
+        lesson1 = self.group1.lessons.first()
+        lesson2 = self.group2.lessons.first()
+        Attendance.objects.create(student=self.student1, lesson=lesson1, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student3, lesson=lesson2, status=Attendance.Status.ABSENT)
+
+        response = self.admin_web.get(self._url("_attendance"))
+        self.assertEqual(response.context["stats"]["total"], 1)
+        self.assertEqual(response.context["stats"]["present"], 1)
+
+    def test_homework_tab_scoped_to_group(self):
+        lesson1 = self.group1.lessons.first()
+        Homework.objects.create(lesson=lesson1, title="HW in group1")
+        lesson2 = self.group2.lessons.first()
+        Homework.objects.create(lesson=lesson2, title="HW in group2")
+
+        response = self.admin_web.get(self._url("_homework"))
+        self.assertEqual(response.context["stats"]["assignments"], 1)
+        self.assertContains(response, "HW in group1")
+        self.assertNotContains(response, "HW in group2")
+
+    def test_analytics_tab_renders_real_numbers(self):
+        response = self.admin_web.get(self._url("_analytics"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["stats"]["students_count"], self.group1.students_count)
+
+    # -- group create redirects straight into the Workspace ------------------
+
+    def test_group_add_redirects_to_workspace(self):
+        response = self.admin_web.post(
+            reverse("admin:academy_group_add"),
+            {"name": "Freshly Created", "course": self.course.pk, "status": "active", "start_date": "2026-09-07"},
+        )
+        group = Group.objects.get(name="Freshly Created")
+        self.assertRedirects(response, reverse("admin:academy_group_workspace", args=[group.pk]))
+
+    def test_group_add_save_and_continue_keeps_normal_admin_flow(self):
+        response = self.admin_web.post(
+            reverse("admin:academy_group_add"),
+            {
+                "name": "Continue Editing", "course": self.course.pk, "status": "active",
+                "start_date": "2026-09-07", "_continue": "Save and continue editing",
+            },
+        )
+        group = Group.objects.get(name="Continue Editing")
+        self.assertRedirects(response, reverse("admin:academy_group_change", args=[group.pk]))
+
+    # -- Teachers tab -----------------------------------------------------------
+
+    def test_teachers_tab_lists_existing_assignments(self):
+        response = self.admin_web.get(self._url("_teachers"))
+        self.assertContains(response, str(self.teacher1))
+
+    def test_add_teacher_creates_bare_group_teacher_with_no_schedule(self):
+        response = self.admin_web.post(
+            self._url("_teachers_add"), {"teacher": self.teacher2.pk, "subject": self.subject_frontend.pk}
+        )
+        self.assertEqual(response.status_code, 302)
+        gt = GroupTeacher.objects.get(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        self.assertEqual(gt.schedules.count(), 0)
+
+    def test_add_teacher_does_not_duplicate_existing_assignment(self):
+        self.admin_web.post(
+            self._url("_teachers_add"), {"teacher": self.teacher2.pk, "subject": self.subject_frontend.pk}
+        )
+        before = GroupTeacher.objects.count()
+        response = self.admin_web.post(
+            self._url("_teachers_add"), {"teacher": self.teacher2.pk, "subject": self.subject_frontend.pk}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(GroupTeacher.objects.count(), before)
+
+    def test_remove_teacher_deletes_assignment_but_preserves_lessons(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        lesson = Lesson.objects.filter(group_teacher=program).first()
+        self.assertIsNotNone(lesson)
+
+        response = self.admin_web.post(self._url("_teachers_remove", program.pk))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(GroupTeacher.objects.filter(pk=program.pk).exists())
+
+        lesson.refresh_from_db()
+        self.assertIsNone(lesson.group_teacher_id)
+        self.assertTrue(Lesson.objects.filter(pk=lesson.pk).exists())
+
+    def test_remove_teacher_requires_post(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        response = self.admin_web.get(self._url("_teachers_remove", program.pk))
+        self.assertEqual(response.status_code, 403)
+
+    def test_remove_teacher_requires_admin(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        response = self.teacher_web.post(self._url("_teachers_remove", program.pk))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    # -- Programs tab: individual lesson-plan redirect ------------------------
+
+    def test_add_program_with_individual_plan_redirects_to_group_teacher_change(self):
+        response = self.admin_web.post(
+            self._url("_programs_add"),
+            {
+                "teacher": self.teacher2.pk, "subject": self.subject_frontend.pk,
+                "day_of_week": ["fri"], "start_time": "10:00", "end_time": "11:00",
+                "lesson_plan_source": "individual",
+            },
+        )
+        gt = GroupTeacher.objects.get(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        self.assertRedirects(response, reverse("admin:academy_groupteacher_change", args=[gt.pk]))
+
+    # -- Weekly Schedule: pre-selected program + day grouping -----------------
+
+    def test_add_schedule_preselects_program_from_query_param(self):
+        program = self.group1.teachers.get(teacher=self.teacher1)
+        response = self.admin_web.get(self._url("_schedule_add"), {"program": program.pk})
+        self.assertEqual(response.context["form"].initial.get("group_teacher"), str(program.pk))
+
+    def test_schedule_tab_groups_slots_by_weekday(self):
+        response = self.admin_web.get(self._url("_schedule"))
+        days = response.context["days"]
+        self.assertEqual(len(days), 7)
+        monday = next(d for d in days if d["code"] == "mon")
+        self.assertTrue(all(row["obj"].day_of_week == "mon" for row in monday["slots"]))
+        self.assertGreater(len(monday["slots"]), 0)
 
 
 # ---------------------------------------------------------------------------

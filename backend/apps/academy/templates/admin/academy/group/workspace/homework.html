@@ -1,0 +1,40 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-journal-text"></i><span>Домашние задания</span></div>
+  <div class="ok-card-body">
+    <div class="okan-mini-stats">
+      <div class="okan-mini-stat">Заданий: <strong>{{ stats.assignments }}</strong></div>
+      <div class="okan-mini-stat">Результатов: <strong>{{ stats.results_total }}</strong></div>
+      <div class="okan-mini-stat">Проверено: <strong>{{ stats.checked }}</strong></div>
+      <div class="okan-mini-stat">Сдано: <strong>{{ stats.submitted }}</strong></div>
+    </div>
+
+    {% if homeworks %}
+      <div class="ok-student-table-wrap">
+        <table class="ok-student-table">
+          <thead><tr><th>Занятие</th><th>Название</th><th>Срок сдачи</th><th>Результатов</th></tr></thead>
+          <tbody>
+            {% for hw in homeworks %}
+              <tr>
+                <td>{{ hw.lesson.date|date:"d.m.Y" }}</td>
+                <td>{{ hw.title }}</td>
+                <td>{{ hw.deadline|date:"d.m.Y"|default:"—" }}</td>
+                <td>{{ hw.results_count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "admin/academy/group/workspace/_pagination.html" with page_obj=homeworks %}
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-journal-text"></i>
+        <h4>Домашних заданий пока нет</h4>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

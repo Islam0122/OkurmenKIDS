@@ -1,0 +1,83 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-calendar-check"></i><span>Занятия</span></div>
+  <div class="ok-card-body">
+    <form method="get" class="ok-group-toolbar ok-group-lesson-filters">
+      <select name="program" class="ok-input">
+        <option value="">Все программы</option>
+        {% for p in programs %}
+          <option value="{{ p.pk }}" {% if selected.program == p.pk|stringformat:"s" %}selected{% endif %}>
+            {{ p.teacher }} — {{ p.subject.name|default:"без предмета" }}
+          </option>
+        {% endfor %}
+      </select>
+      <select name="teacher" class="ok-input">
+        <option value="">Все тренеры</option>
+        {% for t in teachers %}
+          <option value="{{ t.pk }}" {% if selected.teacher == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+      <select name="subject" class="ok-input">
+        <option value="">Все предметы</option>
+        {% for s in subjects %}
+          <option value="{{ s.pk }}" {% if selected.subject == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="status" class="ok-input">
+        <option value="">Все статусы</option>
+        {% for value, label in status_choices %}
+          <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}">
+      <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}">
+      <button type="submit" class="ok-btn-secondary ok-btn-sm">Найти</button>
+    </form>
+
+    {% if lessons %}
+      <div class="ok-student-table-wrap">
+        <table class="ok-student-table">
+          <thead>
+            <tr>
+              <th>Дата</th><th>Время</th><th>Программа</th><th>Тренер</th><th>Предмет</th>
+              <th>Тема</th><th>Статус</th><th>Посещаемость</th><th>ДЗ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for lesson in lessons %}
+              <tr>
+                <td>{{ lesson.date|date:"d.m.Y" }}</td>
+                <td>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</td>
+                <td>{{ lesson.group_teacher.subject.name|default:"—" }}</td>
+                <td>{{ lesson.effective_teacher|default:"—" }}</td>
+                <td>{{ lesson.subject.name|default:"—" }}</td>
+                <td>{{ lesson.topic|default:"—" }}</td>
+                <td>
+                  {% if lesson.status == "completed" %}
+                    <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Проведён</span>
+                  {% elif lesson.status == "cancelled" %}
+                    <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Отменён</span>
+                  {% else %}
+                    <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Запланирован</span>
+                  {% endif %}
+                </td>
+                <td>{{ lesson.attendance_count }}</td>
+                <td>{{ lesson.homework_count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "admin/academy/group/workspace/_pagination.html" with page_obj=lessons %}
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-calendar-check"></i>
+        <h4>Занятий пока нет</h4>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

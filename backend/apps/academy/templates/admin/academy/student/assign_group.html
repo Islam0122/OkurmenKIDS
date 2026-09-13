@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="ok-form-container" style="max-width: 640px;">
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-diagram-3-fill"></i>
+      <span>Назначить группу</span>
+    </div>
+    <div class="ok-card-body">
+      <p class="ok-section-subtitle">
+        Выбрано студентов: <strong>{{ students.count }}</strong>.
+        Новая группа будет назначена всем выбранным студентам.
+      </p>
+
+      <ul style="margin: 0 0 1.1rem; padding-left: 1.2rem; max-height: 180px; overflow-y: auto;">
+        {% for student in students %}
+          <li>{{ student }}{% if student.group %} — <span class="ok-help-text" style="display:inline;">{{ student.group.name }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+
+      <form method="post" style="display:flex; flex-direction:column; gap:1.1rem;">
+        {% csrf_token %}
+        <input type="hidden" name="ids" value="{{ ids }}">
+
+        <div class="ok-field-group">
+          <label class="ok-label" for="{{ form.group.id_for_label }}">{{ form.group.label }}</label>
+          {{ form.group }}
+          {% if form.group.help_text %}<span class="ok-help-text">{{ form.group.help_text }}</span>{% endif %}
+          {% for error in form.group.errors %}
+            <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+          {% endfor %}
+        </div>
+
+        <div class="ok-form-actions" style="margin-top:0;">
+          <a href="{{ changelist_url }}" class="ok-btn-secondary"><i class="bi bi-x-lg"></i> Отмена</a>
+          <button type="submit" class="ok-btn-primary"><i class="bi bi-check2-circle"></i> Назначить группу</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-person-plus"></i><span>Добавить существующего студента</span></div>
+  <div class="ok-card-body">
+    <form method="post" class="ok-group-inline-form">
+      {% csrf_token %}
+      <div class="ok-field-group">
+        <label class="ok-label">{{ existing_form.student.label }}</label>
+        {{ existing_form.student }}
+        {% if existing_form.student.help_text %}<span class="ok-help-text">{{ existing_form.student.help_text }}</span>{% endif %}
+        {% for error in existing_form.student.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+      </div>
+      <div class="ok-form-actions">
+        <a href="{% url 'admin:academy_group_workspace_students' group.pk %}" class="ok-btn-secondary">Отмена</a>
+        <button type="submit" name="add_existing" value="1" class="ok-btn-primary">Добавить в группу</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-person-badge"></i><span>Создать нового студента</span></div>
+  <div class="ok-card-body">
+    <form method="post" class="ok-group-inline-form">
+      {% csrf_token %}
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label">{{ create_form.first_name.label }} <span class="ok-label-required">*</span></label>
+          {{ create_form.first_name }}
+          {% for error in create_form.first_name.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">{{ create_form.last_name.label }}</label>
+          {{ create_form.last_name }}
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">{{ create_form.phone.label }}</label>
+          {{ create_form.phone }}
+          {% for error in create_form.phone.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label">{{ create_form.parent_phone.label }}</label>
+          {{ create_form.parent_phone }}
+        </div>
+      </div>
+      <div class="ok-form-actions">
+        <a href="{% url 'admin:academy_group_workspace_students' group.pk %}" class="ok-btn-secondary">Отмена</a>
+        <button type="submit" name="create_new" value="1" class="ok-btn-primary">Создать и добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

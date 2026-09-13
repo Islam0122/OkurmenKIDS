@@ -2,32 +2,47 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count, Q
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from apps.data_io.admin_mixin import TemplatedIOAdminMixin
-from apps.users.import_export.formats import UnsupportedFileFormat
+from apps.users.import_export.formats import UnsupportedFileFormat, is_valid_phone
 
 from .admin_views import (
     analytics_view,
     generate_lessons_for_group_view,
-    group_add_students_view,
-    group_dashboard_view,
-    group_student_action_view,
     group_teacher_workspace_view,
+    group_workspace_add_existing_students_view,
+    group_workspace_add_program_view,
+    group_workspace_add_schedule_view,
+    group_workspace_add_student_view,
+    group_workspace_add_teacher_view,
+    group_workspace_analytics_view,
+    group_workspace_attendance_view,
+    group_workspace_generate_lessons_view,
+    group_workspace_homework_view,
+    group_workspace_lessons_view,
+    group_workspace_overview_view,
+    group_workspace_programs_view,
+    group_workspace_remove_schedule_view,
+    group_workspace_remove_student_view,
+    group_workspace_remove_teacher_view,
+    group_workspace_schedule_view,
+    group_workspace_students_view,
+    group_workspace_teachers_view,
     schedule_view,
 )
-from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
 from .models import (
     Attendance,
     Course,
     CourseLessonPlan,
     Group,
-    GroupSchedule,
     GroupTeacher,
     GroupTeacherLessonPlan,
     Homework,
@@ -38,14 +53,13 @@ from .models import (
 )
 from .services.import_export import (
     StudentImportValidationError,
+    build_student_import_template,
     export_students,
     import_students,
-    preview_students_import,
+    preview_students_import_rows,
 )
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 from .widgets import SubjectCardsWidget
-
-DAY_CHOICES = [(code, WEEKDAY_LABELS_SHORT[code]) for code in WEEKDAY_CODES]
 
 
 def _badge(css: str, label: str) -> str:
@@ -196,16 +210,97 @@ class StudentImportForm(forms.Form):
     )
 
 
+class StudentBulkRowForm(forms.Form):
+    """One row of the bulk-add table (spec §10). Every field is optional at
+    the Django field level on purpose: a required first_name would make
+    Django reject a trailing blank row before clean() ever gets a chance to
+    tell "intentionally empty" apart from "filled in but invalid" — the
+    distinction the whole feature depends on (empty rows are silently
+    skipped, filled-but-broken rows are a real, row-numbered error)."""
+
+    first_name = forms.CharField(
+        max_length=100, required=False, label="Имя студента",
+        widget=forms.TextInput(attrs={"class": "ok-input", "placeholder": "Имя"}),
+    )
+    last_name = forms.CharField(
+        max_length=100, required=False, label="Фамилия",
+        widget=forms.TextInput(attrs={"class": "ok-input", "placeholder": "Фамилия"}),
+    )
+    phone = forms.CharField(
+        max_length=30, required=False, label="Телефон",
+        widget=forms.TextInput(attrs={"class": "ok-input", "placeholder": "Телефон"}),
+    )
+    group = forms.ModelChoiceField(
+        queryset=Group.objects.all(), required=False, label="Группа",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    is_active = forms.BooleanField(required=False, initial=True, label="Активен")
+
+    def clean(self):
+        cleaned = super().clean()
+        first_name = (cleaned.get("first_name") or "").strip()
+        last_name = (cleaned.get("last_name") or "").strip()
+        phone = (cleaned.get("phone") or "").strip()
+        group = cleaned.get("group")
+        cleaned["first_name"] = first_name
+        cleaned["last_name"] = last_name
+        cleaned["phone"] = phone
+
+        if not first_name and not last_name and not phone and group is None:
+            cleaned["_blank"] = True
+            return cleaned
+        cleaned["_blank"] = False
+
+        if not first_name:
+            raise forms.ValidationError("Имя обязательно для заполненной строки.")
+        if phone and not is_valid_phone(phone):
+            raise forms.ValidationError(f"Некорректный номер телефона «{phone}».")
+        return cleaned
+
+
+class StudentBulkFormSet(forms.BaseFormSet):
+    def clean(self):
+        if any(self.errors):
+            return
+        seen = set()
+        for form in self.forms:
+            data = getattr(form, "cleaned_data", None) or {}
+            if data.get("_blank", True):
+                continue
+            key = (data["first_name"].lower(), data["last_name"].lower(), data["phone"])
+            if key in seen:
+                raise forms.ValidationError(
+                    f'Повторяющаяся строка: «{data["first_name"]} {data["last_name"]}». '
+                    "Уберите дубликат или измените данные, чтобы продолжить."
+                )
+            seen.add(key)
+
+
+StudentBulkFormSetFactory = forms.formset_factory(
+    StudentBulkRowForm, formset=StudentBulkFormSet, extra=3, can_delete=False
+)
+
+
+class StudentAssignGroupForm(forms.Form):
+    group = forms.ModelChoiceField(
+        queryset=Group.objects.all(),
+        required=False,
+        label="Группа",
+        help_text="Оставьте пустым, чтобы снять выбранных студентов с текущей группы.",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+
+
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ("full_name", "group", "phone", "active_badge", "created_at")
+    list_display = ("student_column", "group_column", "phone", "active_badge", "created_at", "row_actions")
     list_filter = ("group", "is_active")
     search_fields = ("first_name", "last_name", "phone", "parent_phone")
     ordering = ("last_name", "first_name")
     readonly_fields = ("created_at", "updated_at")
     autocomplete_fields = ("group",)
     list_per_page = 25
-    actions = ["export_selected_csv"]
+    actions = ["activate_students", "deactivate_students", "assign_group_action", "export_selected_csv"]
     change_list_template = "admin/academy/student/change_list.html"
 
     fieldsets = (
@@ -214,25 +309,114 @@ class StudentAdmin(admin.ModelAdmin):
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
+    # -- students are never hard-deleted from the Admin UI ---------------
+    # Attendance/Homework/history must survive forever — see models.Student
+    # docstring context in the task spec. Deactivation (is_active=False) is
+    # the only supported removal path; has_delete_permission=False alone
+    # already makes Django hide every delete surface it renders (the
+    # "Delete" object-tool, the delete_selected bulk action, and the
+    # /delete/ confirmation route itself all gate on this one check) — the
+    # two method overrides below are pure defense in depth in case anything
+    # ever calls them directly.
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def delete_model(self, request, obj):
+        raise PermissionDenied("Удаление студентов запрещено. Используйте деактивацию.")
+
+    def delete_queryset(self, request, queryset):
+        raise PermissionDenied("Удаление студентов запрещено. Используйте деактивацию.")
+
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("group")
 
+    # -- list columns -----------------------------------------------------
+
     @admin.display(description="Студент", ordering="last_name")
-    def full_name(self, obj: Student) -> str:
-        return f"{obj.first_name} {obj.last_name}".strip()
+    def student_column(self, obj: Student) -> str:
+        initials = (
+            (obj.first_name[:1] if obj.first_name else "") + (obj.last_name[:1] if obj.last_name else "")
+        ).upper() or "?"
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        url = reverse("admin:academy_student_detail", args=[obj.pk])
+        return format_html(
+            '<a class="ok-student-row-link" href="{}">'
+            '<span class="ok-student-avatar ok-person-avatar">{}</span>'
+            '<span class="ok-student-name">{}</span>'
+            "</a>",
+            url, initials, name,
+        )
+
+    @admin.display(description="Группа", ordering="group__name")
+    def group_column(self, obj: Student) -> str:
+        if not obj.group_id:
+            return _badge("ok-badge-muted", "Без группы")
+        url = reverse("admin:academy_group_change", args=[obj.group_id])
+        return format_html('<a class="ok-student-group" href="{}">{}</a>', url, obj.group.name)
 
     @admin.display(description="Статус", ordering="is_active")
     def active_badge(self, obj: Student) -> str:
         return _badge("ok-badge-success", "Активен") if obj.is_active else _badge("ok-badge-danger", "Неактивен")
 
+    @admin.display(description="")
+    def row_actions(self, obj: Student) -> str:
+        detail_url = reverse("admin:academy_student_detail", args=[obj.pk])
+        edit_url = reverse("admin:academy_student_change", args=[obj.pk])
+        return format_html(
+            '<div class="ok-student-actions">'
+            '<a class="ok-btn-secondary ok-btn-sm" href="{}" title="Профиль"><i class="bi bi-eye"></i></a>'
+            '<a class="ok-btn-secondary ok-btn-sm" href="{}" title="Изменить"><i class="bi bi-pencil"></i></a>'
+            "</div>",
+            detail_url, edit_url,
+        )
+
+    # -- bulk actions (safe: no hard delete among them) -------------------
+
     @admin.action(description="Экспортировать выбранных студентов (CSV)")
     def export_selected_csv(self, request, queryset):
         return export_students(queryset, "csv")
+
+    @admin.action(description="Активировать выбранных студентов")
+    def activate_students(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f"Активировано студентов: {updated}.", messages.SUCCESS)
+
+    @admin.action(description="Деактивировать выбранных студентов")
+    def deactivate_students(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(
+            request,
+            f"Деактивировано студентов: {updated}. Посещаемость, домашние задания и история сохранены.",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Назначить группу выбранным студентам")
+    def assign_group_action(self, request, queryset):
+        ids = ",".join(str(pk) for pk in queryset.values_list("pk", flat=True))
+        return redirect(f"{reverse('admin:academy_student_assign_group')}?ids={ids}")
 
     def get_urls(self):
         custom_urls = [
             path("import/", self.admin_site.admin_view(self.import_view), name="academy_student_import"),
             path("export/", self.admin_site.admin_view(self.export_view), name="academy_student_export"),
+            path("template/", self.admin_site.admin_view(self.template_view), name="academy_student_template"),
+            path("bulk-add/", self.admin_site.admin_view(self.bulk_add_view), name="academy_student_bulk_add"),
+            path(
+                "assign-group/",
+                self.admin_site.admin_view(self.assign_group_view),
+                name="academy_student_assign_group",
+            ),
+            path(
+                "<int:student_id>/detail/",
+                self.admin_site.admin_view(self.detail_view),
+                name="academy_student_detail",
+            ),
+            path(
+                "<int:student_id>/toggle-active/",
+                self.admin_site.admin_view(self.toggle_active_view),
+                name="academy_student_toggle_active",
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -255,8 +439,12 @@ class StudentAdmin(admin.ModelAdmin):
             self.message_user(request, str(exc), messages.ERROR)
             return redirect(reverse("admin:academy_student_changelist"))
 
+    def template_view(self, request):
+        return build_student_import_template()
+
     def import_view(self, request):
         preview = None
+        preview_rows = None
         failed = False
 
         if request.method == "POST":
@@ -265,17 +453,23 @@ class StudentAdmin(admin.ModelAdmin):
                 file_obj = form.cleaned_data["file"]
                 if "preview" in request.POST:
                     try:
-                        preview = preview_students_import(file_obj)
+                        preview_rows, preview = preview_students_import_rows(file_obj)
                     except UnsupportedFileFormat as exc:
                         messages.error(request, str(exc))
                 else:
                     try:
+                        file_obj.seek(0)
                         result = import_students(file_obj)
                     except UnsupportedFileFormat as exc:
                         messages.error(request, str(exc))
                     except StudentImportValidationError as exc:
                         preview = exc.preview
                         failed = True
+                        try:
+                            file_obj.seek(0)
+                            preview_rows, _ = preview_students_import_rows(file_obj)
+                        except UnsupportedFileFormat:
+                            preview_rows = None
                     else:
                         messages.success(
                             request,
@@ -292,11 +486,159 @@ class StudentAdmin(admin.ModelAdmin):
             "opts": self.model._meta,
             "form": form,
             "preview": preview,
+            "preview_rows": preview_rows,
             "failed": failed,
             "export_fields": "id, first_name, last_name, phone, parent_phone, group, is_active",
             "changelist_url": reverse("admin:academy_student_changelist"),
+            "template_url": reverse("admin:academy_student_template"),
         }
         return render(request, "admin/academy/student_import.html", context)
+
+    def bulk_add_view(self, request):
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        created_count = None
+        if request.method == "POST":
+            formset = StudentBulkFormSetFactory(request.POST)
+            if formset.is_valid():
+                rows_to_create = [
+                    form.cleaned_data for form in formset.forms if not form.cleaned_data.get("_blank", True)
+                ]
+                if rows_to_create:
+                    with transaction.atomic():
+                        for data in rows_to_create:
+                            student = Student(
+                                first_name=data["first_name"],
+                                last_name=data["last_name"],
+                                phone=data["phone"],
+                                group=data.get("group"),
+                                is_active=data.get("is_active", True),
+                            )
+                            student.full_clean()
+                            student.save()
+                    self.message_user(
+                        request, f"Добавлено студентов: {len(rows_to_create)}.", messages.SUCCESS
+                    )
+                    return redirect(reverse("admin:academy_student_changelist"))
+                messages.warning(request, "Не добавлено ни одного студента — все строки были пустыми.")
+        else:
+            formset = StudentBulkFormSetFactory()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Массовое добавление студентов",
+            "opts": self.model._meta,
+            "formset": formset,
+            "created_count": created_count,
+            "changelist_url": reverse("admin:academy_student_changelist"),
+        }
+        return render(request, "admin/academy/student/bulk_add.html", context)
+
+    def assign_group_view(self, request):
+        ids_param = request.GET.get("ids") or request.POST.get("ids") or ""
+        student_ids = [int(pk) for pk in ids_param.split(",") if pk.strip().isdigit()]
+        students = Student.objects.filter(pk__in=student_ids).select_related("group")
+
+        if not students.exists():
+            self.message_user(request, "Не выбрано ни одного студента.", messages.WARNING)
+            return redirect(reverse("admin:academy_student_changelist"))
+
+        if request.method == "POST":
+            form = StudentAssignGroupForm(request.POST)
+            if form.is_valid():
+                group = form.cleaned_data["group"]
+                updated = students.update(group=group)
+                label = group.name if group else "Без группы"
+                self.message_user(request, f'Группа «{label}» назначена студентам: {updated}.', messages.SUCCESS)
+                return redirect(reverse("admin:academy_student_changelist"))
+        else:
+            form = StudentAssignGroupForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Назначить группу",
+            "opts": self.model._meta,
+            "form": form,
+            "students": students,
+            "ids": ids_param,
+            "changelist_url": reverse("admin:academy_student_changelist"),
+        }
+        return render(request, "admin/academy/student/assign_group.html", context)
+
+    def detail_view(self, request, student_id):
+        student = get_object_or_404(Student.objects.select_related("group__course"), pk=student_id)
+
+        attendance_qs = Attendance.objects.filter(student=student)
+        attendance_total = attendance_qs.count()
+        attendance_present = attendance_qs.filter(status=Attendance.Status.PRESENT).count()
+        attendance_pct = round(100 * attendance_present / attendance_total, 1) if attendance_total else None
+
+        homework_results_qs = HomeworkResult.objects.filter(student=student)
+        homework_submitted = homework_results_qs.filter(
+            status__in=[
+                HomeworkResult.Status.SUBMITTED,
+                HomeworkResult.Status.LATE,
+                HomeworkResult.Status.CHECKED,
+            ]
+        ).count()
+        homework_checked = homework_results_qs.filter(status=HomeworkResult.Status.CHECKED).count()
+        homework_assigned = (
+            Homework.objects.filter(lesson__group_id=student.group_id).count() if student.group_id else 0
+        )
+        homework_pending = max(homework_assigned - homework_submitted, 0) if student.group_id else None
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(student),
+            "opts": self.model._meta,
+            "student": student,
+            "attendance_stats": {
+                "total": attendance_total,
+                "present": attendance_present,
+                "absent": attendance_qs.filter(status=Attendance.Status.ABSENT).count(),
+                "late": attendance_qs.filter(status=Attendance.Status.LATE).count(),
+                "excused": attendance_qs.filter(status=Attendance.Status.EXCUSED).count(),
+                "rate": attendance_pct,
+            },
+            "homework_stats": {
+                "assigned": homework_assigned,
+                "submitted": homework_submitted,
+                "checked": homework_checked,
+                "pending": homework_pending,
+            },
+            "change_url": reverse("admin:academy_student_change", args=[student.pk]),
+            "changelist_url": reverse("admin:academy_student_changelist"),
+            "toggle_active_url": reverse("admin:academy_student_toggle_active", args=[student.pk]),
+            "attendance_url": (
+                f"{reverse('admin:academy_attendance_changelist')}?student__id__exact={student.pk}"
+            ),
+            "homework_results_url": (
+                f"{reverse('admin:academy_homeworkresult_changelist')}?student__id__exact={student.pk}"
+            ),
+            "group_url": (
+                reverse("admin:academy_group_change", args=[student.group_id]) if student.group_id else None
+            ),
+        }
+        return render(request, "admin/academy/student/detail.html", context)
+
+    def toggle_active_view(self, request, student_id):
+        student = get_object_or_404(Student, pk=student_id)
+        if request.method != "POST" or not self.has_change_permission(request, student):
+            raise PermissionDenied
+
+        student.is_active = not student.is_active
+        student.save(update_fields=["is_active", "updated_at"])
+        if student.is_active:
+            self.message_user(request, f"«{student}» активирован.", messages.SUCCESS)
+        else:
+            self.message_user(
+                request,
+                f"«{student}» деактивирован. Посещаемость, домашние задания и история сохранены.",
+                messages.SUCCESS,
+            )
+        next_url = request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id])
+        return redirect(next_url)
 
 
 # ---------------------------------------------------------------------------
@@ -305,29 +647,19 @@ class StudentAdmin(admin.ModelAdmin):
 # ---------------------------------------------------------------------------
 
 class GroupAdminForm(forms.ModelForm):
-    """teacher/room/start_time/end_time/days_of_week are legacy model
-    fields (see their help_text) with no form field here at all — not
-    read-only, not shown anywhere, fully excluded from the form. An admin
-    creating or editing a Group has no way to see or touch them; real
-    schedule configuration always goes through a Teaching Program (models.
-    GroupSchedule), added below."""
-
-    students = forms.ModelMultipleChoiceField(
-        queryset=Student.objects.filter(is_active=True),
-        required=False,
-        label="Выбор студентов",
-        help_text=(
-            "Студенты принадлежат группе и могут посещать разные учебные программы "
-            "внутри этой группы. Начните вводить имя, чтобы найти студента."
-        ),
-        widget=forms.SelectMultiple(
-            attrs={"class": "ok-multiselect-source", "data-placeholder": "Поиск студента..."}
-        ),
-    )
+    """The Group form now covers only the group's own identity/period/limits
+    fields. Students, Teaching Programs and Schedule all moved to the Group
+    Workspace (see admin_views.py's group_workspace_* views) — a Group has
+    no `students` field of its own (Student.group is the FK, managed from
+    the Workspace's Students tab) and schedule rows are no longer an inline
+    here (see the Workspace's Schedule tab). teacher/room/start_time/
+    end_time/days_of_week are legacy model fields (see their help_text on
+    Group) — shown read-only in the "Системная информация" tab via
+    GroupAdmin.readonly_fields, never editable here."""
 
     class Meta:
         model = Group
-        exclude = ["teacher", "room", "start_time", "end_time", "days_of_week"]
+        fields = "__all__"
         labels = {
             "name": "Название группы",
             "status": "Статус группы",
@@ -337,50 +669,9 @@ class GroupAdminForm(forms.ModelForm):
         }
         help_texts = {
             "start_date": "Общий период существования группы.",
-            "end_date": (
-                "Общий период существования группы. Расписание занятий настраивается "
-                "отдельно для каждой учебной программы ниже."
-            ),
+            "end_date": "Общий период существования группы.",
             "max_students": "Оставьте пустым, если количество студентов не ограничено.",
         }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance and self.instance.pk:
-            current_students = Student.objects.filter(group=self.instance)
-            self.fields["students"].queryset = (
-                Student.objects.filter(is_active=True) | current_students
-            ).distinct()
-            self.fields["students"].initial = current_students
-
-    def save_students(self):
-        """Assign/unassign Student.group to match the widget's selection.
-
-        Group has no `students` field of its own (Student.group is the FK),
-        so this can't go through the normal m2m-save path — it's called
-        explicitly from GroupAdmin.save_related once the group has a pk.
-        """
-        selected = self.cleaned_data.get("students", Student.objects.none())
-        selected_ids = list(selected.values_list("id", flat=True))
-        Student.objects.filter(group=self.instance).exclude(id__in=selected_ids).update(group=None)
-        Student.objects.filter(id__in=selected_ids).update(group=self.instance)
-
-
-class GroupScheduleInline(admin.TabularInline):
-    """Every recurring schedule slot of the group — each row is one учебной
-    программы (teacher + subject, see models.GroupTeacher) time slot, and
-    every row is equally editable/removable here. Add as many teachers as
-    the group needs: several rows with the same teacher+subject are the
-    same program's several weekly slots; a new teacher+subject combination
-    is automatically its own, independent program (see
-    models.GroupSchedule.save())."""
-
-    model = GroupSchedule
-    extra = 1
-    fields = ("day_of_week", "start_time", "end_time", "teacher", "subject", "room", "is_active")
-    autocomplete_fields = ("teacher", "subject", "room")
-    verbose_name = "Слот расписания программы"
-    verbose_name_plural = "Расписание учебных программ"
 
 
 class GroupTeacherLessonPlanInline(admin.TabularInline):
@@ -472,35 +763,29 @@ class GroupTeacherAdmin(admin.ModelAdmin):
 
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
-    """A Group is only a container for identity, course, students, status
-    and general period — see module docstring above GroupTeacher in
-    models.py. Every real teaching detail (teacher, subject, schedule,
-    room, individual plan) lives on its учебные программы (models.
-    GroupTeacher/GroupSchedule/GroupTeacherLessonPlan), added below via
-    GroupScheduleInline — there is no "main teacher"/"main schedule": every
-    program is equally first-class.
+    """A Group is only a container for identity, course, status and general
+    period — see module docstring above GroupTeacher in models.py. This
+    admin form covers *only* that: students, Teaching Programs and Schedule
+    all live in the Group Workspace instead (see admin_views.py's
+    group_workspace_* views, wired below via get_urls()) — there is no
+    "main teacher"/"main schedule" there either: every program is equally
+    first-class.
     """
 
     form = GroupAdminForm
     list_display = (
         "name", "course", "teacher_programs_summary",
-        "students_count_display", "status_badge", "start_date", "end_date",
-        "open_dashboard_link",
+        "students_count_display", "status_badge", "start_date", "end_date", "workspace_link",
     )
-    # No column links to the raw change form here — "Открыть →" (the Group
-    # Dashboard) is the only way into a group from this list; the change
-    # form is reached only from the dashboard's own "Изменить группу" button.
-    list_display_links = None
     list_filter = ("status", "course", "start_date")
     search_fields = ("name", "teachers__teacher__user__first_name", "teachers__teacher__user__last_name")
     ordering = ("-start_date", "name")
     readonly_fields = (
-        "created_at", "updated_at",
-        "group_summary", "capacity_summary", "schedule_link_detail", "teaching_programs_summary",
+        "created_at", "updated_at", "capacity_summary", "workspace_summary",
+        "teacher", "room", "start_time", "end_time", "days_of_week",
     )
     autocomplete_fields = ("course",)
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
-    inlines = [GroupScheduleInline]
     list_per_page = 25
 
     def has_delete_permission(self, request, obj=None):
@@ -511,84 +796,66 @@ class GroupAdmin(admin.ModelAdmin):
         # form (Django checks has_delete_permission for both).
         return False
 
-    def get_urls(self):
-        custom_urls = [
-            path(
-                "<int:group_id>/dashboard/",
-                self.admin_site.admin_view(group_dashboard_view),
-                name="academy_group_dashboard",
-            ),
-            path(
-                "<int:group_id>/dashboard/students/add/",
-                self.admin_site.admin_view(group_add_students_view),
-                name="academy_group_add_students",
-            ),
-            path(
-                "<int:group_id>/dashboard/students/<int:student_id>/action/",
-                self.admin_site.admin_view(group_student_action_view),
-                name="academy_group_student_action",
-            ),
-        ]
-        return custom_urls + super().get_urls()
-
-    @admin.display(description="Рабочее пространство")
-    def open_dashboard_link(self, obj: Group) -> str:
-        if not obj.pk:
-            return "—"
-        url = reverse("admin:academy_group_dashboard", args=[obj.pk])
-        return format_html(
-            '<a class="btn btn-success btn-sm" href="{}"><i class="bi bi-speedometer2"></i> Открыть →</a>',
-            url,
-        )
-
     def get_fieldsets(self, request, obj=None):
+        # These "ok-admin-group-tab-*" classes carry no visual meaning to
+        # Django/Jazzmin's own fieldset rendering — they're read back out by
+        # templates/admin/academy/group/change_form.html, which groups
+        # fieldsets sharing a tab class into one tab pane (via {% regroup %}).
+        # Fieldsets meant for the same tab must stay contiguous below for
+        # that grouping to work. See that template for the tab shell itself.
+        tab_main = ("ok-admin-group-section", "ok-admin-group-tab-main")
+        tab_limits = ("ok-admin-group-section", "ok-admin-group-tab-limits")
+        tab_system = ("ok-admin-group-section", "ok-admin-group-tab-system")
+
         fieldsets = [
             (
                 "Основная информация",
                 {
                     "fields": ("name", "course", "status", "description"),
                     "description": "Основные данные учебной группы.",
+                    "classes": tab_main,
                 },
+            ),
+        ]
+        fieldsets.append(
+            ("Рабочее пространство", {"fields": ("workspace_summary",), "classes": tab_main})
+        )
+        fieldsets += [
+            (
+                "Период обучения",
+                {
+                    "fields": ("start_date", "end_date"),
+                    "description": "Общий период существования группы.",
+                    "classes": tab_main,
+                },
+            ),
+            (
+                "Ограничения",
+                {
+                    "fields": ("max_students", "capacity_summary"),
+                    "description": "Максимальное количество студентов в группе.",
+                    "classes": tab_limits,
+                },
+            ),
+            (
+                "Системная информация",
+                {"fields": ("created_at", "updated_at"), "classes": tab_system},
             ),
         ]
         if obj is not None:
-            fieldsets.append(("Сводка группы", {"fields": ("group_summary",)}))
-        fieldsets += [
-            (
-                "Период обучения группы",
-                {
-                    "fields": ("start_date", "end_date"),
-                    "description": (
-                        "Общий период существования группы. Конкретные даты и время занятий "
-                        "задаются отдельно в учебных программах ниже."
-                    ),
-                },
-            ),
-            (
-                "Студенты",
-                {
-                    "fields": ("capacity_summary", "max_students", "students"),
-                    "description": (
-                        "Студенты принадлежат группе и могут посещать разные учебные программы "
-                        "внутри этой группы."
-                    ),
-                },
-            ),
-            (
-                "Тренеры и учебные программы",
-                {
-                    "fields": ("schedule_link_detail", "teaching_programs_summary"),
-                    "description": (
-                        "Добавьте каждого тренера отдельной учебной программой (см. «Расписание "
-                        "учебных программ» ниже — «+ Добавить ещё одну» добавляет любое число "
-                        "тренеров). Каждая программа полностью равноправна и имеет собственный "
-                        "предмет, расписание и, по желанию, собственный индивидуальный план "
-                        "занятий, независимый от других программ этой группы."
-                    ),
-                },
-            ),
-            ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-        ]
+            fieldsets.append(
+                (
+                    "Устаревшие поля",
+                    {
+                        "fields": ("teacher", "room", "start_time", "end_time", "days_of_week"),
+                        "description": (
+                            "Оставлены только для совместимости со старыми данными. Не используются "
+                            "и не редактируются — реальное расписание задаётся в рабочем пространстве группы."
+                        ),
+                        "classes": tab_system,
+                    },
+                )
+            )
         return fieldsets
 
     def get_queryset(self, request):
@@ -604,35 +871,17 @@ class GroupAdmin(admin.ModelAdmin):
             )
         )
 
-    def save_model(self, request, obj, form, change):
-        # Defer lesson generation until save_related() below, once every
-        # inline GroupSchedule row (Teacher Program slot) has saved too —
-        # otherwise the first Teacher Program alone would greedily consume
-        # plan rows meant for another one, generated the instant Group.save()
-        # fires and before this same request even gets to add the rest of
-        # the schedule.
-        obj._defer_schedule_sync = True
-        super().save_model(request, obj, form, change)
-
-    def save_formset(self, request, form, formset, change):
-        # Same deferral as save_model, for each GroupSchedule row the
-        # inline formset saves (see GroupScheduleInline).
-        instances = formset.save(commit=False)
-        for obj in instances:
-            obj._defer_schedule_sync = True
-            obj.save()
-        formset.save_m2m()
-
-    def save_related(self, request, form, formsets, change):
-        super().save_related(request, form, formsets, change)
-        form.save_students()
-        # Now that every inline schedule row (Teacher Program slot) is
-        # persisted, generate exactly once for the complete picture
-        # (idempotent either way, see lesson_generator).
-        try:
-            generate_lessons_for_group(form.instance)
-        except LessonGenerationError:
-            pass
+    def response_add(self, request, obj, post_url_continue=None):
+        # Spec: after creating a Group, go straight to its Workspace instead
+        # of the usual changelist/"add another" screen — "Save and continue
+        # editing" and "Save and add another" are left alone (they're
+        # explicit admin intent to keep working the plain form).
+        if "_continue" not in request.POST and "_addanother" not in request.POST:
+            self.message_user(
+                request, f"Группа «{obj}» создана. Открыто рабочее пространство.", messages.SUCCESS
+            )
+            return redirect(reverse("admin:academy_group_workspace", args=[obj.pk]))
+        return super().response_add(request, obj, post_url_continue)
 
     @admin.display(description="Студенты", ordering="active_students_count")
     def students_count_display(self, obj: Group) -> str:
@@ -655,20 +904,6 @@ class GroupAdmin(admin.ModelAdmin):
         label = "программа" if count == 1 else ("программы" if 2 <= count <= 4 else "программ")
         return _badge("ok-badge-success", f"{count} {label}")
 
-    @admin.display(description="Просмотр расписания")
-    def schedule_link_detail(self, obj: Group) -> str:
-        if not obj.pk:
-            # Kept terse here on purpose — the full explanation lives once,
-            # in teaching_programs_summary just below, to avoid repeating
-            # the same callout twice in the same fieldset.
-            return "—"
-        url = f"{reverse('admin:academy_schedule')}?group={obj.pk}"
-        return format_html(
-            '<a class="btn btn-outline-success btn-sm" href="{}">'
-            '<i class="bi bi-calendar-week"></i> Открыть расписание учебных программ</a>',
-            url,
-        )
-
     @admin.display(description="Статус", ordering="status")
     def status_badge(self, obj: Group) -> str:
         css_map = {
@@ -679,43 +914,38 @@ class GroupAdmin(admin.ModelAdmin):
         }
         return _badge(css_map.get(obj.status, "ok-badge-muted"), obj.get_status_display())
 
-    @admin.display(description="")
-    def group_summary(self, obj: Group) -> str:
-        """Read-only "at a glance" panel (spec: GROUP SUMMARY) — every value
-        is calculated on the fly from the group's own related data, nothing
-        stored or duplicated as a separate KPI record."""
+    @admin.display(description="Рабочее пространство")
+    def workspace_link(self, obj: Group) -> str:
         if not obj.pk:
             return "—"
-
-        students_count = obj.students_count
-        capacity_label = f"{students_count} / {obj.max_students}" if obj.max_students else f"{students_count} / ∞"
-        programs_count = obj.teachers.filter(is_active=True).count()
-
-        if obj.end_date:
-            period_label = f"{obj.start_date:%d.%m.%Y} – {obj.end_date:%d.%m.%Y}"
-        else:
-            period_label = f"{obj.start_date:%d.%m.%Y} – …"
-
-        today = timezone.localdate()
-        upcoming_lessons = obj.lessons.filter(date__gte=today, status=Lesson.Status.PLANNED).count()
-
-        cards = [
-            ("bi-mortarboard", "Курс", obj.course.name),
-            ("bi-flag", "Статус", obj.get_status_display()),
-            ("bi-people", "Студенты", capacity_label),
-            ("bi-calendar-range", "Период", period_label),
-            ("bi-person-badge", "Учебные программы", str(programs_count)),
-            ("bi-calendar-check", "Ближайшие занятия", str(upcoming_lessons)),
-        ]
-        cards_html = "".join(
-            format_html(
-                '<div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi {}"></i></div>'
-                '<div class="ok-kpi-value">{}</div><div class="ok-kpi-label">{}</div></div>',
-                icon, value, label,
-            )
-            for icon, label, value in cards
+        url = reverse("admin:academy_group_workspace", args=[obj.pk])
+        return format_html(
+            '<a class="btn btn-outline-success btn-sm" href="{}"><i class="bi bi-kanban"></i> Открыть →</a>', url
         )
-        return format_html('<div class="ok-kpi-grid" style="margin-bottom:0;">{}</div>', mark_safe(cards_html))
+
+    @admin.display(description="")
+    def workspace_summary(self, obj: Group) -> str:
+        """Compact summary + link (spec §3): students count, programs
+        count, and a prominent button into the Group Workspace — everything
+        else (schedule, lesson generation, analytics...) lives there now."""
+        if not obj.pk:
+            return mark_safe(
+                '<p class="ok-help-text" style="margin:0;">'
+                "Рабочее пространство появится после сохранения группы.</p>"
+            )
+        students_count = obj.students_count
+        programs_count = obj.teachers.filter(is_active=True).count()
+        url = reverse("admin:academy_group_workspace", args=[obj.pk])
+        return format_html(
+            '<div class="ok-group-form-summary">'
+            '<div class="okan-mini-stats" style="margin:0;">'
+            "<div class=\"okan-mini-stat\">Студентов: <strong>{}</strong></div>"
+            "<div class=\"okan-mini-stat\">Учебных программ: <strong>{}</strong></div>"
+            "</div>"
+            '<a class="btn btn-success" href="{}"><i class="bi bi-kanban"></i> Открыть рабочее пространство →</a>'
+            "</div>",
+            students_count, programs_count, url,
+        )
 
     @admin.display(description="")
     def capacity_summary(self, obj: Group) -> str:
@@ -724,14 +954,14 @@ class GroupAdmin(admin.ModelAdmin):
         if not obj.pk:
             return mark_safe(
                 '<p class="ok-help-text" style="margin:0 0 0.5rem;">'
-                "Количество выбранных студентов появится после сохранения группы.</p>"
+                "Количество студентов появится после сохранения группы.</p>"
             )
 
         selected = obj.students_count
         if not obj.max_students:
             return format_html(
                 '<div class="okan-mini-stats" style="margin:0 0 0.75rem;">'
-                '<div class="okan-mini-stat">Выбрано студентов: <strong>{}</strong></div>'
+                '<div class="okan-mini-stat">Студентов сейчас: <strong>{}</strong></div>'
                 '<div class="okan-mini-stat">Вместимость: <strong>Без ограничения</strong></div>'
                 "</div>",
                 selected,
@@ -747,93 +977,12 @@ class GroupAdmin(admin.ModelAdmin):
 
         return format_html(
             '<div class="okan-mini-stats" style="margin:0 0 0.75rem;">'
-            '<div class="okan-mini-stat">Выбрано студентов: <strong>{}</strong></div>'
+            '<div class="okan-mini-stat">Студентов сейчас: <strong>{}</strong></div>'
             '<div class="okan-mini-stat">Вместимость: <strong>{} / {}</strong></div>'
             "<div class=\"okan-mini-stat\">{}</div>"
             "</div>",
             selected, selected, obj.max_students, capacity_badge,
         )
-
-    @admin.display(description="")
-    def teaching_programs_summary(self, obj: Group) -> str:
-        """Every Teaching Program of this group, rendered as equal-weight
-        cards — no field or ordering here marks one program as more
-        "primary" than another (spec §4/§5)."""
-        if not obj.pk:
-            return mark_safe(
-                '<div class="ok-alert ok-alert-warning"><i class="bi bi-info-circle"></i>'
-                "<span>Сначала сохраните группу, затем добавьте учебные программы ниже.</span></div>"
-            )
-
-        day_labels = dict(DAY_CHOICES)
-        programs = list(
-            obj.teachers.select_related("teacher__user", "subject").prefetch_related("schedules")
-        )
-        if not programs:
-            return mark_safe(
-                '<div class="ok-alert ok-alert-warning"><i class="bi bi-exclamation-triangle"></i>'
-                "<span>У группы пока нет ни одной учебной программы. Добавьте тренера через "
-                "«Расписание учебных программ» ниже — она появится здесь автоматически.</span></div>"
-            )
-
-        cards = []
-        for index, group_teacher in enumerate(programs, start=1):
-            active_slots = sorted(
-                (s for s in group_teacher.schedules.all() if s.is_active),
-                key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
-            )
-            schedule_rows = "".join(
-                format_html(
-                    '<div>{} {}–{} · {}</div>',
-                    day_labels.get(s.day_of_week, s.day_of_week), s.start_time.strftime("%H:%M"),
-                    s.end_time.strftime("%H:%M"), s.room.name if s.room_id else "без аудитории",
-                )
-                for s in active_slots
-            )
-            plan_count = group_teacher.lesson_plans.count()
-            plan_badge = (
-                _badge("ok-badge-success", f"Свой план: {plan_count} занятий")
-                if plan_count
-                else _badge("ok-badge-muted", "Общий план курса")
-            )
-            status_badge = (
-                _badge("ok-badge-success", "Активна") if group_teacher.is_active else _badge("ok-badge-danger", "Неактивна")
-            )
-            program_lessons = Lesson.objects.filter(group_teacher=group_teacher)
-            lesson_count = program_lessons.count()
-            completed_count = program_lessons.filter(status=Lesson.Status.COMPLETED).count()
-            upcoming_count = program_lessons.filter(
-                status=Lesson.Status.PLANNED, date__gte=timezone.localdate()
-            ).count()
-
-            workspace_url = reverse("admin:academy_groupteacher_workspace", args=[group_teacher.pk])
-            lessons_url = f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={group_teacher.pk}"
-
-            cards.append(
-                format_html(
-                    '<div class="ok-card" style="margin-bottom:0.85rem;">'
-                    '<div class="ok-card-header">Учебная программа №{} — {} {}</div>'
-                    '<div class="ok-card-body">'
-                    '<div style="margin-bottom:0.5rem;"><strong>Тренер:</strong> {}'
-                    '<span style="margin-left:0.75rem;"><strong>Предмет:</strong> {}</span></div>'
-                    '<div style="margin-bottom:0.5rem;"><strong>Расписание:</strong>{}</div>'
-                    '<div class="okan-mini-stats" style="margin-bottom:0.75rem;">'
-                    '<div class="okan-mini-stat">{}</div>'
-                    '<div class="okan-mini-stat">Сгенерировано занятий: <strong>{}</strong></div>'
-                    '<div class="okan-mini-stat">Проведено: <strong>{}</strong></div>'
-                    '<div class="okan-mini-stat">Предстоит: <strong>{}</strong></div>'
-                    "</div>"
-                    '<a class="btn btn-success btn-sm" href="{}"><i class="bi bi-kanban"></i> Открыть рабочее пространство →</a> '
-                    '<a class="btn btn-outline-success btn-sm" href="{}">Занятия ({}) →</a>'
-                    "</div></div>",
-                    index, group_teacher.subject.name if group_teacher.subject_id else "без предмета", status_badge,
-                    group_teacher.teacher, group_teacher.subject.name if group_teacher.subject_id else "—",
-                    mark_safe(schedule_rows) if schedule_rows else " нет активных слотов",
-                    plan_badge, lesson_count, completed_count, upcoming_count,
-                    workspace_url, lessons_url, lesson_count,
-                )
-            )
-        return mark_safe("".join(cards))
 
     @admin.action(description="Сгенерировать занятия по плану курса")
     def generate_lessons_action(self, request, queryset):
@@ -861,6 +1010,101 @@ class GroupAdmin(admin.ModelAdmin):
     def activate_groups(self, request, queryset):
         updated = queryset.update(status=Group.Status.ACTIVE)
         self.message_user(request, f"Активировано групп: {updated}.", messages.SUCCESS)
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                "<int:group_id>/workspace/",
+                self.admin_site.admin_view(group_workspace_overview_view),
+                name="academy_group_workspace",
+            ),
+            path(
+                "<int:group_id>/workspace/students/",
+                self.admin_site.admin_view(group_workspace_students_view),
+                name="academy_group_workspace_students",
+            ),
+            path(
+                "<int:group_id>/workspace/students/add/",
+                self.admin_site.admin_view(group_workspace_add_student_view),
+                name="academy_group_workspace_students_add",
+            ),
+            path(
+                "<int:group_id>/workspace/students/add-existing/",
+                self.admin_site.admin_view(group_workspace_add_existing_students_view),
+                name="academy_group_workspace_students_add_existing",
+            ),
+            path(
+                "<int:group_id>/workspace/students/<int:student_id>/remove/",
+                self.admin_site.admin_view(group_workspace_remove_student_view),
+                name="academy_group_workspace_students_remove",
+            ),
+            path(
+                "<int:group_id>/workspace/teachers/",
+                self.admin_site.admin_view(group_workspace_teachers_view),
+                name="academy_group_workspace_teachers",
+            ),
+            path(
+                "<int:group_id>/workspace/teachers/add/",
+                self.admin_site.admin_view(group_workspace_add_teacher_view),
+                name="academy_group_workspace_teachers_add",
+            ),
+            path(
+                "<int:group_id>/workspace/teachers/<int:group_teacher_id>/remove/",
+                self.admin_site.admin_view(group_workspace_remove_teacher_view),
+                name="academy_group_workspace_teachers_remove",
+            ),
+            path(
+                "<int:group_id>/workspace/programs/",
+                self.admin_site.admin_view(group_workspace_programs_view),
+                name="academy_group_workspace_programs",
+            ),
+            path(
+                "<int:group_id>/workspace/programs/add/",
+                self.admin_site.admin_view(group_workspace_add_program_view),
+                name="academy_group_workspace_programs_add",
+            ),
+            path(
+                "<int:group_id>/workspace/schedule/",
+                self.admin_site.admin_view(group_workspace_schedule_view),
+                name="academy_group_workspace_schedule",
+            ),
+            path(
+                "<int:group_id>/workspace/schedule/add/",
+                self.admin_site.admin_view(group_workspace_add_schedule_view),
+                name="academy_group_workspace_schedule_add",
+            ),
+            path(
+                "<int:group_id>/workspace/schedule/<int:schedule_id>/remove/",
+                self.admin_site.admin_view(group_workspace_remove_schedule_view),
+                name="academy_group_workspace_schedule_remove",
+            ),
+            path(
+                "<int:group_id>/workspace/lessons/",
+                self.admin_site.admin_view(group_workspace_lessons_view),
+                name="academy_group_workspace_lessons",
+            ),
+            path(
+                "<int:group_id>/workspace/attendance/",
+                self.admin_site.admin_view(group_workspace_attendance_view),
+                name="academy_group_workspace_attendance",
+            ),
+            path(
+                "<int:group_id>/workspace/homework/",
+                self.admin_site.admin_view(group_workspace_homework_view),
+                name="academy_group_workspace_homework",
+            ),
+            path(
+                "<int:group_id>/workspace/analytics/",
+                self.admin_site.admin_view(group_workspace_analytics_view),
+                name="academy_group_workspace_analytics",
+            ),
+            path(
+                "<int:group_id>/workspace/generate-lessons/",
+                self.admin_site.admin_view(group_workspace_generate_lessons_view),
+                name="academy_group_workspace_generate_lessons",
+            ),
+        ]
+        return custom_urls + super().get_urls()
 
 
 # ---------------------------------------------------------------------------

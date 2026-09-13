@@ -1,0 +1,46 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-graph-up-arrow"></i><span>Аналитика группы</span></div>
+  <div class="ok-card-body">
+    <div class="ok-kpi-grid ok-group-kpi">
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
+        <div class="ok-kpi-value">{{ stats.students_count }}</div>
+        <div class="ok-kpi-label">Студенты</div>
+      </div>
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div>
+        <div class="ok-kpi-value">{{ stats.programs_count }}</div>
+        <div class="ok-kpi-label">Активные программы</div>
+      </div>
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div>
+        <div class="ok-kpi-value">{{ stats.completed_lessons }}</div>
+        <div class="ok-kpi-label">Завершённые занятия</div>
+      </div>
+      <div class="ok-kpi-card">
+        <div class="ok-kpi-icon"><i class="bi bi-calendar-check"></i></div>
+        <div class="ok-kpi-value">{{ stats.upcoming_lessons }}</div>
+        <div class="ok-kpi-label">Предстоящие занятия</div>
+      </div>
+      {% if stats.attendance_rate is not None %}
+        <div class="ok-kpi-card">
+          <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
+          <div class="ok-kpi-value">{{ stats.attendance_rate }}%</div>
+          <div class="ok-kpi-label">Посещаемость</div>
+        </div>
+      {% endif %}
+      {% if stats.homework_completion_rate is not None %}
+        <div class="ok-kpi-card">
+          <div class="ok-kpi-icon"><i class="bi bi-journal-check"></i></div>
+          <div class="ok-kpi-value">{{ stats.homework_completion_rate }}%</div>
+          <div class="ok-kpi-label">ДЗ проверено</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -33,6 +33,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 from django.db import transaction
 
@@ -315,3 +316,67 @@ def generate_lessons_for_group(group: Group) -> list[Lesson]:
         )
 
     return created
+
+
+@dataclass
+class LessonGenerationReport:
+    """Human-readable summary of one generate_lessons_for_group() call, for
+    the Group Workspace's "Сгенерировать занятия" button. Built entirely
+    from that function's own return value and its own logging output
+    (already emitted above) — see generate_lessons_for_group_with_report()
+    below. Never re-implements any generation/conflict-detection logic."""
+
+    created: int
+    already_existed: int
+    conflicts_skipped: int
+    errors: list[str] = field(default_factory=list)
+
+
+class _WarningCollector(logging.Handler):
+    """Collects this module's own WARNING-level LogRecords for one call,
+    without touching root/other loggers' handlers or levels."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+def generate_lessons_for_group_with_report(group: Group) -> LessonGenerationReport:
+    """Same generation as generate_lessons_for_group() — this only adds a
+    Created/Already existed/Conflicts skipped/Errors summary on top,
+    captured from that function's own return value and its own WARNING log
+    records (schedule-conflict skips, partial per-program failures), so
+    there's exactly one place the actual generation algorithm lives.
+    """
+    already_existed = Lesson.objects.filter(group=group).count()
+
+    collector = _WarningCollector()
+    logger.addHandler(collector)
+    errors: list[str] = []
+    created_count = 0
+    try:
+        try:
+            created_count = len(generate_lessons_for_group(group))
+        except LessonGenerationError as exc:
+            errors.append(str(exc))
+    finally:
+        logger.removeHandler(collector)
+
+    conflicts_skipped = sum(
+        1 for record in collector.records if "skipping schedule slot" in record.getMessage()
+    )
+    for record in collector.records:
+        if isinstance(record.msg, str) and "program(s) failed" in record.msg and record.args:
+            joined = record.args[-1]
+            if joined:
+                errors.extend(str(joined).split(" | "))
+
+    return LessonGenerationReport(
+        created=created_count,
+        already_existed=already_existed,
+        conflicts_skipped=conflicts_skipped,
+        errors=errors,
+    )

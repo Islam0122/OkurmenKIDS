@@ -1,0 +1,105 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="ok-form-container ok-student-bulk" style="max-width: 980px;">
+
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-people-fill"></i>
+      <span>Массовое добавление студентов</span>
+    </div>
+    <div class="ok-card-body">
+      <p class="ok-section-subtitle">Добавьте несколько студентов одновременно. Пустые строки игнорируются.</p>
+
+      {% if formset.non_form_errors %}
+        <div class="ok-alert ok-alert-danger">
+          {% for error in formset.non_form_errors %}<div>{{ error }}</div>{% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" id="ok-student-bulk-form">
+        {% csrf_token %}
+        {{ formset.management_form }}
+
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table" id="ok-student-bulk-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Имя студента</th>
+                <th>Телефон</th>
+                <th>Группа</th>
+                <th>Активен</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="ok-student-bulk-rows">
+              {% for form in formset %}
+                <tr class="ok-student-bulk-row">
+                  <td class="ok-student-row-index">{{ forloop.counter }}</td>
+                  <td>
+                    {{ form.first_name }}
+                    {{ form.last_name }}
+                    {% for error in form.non_field_errors %}
+                      <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+                    {% endfor %}
+                  </td>
+                  <td>{{ form.phone }}</td>
+                  <td>{{ form.group }}</td>
+                  <td class="ok-student-active-cell">{{ form.is_active }}</td>
+                  <td>
+                    <button type="button" class="ok-btn-secondary ok-btn-sm ok-student-remove-row" title="Удалить строку">
+                      <i class="bi bi-trash3"></i>
+                    </button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="ok-form-actions">
+          <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+            <button type="button" id="ok-student-add-row" class="ok-btn-secondary">
+              <i class="bi bi-plus-lg"></i> Добавить строку
+            </button>
+            <button type="reset" class="ok-btn-secondary">
+              <i class="bi bi-arrow-counterclockwise"></i> Очистить
+            </button>
+          </div>
+          <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+            <a href="{{ changelist_url }}" class="ok-btn-secondary"><i class="bi bi-x-lg"></i> Отмена</a>
+            <button type="submit" class="ok-btn-primary"><i class="bi bi-check2-circle"></i> Сохранить студентов</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <template id="ok-student-bulk-row-template">
+    <tr class="ok-student-bulk-row">
+      <td class="ok-student-row-index"></td>
+      <td>
+        <input type="text" name="__prefix__-first_name" class="ok-input" placeholder="Имя">
+        <input type="text" name="__prefix__-last_name" class="ok-input" placeholder="Фамилия" style="margin-top:0.35rem;">
+      </td>
+      <td><input type="text" name="__prefix__-phone" class="ok-input" placeholder="Телефон"></td>
+      <td>
+        <select name="__prefix__-group" class="ok-input">
+          <option value="">---------</option>
+          {% for group in formset.forms.0.fields.group.queryset %}
+            <option value="{{ group.pk }}">{{ group.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="ok-student-active-cell"><input type="checkbox" name="__prefix__-is_active" checked></td>
+      <td>
+        <button type="button" class="ok-btn-secondary ok-btn-sm ok-student-remove-row" title="Удалить строку">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+    </tr>
+  </template>
+</div>
+{% endblock %}

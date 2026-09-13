@@ -1322,6 +1322,40 @@ button.ok-password-toggle.btn {
   }
 }
 
+/* Teacher changelist toolbar (/admin/users/teacher/) — Jazzmin already
+   wraps the filters/search form and the "Добавить Тренер" link in a
+   `d-flex justify-content-between` row with `flex-grow-1` on the form,
+   which in principle should already span the full toolbar width. But the
+   Add link ships with only Bootstrap's `float-end` utility (a no-op on a
+   flex item — floats don't apply there) and no flex sizing of its own, so
+   it has nothing pinning it to the true right edge once anything upstream
+   changes the form's effective width. Pin the intended layout explicitly
+   with flex properties (no absolute positioning) instead of relying on
+   that implicit behaviour: the row spans 100% of the toolbar, the
+   filters/search form claims all remaining free space, and `margin-left:
+   auto` — the standard flex idiom for pushing one item to the far end of
+   its row — pins the Add link to the right edge regardless of the form's
+   own width. Scoped to this one page only, via the body classes Jazzmin
+   stamps for the Teacher changelist. */
+body.model-teacher.change-list #change-list-filters,
+body.model-teacher.change-list #change-list-filters > div {
+  width: 100%;
+  max-width: none;
+}
+body.model-teacher.change-list #change-list-filters > div {
+  display: flex;
+  flex-wrap: wrap;
+}
+body.model-teacher.change-list #changelist-search {
+  flex: 1 1 auto;
+  max-width: none;
+}
+body.model-teacher.change-list #change-list-filters > div > a.float-end {
+  float: none;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* Actions row — make "Go" clearly primary, and visually warn when a
    destructive action (name/label containing "удал") is selected. */
 .actions select { min-width: 220px; }
@@ -1602,4 +1636,699 @@ button.ok-password-toggle.btn {
     height: 100% !important;
     top: 0 !important;
     right: 8px !important;
+}
+
+/* ===========================================================================
+   Group add/change form — tabbed layout (ok-admin-group-*)
+   Scoped to this one admin page only, via the body classes Jazzmin stamps
+   for the Group changeform (body.model-group.change-form). The tab shell
+   itself lives in templates/admin/academy/group/change_form.html (and its
+   _fieldset.html partial) — GroupAdmin.get_fieldsets() only tags each
+   fieldset with an ok-admin-group-tab-* class for that template to group
+   on; nothing here changes any field, fieldset content or admin logic.
+   =========================================================================== */
+body.model-group.change-form .ok-admin-group-tabs {
+  border-bottom: 1px solid var(--ok-border);
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+body.model-group.change-form .ok-admin-group-tabs .nav-link {
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: var(--ok-text-secondary);
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  background: transparent;
+}
+body.model-group.change-form .ok-admin-group-tabs .nav-link:hover {
+  color: var(--ok-text);
+  border-bottom-color: var(--ok-border-strong);
+}
+body.model-group.change-form .ok-admin-group-tabs .nav-link.active {
+  color: var(--ok-primary);
+  border-bottom-color: var(--ok-primary);
+  background: transparent;
+}
+
+body.model-group.change-form .ok-admin-group-tab-content {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body.model-group.change-form .ok-admin-group-section-card {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  box-shadow: none;
+  margin-bottom: 1rem;
+}
+body.model-group.change-form .ok-admin-group-section-header {
+  background: var(--ok-surface-hover);
+  border-bottom: 1px solid var(--ok-border);
+  padding: 0.85rem 1.1rem;
+}
+body.model-group.change-form .ok-admin-group-section-title {
+  /* AdminLTE's own .card-title rule sets float:left (for icon+title
+     headers elsewhere in the admin) — undo it here so this stacks above
+     ok-admin-group-section-desc instead of sitting beside it. */
+  float: none;
+  display: block;
+  width: 100%;
+  color: var(--ok-text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+body.model-group.change-form .ok-admin-group-section-desc {
+  color: var(--ok-text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+/* group_summary/capacity_summary/teaching_programs_summary/schedule_link_detail
+   (see GroupAdmin) are @admin.display(description="") readonly fields —
+   Django still reserves their (empty) label column next to them, exactly as
+   it does in a plain untabbed admin form. Drop that empty column here so
+   each renders as one full-width info block instead of a "boring text
+   field" squeezed into 75% width — display only, the fields/values
+   themselves are untouched. */
+body.model-group.change-form .ok-admin-group-tab-pane .field-group_summary label,
+body.model-group.change-form .ok-admin-group-tab-pane .field-capacity_summary label,
+body.model-group.change-form .ok-admin-group-tab-pane .field-teaching_programs_summary label,
+body.model-group.change-form .ok-admin-group-tab-pane .field-schedule_link_detail label {
+  display: none;
+}
+body.model-group.change-form .ok-admin-group-tab-pane .field-group_summary.col-sm-9,
+body.model-group.change-form .ok-admin-group-tab-pane .field-capacity_summary.col-sm-9,
+body.model-group.change-form .ok-admin-group-tab-pane .field-teaching_programs_summary.col-sm-9,
+body.model-group.change-form .ok-admin-group-tab-pane .field-schedule_link_detail.col-sm-9 {
+  flex: 0 0 100%;
+  max-width: 100%;
+  width: 100%;
+}
+
+/* System tab — secondary/less important, per spec: muted, not hidden. */
+body.model-group.change-form .ok-admin-group-tab-pane-muted .ok-admin-group-section-card {
+  background: var(--ok-surface-hover);
+  opacity: 0.85;
+}
+body.model-group.change-form .ok-admin-group-tab-pane-muted .ok-admin-group-section-title {
+  color: var(--ok-text-secondary);
+}
+
+/* Teaching-programs tab — visually separate GroupScheduleInline (the
+   schedule slots table) from the fieldset above it, with its own heading. */
+body.model-group.change-form .ok-admin-group-inline-header {
+  border-top: 1px dashed var(--ok-border-strong);
+  margin: 1.5rem 0 0.75rem;
+  padding-top: 1.25rem;
+}
+body.model-group.change-form .ok-admin-group-inline-title {
+  color: var(--ok-text);
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.2rem;
+}
+body.model-group.change-form .ok-admin-group-inline-desc {
+  color: var(--ok-text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+body.model-group.change-form .ok-admin-group-inline-block {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  overflow-x: auto;
+  padding: 0.75rem;
+}
+body.model-group.change-form .ok-admin-group-inline-block .select2-container {
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  body.model-group.change-form .ok-admin-group-tabs .nav-link {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.65rem;
+  }
+  body.model-group.change-form .ok-admin-group-section-header,
+  body.model-group.change-form .ok-admin-group-section-card .card-body {
+    padding: 0.75rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Trainer Detail (admin/users/change_teacher.html) — profile page    */
+/* ------------------------------------------------------------------ */
+
+.ok-trainer-header-body {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.ok-trainer-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--ok-primary-soft);
+  color: var(--ok-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.9rem;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.ok-trainer-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.ok-trainer-identity { min-width: 0; }
+.ok-trainer-name { margin: 0 0 0.15rem; font-size: 1.25rem; font-weight: 700; color: var(--ok-text); }
+.ok-trainer-username { color: var(--ok-text-muted); font-size: 0.85rem; margin-bottom: 0.3rem; }
+.ok-trainer-email {
+  display: flex; align-items: center; gap: 0.4rem;
+  color: var(--ok-text-secondary); font-size: 0.85rem; margin-bottom: 0.6rem;
+}
+.ok-trainer-badges { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.ok-trainer-submeta {
+  display: flex; gap: 1rem; flex-wrap: wrap;
+  margin-top: 0.6rem; font-size: 0.82rem; color: var(--ok-text-muted);
+}
+.ok-trainer-submeta span { display: flex; align-items: center; gap: 0.35rem; }
+.ok-trainer-submeta i { color: var(--ok-text-muted); }
+
+.ok-section-subtitle { color: var(--ok-text-muted); font-size: 0.82rem; margin: -0.25rem 0 1.1rem; }
+
+/* Read-only "value" boxes for identity fields sourced from the related
+   User account (name/username/email/role) — same height/rhythm as the
+   real inputs beside them, but visually distinct as non-editable here. */
+.ok-static-value {
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-surface-hover);
+  color: var(--ok-text);
+  font-size: 0.88rem;
+}
+
+.ok-account-hint { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; }
+
+/* The Teacher.user FK select stays in the DOM (form still submits/
+   validates it unchanged) but isn't shown as a raw account picker. */
+.ok-hidden-field { display: none; }
+
+.ok-quick-actions { display: flex; flex-direction: column; gap: 0.6rem; }
+.ok-btn-block { width: 100%; justify-content: center; }
+.ok-btn-sm { padding: 0.42rem 0.85rem; font-size: 0.8rem; }
+
+/* System info collapse — native <details>/<summary>, no JS required */
+.ok-collapse summary { cursor: pointer; list-style: none; }
+.ok-collapse summary::-webkit-details-marker { display: none; }
+.ok-collapse summary::marker { content: ""; }
+.ok-collapse-summary { display: flex; align-items: center; }
+.ok-collapse-chevron { color: var(--ok-text-muted); margin-left: auto; transition: transform 0.2s ease; }
+.ok-collapse[open] > .ok-collapse-summary .ok-collapse-chevron { transform: rotate(180deg); }
+
+/* Photo field — preview + styled upload/remove controls, replacing the
+   raw ClearableFileInput's "Currently / Clear / Change: no file chosen" text.
+   Real <input type="file"> stays in the DOM (only its template changed —
+   see widgets.PhotoPreviewWidget), so upload/clear submit exactly as before.
+   Two states, driven by the .ok-photo-has-image modifier: the widget template
+   sets it on load from widget.is_initial, ui.js toggles it afterwards as the
+   admin picks or clears a file — the placeholder icon and the <img> are both
+   always in the DOM and CSS shows exactly one of them. */
+.ok-photo-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.ok-photo-preview {
+  width: 112px; height: 112px; border-radius: 50%;
+  background: var(--ok-primary-soft);
+  flex-shrink: 0; overflow: hidden;
+  border: 1px solid var(--ok-border);
+}
+
+.ok-photo-placeholder {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ok-primary); font-size: 2.5rem;
+}
+
+.ok-photo-preview img { display: none; width: 100%; height: 100%; object-fit: cover; }
+
+.ok-photo-field.ok-photo-has-image .ok-photo-placeholder { display: none; }
+.ok-photo-field.ok-photo-has-image .ok-photo-preview img { display: block; }
+
+.ok-photo-content {
+  min-width: 0; flex: 1 1 220px;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.ok-photo-status { font-size: 0.86rem; font-weight: 600; color: var(--ok-text); }
+.ok-photo-field.ok-photo-marked-removed .ok-photo-status { color: var(--ok-danger); }
+
+.ok-photo-filename {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.76rem; color: var(--ok-text-muted);
+  overflow-wrap: anywhere;
+}
+/* Beats the browser's own [hidden]{display:none} rule, which shares its
+   specificity and would otherwise lose to the class rule above. */
+.ok-photo-filename[hidden] { display: none; }
+
+.ok-photo-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.3rem; }
+
+/* Real file input: kept in the DOM and reachable via the styled <label for>
+   above (a native, no-JS-required way to trigger it), just not shown as the
+   raw browser control. Visually hidden rather than display:none so it stays
+   keyboard-focusable. */
+.ok-photo-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ok-photo-remove-toggle {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.82rem; font-weight: 500; color: var(--ok-danger);
+  cursor: pointer;
+}
+.ok-photo-remove-toggle input { accent-color: var(--ok-danger); }
+
+/* ------------------------------------------------------------------ */
+/* Subjects tag picker — collapsed chips + click-to-open dropdown       */
+/* ------------------------------------------------------------------ */
+
+/* Overrides the base .ok-multiselect's overflow:hidden (needed when the
+   panel rendered inline) — the panel now floats via .ok-ms-dropdown below,
+   which would otherwise get clipped by this same element. */
+.ok-multiselect { position: relative; overflow: visible; }
+
+.ok-ms-chips-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.ok-ms-add-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.6rem 0.24rem 0.5rem;
+  border: 1px dashed var(--ok-border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ok-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ok-ms-add-trigger:hover {
+  border-color: var(--ok-primary);
+  color: var(--ok-primary);
+  background: var(--ok-primary-soft);
+}
+.ok-multiselect.is-open .ok-ms-add-trigger {
+  border-style: solid;
+  border-color: var(--ok-primary);
+  color: var(--ok-primary);
+  background: var(--ok-primary-soft);
+}
+
+.ok-ms-chips { padding: 0; }
+
+/* Collapsed by default: only the dropdown panel is toggled, so the field
+   stays a compact single row until the user actually opens it. Floats over
+   whatever sits below it (position:absolute) instead of pushing the rest of
+   the card down, so it never permanently occupies page space. */
+.ok-ms-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border-strong);
+  border-radius: var(--ok-radius);
+  box-shadow: var(--ok-shadow-hover);
+}
+.ok-multiselect.is-open .ok-ms-dropdown { display: block; }
+
+.ok-multiselect-panel { max-height: 220px; overflow-y: auto; }
+
+/* .ok-card normally clips to its own rounded corners (overflow:hidden) —
+   scoped override so an open subjects dropdown isn't cut off at the card's
+   bottom edge. Only takes effect on the one card that currently has an open
+   picker, so every other card on this and every other admin page keeps its
+   normal corner clipping. */
+.ok-card:has(.ok-multiselect.is-open) { overflow: visible; }
+
+@media (max-width: 640px) {
+  .ok-trainer-header-body { justify-content: center; text-align: center; }
+  .ok-trainer-email, .ok-trainer-badges, .ok-trainer-submeta { justify-content: center; }
+  .ok-photo-field { flex-direction: column; align-items: center; text-align: center; }
+  .ok-photo-content { align-items: center; width: 100%; }
+  .ok-photo-filename, .ok-photo-actions { justify-content: center; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Students — changelist row, toolbar, detail profile, bulk-add and     */
+/* import-preview tables (admin/academy/student/*.html).                */
+/* Reuses the same tokens/cards/badges/kpi-grid as everywhere else —    */
+/* only the pieces genuinely unique to Students get their own class.   */
+/* ------------------------------------------------------------------ */
+
+.ok-student-row-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ok-text);
+  font-weight: 600;
+}
+.ok-student-row-link:hover { color: var(--ok-primary); }
+
+.ok-student-avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ok-student-name { white-space: nowrap; }
+
+.ok-student-group { color: var(--ok-text-secondary); font-weight: 500; }
+.ok-student-group:hover { color: var(--ok-primary); }
+
+.ok-student-actions { display: flex; align-items: center; gap: 0.4rem; }
+.ok-student-actions .ok-btn-secondary { padding: 0.32rem 0.55rem; }
+
+.ok-student-toolbar-btn {
+  padding: 0.35rem 0.8rem !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2.1rem;
+}
+
+.ok-empty-state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1.1rem;
+}
+
+/* -- Detail profile ---------------------------------------------------- */
+
+.ok-student-avatar-lg {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.ok-student-kpi .ok-kpi-value { font-size: 1.4rem; }
+
+.ok-student-danger-action { color: var(--ok-danger); border-color: var(--ok-danger); }
+.ok-student-danger-action:hover { background: var(--ok-danger-soft); color: var(--ok-danger); }
+
+/* -- Bulk-add / import-preview tables ----------------------------------- */
+
+.ok-student-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  margin-bottom: 1.1rem;
+}
+
+.ok-student-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.ok-student-table thead th {
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  background: var(--ok-surface-hover);
+  color: var(--ok-text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--ok-border);
+  white-space: nowrap;
+}
+.ok-student-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--ok-border);
+  vertical-align: middle;
+}
+.ok-student-table tbody tr:last-child td { border-bottom: none; }
+.ok-student-table input.ok-input, .ok-student-table select.ok-input { min-height: 2.1rem; padding: 0.4rem 0.6rem; }
+.ok-student-table .ok-student-active-cell { text-align: center; }
+.ok-student-preview-row-error { background: var(--ok-danger-soft); }
+.ok-student-row-index { color: var(--ok-text-muted); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+  .ok-student-table { font-size: 0.78rem; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Group Workspace — header/tabs shell + Overview/Students/Programs/    */
+/* Schedule/Lessons/Attendance/Homework/Analytics tabs                  */
+/* (admin/academy/group/workspace/*.html). Reuses .ok-card/.ok-kpi-*/   */
+/* .ok-badge/.okan-mini-stats/.ok-student-table everywhere it can —     */
+/* only the pieces genuinely unique to the workspace get their own     */
+/* scoped class.                                                        */
+/* ------------------------------------------------------------------ */
+
+.ok-group-workspace { max-width: 1180px; margin: 0 auto 2rem; }
+
+.ok-group-back {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  color: var(--ok-text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;
+}
+.ok-group-back:hover { color: var(--ok-primary); }
+
+.ok-group-header {
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+  padding: 1.1rem 1.35rem;
+  margin-bottom: 1.25rem;
+}
+
+.ok-group-header-main {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;
+}
+
+.ok-group-title { margin: 0 0 0.2rem; font-size: 1.3rem; font-weight: 700; color: var(--ok-text); }
+.ok-group-subtitle { color: var(--ok-text-muted); font-size: 0.85rem; }
+
+.ok-group-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ok-group-actions form { display: inline-flex; }
+
+.ok-group-tabs {
+  display: flex; flex-wrap: wrap; gap: 0.35rem;
+  border-top: 1px solid var(--ok-border); padding-top: 0.85rem;
+}
+.ok-group-tab {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.85rem; border-radius: 999px;
+  font-size: 0.82rem; font-weight: 600; color: var(--ok-text-secondary);
+  border: 1px solid transparent;
+}
+.ok-group-tab:hover { color: var(--ok-primary); background: var(--ok-primary-soft); }
+.ok-group-tab.active { color: var(--ok-primary); background: var(--ok-primary-soft); border-color: var(--ok-primary); }
+
+.ok-group-section { display: flex; flex-direction: column; gap: 1.1rem; }
+
+.ok-group-kpi .ok-kpi-value { font-size: 1.5rem; }
+
+.ok-card-header-action { margin-left: auto; }
+
+.ok-group-toolbar {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.ok-group-toolbar-secondary { margin-top: -0.4rem; }
+.ok-group-lesson-filters .ok-input { min-width: 150px; }
+
+.ok-group-student-avatar { width: 32px; height: 32px; font-size: 0.75rem; }
+
+.ok-group-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 1rem;
+  margin-top: 0.9rem; font-size: 0.82rem; color: var(--ok-text-muted);
+}
+.ok-group-pagination a { color: var(--ok-primary); font-weight: 600; }
+
+.ok-group-empty-state {
+  text-align: center; padding: 2.5rem 1.25rem;
+  border: 1px dashed var(--ok-border); border-radius: var(--ok-radius-lg);
+  background: var(--ok-surface); color: var(--ok-text-muted);
+}
+.ok-group-empty-state i { display: block; font-size: 1.8rem; color: var(--ok-primary); margin-bottom: 0.6rem; opacity: 0.8; }
+.ok-group-empty-state h4 { color: var(--ok-text); font-size: 1rem; margin: 0 0 0.75rem; }
+
+.ok-group-overview-program-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.65rem 0; border-bottom: 1px solid var(--ok-border); flex-wrap: wrap;
+}
+.ok-group-overview-program-row:last-child { border-bottom: none; }
+.ok-group-overview-program-slot { color: var(--ok-text-muted); font-size: 0.82rem; }
+
+.ok-group-overview-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 1.1rem;
+  align-items: start;
+}
+.ok-group-overview-col { display: flex; flex-direction: column; gap: 1.1rem; }
+
+@media (max-width: 900px) {
+  .ok-group-overview-columns { grid-template-columns: 1fr; }
+}
+
+.ok-group-program-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem;
+}
+.ok-group-program-card {
+  border: 1px solid var(--ok-border); border-radius: var(--ok-radius);
+  padding: 1rem; background: var(--ok-surface); display: flex; flex-direction: column;
+}
+.ok-group-program-title { font-size: 1rem; font-weight: 700; color: var(--ok-text); }
+.ok-group-program-teacher { color: var(--ok-text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem; }
+.ok-group-program-slots { font-size: 0.8rem; color: var(--ok-text-muted); margin-bottom: 0.6rem; }
+.ok-group-program-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: auto; padding-top: 0.5rem; }
+
+.ok-group-schedule td { white-space: nowrap; }
+
+.ok-group-inline-form { display: flex; flex-direction: column; gap: 1rem; max-width: 640px; }
+
+.ok-group-day-checkboxes { display: flex; flex-wrap: wrap; gap: 0.9rem; }
+.ok-group-day-checkboxes label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 500; }
+
+.ok-group-form-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+}
+
+.ok-group-breadcrumb {
+  display: flex; align-items: center; gap: 0.4rem;
+  color: var(--ok-text-secondary); font-size: 0.8rem; margin-bottom: 0.75rem;
+}
+.ok-group-breadcrumb a { color: var(--ok-text-secondary); }
+.ok-group-breadcrumb a:hover { color: var(--ok-primary); }
+.ok-group-breadcrumb i { font-size: 0.65rem; color: var(--ok-text-muted); }
+.ok-group-breadcrumb span { color: var(--ok-text); font-weight: 600; }
+
+.ok-group-teacher-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+
+/* -- Weekly Schedule — day columns (spec §9) ---------------------------- */
+
+.ok-group-weekly-schedule {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 0.75rem;
+  overflow-x: auto;
+}
+.ok-group-day-column {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  background: var(--ok-surface);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 150px;
+}
+.ok-group-day-heading {
+  font-size: 0.8rem; font-weight: 700; color: var(--ok-text);
+  text-transform: uppercase; letter-spacing: 0.02em;
+  padding-bottom: 0.5rem; border-bottom: 1px solid var(--ok-border);
+}
+.ok-group-day-empty { color: var(--ok-text-muted); font-size: 0.78rem; text-align: center; padding: 0.5rem 0; }
+
+.ok-group-schedule-block {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-sm);
+  background: var(--ok-primary-soft);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.8rem;
+}
+.ok-group-schedule-block-inactive { background: var(--ok-surface-hover); opacity: 0.7; }
+.ok-group-schedule-time { font-weight: 700; color: var(--ok-primary); margin-bottom: 0.2rem; }
+.ok-group-schedule-block-inactive .ok-group-schedule-time { color: var(--ok-text-muted); }
+.ok-group-schedule-subject { font-weight: 600; color: var(--ok-text); }
+.ok-group-schedule-teacher { color: var(--ok-text-secondary); }
+.ok-group-schedule-room { color: var(--ok-text-muted); font-size: 0.75rem; margin-top: 0.15rem; }
+.ok-group-schedule-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.4rem; margin-top: 0.5rem;
+}
+.ok-group-schedule-footer form { display: inline-flex; }
+
+/* -- Modals (native <dialog>, no JS framework) -------------------------- */
+
+.ok-modal {
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg);
+  padding: 0;
+  width: min(560px, 92vw);
+  max-height: 85vh;
+  box-shadow: var(--ok-shadow-hover);
+  background: var(--ok-surface);
+  color: var(--ok-text);
+}
+.ok-modal::backdrop { background: rgba(20, 30, 24, 0.45); }
+.ok-modal-form { display: flex; flex-direction: column; max-height: 85vh; }
+.ok-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--ok-border);
+  font-weight: 700; font-size: 0.95rem;
+}
+.ok-modal-header span { display: flex; align-items: center; gap: 0.5rem; }
+.ok-modal-close {
+  background: none; border: none; color: var(--ok-text-muted); cursor: pointer;
+  padding: 0.2rem; line-height: 1;
+}
+.ok-modal-close:hover { color: var(--ok-text); }
+.ok-modal-body { padding: 1rem 1.25rem; overflow-y: auto; flex: 1 1 auto; }
+.ok-modal-search { margin-bottom: 0.6rem; }
+.ok-modal-select-all {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.82rem; font-weight: 600; color: var(--ok-text-secondary);
+  margin-bottom: 0.6rem; cursor: pointer;
+}
+.ok-modal-student-list {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  max-height: 340px; overflow-y: auto;
+  border: 1px solid var(--ok-border); border-radius: var(--ok-radius-sm);
+  padding: 0.4rem;
+}
+.ok-modal-student-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 0.6rem; border-radius: var(--ok-radius-sm);
+  cursor: pointer;
+}
+.ok-modal-student-row:hover { background: var(--ok-surface-hover); }
+.ok-modal-student-info { display: flex; flex-direction: column; min-width: 0; }
+.ok-modal-footer {
+  display: flex; justify-content: flex-end; gap: 0.6rem;
+  padding: 1rem 1.25rem; border-top: 1px solid var(--ok-border);
+}
+
+@media (max-width: 640px) {
+  .ok-group-header-main { flex-direction: column; align-items: stretch; }
+  .ok-group-actions { justify-content: center; }
+  .ok-group-tabs { justify-content: center; }
+  .ok-group-toolbar, .ok-group-lesson-filters { justify-content: center; }
+  .ok-group-program-grid { grid-template-columns: 1fr; }
+  .ok-group-form-summary { flex-direction: column; align-items: stretch; text-align: center; }
+  .ok-group-weekly-schedule { grid-template-columns: 1fr; }
 }

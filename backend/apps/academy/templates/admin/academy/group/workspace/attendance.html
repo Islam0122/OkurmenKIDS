@@ -1,0 +1,54 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-clipboard-check"></i><span>Посещаемость</span></div>
+  <div class="ok-card-body">
+    <div class="okan-mini-stats">
+      <div class="okan-mini-stat">Всего: <strong>{{ stats.total }}</strong></div>
+      <div class="okan-mini-stat">Присутствовали: <strong>{{ stats.present }}</strong></div>
+      <div class="okan-mini-stat">Отсутствовали: <strong>{{ stats.absent }}</strong></div>
+      <div class="okan-mini-stat">Опоздали: <strong>{{ stats.late }}</strong></div>
+      <div class="okan-mini-stat">Уважительная причина: <strong>{{ stats.excused }}</strong></div>
+      {% if stats.rate is not None %}
+        <div class="okan-mini-stat">Посещаемость: <strong>{{ stats.rate }}%</strong></div>
+      {% endif %}
+    </div>
+
+    <form method="get" class="ok-group-toolbar">
+      <select name="status" class="ok-input">
+        <option value="">Все статусы</option>
+        {% for value, label in status_choices %}
+          <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="ok-btn-secondary ok-btn-sm">Найти</button>
+    </form>
+
+    {% if records %}
+      <div class="ok-student-table-wrap">
+        <table class="ok-student-table">
+          <thead><tr><th>Дата</th><th>Студент</th><th>Статус</th><th>Комментарий</th></tr></thead>
+          <tbody>
+            {% for record in records %}
+              <tr>
+                <td>{{ record.lesson.date|date:"d.m.Y" }}</td>
+                <td>{{ record.student }}</td>
+                <td>{{ record.get_status_display }}</td>
+                <td>{{ record.comment|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "admin/academy/group/workspace/_pagination.html" with page_obj=records %}
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-clipboard-check"></i>
+        <h4>Записей о посещаемости пока нет</h4>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

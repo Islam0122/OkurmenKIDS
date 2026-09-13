@@ -1,0 +1,31 @@
+{% extends "admin/academy/group/workspace/base.html" %}
+{% load i18n %}
+
+{% block workspace_content %}
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-person-plus"></i><span>Добавить преподавателя</span></div>
+  <div class="ok-card-body">
+    <p class="ok-section-subtitle">
+      Создаёт независимую учебную программу для этого тренера и предмета. Расписание можно
+      добавить сразу после сохранения.
+    </p>
+    <form method="post" class="ok-group-inline-form">
+      {% csrf_token %}
+      <div class="ok-field-group">
+        <label class="ok-label">{{ form.teacher.label }}</label>
+        {{ form.teacher }}
+        {% for error in form.teacher.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+      </div>
+      <div class="ok-field-group">
+        <label class="ok-label">{{ form.subject.label }}</label>
+        {{ form.subject }}
+        {% for error in form.subject.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+      </div>
+      <div class="ok-form-actions">
+        <a href="{% url 'admin:academy_group_workspace_teachers' group.pk %}" class="ok-btn-secondary">Отмена</a>
+        <button type="submit" class="ok-btn-primary">Добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

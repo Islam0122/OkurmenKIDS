@@ -6,7 +6,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import Client as DjangoClient
 from django.test import TestCase
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
@@ -611,48 +611,33 @@ class TeacherImportExportAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
-class TeacherAdminImportExportTests(TestCase):
+class TeacherAdminChangelistTests(TestCase):
+    """The Teacher admin changelist has no admin-side Import/Export UI —
+    those buttons were removed in favor of the Trainers REST API
+    (TrainerViewSet.export/import/import_preview)."""
+
     def setUp(self):
         self.admin = make_admin()
-        self.teacher, self.password = make_teacher(
-            username="teacherWeb", email="teacherWeb@okurmenkids.local"
-        )
         self.admin_web = DjangoClient()
         self.admin_web.force_login(self.admin)
-        self.teacher_web = DjangoClient()
-        self.teacher_web.force_login(self.teacher.user)
 
-    def test_changelist_has_import_export_buttons(self):
+    def test_changelist_has_no_import_export_buttons(self):
         response = self.admin_web.get(reverse("admin:users_teacher_changelist"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, reverse("admin:users_teacher_import"))
-        self.assertContains(response, reverse("admin:users_teacher_export"))
+        content = response.content.decode()
+        self.assertNotIn("Import", content)
+        self.assertNotIn("Export CSV", content)
+        self.assertNotIn("Export XLSX", content)
 
-    def test_export_view_downloads_csv(self):
-        response = self.admin_web.get(reverse("admin:users_teacher_export"))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertNotIn(b"password", response.content.lower())
+    def test_import_and_export_admin_urls_no_longer_exist(self):
+        with self.assertRaises(NoReverseMatch):
+            reverse("admin:users_teacher_import")
+        with self.assertRaises(NoReverseMatch):
+            reverse("admin:users_teacher_export")
 
-    def test_import_preview_then_confirm(self):
-        csv_content = "username,email,first_name\nwebimport,webimport@okurmenkids.local,WebImport\n"
-        url = reverse("admin:users_teacher_import")
-
-        preview_response = self.admin_web.post(url, {"file": _csv_file(csv_content), "preview": "1"})
-        self.assertEqual(preview_response.status_code, 200)
-        self.assertFalse(User.objects.filter(username="webimport").exists())
-
-        confirm_response = self.admin_web.post(
-            url, {"file": _csv_file(csv_content), "confirm": "1"}, follow=True
-        )
-        self.assertEqual(confirm_response.status_code, 200)
-        self.assertTrue(User.objects.filter(username="webimport").exists())
-
-    def test_import_view_requires_admin(self):
-        url = reverse("admin:users_teacher_import")
-        response = self.teacher_web.get(url)
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/admin/login/", response.url)
+    def test_changelist_still_has_add_button(self):
+        response = self.admin_web.get(reverse("admin:users_teacher_changelist"))
+        self.assertContains(response, reverse("admin:users_teacher_add"))
 
 
 # ---------------------------------------------------------------------------
