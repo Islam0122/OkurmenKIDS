@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LogOut, Menu } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
+import logo from '@/assets/logo.png'
 import { Drawer } from '@/components/ui/Drawer'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/utils/cn'
@@ -18,9 +19,7 @@ export function Header() {
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-4 lg:px-6">
       <div className="flex items-center gap-2 lg:hidden">
-        <span className="flex size-8 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">
-          OK
-        </span>
+        <img src={logo} alt="OkurmenKIDS" className="size-8 shrink-0 object-contain" />
         <span className="font-semibold text-ink">OkurmenKIDS</span>
       </div>
 

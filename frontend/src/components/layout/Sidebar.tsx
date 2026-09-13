@@ -1,6 +1,7 @@
 import { LogOut } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
+import logo from '@/assets/logo.png'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/utils/cn'
 
@@ -12,10 +13,8 @@ export function Sidebar() {
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-surface lg:flex">
-      <div className="flex h-16 items-center gap-2 border-b border-border px-6">
-        <span className="flex size-8 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">
-          OK
-        </span>
+      <div className="flex h-16 items-center gap-2.5 border-b border-border px-6">
+        <img src={logo} alt="OkurmenKIDS" className="size-9 shrink-0 object-contain" />
         <span className="font-semibold text-ink">OkurmenKIDS</span>
       </div>
 
