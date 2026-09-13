@@ -52,25 +52,6 @@ export function DashboardPage() {
             />
           </div>
 
-          {data.nextLesson ? (
-            <div className="rounded-xl border border-border bg-surface p-5">
-              <p className="text-sm font-medium text-ink-secondary">Ближайшее занятие</p>
-              <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <p className="text-2xl font-semibold text-ink">{formatTimeRange(data.nextLesson.start_time, data.nextLesson.end_time)}</p>
-                  <p className="mt-1 text-sm text-ink-secondary">{data.nextLesson.subject_name ?? 'Без предмета'}</p>
-                  <p className="mt-3 text-sm text-ink">
-                    Группа: <span className="font-medium">{data.nextLesson.group_name}</span>
-                  </p>
-                  {data.nextLesson.room_name ? (
-                    <p className="text-sm text-ink-secondary">Аудитория: {data.nextLesson.room_name}</p>
-                  ) : null}
-                </div>
-                <Button onClick={() => navigate(`/app/lessons/${data.nextLesson?.id}`)}>Открыть занятие</Button>
-              </div>
-            </div>
-          ) : null}
-
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="mb-3 text-sm font-medium text-ink-secondary">Сегодня</p>
             {data.lessonsToday.length === 0 ? (
@@ -99,6 +80,63 @@ export function DashboardPage() {
               </ol>
             )}
           </div>
+
+          {(data.tomorrowLessons ?? []).length > 0 ? (
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-ink-secondary">Завтра</p>
+                <Link to="/app/lessons?view=tomorrow" className="text-sm text-brand-700 hover:underline">
+                  Показать все
+                </Link>
+              </div>
+              <ol className="space-y-3">
+                {(data.tomorrowLessons ?? []).map((lesson) => (
+                  <li key={lesson.id}>
+                    <Link
+                      to={`/app/lessons/${lesson.id}`}
+                      className="flex items-center gap-4 rounded-lg border border-border px-4 py-3 hover:bg-surface-hover"
+                    >
+                      <span className="w-14 shrink-0 font-mono text-sm text-ink">{lesson.start_time.slice(0, 5)}</span>
+                      <span className="flex-1">
+                        <span className="block text-sm font-medium text-ink">{lesson.subject_name ?? 'Без предмета'}</span>
+                        <span className="block text-xs text-ink-secondary">{lesson.group_name}</span>
+                      </span>
+                      {lesson.status === 'cancelled' ? <Badge tone="danger">Отменено</Badge> : null}
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+
+          {(data.upcomingLessons ?? []).length > 0 ? (
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <p className="mb-3 text-sm font-medium text-ink-secondary">Ближайшие занятия</p>
+              <ol className="space-y-3">
+                {(data.upcomingLessons ?? []).map((lesson) => (
+                  <li key={lesson.id}>
+                    <Link
+                      to={`/app/lessons/${lesson.id}`}
+                      className="flex items-center justify-between gap-4 rounded-lg border border-border px-4 py-3 hover:bg-surface-hover"
+                    >
+                      <span>
+                        <span className="block text-sm font-medium text-ink">
+                          {formatTimeRange(lesson.start_time, lesson.end_time)} · {lesson.subject_name ?? 'Без предмета'}
+                        </span>
+                        <span className="block text-xs text-ink-secondary">{lesson.group_name}</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-ink-muted">{lesson.date}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+              <div className="mt-4">
+                <Button variant="secondary" size="sm" onClick={() => navigate('/app/lessons?view=upcoming')}>
+                  Посмотреть все занятия
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {data.pendingHomeworkCount > 0 ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning-soft bg-warning-soft/60 p-5">
