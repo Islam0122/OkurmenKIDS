@@ -1,3 +1,7 @@
+CORS_ALLOWED_ORIGINS = [
+    "https://okurmen-kids-drab.vercel.app",
+]
+
 CORS_ALLOW_METHODS = [
     "DELETE",
     "GET",
