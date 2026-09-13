@@ -13,7 +13,7 @@ from typing import Iterable
 
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
-from django.db.models import Avg, Q
+from django.db.models import Avg, Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -22,7 +22,18 @@ from django.views.decorators.http import require_POST
 from apps.users.models import Subject, Teacher, User
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
-from .models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Room
+from .models import (
+    Attendance,
+    Course,
+    Group,
+    GroupSchedule,
+    GroupTeacher,
+    Homework,
+    HomeworkResult,
+    Lesson,
+    Room,
+    Student,
+)
 from .services.analytics import get_dashboard
 from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
 
@@ -465,3 +476,307 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
         ),
     }
     return render(request, "admin/academy/group_teacher_workspace.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Group Dashboard — "Открыть" on the Groups changelist lands here instead of
+# the raw Django change form (the change form is still reachable, only via
+# the dashboard's own "Изменить группу" button). Unlike the GroupTeacher
+# Workspace above, this is scoped to the *whole* Group — every one of its
+# Teaching Programs (models.GroupTeacher), every student, every Lesson
+# regardless of which program generated it. Every figure is a direct,
+# freshly-computed aggregate; nothing is stored.
+# ---------------------------------------------------------------------------
+
+_ATTENDED_STATUSES = (Attendance.Status.PRESENT, Attendance.Status.LATE)
+_SUBMITTED_HOMEWORK_STATUSES = (
+    HomeworkResult.Status.SUBMITTED,
+    HomeworkResult.Status.CHECKED,
+    HomeworkResult.Status.LATE,
+)
+_GROUP_STATUS_CSS = {
+    Group.Status.ACTIVE: "ok-badge-success",
+    Group.Status.PAUSED: "ok-badge-warning",
+    Group.Status.COMPLETED: "ok-badge-muted",
+    Group.Status.CANCELLED: "ok-badge-danger",
+}
+
+
+def group_dashboard_view(request, group_id: int):
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Раздел «Информация о группе» доступен только администратору.")
+
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    today = timezone.localdate()
+
+    programs = list(
+        group.teachers.select_related("teacher__user", "subject")
+        .prefetch_related("schedules__room")
+        .order_by("-is_active", "id")
+    )
+    active_programs = [p for p in programs if p.is_active]
+    active_teacher_ids = {p.teacher_id for p in active_programs}
+
+    lessons_all_qs = Lesson.objects.filter(group=group)
+    lesson_totals = lessons_all_qs.aggregate(
+        total=Count("id"),
+        completed=Count("id", filter=Q(status=Lesson.Status.COMPLETED)),
+        upcoming=Count("id", filter=Q(status=Lesson.Status.PLANNED, date__gte=today)),
+    )
+
+    # --- Students: one query each for attendance/homework, not one per
+    # student — then zipped onto each Student in Python. ---
+    students_qs = group.students.order_by("last_name", "first_name")
+    attendance_by_student = {
+        row["student_id"]: row
+        for row in (
+            Attendance.objects.filter(lesson__group=group)
+            .values("student_id")
+            .annotate(total=Count("id"), attended=Count("id", filter=Q(status__in=_ATTENDED_STATUSES)))
+        )
+    }
+    homework_by_student = {
+        row["student_id"]: row
+        for row in (
+            HomeworkResult.objects.filter(homework__lesson__group=group)
+            .values("student_id")
+            .annotate(total=Count("id"), done=Count("id", filter=Q(status__in=_SUBMITTED_HOMEWORK_STATUSES)))
+        )
+    }
+    students = []
+    for student in students_qs:
+        attendance_row = attendance_by_student.get(student.id)
+        homework_row = homework_by_student.get(student.id)
+        students.append(
+            {
+                "obj": student,
+                "attendance_rate": (
+                    round(attendance_row["attended"] / attendance_row["total"] * 100, 1)
+                    if attendance_row and attendance_row["total"]
+                    else None
+                ),
+                "homework_rate": (
+                    round(homework_row["done"] / homework_row["total"] * 100, 1)
+                    if homework_row and homework_row["total"]
+                    else None
+                ),
+            }
+        )
+    students_total = len(students)
+    students_active = sum(1 for row in students if row["obj"].is_active)
+
+    # --- Programs tab: same shape as GroupAdmin.teaching_programs_summary,
+    # but as plain data for a template instead of an HTML string. ---
+    program_cards = []
+    for program in programs:
+        program_lessons = Lesson.objects.filter(group_teacher=program)
+        active_slots = sorted(
+            (slot for slot in program.schedules.all() if slot.is_active),
+            key=lambda slot: (WEEKDAY_CODES.index(slot.day_of_week), slot.start_time),
+        )
+        program_cards.append(
+            {
+                "obj": program,
+                "schedule": active_slots,
+                "lesson_count": program_lessons.count(),
+                "completed": program_lessons.filter(status=Lesson.Status.COMPLETED).count(),
+                "upcoming": program_lessons.filter(status=Lesson.Status.PLANNED, date__gte=today).count(),
+                "plan_count": program.lesson_plans.count(),
+                "workspace_url": reverse("admin:academy_groupteacher_workspace", args=[program.pk]),
+                "change_url": reverse("admin:academy_groupteacher_change", args=[program.pk]),
+                "lessons_url": (
+                    f"{reverse('admin:academy_lesson_changelist')}?group_teacher__id__exact={program.pk}"
+                ),
+            }
+        )
+
+    # --- Teachers tab: every distinct teacher across this group's programs. ---
+    teachers_by_id: dict[int, dict] = {}
+    for program in programs:
+        entry = teachers_by_id.setdefault(program.teacher_id, {"teacher": program.teacher, "programs": []})
+        entry["programs"].append(program)
+    teachers_summary = list(teachers_by_id.values())
+
+    # --- Schedule tab: this group's own weekly slots, grouped by day. ---
+    schedule_slots = list(
+        GroupSchedule.objects.filter(group=group, is_active=True)
+        .select_related("teacher__user", "subject", "room")
+        .order_by("day_of_week", "start_time")
+    )
+    schedule_by_day: dict[str, list] = defaultdict(list)
+    for slot in schedule_slots:
+        schedule_by_day[slot.day_of_week].append(slot)
+    weekly_schedule = [
+        {"code": code, "label": WEEKDAY_LABELS_FULL[code], "slots": schedule_by_day.get(code, [])}
+        for code in WEEKDAY_CODES
+    ]
+
+    # --- Lessons tab: this group's own Lessons only, with optional filters. ---
+    lessons_qs = lessons_all_qs.select_related(
+        "subject", "room", "group_teacher__teacher__user"
+    ).order_by("-date", "-start_time")
+    lesson_filters = {
+        "subject": request.GET.get("lesson_subject") or "",
+        "teacher": request.GET.get("lesson_teacher") or "",
+        "status": request.GET.get("lesson_status") or "",
+        "date": request.GET.get("lesson_date") or "",
+    }
+    if lesson_filters["subject"]:
+        lessons_qs = lessons_qs.filter(subject_id=lesson_filters["subject"])
+    if lesson_filters["teacher"]:
+        teacher_id = lesson_filters["teacher"]
+        lessons_qs = lessons_qs.filter(
+            Q(teacher_id=teacher_id) | Q(teacher__isnull=True, group_teacher__teacher_id=teacher_id)
+        )
+    if lesson_filters["status"]:
+        lessons_qs = lessons_qs.filter(status=lesson_filters["status"])
+    if lesson_filters["date"]:
+        filter_date = _parse_date(lesson_filters["date"], None)
+        if filter_date:
+            lessons_qs = lessons_qs.filter(date=filter_date)
+    lessons = list(lessons_qs[:300])
+
+    upcoming_preview = list(
+        lessons_all_qs.select_related("subject", "room", "group_teacher__teacher__user")
+        .filter(status=Lesson.Status.PLANNED, date__gte=today)
+        .order_by("date", "start_time")[:8]
+    )
+
+    # --- Analytics tab + the attendance/homework KPI cards: the existing,
+    # already-tested analytics service, scoped to just this group over its
+    # whole lifetime (never a fabricated/mock figure). ---
+    end_boundary = max(today, group.end_date) if group.end_date else today
+    dashboard = get_dashboard(
+        period="custom", start_date=group.start_date, end_date=end_boundary, group_id=group.pk, today=today
+    )
+
+    kpis = [
+        {"icon": "bi-mortarboard", "label": "Всего студентов", "value": students_total},
+        {"icon": "bi-person-check", "label": "Активных студентов", "value": students_active},
+        {"icon": "bi-person-badge", "label": "Преподавателей", "value": len(active_teacher_ids)},
+        {"icon": "bi-collection-play", "label": "Учебных программ", "value": len(active_programs)},
+        {"icon": "bi-calendar3", "label": "Всего занятий", "value": lesson_totals["total"] or 0},
+        {"icon": "bi-check2-circle", "label": "Завершённых занятий", "value": lesson_totals["completed"] or 0},
+        {"icon": "bi-calendar-event", "label": "Предстоящих занятий", "value": lesson_totals["upcoming"] or 0},
+        {
+            "icon": "bi-clipboard-check",
+            "label": "Attendance Rate",
+            "value": f"{dashboard['attendance']['attendance_rate']['value']}%",
+        },
+        {
+            "icon": "bi-journal-check",
+            "label": "Homework Completion",
+            "value": f"{dashboard['homework']['submission_rate']['value']}%",
+        },
+    ]
+
+    capacity_label = f"{students_active} / {group.max_students}" if group.max_students else f"{students_active} / ∞"
+    period_label = (
+        f"{group.start_date:%d.%m.%Y} – {group.end_date:%d.%m.%Y}"
+        if group.end_date
+        else f"{group.start_date:%d.%m.%Y} – …"
+    )
+
+    context = {
+        **admin.site.each_context(request),
+        "title": group.name,
+        "group": group,
+        "status_css": _GROUP_STATUS_CSS.get(group.status, "ok-badge-muted"),
+        "capacity_label": capacity_label,
+        "period_label": period_label,
+        "kpis": kpis,
+        "students": students,
+        "students_total": students_total,
+        "students_active": students_active,
+        "students_inactive": students_total - students_active,
+        "programs": program_cards,
+        "active_programs_count": len(active_programs),
+        "teachers_summary": teachers_summary,
+        "weekly_schedule": weekly_schedule,
+        "lessons": lessons,
+        "lesson_filters": lesson_filters,
+        "lesson_statuses": Lesson.Status.choices,
+        "filter_subjects": Subject.objects.filter(is_active=True).order_by("name"),
+        "filter_teachers": Teacher.objects.filter(id__in=active_teacher_ids).select_related("user"),
+        "upcoming_preview": upcoming_preview,
+        "dashboard": dashboard,
+        "active_tab": request.GET.get("tab") or "overview",
+        "change_url": reverse("admin:academy_group_change", args=[group.pk]),
+        "changelist_url": reverse("admin:academy_group_changelist"),
+        "add_student_url": f"{reverse('admin:academy_student_add')}?group={group.pk}",
+        "add_existing_students_url": reverse("admin:academy_group_add_students", args=[group.pk]),
+        "import_students_url": reverse("admin:academy_student_import"),
+        "dashboard_url": reverse("admin:academy_group_dashboard", args=[group.pk]),
+    }
+    return render(request, "admin/academy/group_dashboard.html", context)
+
+
+@require_POST
+def group_student_action_view(request, group_id: int, student_id: int):
+    """Removing a Student from a Group only ever nulls Student.group — the
+    Student row (and every Attendance/HomeworkResult it's tied to) is never
+    deleted. "Деактивировать" is the same is_active flip StudentAdmin's own
+    bulk action does; it's not a delete either.
+    """
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Действие доступно только администратору.")
+
+    group = get_object_or_404(Group, pk=group_id)
+    student = get_object_or_404(Student, pk=student_id, group=group)
+    action = request.POST.get("action")
+
+    if action == "remove":
+        student.group = None
+        student.save()
+        messages.success(request, f"«{student}» убран(а) из группы «{group.name}». Студент не удалён из системы.")
+    elif action == "deactivate":
+        student.is_active = False
+        student.save()
+        messages.success(request, f"«{student}» деактивирован(а). История посещаемости и ДЗ сохранена.")
+    elif action == "activate":
+        student.is_active = True
+        student.save()
+        messages.success(request, f"«{student}» снова активен(а).")
+    else:
+        messages.error(request, "Неизвестное действие.")
+
+    return redirect(f"{reverse('admin:academy_group_dashboard', args=[group_id])}?tab=students")
+
+
+def group_add_students_view(request, group_id: int):
+    """The "Добавить существующих" / "Массовое добавление" flow: pick any
+    number of existing Students (not already in this group) and assign them
+    all at once. Never creates a Student — that's the separate "+ Добавить
+    студента" button, which opens the ordinary Student add form pre-filled
+    with this group.
+    """
+    if not _is_admin_user(request.user):
+        raise PermissionDenied("Действие доступно только администратору.")
+
+    group = get_object_or_404(Group, pk=group_id)
+
+    if request.method == "POST":
+        selected_ids = request.POST.getlist("student_ids")
+        if selected_ids:
+            updated = Student.objects.filter(id__in=selected_ids).update(group=group, updated_at=timezone.now())
+            messages.success(request, f"Добавлено студентов в «{group.name}»: {updated}.")
+        else:
+            messages.warning(request, "Не выбрано ни одного студента.")
+        return redirect(f"{reverse('admin:academy_group_dashboard', args=[group_id])}?tab=students")
+
+    query = (request.GET.get("q") or "").strip()
+    candidates_qs = Student.objects.filter(is_active=True).exclude(group=group).order_by("last_name", "first_name")
+    if query:
+        candidates_qs = candidates_qs.filter(
+            Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(phone__icontains=query)
+        )
+
+    context = {
+        **admin.site.each_context(request),
+        "title": f"Добавить студентов — {group.name}",
+        "group": group,
+        "candidates": candidates_qs[:200],
+        "query": query,
+        "dashboard_url": reverse("admin:academy_group_dashboard", args=[group_id]),
+    }
+    return render(request, "admin/academy/group_add_students.html", context)

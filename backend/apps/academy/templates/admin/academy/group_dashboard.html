@@ -1,0 +1,468 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} okgd-page{% endblock %}
+
+{% block content_title %}{{ group.name }}{% endblock %}
+
+{% block breadcrumbs %}
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'admin:academy_group_changelist' %}">Группы</a></li>
+        <li class="breadcrumb-item">{{ group.name }}</li>
+    </ol>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .okgd-header { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; }
+        .okgd-title { display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem; margin:0 0 0.4rem; font-size:1.3rem; }
+        .okgd-meta { display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem; color:var(--ok-text-secondary,#68736C); font-size:0.85rem; }
+        .okgd-actions { display:flex; gap:0.5rem; flex-wrap:wrap; }
+
+        .okgd-nav { display:flex; flex-wrap:wrap; gap:0.4rem; margin:1.25rem 0; position:sticky; top:0; z-index:5; background:var(--body-bg,#fff); padding:0.5rem 0; }
+        .okgd-nav button.okgd-tab-btn {
+            padding:0.4rem 0.9rem; border-radius:999px; border:1px solid var(--ok-border,#E1E7E2);
+            font-size:0.82rem; color:var(--ok-text-secondary,#68736C); background:var(--ok-surface,#fff);
+            cursor:pointer;
+        }
+        .okgd-nav button.okgd-tab-btn:hover { border-color:var(--ok-primary,#2F8F5B); color:var(--ok-primary,#2F8F5B); }
+        .okgd-nav button.okgd-tab-btn.active { border-color:var(--ok-primary,#2F8F5B); color:#fff; background:var(--ok-primary,#2F8F5B); font-weight:600; }
+
+        .okgd-section { display:none; }
+        .okgd-section.active { display:block; }
+        .okgd-section h2 { font-size:1rem; font-weight:700; margin:0 0 0.85rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+        .okgd-section h2 .bi { color:var(--ok-primary,#2F8F5B); }
+
+        .okgd-table { width:100%; border-collapse:collapse; }
+        .okgd-table th, .okgd-table td { padding:0.55rem 0.65rem; border-bottom:1px solid var(--ok-border,#E1E7E2); font-size:0.85rem; text-align:left; vertical-align:middle; }
+        .okgd-table th { color:var(--ok-text-muted,#89938D); text-transform:uppercase; font-size:0.7rem; letter-spacing:0.03em; }
+        .okgd-empty { color:var(--ok-text-muted,#89938D); padding:1.5rem; text-align:center; font-size:0.85rem; }
+
+        .okgd-week { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:0.75rem; }
+        .okgd-day { border:1px solid var(--ok-border,#E1E7E2); border-radius:0.65rem; overflow:hidden; background:var(--ok-surface,#fff); }
+        .okgd-day-header { padding:0.5rem 0.75rem; background:var(--ok-surface-hover,#F1F6F2); font-weight:700; font-size:0.82rem; border-bottom:1px solid var(--ok-border,#E1E7E2); }
+        .okgd-slot { padding:0.6rem 0.75rem; border-bottom:1px solid var(--ok-border,#E1E7E2); font-size:0.8rem; }
+        .okgd-slot:last-child { border-bottom:none; }
+        .okgd-slot-time { font-weight:700; color:var(--ok-text,#202622); }
+        .okgd-slot-sub { color:var(--ok-text-secondary,#68736C); margin-top:0.15rem; }
+        .okgd-day-empty { padding:0.9rem 0.75rem; color:var(--ok-text-muted,#89938D); font-size:0.78rem; }
+
+        .okgd-filters { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
+        .okgd-filters select, .okgd-filters input { min-height:2.1rem; padding:0.3rem 0.6rem; font-size:0.82rem; }
+    </style>
+{% endblock %}
+
+{% block content %}
+
+<div class="okgd-header">
+    <div>
+        <h1 class="okgd-title">
+            {{ group.name }}
+            <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>{{ group.course.name }}</span>
+            <span class="ok-badge {{ status_css }}"><span class="ok-badge-dot"></span>{{ group.get_status_display }}</span>
+        </h1>
+        <div class="okgd-meta">
+            <span><i class="bi bi-calendar-range"></i> {{ period_label }}</span>
+            <span><i class="bi bi-people"></i> {{ capacity_label }} студентов</span>
+        </div>
+    </div>
+    <div class="okgd-actions">
+        <a class="btn btn-outline-success btn-sm" href="{{ changelist_url }}"><i class="bi bi-arrow-left"></i> К списку групп</a>
+        <a class="btn btn-outline-success btn-sm" href="{{ change_url }}"><i class="bi bi-pencil"></i> Изменить группу</a>
+        <a class="btn btn-success btn-sm" href="{{ add_student_url }}"><i class="bi bi-person-plus"></i> Добавить студента</a>
+        <a class="btn btn-success btn-sm" href="{{ change_url }}"><i class="bi bi-person-badge"></i> Добавить преподавателя</a>
+    </div>
+</div>
+
+<div class="ok-kpi-grid">
+    {% for kpi in kpis %}
+        <div class="ok-kpi-card">
+            <div class="ok-kpi-icon"><i class="bi {{ kpi.icon }}"></i></div>
+            <div class="ok-kpi-value">{{ kpi.value }}</div>
+            <div class="ok-kpi-label">{{ kpi.label }}</div>
+        </div>
+    {% endfor %}
+</div>
+
+<div class="okgd-nav" role="tablist">
+    <button type="button" class="okgd-tab-btn" data-tab="overview">Обзор</button>
+    <button type="button" class="okgd-tab-btn" data-tab="students">Студенты ({{ students_total }})</button>
+    <button type="button" class="okgd-tab-btn" data-tab="programs">Программы ({{ active_programs_count }})</button>
+    <button type="button" class="okgd-tab-btn" data-tab="teachers">Преподаватели ({{ teachers_summary|length }})</button>
+    <button type="button" class="okgd-tab-btn" data-tab="schedule">Расписание</button>
+    <button type="button" class="okgd-tab-btn" data-tab="lessons">Занятия</button>
+    <button type="button" class="okgd-tab-btn" data-tab="analytics">Аналитика</button>
+</div>
+
+<!-- ==================== ОБЗОР ==================== -->
+<div class="okgd-section" id="tab-overview">
+    <div class="ok-grid-2">
+        <div class="ok-card">
+            <div class="ok-card-header"><i class="bi bi-info-circle"></i><span>Информация о группе</span></div>
+            <div class="ok-card-body">
+                <div class="okan-mini-stats">
+                    <div class="okan-mini-stat">Название: <strong>{{ group.name }}</strong></div>
+                    <div class="okan-mini-stat">Курс: <strong>{{ group.course.name }}</strong></div>
+                    <div class="okan-mini-stat">Статус: <strong>{{ group.get_status_display }}</strong></div>
+                    <div class="okan-mini-stat">Дата начала: <strong>{{ group.start_date|date:"d.m.Y" }}</strong></div>
+                    <div class="okan-mini-stat">Дата окончания: <strong>{{ group.end_date|date:"d.m.Y"|default:"—" }}</strong></div>
+                    <div class="okan-mini-stat">Вместимость: <strong>{{ capacity_label }}</strong></div>
+                </div>
+                {% if group.description %}
+                    <p class="ok-help-text" style="margin-top:0.75rem;">{{ group.description|linebreaksbr }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="ok-card">
+            <div class="ok-card-header"><i class="bi bi-people"></i><span>Студенты</span></div>
+            <div class="ok-card-body">
+                <div class="okan-mini-stats">
+                    <div class="okan-mini-stat">Всего: <strong>{{ students_total }}</strong></div>
+                    <div class="okan-mini-stat">Активных: <strong>{{ students_active }}</strong></div>
+                    <div class="okan-mini-stat">Неактивных: <strong>{{ students_inactive }}</strong></div>
+                    <div class="okan-mini-stat">Attendance Rate: <strong>{{ dashboard.attendance.attendance_rate.value }}%</strong></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="ok-card">
+        <div class="ok-card-header"><i class="bi bi-collection-play"></i><span>Учебные программы</span></div>
+        <div class="ok-card-body">
+            {% if programs %}
+                {% for program in programs %}
+                    <div class="ok-card" style="margin-bottom:{% if not forloop.last %}0.75rem{% else %}0{% endif %};">
+                        <div class="ok-card-header">
+                            {{ program.obj.subject.name|default:"без предмета" }}
+                            {% if program.obj.is_active %}<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активна</span>{% else %}<span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивна</span>{% endif %}
+                        </div>
+                        <div class="ok-card-body">
+                            <div class="okan-mini-stats">
+                                <div class="okan-mini-stat">Тренер: <strong>{{ program.obj.teacher }}</strong></div>
+                                {% for slot in program.schedule %}
+                                    <div class="okan-mini-stat">{{ slot.get_day_of_week_display }} {{ slot.start_time|time:"H:i" }}–{{ slot.end_time|time:"H:i" }} · {{ slot.room.name|default:"без аудитории" }}</div>
+                                {% empty %}
+                                    <div class="okan-mini-stat">Нет активных слотов расписания</div>
+                                {% endfor %}
+                                <div class="okan-mini-stat">Занятий: <strong>{{ program.lesson_count }}</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="ok-alert ok-alert-warning"><i class="bi bi-exclamation-triangle"></i><span>У группы пока нет ни одной учебной программы.</span></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="ok-card">
+        <div class="ok-card-header"><i class="bi bi-calendar-event"></i><span>Ближайшие занятия</span></div>
+        <div class="ok-card-body" style="padding:0;">
+            {% if upcoming_preview %}
+                <div class="ok-table-scroll">
+                    <table class="okgd-table">
+                        <thead><tr><th>Дата</th><th>Время</th><th>Предмет</th><th>Тренер</th><th>Аудитория</th><th>Статус</th></tr></thead>
+                        <tbody>
+                        {% for lesson in upcoming_preview %}
+                            <tr>
+                                <td>{{ lesson.date|date:"d.m.Y" }}</td>
+                                <td>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</td>
+                                <td>{{ lesson.subject.name|default:"—" }}</td>
+                                <td>{{ lesson.effective_teacher|default:"—" }}</td>
+                                <td>{{ lesson.room.name|default:"—" }}</td>
+                                <td>{{ lesson.get_status_display }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="okgd-empty">Нет предстоящих занятий.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ==================== СТУДЕНТЫ ==================== -->
+<div class="okgd-section" id="tab-students">
+    <h2>
+        <i class="bi bi-people"></i> Студенты
+        <a class="btn btn-success btn-sm" href="{{ add_student_url }}"><i class="bi bi-person-plus"></i> Добавить студента</a>
+        <a class="btn btn-outline-success btn-sm" href="{{ add_existing_students_url }}"><i class="bi bi-people"></i> Добавить существующих / массово</a>
+        <a class="btn btn-outline-success btn-sm" href="{{ import_students_url }}"><i class="bi bi-file-earmark-excel"></i> Импорт Excel</a>
+    </h2>
+    {% if students %}
+        <div class="ok-table-scroll">
+            <table class="okgd-table">
+                <thead>
+                <tr>
+                    <th>Студент</th><th>Телефон</th><th>Статус</th><th>Посещаемость</th><th>ДЗ</th><th>Действия</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in students %}
+                    <tr>
+                        <td>{{ row.obj }}</td>
+                        <td>{{ row.obj.phone|default:"—" }}</td>
+                        <td>
+                            {% if row.obj.is_active %}<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>
+                            {% else %}<span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span>{% endif %}
+                        </td>
+                        <td>{% if row.attendance_rate is not None %}{{ row.attendance_rate }}%{% else %}—{% endif %}</td>
+                        <td>{% if row.homework_rate is not None %}{{ row.homework_rate }}%{% else %}—{% endif %}</td>
+                        <td style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+                            <a class="btn btn-outline-success btn-sm" href="{% url 'admin:academy_student_change' row.obj.pk %}">Открыть профиль</a>
+                            <form method="post" action="{% url 'admin:academy_group_student_action' group.pk row.obj.pk %}" style="display:inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="remove">
+                                <button type="submit" class="btn btn-outline-success btn-sm" onclick="return confirm('Убрать «{{ row.obj }}» из группы? Студент останется в системе.');">Убрать из группы</button>
+                            </form>
+                            <form method="post" action="{% url 'admin:academy_group_student_action' group.pk row.obj.pk %}" style="display:inline;">
+                                {% csrf_token %}
+                                {% if row.obj.is_active %}
+                                    <input type="hidden" name="action" value="deactivate">
+                                    <button type="submit" class="btn btn-outline-success btn-sm" onclick="return confirm('Деактивировать «{{ row.obj }}»?');">Деактивировать</button>
+                                {% else %}
+                                    <input type="hidden" name="action" value="activate">
+                                    <button type="submit" class="btn btn-outline-success btn-sm">Активировать</button>
+                                {% endif %}
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="okgd-empty">В группе пока нет студентов.</div>
+    {% endif %}
+</div>
+
+<!-- ==================== ПРОГРАММЫ ==================== -->
+<div class="okgd-section" id="tab-programs">
+    <h2><i class="bi bi-collection-play"></i> Учебные программы</h2>
+    {% if programs %}
+        {% for program in programs %}
+            <div class="ok-card" style="margin-bottom:0.85rem;">
+                <div class="ok-card-header">
+                    {{ program.obj.subject.name|default:"без предмета" }} — {{ program.obj.teacher }}
+                    {% if program.obj.is_active %}<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активна</span>{% else %}<span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивна</span>{% endif %}
+                </div>
+                <div class="ok-card-body">
+                    <div class="okan-mini-stats" style="margin-bottom:0.75rem;">
+                        {% for slot in program.schedule %}
+                            <div class="okan-mini-stat">{{ slot.get_day_of_week_display }} {{ slot.start_time|time:"H:i" }}–{{ slot.end_time|time:"H:i" }} · {{ slot.room.name|default:"без аудитории" }}</div>
+                        {% empty %}
+                            <div class="okan-mini-stat">Нет активных слотов расписания</div>
+                        {% endfor %}
+                    </div>
+                    <div class="okan-mini-stats" style="margin-bottom:0.85rem;">
+                        <div class="okan-mini-stat">Занятий всего: <strong>{{ program.lesson_count }}</strong></div>
+                        <div class="okan-mini-stat">Проведено: <strong>{{ program.completed }}</strong></div>
+                        <div class="okan-mini-stat">Предстоит: <strong>{{ program.upcoming }}</strong></div>
+                        <div class="okan-mini-stat">
+                            {% if program.plan_count %}Свой план: <strong>{{ program.plan_count }}</strong>{% else %}Общий план курса{% endif %}
+                        </div>
+                    </div>
+                    <a class="btn btn-success btn-sm" href="{{ program.workspace_url }}"><i class="bi bi-kanban"></i> Открыть программу</a>
+                    <a class="btn btn-outline-success btn-sm" href="{{ program.change_url }}"><i class="bi bi-list-check"></i> Lesson Plan</a>
+                    <a class="btn btn-outline-success btn-sm" href="{{ program.change_url }}"><i class="bi bi-pencil"></i> Изменить</a>
+                    <a class="btn btn-outline-success btn-sm" href="{{ change_url }}"><i class="bi bi-calendar-plus"></i> Добавить расписание</a>
+                    <a class="btn btn-outline-success btn-sm" href="{{ program.lessons_url }}"><i class="bi bi-calendar-week"></i> Занятия ({{ program.lesson_count }})</a>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="okgd-empty">У группы пока нет ни одной учебной программы. Добавьте тренера через «Изменить группу» → «Расписание учебных программ».</div>
+    {% endif %}
+</div>
+
+<!-- ==================== ПРЕПОДАВАТЕЛИ ==================== -->
+<div class="okgd-section" id="tab-teachers">
+    <h2><i class="bi bi-person-badge"></i> Преподаватели</h2>
+    {% if teachers_summary %}
+        <div class="ok-table-scroll">
+            <table class="okgd-table">
+                <thead><tr><th>Тренер</th><th>Предметы</th><th>Программ</th><th></th></tr></thead>
+                <tbody>
+                {% for row in teachers_summary %}
+                    <tr>
+                        <td>{{ row.teacher }}</td>
+                        <td>
+                            {% for program in row.programs %}{{ program.subject.name|default:"без предмета" }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                        </td>
+                        <td>{{ row.programs|length }}</td>
+                        <td><a class="btn btn-outline-success btn-sm" href="{% url 'admin:users_teacher_change' row.teacher.pk %}">Профиль тренера</a></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="okgd-empty">У группы пока нет ни одного преподавателя.</div>
+    {% endif %}
+</div>
+
+<!-- ==================== РАСПИСАНИЕ ==================== -->
+<div class="okgd-section" id="tab-schedule">
+    <h2>
+        <i class="bi bi-calendar-week"></i> Расписание
+        <a class="btn btn-success btn-sm" href="{{ change_url }}"><i class="bi bi-plus-lg"></i> Добавить расписание</a>
+    </h2>
+    <div class="okgd-week">
+        {% for day in weekly_schedule %}
+            <div class="okgd-day">
+                <div class="okgd-day-header">{{ day.label }}</div>
+                {% for slot in day.slots %}
+                    <div class="okgd-slot">
+                        <div class="okgd-slot-time">{{ slot.start_time|time:"H:i" }}–{{ slot.end_time|time:"H:i" }}</div>
+                        <div class="okgd-slot-sub">{{ slot.subject.name|default:"без предмета" }}</div>
+                        <div class="okgd-slot-sub">{{ slot.teacher }}</div>
+                        <div class="okgd-slot-sub">{{ slot.room.name|default:"без аудитории" }}</div>
+                    </div>
+                {% empty %}
+                    <div class="okgd-day-empty">Нет занятий</div>
+                {% endfor %}
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- ==================== ЗАНЯТИЯ ==================== -->
+<div class="okgd-section" id="tab-lessons">
+    <h2><i class="bi bi-calendar3"></i> Занятия группы</h2>
+    <form method="get" class="okgd-filters">
+        <input type="hidden" name="tab" value="lessons">
+        <select name="lesson_subject" class="ok-input">
+            <option value="">Все предметы</option>
+            {% for subject in filter_subjects %}
+                <option value="{{ subject.pk }}" {% if lesson_filters.subject == subject.pk|stringformat:"s" %}selected{% endif %}>{{ subject.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="lesson_teacher" class="ok-input">
+            <option value="">Все тренеры</option>
+            {% for teacher in filter_teachers %}
+                <option value="{{ teacher.pk }}" {% if lesson_filters.teacher == teacher.pk|stringformat:"s" %}selected{% endif %}>{{ teacher }}</option>
+            {% endfor %}
+        </select>
+        <select name="lesson_status" class="ok-input">
+            <option value="">Любой статус</option>
+            {% for value, label in lesson_statuses %}
+                <option value="{{ value }}" {% if lesson_filters.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <input type="date" name="lesson_date" class="ok-input" value="{{ lesson_filters.date }}">
+        <button type="submit" class="btn btn-success btn-sm">Применить</button>
+        <a class="btn btn-outline-success btn-sm" href="{{ dashboard_url }}?tab=lessons">Сбросить</a>
+    </form>
+    {% if lessons %}
+        <div class="ok-table-scroll">
+            <table class="okgd-table">
+                <thead><tr><th>Дата</th><th>Время</th><th>Предмет</th><th>Тренер</th><th>№</th><th>Тема</th><th>Статус</th></tr></thead>
+                <tbody>
+                {% for lesson in lessons %}
+                    <tr>
+                        <td>{{ lesson.date|date:"d.m.Y" }}</td>
+                        <td>{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</td>
+                        <td>{{ lesson.subject.name|default:"—" }}</td>
+                        <td>{{ lesson.effective_teacher|default:"—" }}</td>
+                        <td>{{ lesson.lesson_number }}</td>
+                        <td>{{ lesson.topic|default:"—" }}</td>
+                        <td>{{ lesson.get_status_display }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="okgd-empty">Занятий, подходящих под фильтр, не найдено.</div>
+    {% endif %}
+</div>
+
+<!-- ==================== АНАЛИТИКА ==================== -->
+<div class="okgd-section" id="tab-analytics">
+    <h2><i class="bi bi-graph-up-arrow"></i> Аналитика группы</h2>
+    <p class="ok-help-text">Показатели рассчитаны по всей истории группы: с {{ group.start_date|date:"d.m.Y" }} по {{ dashboard.period.end_date|date:"d.m.Y" }}.</p>
+    <div class="ok-kpi-grid">
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-calendar3"></i></div><div class="ok-kpi-value">{{ dashboard.lessons.lessons_completed.value }}</div><div class="ok-kpi-label">Занятий проведено</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div><div class="ok-kpi-value">{{ dashboard.lessons.lessons_cancelled.value }}</div><div class="ok-kpi-label">Занятий отменено</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-percent"></i></div><div class="ok-kpi-value">{{ dashboard.lessons.lesson_completion_rate.value }}%</div><div class="ok-kpi-label">Процент проведения</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-clipboard-check"></i></div><div class="ok-kpi-value">{{ dashboard.attendance.attendance_rate.value }}%</div><div class="ok-kpi-label">Attendance Rate</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-person-x"></i></div><div class="ok-kpi-value">{{ dashboard.attendance.students_with_repeated_absences.value }}</div><div class="ok-kpi-label">Частые пропуски</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-journal-check"></i></div><div class="ok-kpi-value">{{ dashboard.homework.submission_rate.value }}%</div><div class="ok-kpi-label">Homework Completion</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-star"></i></div><div class="ok-kpi-value">{{ dashboard.homework.average_score.value }}/10</div><div class="ok-kpi-label">Средний балл за ДЗ</div></div>
+        <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-people"></i></div><div class="ok-kpi-value">{{ dashboard.students.average_students_per_group.value }}</div><div class="ok-kpi-label">Студентов на группу</div></div>
+    </div>
+
+    {% if dashboard.lessons.lessons_by_subject %}
+        <div class="ok-card" style="margin-top:1rem;">
+            <div class="ok-card-header"><i class="bi bi-journal-bookmark"></i><span>Занятия по предметам</span></div>
+            <div class="ok-card-body" style="padding:0;">
+                <table class="okgd-table">
+                    <thead><tr><th>Предмет</th><th>Занятий</th></tr></thead>
+                    <tbody>
+                    {% for row in dashboard.lessons.lessons_by_subject %}
+                        <tr><td>{{ row.subject_name }}</td><td>{{ row.lessons }}</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if dashboard.insights %}
+        <div class="ok-card" style="margin-top:1rem;">
+            <div class="ok-card-header"><i class="bi bi-lightbulb"></i><span>Инсайты</span></div>
+            <div class="ok-card-body">
+                {% for insight in dashboard.insights %}
+                    <div class="ok-alert ok-alert-warning" style="margin-bottom:0.5rem;"><i class="bi bi-info-circle"></i><span>{{ insight.message }}</span></div>
+                {% empty %}
+                    <p class="ok-help-text" style="margin:0;">Особых отклонений не найдено.</p>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    var buttons = document.querySelectorAll(".okgd-tab-btn");
+    var sections = document.querySelectorAll(".okgd-section");
+
+    function activate(tab) {
+        var found = false;
+        sections.forEach(function (section) {
+            var match = section.id === "tab-" + tab;
+            section.classList.toggle("active", match);
+            if (match) found = true;
+        });
+        if (!found) {
+            tab = "overview";
+            sections.forEach(function (section) {
+                section.classList.toggle("active", section.id === "tab-overview");
+            });
+        }
+        buttons.forEach(function (button) {
+            button.classList.toggle("active", button.dataset.tab === tab);
+        });
+        if (window.history && window.history.replaceState) {
+            var url = new URL(window.location.href);
+            url.searchParams.set("tab", tab);
+            window.history.replaceState({}, "", url);
+        }
+    }
+
+    buttons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            activate(button.dataset.tab);
+        });
+    });
+
+    activate("{{ active_tab }}");
+})();
+</script>
+
+{% endblock %}

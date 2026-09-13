@@ -15,6 +15,9 @@ from apps.users.import_export.formats import UnsupportedFileFormat
 from .admin_views import (
     analytics_view,
     generate_lessons_for_group_view,
+    group_add_students_view,
+    group_dashboard_view,
+    group_student_action_view,
     group_teacher_workspace_view,
     schedule_view,
 )
@@ -482,7 +485,12 @@ class GroupAdmin(admin.ModelAdmin):
     list_display = (
         "name", "course", "teacher_programs_summary",
         "students_count_display", "status_badge", "start_date", "end_date",
+        "open_dashboard_link",
     )
+    # No column links to the raw change form here — "Открыть →" (the Group
+    # Dashboard) is the only way into a group from this list; the change
+    # form is reached only from the dashboard's own "Изменить группу" button.
+    list_display_links = None
     list_filter = ("status", "course", "start_date")
     search_fields = ("name", "teachers__teacher__user__first_name", "teachers__teacher__user__last_name")
     ordering = ("-start_date", "name")
@@ -494,6 +502,44 @@ class GroupAdmin(admin.ModelAdmin):
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
     inlines = [GroupScheduleInline]
     list_per_page = 25
+
+    def has_delete_permission(self, request, obj=None):
+        # A Group is never deleted — Completed/Cancelled status is the only
+        # way to retire one, so its history (Lessons, Attendance, Homework)
+        # always stays intact. This alone also drops "delete_selected" from
+        # the bulk actions dropdown and the Delete button from the change
+        # form (Django checks has_delete_permission for both).
+        return False
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                "<int:group_id>/dashboard/",
+                self.admin_site.admin_view(group_dashboard_view),
+                name="academy_group_dashboard",
+            ),
+            path(
+                "<int:group_id>/dashboard/students/add/",
+                self.admin_site.admin_view(group_add_students_view),
+                name="academy_group_add_students",
+            ),
+            path(
+                "<int:group_id>/dashboard/students/<int:student_id>/action/",
+                self.admin_site.admin_view(group_student_action_view),
+                name="academy_group_student_action",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    @admin.display(description="Рабочее пространство")
+    def open_dashboard_link(self, obj: Group) -> str:
+        if not obj.pk:
+            return "—"
+        url = reverse("admin:academy_group_dashboard", args=[obj.pk])
+        return format_html(
+            '<a class="btn btn-success btn-sm" href="{}"><i class="bi bi-speedometer2"></i> Открыть →</a>',
+            url,
+        )
 
     def get_fieldsets(self, request, obj=None):
         fieldsets = [
