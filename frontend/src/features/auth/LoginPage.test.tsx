@@ -8,7 +8,7 @@ import { renderWithProviders } from '@/test/testUtils'
 import type { AuthContextValue } from '@/features/auth/AuthContext'
 
 const login = vi.fn()
-const mockUseAuth = vi.fn<() => AuthContextValue>(() => ({ status: 'guest', user: null, login, logout: vi.fn() }))
+const mockUseAuth = vi.fn<() => AuthContextValue>(() => ({ status: 'guest', user: null, login, logout: vi.fn(), retry: vi.fn() }))
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => mockUseAuth() }))
 
 describe('LoginPage', () => {
@@ -40,7 +40,7 @@ describe('LoginPage', () => {
   })
 
   it('redirects away from /login when already authenticated', () => {
-    mockUseAuth.mockReturnValue({ status: 'authenticated', user: null, login, logout: vi.fn() })
+    mockUseAuth.mockReturnValue({ status: 'authenticated', user: null, login, logout: vi.fn(), retry: vi.fn() })
     renderWithProviders(
       <Routes>
         <Route path="/login" element={<LoginPage />} />

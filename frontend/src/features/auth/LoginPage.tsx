@@ -7,6 +7,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import logo from '@/assets/logo.png'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/hooks/useAuth'
+import { extractErrorMessage, isNetworkOrServerError } from '@/lib/apiError'
 
 import { loginSchema, type LoginFormValues } from './loginSchema'
 
@@ -33,7 +34,12 @@ export function LoginPage() {
       await login(values.username, values.password)
       navigate('/app/dashboard', { replace: true })
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Не удалось войти. Проверьте логин и пароль.')
+      if (isNetworkOrServerError(error)) {
+        setFormError('Сервер недоступен. Проверьте подключение к интернету и попробуйте ещё раз.')
+        return
+      }
+      const fallback = error instanceof Error ? error.message : 'Не удалось войти. Проверьте логин и пароль.'
+      setFormError(extractErrorMessage(error, fallback))
     }
   }
 
