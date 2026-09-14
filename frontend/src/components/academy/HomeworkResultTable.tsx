@@ -22,9 +22,14 @@ export type HomeworkResultPatch = Partial<Pick<HomeworkResultRow, 'status' | 'sc
 export interface HomeworkResultTableProps {
   rows: HomeworkResultRow[]
   onChange: (studentId: number, patch: HomeworkResultPatch) => void
+  /** True once the parent lesson is completed — grades/statuses/comments
+   * are frozen (see HomeworkSerializer.results_editable, enforced on the
+   * backend too), so every control here becomes inert rather than merely
+   * styled differently. */
+  readOnly?: boolean
 }
 
-export function HomeworkResultTable({ rows, onChange }: HomeworkResultTableProps) {
+export function HomeworkResultTable({ rows, onChange, readOnly = false }: HomeworkResultTableProps) {
   return (
     <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
       {rows.map((row) => (
@@ -40,12 +45,13 @@ export function HomeworkResultTable({ rows, onChange }: HomeworkResultTableProps
                     type="button"
                     role="radio"
                     aria-checked={isActive}
+                    disabled={readOnly}
                     onClick={() => onChange(row.student, { status: option.value })}
                     className={cn(
-                      'rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                      'rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
                       isActive
                         ? 'border-brand-500 bg-brand-500 text-white'
-                        : 'border-border bg-surface text-ink-secondary hover:bg-surface-hover',
+                        : 'border-border bg-surface text-ink-secondary hover:enabled:bg-surface-hover',
                     )}
                   >
                     {option.label}
@@ -63,6 +69,7 @@ export function HomeworkResultTable({ rows, onChange }: HomeworkResultTableProps
                 inputMode="numeric"
                 min={0}
                 max={10}
+                disabled={readOnly}
                 value={row.score ?? ''}
                 onChange={(event) => {
                   const raw = event.target.value
@@ -73,16 +80,17 @@ export function HomeworkResultTable({ rows, onChange }: HomeworkResultTableProps
                   const parsed = Math.min(10, Math.max(0, Number(raw)))
                   onChange(row.student, { score: parsed })
                 }}
-                className="h-9 w-16 rounded-lg border border-border bg-surface px-2 text-sm text-ink focus-visible:border-brand-500"
+                className="h-9 w-16 rounded-lg border border-border bg-surface px-2 text-sm text-ink focus-visible:border-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
               />
               / 10
             </label>
             <input
               type="text"
+              disabled={readOnly}
               value={row.comment}
               onChange={(event) => onChange(row.student, { comment: event.target.value })}
               placeholder="Комментарий (необязательно)"
-              className="h-9 rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500"
+              className="h-9 rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
         </li>

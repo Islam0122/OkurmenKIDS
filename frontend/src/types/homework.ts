@@ -13,10 +13,15 @@ export interface Homework {
   lesson: number
   group_name: string
   lesson_date: string
+  lesson_status: string
   title: string
   description: string
   deadline: string | null
   results_count: number
+  /** False once the lesson is completed (for a Teacher — an Admin always
+   * gets true) — mirrors the backend's own enforcement, never re-derived
+   * client-side. See services.lesson_lifecycle.homework_results_locked. */
+  results_editable: boolean
   created_at: string
   updated_at: string
 }

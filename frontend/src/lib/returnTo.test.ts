@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { attendanceUrlFor, isSafeInternalPath, resolveReturnTo } from './returnTo'
+import { attendanceUrlFor, homeworkUrlFor, isSafeInternalPath, resolveReturnTo } from './returnTo'
 
 describe('isSafeInternalPath', () => {
   it('accepts a plain internal path', () => {
@@ -49,6 +49,15 @@ describe('attendanceUrlFor', () => {
     const parsed = new URL(url, 'https://app.local')
     expect(parsed.pathname).toBe('/app/attendance')
     expect(parsed.searchParams.get('lesson')).toBe('7')
+    expect(parsed.searchParams.get('returnTo')).toBe('/app/lessons/7')
+  })
+})
+
+describe('homeworkUrlFor', () => {
+  it('builds a URL to the homework detail page carrying the return path', () => {
+    const url = homeworkUrlFor(55, '/app/lessons/7')
+    const parsed = new URL(url, 'https://app.local')
+    expect(parsed.pathname).toBe('/app/homework/55')
     expect(parsed.searchParams.get('returnTo')).toBe('/app/lessons/7')
   })
 })

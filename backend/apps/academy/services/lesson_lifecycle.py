@@ -170,3 +170,12 @@ def set_homework_not_required(lesson: Lesson, value: bool) -> Lesson:
     lesson.homework_not_required = value
     lesson.save(update_fields=["homework_not_required", "updated_at"])
     return lesson
+
+
+def homework_results_locked(lesson: Lesson) -> bool:
+    """Once a lesson is COMPLETED, grading (status/score/comment on its
+    HomeworkResult rows) is frozen for a Teacher — the one place this rule
+    lives, checked both by the API (views._assert_homework_results_editable)
+    and mirrored on HomeworkSerializer.results_editable so the frontend
+    never has to re-derive it from a separate Lesson fetch."""
+    return lesson.status == Lesson.Status.COMPLETED
