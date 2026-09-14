@@ -135,6 +135,7 @@ export function buildLesson(overrides: Partial<Lesson> = {}): Lesson {
     room_name: 'Кабинет 101',
     subject: 1,
     subject_name: 'Робототехника',
+    teacher_name: 'Иванов Иван',
     topic: 'Введение в конструктор',
     description: '',
     youtube_url: '',

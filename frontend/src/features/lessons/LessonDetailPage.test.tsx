@@ -51,7 +51,7 @@ describe('LessonDetailPage', () => {
 
     renderLessonDetail(7)
 
-    await waitFor(() => expect(screen.getByText('Введение в конструктор', { exact: false })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('Введение в конструктор', { exact: false }).length).toBeGreaterThan(0))
     expect(screen.getByText('Роботы-1')).toBeInTheDocument()
   })
 
@@ -340,11 +340,11 @@ describe('LessonDetailPage', () => {
 
       renderLessonDetail(7)
 
-      await waitFor(() => expect(screen.getByText('Итоги занятия')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('Результаты занятия')).toBeInTheDocument())
       expect(screen.getAllByText('3').length).toBeGreaterThan(0)
       expect(screen.getByText('100%')).toBeInTheDocument()
-      expect(screen.getByText('3 из 3')).toBeInTheDocument()
-      expect(screen.getByText('9.5 / 10')).toBeInTheDocument()
+      expect(screen.getByText('3/3')).toBeInTheDocument()
+      expect(screen.getByText('Средний балл 9.5')).toBeInTheDocument()
       // Attendance/homework read models come straight from the API, not a
       // second, ad-hoc roster fetch just for the completed-lesson page.
       expect(lessonsApi.getAttendanceRoster).not.toHaveBeenCalled()
