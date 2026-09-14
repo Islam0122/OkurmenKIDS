@@ -52,7 +52,10 @@ export function useCreateHomework() {
   })
 }
 
-export function useSaveHomeworkResults(homeworkId: number) {
+/** `lessonId` is optional only because it isn't known until `useHomeworkDetail`
+ * resolves — pass `homework?.lesson` from the caller; once the homework has
+ * loaded (the only time a save can actually happen), it's always present. */
+export function useSaveHomeworkResults(homeworkId: number, lessonId?: number) {
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -63,6 +66,14 @@ export function useSaveHomeworkResults(homeworkId: number) {
       void queryClient.invalidateQueries({ queryKey: ['homework-results'] })
       void queryClient.invalidateQueries({ queryKey: ['kpi'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      // Grading doesn't change the lesson's own completion requirements
+      // (only *having* Homework does — see useCreateHomework), but the
+      // Lesson Detail page the teacher lands back on shows this homework's
+      // results_count too — refresh it for consistency regardless.
+      if (lessonId !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail', lessonId] })
+        void queryClient.invalidateQueries({ queryKey: ['lessons', 'list'] })
+      }
     },
   })
 }

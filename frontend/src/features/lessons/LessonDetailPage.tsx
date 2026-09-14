@@ -15,7 +15,7 @@ import { useAttendanceRoster } from '@/hooks/useAttendance'
 import { useCreateHomework, useHomeworkList } from '@/hooks/useHomework'
 import { useCancelLesson, useCompleteLesson, useLesson, useSetHomeworkNotRequired, useStartLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
-import { attendanceUrlFor } from '@/lib/returnTo'
+import { attendanceUrlFor, homeworkUrlFor } from '@/lib/returnTo'
 import { cn } from '@/utils/cn'
 import { formatDate, formatTimeRange } from '@/utils/format'
 
@@ -50,7 +50,7 @@ export function LessonDetailPage() {
   const missingLabels = lesson.completion_requirements.filter((r) => !r.satisfied).map((r) => r.label)
 
   function goToHomework() {
-    if (homework) navigate(`/app/homework/${homework.id}`)
+    if (homework) navigate(homeworkUrlFor(homework.id, `/app/lessons/${lesson.id}`))
   }
 
   async function handleAction(key: LessonActionKey) {

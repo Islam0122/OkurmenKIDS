@@ -751,7 +751,9 @@ class BulkAttendanceItemSerializer(serializers.Serializer):
 class HomeworkSerializer(_RequestAwareSerializer):
     group_name = serializers.CharField(source="lesson.group.name", read_only=True)
     lesson_date = serializers.DateField(source="lesson.date", read_only=True)
+    lesson_status = serializers.CharField(source="lesson.status", read_only=True)
     results_count = serializers.SerializerMethodField()
+    results_editable = serializers.SerializerMethodField()
 
     class Meta:
         model = Homework
@@ -760,10 +762,12 @@ class HomeworkSerializer(_RequestAwareSerializer):
             "lesson",
             "group_name",
             "lesson_date",
+            "lesson_status",
             "title",
             "description",
             "deadline",
             "results_count",
+            "results_editable",
             "created_at",
             "updated_at",
         ]
@@ -777,6 +781,15 @@ class HomeworkSerializer(_RequestAwareSerializer):
 
     def get_results_count(self, obj: Homework) -> int:
         return obj.results.count()
+
+    def get_results_editable(self, obj: Homework) -> bool:
+        """Mirrors views._assert_homework_results_editable — never a second,
+        looser rule: an Admin can always grade; a Teacher can't once the
+        lesson is COMPLETED (see services.lesson_lifecycle.homework_results_locked)."""
+        user = self._request_user()
+        if user is not None and user.is_authenticated and (user.is_superuser or user.role == User.Role.ADMIN):
+            return True
+        return not lesson_lifecycle.homework_results_locked(obj.lesson)
 
 
 class HomeworkResultSerializer(_RequestAwareSerializer):

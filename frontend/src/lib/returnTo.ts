@@ -35,11 +35,26 @@ export function currentPathAsReturnTo(pathname: string, search: string): string 
   return `${pathname}${search}`
 }
 
+/** Appends a `returnTo` query param to `url` (a path, optionally already
+ * carrying its own query string) — the one place that string is actually
+ * built, so every "open X and remember where to come back to" URL builder
+ * below (and any future one) shares this instead of hand-appending it. */
+function withReturnTo(url: string, returnTo: string): string {
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}returnTo=${encodeURIComponent(returnTo)}`
+}
+
 /** Builds the URL to open the attendance editor for one lesson, remembering
- * where to return to after saving. The one place this URL shape is built —
- * every caller (Lesson Detail today, any future "quick attendance" entry
- * point) stays in sync through this instead of hand-building query strings. */
+ * where to return to after saving. Every caller (Lesson Detail today, any
+ * future "quick attendance" entry point) stays in sync through this instead
+ * of hand-building query strings. */
 export function attendanceUrlFor(lessonId: number, returnTo: string): string {
-  const params = new URLSearchParams({ lesson: String(lessonId), returnTo })
-  return `/app/attendance?${params.toString()}`
+  return withReturnTo(`/app/attendance?lesson=${lessonId}`, returnTo)
+}
+
+/** Builds the URL to open one Homework's results editor, remembering where
+ * to return to after saving — the Homework counterpart of
+ * `attendanceUrlFor`, sharing the same `returnTo` mechanism. */
+export function homeworkUrlFor(homeworkId: number, returnTo: string): string {
+  return withReturnTo(`/app/homework/${homeworkId}`, returnTo)
 }
