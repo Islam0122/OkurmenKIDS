@@ -5,20 +5,21 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { LESSON_STATUS_LABEL, LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
-import type { BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
-import { useAttendanceRoster } from '@/hooks/useAttendance'
 import { useCreateHomework, useHomeworkList } from '@/hooks/useHomework'
 import { useCancelLesson, useCompleteLesson, useLesson, useSetHomeworkNotRequired, useStartLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
 import { attendanceUrlFor, homeworkUrlFor } from '@/lib/returnTo'
-import { cn } from '@/utils/cn'
+import type { Lesson } from '@/types/academy'
 import { formatDate, formatTimeRange } from '@/utils/format'
 
+import { AttendanceStatsCard } from './AttendanceStatsCard'
+import { CompletedLessonKpis, CompletedLessonNotice } from './CompletedLessonSummary'
+import { HomeworkSummaryCard } from './HomeworkSummaryCard'
 import { LessonActionBar } from './LessonActionBar'
 import type { LessonActionKey } from './lessonActions'
 import { LessonProgressChecklist } from './LessonProgressChecklist'
@@ -30,7 +31,6 @@ export function LessonDetailPage() {
   const { showToast } = useToast()
 
   const { data: lesson, isPending, isError, refetch } = useLesson(lessonId)
-  const roster = useAttendanceRoster(lessonId)
   const homeworkList = useHomeworkList({ lesson: lessonId })
 
   const startMutation = useStartLesson()
@@ -46,7 +46,6 @@ export function LessonDetailPage() {
   if (isError || !lesson) return <ErrorState onRetry={() => void refetch()} />
 
   const homework = homeworkList.data?.results[0]
-  const isReadOnly = lesson.status === 'completed' || lesson.status === 'cancelled'
   const missingLabels = lesson.completion_requirements.filter((r) => !r.satisfied).map((r) => r.label)
 
   function goToHomework() {
@@ -91,7 +90,6 @@ export function LessonDetailPage() {
         else setHomeworkModalOpen(true)
         return
       case 'view_homework':
-      case 'view_results':
         goToHomework()
         return
       case 'view_details':
@@ -125,106 +123,75 @@ export function LessonDetailPage() {
       ) : null}
 
       {lesson.status === 'completed' ? (
-        <div className="mb-6 rounded-lg bg-brand-50 px-4 py-3 text-sm text-brand-700">
-          Занятие завершено{lesson.completed_by_name ? ` — ${lesson.completed_by_name}` : ''}
-          {lesson.completed_at ? ` · ${formatDate(lesson.completed_at)}` : ''}. Доступно только для просмотра.
-        </div>
-      ) : null}
+        // A historical record: notice + real KPI numbers first, actions
+        // last — the opposite reading order of an active lesson, where the
+        // next action is what matters most (see the `else` branch below).
+        <div className="space-y-4">
+          <CompletedLessonNotice lesson={lesson} />
+          <CompletedLessonKpis lesson={lesson} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          <div className="rounded-xl border border-border bg-surface p-5">
-            <p className="mb-3 text-sm font-medium text-ink-secondary">О занятии</p>
-            <dl className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <dt className="text-ink-secondary">Группа</dt>
-                <dd className="mt-0.5">
-                  <Link to={`/app/groups/${lesson.group}`} className="font-medium text-brand-700 hover:underline">
-                    {lesson.group_name}
-                  </Link>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-ink-secondary">Аудитория</dt>
-                <dd className="mt-0.5 font-medium text-ink">{lesson.room_name ?? '—'}</dd>
-              </div>
-            </dl>
-            {lesson.description ? <p className="mt-4 text-sm text-ink">{lesson.description}</p> : null}
+          <AboutLessonCard lesson={lesson} />
+          <MaterialsCard lesson={lesson} />
+
+          <AttendanceStatsCard summary={lesson.attendance_summary} />
+
+          {homework ? (
+            <HomeworkSummaryCard homework={homework} summary={lesson.homework_summary} onView={goToHomework} />
+          ) : (
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <p className="mb-1 text-sm font-medium text-ink-secondary">Домашнее задание</p>
+              <p className="text-sm text-ink-secondary">
+                {lesson.homework_not_required ? 'ДЗ не требуется.' : 'ДЗ не было добавлено.'}
+              </p>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-dashed border-border bg-surface-muted p-5">
+            <p className="mb-3 text-sm font-medium text-ink-secondary">Просмотр</p>
+            <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="space-y-4 lg:col-span-2">
+            <AboutLessonCard lesson={lesson} />
+            <MaterialsCard lesson={lesson} />
+            {lesson.status !== 'scheduled' ? <AttendanceStatsCard summary={lesson.attendance_summary} /> : null}
           </div>
 
-          {(lesson.youtube_url || lesson.presentation_urls.length > 0) ? (
+          <div className="space-y-4">
             <div className="rounded-xl border border-border bg-surface p-5">
-              <p className="mb-3 text-sm font-medium text-ink-secondary">Материалы</p>
-              <ul className="space-y-2">
-                {lesson.youtube_url ? (
-                  <li>
-                    <a
-                      href={lesson.youtube_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-2 text-sm text-brand-700 hover:underline"
-                    >
-                      <Youtube className="size-4" aria-hidden />
-                      YouTube
-                      <ExternalLink className="size-3" aria-hidden />
-                    </a>
-                  </li>
-                ) : null}
-                {lesson.presentation_urls.map((url, index) => (
-                  <li key={url}>
-                    <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-brand-700 hover:underline">
-                      <FileText className="size-4" aria-hidden />
-                      Презентация {lesson.presentation_urls.length > 1 ? index + 1 : ''}
-                      <ExternalLink className="size-3" aria-hidden />
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <p className="mb-3 text-sm font-medium text-ink-secondary">Действия</p>
+
+              <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
+
+              {lesson.status === 'in_progress' ? (
+                <div className="mt-4 border-t border-border pt-4">
+                  <LessonProgressChecklist
+                    lesson={lesson}
+                    onMarkHomeworkNotRequired={() => void handleMarkHomeworkNotRequired()}
+                    isMarkingHomeworkNotRequired={homeworkNotRequiredMutation.isPending}
+                  />
+                  {!lesson.can_complete && missingLabels.length > 0 ? (
+                    <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
+                      Нельзя завершить занятие: {missingLabels.join('; ')}.
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-          ) : null}
 
-          {lesson.status !== 'scheduled' ? (
-            <AttendanceStatsCard roster={roster.data} isPending={roster.isPending} />
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
-          <div
-            className={cn(
-              'rounded-xl border p-5',
-              isReadOnly ? 'border-dashed border-border bg-surface-muted' : 'border-border bg-surface',
-            )}
-          >
-            <p className="mb-3 text-sm font-medium text-ink-secondary">{isReadOnly ? 'Просмотр' : 'Действия'}</p>
-
-            <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
-
-            {lesson.status === 'in_progress' ? (
-              <div className="mt-4 border-t border-border pt-4">
-                <LessonProgressChecklist
-                  lesson={lesson}
-                  onMarkHomeworkNotRequired={() => void handleMarkHomeworkNotRequired()}
-                  isMarkingHomeworkNotRequired={homeworkNotRequiredMutation.isPending}
-                />
-                {!lesson.can_complete && missingLabels.length > 0 ? (
-                  <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
-                    Нельзя завершить занятие: {missingLabels.join('; ')}.
-                  </div>
-                ) : null}
+            {homework ? (
+              <div className="rounded-xl border border-border bg-surface p-5">
+                <p className="mb-2 text-sm font-medium text-ink-secondary">Домашнее задание</p>
+                <p className="font-medium text-ink">{homework.title}</p>
+                {homework.deadline ? <p className="mt-1 text-sm text-ink-secondary">Срок: {formatDate(homework.deadline)}</p> : null}
+                <p className="mt-2 text-sm text-ink-secondary">{homework.results_count} результатов</p>
               </div>
             ) : null}
           </div>
-
-          {homework ? (
-            <div className="rounded-xl border border-border bg-surface p-5">
-              <p className="mb-2 text-sm font-medium text-ink-secondary">Домашнее задание</p>
-              <p className="font-medium text-ink">{homework.title}</p>
-              {homework.deadline ? <p className="mt-1 text-sm text-ink-secondary">Срок: {formatDate(homework.deadline)}</p> : null}
-              <p className="mt-2 text-sm text-ink-secondary">{homework.results_count} результатов</p>
-            </div>
-          ) : null}
         </div>
-      </div>
+      )}
 
       <CancelLessonModal lessonId={lesson.id} isOpen={isCancelModalOpen} onClose={() => setCancelModalOpen(false)} mutation={cancelMutation} />
       <AddHomeworkModal lessonId={lesson.id} isOpen={isHomeworkModalOpen} onClose={() => setHomeworkModalOpen(false)} />
@@ -232,51 +199,59 @@ export function LessonDetailPage() {
   )
 }
 
-function AttendanceStatsCard({
-  roster,
-  isPending,
-}: {
-  roster: { status: string | null }[] | undefined
-  isPending: boolean
-}) {
-  const present = roster?.filter((row) => row.status === 'present').length ?? 0
-  const absent = roster?.filter((row) => row.status === 'absent').length ?? 0
-  const late = roster?.filter((row) => row.status === 'late').length ?? 0
-  const excused = roster?.filter((row) => row.status === 'excused').length ?? 0
-  const totalStudents = roster?.length ?? 0
-
+function AboutLessonCard({ lesson }: { lesson: Lesson }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-medium text-ink-secondary">Посещаемость</p>
-        <span className="text-sm text-ink-secondary">{totalStudents} студентов</span>
-      </div>
-      {isPending ? (
-        <LoadingState label="Загружаем…" />
-      ) : (
-        <div className="grid grid-cols-4 gap-2 text-center">
-          <StatBlock label="Present" value={present} tone="success" />
-          <StatBlock label="Absent" value={absent} tone="danger" />
-          <StatBlock label="Late" value={late} tone="warning" />
-          <StatBlock label="Excused" value={excused} tone="muted" />
+      <p className="mb-3 text-sm font-medium text-ink-secondary">О занятии</p>
+      <dl className="grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <dt className="text-ink-secondary">Группа</dt>
+          <dd className="mt-0.5">
+            <Link to={`/app/groups/${lesson.group}`} className="font-medium text-brand-700 hover:underline">
+              {lesson.group_name}
+            </Link>
+          </dd>
         </div>
-      )}
+        <div>
+          <dt className="text-ink-secondary">Аудитория</dt>
+          <dd className="mt-0.5 font-medium text-ink">{lesson.room_name ?? '—'}</dd>
+        </div>
+      </dl>
+      {lesson.description ? <p className="mt-4 text-sm text-ink">{lesson.description}</p> : null}
     </div>
   )
 }
 
-function StatBlock({ label, value, tone }: { label: string; value: number; tone: BadgeTone }) {
-  const TONE_TEXT: Record<BadgeTone, string> = {
-    success: 'text-brand-700',
-    danger: 'text-danger',
-    warning: 'text-warning',
-    muted: 'text-ink-muted',
-    brand: 'text-brand-700',
-  }
+function MaterialsCard({ lesson }: { lesson: Lesson }) {
+  if (!lesson.youtube_url && lesson.presentation_urls.length === 0) return null
   return (
-    <div className="rounded-lg bg-surface-muted p-3">
-      <p className={`text-xl font-semibold ${TONE_TEXT[tone]}`}>{value}</p>
-      <p className="text-xs text-ink-secondary">{label}</p>
+    <div className="rounded-xl border border-border bg-surface p-5">
+      <p className="mb-3 text-sm font-medium text-ink-secondary">Материалы</p>
+      <ul className="space-y-2">
+        {lesson.youtube_url ? (
+          <li>
+            <a
+              href={lesson.youtube_url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 text-sm text-brand-700 hover:underline"
+            >
+              <Youtube className="size-4" aria-hidden />
+              YouTube
+              <ExternalLink className="size-3" aria-hidden />
+            </a>
+          </li>
+        ) : null}
+        {lesson.presentation_urls.map((url, index) => (
+          <li key={url}>
+            <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-brand-700 hover:underline">
+              <FileText className="size-4" aria-hidden />
+              Презентация {lesson.presentation_urls.length > 1 ? index + 1 : ''}
+              <ExternalLink className="size-3" aria-hidden />
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

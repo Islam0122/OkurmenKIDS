@@ -21,7 +21,7 @@ from .models import (
     Room,
     Student,
 )
-from .services import lesson_lifecycle
+from .services import lesson_lifecycle, lesson_summary
 from .services.group_schedule_conflicts import (
     find_schedule_group_conflict,
     find_schedule_room_conflict,
@@ -544,6 +544,9 @@ class LessonSerializer(_RequestAwareSerializer):
     homework_added = serializers.SerializerMethodField()
     completion_requirements = serializers.SerializerMethodField()
     completion_progress = serializers.SerializerMethodField()
+    attendance_summary = serializers.SerializerMethodField()
+    homework_summary = serializers.SerializerMethodField()
+    attendance_editable = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
@@ -583,6 +586,9 @@ class LessonSerializer(_RequestAwareSerializer):
             "homework_added",
             "completion_requirements",
             "completion_progress",
+            "attendance_summary",
+            "homework_summary",
+            "attendance_editable",
             "created_at",
             "updated_at",
         ]
@@ -640,6 +646,18 @@ class LessonSerializer(_RequestAwareSerializer):
 
     def get_completion_progress(self, obj: Lesson) -> dict:
         return lesson_lifecycle.completion_progress(obj)
+
+    def get_attendance_summary(self, obj: Lesson) -> dict:
+        return lesson_summary.attendance_summary(obj)
+
+    def get_homework_summary(self, obj: Lesson) -> dict | None:
+        return lesson_summary.homework_summary(obj)
+
+    def get_attendance_editable(self, obj: Lesson) -> bool:
+        """Mirrors views._assert_lesson_editable — never a second,
+        frontend-only definition of "is this lesson locked" that could
+        drift from the backend's own enforcement."""
+        return not lesson_lifecycle.lesson_editing_locked(obj)
 
     def validate(self, attrs):
         start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))

@@ -11,7 +11,6 @@ export type LessonActionKey =
   | 'cancel'
   | 'view_attendance'
   | 'view_homework'
-  | 'view_results'
   | 'view_details'
 
 export interface LessonAction {
@@ -42,7 +41,6 @@ const ACTION_LABELS: Record<LessonActionKey, string> = {
   cancel: 'Отменить занятие',
   view_attendance: 'Посмотреть посещаемость',
   view_homework: 'Посмотреть домашнее задание',
-  view_results: 'Посмотреть результаты',
   view_details: 'Просмотреть детали',
 }
 
@@ -54,7 +52,6 @@ const ACTION_ICONS: Record<LessonActionKey, LucideIcon> = {
   cancel: XCircle,
   view_attendance: Eye,
   view_homework: Eye,
-  view_results: Eye,
   view_details: Eye,
 }
 
@@ -90,11 +87,13 @@ export function getLessonActionPlan(lesson: Lesson): LessonActionPlan {
         isReadOnly: false,
       }
 
-    case 'completed': {
-      const primary = [action('view_attendance')]
-      if (lesson.homework_added) primary.push(action('view_homework'), action('view_results'))
-      return { primary, secondary: [], danger: undefined, isReadOnly: true }
-    }
+    case 'completed':
+      // Homework already has its own "Посмотреть домашнее задание" door on
+      // the Homework summary card (see HomeworkSummaryCard) — listing
+      // `view_homework` here too would just duplicate that same button in
+      // the trailing view-only actions section, so the plan only ever
+      // offers attendance here.
+      return { primary: [action('view_attendance')], secondary: [], danger: undefined, isReadOnly: true }
 
     case 'cancelled':
       return { primary: [], secondary: [], danger: undefined, isReadOnly: true }

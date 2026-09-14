@@ -109,6 +109,21 @@ describe('AttendancePage', () => {
     expect(screen.queryByText('Lesson detail page')).not.toBeInTheDocument()
   })
 
+  it('becomes read-only once the lesson is completed — no save button, no editable controls', async () => {
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status: 'completed', attendance_editable: false }))
+    vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([
+      buildAttendanceRecord({ student: 1, student_name: 'Иванов Пётр', status: 'present' }),
+    ])
+
+    renderAttendance('/app/attendance?lesson=7&returnTo=%2Fapp%2Flessons%2F7')
+
+    await waitFor(() => expect(screen.getByText('Иванов Пётр')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Сохранить посещаемость' })).not.toBeInTheDocument()
+    expect(screen.getByText(/больше нельзя редактировать/)).toBeInTheDocument()
+    const row = screen.getByText('Иванов Пётр').closest('li') as HTMLElement
+    expect(within(row).getByRole('radio', { name: 'Был' })).toBeDisabled()
+  })
+
   it('shows an error toast and stays put when saving fails', async () => {
     vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7 }))
     vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([

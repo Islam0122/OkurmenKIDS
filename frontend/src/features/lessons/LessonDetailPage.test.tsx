@@ -251,9 +251,17 @@ describe('LessonDetailPage', () => {
   })
 
   describe('completed lesson', () => {
-    it('shows only read-only view actions — never Start/Complete/Cancel', async () => {
+    it('shows only read-only view actions — never Start/Complete/Cancel, and never a separate results button', async () => {
       vi.mocked(lessonsApi.get).mockResolvedValue(
-        buildLesson({ id: 7, status: 'completed', can_start: false, can_complete: false, can_cancel: false, homework_added: true }),
+        buildLesson({
+          id: 7,
+          status: 'completed',
+          can_start: false,
+          can_complete: false,
+          can_cancel: false,
+          homework_added: true,
+          attendance_editable: false,
+        }),
       )
       vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
       vi.mocked(homeworkApi.list).mockResolvedValue(paginated([buildHomework({ id: 55, lesson: 7 })]))
@@ -262,16 +270,27 @@ describe('LessonDetailPage', () => {
 
       await waitFor(() => expect(screen.getByRole('button', { name: 'Посмотреть посещаемость' })).toBeInTheDocument())
       expect(screen.getByRole('button', { name: 'Посмотреть домашнее задание' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Посмотреть результаты' })).toBeInTheDocument()
+      // Results are reached from the homework card/detail, never as a
+      // separate action on the completed lesson overview.
+      expect(screen.queryByRole('button', { name: 'Посмотреть результаты' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Начать занятие' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Завершить занятие' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /Отменить/ })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Дополнительные действия' })).not.toBeInTheDocument()
     })
 
-    it('omits the homework view actions when no homework was ever added', async () => {
+    it('omits the homework view action when no homework was ever added', async () => {
       vi.mocked(lessonsApi.get).mockResolvedValue(
-        buildLesson({ id: 7, status: 'completed', can_start: false, can_complete: false, can_cancel: false, homework_added: false, homework_not_required: true }),
+        buildLesson({
+          id: 7,
+          status: 'completed',
+          can_start: false,
+          can_complete: false,
+          can_cancel: false,
+          homework_added: false,
+          homework_not_required: true,
+          attendance_editable: false,
+        }),
       )
       vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
       vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
@@ -281,6 +300,54 @@ describe('LessonDetailPage', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'Посмотреть посещаемость' })).toBeInTheDocument())
       expect(screen.queryByRole('button', { name: 'Посмотреть домашнее задание' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Посмотреть результаты' })).not.toBeInTheDocument()
+    })
+
+    it('shows the required read-only notice and status badge, never mixing terminology', async () => {
+      vi.mocked(lessonsApi.get).mockResolvedValue(
+        buildLesson({ id: 7, status: 'completed', status_display: 'Проведено', can_start: false, can_complete: false, can_cancel: false, attendance_editable: false }),
+      )
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+
+      renderLessonDetail(7)
+
+      await waitFor(() =>
+        expect(
+          screen.getByText('Занятие проведено и закрыто. Все данные сохранены. Редактирование недоступно.'),
+        ).toBeInTheDocument(),
+      )
+      expect(screen.getByText('Проведено')).toBeInTheDocument()
+      expect(screen.queryByText('Завершено')).not.toBeInTheDocument()
+      expect(screen.queryByText('Completed')).not.toBeInTheDocument()
+    })
+
+    it('shows real, backend-calculated KPI values — never invented frontend stats', async () => {
+      vi.mocked(lessonsApi.get).mockResolvedValue(
+        buildLesson({
+          id: 7,
+          status: 'completed',
+          can_start: false,
+          can_complete: false,
+          can_cancel: false,
+          homework_added: true,
+          attendance_editable: false,
+          attendance_summary: { total_students: 3, present: 3, absent: 0, late: 0, excused: 0, attendance_rate: 100 },
+          homework_summary: { results_total: 3, checked: 3, pending: 0, average_score: 9.5 },
+        }),
+      )
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([buildHomework({ id: 55, lesson: 7 })]))
+
+      renderLessonDetail(7)
+
+      await waitFor(() => expect(screen.getByText('Итоги занятия')).toBeInTheDocument())
+      expect(screen.getAllByText('3').length).toBeGreaterThan(0)
+      expect(screen.getByText('100%')).toBeInTheDocument()
+      expect(screen.getByText('3 из 3')).toBeInTheDocument()
+      expect(screen.getByText('9.5 / 10')).toBeInTheDocument()
+      // Attendance/homework read models come straight from the API, not a
+      // second, ad-hoc roster fetch just for the completed-lesson page.
+      expect(lessonsApi.getAttendanceRoster).not.toHaveBeenCalled()
     })
   })
 

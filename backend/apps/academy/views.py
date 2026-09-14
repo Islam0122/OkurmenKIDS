@@ -144,6 +144,21 @@ def _assert_homework_results_editable(request, lesson) -> None:
         )
 
 
+def _assert_lesson_editable(request, lesson) -> None:
+    """A completed or cancelled lesson is an immutable historical record for
+    a Teacher — no new Attendance or Homework may be attached to it, on top
+    of the lesson's own status/cancellation_reason already being read-only
+    (see LessonSerializer) and its homework results being separately locked
+    by `_assert_homework_results_editable`. Admin keeps write access, same
+    override as everywhere else in the lesson lifecycle."""
+    if _is_admin(request.user):
+        return
+    if lesson is not None and lesson_lifecycle.lesson_editing_locked(lesson):
+        raise PermissionDenied(
+            "Занятие завершено или отменено — данные больше нельзя изменять."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Course catalogue
 # ---------------------------------------------------------------------------
@@ -701,6 +716,8 @@ class LessonViewSet(
                     )
             return Response(payload)
 
+        _assert_lesson_editable(request, lesson)
+
         item_serializer = BulkAttendanceItemSerializer(data=request.data, many=True)
         item_serializer.is_valid(raise_exception=True)
         try:
@@ -822,7 +839,13 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
 
     def perform_create(self, serializer):
-        _assert_teacher_owns_lesson(self.request, serializer.validated_data.get("lesson"))
+        lesson = serializer.validated_data.get("lesson")
+        _assert_teacher_owns_lesson(self.request, lesson)
+        _assert_lesson_editable(self.request, lesson)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _assert_lesson_editable(self.request, serializer.instance.lesson)
         serializer.save()
 
 
@@ -862,7 +885,9 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
 
     def perform_create(self, serializer):
-        _assert_teacher_owns_lesson(self.request, serializer.validated_data.get("lesson"))
+        lesson = serializer.validated_data.get("lesson")
+        _assert_teacher_owns_lesson(self.request, lesson)
+        _assert_lesson_editable(self.request, lesson)
         serializer.save()
 
     @extend_schema(

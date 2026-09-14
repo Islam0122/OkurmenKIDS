@@ -19,9 +19,14 @@ export interface AttendanceRow {
 export interface AttendanceTableProps {
   rows: AttendanceRow[]
   onStatusChange: (studentId: number, status: AttendanceStatus) => void
+  /** True once the lesson is completed or cancelled — attendance is frozen
+   * (see LessonSerializer.attendance_editable, enforced on the backend too
+   * via views._assert_lesson_editable), so every control here becomes
+   * inert rather than merely styled differently. */
+  readOnly?: boolean
 }
 
-export function AttendanceTable({ rows, onStatusChange }: AttendanceTableProps) {
+export function AttendanceTable({ rows, onStatusChange, readOnly = false }: AttendanceTableProps) {
   return (
     <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
       {rows.map((row) => (
@@ -36,10 +41,11 @@ export function AttendanceTable({ rows, onStatusChange }: AttendanceTableProps) 
                   type="button"
                   role="radio"
                   aria-checked={isActive}
+                  disabled={readOnly}
                   onClick={() => onStatusChange(row.studentId, control.value)}
                   className={cn(
-                    'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                    isActive ? control.activeClasses : 'border-border bg-surface text-ink-secondary hover:bg-surface-hover',
+                    'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                    isActive ? control.activeClasses : 'border-border bg-surface text-ink-secondary hover:enabled:bg-surface-hover',
                   )}
                 >
                   <control.icon className="size-3.5" aria-hidden />
