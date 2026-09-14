@@ -199,6 +199,7 @@ export interface Lesson {
   room_name: string | null
   subject: number | null
   subject_name: string | null
+  teacher_name: string | null
   topic: string
   description: string
   youtube_url: string

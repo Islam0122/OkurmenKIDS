@@ -123,33 +123,34 @@ export function LessonDetailPage() {
       ) : null}
 
       {lesson.status === 'completed' ? (
-        // A historical record: notice + real KPI numbers first, actions
-        // last — the opposite reading order of an active lesson, where the
-        // next action is what matters most (see the `else` branch below).
-        <div className="space-y-4">
+        // A historical record, read top to bottom like a report: notice →
+        // KPI overview → lesson/homework detail → full attendance detail.
+        // Never a generic action-bar container — "Посмотреть посещаемость"/
+        // "Посмотреть домашнее задание" live inside their own section,
+        // never as a standalone button in an otherwise-empty card.
+        <div className="space-y-5">
           <CompletedLessonNotice lesson={lesson} />
           <CompletedLessonKpis lesson={lesson} />
 
-          <AboutLessonCard lesson={lesson} />
-          <MaterialsCard lesson={lesson} />
-
-          <AttendanceStatsCard summary={lesson.attendance_summary} />
-
-          {homework ? (
-            <HomeworkSummaryCard homework={homework} summary={lesson.homework_summary} onView={goToHomework} />
-          ) : (
-            <div className="rounded-xl border border-border bg-surface p-5">
-              <p className="mb-1 text-sm font-medium text-ink-secondary">Домашнее задание</p>
-              <p className="text-sm text-ink-secondary">
-                {lesson.homework_not_required ? 'ДЗ не требуется.' : 'ДЗ не было добавлено.'}
-              </p>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="space-y-4">
+              <AboutLessonCard lesson={lesson} />
+              <MaterialsCard lesson={lesson} />
             </div>
-          )}
 
-          <div className="rounded-xl border border-dashed border-border bg-surface-muted p-5">
-            <p className="mb-3 text-sm font-medium text-ink-secondary">Просмотр</p>
-            <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
+            {homework ? (
+              <HomeworkSummaryCard homework={homework} summary={lesson.homework_summary} onView={goToHomework} />
+            ) : (
+              <div className="rounded-2xl border border-border bg-surface p-5">
+                <p className="mb-1 text-sm font-medium text-ink-secondary">Домашнее задание</p>
+                <p className="text-sm text-ink-secondary">
+                  {lesson.homework_not_required ? 'ДЗ не требуется.' : 'ДЗ не было добавлено.'}
+                </p>
+              </div>
+            )}
           </div>
+
+          <AttendanceStatsCard summary={lesson.attendance_summary} onView={() => void handleAction('view_attendance')} />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -201,7 +202,7 @@ export function LessonDetailPage() {
 
 function AboutLessonCard({ lesson }: { lesson: Lesson }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
+    <div className="rounded-2xl border border-border bg-surface p-5">
       <p className="mb-3 text-sm font-medium text-ink-secondary">О занятии</p>
       <dl className="grid grid-cols-2 gap-4 text-sm">
         <div>
@@ -213,11 +214,24 @@ function AboutLessonCard({ lesson }: { lesson: Lesson }) {
           </dd>
         </div>
         <div>
+          <dt className="text-ink-secondary">Предмет</dt>
+          <dd className="mt-0.5 font-medium text-ink">{lesson.subject_name ?? '—'}</dd>
+        </div>
+        <div>
+          <dt className="text-ink-secondary">Преподаватель</dt>
+          <dd className="mt-0.5 font-medium text-ink">{lesson.teacher_name ?? '—'}</dd>
+        </div>
+        <div>
           <dt className="text-ink-secondary">Аудитория</dt>
           <dd className="mt-0.5 font-medium text-ink">{lesson.room_name ?? '—'}</dd>
         </div>
       </dl>
-      {lesson.description ? <p className="mt-4 text-sm text-ink">{lesson.description}</p> : null}
+      {lesson.topic || lesson.description ? (
+        <div className="mt-4 space-y-1 border-t border-border pt-4">
+          {lesson.topic ? <p className="text-sm font-medium text-ink">{lesson.topic}</p> : null}
+          {lesson.description ? <p className="text-sm text-ink-secondary">{lesson.description}</p> : null}
+        </div>
+      ) : null}
     </div>
   )
 }
