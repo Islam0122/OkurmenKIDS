@@ -7,7 +7,8 @@ import { cn } from '@/utils/cn'
 import { formatTimeRange } from '@/utils/format'
 
 const STATUS_TONE: Record<Lesson['status'], BadgeTone> = {
-  planned: 'muted',
+  scheduled: 'muted',
+  in_progress: 'warning',
   completed: 'success',
   cancelled: 'danger',
 }

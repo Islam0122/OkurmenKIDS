@@ -21,6 +21,7 @@ from .models import (
     Room,
     Student,
 )
+from .services import lesson_lifecycle
 from .services.group_schedule_conflicts import (
     find_schedule_group_conflict,
     find_schedule_room_conflict,
@@ -529,12 +530,18 @@ class GenerateLessonsResponseSerializer(serializers.Serializer):
 # Lessons
 # ---------------------------------------------------------------------------
 
-class LessonSerializer(serializers.ModelSerializer):
+class LessonSerializer(_RequestAwareSerializer):
     group_name = serializers.CharField(source="group.name", read_only=True)
     room_name = serializers.CharField(source="room.name", read_only=True, default=None)
     subject_name = serializers.CharField(source="subject.name", read_only=True, default=None)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     teacher_name = serializers.SerializerMethodField()
+    completed_by_name = serializers.SerializerMethodField()
+    can_start = serializers.SerializerMethodField()
+    can_complete = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
+    completion_requirements = serializers.SerializerMethodField()
+    completion_progress = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
@@ -562,19 +569,67 @@ class LessonSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "cancellation_reason",
+            "homework_not_required",
+            "started_at",
+            "completed_at",
+            "completed_by",
+            "completed_by_name",
+            "can_start",
+            "can_complete",
+            "can_cancel",
+            "completion_requirements",
+            "completion_progress",
             "created_at",
             "updated_at",
         ]
         # Lessons are only ever created by the generator — the API only
-        # updates content/status/scheduling on an already-generated lesson.
+        # updates content/scheduling on an already-generated lesson. Every
+        # lifecycle field (status, cancellation_reason, homework_not_required,
+        # started_at/completed_at/completed_by) only ever changes through the
+        # dedicated start/complete/cancel/homework-not-required actions (see
+        # services.lesson_lifecycle + LessonViewSet) — never through a plain
+        # PATCH, so a completed/cancelled lesson can never be silently reset.
         read_only_fields = [
             "id", "group", "group_teacher", "plan", "individual_plan", "lesson_number", "teacher",
+            "status", "cancellation_reason", "homework_not_required",
+            "started_at", "completed_at", "completed_by",
             "created_at", "updated_at",
         ]
 
     def get_teacher_name(self, obj: Lesson) -> str | None:
         teacher = obj.effective_teacher
         return str(teacher) if teacher else None
+
+    def get_completed_by_name(self, obj: Lesson) -> str | None:
+        return str(obj.completed_by) if obj.completed_by_id else None
+
+    def _can_manage(self, obj: Lesson) -> bool:
+        user = self._request_user()
+        if user is None or not user.is_authenticated:
+            return False
+        if user.is_superuser or user.role == User.Role.ADMIN:
+            return True
+        teacher = getattr(user, "teacher_profile", None)
+        owner = obj.effective_teacher
+        return bool(teacher and owner and owner.id == teacher.id)
+
+    def get_can_start(self, obj: Lesson) -> bool:
+        return self._can_manage(obj) and lesson_lifecycle.can_start(obj)
+
+    def get_can_complete(self, obj: Lesson) -> bool:
+        return self._can_manage(obj) and lesson_lifecycle.can_complete(obj)
+
+    def get_can_cancel(self, obj: Lesson) -> bool:
+        return self._can_manage(obj) and lesson_lifecycle.can_cancel(obj)
+
+    def get_completion_requirements(self, obj: Lesson) -> list[dict]:
+        return [
+            {"key": r.key, "label": r.label, "satisfied": r.satisfied}
+            for r in lesson_lifecycle.completion_requirements(obj)
+        ]
+
+    def get_completion_progress(self, obj: Lesson) -> dict:
+        return lesson_lifecycle.completion_progress(obj)
 
     def validate(self, attrs):
         start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))
@@ -608,6 +663,14 @@ class GroupScheduleSerializer(serializers.Serializer):
 
     group = GroupSerializer()
     lessons = GroupScheduleLessonSerializer(many=True)
+
+
+class LessonCancelRequestSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+
+
+class HomeworkNotRequiredRequestSerializer(serializers.Serializer):
+    value = serializers.BooleanField(required=False, default=True)
 
 
 # ---------------------------------------------------------------------------
@@ -885,8 +948,10 @@ class AnalyticsLessonsBySubjectRowSerializer(serializers.Serializer):
 class AnalyticsLessonsSectionSerializer(serializers.Serializer):
     lessons_today = ComparisonMetricSerializer()
     lessons_scheduled = ComparisonMetricSerializer()
+    lessons_in_progress = ComparisonMetricSerializer()
     lessons_completed = ComparisonMetricSerializer()
     lessons_cancelled = ComparisonMetricSerializer()
+    lessons_requiring_attention = ComparisonMetricSerializer()
     lesson_completion_rate = ComparisonMetricSerializer()
     lessons_by_teacher = AnalyticsLessonsByTeacherRowSerializer(many=True)
     lessons_by_subject = AnalyticsLessonsBySubjectRowSerializer(many=True)

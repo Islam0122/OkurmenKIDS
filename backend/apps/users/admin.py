@@ -414,18 +414,16 @@ class TeacherAdmin(admin.ModelAdmin):
             # Imported lazily: apps.academy.models imports Teacher from this
             # app, so importing these at module level here would be circular.
             from apps.academy.models import Attendance, Group, Homework, Lesson, Student
+            from apps.academy.services.lesson_status import lesson_status_counts
 
             groups = Group.objects.for_teacher(teacher)
             lessons = Lesson.objects.for_teacher(teacher)
             today = timezone.now().date()
 
-            # One aggregate query for both lesson counts, one for attendance —
-            # no per-row loops, so this stays O(1) queries regardless of how
-            # many lessons/attendance records the teacher has.
-            lesson_stats = lessons.aggregate(
-                completed=Count("id", filter=Q(status=Lesson.Status.COMPLETED)),
-                upcoming=Count("id", filter=Q(status=Lesson.Status.PLANNED, date__gte=today)),
-            )
+            # Same shared status-counting logic the Admin/Analytics
+            # dashboards use (services.lesson_status) — never a second,
+            # independent implementation of "completed"/"upcoming".
+            lesson_stats = lesson_status_counts(lessons, today=today)
             attendance_stats = Attendance.objects.filter(lesson__in=lessons).aggregate(
                 total=Count("id"),
                 present=Count("id", filter=Q(status=Attendance.Status.PRESENT)),

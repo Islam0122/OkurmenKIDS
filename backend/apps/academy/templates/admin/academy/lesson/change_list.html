@@ -46,6 +46,11 @@
       <div class="ok-kpi-label">Отменённые</div>
     </div>
     <div class="ok-kpi-card">
+      <div class="ok-kpi-icon"><i class="bi bi-exclamation-triangle"></i></div>
+      <div class="ok-kpi-value">{{ kpi.attention }}</div>
+      <div class="ok-kpi-label">Требуют внимания</div>
+    </div>
+    <div class="ok-kpi-card">
       <div class="ok-kpi-icon"><i class="bi bi-calendar-week"></i></div>
       <div class="ok-kpi-value">{{ kpi.this_week }}</div>
       <div class="ok-kpi-label">На этой неделе</div>
@@ -128,6 +133,8 @@
                       <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Завершено</span>
                     {% elif lesson.status == "cancelled" %}
                       <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Отменено</span>
+                    {% elif lesson.status == "in_progress" %}
+                      <span class="ok-badge ok-badge-warning"><span class="ok-badge-dot"></span>Идёт занятие</span>
                     {% else %}
                       <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Запланировано</span>
                     {% endif %}

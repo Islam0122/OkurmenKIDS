@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import datetime as dt
 
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.db.models.functions import Coalesce
 
-from apps.academy.models import Lesson
+from apps.academy.services.lesson_status import lesson_status_counts
 from .metrics import build_metric
 from .period import DateRange
 from .scope import AnalyticsScope
@@ -49,19 +49,19 @@ def _by_subject(scope: AnalyticsScope, date_range: DateRange) -> list[dict]:
 
 
 def _snapshot(scope: AnalyticsScope, date_range: DateRange) -> dict:
-    agg = scope.lessons_qs(date_range=date_range).aggregate(
-        total=Count("id"),
-        completed=Count("id", filter=Q(status=Lesson.Status.COMPLETED)),
-        cancelled=Count("id", filter=Q(status=Lesson.Status.CANCELLED)),
-        planned=Count("id", filter=Q(status=Lesson.Status.PLANNED)),
-    )
-    total = agg["total"] or 0
-    completed = agg["completed"] or 0
+    # Same shared per-status counting the Admin dashboard uses (see
+    # services.lesson_status) — never a second, independent implementation
+    # of "how many lessons are scheduled/completed/cancelled".
+    counts = lesson_status_counts(scope.lessons_qs(date_range=date_range))
+    total = counts["total"]
+    completed = counts["completed"]
     return {
         "total": total,
         "completed": completed,
-        "cancelled": agg["cancelled"] or 0,
-        "planned": agg["planned"] or 0,
+        "cancelled": counts["cancelled"],
+        "scheduled": counts["scheduled"],
+        "in_progress": counts["in_progress"],
+        "attention": counts["attention"],
         "completion_rate": round(completed / total * 100, 1) if total else 0.0,
         "by_teacher": _by_teacher(scope, date_range),
         "by_subject": _by_subject(scope, date_range),
@@ -80,9 +80,11 @@ def build(scope: AnalyticsScope, compare_range: DateRange | None, *, today: dt.d
 
     return {
         "lessons_today": build_metric(lessons_today, None),
-        "lessons_scheduled": metric("planned"),
+        "lessons_scheduled": metric("scheduled"),
+        "lessons_in_progress": metric("in_progress"),
         "lessons_completed": metric("completed"),
         "lessons_cancelled": metric("cancelled"),
+        "lessons_requiring_attention": metric("attention"),
         "lesson_completion_rate": metric("completion_rate"),
         # Not comparison-wrapped: distributions, not scalars.
         "lessons_by_teacher": current["by_teacher"],

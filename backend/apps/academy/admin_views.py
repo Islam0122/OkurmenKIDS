@@ -40,6 +40,7 @@ from .models import (
 )
 from .services.analytics import get_dashboard
 from .services.group_schedule_conflicts import overlapping_groups
+from .services.lesson_status import attention_q, lesson_status_counts
 from .services.lesson_generator import (
     LessonGenerationError,
     generate_lessons_for_group,
@@ -73,26 +74,33 @@ def _week_start(day: dt.date) -> dt.date:
 
 def _lesson_status_kpi(lessons_qs, today: dt.date) -> dict:
     """The one, shared definition of "how many lessons are total/today/
-    upcoming/completed/cancelled/this week" for a given (already filtered)
-    Lesson queryset — used by both the Group Workspace overview and the
-    Lessons monitoring page, so the same underlying data never reports two
-    different numbers in two different places (spec: no duplicate source of
-    truth for lesson statistics).
+    upcoming/completed/cancelled/requiring attention/this week" for a given
+    (already filtered) Lesson queryset — used by both the Group Workspace
+    overview and the Lessons monitoring page, so the same underlying data
+    never reports two different numbers in two different places (spec: no
+    duplicate source of truth for lesson statistics). The actual per-status
+    counting lives in services.lesson_status.lesson_status_counts — the same
+    function the Analytics dashboard uses — so this is the Admin-dashboard
+    shaping of it, not a second implementation.
 
     Status-based, not date-based: "completed"/"cancelled" reflect the real
     `Lesson.status` value only — a lesson is never inferred as completed
     just because its date has passed, since status requires an explicit
-    transition (by the teacher, through their own workspace/API). "Upcoming"
-    is the complement: still planned, and not yet in the past.
+    transition (start/complete/cancel — see services.lesson_lifecycle).
+    "Upcoming" is still-scheduled and not yet in the past; "attention" is
+    the opposite failure mode — still scheduled/in_progress but *already* in
+    the past, i.e. a lesson a teacher forgot to start/finish.
     """
     week_start = _week_start(today)
     week_end = week_start + dt.timedelta(days=6)
+    counts = lesson_status_counts(lessons_qs, today=today)
     return {
-        "total": lessons_qs.count(),
+        "total": counts["total"],
         "today": lessons_qs.filter(date=today).count(),
-        "upcoming": lessons_qs.filter(status=Lesson.Status.PLANNED, date__gte=today).count(),
-        "completed": lessons_qs.filter(status=Lesson.Status.COMPLETED).count(),
-        "cancelled": lessons_qs.filter(status=Lesson.Status.CANCELLED).count(),
+        "upcoming": counts["upcoming"],
+        "completed": counts["completed"],
+        "cancelled": counts["cancelled"],
+        "attention": counts["attention"],
         "this_week": lessons_qs.filter(date__gte=week_start, date__lte=week_end).count(),
     }
 
@@ -416,14 +424,14 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
         "completed": sum(1 for lesson in lessons if lesson.status == Lesson.Status.COMPLETED),
         "cancelled": sum(1 for lesson in lessons if lesson.status == Lesson.Status.CANCELLED),
         "upcoming": sum(
-            1 for lesson in lessons if lesson.status == Lesson.Status.PLANNED and lesson.date >= today
+            1 for lesson in lessons if lesson.status == Lesson.Status.SCHEDULED and lesson.date >= today
         ),
     }
     upcoming_lessons = [
-        lesson for lesson in lessons if lesson.status == Lesson.Status.PLANNED and lesson.date >= today
+        lesson for lesson in lessons if lesson.status == Lesson.Status.SCHEDULED and lesson.date >= today
     ][:10]
     past_lessons = sorted(
-        (lesson for lesson in lessons if lesson.date < today or lesson.status != Lesson.Status.PLANNED),
+        (lesson for lesson in lessons if lesson.date < today or lesson.status != Lesson.Status.SCHEDULED),
         key=lambda lesson: (lesson.date, lesson.start_time),
         reverse=True,
     )[:10]
@@ -617,6 +625,7 @@ def group_workspace_overview_view(request, group_id):
                 "upcoming_lessons": lesson_kpi["upcoming"],
                 "completed_lessons": lesson_kpi["completed"],
                 "cancelled_lessons": lesson_kpi["cancelled"],
+                "attention_lessons": lesson_kpi["attention"],
                 "attendance_rate": attendance_rate,
             },
             "period_label": period_label,
@@ -794,7 +803,7 @@ def _teaching_program_cards(group: Group) -> list[dict]:
                 ],
                 "lesson_count": lessons.count(),
                 "completed_count": lessons.filter(status=Lesson.Status.COMPLETED).count(),
-                "upcoming_count": lessons.filter(status=Lesson.Status.PLANNED, date__gte=today).count(),
+                "upcoming_count": lessons.filter(status=Lesson.Status.SCHEDULED, date__gte=today).count(),
                 "plan_count": gt._plan_count,
                 "has_individual_plan": has_individual_plan,
                 "plan_filled": plan_filled,
@@ -1911,6 +1920,7 @@ def lesson_monitor_view(request):
     date_from = request.GET.get("date_from") or ""
     date_to = request.GET.get("date_to") or ""
     group_teacher_id = request.GET.get("group_teacher") or ""
+    attention_only = request.GET.get("attention") or ""
 
     lessons_qs = Lesson.objects.select_related(
         "group",
@@ -1951,15 +1961,19 @@ def lesson_monitor_view(request):
     if parsed:
         lessons_qs = lessons_qs.filter(date__lte=parsed)
 
-    lessons_qs = lessons_qs.order_by("-date", "-start_time")
     kpi = _lesson_status_kpi(lessons_qs, today)
+
+    if attention_only:
+        lessons_qs = lessons_qs.filter(attention_q(today, timezone.localtime().time()))
+
+    lessons_qs = lessons_qs.order_by("-date", "-start_time")
 
     paginator = Paginator(lessons_qs, 25)
     page_obj = paginator.get_page(request.GET.get("page"))
 
     selected = {
         "q": search, "group": group_id, "subject": subject_id, "teacher": teacher_id, "room": room_id,
-        "status": status_filter, "date_from": date_from, "date_to": date_to,
+        "status": status_filter, "date_from": date_from, "date_to": date_to, "attention": attention_only,
     }
 
     def _quick_url(params: dict) -> str:
@@ -1969,7 +1983,8 @@ def lesson_monitor_view(request):
     quick_presets = [
         {"label": "Все", "params": {}},
         {"label": "Сегодня", "params": {"date_from": today.isoformat(), "date_to": today.isoformat()}},
-        {"label": "Предстоящие", "params": {"status": Lesson.Status.PLANNED, "date_from": today.isoformat()}},
+        {"label": "Предстоящие", "params": {"status": Lesson.Status.SCHEDULED, "date_from": today.isoformat()}},
+        {"label": "Требуют внимания", "params": {"attention": "1"}},
         {"label": "Завершённые", "params": {"status": Lesson.Status.COMPLETED}},
         {"label": "Отменённые", "params": {"status": Lesson.Status.CANCELLED}},
     ]
@@ -1981,6 +1996,7 @@ def lesson_monitor_view(request):
                 selected["status"] == preset["params"].get("status", "")
                 and selected["date_from"] == preset["params"].get("date_from", "")
                 and selected["date_to"] == preset["params"].get("date_to", "")
+                and selected["attention"] == preset["params"].get("attention", "")
             ),
         }
         for preset in quick_presets

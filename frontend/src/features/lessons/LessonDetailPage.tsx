@@ -1,4 +1,5 @@
-import { ExternalLink, FileText, Youtube } from 'lucide-react'
+import { useState } from 'react'
+import { CheckCircle2, Circle, ExternalLink, FileText, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -7,14 +8,18 @@ import type { BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { Modal } from '@/components/ui/Modal'
+import { useToast } from '@/components/ui/Toast'
 import { useAttendanceRoster } from '@/hooks/useAttendance'
-import { useHomeworkList } from '@/hooks/useHomework'
-import { useLesson } from '@/hooks/useLessons'
+import { useCreateHomework, useHomeworkList } from '@/hooks/useHomework'
+import { useCancelLesson, useCompleteLesson, useLesson, useSetHomeworkNotRequired, useStartLesson } from '@/hooks/useLessons'
+import { extractErrorMessage } from '@/lib/apiError'
 import type { Lesson } from '@/types/academy'
 import { formatDate, formatTimeRange } from '@/utils/format'
 
 const STATUS_TONE: Record<Lesson['status'], BadgeTone> = {
-  planned: 'muted',
+  scheduled: 'muted',
+  in_progress: 'warning',
   completed: 'success',
   cancelled: 'danger',
 }
@@ -23,10 +28,19 @@ export function LessonDetailPage() {
   const { id } = useParams<{ id: string }>()
   const lessonId = Number(id)
   const navigate = useNavigate()
+  const { showToast } = useToast()
 
   const { data: lesson, isPending, isError, refetch } = useLesson(lessonId)
   const roster = useAttendanceRoster(lessonId)
   const homeworkList = useHomeworkList({ lesson: lessonId })
+
+  const startMutation = useStartLesson()
+  const completeMutation = useCompleteLesson()
+  const cancelMutation = useCancelLesson()
+  const homeworkNotRequiredMutation = useSetHomeworkNotRequired()
+
+  const [isCancelModalOpen, setCancelModalOpen] = useState(false)
+  const [isHomeworkModalOpen, setHomeworkModalOpen] = useState(false)
 
   if (isPending) return <LoadingState label="Загружаем занятие…" />
   if (isError || !lesson) return <ErrorState onRetry={() => void refetch()} />
@@ -39,17 +53,55 @@ export function LessonDetailPage() {
 
   const homework = homeworkList.data?.results[0]
 
+  const attendanceOk = lesson.completion_requirements.find((r) => r.key === 'attendance')?.satisfied ?? false
+  const homeworkAdded = Boolean(homework)
+  const missingLabels = lesson.completion_requirements.filter((r) => !r.satisfied).map((r) => r.label)
+
+  async function handleStart() {
+    try {
+      await startMutation.mutateAsync(lesson!.id)
+      showToast('Занятие начато', 'success')
+    } catch (error) {
+      showToast(extractErrorMessage(error, 'Не удалось начать занятие'), 'error')
+    }
+  }
+
+  async function handleComplete() {
+    try {
+      await completeMutation.mutateAsync(lesson!.id)
+      showToast('Занятие завершено', 'success')
+    } catch (error) {
+      showToast(extractErrorMessage(error, 'Не удалось завершить занятие'), 'error')
+    }
+  }
+
+  async function handleToggleHomeworkNotRequired(value: boolean) {
+    try {
+      await homeworkNotRequiredMutation.mutateAsync({ id: lesson!.id, value })
+      showToast(value ? 'Отмечено: ДЗ не требуется' : 'Отметка снята', 'success')
+    } catch (error) {
+      showToast(extractErrorMessage(error, 'Не удалось изменить отметку'), 'error')
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title={formatTimeRange(lesson.start_time, lesson.end_time)}
         description={`${formatDate(lesson.date)} · ${lesson.subject_name ?? 'Без предмета'}${lesson.topic ? ` — ${lesson.topic}` : ''}`}
-        actions={<Badge tone={STATUS_TONE[lesson.status]}>{lesson.status_display}</Badge>}
+        actions={<Badge tone={STATUS_TONE[lesson.status]}>{lesson.status === 'in_progress' ? 'Идёт занятие' : lesson.status_display}</Badge>}
       />
 
       {lesson.status === 'cancelled' && lesson.cancellation_reason ? (
         <div className="mb-6 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
           Занятие отменено. Причина: {lesson.cancellation_reason}
+        </div>
+      ) : null}
+
+      {lesson.status === 'completed' ? (
+        <div className="mb-6 rounded-lg bg-brand-50 px-4 py-3 text-sm text-brand-700">
+          Занятие завершено{lesson.completed_by_name ? ` — ${lesson.completed_by_name}` : ''}
+          {lesson.completed_at ? ` · ${formatDate(lesson.completed_at)}` : ''}
         </div>
       ) : null}
 
@@ -121,18 +173,73 @@ export function LessonDetailPage() {
               </div>
             )}
           </div>
+
+          {lesson.status === 'scheduled' || lesson.status === 'in_progress' ? (
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <p className="mb-3 text-sm font-medium text-ink-secondary">Чек-лист завершения</p>
+              <div className="space-y-2 text-sm">
+                <ChecklistLine ok={attendanceOk} text="Посещаемость отмечена" />
+                <ChecklistLine ok={homeworkAdded} text="Добавлено домашнее задание" />
+                <ChecklistLine ok={lesson.homework_not_required} text="ДЗ не требуется" />
+              </div>
+              {lesson.status === 'in_progress' && !lesson.completion_progress.is_complete ? (
+                <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
+                  Нельзя завершить занятие: {missingLabels.join('; ')}.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-4">
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="mb-3 text-sm font-medium text-ink-secondary">Действия</p>
             <div className="space-y-2">
-              <Button className="w-full" onClick={() => navigate(`/app/attendance?lesson=${lesson.id}`)}>
+              {lesson.can_start ? (
+                <Button className="w-full" onClick={() => void handleStart()} isLoading={startMutation.isPending}>
+                  Начать занятие
+                </Button>
+              ) : null}
+
+              <Button className="w-full" variant="secondary" onClick={() => navigate(`/app/attendance?lesson=${lesson.id}`)}>
                 Отметить посещаемость
               </Button>
+
               {homework ? (
                 <Button variant="secondary" className="w-full" onClick={() => navigate(`/app/homework/${homework.id}`)}>
                   Открыть ДЗ
+                </Button>
+              ) : lesson.status === 'scheduled' || lesson.status === 'in_progress' ? (
+                <Button variant="secondary" className="w-full" onClick={() => setHomeworkModalOpen(true)}>
+                  Добавить ДЗ
+                </Button>
+              ) : null}
+
+              {!homework && (lesson.status === 'scheduled' || lesson.status === 'in_progress') ? (
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  isLoading={homeworkNotRequiredMutation.isPending}
+                  onClick={() => void handleToggleHomeworkNotRequired(!lesson.homework_not_required)}
+                >
+                  {lesson.homework_not_required ? 'Снять отметку «ДЗ не требуется»' : 'ДЗ не требуется'}
+                </Button>
+              ) : null}
+
+              {lesson.status === 'in_progress' ? (
+                <Button
+                  className="w-full"
+                  onClick={() => void handleComplete()}
+                  isLoading={completeMutation.isPending}
+                  disabled={!lesson.can_complete}
+                >
+                  Завершить занятие
+                </Button>
+              ) : null}
+
+              {lesson.can_cancel ? (
+                <Button className="w-full" variant="danger" onClick={() => setCancelModalOpen(true)}>
+                  Отменить занятие
                 </Button>
               ) : null}
             </div>
@@ -148,7 +255,25 @@ export function LessonDetailPage() {
           ) : null}
         </div>
       </div>
+
+      <CancelLessonModal
+        lessonId={lesson.id}
+        isOpen={isCancelModalOpen}
+        onClose={() => setCancelModalOpen(false)}
+        mutation={cancelMutation}
+      />
+      <AddHomeworkModal lessonId={lesson.id} isOpen={isHomeworkModalOpen} onClose={() => setHomeworkModalOpen(false)} />
     </div>
+  )
+}
+
+function ChecklistLine({ ok, text }: { ok: boolean; text: string }) {
+  const Icon = ok ? CheckCircle2 : Circle
+  return (
+    <p className={ok ? 'flex items-center gap-2 text-brand-700' : 'flex items-center gap-2 text-ink-secondary'}>
+      <Icon className="size-4 shrink-0" aria-hidden />
+      {text}
+    </p>
   )
 }
 
@@ -165,5 +290,126 @@ function StatBlock({ label, value, tone }: { label: string; value: number; tone:
       <p className={`text-xl font-semibold ${TONE_TEXT[tone]}`}>{value}</p>
       <p className="text-xs text-ink-secondary">{label}</p>
     </div>
+  )
+}
+
+function CancelLessonModal({
+  lessonId,
+  isOpen,
+  onClose,
+  mutation,
+}: {
+  lessonId: number
+  isOpen: boolean
+  onClose: () => void
+  mutation: ReturnType<typeof useCancelLesson>
+}) {
+  const [reason, setReason] = useState('')
+  const { showToast } = useToast()
+
+  async function handleConfirm() {
+    try {
+      await mutation.mutateAsync({ id: lessonId, reason })
+      showToast('Занятие отменено', 'success')
+      setReason('')
+      onClose()
+    } catch (error) {
+      showToast(extractErrorMessage(error, 'Не удалось отменить занятие'), 'error')
+    }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Отменить занятие">
+      <p className="text-sm text-ink-secondary">Укажите причину отмены (необязательно).</p>
+      <textarea
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+        rows={3}
+        maxLength={255}
+        placeholder="Например: тренер заболел"
+        className="mt-3 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus-visible:border-brand-500"
+      />
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>
+          Не отменять
+        </Button>
+        <Button variant="danger" onClick={() => void handleConfirm()} isLoading={mutation.isPending}>
+          Отменить занятие
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+function AddHomeworkModal({ lessonId, isOpen, onClose }: { lessonId: number; isOpen: boolean; onClose: () => void }) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [deadline, setDeadline] = useState('')
+  const createMutation = useCreateHomework()
+  const { showToast } = useToast()
+
+  async function handleSubmit() {
+    if (!title.trim()) return
+    try {
+      await createMutation.mutateAsync({ lesson: lessonId, title: title.trim(), description, deadline: deadline || null })
+      showToast('Домашнее задание добавлено', 'success')
+      setTitle('')
+      setDescription('')
+      setDeadline('')
+      onClose()
+    } catch (error) {
+      showToast(extractErrorMessage(error, 'Не удалось добавить домашнее задание'), 'error')
+    }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Добавить домашнее задание">
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-secondary" htmlFor="homework-title">
+            Название
+          </label>
+          <input
+            id="homework-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500"
+            placeholder="Например: Собрать простого робота"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-secondary" htmlFor="homework-description">
+            Описание
+          </label>
+          <textarea
+            id="homework-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={3}
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus-visible:border-brand-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-secondary" htmlFor="homework-deadline">
+            Срок сдачи
+          </label>
+          <input
+            id="homework-deadline"
+            type="date"
+            value={deadline}
+            onChange={(event) => setDeadline(event.target.value)}
+            className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500"
+          />
+        </div>
+      </div>
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose} disabled={createMutation.isPending}>
+          Отмена
+        </Button>
+        <Button onClick={() => void handleSubmit()} isLoading={createMutation.isPending} disabled={!title.trim()}>
+          Добавить
+        </Button>
+      </div>
+    </Modal>
   )
 }

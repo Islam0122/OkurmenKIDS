@@ -149,7 +149,19 @@ export interface Student {
   updated_at: string
 }
 
-export type LessonStatus = 'planned' | 'completed' | 'cancelled'
+export type LessonStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+
+export interface LessonCompletionRequirement {
+  key: string
+  label: string
+  satisfied: boolean
+}
+
+export interface LessonCompletionProgress {
+  satisfied: number
+  total: number
+  is_complete: boolean
+}
 
 /** `apps.academy.serializers.LessonSerializer` */
 export interface Lesson {
@@ -172,6 +184,16 @@ export interface Lesson {
   status: LessonStatus
   status_display: string
   cancellation_reason: string
+  homework_not_required: boolean
+  started_at: string | null
+  completed_at: string | null
+  completed_by: number | null
+  completed_by_name: string | null
+  can_start: boolean
+  can_complete: boolean
+  can_cancel: boolean
+  completion_requirements: LessonCompletionRequirement[]
+  completion_progress: LessonCompletionProgress
   created_at: string
   updated_at: string
 }

@@ -10,7 +10,16 @@ import { formatDate } from '@/utils/format'
  * ever generated. "Все уроки" is the only tab that shows a full, paginated
  * history; every other tab is a bounded, real-data slice of it.
  */
-export type LessonView = 'today' | 'tomorrow' | 'week' | 'next_week' | 'upcoming' | 'all' | 'completed' | 'cancelled'
+export type LessonView =
+  | 'today'
+  | 'tomorrow'
+  | 'week'
+  | 'next_week'
+  | 'upcoming'
+  | 'attention'
+  | 'all'
+  | 'completed'
+  | 'cancelled'
 
 export const DEFAULT_LESSON_VIEW: LessonView = 'today'
 
@@ -20,9 +29,10 @@ export const LESSON_VIEW_TABS: { key: LessonView; label: string }[] = [
   { key: 'week', label: 'Эта неделя' },
   { key: 'next_week', label: 'Следующая неделя' },
   { key: 'upcoming', label: 'Предстоящие' },
-  { key: 'all', label: 'Все уроки' },
+  { key: 'attention', label: 'Требуют внимания' },
   { key: 'completed', label: 'Завершённые' },
   { key: 'cancelled', label: 'Отменённые' },
+  { key: 'all', label: 'Все уроки' },
 ]
 
 export function isLessonView(value: string | null): value is LessonView {
@@ -72,6 +82,12 @@ export function upcomingWindow(): DateRange {
   return { from: todayISO(), to: isoDate(addDays(new Date(), 60)) }
 }
 
+/** Bounded look-back window for "Требуют внимания" — lessons a trainer
+ * scheduled/started but never explicitly finished, over the last 60 days. */
+export function attentionWindow(): DateRange {
+  return { from: isoDate(addDays(new Date(), -60)), to: todayISO() }
+}
+
 /** "Сегодня" / "Завтра" / capitalized weekday — the label half of a date section header. */
 export function dateSectionLabel(iso: string): string {
   const date = parseISO(iso)
@@ -116,4 +132,17 @@ export function hasLessonPassed(lesson: Lesson, now: Date = new Date()): boolean
   if (lesson.date !== today) return lesson.date < today
   const [hours, minutes] = lesson.end_time.split(':').map(Number)
   return hours * 60 + minutes <= now.getHours() * 60 + now.getMinutes()
+}
+
+/**
+ * Whether a lesson's completion checklist (attendance/homework) is worth
+ * showing right now: it's actively `in_progress`, or it's still `scheduled`
+ * but its slot is already over and nobody explicitly started/finished it —
+ * the same "requires attention" condition the Admin dashboard's KPI uses,
+ * computed here from the real `status` plus real timing, never status
+ * inferred from the clock.
+ */
+export function needsAttentionCheck(lesson: Lesson, now: Date = new Date()): boolean {
+  if (lesson.status === 'cancelled' || lesson.status === 'completed') return false
+  return lesson.status === 'in_progress' || hasLessonPassed(lesson, now)
 }

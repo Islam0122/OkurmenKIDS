@@ -68,6 +68,8 @@ from apps.academy.services.lesson_generator import (
     generate_lessons_for_group,
     generate_lessons_for_group_with_report,
 )
+from apps.academy.services import lesson_lifecycle
+from apps.academy.services.lesson_status import lesson_status_counts
 from apps.academy.views import _assert_teacher_owns_lesson
 
 # NOTE: login/verification/permission tests for the underlying auth system
@@ -4244,7 +4246,7 @@ class ConflictReportGroupingTests(AcademyTestBase):
         return Lesson.objects.create(
             group=self.group1, group_teacher=group_teacher, teacher=teacher, subject=subject,
             lesson_number=lesson_number, date=date, start_time=start_time, end_time=end_time,
-            room=room, status=Lesson.Status.PLANNED,
+            room=room, status=Lesson.Status.SCHEDULED,
         )
 
     def test_three_mutually_overlapping_lessons_produce_one_group_conflict(self):
@@ -4292,17 +4294,17 @@ class ConflictReportGroupingTests(AcademyTestBase):
         lesson_a = Lesson.objects.create(
             group=self.group1, group_teacher=gt_a, teacher=self.teacher1, subject=self.subject_python,
             lesson_number=201, date=dt.date(2026, 9, 9), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
-            room=room, status=Lesson.Status.PLANNED,
+            room=room, status=Lesson.Status.SCHEDULED,
         )
         lesson_b = Lesson.objects.create(
             group=self.group2, group_teacher=gt_b, teacher=self.teacher2, subject=self.subject_frontend,
             lesson_number=201, date=dt.date(2026, 9, 9), start_time=dt.time(8, 30), end_time=dt.time(9, 30),
-            room=room, status=Lesson.Status.PLANNED,
+            room=room, status=Lesson.Status.SCHEDULED,
         )
         lesson_c = Lesson.objects.create(
             group=self.group2, group_teacher=gt_c, teacher=teacher_c, subject=self.subject_frontend,
             lesson_number=201, date=dt.date(2026, 9, 9), start_time=dt.time(9, 15), end_time=dt.time(10, 15),
-            room=room, status=Lesson.Status.PLANNED,
+            room=room, status=Lesson.Status.SCHEDULED,
         )
 
         _, room_conflicts, _, conflicting_ids = _detect_conflicts(
@@ -4347,7 +4349,7 @@ class ScheduleViewGroupConflictDisplayTests(AcademyTestBase):
 
         common = dict(
             group=self.group1, date=dt.date(2026, 9, 9), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
-            status=Lesson.Status.PLANNED,
+            status=Lesson.Status.SCHEDULED,
         )
         Lesson.objects.create(group_teacher=gt_a, teacher=self.teacher1, subject=self.subject_python, lesson_number=401, **common)
         Lesson.objects.create(group_teacher=gt_b, teacher=self.teacher2, subject=self.subject_frontend, lesson_number=401, **common)
@@ -4419,6 +4421,22 @@ class LessonGenerationIdempotencyTests(AcademyTestBase):
         self.lesson1.refresh_from_db()
         self.assertEqual(self.lesson1.status, Lesson.Status.CANCELLED)
         self.assertEqual(self.lesson1.cancellation_reason, "Праздник")
+
+    def test_completed_lesson_untouched_by_regeneration(self):
+        Attendance.objects.create(student=self.student1, lesson=self.lesson1, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student2, lesson=self.lesson1, status=Attendance.Status.PRESENT)
+        from apps.academy.services import lesson_lifecycle
+
+        lesson_lifecycle.start_lesson(self.lesson1, self.teacher1.user)
+        lesson_lifecycle.set_homework_not_required(self.lesson1, True)
+        lesson_lifecycle.complete_lesson(self.lesson1, self.teacher1.user)
+        completed_at = self.lesson1.completed_at
+
+        generate_lessons_for_group(self.group1)
+
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
+        self.assertEqual(self.lesson1.completed_at, completed_at)
 
     def test_attendance_and_homework_survive_regeneration(self):
         Attendance.objects.create(student=self.student1, lesson=self.lesson1, status=Attendance.Status.PRESENT)
@@ -4520,6 +4538,248 @@ class GeneratorSkipsInvalidSlotsTests(AcademyTestBase):
             generate_lessons_for_group(self.group1)
 
 
+class LessonLifecycleActionsTests(AcademyTestBase):
+    """The real start/complete/cancel workflow (services.lesson_lifecycle +
+    LessonViewSet's start/complete/cancel/homework-not-required actions) —
+    the actual fix for "lessons never move to Completed"."""
+
+    def setUp(self):
+        super().setUp()
+        self.lesson1 = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        self.other_lesson = Lesson.objects.filter(group=self.group2).order_by("lesson_number").first()
+
+    def _mark_full_attendance(self, lesson):
+        for student in (self.student1, self.student2):
+            Attendance.objects.create(student=student, lesson=lesson, status=Attendance.Status.PRESENT)
+
+    # -- generation / initial state ---------------------------------------
+
+    def test_generated_lesson_starts_as_scheduled(self):
+        self.assertEqual(self.lesson1.status, Lesson.Status.SCHEDULED)
+        self.assertIsNone(self.lesson1.started_at)
+        self.assertIsNone(self.lesson1.completed_at)
+        self.assertIsNone(self.lesson1.completed_by_id)
+        self.assertFalse(self.lesson1.homework_not_required)
+
+    # -- start --------------------------------------------------------------
+
+    def test_teacher_can_start_own_lesson(self):
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.IN_PROGRESS)
+        self.assertIsNotNone(self.lesson1.started_at)
+
+    def test_teacher_cannot_start_another_teachers_lesson(self):
+        response = self.teacher2_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.SCHEDULED)
+
+    def test_admin_can_start_any_lesson(self):
+        response = self.admin_client.post(f"/api/v1/lessons/{self.other_lesson.id}/start/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_starting_already_in_progress_lesson_is_idempotent(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self.lesson1.refresh_from_db()
+        first_started_at = self.lesson1.started_at
+
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.started_at, first_started_at)
+
+    def test_cannot_start_a_cancelled_lesson(self):
+        lesson_lifecycle.cancel_lesson(self.lesson1, self.teacher1.user)
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # -- completion validation ----------------------------------------------
+
+    def test_cannot_complete_a_lesson_that_was_never_started(self):
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.SCHEDULED)
+
+    def test_cannot_complete_without_attendance(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ")  # homework alone isn't enough
+
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Посещаемость отмечена", str(response.data))
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.IN_PROGRESS)
+
+    def test_cannot_complete_without_homework_or_not_required_flag(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.IN_PROGRESS)
+
+    def test_can_complete_after_attendance_is_filled_and_homework_added(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ")
+
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
+        self.assertIsNotNone(self.lesson1.completed_at)
+        self.assertEqual(self.lesson1.completed_by_id, self.teacher1.user_id)
+
+    def test_can_complete_with_no_homework_once_marked_not_required(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+
+        mark_response = self.teacher1_client.post(
+            f"/api/v1/lessons/{self.lesson1.id}/homework-not-required/", {"value": True}, format="json"
+        )
+        self.assertEqual(mark_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(mark_response.data["homework_not_required"])
+
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
+
+    def test_teacher_cannot_complete_another_teachers_lesson(self):
+        lesson_lifecycle.start_lesson(self.lesson1, self.teacher1.user)
+        response = self.teacher2_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_complete_a_cancelled_lesson(self):
+        lesson_lifecycle.cancel_lesson(self.lesson1, self.teacher1.user)
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_repeated_complete_request_is_idempotent(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ")
+        first = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.lesson1.refresh_from_db()
+        first_completed_at = self.lesson1.completed_at
+
+        second = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.completed_at, first_completed_at)
+        self.assertEqual(self.lesson1.completed_by_id, self.teacher1.user_id)
+
+    # -- cancel ---------------------------------------------------------------
+
+    def test_teacher_can_cancel_own_lesson_with_reason(self):
+        response = self.teacher1_client.post(
+            f"/api/v1/lessons/{self.lesson1.id}/cancel/", {"reason": "Тренер заболел"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.CANCELLED)
+        self.assertEqual(self.lesson1.cancellation_reason, "Тренер заболел")
+
+    def test_teacher_cannot_cancel_another_teachers_lesson(self):
+        response = self.teacher2_client.post(f"/api/v1/lessons/{self.lesson1.id}/cancel/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cancelling_already_cancelled_lesson_is_idempotent(self):
+        lesson_lifecycle.cancel_lesson(self.lesson1, self.teacher1.user, reason="Первая причина")
+        response = self.teacher1_client.post(
+            f"/api/v1/lessons/{self.lesson1.id}/cancel/", {"reason": "Вторая причина"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.CANCELLED)
+        self.assertEqual(self.lesson1.cancellation_reason, "Первая причина")
+
+    def test_completed_lesson_cannot_be_cancelled(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ")
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/cancel/")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
+
+    # -- queryset / filter correctness ---------------------------------------
+
+    def test_completed_lesson_appears_in_completed_queryset(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ")
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+
+        response = self.teacher1_client.get("/api/v1/lessons/", {"status": "completed"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = [row["id"] for row in response.data["results"]]
+        self.assertIn(self.lesson1.id, ids)
+
+    def test_cancelled_lesson_appears_in_cancelled_queryset(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/cancel/")
+
+        response = self.teacher1_client.get("/api/v1/lessons/", {"status": "cancelled"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = [row["id"] for row in response.data["results"]]
+        self.assertIn(self.lesson1.id, ids)
+
+    def test_completed_lesson_is_not_upcoming(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ")
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/complete/")
+
+        counts = lesson_status_counts(Lesson.objects.filter(group=self.group1))
+        self.assertEqual(counts["completed"], 1)
+        # "Upcoming" only ever counts still-SCHEDULED lessons — a completed
+        # one, whatever its date, is never upcoming.
+        upcoming_ids = Lesson.objects.filter(
+            group=self.group1, status=Lesson.Status.SCHEDULED, date__gte=timezone.localdate()
+        ).values_list("id", flat=True)
+        self.assertNotIn(self.lesson1.id, list(upcoming_ids))
+
+    # -- serializer fields ----------------------------------------------------
+
+    def test_serializer_exposes_lifecycle_fields(self):
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for field in (
+            "status", "can_start", "can_complete", "can_cancel",
+            "completion_requirements", "completion_progress",
+            "completed_at", "completed_by", "started_at", "homework_not_required",
+        ):
+            self.assertIn(field, response.data)
+        self.assertTrue(response.data["can_start"])
+        self.assertFalse(response.data["can_complete"])
+
+    def test_status_and_lifecycle_fields_are_read_only_on_plain_patch(self):
+        # A plain PATCH must never be able to reset/forge lifecycle state —
+        # only the dedicated start/complete/cancel actions may change it.
+        response = self.teacher1_client.patch(
+            f"/api/v1/lessons/{self.lesson1.id}/",
+            {"status": "completed", "cancellation_reason": "hacked", "homework_not_required": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.SCHEDULED)
+        self.assertEqual(self.lesson1.cancellation_reason, "")
+        self.assertFalse(self.lesson1.homework_not_required)
+
+
 class LessonStatusKPITests(AcademyTestBase):
     """Completed/Cancelled/Upcoming must reflect the real `Lesson.status`
     value only, never date-based inference — and the same underlying data
@@ -4546,8 +4806,8 @@ class LessonStatusKPITests(AcademyTestBase):
         # A PLANNED lesson whose date has already passed but was never
         # confirmed completed — must NOT count as completed just because
         # the date is in the past (spec §12).
-        self.past_still_planned = make(3, self.today - dt.timedelta(days=1), Lesson.Status.PLANNED)
-        self.upcoming_planned = make(4, self.today + dt.timedelta(days=1), Lesson.Status.PLANNED)
+        self.past_still_planned = make(3, self.today - dt.timedelta(days=1), Lesson.Status.SCHEDULED)
+        self.upcoming_planned = make(4, self.today + dt.timedelta(days=1), Lesson.Status.SCHEDULED)
 
     def test_kpi_helper_counts_real_statuses_only(self):
         kpi = _lesson_status_kpi(Lesson.objects.filter(group=self.group1), self.today)
@@ -4557,6 +4817,36 @@ class LessonStatusKPITests(AcademyTestBase):
         # planned lesson (it's not "upcoming" — it's in the past).
         self.assertEqual(kpi["upcoming"], 1)
         self.assertEqual(kpi["total"], 4)
+        # "Requires attention": only the still-SCHEDULED lesson whose date
+        # has already passed (past_completed/past_cancelled are resolved;
+        # upcoming_planned is still in the future).
+        self.assertEqual(kpi["attention"], 1)
+
+    def test_admin_counters_are_correct_including_in_progress_and_attendance_noise(self):
+        # An in-progress lesson whose slot is already over must also count
+        # as "requires attention" — starting a lesson and never finishing it
+        # is exactly the case the counter exists to surface.
+        gt = self.group1.teachers.get()
+        in_progress_past = Lesson.objects.create(
+            group=self.group1, group_teacher=gt, teacher=self.teacher1, subject=self.subject_python,
+            lesson_number=5, date=self.today - dt.timedelta(days=1),
+            start_time=dt.time(10, 0), end_time=dt.time(11, 0), status=Lesson.Status.IN_PROGRESS,
+        )
+        # Attendance records alone (no status transition) must never be
+        # mistaken for a completed lesson.
+        Attendance.objects.create(student=self.student1, lesson=self.past_still_planned, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student2, lesson=self.past_still_planned, status=Attendance.Status.PRESENT)
+
+        kpi = _lesson_status_kpi(Lesson.objects.filter(group=self.group1), self.today)
+
+        self.assertEqual(kpi["completed"], 1)  # unchanged by the Attendance rows above
+        self.assertEqual(kpi["cancelled"], 1)
+        self.assertEqual(kpi["upcoming"], 1)
+        self.assertEqual(kpi["attention"], 2)  # past_still_planned + in_progress_past
+        self.assertEqual(kpi["total"], 5)
+
+        response = self.admin_web.get(reverse("admin:academy_lesson_changelist"), {"group": self.group1.pk})
+        self.assertContains(response, '<div class="ok-kpi-value">2</div>\n      <div class="ok-kpi-label">Требуют внимания</div>')
 
     def test_group_overview_and_lesson_monitor_report_the_same_numbers(self):
         overview = self.admin_web.get(reverse("admin:academy_group_workspace", args=[self.group1.pk]))

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CalendarDays, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, ListChecks } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, ListChecks } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { groupsApi } from '@/api/groups'
@@ -29,11 +29,13 @@ import {
   DEFAULT_LESSON_VIEW,
   LESSON_VIEW_TABS,
   addDaysISO,
+  attentionWindow,
   dateSectionHeading,
   dateSectionLabel,
   groupLessonsByDate,
   hasLessonPassed,
   isLessonView,
+  needsAttentionCheck,
   nextWeekRange,
   thisWeekRange,
   todayISO,
@@ -46,7 +48,8 @@ import { OPERATIONAL_STATUS_LABELS, useLessonOperationalStatus } from './useLess
 import type { LessonOperationalStatus } from './useLessonOperationalStatus'
 
 const STATUS_OPTIONS: { value: LessonStatus; label: string }[] = [
-  { value: 'planned', label: 'Запланировано' },
+  { value: 'scheduled', label: 'Запланировано' },
+  { value: 'in_progress', label: 'Идёт занятие' },
   { value: 'completed', label: 'Проведено' },
   { value: 'cancelled', label: 'Отменено' },
 ]
@@ -101,6 +104,7 @@ export function LessonsListPage() {
       {view === 'week' ? <GroupedRangeView range={thisWeekRange()} emptyTitle="На этой неделе занятий нет" /> : null}
       {view === 'next_week' ? <GroupedRangeView range={nextWeekRange()} emptyTitle="На следующей неделе занятий нет" /> : null}
       {view === 'upcoming' ? <GroupedRangeView range={upcomingWindow()} emptyTitle="Предстоящих занятий нет" excludePast /> : null}
+      {view === 'attention' ? <AttentionLessonsView groupStudentsCount={groupStudentsCount} /> : null}
       {view === 'all' ? <AllLessonsView groupsData={groupsData} /> : null}
       {view === 'completed' ? <CompletedLessonsView groupsData={groupsData} /> : null}
       {view === 'cancelled' ? <CancelledLessonsView groupsData={groupsData} /> : null}
@@ -120,7 +124,7 @@ function DayLessonsView({ mode, groupStudentsCount }: { mode: 'today' | 'tomorro
   const lessons = data?.results ?? []
 
   const idsNeedingStatus = lessons
-    .filter((lesson) => lesson.status !== 'cancelled' && hasLessonPassed(lesson))
+    .filter((lesson) => needsAttentionCheck(lesson))
     .map((lesson) => lesson.id)
   const enrichment = useLessonEnrichment(idsNeedingStatus)
 
@@ -177,7 +181,7 @@ function DayLessonsView({ mode, groupStudentsCount }: { mode: 'today' | 'tomorro
         <div className="space-y-3">
           {lessons.map((lesson) => {
             const status = enrichment.get(lesson.id)
-            const needsStatus = lesson.status !== 'cancelled' && hasLessonPassed(lesson)
+            const needsStatus = needsAttentionCheck(lesson)
             return (
               <LessonDayCard
                 key={lesson.id}
@@ -246,6 +250,50 @@ function GroupedRangeView({ range, emptyTitle, excludePast = false }: { range: D
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/** "Требуют внимания" — lessons that are still `scheduled`/`in_progress`
+ * but whose slot has already passed: the trainer forgot to start or finish
+ * them. Never based on date alone in isolation — `needsAttentionCheck`
+ * combines the real status with real timing, the same definition the Admin
+ * dashboard's "Requires attention" KPI uses. */
+function AttentionLessonsView({ groupStudentsCount }: { groupStudentsCount: Map<number, number> }) {
+  const range = attentionWindow()
+  const { data: lessons, isPending, isError, refetch } = useQuery({
+    queryKey: ['lessons', 'attention', range],
+    queryFn: () =>
+      fetchAllPages<Lesson>((page) =>
+        lessonsApi.list({ date_from: range.from, date_to: range.to, ordering: '-date,start_time', page }),
+      ),
+  })
+
+  const visible = (lessons ?? []).filter((lesson) => needsAttentionCheck(lesson))
+  const enrichment = useLessonEnrichment(visible.map((lesson) => lesson.id))
+
+  if (isPending) return <LoadingState label="Загружаем занятия…" />
+  if (isError) return <ErrorState onRetry={() => void refetch()} />
+
+  if (visible.length === 0) {
+    return <EmptyState icon={AlertTriangle} title="Нет занятий, требующих внимания" description="Все занятия начаты/завершены вовремя." />
+  }
+
+  return (
+    <div className="space-y-3">
+      {visible.map((lesson) => {
+        const status = enrichment.get(lesson.id)
+        return (
+          <LessonDayCard
+            key={lesson.id}
+            lesson={lesson}
+            studentsCount={groupStudentsCount.get(lesson.group)}
+            attendanceFilled={status?.attendanceFilled}
+            homeworkCount={status?.homeworkCount}
+            isEnriching={!status}
+          />
+        )
+      })}
     </div>
   )
 }

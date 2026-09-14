@@ -10,11 +10,22 @@ export interface HomeworkListParams {
   page?: number
 }
 
+export interface CreateHomeworkPayload {
+  lesson: number
+  title: string
+  description?: string
+  deadline?: string | null
+}
+
 export const homeworkApi = {
   list: (params?: HomeworkListParams): Promise<Paginated<Homework>> =>
     apiClient.get<Paginated<Homework>>('/homework/', { params }).then((r) => r.data),
 
   get: (id: number): Promise<Homework> => apiClient.get<Homework>(`/homework/${id}/`).then((r) => r.data),
+
+  /** Add a Homework to a lesson — a Teacher may only do this for their own lessons. */
+  create: (payload: CreateHomeworkPayload): Promise<Homework> =>
+    apiClient.post<Homework>('/homework/', payload).then((r) => r.data),
 
   /** Every active student of the lesson's group, with their current result (or a `not_submitted` placeholder). */
   getResultsRoster: (id: number): Promise<HomeworkResult[]> =>
