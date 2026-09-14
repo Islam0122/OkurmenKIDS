@@ -192,6 +192,8 @@ export interface Lesson {
   can_start: boolean
   can_complete: boolean
   can_cancel: boolean
+  attendance_completed: boolean
+  homework_added: boolean
   completion_requirements: LessonCompletionRequirement[]
   completion_progress: LessonCompletionProgress
   created_at: string

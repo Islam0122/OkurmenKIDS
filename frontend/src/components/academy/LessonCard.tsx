@@ -1,17 +1,11 @@
 import { Link } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/Badge'
-import type { BadgeTone } from '@/components/ui/Badge'
 import type { Lesson } from '@/types/academy'
 import { cn } from '@/utils/cn'
 import { formatTimeRange } from '@/utils/format'
 
-const STATUS_TONE: Record<Lesson['status'], BadgeTone> = {
-  scheduled: 'muted',
-  in_progress: 'warning',
-  completed: 'success',
-  cancelled: 'danger',
-}
+import { LESSON_STATUS_TONE } from './lessonStatus'
 
 export interface LessonCardProps {
   lesson: Lesson
@@ -41,7 +35,7 @@ export function LessonCard({ lesson, compact = false, className }: LessonCardPro
       {lesson.room_name ? <p className="text-xs text-ink-muted">Аудитория: {lesson.room_name}</p> : null}
       {!compact ? (
         <div className="mt-2">
-          <Badge tone={STATUS_TONE[lesson.status]}>{lesson.status_display}</Badge>
+          <Badge tone={LESSON_STATUS_TONE[lesson.status]}>{lesson.status_display}</Badge>
         </div>
       ) : null}
     </Link>

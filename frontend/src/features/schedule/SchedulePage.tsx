@@ -7,6 +7,7 @@ import { lessonsApi, type LessonListParams } from '@/api/lessons'
 import { roomsApi } from '@/api/rooms'
 import { subjectsApi } from '@/api/subjects'
 import { RoomAvailabilityPanel } from '@/components/academy/RoomAvailabilityPanel'
+import { LESSON_STATUS_OPTIONS } from '@/components/academy/lessonStatus'
 import { DaySchedule } from '@/components/calendar/DaySchedule'
 import { WeekCalendar } from '@/components/calendar/WeekCalendar'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -19,13 +20,6 @@ import { fetchAllPages } from '@/lib/fetchAllPages'
 import type { Lesson, LessonStatus } from '@/types/academy'
 
 type ViewMode = 'week' | 'day'
-
-const STATUS_OPTIONS: { value: LessonStatus; label: string }[] = [
-  { value: 'scheduled', label: 'Запланировано' },
-  { value: 'in_progress', label: 'Идёт занятие' },
-  { value: 'completed', label: 'Проведено' },
-  { value: 'cancelled', label: 'Отменено' },
-]
 
 export function SchedulePage() {
   const [anchor, setAnchor] = useState(() => new Date())
@@ -160,7 +154,7 @@ export function SchedulePage() {
           placeholder="Все статусы"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
-          options={STATUS_OPTIONS}
+          options={LESSON_STATUS_OPTIONS}
         />
       </div>
 
