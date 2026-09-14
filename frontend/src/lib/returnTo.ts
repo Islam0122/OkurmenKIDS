@@ -9,6 +9,8 @@
  * `location`/`searchParams` MUST go through `resolveReturnTo` before being
  * handed to `navigate()`. Never `navigate(rawQueryValue)` directly.
  */
+import { useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 /** True only for a same-app relative path — never an absolute URL
  * (`https://evil.com`), a protocol-relative one (`//evil.com`, browsers
@@ -57,4 +59,26 @@ export function attendanceUrlFor(lessonId: number, returnTo: string): string {
  * `attendanceUrlFor`, sharing the same `returnTo` mechanism. */
 export function homeworkUrlFor(homeworkId: number, returnTo: string): string {
   return withReturnTo(`/app/homework/${homeworkId}`, returnTo)
+}
+
+export interface ReturnLink {
+  /** The safe, resolved destination — the real caller's page when one was
+   * given, otherwise `fallback`. The only value any of these pages'
+   * "← back" link or save-and-return navigation should ever use. */
+  to: string
+  /** True when this page was actually opened from another page's "view X"
+   * action (a real, safe `returnTo` was supplied) rather than a bare/deep
+   * link — the one signal the visible back link's own label is chosen
+   * from ("Вернуться к занятию" vs "К списку …"). */
+  hasOrigin: boolean
+}
+
+/** Reads *this* page's own `returnTo` query param and resolves it against
+ * `fallback` — the single place Attendance, Homework, and Homework Results
+ * all derive both their auto-navigate-after-save target and their visible
+ * "← back" link from, so the two can never point two different ways. */
+export function useReturnLink(fallback: string): ReturnLink {
+  const [searchParams] = useSearchParams()
+  const raw = searchParams.get('returnTo')
+  return useMemo(() => ({ to: resolveReturnTo(raw, fallback), hasOrigin: isSafeInternalPath(raw) }), [raw, fallback])
 }

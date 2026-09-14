@@ -56,6 +56,34 @@ describe('AttendancePage', () => {
     )
   })
 
+  it('shows a "← Вернуться к занятию" back link when opened from Lesson Detail, and it navigates there', async () => {
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7 }))
+    vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([
+      buildAttendanceRecord({ student: 1, student_name: 'Иванов Пётр', status: 'present' }),
+    ])
+
+    const user = userEvent.setup()
+    renderAttendance('/app/attendance?lesson=7&returnTo=%2Fapp%2Flessons%2F7')
+
+    const backLink = await screen.findByRole('link', { name: /Вернуться к занятию/ })
+    expect(screen.queryByRole('link', { name: /К списку посещаемости/ })).not.toBeInTheDocument()
+    await user.click(backLink)
+
+    expect(await screen.findByText('Lesson detail page')).toBeInTheDocument()
+  })
+
+  it('shows a "← К списку посещаемости" back link when opened directly, without a returnTo', async () => {
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7 }))
+    vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([
+      buildAttendanceRecord({ student: 1, student_name: 'Иванов Пётр', status: 'present' }),
+    ])
+
+    renderAttendance('/app/attendance?lesson=7')
+
+    expect(await screen.findByRole('link', { name: /К списку посещаемости/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Вернуться к занятию/ })).not.toBeInTheDocument()
+  })
+
   it('returns to the exact Lesson Detail page it was opened from after a successful save', async () => {
     vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7 }))
     vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([

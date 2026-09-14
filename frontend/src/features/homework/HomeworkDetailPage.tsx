@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 
 import { HomeworkResultTable } from '@/components/academy/HomeworkResultTable'
 import type { HomeworkResultPatch, HomeworkResultRow } from '@/components/academy/HomeworkResultTable'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { BackLink } from '@/components/ui/BackLink'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -11,7 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { useToast } from '@/components/ui/Toast'
 import { useHomeworkDetail, useHomeworkResultsRoster, useSaveHomeworkResults } from '@/hooks/useHomework'
 import { extractErrorMessage } from '@/lib/apiError'
-import { resolveReturnTo } from '@/lib/returnTo'
+import { useReturnLink } from '@/lib/returnTo'
 import type { BulkHomeworkResultItem, HomeworkResultStatus } from '@/types/homework'
 import { formatDate } from '@/utils/format'
 
@@ -28,11 +29,11 @@ interface LocalEntry {
 export function HomeworkDetailPage() {
   const { id } = useParams<{ id: string }>()
   const homeworkId = Number(id)
-  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  // Never trust the raw query value — only a same-app path (or the safe
-  // fallback) is ever handed to `navigate()`.
-  const returnTo = resolveReturnTo(searchParams.get('returnTo'), HOMEWORK_LIST_PATH)
+  // Never trust the raw query value — `useReturnLink` only ever hands back
+  // this same-app path or the safe fallback, so a crafted link can't send a
+  // teacher who just saved results off to an external site.
+  const returnLink = useReturnLink(HOMEWORK_LIST_PATH)
 
   const { data: homework, isPending, isError, refetch } = useHomeworkDetail(homeworkId)
   const roster = useHomeworkResultsRoster(homeworkId)
@@ -88,7 +89,7 @@ export function HomeworkDetailPage() {
       // the completion checklist update on their own. `replace` drops the
       // just-submitted results form from history so Back doesn't return to
       // a now-stale page.
-      navigate(returnTo, { replace: true })
+      navigate(returnLink.to, { replace: true })
     } catch (error) {
       showToast(extractErrorMessage(error, 'Не удалось сохранить результаты'), 'error')
     }
@@ -107,6 +108,8 @@ export function HomeworkDetailPage() {
 
   return (
     <div>
+      <BackLink to={returnLink.to}>{returnLink.hasOrigin ? 'Вернуться к занятию' : 'К списку домашних заданий'}</BackLink>
+
       <PageHeader
         title={homework.title}
         description={`${homework.group_name} · ${formatDate(homework.lesson_date, false)}${homework.deadline ? ` · срок: ${formatDate(homework.deadline)}` : ''}`}
@@ -126,12 +129,7 @@ export function HomeworkDetailPage() {
         </div>
       ) : null}
 
-      <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm font-medium text-ink-secondary">Результаты студентов</p>
-        <Link to={`/app/lessons/${homework.lesson}`} className="text-sm text-brand-700 hover:underline">
-          Открыть занятие
-        </Link>
-      </div>
+      <p className="mb-4 text-sm font-medium text-ink-secondary">Результаты студентов</p>
 
       {roster.isPending ? <LoadingState label="Загружаем список студентов…" /> : null}
       {roster.isError ? <ErrorState onRetry={() => void roster.refetch()} /> : null}

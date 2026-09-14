@@ -7,6 +7,7 @@ import { lessonsApi } from '@/api/lessons'
 import { AttendanceTable } from '@/components/academy/AttendanceTable'
 import type { AttendanceRow } from '@/components/academy/AttendanceTable'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { BackLink } from '@/components/ui/BackLink'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -17,7 +18,8 @@ import { useToast } from '@/components/ui/Toast'
 import { useAttendanceRoster, useSaveAttendance } from '@/hooks/useAttendance'
 import { useLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
-import { resolveReturnTo } from '@/lib/returnTo'
+import type { ReturnLink } from '@/lib/returnTo'
+import { useReturnLink } from '@/lib/returnTo'
 import { todayISO } from '@/features/dashboard/useDashboardData'
 import type { AttendanceStatus } from '@/types/attendance'
 import { formatDate, formatTimeRange } from '@/utils/format'
@@ -31,16 +33,16 @@ export function AttendancePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const lessonParam = searchParams.get('lesson')
   const lessonId = lessonParam ? Number(lessonParam) : undefined
-  // Never trust the raw query value — `resolveReturnTo` only ever hands back
+  // Never trust the raw query value — `useReturnLink` only ever hands back
   // this same-app path or the safe fallback, so a crafted link can't send a
   // teacher who just saved attendance off to an external site.
-  const returnTo = resolveReturnTo(searchParams.get('returnTo'), ATTENDANCE_LIST_PATH)
+  const returnLink = useReturnLink(ATTENDANCE_LIST_PATH)
 
   if (!lessonId) {
     return <LessonPicker onSelect={(id) => setSearchParams({ lesson: String(id) })} />
   }
 
-  return <AttendanceEditor lessonId={lessonId} returnTo={returnTo} onChangeLesson={() => setSearchParams({})} />
+  return <AttendanceEditor lessonId={lessonId} returnLink={returnLink} onChangeLesson={() => setSearchParams({})} />
 }
 
 function LessonPicker({ onSelect }: { onSelect: (lessonId: number) => void }) {
@@ -92,11 +94,11 @@ function LessonPicker({ onSelect }: { onSelect: (lessonId: number) => void }) {
 
 function AttendanceEditor({
   lessonId,
-  returnTo,
+  returnLink,
   onChangeLesson,
 }: {
   lessonId: number
-  returnTo: string
+  returnLink: ReturnLink
   onChangeLesson: () => void
 }) {
   const { data: lesson } = useLesson(lessonId)
@@ -139,7 +141,7 @@ function AttendanceEditor({
       // the next suggested action ("Домашнее задание"/"Завершить занятие")
       // update on their own. `replace` drops the just-submitted attendance
       // form from history so Back doesn't return to a now-stale page.
-      navigate(returnTo, { replace: true })
+      navigate(returnLink.to, { replace: true })
     } catch (error) {
       showToast(extractErrorMessage(error, 'Не удалось сохранить посещаемость'), 'error')
     }
@@ -153,6 +155,8 @@ function AttendanceEditor({
 
   return (
     <div>
+      <BackLink to={returnLink.to}>{returnLink.hasOrigin ? 'Вернуться к занятию' : 'К списку посещаемости'}</BackLink>
+
       <PageHeader
         title="Посещаемость"
         description={lesson ? `${formatDate(lesson.date)} · ${formatTimeRange(lesson.start_time, lesson.end_time)} · ${lesson.group_name}` : undefined}
