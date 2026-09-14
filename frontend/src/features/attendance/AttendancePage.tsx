@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CalendarCheck } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { lessonsApi } from '@/api/lessons'
 import { AttendanceTable } from '@/components/academy/AttendanceTable'
@@ -16,20 +16,30 @@ import { useToast } from '@/components/ui/Toast'
 import { useAttendanceRoster, useSaveAttendance } from '@/hooks/useAttendance'
 import { useLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
+import { resolveReturnTo } from '@/lib/returnTo'
 import { todayISO } from '@/features/dashboard/useDashboardData'
 import type { AttendanceStatus } from '@/types/attendance'
 import { formatDate, formatTimeRange } from '@/utils/format'
+
+/** No lesson (opened straight from the nav/dashboard, not from a Lesson
+ * Detail page) has nowhere sensible to return to but the attendance list
+ * itself. */
+const ATTENDANCE_LIST_PATH = '/app/attendance'
 
 export function AttendancePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const lessonParam = searchParams.get('lesson')
   const lessonId = lessonParam ? Number(lessonParam) : undefined
+  // Never trust the raw query value — `resolveReturnTo` only ever hands back
+  // this same-app path or the safe fallback, so a crafted link can't send a
+  // teacher who just saved attendance off to an external site.
+  const returnTo = resolveReturnTo(searchParams.get('returnTo'), ATTENDANCE_LIST_PATH)
 
   if (!lessonId) {
     return <LessonPicker onSelect={(id) => setSearchParams({ lesson: String(id) })} />
   }
 
-  return <AttendanceEditor lessonId={lessonId} onChangeLesson={() => setSearchParams({})} />
+  return <AttendanceEditor lessonId={lessonId} returnTo={returnTo} onChangeLesson={() => setSearchParams({})} />
 }
 
 function LessonPicker({ onSelect }: { onSelect: (lessonId: number) => void }) {
@@ -79,11 +89,20 @@ function LessonPicker({ onSelect }: { onSelect: (lessonId: number) => void }) {
   )
 }
 
-function AttendanceEditor({ lessonId, onChangeLesson }: { lessonId: number; onChangeLesson: () => void }) {
+function AttendanceEditor({
+  lessonId,
+  returnTo,
+  onChangeLesson,
+}: {
+  lessonId: number
+  returnTo: string
+  onChangeLesson: () => void
+}) {
   const { data: lesson } = useLesson(lessonId)
   const roster = useAttendanceRoster(lessonId)
   const saveMutation = useSaveAttendance(lessonId)
   const { showToast } = useToast()
+  const navigate = useNavigate()
 
   const [localStatus, setLocalStatus] = useState<Record<number, AttendanceStatus>>({})
 
@@ -103,8 +122,18 @@ function AttendanceEditor({ lessonId, onChangeLesson }: { lessonId: number; onCh
       status: localStatus[row.student] ?? 'present',
     }))
     try {
+      // One bulk upsert either way (see services.attendance_service on the
+      // backend) — a first save creates every record, a later one updates
+      // them, with no branching needed here for "create vs. update".
       await saveMutation.mutateAsync(items)
-      showToast('Посещаемость сохранена', 'success')
+      showToast('Посещаемость успешно сохранена', 'success')
+      // The mutation already invalidated this lesson's cached detail (see
+      // useSaveAttendance), so landing back on it refetches fresh —
+      // attendance_completed flips to true, the completion checklist and
+      // the next suggested action ("Домашнее задание"/"Завершить занятие")
+      // update on their own. `replace` drops the just-submitted attendance
+      // form from history so Back doesn't return to a now-stale page.
+      navigate(returnTo, { replace: true })
     } catch (error) {
       showToast(extractErrorMessage(error, 'Не удалось сохранить посещаемость'), 'error')
     }

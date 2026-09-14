@@ -15,6 +15,7 @@ import { useAttendanceRoster } from '@/hooks/useAttendance'
 import { useCreateHomework, useHomeworkList } from '@/hooks/useHomework'
 import { useCancelLesson, useCompleteLesson, useLesson, useSetHomeworkNotRequired, useStartLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
+import { attendanceUrlFor } from '@/lib/returnTo'
 import { cn } from '@/utils/cn'
 import { formatDate, formatTimeRange } from '@/utils/format'
 
@@ -83,7 +84,7 @@ export function LessonDetailPage() {
         return
       case 'attendance':
       case 'view_attendance':
-        navigate(`/app/attendance?lesson=${lesson!.id}`)
+        navigate(attendanceUrlFor(lesson.id, `/app/lessons/${lesson.id}`))
         return
       case 'homework':
         if (homework) goToHomework()
