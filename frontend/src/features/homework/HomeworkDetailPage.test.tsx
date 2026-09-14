@@ -72,6 +72,34 @@ describe('HomeworkDetailPage', () => {
     expect(scoreInput.value).toBe('10')
   })
 
+  it('shows a "← Вернуться к занятию" back link when opened from Lesson Detail, and it navigates there', async () => {
+    vi.mocked(homeworkApi.get).mockResolvedValue(buildHomework({ id: 55, lesson: 7 }))
+    vi.mocked(homeworkApi.getResultsRoster).mockResolvedValue([
+      buildHomeworkResult({ student: 1, student_name: 'Иванов Пётр' }),
+    ])
+
+    const user = userEvent.setup()
+    renderHomeworkDetail('/app/homework/55?returnTo=%2Fapp%2Flessons%2F7')
+
+    const backLink = await screen.findByRole('link', { name: /Вернуться к занятию/ })
+    expect(screen.queryByRole('link', { name: /К списку домашних заданий/ })).not.toBeInTheDocument()
+    await user.click(backLink)
+
+    expect(await screen.findByText('Lesson detail page')).toBeInTheDocument()
+  })
+
+  it('shows a "← К списку домашних заданий" back link when opened directly, without a returnTo', async () => {
+    vi.mocked(homeworkApi.get).mockResolvedValue(buildHomework({ id: 55 }))
+    vi.mocked(homeworkApi.getResultsRoster).mockResolvedValue([
+      buildHomeworkResult({ student: 1, student_name: 'Иванов Пётр' }),
+    ])
+
+    renderHomeworkDetail('/app/homework/55')
+
+    expect(await screen.findByRole('link', { name: /К списку домашних заданий/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Вернуться к занятию/ })).not.toBeInTheDocument()
+  })
+
   it('returns to the exact Lesson Detail page it was opened from after a successful save', async () => {
     vi.mocked(homeworkApi.get).mockResolvedValue(buildHomework({ id: 55, lesson: 7 }))
     vi.mocked(homeworkApi.getResultsRoster).mockResolvedValue([
