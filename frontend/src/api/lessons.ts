@@ -28,4 +28,18 @@ export const lessonsApi = {
   /** Bulk create/update Attendance for the given students in one call. */
   saveAttendance: (id: number, items: BulkAttendanceItem[]): Promise<AttendanceRecord[]> =>
     apiClient.post<AttendanceRecord[]>(`/lessons/${id}/attendance/`, items).then((r) => r.data),
+
+  /** SCHEDULED → IN_PROGRESS. Idempotent. */
+  start: (id: number): Promise<Lesson> => apiClient.post<Lesson>(`/lessons/${id}/start/`).then((r) => r.data),
+
+  /** IN_PROGRESS → COMPLETED. Rejected (400) unless the completion checklist is satisfied. Idempotent. */
+  complete: (id: number): Promise<Lesson> => apiClient.post<Lesson>(`/lessons/${id}/complete/`).then((r) => r.data),
+
+  /** SCHEDULED/IN_PROGRESS → CANCELLED. A completed lesson can never be cancelled. Idempotent. */
+  cancel: (id: number, reason?: string): Promise<Lesson> =>
+    apiClient.post<Lesson>(`/lessons/${id}/cancel/`, { reason: reason ?? '' }).then((r) => r.data),
+
+  /** Explicitly mark (or unmark) that this lesson needs no Homework. */
+  setHomeworkNotRequired: (id: number, value = true): Promise<Lesson> =>
+    apiClient.post<Lesson>(`/lessons/${id}/homework-not-required/`, { value }).then((r) => r.data),
 }

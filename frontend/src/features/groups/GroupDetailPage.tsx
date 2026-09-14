@@ -30,7 +30,8 @@ const STATUS_TONE: Record<Group['status'], BadgeTone> = {
 }
 
 const LESSON_STATUS_TONE: Record<LessonStatus, BadgeTone> = {
-  planned: 'muted',
+  scheduled: 'muted',
+  in_progress: 'warning',
   completed: 'success',
   cancelled: 'danger',
 }

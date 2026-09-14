@@ -63,8 +63,10 @@ from .serializers import (
     GroupSerializer,
     GroupTeacherLessonPlanSerializer,
     GroupTeacherSerializer,
+    HomeworkNotRequiredRequestSerializer,
     HomeworkResultSerializer,
     HomeworkSerializer,
+    LessonCancelRequestSerializer,
     LessonSerializer,
     RoomAvailabilityRequestSerializer,
     RoomAvailabilitySerializer,
@@ -76,6 +78,7 @@ from .serializers import (
 from .services.analytics import COMPARE_CHOICES, get_dashboard
 from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
+from .services import lesson_lifecycle
 from .services.import_export import (
     StudentImportValidationError,
     export_students,
@@ -470,7 +473,7 @@ class GroupViewSet(viewsets.ModelViewSet):
 
         payload = {
             "group": GroupSerializer(group, context=self.get_serializer_context()).data,
-            "lessons": GroupScheduleLessonSerializer(lessons, many=True).data,
+            "lessons": GroupScheduleLessonSerializer(lessons, many=True, context=self.get_serializer_context()).data,
         }
         return Response(payload)
 
@@ -693,6 +696,81 @@ class LessonViewSet(
 
         records_qs = Attendance.objects.filter(pk__in=[r.pk for r in records]).select_related("student")
         return Response(AttendanceSerializer(records_qs, many=True).data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        tags=["Lessons"],
+        request=None,
+        responses=LessonSerializer,
+        description="SCHEDULED → IN_PROGRESS. Idempotent — starting an already in-progress lesson is a no-op.",
+    )
+    @action(detail=True, methods=["post"], url_path="start")
+    def start(self, request, pk=None):
+        lesson = self.get_object()
+        try:
+            lesson = lesson_lifecycle.start_lesson(lesson, request.user)
+        except DjangoValidationError as exc:
+            raise _as_drf_validation_error(exc)
+        return Response(LessonSerializer(lesson, context=self.get_serializer_context()).data)
+
+    @extend_schema(
+        tags=["Lessons"],
+        request=None,
+        responses=LessonSerializer,
+        description=(
+            "IN_PROGRESS → COMPLETED. Rejected (400) unless attendance is fully marked and either a "
+            "Homework exists or homework_not_required has been set. Idempotent — completing an already "
+            "completed lesson is a no-op and never re-checks requirements."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, pk=None):
+        lesson = self.get_object()
+        try:
+            lesson = lesson_lifecycle.complete_lesson(lesson, request.user)
+        except DjangoValidationError as exc:
+            raise _as_drf_validation_error(exc)
+        return Response(LessonSerializer(lesson, context=self.get_serializer_context()).data)
+
+    @extend_schema(
+        tags=["Lessons"],
+        request=LessonCancelRequestSerializer,
+        responses=LessonSerializer,
+        description=(
+            "SCHEDULED/IN_PROGRESS → CANCELLED. A completed lesson can never be cancelled. "
+            "Idempotent — cancelling an already cancelled lesson is a no-op."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        lesson = self.get_object()
+        body = LessonCancelRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            lesson = lesson_lifecycle.cancel_lesson(lesson, request.user, reason=body.validated_data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _as_drf_validation_error(exc)
+        return Response(LessonSerializer(lesson, context=self.get_serializer_context()).data)
+
+    @extend_schema(
+        tags=["Lessons"],
+        request=HomeworkNotRequiredRequestSerializer,
+        responses=LessonSerializer,
+        description=(
+            "Explicitly mark (or unmark) that this lesson needs no Homework — the only alternative to a "
+            "real Homework row for satisfying the completion checklist. Only while the lesson is still "
+            "open (scheduled/in_progress)."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="homework-not-required")
+    def homework_not_required(self, request, pk=None):
+        lesson = self.get_object()
+        body = HomeworkNotRequiredRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            lesson = lesson_lifecycle.set_homework_not_required(lesson, body.validated_data["value"])
+        except DjangoValidationError as exc:
+            raise _as_drf_validation_error(exc)
+        return Response(LessonSerializer(lesson, context=self.get_serializer_context()).data)
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from ..users.models import Subject, Teacher
+from ..users.models import Subject, Teacher, User
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 
 
@@ -796,7 +796,8 @@ class Lesson(models.Model):
     objects = LessonQuerySet.as_manager()
 
     class Status(models.TextChoices):
-        PLANNED = "planned", "Запланирован"
+        SCHEDULED = "scheduled", "Запланирован"
+        IN_PROGRESS = "in_progress", "Идёт занятие"
         COMPLETED = "completed", "Проведён"
         CANCELLED = "cancelled", "Отменён"
 
@@ -922,7 +923,7 @@ class Lesson(models.Model):
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.PLANNED,
+        default=Status.SCHEDULED,
         db_index=True,
         verbose_name="Статус",
     )
@@ -931,6 +932,36 @@ class Lesson(models.Model):
         max_length=255,
         blank=True,
         verbose_name="Причина отмены",
+    )
+
+    homework_not_required = models.BooleanField(
+        default=False,
+        verbose_name="ДЗ не требуется",
+        help_text=(
+            "Явно отмечено тренером/администратором как занятие без домашнего "
+            "задания — снимает требование иметь Homework для завершения занятия."
+        ),
+    )
+
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Начато",
+    )
+
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Завершено",
+    )
+
+    completed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="completed_lessons",
+        verbose_name="Завершил",
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")

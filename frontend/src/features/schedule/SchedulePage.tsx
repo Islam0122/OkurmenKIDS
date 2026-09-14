@@ -21,7 +21,8 @@ import type { Lesson, LessonStatus } from '@/types/academy'
 type ViewMode = 'week' | 'day'
 
 const STATUS_OPTIONS: { value: LessonStatus; label: string }[] = [
-  { value: 'planned', label: 'Запланировано' },
+  { value: 'scheduled', label: 'Запланировано' },
+  { value: 'in_progress', label: 'Идёт занятие' },
   { value: 'completed', label: 'Проведено' },
   { value: 'cancelled', label: 'Отменено' },
 ]

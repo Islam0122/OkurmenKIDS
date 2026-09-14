@@ -34,6 +34,11 @@
     <div class="ok-kpi-label">Отменённые занятия</div>
   </div>
   <div class="ok-kpi-card">
+    <div class="ok-kpi-icon"><i class="bi bi-exclamation-triangle"></i></div>
+    <div class="ok-kpi-value">{{ kpi.attention_lessons }}</div>
+    <div class="ok-kpi-label">Требуют внимания</div>
+  </div>
+  <div class="ok-kpi-card">
     <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
     <div class="ok-kpi-value">{% if kpi.attendance_rate is not None %}{{ kpi.attendance_rate }}%{% else %}—{% endif %}</div>
     <div class="ok-kpi-label">Посещаемость</div>

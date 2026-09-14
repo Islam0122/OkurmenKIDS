@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { homeworkApi, homeworkResultsApi, type HomeworkListParams, type HomeworkResultListParams } from '@/api/homework'
+import {
+  homeworkApi,
+  homeworkResultsApi,
+  type CreateHomeworkPayload,
+  type HomeworkListParams,
+  type HomeworkResultListParams,
+} from '@/api/homework'
 import type { BulkHomeworkResultItem } from '@/types/homework'
 
 export function useHomeworkList(params: HomeworkListParams) {
@@ -30,6 +36,19 @@ export function useHomeworkResultsList(params: HomeworkResultListParams) {
   return useQuery({
     queryKey: ['homework-results', 'list', params],
     queryFn: () => homeworkResultsApi.list(params),
+  })
+}
+
+export function useCreateHomework() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (payload: CreateHomeworkPayload) => homeworkApi.create(payload),
+    onSuccess: (_data, payload) => {
+      void queryClient.invalidateQueries({ queryKey: ['homework', 'list'] })
+      void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail', payload.lesson] })
+      void queryClient.invalidateQueries({ queryKey: ['lessons', 'list'] })
+    },
   })
 }
 

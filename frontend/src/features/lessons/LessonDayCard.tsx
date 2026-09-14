@@ -10,7 +10,8 @@ import { formatTimeRange } from '@/utils/format'
 import { hasLessonPassed } from './lessonViews'
 
 const STATUS_TONE: Record<Lesson['status'], BadgeTone> = {
-  planned: 'muted',
+  scheduled: 'muted',
+  in_progress: 'warning',
   completed: 'success',
   cancelled: 'danger',
 }
@@ -26,13 +27,18 @@ export interface LessonDayCardProps {
 
 /**
  * The detailed "Today"/"Tomorrow" row: what a Trainer needs to act on one
- * lesson without opening it first. Quick actions and the checklist depend
- * on real timing (`hasLessonPassed`), never on the DB `status` alone — a
- * `planned` lesson whose slot is over still needs attendance/homework done.
+ * lesson without opening it first. The badge always reflects the real
+ * `Lesson.status` (never inferred from the clock) — the one exception is a
+ * still-`scheduled` lesson whose slot is already over, shown as "Требует
+ * внимания" since the trainer never explicitly started/finished it (see
+ * `needsAttentionCheck` — this is the same "requires attention" concept the
+ * Admin dashboard's KPI uses, computed here from the same real status).
  */
 export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homeworkCount, isEnriching }: LessonDayCardProps) {
   const isCancelled = lesson.status === 'cancelled'
-  const isPast = !isCancelled && hasLessonPassed(lesson)
+  const isCompleted = lesson.status === 'completed'
+  const isInProgress = lesson.status === 'in_progress'
+  const needsAttentionCheck = !isCancelled && !isCompleted && (isInProgress || hasLessonPassed(lesson))
   const hasMaterials = Boolean(lesson.youtube_url) || lesson.presentation_urls.length > 0
 
   return (
@@ -53,8 +59,12 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
 
         {isCancelled ? (
           <Badge tone={STATUS_TONE.cancelled}>Отменено</Badge>
-        ) : isPast ? (
-          <Badge tone={STATUS_TONE[lesson.status]}>{lesson.status_display}</Badge>
+        ) : isCompleted ? (
+          <Badge tone={STATUS_TONE.completed}>{lesson.status_display}</Badge>
+        ) : isInProgress ? (
+          <Badge tone={STATUS_TONE.in_progress}>Идёт занятие</Badge>
+        ) : hasLessonPassed(lesson) ? (
+          <Badge tone="danger">Требует внимания</Badge>
         ) : (
           <Badge tone="muted">Предстоит</Badge>
         )}
@@ -64,7 +74,7 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
         lesson.cancellation_reason ? (
           <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">Причина: {lesson.cancellation_reason}</p>
         ) : null
-      ) : isPast ? (
+      ) : needsAttentionCheck ? (
         <div className="mt-3 space-y-1 text-sm">
           {isEnriching ? (
             <p className="flex items-center gap-1.5 text-ink-muted">
