@@ -163,6 +163,28 @@ export interface LessonCompletionProgress {
   is_complete: boolean
 }
 
+/** `apps.academy.services.lesson_summary.attendance_summary` — real,
+ * backend-calculated counts, never re-derived from a separate roster fetch. */
+export interface LessonAttendanceSummary {
+  total_students: number
+  present: number
+  absent: number
+  late: number
+  excused: number
+  /** `null` until at least one student has been marked. */
+  attendance_rate: number | null
+}
+
+/** `apps.academy.services.lesson_summary.homework_summary` — `null` when
+ * the lesson has no Homework at all. */
+export interface LessonHomeworkSummary {
+  results_total: number
+  checked: number
+  pending: number
+  /** `null` until at least one result has a score. */
+  average_score: number | null
+}
+
 /** `apps.academy.serializers.LessonSerializer` */
 export interface Lesson {
   id: number
@@ -196,6 +218,9 @@ export interface Lesson {
   homework_added: boolean
   completion_requirements: LessonCompletionRequirement[]
   completion_progress: LessonCompletionProgress
+  attendance_summary: LessonAttendanceSummary
+  homework_summary: LessonHomeworkSummary | null
+  attendance_editable: boolean
   created_at: string
   updated_at: string
 }

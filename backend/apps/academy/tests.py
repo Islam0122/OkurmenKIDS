@@ -4874,6 +4874,169 @@ class HomeworkResultsLockedAfterCompletionTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
 
 
+class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
+    """Once a lesson is COMPLETED or CANCELLED, a Teacher can no longer
+    attach new Attendance or Homework to it — the broader "immutable
+    historical record" rule (views._assert_lesson_editable /
+    services.lesson_lifecycle.lesson_editing_locked), on top of the
+    narrower homework-results-only lock tested separately above."""
+
+    def setUp(self):
+        super().setUp()
+        self.lesson1 = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        self.other_lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number")[1]
+
+        for student in (self.student1, self.student2):
+            Attendance.objects.create(student=student, lesson=self.lesson1, status=Attendance.Status.PRESENT)
+        lesson_lifecycle.start_lesson(self.lesson1, self.teacher1.user)
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
+        lesson_lifecycle.complete_lesson(self.lesson1, self.teacher1.user)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
+
+    def test_teacher_cannot_bulk_mark_attendance_after_completion(self):
+        response = self.teacher1_client.post(
+            f"/api/v1/lessons/{self.lesson1.id}/attendance/",
+            [{"student": self.student1.id, "status": "absent"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        attendance = Attendance.objects.get(student=self.student1, lesson=self.lesson1)
+        self.assertEqual(attendance.status, Attendance.Status.PRESENT)  # untouched
+
+    def test_teacher_cannot_create_attendance_directly_after_completion(self):
+        response = self.teacher1_client.post(
+            "/api/v1/attendance/",
+            {"student": self.student1.id, "lesson": self.other_lesson.id, "status": "present"},
+            format="json",
+        )
+        # other_lesson is still SCHEDULED — sanity check the direct-create
+        # path itself works before proving it's blocked once completed.
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+        # Remove student2's existing record first so the attempt below hits
+        # the completion lock (403), not the serializer's own "already
+        # marked" uniqueness check (400) — the two are independent guards.
+        Attendance.objects.filter(student=self.student2, lesson=self.lesson1).delete()
+        response = self.teacher1_client.post(
+            "/api/v1/attendance/",
+            {"student": self.student2.id, "lesson": self.lesson1.id, "status": "present"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_cannot_update_existing_attendance_after_completion(self):
+        record = Attendance.objects.get(student=self.student1, lesson=self.lesson1)
+        response = self.teacher1_client.patch(
+            f"/api/v1/attendance/{record.id}/", {"status": "absent"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        record.refresh_from_db()
+        self.assertEqual(record.status, Attendance.Status.PRESENT)
+
+    def test_teacher_cannot_add_homework_after_completion(self):
+        response = self.teacher1_client.post(
+            "/api/v1/homework/",
+            {"lesson": self.lesson1.id, "title": "Ещё одно ДЗ"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_cannot_edit_attendance_or_homework_after_cancellation(self):
+        lesson_lifecycle.cancel_lesson(self.other_lesson, self.teacher1.user)
+
+        attendance_response = self.teacher1_client.post(
+            f"/api/v1/lessons/{self.other_lesson.id}/attendance/",
+            [{"student": self.student1.id, "status": "present"}],
+            format="json",
+        )
+        self.assertEqual(attendance_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        homework_response = self.teacher1_client.post(
+            "/api/v1/homework/",
+            {"lesson": self.other_lesson.id, "title": "ДЗ на отменённое занятие"},
+            format="json",
+        )
+        self.assertEqual(homework_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_still_edit_after_completion(self):
+        response = self.admin_client.post(
+            f"/api/v1/lessons/{self.lesson1.id}/attendance/",
+            [{"student": self.student1.id, "status": "late"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+    def test_attendance_editable_field_mirrors_the_lock(self):
+        """LessonSerializer.attendance_editable — the frontend's own
+        read-only switch for the attendance page — must never drift from
+        what the backend actually enforces above."""
+        completed_response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        self.assertFalse(completed_response.data["attendance_editable"])
+
+        scheduled_response = self.teacher1_client.get(f"/api/v1/lessons/{self.other_lesson.id}/")
+        self.assertTrue(scheduled_response.data["attendance_editable"])
+
+
+class LessonSummaryFieldsTests(AcademyTestBase):
+    """LessonSerializer.attendance_summary/homework_summary — the real,
+    backend-calculated numbers behind the completed Lesson Detail page's
+    "Итоги занятия" KPI section (services.lesson_summary)."""
+
+    def setUp(self):
+        super().setUp()
+        self.lesson1 = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+
+    def test_attendance_summary_before_any_marking(self):
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        summary = response.data["attendance_summary"]
+        self.assertEqual(summary["total_students"], 2)
+        self.assertEqual(summary["present"], 0)
+        self.assertEqual(summary["attendance_rate"], None)
+
+    def test_attendance_summary_reflects_real_records(self):
+        Attendance.objects.create(student=self.student1, lesson=self.lesson1, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student2, lesson=self.lesson1, status=Attendance.Status.LATE)
+
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        summary = response.data["attendance_summary"]
+        self.assertEqual(summary["total_students"], 2)
+        self.assertEqual(summary["present"], 1)
+        self.assertEqual(summary["late"], 1)
+        self.assertEqual(summary["absent"], 0)
+        self.assertEqual(summary["excused"], 0)
+        self.assertEqual(summary["attendance_rate"], 100.0)  # present+late count as attended
+
+    def test_homework_summary_is_none_without_homework(self):
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        self.assertIsNone(response.data["homework_summary"])
+
+    def test_homework_summary_reflects_real_results(self):
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
+        HomeworkResult.objects.create(
+            homework=homework, student=self.student1, status=HomeworkResult.Status.CHECKED, score=9
+        )
+        HomeworkResult.objects.create(
+            homework=homework, student=self.student2, status=HomeworkResult.Status.SUBMITTED
+        )
+
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        summary = response.data["homework_summary"]
+        self.assertEqual(summary["results_total"], 2)
+        self.assertEqual(summary["checked"], 1)
+        self.assertEqual(summary["pending"], 1)
+        self.assertEqual(summary["average_score"], 9.0)  # only the scored result counts
+
+    def test_homework_summary_average_score_none_when_nothing_scored(self):
+        homework = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
+        HomeworkResult.objects.create(
+            homework=homework, student=self.student1, status=HomeworkResult.Status.SUBMITTED
+        )
+
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        self.assertIsNone(response.data["homework_summary"]["average_score"])
+
+
 class LessonStatusKPITests(AcademyTestBase):
     """Completed/Cancelled/Upcoming must reflect the real `Lesson.status`
     value only, never date-based inference — and the same underlying data

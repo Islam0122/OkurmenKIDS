@@ -7,6 +7,7 @@ import { lessonsApi } from '@/api/lessons'
 import { AttendanceTable } from '@/components/academy/AttendanceTable'
 import type { AttendanceRow } from '@/components/academy/AttendanceTable'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -106,6 +107,11 @@ function AttendanceEditor({
 
   const [localStatus, setLocalStatus] = useState<Record<number, AttendanceStatus>>({})
 
+  // Mirrors the backend's own enforcement (LessonSerializer.attendance_editable
+  // / views._assert_lesson_editable) — never re-derived from the lesson
+  // status here, so the two can't drift apart.
+  const isReadOnly = lesson ? !lesson.attendance_editable : false
+
   useEffect(() => {
     if (!roster.data) return
     const initial: Record<number, AttendanceStatus> = {}
@@ -151,11 +157,21 @@ function AttendanceEditor({
         title="Посещаемость"
         description={lesson ? `${formatDate(lesson.date)} · ${formatTimeRange(lesson.start_time, lesson.end_time)} · ${lesson.group_name}` : undefined}
         actions={
-          <Button variant="ghost" size="sm" onClick={onChangeLesson}>
-            Выбрать другое занятие
-          </Button>
+          isReadOnly ? (
+            <Badge tone="muted">Только просмотр</Badge>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={onChangeLesson}>
+              Выбрать другое занятие
+            </Button>
+          )
         }
       />
+
+      {isReadOnly ? (
+        <div className="mb-6 rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-secondary">
+          Занятие завершено или отменено — посещаемость больше нельзя редактировать.
+        </div>
+      ) : null}
 
       {roster.isPending ? <LoadingState label="Загружаем список студентов…" /> : null}
       {roster.isError ? <ErrorState onRetry={() => void roster.refetch()} /> : null}
@@ -164,12 +180,18 @@ function AttendanceEditor({
 
       {rows.length > 0 ? (
         <>
-          <AttendanceTable rows={rows} onStatusChange={(studentId, status) => setLocalStatus((prev) => ({ ...prev, [studentId]: status }))} />
-          <div className="sticky bottom-20 mt-4 flex justify-end lg:bottom-4">
-            <Button onClick={() => void handleSave()} isLoading={saveMutation.isPending} size="lg">
-              Сохранить посещаемость
-            </Button>
-          </div>
+          <AttendanceTable
+            rows={rows}
+            onStatusChange={(studentId, status) => setLocalStatus((prev) => ({ ...prev, [studentId]: status }))}
+            readOnly={isReadOnly}
+          />
+          {!isReadOnly ? (
+            <div className="sticky bottom-20 mt-4 flex justify-end lg:bottom-4">
+              <Button onClick={() => void handleSave()} isLoading={saveMutation.isPending} size="lg">
+                Сохранить посещаемость
+              </Button>
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>

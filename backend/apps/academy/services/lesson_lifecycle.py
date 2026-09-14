@@ -179,3 +179,14 @@ def homework_results_locked(lesson: Lesson) -> bool:
     and mirrored on HomeworkSerializer.results_editable so the frontend
     never has to re-derive it from a separate Lesson fetch."""
     return lesson.status == Lesson.Status.COMPLETED
+
+
+def lesson_editing_locked(lesson: Lesson) -> bool:
+    """A lesson that's no longer open — COMPLETED (graded and closed) or
+    CANCELLED (never happened) — accepts no new Attendance or Homework rows
+    from a Teacher. Broader than `homework_results_locked` (COMPLETED only):
+    mirrors the frontend's own `isReadOnly` definition (completed OR
+    cancelled), so the "immutable historical record" rule is identical on
+    both sides for every write path — bulk attendance marking, direct
+    Attendance CRUD, and Homework creation alike."""
+    return lesson.status in (Lesson.Status.COMPLETED, Lesson.Status.CANCELLED)
