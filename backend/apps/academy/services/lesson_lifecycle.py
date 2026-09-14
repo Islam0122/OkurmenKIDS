@@ -29,7 +29,11 @@ class CompletionRequirement:
     satisfied: bool
 
 
-def _attendance_satisfied(lesson: Lesson) -> bool:
+def attendance_completed(lesson: Lesson) -> bool:
+    """Every active student of the lesson's group has an Attendance record.
+    The one public definition of "attendance status" — reused by the
+    completion checklist and exposed directly on LessonSerializer so the
+    frontend never re-derives it from a separate roster fetch."""
     active_count = lesson.group.students.filter(is_active=True).count()
     if active_count == 0:
         return True
@@ -37,10 +41,17 @@ def _attendance_satisfied(lesson: Lesson) -> bool:
     return marked_count >= active_count
 
 
-def _homework_satisfied(lesson: Lesson) -> bool:
-    if lesson.homework_not_required:
-        return True
+def homework_added(lesson: Lesson) -> bool:
+    """Whether a real Homework row exists for this lesson — the one public
+    definition of "homework status", independent of `homework_not_required`
+    (see `homework_satisfied` for the completion-checklist combination of
+    the two). Exposed directly on LessonSerializer for the same reason as
+    `attendance_completed`."""
     return Homework.objects.filter(lesson=lesson).exists()
+
+
+def homework_satisfied(lesson: Lesson) -> bool:
+    return lesson.homework_not_required or homework_added(lesson)
 
 
 def completion_requirements(lesson: Lesson) -> list[CompletionRequirement]:
@@ -51,12 +62,12 @@ def completion_requirements(lesson: Lesson) -> list[CompletionRequirement]:
         CompletionRequirement(
             key="attendance",
             label="Посещаемость отмечена",
-            satisfied=_attendance_satisfied(lesson),
+            satisfied=attendance_completed(lesson),
         ),
         CompletionRequirement(
             key="homework",
             label="Добавлено домашнее задание или отмечено «ДЗ не требуется»",
-            satisfied=_homework_satisfied(lesson),
+            satisfied=homework_satisfied(lesson),
         ),
     ]
 

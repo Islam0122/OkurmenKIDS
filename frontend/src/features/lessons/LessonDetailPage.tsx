@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { CheckCircle2, Circle, ExternalLink, FileText, Youtube } from 'lucide-react'
+import { ExternalLink, FileText, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { LESSON_STATUS_LABEL, LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
@@ -14,15 +15,12 @@ import { useAttendanceRoster } from '@/hooks/useAttendance'
 import { useCreateHomework, useHomeworkList } from '@/hooks/useHomework'
 import { useCancelLesson, useCompleteLesson, useLesson, useSetHomeworkNotRequired, useStartLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
-import type { Lesson } from '@/types/academy'
+import { cn } from '@/utils/cn'
 import { formatDate, formatTimeRange } from '@/utils/format'
 
-const STATUS_TONE: Record<Lesson['status'], BadgeTone> = {
-  scheduled: 'muted',
-  in_progress: 'warning',
-  completed: 'success',
-  cancelled: 'danger',
-}
+import { LessonActionBar } from './LessonActionBar'
+import type { LessonActionKey } from './lessonActions'
+import { LessonProgressChecklist } from './LessonProgressChecklist'
 
 export function LessonDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -41,44 +39,71 @@ export function LessonDetailPage() {
 
   const [isCancelModalOpen, setCancelModalOpen] = useState(false)
   const [isHomeworkModalOpen, setHomeworkModalOpen] = useState(false)
+  const [pendingKey, setPendingKey] = useState<LessonActionKey | null>(null)
 
   if (isPending) return <LoadingState label="Загружаем занятие…" />
   if (isError || !lesson) return <ErrorState onRetry={() => void refetch()} />
 
-  const present = roster.data?.filter((row) => row.status === 'present').length ?? 0
-  const absent = roster.data?.filter((row) => row.status === 'absent').length ?? 0
-  const late = roster.data?.filter((row) => row.status === 'late').length ?? 0
-  const excused = roster.data?.filter((row) => row.status === 'excused').length ?? 0
-  const totalStudents = roster.data?.length ?? 0
-
   const homework = homeworkList.data?.results[0]
-
-  const attendanceOk = lesson.completion_requirements.find((r) => r.key === 'attendance')?.satisfied ?? false
-  const homeworkAdded = Boolean(homework)
+  const isReadOnly = lesson.status === 'completed' || lesson.status === 'cancelled'
   const missingLabels = lesson.completion_requirements.filter((r) => !r.satisfied).map((r) => r.label)
 
-  async function handleStart() {
-    try {
-      await startMutation.mutateAsync(lesson!.id)
-      showToast('Занятие начато', 'success')
-    } catch (error) {
-      showToast(extractErrorMessage(error, 'Не удалось начать занятие'), 'error')
+  function goToHomework() {
+    if (homework) navigate(`/app/homework/${homework.id}`)
+  }
+
+  async function handleAction(key: LessonActionKey) {
+    switch (key) {
+      case 'start': {
+        setPendingKey('start')
+        try {
+          await startMutation.mutateAsync(lesson!.id)
+          showToast('Занятие начато', 'success')
+        } catch (error) {
+          showToast(extractErrorMessage(error, 'Не удалось начать занятие'), 'error')
+        } finally {
+          setPendingKey(null)
+        }
+        return
+      }
+      case 'complete': {
+        setPendingKey('complete')
+        try {
+          await completeMutation.mutateAsync(lesson!.id)
+          showToast('Занятие завершено', 'success')
+        } catch (error) {
+          showToast(extractErrorMessage(error, 'Не удалось завершить занятие'), 'error')
+        } finally {
+          setPendingKey(null)
+        }
+        return
+      }
+      case 'cancel':
+        setCancelModalOpen(true)
+        return
+      case 'attendance':
+      case 'view_attendance':
+        navigate(`/app/attendance?lesson=${lesson!.id}`)
+        return
+      case 'homework':
+        if (homework) goToHomework()
+        else setHomeworkModalOpen(true)
+        return
+      case 'view_homework':
+      case 'view_results':
+        goToHomework()
+        return
+      case 'view_details':
+        // Never reached on the detail page itself — only meaningful on a
+        // lesson card/list row, where it navigates here.
+        return
     }
   }
 
-  async function handleComplete() {
+  async function handleMarkHomeworkNotRequired() {
     try {
-      await completeMutation.mutateAsync(lesson!.id)
-      showToast('Занятие завершено', 'success')
-    } catch (error) {
-      showToast(extractErrorMessage(error, 'Не удалось завершить занятие'), 'error')
-    }
-  }
-
-  async function handleToggleHomeworkNotRequired(value: boolean) {
-    try {
-      await homeworkNotRequiredMutation.mutateAsync({ id: lesson!.id, value })
-      showToast(value ? 'Отмечено: ДЗ не требуется' : 'Отметка снята', 'success')
+      await homeworkNotRequiredMutation.mutateAsync({ id: lesson.id, value: true })
+      showToast('Отмечено: ДЗ не требуется', 'success')
     } catch (error) {
       showToast(extractErrorMessage(error, 'Не удалось изменить отметку'), 'error')
     }
@@ -89,19 +114,19 @@ export function LessonDetailPage() {
       <PageHeader
         title={formatTimeRange(lesson.start_time, lesson.end_time)}
         description={`${formatDate(lesson.date)} · ${lesson.subject_name ?? 'Без предмета'}${lesson.topic ? ` — ${lesson.topic}` : ''}`}
-        actions={<Badge tone={STATUS_TONE[lesson.status]}>{lesson.status === 'in_progress' ? 'Идёт занятие' : lesson.status_display}</Badge>}
+        actions={<Badge tone={LESSON_STATUS_TONE[lesson.status]}>{LESSON_STATUS_LABEL[lesson.status]}</Badge>}
       />
 
-      {lesson.status === 'cancelled' && lesson.cancellation_reason ? (
+      {lesson.status === 'cancelled' ? (
         <div className="mb-6 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
-          Занятие отменено. Причина: {lesson.cancellation_reason}
+          Занятие отменено{lesson.cancellation_reason ? `. Причина: ${lesson.cancellation_reason}` : '.'}
         </div>
       ) : null}
 
       {lesson.status === 'completed' ? (
         <div className="mb-6 rounded-lg bg-brand-50 px-4 py-3 text-sm text-brand-700">
           Занятие завершено{lesson.completed_by_name ? ` — ${lesson.completed_by_name}` : ''}
-          {lesson.completed_at ? ` · ${formatDate(lesson.completed_at)}` : ''}
+          {lesson.completed_at ? ` · ${formatDate(lesson.completed_at)}` : ''}. Доступно только для просмотра.
         </div>
       ) : null}
 
@@ -157,92 +182,36 @@ export function LessonDetailPage() {
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-border bg-surface p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-medium text-ink-secondary">Посещаемость</p>
-              <span className="text-sm text-ink-secondary">{totalStudents} студентов</span>
-            </div>
-            {roster.isPending ? (
-              <LoadingState label="Загружаем…" />
-            ) : (
-              <div className="grid grid-cols-4 gap-2 text-center">
-                <StatBlock label="Present" value={present} tone="success" />
-                <StatBlock label="Absent" value={absent} tone="danger" />
-                <StatBlock label="Late" value={late} tone="warning" />
-                <StatBlock label="Excused" value={excused} tone="muted" />
-              </div>
-            )}
-          </div>
-
-          {lesson.status === 'scheduled' || lesson.status === 'in_progress' ? (
-            <div className="rounded-xl border border-border bg-surface p-5">
-              <p className="mb-3 text-sm font-medium text-ink-secondary">Чек-лист завершения</p>
-              <div className="space-y-2 text-sm">
-                <ChecklistLine ok={attendanceOk} text="Посещаемость отмечена" />
-                <ChecklistLine ok={homeworkAdded} text="Добавлено домашнее задание" />
-                <ChecklistLine ok={lesson.homework_not_required} text="ДЗ не требуется" />
-              </div>
-              {lesson.status === 'in_progress' && !lesson.completion_progress.is_complete ? (
-                <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
-                  Нельзя завершить занятие: {missingLabels.join('; ')}.
-                </div>
-              ) : null}
-            </div>
+          {lesson.status !== 'scheduled' ? (
+            <AttendanceStatsCard roster={roster.data} isPending={roster.isPending} />
           ) : null}
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-xl border border-border bg-surface p-5">
-            <p className="mb-3 text-sm font-medium text-ink-secondary">Действия</p>
-            <div className="space-y-2">
-              {lesson.can_start ? (
-                <Button className="w-full" onClick={() => void handleStart()} isLoading={startMutation.isPending}>
-                  Начать занятие
-                </Button>
-              ) : null}
+          <div
+            className={cn(
+              'rounded-xl border p-5',
+              isReadOnly ? 'border-dashed border-border bg-surface-muted' : 'border-border bg-surface',
+            )}
+          >
+            <p className="mb-3 text-sm font-medium text-ink-secondary">{isReadOnly ? 'Просмотр' : 'Действия'}</p>
 
-              <Button className="w-full" variant="secondary" onClick={() => navigate(`/app/attendance?lesson=${lesson.id}`)}>
-                Отметить посещаемость
-              </Button>
+            <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
 
-              {homework ? (
-                <Button variant="secondary" className="w-full" onClick={() => navigate(`/app/homework/${homework.id}`)}>
-                  Открыть ДЗ
-                </Button>
-              ) : lesson.status === 'scheduled' || lesson.status === 'in_progress' ? (
-                <Button variant="secondary" className="w-full" onClick={() => setHomeworkModalOpen(true)}>
-                  Добавить ДЗ
-                </Button>
-              ) : null}
-
-              {!homework && (lesson.status === 'scheduled' || lesson.status === 'in_progress') ? (
-                <Button
-                  variant="ghost"
-                  className="w-full"
-                  isLoading={homeworkNotRequiredMutation.isPending}
-                  onClick={() => void handleToggleHomeworkNotRequired(!lesson.homework_not_required)}
-                >
-                  {lesson.homework_not_required ? 'Снять отметку «ДЗ не требуется»' : 'ДЗ не требуется'}
-                </Button>
-              ) : null}
-
-              {lesson.status === 'in_progress' ? (
-                <Button
-                  className="w-full"
-                  onClick={() => void handleComplete()}
-                  isLoading={completeMutation.isPending}
-                  disabled={!lesson.can_complete}
-                >
-                  Завершить занятие
-                </Button>
-              ) : null}
-
-              {lesson.can_cancel ? (
-                <Button className="w-full" variant="danger" onClick={() => setCancelModalOpen(true)}>
-                  Отменить занятие
-                </Button>
-              ) : null}
-            </div>
+            {lesson.status === 'in_progress' ? (
+              <div className="mt-4 border-t border-border pt-4">
+                <LessonProgressChecklist
+                  lesson={lesson}
+                  onMarkHomeworkNotRequired={() => void handleMarkHomeworkNotRequired()}
+                  isMarkingHomeworkNotRequired={homeworkNotRequiredMutation.isPending}
+                />
+                {!lesson.can_complete && missingLabels.length > 0 ? (
+                  <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
+                    Нельзя завершить занятие: {missingLabels.join('; ')}.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {homework ? (
@@ -256,24 +225,42 @@ export function LessonDetailPage() {
         </div>
       </div>
 
-      <CancelLessonModal
-        lessonId={lesson.id}
-        isOpen={isCancelModalOpen}
-        onClose={() => setCancelModalOpen(false)}
-        mutation={cancelMutation}
-      />
+      <CancelLessonModal lessonId={lesson.id} isOpen={isCancelModalOpen} onClose={() => setCancelModalOpen(false)} mutation={cancelMutation} />
       <AddHomeworkModal lessonId={lesson.id} isOpen={isHomeworkModalOpen} onClose={() => setHomeworkModalOpen(false)} />
     </div>
   )
 }
 
-function ChecklistLine({ ok, text }: { ok: boolean; text: string }) {
-  const Icon = ok ? CheckCircle2 : Circle
+function AttendanceStatsCard({
+  roster,
+  isPending,
+}: {
+  roster: { status: string | null }[] | undefined
+  isPending: boolean
+}) {
+  const present = roster?.filter((row) => row.status === 'present').length ?? 0
+  const absent = roster?.filter((row) => row.status === 'absent').length ?? 0
+  const late = roster?.filter((row) => row.status === 'late').length ?? 0
+  const excused = roster?.filter((row) => row.status === 'excused').length ?? 0
+  const totalStudents = roster?.length ?? 0
+
   return (
-    <p className={ok ? 'flex items-center gap-2 text-brand-700' : 'flex items-center gap-2 text-ink-secondary'}>
-      <Icon className="size-4 shrink-0" aria-hidden />
-      {text}
-    </p>
+    <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-medium text-ink-secondary">Посещаемость</p>
+        <span className="text-sm text-ink-secondary">{totalStudents} студентов</span>
+      </div>
+      {isPending ? (
+        <LoadingState label="Загружаем…" />
+      ) : (
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <StatBlock label="Present" value={present} tone="success" />
+          <StatBlock label="Absent" value={absent} tone="danger" />
+          <StatBlock label="Late" value={late} tone="warning" />
+          <StatBlock label="Excused" value={excused} tone="muted" />
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -1,20 +1,14 @@
 import { CheckCircle2, FileText, Loader2, XCircle, Youtube } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import { LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { Badge } from '@/components/ui/Badge'
-import type { BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import type { Lesson } from '@/types/academy'
 import { formatTimeRange } from '@/utils/format'
 
-import { hasLessonPassed } from './lessonViews'
-
-const STATUS_TONE: Record<Lesson['status'], BadgeTone> = {
-  scheduled: 'muted',
-  in_progress: 'warning',
-  completed: 'success',
-  cancelled: 'danger',
-}
+import { getPrimaryCardAction } from './lessonActions'
+import { hasLessonPassed, needsAttentionCheck } from './lessonViews'
 
 export interface LessonDayCardProps {
   lesson: Lesson
@@ -38,8 +32,10 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
   const isCancelled = lesson.status === 'cancelled'
   const isCompleted = lesson.status === 'completed'
   const isInProgress = lesson.status === 'in_progress'
-  const needsAttentionCheck = !isCancelled && !isCompleted && (isInProgress || hasLessonPassed(lesson))
+  const needsAttention = needsAttentionCheck(lesson)
   const hasMaterials = Boolean(lesson.youtube_url) || lesson.presentation_urls.length > 0
+  const primaryAction = getPrimaryCardAction(lesson)
+  const PrimaryIcon = primaryAction.icon
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
@@ -58,11 +54,11 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
         </div>
 
         {isCancelled ? (
-          <Badge tone={STATUS_TONE.cancelled}>Отменено</Badge>
+          <Badge tone={LESSON_STATUS_TONE.cancelled}>Отменено</Badge>
         ) : isCompleted ? (
-          <Badge tone={STATUS_TONE.completed}>{lesson.status_display}</Badge>
+          <Badge tone={LESSON_STATUS_TONE.completed}>{lesson.status_display}</Badge>
         ) : isInProgress ? (
-          <Badge tone={STATUS_TONE.in_progress}>Идёт занятие</Badge>
+          <Badge tone={LESSON_STATUS_TONE.in_progress}>Идёт занятие</Badge>
         ) : hasLessonPassed(lesson) ? (
           <Badge tone="danger">Требует внимания</Badge>
         ) : (
@@ -74,7 +70,7 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
         lesson.cancellation_reason ? (
           <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">Причина: {lesson.cancellation_reason}</p>
         ) : null
-      ) : needsAttentionCheck ? (
+      ) : needsAttention ? (
         <div className="mt-3 space-y-1 text-sm">
           {isEnriching ? (
             <p className="flex items-center gap-1.5 text-ink-muted">
@@ -100,8 +96,8 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
 
       <div className="mt-3">
         <Link to={`/app/lessons/${lesson.id}`}>
-          <Button size="sm" variant={isCancelled ? 'secondary' : 'primary'}>
-            Открыть урок
+          <Button size="sm" variant={isCancelled || isCompleted ? 'secondary' : 'primary'} leftIcon={<PrimaryIcon className="size-4" aria-hidden />}>
+            {primaryAction.label}
           </Button>
         </Link>
       </div>

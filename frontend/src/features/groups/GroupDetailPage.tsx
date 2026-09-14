@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -16,7 +17,7 @@ import { useAnalyticsDashboard } from '@/hooks/useKPI'
 import { useStudents } from '@/hooks/useStudents'
 import { getKPIPeriods } from '@/features/kpi/periods'
 import type { KPIPeriodKey } from '@/types/kpi'
-import type { Group, GroupScheduleLesson, LessonStatus } from '@/types/academy'
+import type { Group, GroupScheduleLesson } from '@/types/academy'
 import { ATTENDANCE_STATUS_LABELS } from '@/types/attendance'
 import { DAY_LABELS, WEEKDAY_ORDER } from '@/types/common'
 import { cn } from '@/utils/cn'
@@ -26,13 +27,6 @@ const STATUS_TONE: Record<Group['status'], BadgeTone> = {
   active: 'success',
   paused: 'warning',
   completed: 'muted',
-  cancelled: 'danger',
-}
-
-const LESSON_STATUS_TONE: Record<LessonStatus, BadgeTone> = {
-  scheduled: 'muted',
-  in_progress: 'warning',
-  completed: 'success',
   cancelled: 'danger',
 }
 

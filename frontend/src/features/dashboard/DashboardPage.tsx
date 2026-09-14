@@ -1,6 +1,7 @@
 import { CalendarDays, ClipboardCheck, NotebookPen, PartyPopper, Percent, Users } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import { LESSON_STATUS_LABEL, LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -73,7 +74,9 @@ export function DashboardPage() {
                         <span className="block text-sm font-medium text-ink">{lesson.subject_name ?? 'Без предмета'}</span>
                         <span className="block text-xs text-ink-secondary">{lesson.group_name}</span>
                       </span>
-                      {lesson.status === 'cancelled' ? <Badge tone="danger">Отменено</Badge> : null}
+                      {lesson.status !== 'scheduled' ? (
+                        <Badge tone={LESSON_STATUS_TONE[lesson.status]}>{LESSON_STATUS_LABEL[lesson.status]}</Badge>
+                      ) : null}
                     </Link>
                   </li>
                 ))}
@@ -101,7 +104,9 @@ export function DashboardPage() {
                         <span className="block text-sm font-medium text-ink">{lesson.subject_name ?? 'Без предмета'}</span>
                         <span className="block text-xs text-ink-secondary">{lesson.group_name}</span>
                       </span>
-                      {lesson.status === 'cancelled' ? <Badge tone="danger">Отменено</Badge> : null}
+                      {lesson.status !== 'scheduled' ? (
+                        <Badge tone={LESSON_STATUS_TONE[lesson.status]}>{LESSON_STATUS_LABEL[lesson.status]}</Badge>
+                      ) : null}
                     </Link>
                   </li>
                 ))}

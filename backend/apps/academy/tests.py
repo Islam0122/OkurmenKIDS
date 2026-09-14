@@ -4758,12 +4758,28 @@ class LessonLifecycleActionsTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for field in (
             "status", "can_start", "can_complete", "can_cancel",
+            "attendance_completed", "homework_added",
             "completion_requirements", "completion_progress",
             "completed_at", "completed_by", "started_at", "homework_not_required",
         ):
             self.assertIn(field, response.data)
         self.assertTrue(response.data["can_start"])
         self.assertFalse(response.data["can_complete"])
+        self.assertFalse(response.data["attendance_completed"])
+        self.assertFalse(response.data["homework_added"])
+
+    def test_attendance_completed_and_homework_added_reflect_real_state(self):
+        self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
+        self._mark_full_attendance(self.lesson1)
+
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        self.assertTrue(response.data["attendance_completed"])
+        self.assertFalse(response.data["homework_added"])
+
+        Homework.objects.create(lesson=self.lesson1, title="ДЗ")
+
+        response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
+        self.assertTrue(response.data["homework_added"])
 
     def test_status_and_lifecycle_fields_are_read_only_on_plain_patch(self):
         # A plain PATCH must never be able to reset/forge lifecycle state —

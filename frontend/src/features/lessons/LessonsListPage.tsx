@@ -7,6 +7,7 @@ import { groupsApi } from '@/api/groups'
 import { lessonsApi } from '@/api/lessons'
 import { subjectsApi } from '@/api/subjects'
 import { LessonCard } from '@/components/academy/LessonCard'
+import { LESSON_STATUS_OPTIONS } from '@/components/academy/lessonStatus'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
@@ -46,13 +47,6 @@ import type { DateRange, LessonView } from './lessonViews'
 import { useLessonEnrichment } from './useLessonEnrichment'
 import { OPERATIONAL_STATUS_LABELS, useLessonOperationalStatus } from './useLessonOperationalStatus'
 import type { LessonOperationalStatus } from './useLessonOperationalStatus'
-
-const STATUS_OPTIONS: { value: LessonStatus; label: string }[] = [
-  { value: 'scheduled', label: 'Запланировано' },
-  { value: 'in_progress', label: 'Идёт занятие' },
-  { value: 'completed', label: 'Проведено' },
-  { value: 'cancelled', label: 'Отменено' },
-]
 
 export function LessonsListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -361,7 +355,7 @@ function AllLessonsView({ groupsData }: { groupsData: Group[] | undefined }) {
             placeholder="Все статусы"
             value={status}
             onChange={(event) => resetPage(setStatus)(event.target.value)}
-            options={STATUS_OPTIONS}
+            options={LESSON_STATUS_OPTIONS}
           />
         </div>
       </div>
