@@ -25,6 +25,8 @@
   --color-danger-soft: #fbeae7;
   --color-warning: #b4790f;
   --color-warning-soft: #fbf1df;
+  --color-info: #2563a8;
+  --color-info-soft: #e7f0fa;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }

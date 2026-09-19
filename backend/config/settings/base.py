@@ -48,6 +48,7 @@ LOCAL_APPS = [
     "apps.users.apps.UsersConfig",
     "apps.academy.apps.AcademyConfig",
     "apps.data_io.apps.DataIoConfig",
+    "apps.news.apps.NewsConfig",
 
 ]
 
@@ -230,6 +231,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "Attendance", "description": "Attendance management"},
         {"name": "Homework", "description": "Homework management"},
         {"name": "Analytics", "description": "KPI and performance analytics"},
+        {"name": "News", "description": "Teacher-facing news and announcements"},
     ],
 }
 
@@ -260,11 +262,16 @@ JAZZMIN_SETTINGS = {
     # grouped the way an academy admin actually thinks about them
     # (teaching staff/students, organisation, day-to-day control, system)
     # rather than by Django app label.
-    "hide_apps": ["users", "academy", "data_io"],
+    "hide_apps": ["users", "academy", "data_io", "news"],
 
     "custom_links": {
         "центр помощи": [
             {"name": "Центр помощи", "url": "admin:academy_help", "icon": "bi bi-question-circle"},
+        ],
+
+        "новости": [
+            {"name": "Новости", "model": "news.news", "icon": "bi bi-megaphone"},
+            {"name": "Прочтения", "model": "news.newsread", "icon": "bi bi-eye"},
         ],
 
         "академия": [
@@ -329,6 +336,8 @@ JAZZMIN_SETTINGS = {
         "academy.homework": "bi bi-journal-text",
         "academy.homeworkresult": "bi bi-check2-square",
         "data_io.exporttemplate": "bi bi-file-earmark-ruled",
+        "news.news": "bi bi-megaphone",
+        "news.newsread": "bi bi-eye",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

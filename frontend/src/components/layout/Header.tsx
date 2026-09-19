@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/utils/cn'
 
 import { getMobileMoreNav } from './navItems'
+import { NewsBell } from './NewsBell'
 
 export function Header() {
   const { user, logout } = useAuth()
@@ -34,6 +35,8 @@ export function Header() {
           <Menu className="size-5" aria-hidden />
           Ещё
         </button>
+
+        <NewsBell />
 
         <div className="hidden items-center gap-2 sm:flex">
           <span className="flex size-9 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">

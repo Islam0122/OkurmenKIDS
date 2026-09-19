@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   GraduationCap,
   LayoutDashboard,
+  Megaphone,
   NotebookPen,
   User,
   Users,
@@ -40,6 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/attendance', label: 'Посещаемость', icon: ClipboardCheck, roles: ['admin'] },
   { to: '/app/homework', label: 'Домашние задания', icon: NotebookPen, roles: ['admin'] },
   { to: '/app/kpi', label: 'KPI', icon: BarChart3 },
+  { to: '/app/news', label: 'Новости', icon: Megaphone },
 ]
 
 export const PROFILE_NAV_ITEM: NavItem = { to: '/app/profile', label: 'Профиль', icon: User }

@@ -15,6 +15,10 @@ vi.mock('@/features/dashboard/useDashboardData', () => ({
   todayISO: () => '2026-09-10',
 }))
 
+vi.mock('@/hooks/useNews', () => ({
+  useNewsList: () => ({ data: { count: 0, next: null, previous: null, results: [] }, isPending: false }),
+}))
+
 describe('DashboardPage', () => {
   it('greets the teacher by first name and renders today’s real lessons', () => {
     const lesson = buildLesson({ id: 42, subject_name: 'Робототехника', group_name: 'Роботы-1', start_time: '15:00:00' })

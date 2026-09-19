@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { cn } from '@/utils/cn'
 
-export type BadgeTone = 'success' | 'warning' | 'danger' | 'muted' | 'brand'
+export type BadgeTone = 'success' | 'warning' | 'danger' | 'muted' | 'brand' | 'info'
 
 const TONE_CLASSES: Record<BadgeTone, string> = {
   success: 'bg-brand-50 text-brand-700',
@@ -10,6 +10,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
   danger: 'bg-danger-soft text-danger',
   muted: 'bg-surface-hover text-ink-muted border border-border',
   brand: 'bg-brand-500 text-white',
+  info: 'bg-info-soft text-info',
 }
 
 export interface BadgeProps {
