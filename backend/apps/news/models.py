@@ -1,5 +1,14 @@
+import datetime as dt
+
 from django.db import models
 from django.utils import timezone
+
+
+def default_news_expiry():
+    """A freshly created News stays active for a week unless the Admin
+    changes it — existing rows saved before this default was added keep
+    whatever `expires_at` they already have (including `None`)."""
+    return timezone.now() + dt.timedelta(days=7)
 
 
 class NewsQuerySet(models.QuerySet):
@@ -79,8 +88,12 @@ class News(models.Model):
     expires_at = models.DateTimeField(
         null=True,
         blank=True,
+        default=default_news_expiry,
         verbose_name="Дата окончания",
-        help_text="После этой даты новость перестаёт показываться тренерам. Можно оставить пустым.",
+        help_text=(
+            "После этой даты новость перестаёт показываться тренерам. "
+            "По умолчанию новость публикуется 7 дней — можно изменить или оставить пустым."
+        ),
     )
 
     objects = NewsQuerySet.as_manager()
