@@ -930,6 +930,13 @@ button.ok-password-toggle.btn {
   color: inherit;
   cursor: pointer;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Keeps the × a real click target even if the icon glyph itself doesn't
+     render (e.g. the icon font hasn't loaded yet) — content-only sizing
+     would otherwise collapse this button to 0×0. */
+  min-width: 16px;
+  min-height: 16px;
   padding: 0;
   font-size: 0.8rem;
   opacity: 0.75;
@@ -1940,11 +1947,7 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
    which would otherwise get clipped by this same element. */
 .ok-multiselect { position: relative; overflow: visible; }
 
-.ok-ms-chips-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+.ok-ms-add-row {
   padding: 0.6rem 0.7rem;
 }
 
@@ -1973,7 +1976,28 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   background: var(--ok-primary-soft);
 }
 
-.ok-ms-chips { padding: 0; }
+/* "Выбранные:" block — a separate section below the add button, only
+   rendered (sync() sets .hidden) once at least one option is picked, so
+   an empty field never shows a dangling heading over nothing. */
+.ok-ms-selected {
+  padding: 0 0.7rem 0.7rem;
+}
+
+.ok-ms-selected-label {
+  margin-bottom: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ok-text-muted);
+}
+
+.ok-ms-chips {
+  padding: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.ok-ms-chip { max-width: 100%; }
 
 /* Collapsed by default: only the dropdown panel is toggled, so the field
    stays a compact single row until the user actually opens it. Floats over

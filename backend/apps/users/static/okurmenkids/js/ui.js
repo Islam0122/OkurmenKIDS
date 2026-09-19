@@ -131,11 +131,8 @@ function addPasswordToggle(input) {
     var wrap = document.createElement("div");
     wrap.className = "ok-multiselect";
 
-    var chipsRow = document.createElement("div");
-    chipsRow.className = "ok-ms-chips-row";
-
-    var chips = document.createElement("div");
-    chips.className = "ok-ms-chips";
+    var addRow = document.createElement("div");
+    addRow.className = "ok-ms-add-row";
 
     var addTrigger = document.createElement("button");
     addTrigger.type = "button";
@@ -149,9 +146,25 @@ function addPasswordToggle(input) {
     addTriggerLabel.textContent = select.dataset.addLabel || "Добавить предмет";
     addTrigger.appendChild(addTriggerIcon);
     addTrigger.appendChild(addTriggerLabel);
+    addRow.appendChild(addTrigger);
 
-    chipsRow.appendChild(chips);
-    chipsRow.appendChild(addTrigger);
+    // "Выбранные:" + chips list — a separate block below the add button
+    // (not a container.hidden by default; sync() below shows it only once
+    // something is actually selected, so an empty field never renders a
+    // dangling "Выбранные:" heading with nothing under it).
+    var selectedBlock = document.createElement("div");
+    selectedBlock.className = "ok-ms-selected";
+    selectedBlock.hidden = true;
+
+    var selectedLabel = document.createElement("div");
+    selectedLabel.className = "ok-ms-selected-label";
+    selectedLabel.textContent = "Выбранные:";
+
+    var chips = document.createElement("div");
+    chips.className = "ok-ms-chips";
+
+    selectedBlock.appendChild(selectedLabel);
+    selectedBlock.appendChild(chips);
 
     var dropdown = document.createElement("div");
     dropdown.className = "ok-ms-dropdown";
@@ -289,6 +302,8 @@ function addPasswordToggle(input) {
         selectedCount +
         "</strong> из " +
         rows.length;
+
+      selectedBlock.hidden = selectedCount === 0;
     }
 
     searchInput.addEventListener(
@@ -359,7 +374,8 @@ function addPasswordToggle(input) {
     panel.appendChild(emptyRow);
     dropdown.appendChild(footer);
 
-    wrap.appendChild(chipsRow);
+    wrap.appendChild(addRow);
+    wrap.appendChild(selectedBlock);
     wrap.appendChild(dropdown);
 
     select.parentNode.insertBefore(
@@ -894,8 +910,24 @@ card.dataset.label = label.toLowerCase();
 
     if (!teachersRow) return;
 
+    // Purely cosmetic — the field stays optional at the Django form level
+    // (NewsAdminForm.clean() is the real, server-side rule) so a
+    // JS-disabled submit still works; this just matches the visual
+    // required-marker Django renders for genuinely required fields.
+    var teachersLabel = document.querySelector('label[for="id_teachers"]');
+    var requiredMark = null;
+
+    if (teachersLabel) {
+      requiredMark = document.createElement("span");
+      requiredMark.className = "text-red";
+      requiredMark.textContent = "* ";
+      teachersLabel.appendChild(requiredMark);
+    }
+
     function update() {
-      teachersRow.hidden = audienceField.value !== "selected";
+      var isSelected = audienceField.value === "selected";
+      teachersRow.hidden = !isSelected;
+      if (requiredMark) requiredMark.hidden = !isSelected;
     }
 
     audienceField.addEventListener("change", update);
