@@ -18,6 +18,7 @@ from .models import (
     Homework,
     HomeworkResult,
     Lesson,
+    MonthlyTeacherReport,
     Room,
     Student,
 )
@@ -1064,3 +1065,103 @@ class AnalyticsDashboardSerializer(serializers.Serializer):
     attendance = AnalyticsAttendanceSectionSerializer()
     homework = AnalyticsHomeworkSectionSerializer()
     insights = AnalyticsInsightSerializer(many=True)
+
+
+# ---------------------------------------------------------------------------
+# Monthly Teacher Reports
+# ---------------------------------------------------------------------------
+
+class MonthlyReportPeriodSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    month = serializers.IntegerField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+
+
+class MonthlyReportAttendanceSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    present = serializers.IntegerField()
+    late = serializers.IntegerField()
+    absent = serializers.IntegerField()
+    excused = serializers.IntegerField()
+    rate = serializers.FloatField()
+
+
+class MonthlyReportHomeworkSerializer(serializers.Serializer):
+    assigned = serializers.IntegerField()
+    checked = serializers.IntegerField()
+    submission_rate = serializers.FloatField()
+    average_score = serializers.FloatField(allow_null=True)
+
+
+class MonthlyReportGroupRowSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    students_count = serializers.IntegerField()
+    lessons_count = serializers.IntegerField()
+
+
+class MonthlyReportWeekPointSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    percent = serializers.FloatField()
+
+
+class MonthlyReportKPISerializer(serializers.Serializer):
+    attendance = serializers.FloatField()
+    homework = serializers.FloatField()
+    lessons = serializers.FloatField()
+    student_progress = serializers.FloatField()
+    total = serializers.FloatField()
+
+
+class MonthlyReportStatsSerializer(serializers.Serializer):
+    """`services.monthly_report.compute_monthly_stats` — computed fresh on
+    every request from Lesson/Attendance/Homework/HomeworkResult, never
+    stored (spec: no duplicate statistics models)."""
+
+    period = MonthlyReportPeriodSerializer()
+    has_data = serializers.BooleanField()
+    lessons_total = serializers.IntegerField()
+    lessons_completed = serializers.IntegerField()
+    students_count = serializers.IntegerField()
+    groups_count = serializers.IntegerField()
+    attendance = MonthlyReportAttendanceSerializer()
+    homework = MonthlyReportHomeworkSerializer()
+    groups = MonthlyReportGroupRowSerializer(many=True)
+    weekly_dynamics = MonthlyReportWeekPointSerializer(many=True)
+    kpi = MonthlyReportKPISerializer()
+
+
+class MonthlyTeacherReportSerializer(serializers.ModelSerializer):
+    """Read shape of a report — the model's own fields plus its always
+    freshly-computed `stats` (see `MonthlyReportStatsSerializer`)."""
+
+    teacher = TeacherSerializer(read_only=True)
+    stats = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MonthlyTeacherReport
+        fields = ["id", "teacher", "year", "month", "comment", "stats", "created_at", "updated_at"]
+        read_only_fields = ["id", "teacher", "year", "month", "stats", "created_at", "updated_at"]
+
+    def get_stats(self, obj) -> dict:
+        from .services.monthly_report import compute_monthly_stats
+
+        return MonthlyReportStatsSerializer(compute_monthly_stats(obj.teacher, obj.year, obj.month)).data
+
+
+class MonthlyTeacherReportCreateSerializer(serializers.Serializer):
+    """`POST /monthly-reports/` — a Teacher picks only the month; every
+    figure inside it is always computed, never entered (spec §1)."""
+
+    year = serializers.IntegerField(min_value=2000, max_value=2100)
+    month = serializers.IntegerField(min_value=1, max_value=12)
+
+
+class MonthlyTeacherReportCommentSerializer(serializers.ModelSerializer):
+    """`PATCH /monthly-reports/<id>/` — the only field a Teacher may ever
+    write on their own report; every other field is server-computed."""
+
+    class Meta:
+        model = MonthlyTeacherReport
+        fields = ["comment"]

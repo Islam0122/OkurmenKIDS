@@ -1214,3 +1214,56 @@ class Attendance(models.Model):
         if self.student_id and self.lesson_id and self.student.group_id != self.lesson.group_id:
             raise ValidationError({"student": "Студент не принадлежит группе этого занятия."})
 
+
+# ---------------------------------------------------------------------------
+# Monthly Teacher Reports — a Teacher's own once-a-month report shell. Every
+# number a report shows (lessons, students, groups, attendance, homework,
+# KPI, weekly dynamics, ...) is computed on demand for (teacher, year, month)
+# from Lesson/Attendance/Homework/HomeworkResult — see
+# services.monthly_report.compute_monthly_stats — never stored here, so
+# there is nothing to keep in sync or go stale. This model only ever holds
+# what a Teacher cannot get any other way: which month they've opened a
+# report for, and their own closing comment about it.
+# ---------------------------------------------------------------------------
+
+class MonthlyTeacherReport(models.Model):
+    teacher = models.ForeignKey(
+        Teacher,
+        on_delete=models.CASCADE,
+        related_name="monthly_reports",
+        verbose_name="Тренер",
+    )
+
+    year = models.PositiveIntegerField(
+        validators=[MinValueValidator(2000), MaxValueValidator(2100)],
+        verbose_name="Год",
+    )
+
+    month = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(12)],
+        verbose_name="Месяц",
+    )
+
+    comment = models.TextField(
+        blank=True,
+        verbose_name="Итог месяца",
+        help_text="Комментарий тренера о проделанной работе за месяц.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Отчёт тренера"
+        verbose_name_plural = "Отчёты тренеров"
+        ordering = ["-year", "-month"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["teacher", "year", "month"],
+                name="unique_teacher_monthly_report",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.teacher} — {self.month:02d}.{self.year}"
+

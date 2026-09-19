@@ -44,6 +44,8 @@ from .admin_views import (
     homeworkresult_monitor_view,
     lesson_detail_view,
     lesson_monitor_view,
+    monthly_report_detail_view,
+    monthly_report_monitor_view,
     schedule_view,
 )
 from .help_center import help_center_view
@@ -57,6 +59,7 @@ from .models import (
     Homework,
     HomeworkResult,
     Lesson,
+    MonthlyTeacherReport,
     Room,
     Student,
 )
@@ -1208,6 +1211,34 @@ class AttendanceAdmin(admin.ModelAdmin):
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         return attendance_detail_view(request, object_id)
+
+
+# ---------------------------------------------------------------------------
+# Monthly Teacher Reports — Admin only ever looks (spec §14: "Admin НЕ
+# должен создавать отчёт вместо Teacher", "НЕ должен изменять статистику").
+# Same read-only-ModelAdmin-owns-the-URLs-only pattern as Lesson/Homework/
+# HomeworkResult/Attendance above — both screens are fully replaced by
+# admin_views.py's monitor/detail views.
+# ---------------------------------------------------------------------------
+
+@admin.register(MonthlyTeacherReport)
+class MonthlyTeacherReportAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    actions = None
+
+    def changelist_view(self, request, extra_context=None):
+        return monthly_report_monitor_view(request)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        return monthly_report_detail_view(request, object_id)
 
 
 # ---------------------------------------------------------------------------
