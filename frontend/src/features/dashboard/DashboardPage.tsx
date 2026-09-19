@@ -9,6 +9,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { StatCard } from '@/components/ui/StatCard'
+import { NewsWidget } from '@/features/news/NewsWidget'
 import { useAuth } from '@/hooks/useAuth'
 import { formatTimeRange } from '@/utils/format'
 
@@ -52,6 +53,8 @@ export function DashboardPage() {
               tone={data.pendingHomeworkCount > 0 ? 'warning' : 'default'}
             />
           </div>
+
+          <NewsWidget />
 
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="mb-3 text-sm font-medium text-ink-secondary">Сегодня</p>

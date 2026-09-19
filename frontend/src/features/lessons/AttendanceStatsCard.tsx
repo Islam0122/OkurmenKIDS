@@ -52,6 +52,7 @@ function StatBlock({ label, value, tone }: { label: string; value: number; tone:
     warning: 'text-warning',
     muted: 'text-ink-muted',
     brand: 'text-brand-700',
+    info: 'text-info',
   }
   return (
     <div className="rounded-lg bg-surface-muted p-3 text-center">

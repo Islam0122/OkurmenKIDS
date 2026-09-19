@@ -46,6 +46,8 @@
   --ok-danger-soft: #FBEAE7;
   --ok-warning: #B4790F;
   --ok-warning-soft: #FBF1DF;
+  --ok-info: #2563A8;
+  --ok-info-soft: #E7F0FA;
 
   /* Shared metrics */
   --ok-radius: 0.65rem;
@@ -81,6 +83,8 @@
   --ok-danger-soft: rgba(224, 102, 90, 0.14);
   --ok-warning: #D9A441;
   --ok-warning-soft: rgba(217, 164, 65, 0.14);
+  --ok-info: #5B9BD9;
+  --ok-info-soft: rgba(91, 155, 217, 0.14);
 
   --ok-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 10px rgba(0, 0, 0, 0.22);
   --ok-shadow-hover: 0 6px 22px rgba(0, 0, 0, 0.32);
@@ -112,6 +116,8 @@
     --ok-danger-soft: rgba(224, 102, 90, 0.14);
     --ok-warning: #D9A441;
     --ok-warning-soft: rgba(217, 164, 65, 0.14);
+    --ok-info: #5B9BD9;
+    --ok-info-soft: rgba(91, 155, 217, 0.14);
 
     --ok-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 10px rgba(0, 0, 0, 0.22);
     --ok-shadow-hover: 0 6px 22px rgba(0, 0, 0, 0.32);
@@ -689,6 +695,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .ok-badge-muted { background: var(--ok-surface-hover); color: var(--ok-text-muted); border: 1px solid var(--ok-border); }
 .ok-badge-warning { background: var(--ok-warning-soft); color: var(--ok-warning); }
 .ok-badge-danger { background: var(--ok-danger-soft); color: var(--ok-danger); }
+.ok-badge-info { background: var(--ok-info-soft); color: var(--ok-info); }
 .ok-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
 /* Subject / tag chips used in list views */

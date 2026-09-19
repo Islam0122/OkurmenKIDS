@@ -11,6 +11,7 @@ import type { AttendanceRecord } from '@/types/attendance'
 import type { User } from '@/types/auth'
 import type { Homework, HomeworkResult } from '@/types/homework'
 import type { AnalyticsDashboard, ComparisonMetric } from '@/types/kpi'
+import type { News } from '@/types/news'
 import type { Paginated } from '@/types/common'
 
 export function paginated<T>(results: T[]): Paginated<T> {
@@ -302,6 +303,20 @@ export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> =
       homework_completion_trend: [],
     },
     insights: [],
+    ...overrides,
+  }
+}
+
+export function buildNews(overrides: Partial<News> = {}): News {
+  return {
+    id: 1,
+    title: 'Завтра занятий нет',
+    text: 'Завтра занятий не будет.',
+    type: 'important',
+    type_label: 'Важно',
+    created_at: '2026-09-10T15:30:00Z',
+    expires_at: null,
+    is_read: false,
     ...overrides,
   }
 }
