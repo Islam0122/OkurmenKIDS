@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,10 +7,8 @@ import { buildNews, paginated } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
 
 const mockUseNewsList = vi.fn()
-const mockMutate = vi.fn()
 vi.mock('@/hooks/useNews', () => ({
   useNewsList: () => mockUseNewsList(),
-  useMarkNewsRead: () => ({ mutate: mockMutate, isPending: false }),
 }))
 
 describe('NewsListPage', () => {
@@ -18,7 +16,7 @@ describe('NewsListPage', () => {
     vi.clearAllMocks()
   })
 
-  it('shows unread news as highlighted and marks it read on click', async () => {
+  it('shows unread news as highlighted, linking through to its detail page', () => {
     mockUseNewsList.mockReturnValue({
       isPending: false,
       isError: false,
@@ -28,14 +26,11 @@ describe('NewsListPage', () => {
 
     renderWithProviders(<NewsListPage />, { route: '/app/news' })
 
-    expect(screen.getByText('Непрочитано')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByText('В офисе не будет света'))
-
-    await waitFor(() => expect(mockMutate).toHaveBeenCalledWith(7))
+    expect(screen.getByText('Новое')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /В офисе не будет света/ })).toHaveAttribute('href', '/app/news/7')
   })
 
-  it('shows read news with a checkmark and does not re-mark it', async () => {
+  it('shows read news with a checkmark', () => {
     mockUseNewsList.mockReturnValue({
       isPending: false,
       isError: false,
@@ -46,9 +41,28 @@ describe('NewsListPage', () => {
     renderWithProviders(<NewsListPage />, { route: '/app/news' })
 
     expect(screen.getByText('✓ Прочитано')).toBeInTheDocument()
+  })
 
-    await userEvent.click(screen.getByText('Уже прочитано'))
-    expect(mockMutate).not.toHaveBeenCalled()
+  it('filters down to unread items only', async () => {
+    mockUseNewsList.mockReturnValue({
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: paginated([
+        buildNews({ id: 1, title: 'Прочитанная новость', is_read: true }),
+        buildNews({ id: 2, title: 'Непрочитанная новость', is_read: false }),
+      ]),
+    })
+
+    renderWithProviders(<NewsListPage />, { route: '/app/news' })
+
+    expect(screen.getByText('Прочитанная новость')).toBeInTheDocument()
+    expect(screen.getByText('Непрочитанная новость')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /Непрочитанные · 1/ }))
+
+    expect(screen.queryByText('Прочитанная новость')).not.toBeInTheDocument()
+    expect(screen.getByText('Непрочитанная новость')).toBeInTheDocument()
   })
 
   it('shows the empty state when there is no active news', () => {

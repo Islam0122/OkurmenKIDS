@@ -314,6 +314,8 @@ export function buildNews(overrides: Partial<News> = {}): News {
     text: 'Завтра занятий не будет.',
     type: 'important',
     type_label: 'Важно',
+    audience: 'all',
+    audience_label: 'Всем',
     created_at: '2026-09-10T15:30:00Z',
     expires_at: null,
     is_read: false,
