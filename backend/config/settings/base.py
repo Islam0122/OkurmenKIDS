@@ -271,7 +271,6 @@ JAZZMIN_SETTINGS = {
 
         "новости": [
             {"name": "Новости", "model": "news.news", "icon": "bi bi-megaphone"},
-            {"name": "Прочтения", "model": "news.newsread", "icon": "bi bi-eye"},
         ],
 
         "академия": [
@@ -337,7 +336,6 @@ JAZZMIN_SETTINGS = {
         "academy.homeworkresult": "bi bi-check2-square",
         "data_io.exporttemplate": "bi bi-file-earmark-ruled",
         "news.news": "bi bi-megaphone",
-        "news.newsread": "bi bi-eye",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

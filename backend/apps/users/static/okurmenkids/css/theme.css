@@ -2396,3 +2396,50 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
   .ok-mon-detail-header { flex-direction: column; align-items: stretch; text-align: center; }
   .ok-mon-page-head { flex-direction: column; align-items: stretch; text-align: center; }
 }
+
+/* ------------------------------------------------------------------ */
+/* News admin — read/unread overview inside the change form           */
+/* ------------------------------------------------------------------ */
+
+.ok-news-reads-summary {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+  color: var(--ok-text);
+}
+
+.ok-news-reads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius);
+  background: var(--ok-surface);
+}
+
+.ok-news-read-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--ok-border);
+  font-size: 0.88rem;
+}
+.ok-news-read-row:last-child { border-bottom: none; }
+
+.ok-news-read-row.is-read { color: var(--ok-text); }
+.ok-news-read-row.is-read i { color: var(--ok-primary); }
+
+.ok-news-read-row.is-unread { color: var(--ok-text-muted); }
+.ok-news-read-row.is-unread i { color: var(--ok-border-strong); }
+
+.ok-news-read-name { flex: 1; min-width: 0; }
+
+.ok-news-read-time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--ok-text-secondary);
+}
+.ok-news-read-row.is-unread .ok-news-read-time { color: var(--ok-text-muted); }

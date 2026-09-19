@@ -140,7 +140,15 @@ function addPasswordToggle(input) {
     var addTrigger = document.createElement("button");
     addTrigger.type = "button";
     addTrigger.className = "ok-ms-add-trigger";
-    addTrigger.innerHTML = '<i class="bi bi-plus-lg"></i><span>Добавить предмет</span>';
+    var addTriggerIcon = document.createElement("i");
+    addTriggerIcon.className = "bi bi-plus-lg";
+    var addTriggerLabel = document.createElement("span");
+    // Per-field label ("Добавить тренера", etc.) via data-add-label —
+    // defaults to the original copy so the existing subjects widget
+    // (which never set this attribute) keeps working unchanged.
+    addTriggerLabel.textContent = select.dataset.addLabel || "Добавить предмет";
+    addTrigger.appendChild(addTriggerIcon);
+    addTrigger.appendChild(addTriggerLabel);
 
     chipsRow.appendChild(chips);
     chipsRow.appendChild(addTrigger);
@@ -874,6 +882,27 @@ card.dataset.label = label.toLowerCase();
   };
 
   /* ------------------------------------------------------------------ */
+  /* 11. News admin — hide the Teachers field unless audience=selected    */
+  /* ------------------------------------------------------------------ */
+
+  function initNewsAudienceToggle() {
+    var audienceField = document.getElementById("id_audience");
+
+    if (!audienceField) return;
+
+    var teachersRow = document.querySelector(".field-teachers");
+
+    if (!teachersRow) return;
+
+    function update() {
+      teachersRow.hidden = audienceField.value !== "selected";
+    }
+
+    audienceField.addEventListener("change", update);
+    update();
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Initialize                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -889,6 +918,7 @@ card.dataset.label = label.toLowerCase();
       initSearchHint();
       initEmptyState();
       initActionWarning();
+      initNewsAudienceToggle();
     }
   );
 })();

@@ -1,14 +1,30 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from django import forms
 from django.contrib import admin
-from django.utils.html import format_html
+from django.utils import timezone
+from django.utils.html import format_html, format_html_join
 
-from .models import News, NewsRead
+from apps.users.models import Teacher
+
+from .models import News
 
 
 def _badge(css: str, label: str) -> str:
     return format_html('<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>', css, label)
+
+
+def _pluralize_teacher(count: int) -> str:
+    mod10, mod100 = count % 10, count % 100
+    if mod10 == 1 and mod100 != 11:
+        word = "тренер"
+    elif 2 <= mod10 <= 4 and not (12 <= mod100 <= 14):
+        word = "тренера"
+    else:
+        word = "тренеров"
+    return f"{count} {word}"
 
 
 _TYPE_BADGE_CSS = {
@@ -20,9 +36,28 @@ _TYPE_BADGE_CSS = {
 
 
 class NewsAdminForm(forms.ModelForm):
+    teachers = forms.ModelMultipleChoiceField(
+        queryset=Teacher.objects.none(),
+        required=False,
+        label="Тренеры",
+        help_text="Кому именно адресована новость — только при аудитории «Выбранным».",
+        widget=forms.SelectMultiple(
+            attrs={
+                "class": "ok-multiselect-source",
+                "data-add-label": "Добавить тренера",
+            }
+        ),
+    )
+
     class Meta:
         model = News
         fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["teachers"].queryset = (
+            Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name", "user__last_name")
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -41,17 +76,31 @@ class NewsAdminForm(forms.ModelForm):
 @admin.register(News)
 class NewsAdmin(admin.ModelAdmin):
     form = NewsAdminForm
-    list_display = ("title", "type_badge", "audience_badge", "published_badge", "created_at", "expires_at")
+    list_display = ("title", "type_badge", "audience_badge", "published_badge", "expires_at", "created_at", "reads_column")
     list_filter = ("type", "audience", "is_published", "created_at")
     search_fields = ("title", "text")
     ordering = ("-created_at",)
-    filter_horizontal = ("teachers",)
     readonly_fields = ("created_at",)
-    fieldsets = (
-        (None, {"fields": ("title", "text", "type")}),
-        ("Показ тренерам", {"fields": ("audience", "teachers", "is_published", "expires_at")}),
-        ("Служебное", {"fields": ("created_at",)}),
-    )
+
+    def get_queryset(self, request):
+        # Both fields feed reads_column/reads_overview below — prefetched
+        # once here so a changelist page never runs a query per row.
+        return super().get_queryset(request).prefetch_related("teachers__user", "reads__teacher__user")
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = [
+            ("Новость", {"fields": ("title", "text", "type")}),
+            ("Показ тренерам", {"fields": ("audience", "teachers", "is_published", "expires_at")}),
+        ]
+        if obj is not None and obj.pk is not None:
+            fieldsets.append(("👁 Прочтения", {"fields": ("reads_overview",)}))
+        fieldsets.append(("Служебное", {"fields": ("created_at",)}))
+        return fieldsets
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None and obj.pk is not None:
+            return (*self.readonly_fields, "reads_overview")
+        return self.readonly_fields
 
     @admin.display(description="Тип", ordering="type")
     def type_badge(self, obj: News) -> str:
@@ -61,31 +110,68 @@ class NewsAdmin(admin.ModelAdmin):
     def audience_badge(self, obj: News) -> str:
         if obj.audience == News.Audience.ALL:
             return _badge("ok-badge-muted", "Всем")
-        count = obj.teachers.count()
+        count = len(obj.teachers.all())
         return _badge("ok-badge-info", f"Выбранным ({count})")
 
     @admin.display(description="Опубликовано", ordering="is_published", boolean=False)
     def published_badge(self, obj: News) -> str:
         return _badge("ok-badge-success", "Да") if obj.is_published else _badge("ok-badge-muted", "Нет")
 
+    def _target_teachers(self, obj: News) -> list[Teacher]:
+        """Who this News is actually addressed to — the same scope the
+        Teacher-facing API uses to decide visibility (see
+        News.objects.visible_to), so this list never includes a Teacher
+        the news wasn't meant for."""
+        if obj.audience == News.Audience.SELECTED:
+            return list(obj.teachers.all())
+        return list(Teacher.objects.filter(is_active=True).select_related("user"))
 
-@admin.register(NewsRead)
-class NewsReadAdmin(admin.ModelAdmin):
-    list_display = ("news", "teacher", "read_at")
-    list_filter = ("read_at",)
-    search_fields = (
-        "news__title",
-        "teacher__user__username",
-        "teacher__user__first_name",
-        "teacher__user__last_name",
-    )
-    ordering = ("-read_at",)
-    readonly_fields = ("news", "teacher", "read_at")
+    def _read_at_by_teacher(self, obj: News, target_ids: set[int]) -> dict[int, dt.datetime]:
+        return {r.teacher_id: r.read_at for r in obj.reads.all() if r.teacher_id in target_ids}
 
-    def has_add_permission(self, request) -> bool:
-        # Read records are only ever created by a Teacher marking News as
-        # read via the API — nothing for an Admin to add by hand here.
-        return False
+    @admin.display(description="Прочтения")
+    def reads_column(self, obj: News) -> str:
+        targets = self._target_teachers(obj)
+        reads = self._read_at_by_teacher(obj, {t.id for t in targets})
+        return f"{len(reads)} / {len(targets)}"
 
-    def has_change_permission(self, request, obj=None) -> bool:
-        return False
+    @admin.display(description="Прочтения")
+    def reads_overview(self, obj: News) -> str:
+        targets = self._target_teachers(obj)
+        reads = self._read_at_by_teacher(obj, {t.id for t in targets})
+
+        if obj.audience == News.Audience.SELECTED:
+            summary = f"Кому отправлено: {_pluralize_teacher(len(targets))}. Прочитали: {len(reads)} из {len(targets)}."
+        else:
+            summary = f"Прочитали: {len(reads)} из {len(targets)}."
+
+        if not targets:
+            return format_html('<p class="ok-news-reads-summary">{}</p>', summary)
+
+        read_rows = sorted((t for t in targets if t.id in reads), key=lambda t: reads[t.id])
+        unread_rows = sorted((t for t in targets if t.id not in reads), key=lambda t: str(t))
+
+        # One format_html_join call for both read/unread rows — concatenating
+        # two separately-escaped SafeString results with `+` would silently
+        # drop the "safe" marking and get double-escaped by the outer
+        # format_html() call below.
+        rows = [(True, t, timezone.localtime(reads[t.id]).strftime("%d.%m %H:%M")) for t in read_rows] + [
+            (False, t, "Не прочитано") for t in unread_rows
+        ]
+        rows_html = format_html_join(
+            "",
+            '<div class="ok-news-read-row {}"><i class="bi {}"></i>'
+            '<span class="ok-news-read-name">{}</span>'
+            '<span class="ok-news-read-time">{}</span></div>',
+            (
+                ("is-read" if is_read else "is-unread", "bi-check-circle-fill" if is_read else "bi-circle", str(t), time_label)
+                for is_read, t, time_label in rows
+            ),
+        )
+
+        return format_html(
+            '<div class="ok-news-reads"><p class="ok-news-reads-summary">{}</p>'
+            '<div class="ok-news-reads-list">{}</div></div>',
+            summary,
+            rows_html,
+        )
