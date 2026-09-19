@@ -16,6 +16,7 @@ router.register("lessons", views.LessonViewSet, basename="lesson")
 router.register("attendance", views.AttendanceViewSet, basename="attendance")
 router.register("homework", views.HomeworkViewSet, basename="homework")
 router.register("homework-results", views.HomeworkResultViewSet, basename="homework-result")
+router.register("monthly-reports", views.MonthlyTeacherReportViewSet, basename="monthly-report")
 
 urlpatterns = [
     path("analytics/dashboard/", views.AnalyticsDashboardView.as_view(), name="analytics-dashboard"),

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -44,6 +45,7 @@ from .models import (
     Homework,
     HomeworkResult,
     Lesson,
+    MonthlyTeacherReport,
     Room,
     Student,
 )
@@ -68,6 +70,9 @@ from .serializers import (
     HomeworkSerializer,
     LessonCancelRequestSerializer,
     LessonSerializer,
+    MonthlyTeacherReportCommentSerializer,
+    MonthlyTeacherReportCreateSerializer,
+    MonthlyTeacherReportSerializer,
     RoomAvailabilityRequestSerializer,
     RoomAvailabilitySerializer,
     RoomSerializer,
@@ -79,6 +84,7 @@ from .services.analytics import COMPARE_CHOICES, get_dashboard
 from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
 from .services import lesson_lifecycle
+from .services.monthly_report_pdf import build_monthly_report_pdf
 from .services.import_export import (
     StudentImportValidationError,
     export_students,
@@ -1144,3 +1150,91 @@ class AnalyticsDashboardView(APIView):
             subject_id=subject_id,
         )
         return Response(dashboard)
+
+
+# ---------------------------------------------------------------------------
+# Monthly Teacher Reports
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Monthly Reports"]),
+    retrieve=extend_schema(tags=["Monthly Reports"]),
+    create=extend_schema(tags=["Monthly Reports"], request=MonthlyTeacherReportCreateSerializer, responses=MonthlyTeacherReportSerializer),
+    partial_update=extend_schema(tags=["Monthly Reports"], request=MonthlyTeacherReportCommentSerializer, responses=MonthlyTeacherReportSerializer),
+)
+class MonthlyTeacherReportViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """A Teacher's own once-a-month report (spec: "Один Teacher может иметь
+    только один отчёт за один месяц" — `MonthlyTeacherReport`'s own
+    unique_teacher_monthly_report constraint). A Teacher may only see and
+    create/comment on their own reports; Admin may see every report but
+    never creates or edits one — every figure besides `comment` is always
+    computed, never entered (see .services.monthly_report)."""
+
+    serializer_class = MonthlyTeacherReportSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ["year", "month", "teacher"]
+    ordering_fields = ["year", "month", "created_at"]
+    ordering = ["-year", "-month"]
+
+    def get_queryset(self):
+        qs = MonthlyTeacherReport.objects.select_related("teacher__user").prefetch_related("teacher__subjects")
+        if _is_admin(self.request.user):
+            return qs
+        teacher = _teacher_profile(self.request)
+        if teacher is None:
+            return qs.none()
+        return qs.filter(teacher=teacher)
+
+    def create(self, request, *args, **kwargs):
+        if _is_admin(request.user):
+            raise PermissionDenied("Отчёт создаёт только тренер — администратор может только просматривать.")
+        teacher = _teacher_profile(request)
+        if teacher is None:
+            raise PermissionDenied("Профиль тренера не найден.")
+
+        body = MonthlyTeacherReportCreateSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+
+        report, created = MonthlyTeacherReport.objects.get_or_create(
+            teacher=teacher, year=body.validated_data["year"], month=body.validated_data["month"]
+        )
+        out = MonthlyTeacherReportSerializer(report, context=self.get_serializer_context()).data
+        if created:
+            return Response(out, status=status.HTTP_201_CREATED)
+        # Not an error — the unique-per-month rule is a fact of the domain,
+        # not a mistake the Teacher made; the frontend surfaces this as
+        # "already exists, open it" rather than a validation failure.
+        return Response({"detail": "exists", "report": out}, status=status.HTTP_200_OK)
+
+    def update(self, request, *args, **kwargs):
+        if not kwargs.get("partial", False):
+            raise MethodNotAllowed("PUT")
+
+        instance = self.get_object()
+        if _is_admin(request.user):
+            raise PermissionDenied("Администратор может только просматривать отчёты тренеров.")
+        teacher = _teacher_profile(request)
+        if teacher is None or instance.teacher_id != teacher.id:
+            raise PermissionDenied("Вы можете редактировать только свой отчёт.")
+
+        serializer = MonthlyTeacherReportCommentSerializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(MonthlyTeacherReportSerializer(instance, context=self.get_serializer_context()).data)
+
+    @extend_schema(tags=["Monthly Reports"], request=None, responses={200: {"type": "string", "format": "binary"}})
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        report = self.get_object()
+        pdf_bytes = build_monthly_report_pdf(report)
+        filename = f"report-{report.teacher_id}-{report.year}-{report.month:02d}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

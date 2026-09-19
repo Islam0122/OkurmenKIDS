@@ -35,12 +35,15 @@ from .models import (
     Homework,
     HomeworkResult,
     Lesson,
+    MonthlyTeacherReport,
     Room,
     Student,
 )
 from .services.analytics import get_dashboard
 from .services.group_schedule_conflicts import overlapping_groups
 from .services.lesson_status import attention_q, lesson_status_counts
+from .services.monthly_report import compute_monthly_stats
+from .services.monthly_report_pdf import MONTH_NAMES_RU
 from .services.lesson_generator import (
     LessonGenerationError,
     generate_lessons_for_group,
@@ -2120,3 +2123,71 @@ def lesson_detail_view(request, object_id):
         ),
     }
     return render(request, "admin/academy/lesson/detail.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Monthly Teacher Reports — Admin's read-only view onto what a Teacher has
+# submitted. Admin never creates or edits a report (spec §14): both screens
+# below are pure display, built on the very same `compute_monthly_stats`
+# the Teacher-facing API/PDF use, so a number here can never drift from what
+# the Teacher themself sees.
+# ---------------------------------------------------------------------------
+
+def monthly_report_monitor_view(request):
+    _require_admin(request)
+
+    teacher_id = request.GET.get("teacher") or ""
+    year = request.GET.get("year") or ""
+    month = request.GET.get("month") or ""
+
+    reports_qs = MonthlyTeacherReport.objects.select_related("teacher__user")
+    if teacher_id:
+        reports_qs = reports_qs.filter(teacher_id=teacher_id)
+    if year:
+        reports_qs = reports_qs.filter(year=year)
+    if month:
+        reports_qs = reports_qs.filter(month=month)
+    reports_qs = reports_qs.order_by("-year", "-month", "teacher__user__last_name")
+
+    paginator = Paginator(reports_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    rows = []
+    for report in page_obj:
+        stats = compute_monthly_stats(report.teacher, report.year, report.month)
+        rows.append({"report": report, "stats": stats, "month_label": f"{MONTH_NAMES_RU[report.month]} {report.year}"})
+
+    years = sorted(MonthlyTeacherReport.objects.values_list("year", flat=True).distinct(), reverse=True)
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Отчёты тренеров",
+        "subtitle": "Ежемесячные отчёты о работе тренеров — статистика считается автоматически.",
+        "rows": rows,
+        "page_obj": page_obj,
+        "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
+        "years": years,
+        "months": list(enumerate(MONTH_NAMES_RU))[1:],
+        "selected": {"teacher": teacher_id, "year": year, "month": month},
+        "reset_url": reverse("admin:academy_monthlyteacherreport_changelist"),
+    }
+    return render(request, "admin/academy/monthlyteacherreport/change_list.html", context)
+
+
+def monthly_report_detail_view(request, object_id):
+    _require_admin(request)
+    report = get_object_or_404(MonthlyTeacherReport.objects.select_related("teacher__user"), pk=object_id)
+    stats = compute_monthly_stats(report.teacher, report.year, report.month)
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Отчёт тренера",
+        "report": report,
+        "teacher": report.teacher,
+        "stats": stats,
+        "month_label": f"{MONTH_NAMES_RU[report.month]} {report.year}",
+        "changelist_url": reverse("admin:academy_monthlyteacherreport_changelist"),
+        "teacher_url": reverse("admin:users_teacher_change", args=[report.teacher_id]),
+        "pdf_url": reverse("monthly-report-pdf", args=[report.pk]),
+    }
+    return render(request, "admin/academy/monthlyteacherreport/detail.html", context)

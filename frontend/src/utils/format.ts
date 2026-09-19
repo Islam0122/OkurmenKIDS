@@ -30,6 +30,13 @@ export function formatPercent(value: number): string {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}%`
 }
 
+/** `(2026, 9)` → `Сентябрь 2026` — used across the Monthly Teacher Report
+ * pages instead of a duplicated month-name table per component. */
+export function formatMonthYear(year: number, month: number): string {
+  const label = format(new Date(year, month - 1, 1), 'LLLL yyyy', { locale: ru })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 export function pluralize(count: number, one: string, few: string, many: string): string {
   const mod10 = count % 10
   const mod100 = count % 100

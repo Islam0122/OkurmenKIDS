@@ -291,6 +291,7 @@ JAZZMIN_SETTINGS = {
             {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
             {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-check"},
             {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-circle"},
+            {"name": "Отчёты тренеров", "model": "academy.monthlyteacherreport", "icon": "bi bi-file-earmark-text"},
         ],
 
         "ресурсы": [
@@ -334,6 +335,7 @@ JAZZMIN_SETTINGS = {
         "academy.attendance": "bi bi-clipboard-check",
         "academy.homework": "bi bi-journal-text",
         "academy.homeworkresult": "bi bi-check2-square",
+        "academy.monthlyteacherreport": "bi bi-file-earmark-text",
         "data_io.exporttemplate": "bi bi-file-earmark-ruled",
         "news.news": "bi bi-megaphone",
     },
