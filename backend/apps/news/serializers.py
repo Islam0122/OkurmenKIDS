@@ -15,6 +15,7 @@ class NewsSerializer(serializers.ModelSerializer):
     """
 
     type_label = serializers.CharField(source="get_type_display", read_only=True)
+    audience_label = serializers.CharField(source="get_audience_display", read_only=True)
     is_read = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -25,6 +26,8 @@ class NewsSerializer(serializers.ModelSerializer):
             "text",
             "type",
             "type_label",
+            "audience",
+            "audience_label",
             "created_at",
             "expires_at",
             "is_read",

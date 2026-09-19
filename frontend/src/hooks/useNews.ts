@@ -9,6 +9,14 @@ export function useNewsList() {
   })
 }
 
+export function useNewsDetail(id: number) {
+  return useQuery({
+    queryKey: ['news', 'detail', id],
+    queryFn: () => newsApi.get(id),
+    enabled: Number.isFinite(id),
+  })
+}
+
 export function useUnreadNewsCount() {
   return useQuery({
     queryKey: ['news', 'unread-count'],

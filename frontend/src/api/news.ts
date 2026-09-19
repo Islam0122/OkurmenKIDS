@@ -5,6 +5,8 @@ import type { Paginated } from '@/types/common'
 export const newsApi = {
   list: (): Promise<Paginated<News>> => apiClient.get<Paginated<News>>('/teacher/news/').then((r) => r.data),
 
+  get: (id: number): Promise<News> => apiClient.get<News>(`/teacher/news/${id}/`).then((r) => r.data),
+
   unreadCount: (): Promise<UnreadNewsCount> =>
     apiClient.get<UnreadNewsCount>('/teacher/news/unread-count/').then((r) => r.data),
 

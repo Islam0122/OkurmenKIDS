@@ -103,6 +103,15 @@ class TeacherNewsAPITests(NewsTestBase):
         titles = {item["title"] for item in response.data["results"]}
         self.assertEqual(titles, {"Всем", "Только тренеру 1"})
 
+    def test_list_includes_audience_and_audience_label(self):
+        response = self.teacher1_client.get("/api/v1/teacher/news/")
+        by_title = {item["title"]: item for item in response.data["results"]}
+
+        self.assertEqual(by_title["Всем"]["audience"], "all")
+        self.assertEqual(by_title["Всем"]["audience_label"], "Всем")
+        self.assertEqual(by_title["Только тренеру 1"]["audience"], "selected")
+        self.assertEqual(by_title["Только тренеру 1"]["audience_label"], "Выбранным")
+
     def test_teacher_cannot_see_other_teachers_selected_news(self):
         response = self.teacher2_client.get("/api/v1/teacher/news/")
         titles = {item["title"] for item in response.data["results"]}
