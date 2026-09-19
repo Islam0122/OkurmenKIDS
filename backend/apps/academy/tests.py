@@ -41,6 +41,7 @@ from apps.academy.models import (
     Homework,
     HomeworkResult,
     Lesson,
+    MonthlyTeacherReport,
     Room,
     Student,
 )
@@ -3911,6 +3912,184 @@ class SeedDevDataTests(TestCase):
         self.assertEqual(Lesson.objects.count(), first_lesson_count)
         self.assertEqual(Student.objects.count(), first_student_count)
         self.assertEqual(User.objects.count(), first_user_count)
+
+
+class SeedDemoDataTests(TestCase):
+    """`seed_demo_data` — the Monthly Teacher Reports demo dataset."""
+
+    def test_refuses_when_django_env_is_production(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}):
+            with self.assertRaises(CommandError) as ctx:
+                call_command("seed_demo_data")
+        self.assertIn("production", str(ctx.exception).lower())
+        self.assertEqual(User.objects.count(), 0)
+        self.assertEqual(Group.objects.count(), 0)
+
+    def test_production_guard_runs_before_any_seeding_work(self):
+        from apps.academy.management.commands.seed_demo_data import Command
+
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}):
+            with mock.patch.object(Command, "_seed") as mocked_seed:
+                with self.assertRaises(CommandError):
+                    call_command("seed_demo_data")
+        mocked_seed.assert_not_called()
+
+    def test_creates_the_full_connected_dataset(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_demo_data", stdout=StringIO())
+
+        self.assertEqual(Group.objects.count(), 10)
+        self.assertGreaterEqual(Student.objects.count(), 60)
+        self.assertGreaterEqual(Lesson.objects.count(), 100)
+        self.assertTrue(Attendance.objects.exists())
+        self.assertTrue(Homework.objects.exists())
+        self.assertTrue(HomeworkResult.objects.exists())
+
+        admin = User.objects.get(username="admin")
+        self.assertEqual(admin.role, User.Role.ADMIN)
+        self.assertTrue(admin.is_superuser)
+        self.assertTrue(admin.check_password("admin12345"))
+
+        islam = User.objects.get(username="islam_it")
+        self.assertTrue(islam.check_password("teacher123"))
+        # Group.objects.for_teacher, not the legacy Group.teacher field — see
+        # models.GroupQuerySet.for_teacher's own docstring on why.
+        self.assertEqual(Group.objects.for_teacher(islam.teacher_profile).count(), 3)  # IT-15, IT-16, Backend-7
+
+        report = MonthlyTeacherReport.objects.get(teacher=islam.teacher_profile, year=2026, month=9)
+        self.assertTrue(report.comment)
+
+    def test_monthly_report_never_grows_a_duplicate_statistics_field(self):
+        """Regression guard for spec §16: every number a report shows must be
+        computed live (see services.monthly_report), never stored on the
+        model itself."""
+        field_names = {f.name for f in MonthlyTeacherReport._meta.get_fields()}
+        forbidden = {
+            "lessons_count", "students_count", "groups_count",
+            "attendance_percent", "homework_count", "kpi_percent",
+        }
+        self.assertEqual(field_names & forbidden, set())
+
+    def test_islam_september_matches_the_spec_shape(self):
+        """The one month the spec gives exact figures for: 24 lessons across
+        3 groups (IT-15=12, IT-16=8, Backend-7=4), all COMPLETED."""
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_demo_data", stdout=StringIO())
+
+        islam = Teacher.objects.get(user__username="islam_it")
+        september_lessons = Lesson.objects.for_teacher(islam).filter(date__year=2026, date__month=9)
+        self.assertEqual(september_lessons.count(), 24)
+        self.assertEqual(september_lessons.filter(status=Lesson.Status.COMPLETED).count(), 24)
+        self.assertEqual(september_lessons.filter(group__name="IT-15").count(), 12)
+        self.assertEqual(september_lessons.filter(group__name="IT-16").count(), 8)
+        self.assertEqual(september_lessons.filter(group__name="Backend-7").count(), 4)
+
+    def test_monthly_reports_are_only_created_for_the_planned_months(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_demo_data", stdout=StringIO())
+
+        def months_for(username):
+            teacher = Teacher.objects.get(user__username=username)
+            return set(MonthlyTeacherReport.objects.filter(teacher=teacher).values_list("month", flat=True))
+
+        self.assertEqual(months_for("islam_it"), {7, 8, 9})
+        self.assertEqual(months_for("khadizha_soft"), {8, 9})
+        self.assertEqual(months_for("azamat_python"), {9})
+        # Aizada only has a September report — July/August have real lesson
+        # data (see next assertion) but deliberately no report yet, so the
+        # "create a report for a month with data" flow has something real to
+        # exercise.
+        self.assertEqual(months_for("aizada_frontend"), {9})
+
+        aizada = Teacher.objects.get(user__username="aizada_frontend")
+        self.assertTrue(Lesson.objects.for_teacher(aizada).filter(date__year=2026, date__month=7).exists())
+
+    def test_is_idempotent_on_rerun(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_demo_data", stdout=StringIO())
+            counts = {
+                "users": User.objects.count(),
+                "groups": Group.objects.count(),
+                "students": Student.objects.count(),
+                "lessons": Lesson.objects.count(),
+                "attendance": Attendance.objects.count(),
+                "homework": Homework.objects.count(),
+                "homework_results": HomeworkResult.objects.count(),
+                "reports": MonthlyTeacherReport.objects.count(),
+            }
+
+            call_command("seed_demo_data", stdout=StringIO())
+
+        self.assertEqual(User.objects.count(), counts["users"])
+        self.assertEqual(Group.objects.count(), counts["groups"])
+        self.assertEqual(Student.objects.count(), counts["students"])
+        self.assertEqual(Lesson.objects.count(), counts["lessons"])
+        self.assertEqual(Attendance.objects.count(), counts["attendance"])
+        self.assertEqual(Homework.objects.count(), counts["homework"])
+        self.assertEqual(HomeworkResult.objects.count(), counts["homework_results"])
+        self.assertEqual(MonthlyTeacherReport.objects.count(), counts["reports"])
+
+
+class ClearDemoDataTests(TestCase):
+    """`clear_demo_data` — removes only what `seed_demo_data` created."""
+
+    def test_refuses_when_django_env_is_production(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}):
+            with self.assertRaises(CommandError) as ctx:
+                call_command("clear_demo_data", "--confirm")
+        self.assertIn("production", str(ctx.exception).lower())
+
+    def test_refuses_without_confirm_flag(self):
+        with self.assertRaises(CommandError) as ctx:
+            call_command("clear_demo_data")
+        self.assertIn("--confirm", str(ctx.exception))
+
+    def test_removes_demo_data_without_touching_unrelated_data(self):
+        # A real account/group that happens to coexist with the demo data —
+        # must survive clear_demo_data untouched.
+        real_admin = User.objects.create(
+            username="real_admin", email="real@example.com", role=User.Role.ADMIN, is_staff=True, is_superuser=True,
+        )
+        real_subject, _ = Subject.objects.get_or_create(name="Python")
+        real_course = Course.objects.create(name="Real Course", count_lesson=5)
+        real_course.subjects.add(real_subject)
+        real_group = Group.objects.create(name="Real-Group-1", course=real_course, start_date=dt.date(2026, 1, 1))
+        Student.objects.create(first_name="Real", last_name="Student", group=real_group)
+
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_demo_data", stdout=StringIO())
+            call_command("clear_demo_data", "--confirm", stdout=StringIO())
+
+        self.assertEqual(Group.objects.count(), 1)
+        self.assertEqual(Group.objects.first().name, "Real-Group-1")
+        self.assertEqual(Student.objects.count(), 1)
+        self.assertTrue(User.objects.filter(pk=real_admin.pk).exists())
+        self.assertFalse(User.objects.filter(username="admin").exists())
+        self.assertFalse(User.objects.filter(username="islam_it").exists())
+        self.assertEqual(MonthlyTeacherReport.objects.count(), 0)
+        # Subjects are shared catalogue data — never deleted by clear_demo_data.
+        self.assertTrue(Subject.objects.filter(name="Python").exists())
+
+    def test_a_real_user_named_admin_is_never_deleted(self):
+        real = User.objects.create(
+            username="admin", email="real-owner@example.com", role=User.Role.ADMIN, is_staff=True, is_superuser=True,
+        )
+
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_demo_data", stdout=StringIO())
+            call_command("clear_demo_data", "--confirm", stdout=StringIO())
+
+        self.assertTrue(User.objects.filter(pk=real.pk).exists())
+
+    def test_reseeding_after_clear_reproduces_the_same_dataset(self):
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "development"}):
+            call_command("seed_demo_data", stdout=StringIO())
+            call_command("clear_demo_data", "--confirm", stdout=StringIO())
+            call_command("seed_demo_data", stdout=StringIO())
+
+        self.assertEqual(Group.objects.count(), 10)
+        self.assertEqual(Lesson.objects.count(), 264)
+        self.assertEqual(MonthlyTeacherReport.objects.count(), 7)
 
 
 # ---------------------------------------------------------------------------
