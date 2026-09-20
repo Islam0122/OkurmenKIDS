@@ -5417,6 +5417,8 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         self.assertEqual(stats["homework"]["assigned"], 1)
         self.assertEqual(stats["homework"]["checked"], 1)
         self.assertEqual(stats["homework"]["pending_review"], 1)  # the "submitted" result
+        # 1 checked out of 2 that actually came in (1 checked + 1 submitted).
+        self.assertEqual(stats["homework"]["checked_rate"], 50.0)
 
         group_names = {row["name"]: row for row in stats["groups"]}
         self.assertEqual(set(group_names), {"Python Beginner", "Frontend Beginner"})
@@ -5448,6 +5450,73 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         self.assertEqual(stats["teachers"], [])
         self.assertEqual(stats["weekly_dynamics"], [])
         self.assertEqual(stats["kpi"]["total"], 0.0)
+
+    def test_checked_rate_excludes_never_submitted_from_denominator(self):
+        """Regression test: a student who never submitted anything must not
+        silently deflate "Процент проверки" — that figure answers "of the
+        work that came in, how much has been reviewed", not "of every
+        student who could ever have submitted". student3 here has a
+        HomeworkResult row defaulting to NOT_SUBMITTED (as bulk-grading the
+        whole roster produces one row per enrolled student, see
+        services.homework_service.bulk_upsert_homework_results) alongside
+        the checked/submitted pair from setUp."""
+        homework1 = Homework.objects.get(lesson=self.g1_lessons[0])
+        HomeworkResult.objects.create(homework=homework1, student=self.student3, status="not_submitted")
+
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        # Still only 1 checked out of 2 that came in — the never-submitted
+        # student3 row must not count against the reviewed population.
+        self.assertEqual(stats["homework"]["checked"], 1)
+        self.assertEqual(stats["homework"]["pending_review"], 1)
+        self.assertEqual(stats["homework"]["checked_rate"], 50.0)
+
+    def test_checked_rate_is_none_when_nothing_submitted_yet(self):
+        """Homework assigned but with zero submissions this month must
+        report `checked_rate=None` ("Нет данных") — there is nothing to
+        review yet, which is different from "0% reviewed"."""
+        homework1 = Homework.objects.get(lesson=self.g1_lessons[0])
+        HomeworkResult.objects.filter(homework=homework1).delete()
+        HomeworkResult.objects.create(homework=homework1, student=self.student1, status="not_submitted")
+
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats["homework"]["checked"], 0)
+        self.assertEqual(stats["homework"]["pending_review"], 0)
+        self.assertIsNone(stats["homework"]["checked_rate"])
+
+    def test_student_progress_is_none_not_fabricated_zero_when_no_homework_scored(self):
+        """Regression test: `services.monthly_report.compute_monthly_stats`
+        used to collapse "no graded homework yet" into a fabricated 0%
+        student_progress, dragging kpi_total down for a teacher who simply
+        hasn't graded anything yet this month — inconsistent with
+        `average_score` (already nullable) and with
+        services.academy_monthly_report's own KPI, which always treats a
+        missing student_progress as excluded from the average, never a
+        zero. teacher2/group2 here has lessons and attendance this month
+        but no Homework at all (only group1's lesson gets a Homework in
+        setUp), so average_score is genuinely None."""
+        from apps.academy.services.monthly_report import compute_monthly_stats
+
+        stats = compute_monthly_stats(self.teacher2, 2026, 9)
+        self.assertTrue(stats["has_data"])
+        self.assertIsNone(stats["homework"]["average_score"])
+        self.assertIsNone(stats["kpi"]["student_progress"])
+
+        real_components = [stats["kpi"]["attendance"], stats["kpi"]["homework"], stats["kpi"]["lessons"]]
+        expected_total = round(sum(real_components) / len(real_components), 1)
+        self.assertEqual(stats["kpi"]["total"], expected_total)
+
+    def test_academy_report_teacher_kpi_not_deflated_by_missing_student_progress(self):
+        """The Academy Report's per-teacher `kpi_total` (spec §6/§10: one
+        shared KPI formula, never duplicated) must read the exact same
+        `compute_monthly_stats` value teacher1's own Monthly Report shows —
+        including this None-vs-0.0 fix, since `_teachers_breakdown` calls
+        that same function rather than recomputing KPI itself."""
+        from apps.academy.services.monthly_report import compute_monthly_stats
+
+        teacher_stats = compute_monthly_stats(self.teacher2, 2026, 9)
+        academy_stats = self.compute_academy_monthly_stats(2026, 9)
+        row = next(r for r in academy_stats["teachers"] if r["name"] == str(self.teacher2))
+        self.assertEqual(row["kpi_total"], teacher_stats["kpi"]["total"])
 
     # -- Permissions (backend-enforced, spec §2/§20) -------------------------
 
@@ -6349,6 +6418,50 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         stats = compute_academy_monthly_stats(today.year, today.month)
         labels = {row["reason_display"] for row in stats["movement"]["reasons"]}
         self.assertEqual(labels, {"Не понравился преподаватель"})
+
+    def test_student_who_left_twice_same_month_counted_once_in_breakdown(self):
+        """Regression test for a real production anomaly: a student who
+        leaves, is reactivated, and leaves again *for a different reason*
+        within the same month must appear in exactly one reason bucket, not
+        both — otherwise `sum(reasons[*].count) > left`, and each bucket's
+        percentage is computed against the true `left` denominator, so two
+        single-student buckets each wrongly show 100% (200% total) instead
+        of 100% combined. Their most recent reason for the month wins."""
+        deactivate_student(self.student1, reason="financial_issues", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+        deactivate_student(self.student1, reason="disliked_teacher", comment="")
+
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["movement"]["left"], 1)
+        self.assertEqual(stats["students"]["left"], 1)
+
+        reasons = stats["movement"]["reasons"]
+        self.assertEqual(sum(row["count"] for row in reasons), 1)
+        self.assertEqual(round(sum(row["percent"] for row in reasons), 1), 100.0)
+        breakdown = {row["reason"]: row for row in reasons}
+        self.assertEqual(breakdown, {
+            "disliked_teacher": {
+                "reason": "disliked_teacher",
+                "reason_display": "Не понравился преподаватель",
+                "count": 1,
+                "percent": 100.0,
+            }
+        })
+
+    def test_two_different_students_leaving_for_different_reasons_both_counted(self):
+        """Sanity check for the fix above: two *different* students leaving
+        for two different reasons must still show up as two separate
+        buckets — the fix must not collapse distinct students together."""
+        deactivate_student(self.student1, reason="financial_issues", comment="")
+        deactivate_student(self.student2, reason="disliked_teacher", comment="")
+
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["movement"]["left"], 2)
+        reasons = {row["reason"]: row["count"] for row in stats["movement"]["reasons"]}
+        self.assertEqual(reasons, {"financial_issues": 1, "disliked_teacher": 1})
+        self.assertEqual(sum(row["percent"] for row in stats["movement"]["reasons"]), 100.0)
 
     def test_academy_report_api_exposes_reason_breakdown(self):
         deactivate_student(self.student1, reason="no_interest", comment="")

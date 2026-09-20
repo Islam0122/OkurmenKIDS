@@ -127,21 +127,31 @@ def _weekly_dynamics(start: dt.date, end: dt.date) -> list[dict]:
 
 
 def _homework_checked_rate(scope: AnalyticsScope, date_range: DateRange) -> tuple[int, float | None, float | None]:
-    """`(pending_review, checked_rate)` — computed directly (not read off
-    `homework.build()`'s already-rounded figures) so a month with zero
-    HomeworkResult rows can honestly report `checked_rate=None` ("Нет
-    данных") instead of a misleading 0%."""
+    """`(pending_review, checked_rate, average_score)` — computed directly
+    (not read off `homework.build()`'s already-rounded figures) so a month
+    with zero HomeworkResult rows can honestly report `checked_rate=None`
+    ("Нет данных") instead of a misleading 0%.
+
+    `checked_rate`'s denominator is `submitted_total` (checked + submitted +
+    late) — the same population `pending_review` is drawn from — never the
+    full `total` (which also includes NOT_SUBMITTED rows). "Процент
+    проверки" sits next to "Ожидают проверки" in the report and answers "of
+    the homework that actually came in, how much has been reviewed"; a
+    student who never submitted is a submission problem, not a review
+    backlog, and must not silently deflate the review-completion figure by
+    inflating its denominator.
+    """
     results_qs = homework_analytics._results_qs(scope, date_range)
     agg = results_qs.aggregate(
-        total=Count("id"),
         checked=Count("id", filter=Q(status=HomeworkResult.Status.CHECKED)),
         submitted=Count("id", filter=Q(status=HomeworkResult.Status.SUBMITTED)),
         late=Count("id", filter=Q(status=HomeworkResult.Status.LATE)),
         avg_score=Avg("score"),
     )
-    total = agg["total"] or 0
+    checked = agg["checked"] or 0
     pending_review = (agg["submitted"] or 0) + (agg["late"] or 0)
-    checked_rate = round((agg["checked"] or 0) / total * 100, 1) if total else None
+    submitted_total = checked + pending_review
+    checked_rate = round(checked / submitted_total * 100, 1) if submitted_total else None
     average_score = round(agg["avg_score"], 1) if agg["avg_score"] is not None else None
     return pending_review, checked_rate, average_score
 
@@ -223,28 +233,45 @@ def _departures(date_range: DateRange) -> tuple[int, list[dict]]:
     other edit also bumps).
 
     `left_count` is distinct students (spec: "не считать одного студента
-    несколько раз в одной метрике"); the breakdown counts distinct students
-    per reason too, so a student who left and came back and left again for a
-    *different* reason within the same month is never silently folded into
-    one bucket — an edge case, not the common path, but still never a
-    fabricated total.
+    несколько раз в одной метрике"). The breakdown is a true partition of
+    that same `left_count` — each departed student is attributed to exactly
+    one reason bucket, their *most recent* deactivation this period — never
+    grouped by (student, reason) pairs: a student who left, was reactivated,
+    and left again for a *different* reason within the same month is a real
+    but rare case, and counting them under both reasons would make
+    `sum(breakdown[*].count) > left_count` and percentages sum past 100%,
+    silently misrepresenting how many students actually left. Their final
+    reason for the month is the one that describes their current departure.
     """
-    events = StudentStatusEvent.objects.filter(
-        event_type=StudentStatusEvent.EventType.DEACTIVATED,
-        event_date__gte=date_range.start,
-        event_date__lte=date_range.end,
+    events = list(
+        StudentStatusEvent.objects.filter(
+            event_type=StudentStatusEvent.EventType.DEACTIVATED,
+            event_date__gte=date_range.start,
+            event_date__lte=date_range.end,
+        )
+        .order_by("student_id", "-event_date", "-created_at")
+        .values("student_id", "reason")
     )
-    left_count = events.values("student_id").distinct().count()
+    latest_reason_by_student: dict[int, str] = {}
+    for event in events:
+        # Ordered latest-first per student — the first row seen for a given
+        # student_id is their most recent departure this period.
+        latest_reason_by_student.setdefault(event["student_id"], event["reason"])
 
-    reason_rows = events.values("reason").annotate(n=Count("student_id", distinct=True)).order_by("-n")
+    left_count = len(latest_reason_by_student)
+
+    reason_counts: dict[str, int] = {}
+    for reason in latest_reason_by_student.values():
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
     breakdown = [
         {
-            "reason": row["reason"],
-            "reason_display": _reason_label(row["reason"]),
-            "count": row["n"],
-            "percent": round(row["n"] / left_count * 100, 1) if left_count else 0.0,
+            "reason": reason,
+            "reason_display": _reason_label(reason),
+            "count": count,
+            "percent": round(count / left_count * 100, 1) if left_count else 0.0,
         }
-        for row in reason_rows
+        for reason, count in sorted(reason_counts.items(), key=lambda item: -item[1])
     ]
     return left_count, breakdown
 
@@ -375,6 +402,13 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
             "attendance_rate": attendance_rate,
         },
         "homework": {
+            # `assigned` counts distinct Homework rows (one per lesson that
+            # got a homework assignment this month); `checked`/`pending_review`
+            # count individual HomeworkResult rows (one per enrolled student
+            # per Homework) — `checked` legitimately exceeding `assigned` is
+            # expected once one Homework fans out to several students, not a
+            # data error (spec §9: don't assume a mismatch is a bug before
+            # checking the models).
             "assigned": homework_section["homework_count"]["value"],
             "checked": homework_section["checked_count"]["value"],
             "pending_review": pending_review,

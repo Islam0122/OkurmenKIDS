@@ -1111,7 +1111,9 @@ class MonthlyReportKPISerializer(serializers.Serializer):
     attendance = serializers.FloatField()
     homework = serializers.FloatField()
     lessons = serializers.FloatField()
-    student_progress = serializers.FloatField()
+    # `None` when no homework has been graded yet this month — never a
+    # fabricated 0% (see services.monthly_report.compute_monthly_stats).
+    student_progress = serializers.FloatField(allow_null=True)
     total = serializers.FloatField()
 
 

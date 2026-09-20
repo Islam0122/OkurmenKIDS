@@ -1,12 +1,12 @@
 import type { MonthlyReportKPI } from '@/types/monthlyReport'
 import { formatRuPercent } from '@/utils/format'
 
-function KPICell({ label, percent }: { label: string; percent: number }) {
-  const clamped = Math.max(0, Math.min(100, percent))
+function KPICell({ label, percent }: { label: string; percent: number | null }) {
+  const clamped = percent === null ? 0 : Math.max(0, Math.min(100, percent))
   return (
     <div>
       <p className="text-sm text-ink-secondary">{label}</p>
-      <p className="mt-0.5 text-xl font-bold text-ink">{formatRuPercent(percent)}</p>
+      <p className="mt-0.5 text-xl font-bold text-ink">{percent === null ? 'Нет данных' : formatRuPercent(percent)}</p>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-hover">
         <div className="h-full rounded-full bg-brand-500" style={{ width: `${clamped}%` }} />
       </div>
