@@ -277,6 +277,12 @@ JAZZMIN_SETTINGS = {
             {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
             {"name": "Студенты", "model": "academy.student", "icon": "bi bi-mortarboard"},
             {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
+            {
+                "name": "Неактивные студенты",
+                "url": "admin:academy_inactive_students",
+                "icon": "bi bi-door-open",
+                "permissions": ["academy.view_studentstatusevent"],
+            },
         ],
 
         "программа обучения": [

@@ -52,13 +52,11 @@
                 <td>{{ student.created_at|date:"d.m.Y" }}</td>
                 <td class="ok-student-actions">
                   <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_student_detail' student.pk %}" title="Открыть профиль"><i class="bi bi-eye"></i></a>
-                  <form method="post" action="{% url 'admin:academy_student_toggle_active' student.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.path }}?{{ request.GET.urlencode }}">
-                    <button type="submit" class="ok-btn-secondary ok-btn-sm" title="{% if student.is_active %}Деактивировать{% else %}Активировать{% endif %}">
-                      <i class="bi {% if student.is_active %}bi-slash-circle{% else %}bi-check2-circle{% endif %}"></i>
-                    </button>
-                  </form>
+                  <a class="ok-btn-secondary ok-btn-sm {% if student.is_active %}ok-student-danger-action{% endif %}"
+                     href="{% url 'admin:academy_student_detail' student.pk %}"
+                     title="{% if student.is_active %}Деактивировать{% else %}Повторно активировать{% endif %}">
+                    <i class="bi {% if student.is_active %}bi-slash-circle{% else %}bi-check2-circle{% endif %}"></i>
+                  </a>
                   <form method="post" action="{% url 'admin:academy_group_workspace_students_remove' group.pk student.pk %}"
                         onsubmit="return confirm('Убрать студента из группы? Сам студент не будет удалён.');">
                     {% csrf_token %}

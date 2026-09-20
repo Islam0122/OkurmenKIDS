@@ -45,7 +45,10 @@ from apps.academy.models import (
     MonthlyTeacherReport,
     Room,
     Student,
+    StudentStatusEvent,
 )
+from apps.academy.services.academy_monthly_report import compute_academy_monthly_stats
+from apps.academy.services.student_status import deactivate_student, reactivate_student
 from apps.academy.services.analytics import (
     COMPARE_CHOICES,
     PERIOD_CHOICES,
@@ -1900,20 +1903,25 @@ class StudentAdminUXTests(AcademyTestBase):
 
     # -- activate / deactivate ------------------------------------------------
 
-    def test_toggle_active_view_deactivates_and_reactivates(self):
-        url = reverse("admin:academy_student_toggle_active", args=[self.student1.pk])
-        self.admin_web.post(url)
+    def test_deactivate_view_deactivates_and_reactivate_view_reactivates(self):
+        deactivate_url = reverse("admin:academy_student_deactivate", args=[self.student1.pk])
+        self.admin_web.post(deactivate_url, {"reason": "no_interest", "comment": ""})
         self.student1.refresh_from_db()
         self.assertFalse(self.student1.is_active)
 
-        self.admin_web.post(url)
+        reactivate_url = reverse("admin:academy_student_reactivate", args=[self.student1.pk])
+        self.admin_web.post(
+            reactivate_url,
+            {"group": self.group1.pk, "event_date": "2026-09-15", "comment": ""},
+        )
         self.student1.refresh_from_db()
         self.assertTrue(self.student1.is_active)
 
-    def test_toggle_active_requires_post(self):
-        url = reverse("admin:academy_student_toggle_active", args=[self.student1.pk])
-        response = self.admin_web.get(url)
-        self.assertEqual(response.status_code, 403)
+    def test_deactivate_and_reactivate_require_post(self):
+        deactivate_url = reverse("admin:academy_student_deactivate", args=[self.student1.pk])
+        self.assertEqual(self.admin_web.get(deactivate_url).status_code, 403)
+        reactivate_url = reverse("admin:academy_student_reactivate", args=[self.student1.pk])
+        self.assertEqual(self.admin_web.get(reactivate_url).status_code, 403)
 
     def test_bulk_deactivate_and_activate_actions(self):
         changelist_url = reverse("admin:academy_student_changelist")
@@ -1942,7 +1950,10 @@ class StudentAdminUXTests(AcademyTestBase):
         lesson = self.group1.lessons.first()
         Attendance.objects.create(student=self.student1, lesson=lesson, status=Attendance.Status.PRESENT)
 
-        self.admin_web.post(reverse("admin:academy_student_toggle_active", args=[self.student1.pk]))
+        self.admin_web.post(
+            reverse("admin:academy_student_deactivate", args=[self.student1.pk]),
+            {"reason": "no_interest", "comment": ""},
+        )
         self.student1.refresh_from_db()
         self.assertFalse(self.student1.is_active)
         self.assertTrue(Attendance.objects.filter(student=self.student1).exists())
@@ -5610,3 +5621,375 @@ class AcademyReportAdminViewTests(AcademyTestBase):
         pdf_response = self.admin_web.get(pdf_url)
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response["Content-Type"], "application/pdf")
+
+
+# ---------------------------------------------------------------------------
+# Student deactivation / reactivation / history (spec: "Student
+# Deactivation, Reactivation, History & Academy Reports").
+# ---------------------------------------------------------------------------
+
+class StudentStatusServiceTests(AcademyTestBase):
+    """`services.student_status` — the one place `Student.is_active` ever
+    flips and a `StudentStatusEvent` ever gets written."""
+
+    def test_deactivate_success_creates_event_and_flips_status(self):
+        event = deactivate_student(self.student1, reason="no_interest", comment="", performed_by=self.admin)
+        self.student1.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+        self.assertEqual(event.event_type, StudentStatusEvent.EventType.DEACTIVATED)
+        self.assertEqual(event.reason, "no_interest")
+        self.assertEqual(event.group_id, self.group1.id)  # group at moment of leaving
+        self.assertEqual(event.performed_by_id, self.admin.id)
+        self.assertEqual(event.event_date, dt.date.today())
+
+    def test_deactivate_requires_reason(self):
+        with self.assertRaises(DjangoValidationError):
+            deactivate_student(self.student1, reason="", comment="")
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+        self.assertEqual(StudentStatusEvent.objects.count(), 0)
+
+    def test_deactivate_other_reason_requires_comment(self):
+        with self.assertRaises(DjangoValidationError):
+            deactivate_student(self.student1, reason="other", comment="   ")
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+        self.assertEqual(StudentStatusEvent.objects.count(), 0)
+
+    def test_deactivate_other_reason_with_comment_succeeds(self):
+        event = deactivate_student(self.student1, reason="other", comment="Уехал учиться за границу.")
+        self.assertEqual(event.reason, "other")
+        self.assertEqual(event.comment, "Уехал учиться за границу.")
+
+    def test_deactivate_is_atomic_on_model_validation_failure(self):
+        """An invalid reason fails `StudentStatusEvent.full_clean()` deep
+        inside the transaction — neither the Student row nor a history
+        event may survive that failure."""
+        with self.assertRaises(DjangoValidationError):
+            deactivate_student(self.student1, reason="not_a_real_reason", comment="")
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+        self.assertEqual(StudentStatusEvent.objects.count(), 0)
+
+    def test_double_deactivate_is_safe_not_duplicated(self):
+        """A retried/duplicate request against an already-inactive student
+        is a clean error, never a second history event for the same
+        departure (spec: "Повторные запросы должны обрабатываться
+        безопасно")."""
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        with self.assertRaises(DjangoValidationError):
+            deactivate_student(self.student1, reason="financial_issues", comment="")
+        self.assertEqual(StudentStatusEvent.objects.filter(student=self.student1).count(), 1)
+
+    def test_reactivate_success_sets_group_and_status(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        event = reactivate_student(
+            self.student1, group=self.group2, event_date=dt.date(2026, 9, 20), comment="Вернулась", performed_by=self.admin
+        )
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+        self.assertEqual(self.student1.group_id, self.group2.id)
+        self.assertEqual(event.event_type, StudentStatusEvent.EventType.REACTIVATED)
+        self.assertEqual(event.event_date, dt.date(2026, 9, 20))
+
+    def test_reactivate_requires_group(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        with self.assertRaises(DjangoValidationError):
+            reactivate_student(self.student1, group=None, event_date=dt.date.today(), comment="")
+
+    def test_cannot_reactivate_already_active_student(self):
+        with self.assertRaises(DjangoValidationError):
+            reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+
+    def test_double_reactivate_is_safe(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+        with self.assertRaises(DjangoValidationError):
+            reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+
+    def test_multiple_deactivate_reactivate_cycles_keep_full_history(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date(2026, 1, 1), comment="")
+        deactivate_student(self.student1, reason="financial_issues", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date(2026, 3, 1), comment="")
+
+        events = list(StudentStatusEvent.objects.filter(student=self.student1).order_by("created_at"))
+        self.assertEqual(len(events), 4)
+        self.assertEqual(
+            [e.event_type for e in events],
+            [
+                StudentStatusEvent.EventType.DEACTIVATED,
+                StudentStatusEvent.EventType.REACTIVATED,
+                StudentStatusEvent.EventType.DEACTIVATED,
+                StudentStatusEvent.EventType.REACTIVATED,
+            ],
+        )
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+
+    def test_no_refund_fields_exist_on_the_model(self):
+        """This project has no payment/billing model anywhere — asserting
+        this stays true guards against ever bolting a fabricated Decimal
+        refund field onto history events (spec: "Не создавай выдуманные
+        суммы, платежи или возвраты")."""
+        field_names = {f.name for f in StudentStatusEvent._meta.get_fields()}
+        self.assertNotIn("refund_amount", field_names)
+        self.assertNotIn("refund_date", field_names)
+
+
+class StudentDeactivateReactivateAdminViewTests(AcademyTestBase):
+    """The Student Detail admin page's modal-driven flow — same red
+    "Деактивировать" button, now backed by a required reason instead of an
+    instant toggle."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    def test_deactivate_without_reason_reopens_modal_with_error(self):
+        url = reverse("admin:academy_student_deactivate", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"reason": "", "comment": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["open_deactivate_modal"])
+        self.assertTrue(response.context["deactivate_form"].errors)
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+
+    def test_deactivate_other_reason_without_comment_reopens_modal(self):
+        url = reverse("admin:academy_student_deactivate", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"reason": "other", "comment": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("comment", response.context["deactivate_form"].errors)
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+
+    def test_deactivate_success_redirects_and_shows_russian_message(self):
+        url = reverse("admin:academy_student_deactivate", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"reason": "no_interest", "comment": ""}, follow=True)
+        self.student1.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertIn("Студент успешно деактивирован.", messages_text)
+
+    def test_double_submit_shows_russian_error_not_a_crash(self):
+        url = reverse("admin:academy_student_deactivate", args=[self.student1.pk])
+        self.admin_web.post(url, {"reason": "no_interest", "comment": ""})
+        response = self.admin_web.post(url, {"reason": "financial_issues", "comment": ""}, follow=True)
+        self.assertEqual(response.status_code, 200)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertTrue(any("уже деактивирован" in m for m in messages_text))
+        self.assertEqual(StudentStatusEvent.objects.filter(student=self.student1).count(), 1)
+
+    def test_reactivate_requires_group(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        url = reverse("admin:academy_student_reactivate", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"group": "", "event_date": "2026-09-20", "comment": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["reactivate_form"].errors)
+        self.student1.refresh_from_db()
+        self.assertFalse(self.student1.is_active)
+
+    def test_reactivate_success(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        url = reverse("admin:academy_student_reactivate", args=[self.student1.pk])
+        response = self.admin_web.post(
+            url, {"group": self.group1.pk, "event_date": "2026-09-20", "comment": "Вернулась"}, follow=True
+        )
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertIn("Студент успешно активирован.", messages_text)
+
+    def test_teacher_cannot_deactivate_or_reactivate(self):
+        deactivate_url = reverse("admin:academy_student_deactivate", args=[self.student1.pk])
+        self.assertEqual(self.teacher_web.post(deactivate_url, {"reason": "no_interest"}).status_code, 302)
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+
+    def test_status_history_rendered_on_detail_page(self):
+        deactivate_student(self.student1, reason="no_interest", comment="Тестовый комментарий")
+        response = self.admin_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        body = response.content.decode()
+        self.assertIn("Нет интереса", body)
+        self.assertIn("Тестовый комментарий", body)
+        # No payments model exists — refund columns must always be a dash.
+        self.assertIn("<td>—</td>", body)
+
+
+class InactiveStudentsAndDepartureHistoryViewTests(AcademyTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    def test_reactivated_student_disappears_from_inactive_list(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        deactivate_student(self.student2, reason="relocation", comment="")
+
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"))
+        pks = {row["student"].pk for row in response.context["rows"]}
+        self.assertEqual(pks, {self.student1.pk, self.student2.pk})
+
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"))
+        pks = {row["student"].pk for row in response.context["rows"]}
+        self.assertEqual(pks, {self.student2.pk})
+
+    def test_empty_state_when_no_inactive_students(self):
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"))
+        self.assertIn("Неактивные студенты отсутствуют", response.content.decode())
+
+    def test_filter_by_reason(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        deactivate_student(self.student2, reason="relocation", comment="")
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"), {"reason": "relocation"})
+        pks = {row["student"].pk for row in response.context["rows"]}
+        self.assertEqual(pks, {self.student2.pk})
+
+    def test_filter_by_group(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")  # group1
+        deactivate_student(self.student3, reason="relocation", comment="")  # group2
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"), {"group": self.group2.pk})
+        pks = {row["student"].pk for row in response.context["rows"]}
+        self.assertEqual(pks, {self.student3.pk})
+
+    def test_search_by_name_id_and_group(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        url = reverse("admin:academy_inactive_students")
+
+        response = self.admin_web.get(url, {"q": self.student1.last_name})
+        self.assertEqual({row["student"].pk for row in response.context["rows"]}, {self.student1.pk})
+
+        response = self.admin_web.get(url, {"q": str(self.student1.pk)})
+        self.assertEqual({row["student"].pk for row in response.context["rows"]}, {self.student1.pk})
+
+        response = self.admin_web.get(url, {"q": self.group1.name})
+        self.assertEqual({row["student"].pk for row in response.context["rows"]}, {self.student1.pk})
+
+    def test_has_refund_yes_filter_always_empty(self):
+        """No payments model exists, so a real refund never happens —
+        filtering for one is honest, not fabricated (spec §3/§6)."""
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"), {"has_refund": "yes"})
+        self.assertEqual(list(response.context["rows"]), [])
+
+    def test_departure_history_includes_returned_students(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+
+        response = self.admin_web.get(reverse("admin:academy_student_departure_history"))
+        student_ids = {event.student_id for event in response.context["rows"]}
+        self.assertIn(self.student1.pk, student_ids)
+        # The student is active again, but the departure record must stay.
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)
+
+    def test_departure_history_records_multiple_cycles(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+        deactivate_student(self.student1, reason="financial_issues", comment="")
+
+        response = self.admin_web.get(reverse("admin:academy_student_departure_history"))
+        reasons = [event.reason for event in response.context["rows"] if event.student_id == self.student1.pk]
+        self.assertEqual(sorted(reasons), sorted(["no_interest", "financial_issues"]))
+
+    def test_teacher_cannot_view_inactive_students_or_history(self):
+        self.assertEqual(self.teacher_web.get(reverse("admin:academy_inactive_students")).status_code, 302)
+        self.assertEqual(self.teacher_web.get(reverse("admin:academy_student_departure_history")).status_code, 302)
+
+    def test_staff_non_admin_forbidden_from_inactive_students(self):
+        self.teacher1.user.is_staff = True
+        self.teacher1.user.save(update_fields=["is_staff"])
+        staff_teacher_web = DjangoClient()
+        staff_teacher_web.force_login(self.teacher1.user)
+        response = staff_teacher_web.get(reverse("admin:academy_inactive_students"))
+        self.assertEqual(response.status_code, 403)
+
+
+class AcademyReportMovementMetricsTests(AcademyTestBase):
+    """§7/§8: movement metrics and the reason breakdown, computed from
+    confirmed StudentStatusEvent records for the exact selected year/month."""
+
+    def test_left_counts_distinct_students_using_event_date(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        deactivate_student(self.student2, reason="no_interest", comment="")
+
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["students"]["left"], 2)
+        self.assertEqual(stats["movement"]["left"], 2)
+
+    def test_events_outside_selected_month_are_excluded(self):
+        event = StudentStatusEvent.objects.create(
+            student=self.student1,
+            event_type=StudentStatusEvent.EventType.DEACTIVATED,
+            reason="no_interest",
+            group=self.group1,
+            event_date=dt.date(2026, 8, 15),
+        )
+        self.student1.is_active = False
+        self.student1.save(update_fields=["is_active"])
+
+        stats_august = compute_academy_monthly_stats(2026, 8)
+        stats_september = compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats_august["students"]["left"], 1)
+        self.assertEqual(stats_september["students"]["left"], 0)
+        self.assertIsNotNone(event.pk)
+
+    def test_returned_is_zero_not_none_when_supported_and_empty(self):
+        stats = compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats["movement"]["returned"], 0)
+        self.assertIsNotNone(stats["movement"]["returned"])
+
+    def test_returned_counts_real_reactivation_events(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date(2026, 9, 20), comment="")
+        stats = compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats["movement"]["returned"], 1)
+
+    def test_paused_and_continued_are_unsupported_none(self):
+        stats = compute_academy_monthly_stats(2026, 9)
+        self.assertIsNone(stats["movement"]["paused"])
+        self.assertIsNone(stats["movement"]["continued"])
+        self.assertIsNone(stats["students"]["paused"])
+        self.assertIsNone(stats["students"]["completed"])
+
+    def test_reason_breakdown_percentages_and_no_division_by_zero(self):
+        today = dt.date.today()
+        empty_stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(empty_stats["movement"]["reasons"], [])
+
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        deactivate_student(self.student2, reason="no_interest", comment="")
+        deactivate_student(self.student3, reason="relocation", comment="")
+
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        breakdown = {row["reason"]: row for row in stats["movement"]["reasons"]}
+        self.assertEqual(breakdown["no_interest"]["count"], 2)
+        self.assertEqual(breakdown["no_interest"]["percent"], round(2 / 3 * 100, 1))
+        self.assertEqual(breakdown["relocation"]["count"], 1)
+        self.assertEqual(breakdown["relocation"]["percent"], round(1 / 3 * 100, 1))
+        self.assertEqual(breakdown["no_interest"]["reason_display"], "Нет интереса")
+
+    def test_reason_breakdown_uses_russian_labels(self):
+        deactivate_student(self.student1, reason="disliked_teacher", comment="")
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        labels = {row["reason_display"] for row in stats["movement"]["reasons"]}
+        self.assertEqual(labels, {"Не понравился преподаватель"})
+
+    def test_academy_report_api_exposes_reason_breakdown(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        today = dt.date.today()
+        response = self.admin_client.post(
+            "/api/v1/academy-reports/", {"year": today.year, "month": today.month}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["stats"]["movement"]["left"], 1)
+        self.assertEqual(len(response.data["stats"]["movement"]["reasons"]), 1)
+        self.assertEqual(response.data["stats"]["movement"]["returned"], 0)

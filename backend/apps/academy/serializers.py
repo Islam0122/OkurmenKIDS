@@ -1249,12 +1249,26 @@ class AcademyReportKPISerializer(serializers.Serializer):
     total = serializers.FloatField()
 
 
+class AcademyReportReasonBreakdownRowSerializer(serializers.Serializer):
+    reason = serializers.CharField()
+    reason_display = serializers.CharField()
+    count = serializers.IntegerField()
+    percent = serializers.FloatField()
+
+
 class AcademyReportMovementSerializer(serializers.Serializer):
     left = serializers.IntegerField()
+    # "paused"/"continued" have no backing status in the current schema
+    # (spec §7: not every deactivation reason implies a pause, and there is
+    # no separate "paused" student status) — `null` means "Функция пока не
+    # поддерживается", never a fabricated number.
     paused = serializers.IntegerField(allow_null=True)
     continued = serializers.IntegerField(allow_null=True)
-    returned = serializers.IntegerField(allow_null=True)
-    reasons = serializers.ListField(child=serializers.DictField(), allow_null=True)
+    # Reactivation IS a real, supported event type — always a real count,
+    # 0 when there are none this month, never `null` (spec §7: "Не путать
+    # `0` и `unsupported`").
+    returned = serializers.IntegerField()
+    reasons = AcademyReportReasonBreakdownRowSerializer(many=True)
 
 
 class AcademyReportAttentionItemSerializer(serializers.Serializer):

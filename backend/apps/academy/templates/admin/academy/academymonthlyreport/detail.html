@@ -79,11 +79,11 @@
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Завершили обучение</span>
-        <span class="ok-report-row-value">{% if stats.students.completed is None %}Нет данных{% else %}{{ stats.students.completed }}{% endif %}</span>
+        <span class="ok-report-row-value">{% if stats.students.completed is None %}Функция пока не поддерживается{% else %}{{ stats.students.completed }}{% endif %}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Приостановили обучение</span>
-        <span class="ok-report-row-value">{% if stats.students.paused is None %}Нет данных{% else %}{{ stats.students.paused }}{% endif %}</span>
+        <span class="ok-report-row-value">{% if stats.students.paused is None %}Функция пока не поддерживается{% else %}{{ stats.students.paused }}{% endif %}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Вышли из курса</span>
@@ -267,18 +267,39 @@
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Приостановили обучение</span>
-        <span class="ok-report-row-value">{% if stats.movement.paused is None %}Нет данных{% else %}{{ stats.movement.paused }}{% endif %}</span>
+        <span class="ok-report-row-value">{% if stats.movement.paused is None %}Функция пока не поддерживается{% else %}{{ stats.movement.paused }}{% endif %}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Продолжили обучение</span>
-        <span class="ok-report-row-value">{% if stats.movement.continued is None %}Нет данных{% else %}{{ stats.movement.continued }}{% endif %}</span>
+        <span class="ok-report-row-value">{% if stats.movement.continued is None %}Функция пока не поддерживается{% else %}{{ stats.movement.continued }}{% endif %}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Вернулись после паузы</span>
-        <span class="ok-report-row-value">{% if stats.movement.returned is None %}Нет данных{% else %}{{ stats.movement.returned }}{% endif %}</span>
+        <span class="ok-report-row-value">{{ stats.movement.returned }}</span>
       </div>
-      {% if stats.movement.reasons is None %}
-        <p class="ok-help-text" style="margin-top:0.6rem;">Разбивка по причинам ухода недоступна — в системе пока нет отдельного модуля учёта причин.</p>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-pie-chart"></i><span>Разбивка по причинам ухода</span></div>
+    <div class="ok-card-body">
+      {% if stats.movement.reasons %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead><tr><th>Причина</th><th>Студентов</th><th>% от ушедших</th></tr></thead>
+            <tbody>
+              {% for row in stats.movement.reasons %}
+                <tr>
+                  <td>{{ row.reason_display }}</td>
+                  <td>{{ row.count }}</td>
+                  <td>{{ row.percent|ru_percent }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="ok-help-text">За выбранный период уходов студентов не зарегистрировано.</p>
       {% endif %}
     </div>
   </div>

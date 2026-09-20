@@ -1,0 +1,108 @@
+{% extends "admin/base_site.html" %}
+{% load i18n academy_extras %}
+
+{% block content_title %}Неактивные студенты{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item">Неактивные студенты</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <div class="ok-mon-page-head">
+    <p class="ok-page-subtitle">{{ subtitle }}</p>
+    <a href="{{ history_url }}" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-clock-history"></i> История ухода студентов</a>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-funnel"></i><span>Фильтры и поиск</span></div>
+    <div class="ok-card-body">
+      <form method="get" class="ok-group-toolbar">
+        <input type="text" name="q" class="ok-input" placeholder="Имя, фамилия, ID или группа..." value="{{ selected.q }}" style="min-width:220px;">
+        <select name="year" class="ok-input">
+          <option value="">Все годы</option>
+          {% for y in years %}
+            <option value="{{ y }}" {% if selected.year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+        <select name="month" class="ok-input">
+          <option value="">Все месяцы</option>
+          {% for num, label in months %}
+            <option value="{{ num }}" {% if selected.month == num|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <select name="reason" class="ok-input">
+          <option value="">Все причины</option>
+          {% for value, label in reasons %}
+            <option value="{{ value }}" {% if selected.reason == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <select name="group" class="ok-input">
+          <option value="">Все группы</option>
+          {% for g in groups %}
+            <option value="{{ g.pk }}" {% if selected.group == g.pk|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="has_refund" class="ok-input">
+          <option value="">Возврат — не важно</option>
+          <option value="yes" {% if selected.has_refund == "yes" %}selected{% endif %}>Есть возврат</option>
+          <option value="no" {% if selected.has_refund == "no" %}selected{% endif %}>Без возврата</option>
+        </select>
+        <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}" title="Дата с">
+        <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}" title="Дата по">
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
+      </form>
+      <p class="ok-help-text" style="margin:0.6rem 0 0;">
+        В проекте пока нет модуля учёта платежей, поэтому «возврат» никогда не бывает «есть» — фильтр отражает это честно, а не скрывает отсутствие данных.
+      </p>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-door-open"></i><span>Неактивные студенты</span></div>
+    <div class="ok-card-body">
+      {% if rows %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Студент</th><th>ID</th><th>Последняя группа</th><th>Дата деактивации</th>
+                <th>Причина</th><th>Сумма возврата</th><th>Дата возврата</th><th>Статус</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  <td><a href="{% url 'admin:academy_student_detail' row.student.pk %}">{{ row.student }}</a></td>
+                  <td>#{{ row.student.pk }}</td>
+                  <td>{{ row.last_event.group.name|default:row.student.group.name|default:"—" }}</td>
+                  <td>{{ row.last_event.event_date|date:"d.m.Y"|default:"—" }}</td>
+                  <td>{{ row.last_event.get_reason_display|default:"—" }}</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td><span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span></td>
+                  <td class="ok-student-actions">
+                    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_student_detail' row.student.pk %}" title="Открыть профиль">
+                      <i class="bi bi-eye"></i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "admin/academy/group/workspace/_pagination.html" with page_obj=page_obj %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-door-open"></i>
+          <h4>Неактивные студенты отсутствуют</h4>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

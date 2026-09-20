@@ -23,7 +23,7 @@ from django.utils import timezone
 
 from apps.users.models import Teacher
 
-from ..models import Attendance, Group, HomeworkResult
+from ..models import Attendance, Group, HomeworkResult, StudentStatusEvent
 from .analytics import homework as homework_analytics
 from .analytics import insights as insights_analytics
 from .analytics.attendance import build as build_attendance_section
@@ -197,6 +197,61 @@ def _pluralize_student(n: int) -> str:
     return "студентов"
 
 
+def _reason_label(reason: str) -> str:
+    return dict(StudentStatusEvent.Reason.choices).get(reason, reason or "—")
+
+
+def _departures(date_range: DateRange) -> tuple[int, list[dict]]:
+    """`(left_count, reason_breakdown)` — from confirmed StudentStatusEvent
+    deactivation records only (spec §7: "Считать только подтверждённые
+    deactivation events"), using the event's own `event_date` (spec: "Реальную
+    дату события"), never `Student.updated_at` (which a group change or any
+    other edit also bumps).
+
+    `left_count` is distinct students (spec: "не считать одного студента
+    несколько раз в одной метрике"); the breakdown counts distinct students
+    per reason too, so a student who left and came back and left again for a
+    *different* reason within the same month is never silently folded into
+    one bucket — an edge case, not the common path, but still never a
+    fabricated total.
+    """
+    events = StudentStatusEvent.objects.filter(
+        event_type=StudentStatusEvent.EventType.DEACTIVATED,
+        event_date__gte=date_range.start,
+        event_date__lte=date_range.end,
+    )
+    left_count = events.values("student_id").distinct().count()
+
+    reason_rows = events.values("reason").annotate(n=Count("student_id", distinct=True)).order_by("-n")
+    breakdown = [
+        {
+            "reason": row["reason"],
+            "reason_display": _reason_label(row["reason"]),
+            "count": row["n"],
+            "percent": round(row["n"] / left_count * 100, 1) if left_count else 0.0,
+        }
+        for row in reason_rows
+    ]
+    return left_count, breakdown
+
+
+def _returned_count(date_range: DateRange) -> int:
+    """Distinct students with a confirmed reactivation event in the period —
+    always a real number (0 when there are none), never `None`: unlike
+    "paused"/"continued", reactivation is a real, fully-supported event type
+    (spec §7: "Если функция поддерживается и событий нет — показывать 0")."""
+    return (
+        StudentStatusEvent.objects.filter(
+            event_type=StudentStatusEvent.EventType.REACTIVATED,
+            event_date__gte=date_range.start,
+            event_date__lte=date_range.end,
+        )
+        .values("student_id")
+        .distinct()
+        .count()
+    )
+
+
 def _pluralize_lesson(n: int) -> str:
     mod10, mod100 = n % 10, n % 100
     if mod10 == 1 and mod100 != 11:
@@ -239,6 +294,8 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
     kpi_total = round(sum(kpi_components) / len(kpi_components), 1) if has_data else 0.0
 
     attention = _attention_items(scope, date_range, lessons_section, pending_review)
+    left_count, reason_breakdown = _departures(date_range)
+    returned_count = _returned_count(date_range)
 
     return {
         "period": {"year": year, "month": month, "start_date": start, "end_date": end},
@@ -263,7 +320,7 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
         "students": {
             "active": students_section["active_students"]["value"],
             "new": students_section["new_students"]["value"],
-            "left": students_section["students_left"]["value"],
+            "left": left_count,
             "completed": None,
             "paused": None,
         },
@@ -291,11 +348,11 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
             "total": kpi_total,
         },
         "movement": {
-            "left": students_section["students_left"]["value"],
+            "left": left_count,
             "paused": None,
             "continued": None,
-            "returned": None,
-            "reasons": None,
+            "returned": returned_count,
+            "reasons": reason_breakdown,
         },
         "attention": attention,
     }

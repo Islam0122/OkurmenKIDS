@@ -1,0 +1,59 @@
+<dialog id="ok-modal-deactivate" class="ok-modal"{% if open_deactivate_modal %} open{% endif %}>
+  <form method="post" action="{{ deactivate_url }}" class="ok-modal-form" id="ok-deactivate-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url|default:request.path }}">
+    <div class="ok-modal-header">
+      <span><i class="bi bi-exclamation-triangle-fill" style="color:var(--ok-danger);"></i> Деактивировать студента?</span>
+      <button type="button" class="ok-modal-close" onclick="document.getElementById('ok-modal-deactivate').close()" aria-label="Закрыть">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="ok-modal-body">
+      <p class="ok-static-value" style="margin:0 0 0.35rem;"><strong>{{ student }}</strong></p>
+      <p class="ok-help-text" style="margin:0 0 1.1rem;">
+        Студент будет помечен как неактивный. Посещаемость, домашние задания и вся история сохраняются — ничего не удаляется.
+      </p>
+
+      {% for error in deactivate_form.non_field_errors %}
+        <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+      {% endfor %}
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ deactivate_form.reason.id_for_label }}">{{ deactivate_form.reason.label }} *</label>
+        {{ deactivate_form.reason }}
+        {% for error in deactivate_form.reason.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ deactivate_form.comment.id_for_label }}">{{ deactivate_form.comment.label }}</label>
+        {{ deactivate_form.comment }}
+        <span class="ok-help-text" id="ok-deactivate-comment-hint">Необязательно — кроме причины «Другая причина», для неё комментарий обязателен.</span>
+        {% for error in deactivate_form.comment.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary" onclick="document.getElementById('ok-modal-deactivate').close()">Отмена</button>
+      <button type="submit" class="ok-btn-danger"><i class="bi bi-slash-circle"></i> Подтвердить деактивацию</button>
+    </div>
+  </form>
+</dialog>
+<script>
+  (function () {
+    var form = document.getElementById('ok-deactivate-form');
+    if (!form) return;
+    var reasonField = form.querySelector('[name="reason"]');
+    var commentField = form.querySelector('[name="comment"]');
+    function syncCommentRequired() {
+      if (!reasonField || !commentField) return;
+      commentField.required = reasonField.value === 'other';
+    }
+    if (reasonField) {
+      reasonField.addEventListener('change', syncCommentRequired);
+      syncCommentRequired();
+    }
+  })();
+</script>
