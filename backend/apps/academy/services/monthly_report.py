@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+from collections import defaultdict
 
 from django.db.models import Avg, Count, Q
 
@@ -85,12 +86,37 @@ def compute_monthly_stats(teacher: Teacher, year: int, month: int) -> dict:
     homework_submission_rate = round((results_agg["submitted"] or 0) / results_total * 100, 1) if results_total else 0.0
     average_score = round(results_agg["avg_score"], 1) if results_agg["avg_score"] is not None else None
 
+    # Both figures below must use the *same* definition the summary cards
+    # above do, or "Группы" table totals silently disagree with them (spec:
+    # summary lessons/students must reconcile with the group breakdown).
+    # `lessons_count` therefore counts only COMPLETED lessons, exactly like
+    # `lessons_completed` — never every Lesson regardless of status (a
+    # SCHEDULED/CANCELLED lesson was never "conducted"). `students_count` is
+    # the same attendance-based "worked with this month" headcount as the
+    # summary's `students_count`, scoped to this one group — never
+    # `group.students_count` (that property is the group's *current* active
+    # roster, live and un-scoped by teacher or period, so it can disagree
+    # with what this teacher actually taught this month in either
+    # direction). A student attending lessons in two of this teacher's
+    # groups is counted once in the summary total but appears in each of
+    # those groups' own counts — so the column can legitimately sum to more
+    # than the summary total; that is not a bug, just why the summary uses
+    # a distinct count instead of summing the rows.
+    # Two queries total (not one pair per group — see `for_teacher`'s own
+    # N+1 concerns elsewhere in this module) to build both per-group maps.
+    completed_lessons_by_group = dict(
+        lessons_qs.filter(status=Lesson.Status.COMPLETED).values("group_id").annotate(n=Count("id")).values_list("group_id", "n")
+    )
+    students_by_group: dict[int, set] = defaultdict(set)
+    for group_id, student_id in attendance_qs.values_list("lesson__group_id", "student_id").distinct():
+        students_by_group[group_id].add(student_id)
+
     groups = [
         {
             "id": group.id,
             "name": group.name,
-            "students_count": group.students_count,
-            "lessons_count": lessons_qs.filter(group_id=group.id).count(),
+            "students_count": len(students_by_group.get(group.id, ())),
+            "lessons_count": completed_lessons_by_group.get(group.id, 0),
         }
         for group in groups_qs.order_by("name")
     ]
