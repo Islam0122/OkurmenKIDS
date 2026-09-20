@@ -1231,7 +1231,7 @@ class MonthlyTeacherReport(models.Model):
         Teacher,
         on_delete=models.CASCADE,
         related_name="monthly_reports",
-        verbose_name="Тренер",
+        verbose_name="Преподаватель",
     )
 
     year = models.PositiveIntegerField(
@@ -1247,15 +1247,15 @@ class MonthlyTeacherReport(models.Model):
     comment = models.TextField(
         blank=True,
         verbose_name="Итог месяца",
-        help_text="Комментарий тренера о проделанной работе за месяц.",
+        help_text="Комментарий преподавателя о проделанной работе за месяц.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
     class Meta:
-        verbose_name = "Отчёт тренера"
-        verbose_name_plural = "Отчёты тренеров"
+        verbose_name = "Отчёт преподавателя"
+        verbose_name_plural = "Отчёты преподавателей"
         ordering = ["-year", "-month"]
         constraints = [
             models.UniqueConstraint(

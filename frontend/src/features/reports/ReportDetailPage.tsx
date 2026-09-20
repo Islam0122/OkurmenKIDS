@@ -28,13 +28,13 @@ import { useAuth } from '@/hooks/useAuth'
 import { useMonthlyReportDetail } from '@/hooks/useMonthlyReports'
 import { monthlyReportsApi } from '@/api/monthlyReports'
 import { extractErrorMessage } from '@/lib/apiError'
-import { formatMonthYear } from '@/utils/format'
+import { formatMonthYear, formatRuPercent } from '@/utils/format'
 
 import { ReportComment } from './ReportComment'
 import { ReportGroupsTable } from './ReportGroupsTable'
 import { ReportHeader } from './ReportHeader'
 import { ReportKPIBreakdown } from './ReportKPIBreakdown'
-import { ReportWeeklyBars } from './ReportWeeklyBars'
+import { WeeklyAttendanceChart } from './WeeklyAttendanceChart'
 
 export function ReportDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -98,12 +98,12 @@ export function ReportDetailPage() {
                 <StatCard icon={BookOpen} label="Занятия" value={stats.lessons_completed} />
                 <StatCard icon={Users2} label="Студенты" value={stats.students_count} />
                 <StatCard icon={FolderOpen} label="Группы" value={stats.groups_count} />
-                <StatCard icon={CalendarCheck} label="Посещаемость" value={`${stats.attendance.rate}%`} />
-                <StatCard icon={ClipboardCheck} label="Домашние задания" value={`${stats.homework.submission_rate}%`} />
+                <StatCard icon={CalendarCheck} label="Посещаемость" value={formatRuPercent(stats.attendance.rate)} />
+                <StatCard icon={ClipboardCheck} label="Домашние задания" value={formatRuPercent(stats.homework.submission_rate)} />
                 <StatCard
                   icon={Award}
                   label="Итоговый KPI"
-                  value={`${stats.kpi.total}%`}
+                  value={formatRuPercent(stats.kpi.total)}
                   tone={stats.kpi.total >= 85 ? 'default' : stats.kpi.total >= 60 ? 'warning' : 'danger'}
                 />
               </div>
@@ -134,7 +134,7 @@ export function ReportDetailPage() {
 
               <section className="rounded-xl border border-border bg-surface p-5">
                 <SectionHeader icon={TrendingUp} title="Динамика посещаемости" subtitle="Посещаемость по неделям" />
-                <ReportWeeklyBars weeks={stats.weekly_dynamics} />
+                <WeeklyAttendanceChart weeks={stats.weekly_dynamics} />
               </section>
             </div>
           </>

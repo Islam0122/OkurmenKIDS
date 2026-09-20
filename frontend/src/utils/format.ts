@@ -30,6 +30,16 @@ export function formatPercent(value: number): string {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}%`
 }
 
+/** `94.4` → `94,4%`, `100` → `100%` — Russian decimal comma. Used
+ * throughout the Monthly Teacher Report (frontend, admin, and PDF all
+ * format numbers this way) instead of a period, which reads as a typo in
+ * Russian. */
+export function formatRuPercent(value: number): string {
+  const rounded = Math.round(value * 10) / 10
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace('.', ',')
+  return `${text}%`
+}
+
 /** `(2026, 9)` → `Сентябрь 2026` — used across the Monthly Teacher Report
  * pages instead of a duplicated month-name table per component. */
 export function formatMonthYear(year: number, month: number): string {

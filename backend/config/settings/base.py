@@ -291,7 +291,7 @@ JAZZMIN_SETTINGS = {
             {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
             {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-check"},
             {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-circle"},
-            {"name": "Отчёты тренеров", "model": "academy.monthlyteacherreport", "icon": "bi bi-file-earmark-text"},
+            {"name": "Отчёты преподавателей", "model": "academy.monthlyteacherreport", "icon": "bi bi-file-earmark-text"},
         ],
 
         "ресурсы": [

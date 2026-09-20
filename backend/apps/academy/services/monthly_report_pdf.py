@@ -20,6 +20,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from .chart_geometry import nice_domain, nice_ticks, ratio_in_domain
 from .monthly_report import compute_monthly_stats
 
 _FONTS_DIR = Path(__file__).resolve().parent / "fonts"
@@ -56,6 +57,12 @@ MONTH_NAMES_RU = [
 PAGE_W, PAGE_H = A4
 MARGIN = 42
 CONTENT_W = PAGE_W - 2 * MARGIN
+
+
+def _fmt_percent(value: float) -> str:
+    """`94.4` -> `"94,4%"`, `100` -> `"100%"` — Russian decimal comma,
+    matching the frontend (see utils/format.ts's formatRuPercent)."""
+    return f"{value:g}".replace(".", ",") + "%"
 
 
 def _wrap_text(text: str, font: str, size: float, max_width: float) -> list[str]:
@@ -131,16 +138,16 @@ def _draw_header(doc: _Doc, report) -> None:
     teacher = report.teacher
     user = teacher.user
     full_name = (user.get_full_name() or user.username).upper()
-    position = teacher.position or "Тренер"
+    position = teacher.position or "Преподаватель"
     month_label = f"{MONTH_NAMES_RU[report.month]} {report.year}"
 
-    doc.ensure_space(112)
+    doc.ensure_space(120)
     top = doc.y
 
     doc.text(MARGIN, top, "OKURMENKIDS", font=_BOLD, size=13, color=BRAND)
-    doc.text(MARGIN, top - 16, "Ежемесячный отчёт тренера", font=_REGULAR, size=9, color=INK_MUTED)
+    doc.text(MARGIN, top - 16, "Ежемесячный отчёт преподавателя", font=_REGULAR, size=9, color=INK_MUTED)
 
-    photo_size = 56
+    photo_size = 64
     photo_x = MARGIN
     photo_y = top - 30 - photo_size
 
@@ -181,39 +188,22 @@ def _draw_header(doc: _Doc, report) -> None:
     doc.y -= 20
 
 
-def _draw_top_stats(doc: _Doc, stats: dict) -> None:
-    items = [
-        (str(stats["lessons_completed"]), "Занятия"),
-        (str(stats["students_count"]), "Студенты"),
-        (str(stats["groups_count"]), "Группы"),
-    ]
-    doc.ensure_space(46)
-    col_w = CONTENT_W / len(items)
-    top = doc.y
-    for index, (value, label) in enumerate(items):
-        cx = MARGIN + col_w * index + col_w / 2
-        doc.text(cx, top, value, font=_BOLD, size=18, color=INK, align="center")
-        doc.text(cx, top - 15, label, font=_REGULAR, size=9, color=INK_SECONDARY, align="center")
-    doc.y = top - 34
-    doc.hline(doc.y)
-    doc.y -= 20
-
-
 def _draw_kpi_cards(doc: _Doc, stats: dict) -> None:
     cards = [
         (str(stats["lessons_completed"]), "Занятия"),
         (str(stats["students_count"]), "Студенты"),
         (str(stats["groups_count"]), "Группы"),
-        (f"{stats['attendance']['rate']:g}%", "Attendance"),
-        (f"{stats['homework']['submission_rate']:g}%", "Homework"),
-        (f"{stats['kpi']['total']:g}%", "KPI"),
+        (_fmt_percent(stats["attendance"]["rate"]), "Посещаемость"),
+        (_fmt_percent(stats["homework"]["submission_rate"]), "Домашние задания"),
+        (_fmt_percent(stats["kpi"]["total"]), "Итоговый KPI"),
     ]
     cols = 3
     gap = 10
     card_w = (CONTENT_W - gap * (cols - 1)) / cols
     card_h = 52
     rows = (len(cards) + cols - 1) // cols
-    doc.ensure_space(rows * (card_h + gap))
+    doc.ensure_space(_TITLE_HEIGHT + rows * (card_h + gap))
+    _section_title(doc, "Основная статистика")
 
     for index, (value, label) in enumerate(cards):
         row, col = divmod(index, cols)
@@ -229,26 +219,33 @@ def _draw_kpi_cards(doc: _Doc, stats: dict) -> None:
 _TITLE_HEIGHT = 28
 
 
-def _section_title(doc: _Doc, title: str) -> None:
-    """Draws the heading only — the caller must `ensure_space` for the
-    heading *plus* its body beforehand (see `_TITLE_HEIGHT`), so a section's
-    title never gets orphaned at the bottom of a page while its content
-    flows onto the next one."""
+_SUBTITLE_HEIGHT = 14
+
+
+def _section_title(doc: _Doc, title: str, subtitle: str | None = None) -> None:
+    """Draws the heading (+ optional muted subtitle) only — the caller must
+    `ensure_space` for the heading *plus* its body beforehand (see
+    `_TITLE_HEIGHT`/`_SUBTITLE_HEIGHT`), so a section's title never gets
+    orphaned at the bottom of a page while its content flows onto the next
+    one."""
     doc.y -= 10
     doc.text(MARGIN, doc.y, title, font=_BOLD, size=11.5, color=INK)
     doc.y -= 18
+    if subtitle:
+        doc.text(MARGIN, doc.y, subtitle, font=_REGULAR, size=8.5, color=INK_SECONDARY)
+        doc.y -= _SUBTITLE_HEIGHT
 
 
 def _draw_work_rows(doc: _Doc, stats: dict) -> None:
     rows = [
         ("Проведено занятий", str(stats["lessons_completed"])),
-        ("Выдано Homework", str(stats["homework"]["assigned"])),
-        ("Проверено Homework", str(stats["homework"]["checked"])),
+        ("Выдано домашних заданий", str(stats["homework"]["assigned"])),
+        ("Проверено домашних заданий", str(stats["homework"]["checked"])),
         ("Работа со студентами", str(stats["students_count"])),
     ]
     row_h = 22
     doc.ensure_space(_TITLE_HEIGHT + row_h * len(rows) + 10)
-    _section_title(doc, "Работа тренера")
+    _section_title(doc, "Работа преподавателя")
     for label, value in rows:
         doc.text(MARGIN, doc.y - 15, label, font=_REGULAR, size=10, color=INK_SECONDARY)
         doc.text(PAGE_W - MARGIN, doc.y - 15, value, font=_BOLD, size=10.5, color=INK, align="right")
@@ -292,56 +289,120 @@ def _draw_groups_table(doc: _Doc, stats: dict) -> None:
 
 
 def _draw_weekly_dynamics(doc: _Doc, stats: dict) -> None:
+    """A real line chart — points, connecting line, a light grid, and a
+    Y-axis auto-scaled to the data's own range (see chart_geometry), so a
+    strong, stable month (89.8 -> 95.9 -> 95.9 -> 95.9) still reads as
+    visible movement instead of four dots flattened against a fixed
+    0-100% scale. Drawn natively with reportlab's canvas — never a
+    screenshot of the frontend chart."""
     weeks = stats["weekly_dynamics"]
     if len(weeks) < 2:
-        doc.ensure_space(_TITLE_HEIGHT + 20)
-        _section_title(doc, "Динамика по неделям")
+        doc.ensure_space(_TITLE_HEIGHT + _SUBTITLE_HEIGHT + 20)
+        _section_title(doc, "Динамика посещаемости", subtitle="Посещаемость по неделям")
         doc.text(MARGIN, doc.y - 12, "Недостаточно данных для динамики.", font=_REGULAR, size=9.5, color=INK_MUTED)
         doc.y -= 26
         return
 
-    chart_h = 60
-    doc.ensure_space(_TITLE_HEIGHT + chart_h + 24)
-    _section_title(doc, "Динамика по неделям")
-    base_y = doc.y - chart_h
-    col_w = CONTENT_W / len(weeks)
-    bar_w = min(28, col_w * 0.4)
-    for index, week in enumerate(weeks):
-        cx = MARGIN + col_w * index + col_w / 2
-        bar_h = chart_h * week["percent"] / 100
-        _rounded_rect(doc.c, cx - bar_w / 2, base_y, bar_w, max(bar_h, 2), 3, fill=BRAND)
-        doc.text(cx, base_y + bar_h + 6, f"{week['percent']:g}%", font=_BOLD, size=8.5, color=INK, align="center")
-        doc.text(cx, base_y - 12, week["label"], font=_REGULAR, size=8, color=INK_SECONDARY, align="center")
-    doc.y = base_y - 26
+    chart_h = 140
+    top_pad = 18      # headroom above the topmost point for its value label
+    bottom_pad = 16   # room below the plot for week labels
+    y_axis_w = 26
+
+    doc.ensure_space(_TITLE_HEIGHT + _SUBTITLE_HEIGHT + chart_h + 20)
+    _section_title(doc, "Динамика посещаемости", subtitle="Посещаемость по неделям")
+
+    values = [w["percent"] for w in weeks]
+    domain_lo, domain_hi = nice_domain(values)
+    ticks = nice_ticks(domain_lo, domain_hi)
+
+    plot_x0 = MARGIN + y_axis_w
+    plot_x1 = PAGE_W - MARGIN
+    plot_top = doc.y
+    inner_top = plot_top - top_pad
+    inner_bottom = plot_top - chart_h + bottom_pad
+
+    def y_for(value: float) -> float:
+        ratio = ratio_in_domain(value, domain_lo, domain_hi)
+        return inner_bottom + ratio * (inner_top - inner_bottom)
+
+    def x_for(index: int) -> float:
+        if len(weeks) == 1:
+            return (plot_x0 + plot_x1) / 2
+        return plot_x0 + (index / (len(weeks) - 1)) * (plot_x1 - plot_x0)
+
+    # Gridlines + Y-axis labels — thin and unobtrusive.
+    doc.c.saveState()
+    doc.c.setStrokeColor(BORDER)
+    doc.c.setLineWidth(0.5)
+    for tick in ticks:
+        ty = y_for(tick)
+        doc.c.line(plot_x0, ty, plot_x1, ty)
+        doc.text(plot_x0 - 6, ty - 3, f"{tick}%", font=_REGULAR, size=7, color=INK_MUTED, align="right")
+    doc.c.restoreState()
+
+    points = [(x_for(i), y_for(w["percent"])) for i, w in enumerate(weeks)]
+
+    # Connecting line.
+    doc.c.saveState()
+    doc.c.setStrokeColor(BRAND)
+    doc.c.setLineWidth(1.6)
+    doc.c.setLineJoin(1)
+    path = doc.c.beginPath()
+    path.moveTo(*points[0])
+    for px, py in points[1:]:
+        path.lineTo(px, py)
+    doc.c.drawPath(path, stroke=1, fill=0)
+    doc.c.restoreState()
+
+    # Point markers, value labels above each point, week labels below the plot.
+    plot_bottom = plot_top - chart_h
+    for (px, py), week in zip(points, weeks):
+        doc.c.saveState()
+        doc.c.setFillColor(BRAND)
+        doc.c.circle(px, py, 3.2, stroke=0, fill=1)
+        doc.c.setFillColor(WHITE)
+        doc.c.circle(px, py, 1.3, stroke=0, fill=1)
+        doc.c.restoreState()
+        doc.text(px, py + 8, _fmt_percent(week["percent"]), font=_BOLD, size=8, color=INK, align="center")
+        doc.text(px, plot_bottom + 2, week["label"], font=_REGULAR, size=8, color=INK_SECONDARY, align="center")
+
+    doc.y = plot_bottom - 14
 
 
 def _draw_kpi_breakdown(doc: _Doc, stats: dict) -> None:
+    """A compact 2x2 grid, not four bars stretched across the full page
+    width — the same layout as the frontend and the admin screen."""
     kpi = stats["kpi"]
-    bars = [
-        ("Attendance", kpi["attendance"]),
-        ("Homework", kpi["homework"]),
-        ("Lessons", kpi["lessons"]),
-        ("Student Progress", kpi["student_progress"]),
+    metrics = [
+        ("Посещаемость", kpi["attendance"]),
+        ("Домашние задания", kpi["homework"]),
+        ("Проведённые занятия", kpi["lessons"]),
+        ("Прогресс студентов", kpi["student_progress"]),
     ]
-    bar_h = 8
-    row_h = 26
-    doc.ensure_space(_TITLE_HEIGHT + row_h * len(bars) + 46)
-    _section_title(doc, "KPI")
-    label_w = 120
-    value_w = 44
-    bar_area_w = CONTENT_W - label_w - value_w
+    cols = 2
+    gap_x = 24
+    gap_y = 18
+    cell_w = (CONTENT_W - gap_x * (cols - 1)) / cols
+    cell_h = 44
+    bar_h = 6
+    rows = (len(metrics) + cols - 1) // cols
 
-    for label, percent in bars:
-        row_top = doc.y
-        doc.text(MARGIN, row_top - 6, label, font=_REGULAR, size=9.5, color=INK_SECONDARY)
-        _progress_bar(doc.c, MARGIN + label_w, row_top - bar_h - 2, bar_area_w, bar_h, percent, BRAND)
-        doc.text(PAGE_W - MARGIN, row_top - 6, f"{percent:g}%", font=_BOLD, size=9.5, color=INK, align="right")
-        doc.y -= row_h
+    doc.ensure_space(_TITLE_HEIGHT + rows * cell_h + (rows - 1) * gap_y + 50)
+    _section_title(doc, "Показатели KPI")
 
-    doc.y -= 6
+    top = doc.y
+    for index, (label, percent) in enumerate(metrics):
+        row, col = divmod(index, cols)
+        x = MARGIN + col * (cell_w + gap_x)
+        y = top - row * (cell_h + gap_y)
+        doc.text(x, y - 10, label, font=_REGULAR, size=9, color=INK_SECONDARY)
+        doc.text(x, y - 27, _fmt_percent(percent), font=_BOLD, size=15, color=INK)
+        _progress_bar(doc.c, x, y - 36, cell_w, bar_h, percent, BRAND)
+
+    doc.y = top - rows * cell_h - (rows - 1) * gap_y - 8
     _rounded_rect(doc.c, MARGIN, doc.y - 40, CONTENT_W, 40, 10, fill=BRAND_SOFT)
-    doc.text(MARGIN + 16, doc.y - 25, "TOTAL KPI", font=_BOLD, size=10, color=BRAND_DARK)
-    doc.text(PAGE_W - MARGIN - 16, doc.y - 27, f"{kpi['total']:g}%", font=_BOLD, size=18, color=BRAND_DARK, align="right")
+    doc.text(MARGIN + 16, doc.y - 25, "ИТОГОВЫЙ KPI", font=_BOLD, size=10, color=BRAND_DARK)
+    doc.text(PAGE_W - MARGIN - 16, doc.y - 27, _fmt_percent(kpi["total"]), font=_BOLD, size=18, color=BRAND_DARK, align="right")
     doc.y -= 56
 
 
@@ -366,7 +427,7 @@ def _draw_signatures(doc: _Doc, report) -> None:
     doc.y -= 30
 
     col_w = CONTENT_W / 3
-    labels = [("Тренер", teacher_name), ("Администратор", "_" * 22), ("Дата", today)]
+    labels = [("Преподаватель", teacher_name), ("Администратор", "_" * 22), ("Дата", today)]
     for index, (label, value) in enumerate(labels):
         x = MARGIN + col_w * index
         doc.text(x, doc.y, label, font=_REGULAR, size=8.5, color=INK_MUTED)
@@ -381,7 +442,6 @@ def build_monthly_report_pdf(report) -> bytes:
     doc = _Doc(buffer)
 
     _draw_header(doc, report)
-    _draw_top_stats(doc, stats)
 
     if not stats["has_data"]:
         doc.text(MARGIN, doc.y - 12, "Нет данных за этот месяц.", font=_REGULAR, size=10, color=INK_MUTED)
