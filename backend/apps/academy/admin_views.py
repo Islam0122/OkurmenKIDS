@@ -27,6 +27,7 @@ from apps.users.models import Subject, Teacher, User
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL, WEEKDAY_LABELS_SHORT
 from .models import (
+    AcademyMonthlyReport,
     Attendance,
     Course,
     Group,
@@ -39,6 +40,7 @@ from .models import (
     Room,
     Student,
 )
+from .services.academy_monthly_report import compute_academy_monthly_stats
 from .services.analytics import get_dashboard
 from .services.chart_geometry import nice_domain, nice_ticks, ratio_in_domain
 from .services.group_schedule_conflicts import overlapping_groups
@@ -2263,3 +2265,91 @@ def monthly_report_detail_view(request, object_id):
         "pdf_url": reverse("monthly-report-pdf", args=[report.pk]),
     }
     return render(request, "admin/academy/monthlyteacherreport/detail.html", context)
+
+
+# ---------------------------------------------------------------------------
+# "Отчёт академии" — the whole-academy counterpart of the Monthly Teacher
+# Report monitor/detail views above. Every figure is computed on demand by
+# services.academy_monthly_report.compute_academy_monthly_stats from the
+# existing Lesson/Attendance/Homework/HomeworkResult/Group/Student/Teacher
+# data — nothing here duplicates that calculation, this module only ever
+# renders it. Admin-only, enforced by `_require_admin` (backend check, not
+# just a hidden Sidebar entry — see AcademyReportSidebarTests).
+# ---------------------------------------------------------------------------
+
+def academy_report_monitor_view(request):
+    _require_admin(request)
+
+    year = request.GET.get("year") or ""
+    month = request.GET.get("month") or ""
+
+    reports_qs = AcademyMonthlyReport.objects.all()
+    if year:
+        reports_qs = reports_qs.filter(year=year)
+    if month:
+        reports_qs = reports_qs.filter(month=month)
+    reports_qs = reports_qs.order_by("-year", "-month")
+
+    paginator = Paginator(reports_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    rows = []
+    for report in page_obj:
+        stats = compute_academy_monthly_stats(report.year, report.month)
+        rows.append({"report": report, "stats": stats, "month_label": f"{MONTH_NAMES_RU[report.month]} {report.year}"})
+
+    years = sorted(AcademyMonthlyReport.objects.values_list("year", flat=True).distinct(), reverse=True)
+    today = timezone.localdate()
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Отчёт академии",
+        "subtitle": "Ежемесячная статистика и результаты академии — считается автоматически.",
+        "rows": rows,
+        "page_obj": page_obj,
+        "years": years,
+        "months": list(enumerate(MONTH_NAMES_RU))[1:],
+        "selected": {"year": year, "month": month},
+        "current_year": today.year,
+        "current_month": today.month,
+        "reset_url": reverse("admin:academy_report_monitor"),
+        "open_url": reverse("admin:academy_report_open"),
+    }
+    return render(request, "admin/academy/academymonthlyreport/change_list.html", context)
+
+
+@require_POST
+def academy_report_open_view(request):
+    _require_admin(request)
+
+    try:
+        year = int(request.POST.get("year", ""))
+        month = int(request.POST.get("month", ""))
+    except (TypeError, ValueError):
+        messages.error(request, "Укажите год и месяц.")
+        return redirect(reverse("admin:academy_report_monitor"))
+
+    if not (2000 <= year <= 2100 and 1 <= month <= 12):
+        messages.error(request, "Некорректный год или месяц.")
+        return redirect(reverse("admin:academy_report_monitor"))
+
+    report, _created = AcademyMonthlyReport.objects.get_or_create(year=year, month=month)
+    return redirect(reverse("admin:academy_report_detail", args=[report.pk]))
+
+
+def academy_report_detail_view(request, object_id):
+    _require_admin(request)
+    report = get_object_or_404(AcademyMonthlyReport, pk=object_id)
+    stats = compute_academy_monthly_stats(report.year, report.month)
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Отчёт академии",
+        "report": report,
+        "stats": stats,
+        "chart": _weekly_dynamics_chart(stats["weekly_dynamics"]),
+        "month_label": f"{MONTH_NAMES_RU[report.month]} {report.year}",
+        "monitor_url": reverse("admin:academy_report_monitor"),
+        "pdf_url": reverse("academy-report-pdf", args=[report.pk]),
+    }
+    return render(request, "admin/academy/academymonthlyreport/detail.html", context)

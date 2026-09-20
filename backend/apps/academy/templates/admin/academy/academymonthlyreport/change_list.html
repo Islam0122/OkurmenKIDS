@@ -1,0 +1,117 @@
+{% extends "admin/base_site.html" %}
+{% load i18n academy_extras %}
+
+{% block bodyclass %}{{ block.super }} ok-mon-page-body{% endblock %}
+
+{% block content_title %}Отчёт академии{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item">Отчёт академии</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <p class="ok-page-subtitle">{{ subtitle }}</p>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-calendar2-plus"></i><span>Открыть отчёт</span></div>
+    <div class="ok-card-body">
+      <form method="post" action="{{ open_url }}" class="ok-group-toolbar">
+        {% csrf_token %}
+        <select name="year" class="ok-input">
+          {% for y in years %}
+            <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+          {% if current_year not in years %}<option value="{{ current_year }}" selected>{{ current_year }}</option>{% endif %}
+        </select>
+        <select name="month" class="ok-input">
+          {% for num, label in months %}
+            <option value="{{ num }}" {% if num == current_month %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-box-arrow-up-right"></i> Открыть отчёт</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-funnel"></i><span>Фильтры</span></div>
+    <div class="ok-card-body">
+      <form method="get" class="ok-group-toolbar">
+        <select name="year" class="ok-input">
+          <option value="">Все годы</option>
+          {% for y in years %}
+            <option value="{{ y }}" {% if selected.year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+        <select name="month" class="ok-input">
+          <option value="">Все месяцы</option>
+          {% for num, label in months %}
+            <option value="{{ num }}" {% if selected.month == num|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-building"></i><span>Отчёты академии</span></div>
+    <div class="ok-card-body">
+      {% if rows %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Месяц</th><th>Студенты</th><th>Группы</th><th>Тренеры</th><th>Занятия</th>
+                <th>Посещаемость</th><th>Средний KPI</th><th>Создан</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  <td>{{ row.month_label }}</td>
+                  <td>{{ row.stats.students_count }}</td>
+                  <td>{{ row.stats.groups_count }}</td>
+                  <td>{{ row.stats.teachers_count }}</td>
+                  <td>{{ row.stats.lessons_completed }}</td>
+                  <td>
+                    {% if row.stats.has_data %}{{ row.stats.attendance.rate|ru_percent }}{% else %}—{% endif %}
+                  </td>
+                  <td>
+                    {% if row.stats.has_data %}
+                      {% if row.stats.kpi.total >= 85 %}<span class="ok-badge ok-badge-success">{{ row.stats.kpi.total|ru_percent }}</span>
+                      {% elif row.stats.kpi.total >= 60 %}<span class="ok-badge ok-badge-warning">{{ row.stats.kpi.total|ru_percent }}</span>
+                      {% else %}<span class="ok-badge ok-badge-danger">{{ row.stats.kpi.total|ru_percent }}</span>{% endif %}
+                    {% else %}<span class="ok-badge ok-badge-muted">Нет данных</span>{% endif %}
+                  </td>
+                  <td>{{ row.report.created_at|date:"d.m.Y" }}</td>
+                  <td class="ok-student-actions">
+                    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_report_detail' row.report.pk %}" title="Открыть">
+                      <i class="bi bi-eye"></i>
+                    </a>
+                    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'academy-report-pdf' row.report.pk %}" title="Скачать PDF" target="_blank" rel="noopener">
+                      <i class="bi bi-file-earmark-pdf"></i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "admin/academy/group/workspace/_pagination.html" with page_obj=page_obj %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-building"></i>
+          <h4>Отчётов пока нет</h4>
+          <p>Выберите год и месяц выше и нажмите «Открыть отчёт» — он будет создан автоматически.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
