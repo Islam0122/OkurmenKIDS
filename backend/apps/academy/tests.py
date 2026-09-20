@@ -31,6 +31,7 @@ from apps.users.models import Subject, Teacher, User
 # registry. Absolute imports always land on the one canonical module
 # already cached under `apps.academy.*` by Django's normal app loading.
 from apps.academy.models import (
+    AcademyMonthlyReport,
     Attendance,
     Course,
     CourseLessonPlan,
@@ -5329,3 +5330,158 @@ class AuditScheduleConflictsCommandTests(AcademyTestBase):
         # group1/group2 alone (no manually-introduced conflict) must not be
         # reported as conflicting with each other.
         self.assertNotIn("Frontend Beginner", out.getvalue().split("Python Beginner")[0])
+
+
+class AcademyMonthlyReportTests(AcademyTestBase):
+    """The Admin-only, whole-academy Monthly Report (spec: aggregate across
+    every Teacher/Group/Student/Lesson for one calendar month, never a
+    single teacher's own slice)."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.academy.services.academy_monthly_report import compute_academy_monthly_stats
+
+        self.compute_academy_monthly_stats = staticmethod(compute_academy_monthly_stats)
+
+        # group1's lessons were auto-generated for Sep 2026 (Mon/Wed ->
+        # every 7 days: 7, 14, 21, 28 — see LessonGenerationTests).
+        self.g1_lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+        self.g2_lessons = list(Lesson.objects.filter(group=self.group2).order_by("lesson_number"))
+
+        # Mark attendance + homework on the first lesson of each group so
+        # the month has real, non-zero figures to assert on.
+        Attendance.objects.create(student=self.student1, lesson=self.g1_lessons[0], status="present")
+        Attendance.objects.create(student=self.student2, lesson=self.g1_lessons[0], status="absent")
+        Attendance.objects.create(student=self.student3, lesson=self.g2_lessons[0], status="present")
+
+        homework1 = Homework.objects.create(lesson=self.g1_lessons[0], title="ДЗ 1")
+        HomeworkResult.objects.create(homework=homework1, student=self.student1, status="checked", score=8)
+        HomeworkResult.objects.create(homework=homework1, student=self.student2, status="submitted")
+
+        self.g1_lessons[0].status = Lesson.Status.COMPLETED
+        self.g1_lessons[0].save(update_fields=["status"])
+        self.g2_lessons[0].status = Lesson.Status.COMPLETED
+        self.g2_lessons[0].save(update_fields=["status"])
+
+    # -- Model -------------------------------------------------------------
+
+    def test_unique_constraint_one_report_per_month(self):
+        AcademyMonthlyReport.objects.create(year=2026, month=9)
+        with self.assertRaises(Exception):
+            AcademyMonthlyReport.objects.create(year=2026, month=9)
+
+    # -- month_bounds / leap year -------------------------------------------
+
+    def test_february_leap_year_bounds(self):
+        stats = self.compute_academy_monthly_stats(2028, 2)  # 2028 is a leap year
+        self.assertEqual(stats["period"]["start_date"], dt.date(2028, 2, 1))
+        self.assertEqual(stats["period"]["end_date"], dt.date(2028, 2, 29))
+
+    def test_february_non_leap_year_bounds(self):
+        stats = self.compute_academy_monthly_stats(2026, 2)
+        self.assertEqual(stats["period"]["start_date"], dt.date(2026, 2, 1))
+        self.assertEqual(stats["period"]["end_date"], dt.date(2026, 2, 28))
+
+    # -- Stats computation ---------------------------------------------------
+
+    def test_stats_computed_from_real_data(self):
+        stats = self.compute_academy_monthly_stats(2026, 9)
+
+        self.assertTrue(stats["has_data"])
+        self.assertEqual(stats["students_count"], 3)  # student1/2/3 all active
+        self.assertEqual(stats["groups_count"], 2)  # group1 + group2 both had lessons
+        self.assertEqual(stats["teachers_count"], 2)  # teacher1 + teacher2
+        self.assertEqual(stats["lessons_completed"], 2)
+
+        self.assertEqual(stats["attendance"]["total"], 3)
+        self.assertEqual(stats["attendance"]["present"], 2)
+        self.assertEqual(stats["attendance"]["absent"], 1)
+
+        self.assertEqual(stats["homework"]["assigned"], 1)
+        self.assertEqual(stats["homework"]["checked"], 1)
+        self.assertEqual(stats["homework"]["pending_review"], 1)  # the "submitted" result
+
+        group_names = {row["name"]: row for row in stats["groups"]}
+        self.assertEqual(set(group_names), {"Python Beginner", "Frontend Beginner"})
+        self.assertEqual(group_names["Python Beginner"]["students_count"], 2)
+
+        teacher_names = {row["name"] for row in stats["teachers"]}
+        self.assertEqual(len(teacher_names), 2)
+
+        # No fabricated figures for statuses the schema can't distinguish.
+        self.assertIsNone(stats["students"]["completed"])
+        self.assertIsNone(stats["students"]["paused"])
+        self.assertIsNone(stats["lessons"]["rescheduled"])
+
+    def test_no_data_month_is_honest_not_fabricated(self):
+        stats = self.compute_academy_monthly_stats(2020, 1)
+        self.assertFalse(stats["has_data"])
+        self.assertEqual(stats["groups"], [])
+        self.assertEqual(stats["teachers"], [])
+        self.assertEqual(stats["weekly_dynamics"], [])
+        self.assertEqual(stats["kpi"]["total"], 0.0)
+
+    # -- Permissions (backend-enforced, spec §2/§20) -------------------------
+
+    def test_teacher_cannot_list_academy_reports(self):
+        response = self.teacher1_client.get("/api/v1/academy-reports/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_cannot_create_academy_report(self):
+        response = self.teacher1_client.post("/api/v1/academy-reports/", {"year": 2026, "month": 9}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_anonymous_cannot_access(self):
+        response = self.anon_client.get("/api/v1/academy-reports/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_admin_can_create_and_retrieve(self):
+        response = self.admin_client.post("/api/v1/academy-reports/", {"year": 2026, "month": 9}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        report_id = response.data["id"]
+        self.assertEqual(response.data["stats"]["students_count"], 3)
+
+        detail = self.admin_client.get(f"/api/v1/academy-reports/{report_id}/")
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail.data["stats"]["lessons_completed"], 2)
+
+    def test_create_is_idempotent_per_month(self):
+        first = self.admin_client.post("/api/v1/academy-reports/", {"year": 2026, "month": 9}, format="json")
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        second = self.admin_client.post("/api/v1/academy-reports/", {"year": 2026, "month": 9}, format="json")
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.data["detail"], "exists")
+        self.assertEqual(second.data["report"]["id"], first.data["id"])
+        self.assertEqual(AcademyMonthlyReport.objects.count(), 1)
+
+    def test_admin_can_update_comment(self):
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+        response = self.admin_client.patch(
+            f"/api/v1/academy-reports/{report.id}/", {"comment": "Отличный месяц."}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        report.refresh_from_db()
+        self.assertEqual(report.comment, "Отличный месяц.")
+
+    # -- PDF ------------------------------------------------------------
+
+    def test_admin_can_download_pdf(self):
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+        response = self.admin_client.get(f"/api/v1/academy-reports/{report.id}/pdf/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        content = b"".join(response.streaming_content) if response.streaming else response.content
+        self.assertTrue(content.startswith(b"%PDF"))
+
+    def test_teacher_cannot_download_pdf(self):
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+        response = self.teacher1_client.get(f"/api/v1/academy-reports/{report.id}/pdf/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_pdf_builds_for_month_with_no_data(self):
+        from apps.academy.services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
+
+        report = AcademyMonthlyReport.objects.create(year=2020, month=1)
+        pdf_bytes = build_academy_monthly_report_pdf(report)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))

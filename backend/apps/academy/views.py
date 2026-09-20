@@ -35,6 +35,7 @@ from .filters import (
     StudentFilter,
 )
 from .models import (
+    AcademyMonthlyReport,
     Attendance,
     Course,
     CourseLessonPlan,
@@ -51,6 +52,9 @@ from .models import (
 )
 from .permissions import IsAdminOrOwningTeacher, IsAdminOrReadOnly
 from .serializers import (
+    AcademyMonthlyReportCommentSerializer,
+    AcademyMonthlyReportCreateSerializer,
+    AcademyMonthlyReportSerializer,
     AnalyticsDashboardSerializer,
     AnalyticsQuerySerializer,
     AttendanceSerializer,
@@ -85,6 +89,7 @@ from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
 from .services import lesson_lifecycle
 from .services.monthly_report_pdf import build_monthly_report_pdf
+from .services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
 from .services.import_export import (
     StudentImportValidationError,
     export_students,
@@ -1235,6 +1240,77 @@ class MonthlyTeacherReportViewSet(
         report = self.get_object()
         pdf_bytes = build_monthly_report_pdf(report)
         filename = f"report-{report.teacher_id}-{report.year}-{report.month:02d}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+# ---------------------------------------------------------------------------
+# Academy Monthly Reports — the Admin-only, whole-academy counterpart of the
+# Monthly Teacher Report above (spec: "Это НЕ отчёт отдельного
+# преподавателя. Это общий отчёт по всей академии"). A Teacher must never
+# reach this data (spec §2) — enforced here on the backend via `IsAdmin`,
+# never left to the frontend hiding a nav item/button.
+# ---------------------------------------------------------------------------
+
+@extend_schema_view(
+    list=extend_schema(tags=["Academy Reports"]),
+    retrieve=extend_schema(tags=["Academy Reports"]),
+    create=extend_schema(tags=["Academy Reports"], request=AcademyMonthlyReportCreateSerializer, responses=AcademyMonthlyReportSerializer),
+    partial_update=extend_schema(tags=["Academy Reports"], request=AcademyMonthlyReportCommentSerializer, responses=AcademyMonthlyReportSerializer),
+)
+class AcademyMonthlyReportViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """One report per calendar month for the whole academy (spec: "Не
+    создавать два отчёта за один месяц" — `AcademyMonthlyReport`'s own
+    unique_academy_monthly_report constraint). Admin-only end to end; every
+    figure besides `comment` is always computed, never entered (see
+    .services.academy_monthly_report)."""
+
+    queryset = AcademyMonthlyReport.objects.all()
+    serializer_class = AcademyMonthlyReportSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ["year", "month"]
+    ordering_fields = ["year", "month", "created_at"]
+    ordering = ["-year", "-month"]
+
+    def create(self, request, *args, **kwargs):
+        body = AcademyMonthlyReportCreateSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+
+        report, created = AcademyMonthlyReport.objects.get_or_create(
+            year=body.validated_data["year"], month=body.validated_data["month"]
+        )
+        out = AcademyMonthlyReportSerializer(report, context=self.get_serializer_context()).data
+        if created:
+            return Response(out, status=status.HTTP_201_CREATED)
+        # Not an error — the unique-per-month rule is a fact of the domain,
+        # not a mistake the Admin made; the frontend surfaces this as
+        # "already exists, open it" rather than a validation failure.
+        return Response({"detail": "exists", "report": out}, status=status.HTTP_200_OK)
+
+    def update(self, request, *args, **kwargs):
+        if not kwargs.get("partial", False):
+            raise MethodNotAllowed("PUT")
+
+        instance = self.get_object()
+        serializer = AcademyMonthlyReportCommentSerializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(AcademyMonthlyReportSerializer(instance, context=self.get_serializer_context()).data)
+
+    @extend_schema(tags=["Academy Reports"], request=None, responses={200: {"type": "string", "format": "binary"}})
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        report = self.get_object()
+        pdf_bytes = build_academy_monthly_report_pdf(report)
+        filename = f"academy-report-{report.year}-{report.month:02d}.pdf"
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response

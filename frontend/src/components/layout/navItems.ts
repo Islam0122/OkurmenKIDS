@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Megaphone,
   NotebookPen,
+  School,
   User,
   Users,
 } from 'lucide-react'
@@ -43,6 +44,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/homework', label: 'Домашние задания', icon: NotebookPen, roles: ['admin'] },
   { to: '/app/kpi', label: 'KPI', icon: BarChart3 },
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },
+  { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin'] },
   { to: '/app/news', label: 'Новости', icon: Megaphone },
 ]
 
