@@ -17,7 +17,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -39,6 +39,7 @@ from .models import (
     MonthlyTeacherReport,
     Room,
     Student,
+    StudentStatusEvent,
 )
 from .services.academy_monthly_report import compute_academy_monthly_stats
 from .services.analytics import get_dashboard
@@ -2353,3 +2354,174 @@ def academy_report_detail_view(request, object_id):
         "pdf_url": reverse("academy-report-pdf", args=[report.pk]),
     }
     return render(request, "admin/academy/academymonthlyreport/detail.html", context)
+
+
+# ---------------------------------------------------------------------------
+# "Неактивные студенты" / "История ухода студентов" — read the audit trail
+# `services.student_status` writes (see StudentStatusEvent). Both screens
+# only ever read; nothing here mutates a Student or writes a new event.
+# ---------------------------------------------------------------------------
+
+def _reason_label(reason: str) -> str:
+    return dict(StudentStatusEvent.Reason.choices).get(reason, reason or "—")
+
+
+def _student_search_q(query: str) -> Q:
+    q = Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(group__name__icontains=query)
+    if query.isdigit():
+        q |= Q(id=int(query))
+    return q
+
+
+def _int_or_none(value: str) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def inactive_students_view(request):
+    """Only *currently* inactive students — a reactivated student's
+    `is_active` flips back to True (see services.student_status), so they
+    drop off this list on their own without any extra bookkeeping here."""
+    _require_admin(request)
+
+    year = _int_or_none(request.GET.get("year"))
+    month = _int_or_none(request.GET.get("month"))
+    reason = request.GET.get("reason") or ""
+    group_id = request.GET.get("group") or ""
+    has_refund = request.GET.get("has_refund") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
+    query = request.GET.get("q") or ""
+
+    students_qs = Student.objects.filter(is_active=False).select_related("group")
+    if group_id:
+        students_qs = students_qs.filter(group_id=group_id)
+    if query:
+        students_qs = students_qs.filter(_student_search_q(query))
+
+    last_deactivation_qs = StudentStatusEvent.objects.filter(
+        event_type=StudentStatusEvent.EventType.DEACTIVATED
+    ).select_related("group").order_by("-created_at")
+    students_qs = students_qs.prefetch_related(
+        Prefetch("status_events", queryset=last_deactivation_qs, to_attr="_deactivations")
+    )
+
+    rows = []
+    for student in students_qs:
+        last_event = student._deactivations[0] if student._deactivations else None
+
+        if year is not None and (last_event is None or last_event.event_date.year != year):
+            continue
+        if month is not None and (last_event is None or last_event.event_date.month != month):
+            continue
+        if reason and (last_event is None or last_event.reason != reason):
+            continue
+        if date_from and (last_event is None or last_event.event_date < dt.date.fromisoformat(date_from)):
+            continue
+        if date_to and (last_event is None or last_event.event_date > dt.date.fromisoformat(date_to)):
+            continue
+        # No payments/refunds model exists anywhere in the project (see
+        # StudentStatusEvent's docstring) — a real refund never exists, so
+        # "есть возврат" can never match a real row; kept as a filter option
+        # only so the control is honest about what it will find, not hidden.
+        if has_refund == "yes":
+            continue
+
+        rows.append({"student": student, "last_event": last_event})
+
+    paginator = Paginator(rows, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "Неактивные студенты",
+        "subtitle": "Студенты, которые сейчас не активны — вернувшиеся автоматически исчезают из списка.",
+        "page_obj": page_obj,
+        "rows": page_obj.object_list,
+        "groups": Group.objects.order_by("name"),
+        "reasons": StudentStatusEvent.Reason.choices,
+        "years": sorted(
+            {
+                d.year
+                for d in StudentStatusEvent.objects.filter(
+                    event_type=StudentStatusEvent.EventType.DEACTIVATED
+                ).dates("event_date", "year")
+            },
+            reverse=True,
+        ),
+        "months": list(enumerate(MONTH_NAMES_RU))[1:],
+        "selected": {
+            "year": request.GET.get("year") or "",
+            "month": request.GET.get("month") or "",
+            "reason": reason,
+            "group": group_id,
+            "has_refund": has_refund,
+            "date_from": date_from,
+            "date_to": date_to,
+            "q": query,
+        },
+        "reset_url": reverse("admin:academy_inactive_students"),
+        "history_url": reverse("admin:academy_student_departure_history"),
+    }
+    return render(request, "admin/academy/student/inactive_list.html", context)
+
+
+def student_departure_history_view(request):
+    """Every deactivation ever recorded — including students who have since
+    returned (spec: "включая студентов, которые уже вернулись")."""
+    _require_admin(request)
+
+    year = request.GET.get("year") or ""
+    month = request.GET.get("month") or ""
+    reason = request.GET.get("reason") or ""
+    group_id = request.GET.get("group") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
+    query = request.GET.get("q") or ""
+
+    events_qs = (
+        StudentStatusEvent.objects.filter(event_type=StudentStatusEvent.EventType.DEACTIVATED)
+        .select_related("student", "group", "performed_by")
+        .order_by("-event_date", "-created_at")
+    )
+    if year:
+        events_qs = events_qs.filter(event_date__year=year)
+    if month:
+        events_qs = events_qs.filter(event_date__month=month)
+    if reason:
+        events_qs = events_qs.filter(reason=reason)
+    if group_id:
+        events_qs = events_qs.filter(group_id=group_id)
+    if date_from:
+        events_qs = events_qs.filter(event_date__gte=date_from)
+    if date_to:
+        events_qs = events_qs.filter(event_date__lte=date_to)
+    if query:
+        q = Q(student__first_name__icontains=query) | Q(student__last_name__icontains=query) | Q(group__name__icontains=query)
+        if query.isdigit():
+            q |= Q(student_id=int(query))
+        events_qs = events_qs.filter(q)
+
+    paginator = Paginator(events_qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = {
+        **admin.site.each_context(request),
+        "title": "История ухода студентов",
+        "subtitle": "Все деактивации, включая студентов, которые уже вернулись.",
+        "page_obj": page_obj,
+        "rows": page_obj.object_list,
+        "groups": Group.objects.order_by("name"),
+        "reasons": StudentStatusEvent.Reason.choices,
+        "years": sorted({d.year for d in events_qs.dates("event_date", "year")}, reverse=True),
+        "months": list(enumerate(MONTH_NAMES_RU))[1:],
+        "selected": {
+            "year": year, "month": month, "reason": reason, "group": group_id,
+            "date_from": date_from, "date_to": date_to, "q": query,
+        },
+        "reset_url": reverse("admin:academy_student_departure_history"),
+        "inactive_students_url": reverse("admin:academy_inactive_students"),
+    }
+    return render(request, "admin/academy/student/departure_history.html", context)

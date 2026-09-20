@@ -1,0 +1,100 @@
+{% extends "admin/base_site.html" %}
+{% load i18n academy_extras %}
+
+{% block content_title %}История ухода студентов{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{{ inactive_students_url }}">Неактивные студенты</a></li>
+    <li class="breadcrumb-item">История ухода</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-mon-page">
+  <p class="ok-page-subtitle">{{ subtitle }}</p>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-funnel"></i><span>Фильтры и поиск</span></div>
+    <div class="ok-card-body">
+      <form method="get" class="ok-group-toolbar">
+        <input type="text" name="q" class="ok-input" placeholder="Имя, фамилия, ID или группа..." value="{{ selected.q }}" style="min-width:220px;">
+        <select name="year" class="ok-input">
+          <option value="">Все годы</option>
+          {% for y in years %}
+            <option value="{{ y }}" {% if selected.year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+        <select name="month" class="ok-input">
+          <option value="">Все месяцы</option>
+          {% for num, label in months %}
+            <option value="{{ num }}" {% if selected.month == num|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <select name="reason" class="ok-input">
+          <option value="">Все причины</option>
+          {% for value, label in reasons %}
+            <option value="{{ value }}" {% if selected.reason == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <select name="group" class="ok-input">
+          <option value="">Все группы</option>
+          {% for g in groups %}
+            <option value="{{ g.pk }}" {% if selected.group == g.pk|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}" title="Дата с">
+        <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}" title="Дата по">
+        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-clock-history"></i><span>Все деактивации</span></div>
+    <div class="ok-card-body">
+      {% if rows %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Студент</th><th>Причина</th><th>Группа на момент ухода</th><th>Дата ухода</th>
+                <th>Кто оформил</th><th>Возврат</th><th>Сумма возврата</th><th>Дата возврата</th><th>Текущий статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for event in rows %}
+                <tr>
+                  <td><a href="{% url 'admin:academy_student_detail' event.student.pk %}">{{ event.student }}</a></td>
+                  <td>{{ event.get_reason_display|default:"—" }}{% if event.comment %}<div class="ok-help-text">{{ event.comment }}</div>{% endif %}</td>
+                  <td>{{ event.group.name|default:"—" }}</td>
+                  <td>{{ event.event_date|date:"d.m.Y" }}</td>
+                  <td>{{ event.performed_by|default:"—" }}</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>
+                    {% if event.student.is_active %}
+                      <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "admin/academy/group/workspace/_pagination.html" with page_obj=page_obj %}
+      {% else %}
+        <div class="ok-empty-state">
+          <i class="bi bi-clock-history"></i>
+          <h4>Записей об уходе студентов пока нет</h4>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

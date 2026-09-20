@@ -51,6 +51,14 @@ def _na(value, formatter=str) -> str:
     return "Нет данных" if value is None else formatter(value)
 
 
+def _unsupported(value, formatter=str) -> str:
+    """Same as `_na`, but for a metric the schema genuinely has no feature
+    for yet (spec: "паузы"/"продолжения" have no dedicated status) — distinct
+    wording from "Нет данных" (feature exists, nothing to show this period)
+    so the two are never confused."""
+    return "Функция пока не поддерживается" if value is None else formatter(value)
+
+
 class _Doc:
     """Same cursor-based canvas wrapper as `monthly_report_pdf._Doc` — kept
     as a private copy rather than an imported shared class, so this report's
@@ -141,8 +149,8 @@ def _draw_students(doc: _Doc, stats: dict) -> None:
     rows = [
         ("Всего активных студентов", str(students["active"])),
         ("Новые студенты", str(students["new"])),
-        ("Завершили обучение", _na(students["completed"])),
-        ("Приостановили обучение", _na(students["paused"])),
+        ("Завершили обучение", _unsupported(students["completed"])),
+        ("Приостановили обучение", _unsupported(students["paused"])),
         ("Вышли из курса", str(students["left"])),
     ]
     row_h = 22
@@ -391,9 +399,9 @@ def _draw_movement(doc: _Doc, stats: dict) -> None:
     movement = stats["movement"]
     rows = [
         ("Вышли из курса за месяц", str(movement["left"])),
-        ("Приостановили обучение", _na(movement["paused"])),
-        ("Продолжили обучение", _na(movement["continued"])),
-        ("Вернулись после паузы", _na(movement["returned"])),
+        ("Приостановили обучение", _unsupported(movement["paused"])),
+        ("Продолжили обучение", _unsupported(movement["continued"])),
+        ("Вернулись после паузы", str(movement["returned"])),
     ]
     row_h = 20
     doc.ensure_space(_TITLE_HEIGHT + row_h * len(rows) + 10)
@@ -403,6 +411,46 @@ def _draw_movement(doc: _Doc, stats: dict) -> None:
         doc.text(PAGE_W - MARGIN, doc.y - 14, value, font=_BOLD, size=10, color=INK, align="right")
         doc.y -= row_h
     doc.y -= 6
+
+
+def _draw_reason_breakdown(doc: _Doc, stats: dict) -> None:
+    """Spec §8: reason, count, and percent of that month's departures —
+    computed once in `academy_monthly_report._departures` and only ever
+    rendered here, never recalculated."""
+    reasons = stats["movement"]["reasons"]
+    if not reasons:
+        doc.ensure_space(_TITLE_HEIGHT + 20)
+        _section_title(doc, "Разбивка по причинам ухода")
+        doc.text(
+            MARGIN, doc.y - 12,
+            "За выбранный период уходов студентов не зарегистрировано.",
+            font=_REGULAR, size=9.5, color=INK_MUTED,
+        )
+        doc.y -= 26
+        return
+
+    col_widths = [CONTENT_W * 0.5, CONTENT_W * 0.2, CONTENT_W * 0.3]
+    row_h = 20
+    doc.ensure_space(_TITLE_HEIGHT + row_h * (len(reasons) + 1) + 6)
+    _section_title(doc, "Разбивка по причинам ухода")
+
+    header_y = doc.y
+    _rounded_rect(doc.c, MARGIN, header_y - row_h, CONTENT_W, row_h, 6, fill=SURFACE_MUTED)
+    x = MARGIN + 10
+    for width, header in zip(col_widths, ["Причина", "Студентов", "% от ушедших"]):
+        doc.text(x, header_y - row_h + 6, header, font=_BOLD, size=9, color=INK_SECONDARY)
+        x += width
+    doc.y = header_y - row_h
+
+    for row in reasons:
+        doc.ensure_space(row_h)
+        x = MARGIN + 10
+        for width, value in zip(col_widths, [row["reason_display"], str(row["count"]), _fmt_percent(row["percent"])]):
+            doc.text(x, doc.y - row_h + 6, value, font=_REGULAR, size=9, color=INK)
+            x += width
+        doc.y -= row_h
+        doc.hline(doc.y, color=BORDER, width=0.5)
+    doc.y -= 14
 
 
 def _draw_attention(doc: _Doc, stats: dict) -> None:
@@ -463,6 +511,7 @@ def build_academy_monthly_report_pdf(report) -> bytes:
         _draw_weekly_dynamics(doc, stats)
         _draw_kpi_breakdown(doc, stats)
         _draw_movement(doc, stats)
+        _draw_reason_breakdown(doc, stats)
         _draw_attention(doc, stats)
 
     _draw_comment(doc, report)

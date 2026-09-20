@@ -237,6 +237,114 @@ class Student(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# StudentStatusEvent — the one append-only ledger of a Student's
+# deactivation/reactivation history. `Student.is_active` remains the single
+# source of truth for "is this student currently active" (never duplicated
+# into a second status field here); this model only ever records *why* and
+# *when* it last changed, and keeps every past change even across several
+# deactivate/reactivate cycles.
+#
+# There is no refund/payment amount field here on purpose: this project has
+# no payment/billing model anywhere (checked before adding this model) — a
+# refund_amount field here would just be a fabricated financial record with
+# nothing real behind it. Every "Возврат" column across the Admin UI/PDF
+# reads this absence and always renders "—", per spec: "Не создавай
+# выдуманные суммы, платежи или возвраты." The moment a real payments module
+# exists, that is the right place to add a FK from it back to the event
+# this happened alongside — not a bolted-on Decimal field here.
+# ---------------------------------------------------------------------------
+
+class StudentStatusEvent(models.Model):
+    class EventType(models.TextChoices):
+        DEACTIVATED = "deactivated", "Деактивация"
+        REACTIVATED = "reactivated", "Повторная активация"
+
+    class Reason(models.TextChoices):
+        NO_INTEREST = "no_interest", "Нет интереса"
+        DISLIKED_TEACHER = "disliked_teacher", "Не понравился преподаватель"
+        FAMILY_CIRCUMSTANCES = "family_circumstances", "Семейные обстоятельства"
+        WILL_CONTINUE_LATER = "will_continue_later", "Продолжим через некоторое время"
+        FINANCIAL_ISSUES = "financial_issues", "Финансовые проблемы"
+        NOT_ENOUGH_TIME = "not_enough_time", "Не хватает времени / другие курсы"
+        RELOCATION = "relocation", "Переезд"
+        HEALTH = "health", "Состояние здоровья"
+        CHANGED_PLANS = "changed_plans", "Изменение планов"
+        OTHER = "other", "Другая причина"
+
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.CASCADE,
+        related_name="status_events",
+        verbose_name="Студент",
+    )
+
+    event_type = models.CharField(
+        max_length=20,
+        choices=EventType.choices,
+        db_index=True,
+        verbose_name="Тип события",
+    )
+
+    reason = models.CharField(
+        max_length=30,
+        choices=Reason.choices,
+        blank=True,
+        db_index=True,
+        verbose_name="Причина",
+        help_text="Заполняется только для деактивации.",
+    )
+
+    comment = models.TextField(
+        blank=True,
+        verbose_name="Комментарий",
+    )
+
+    group = models.ForeignKey(
+        "Group",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="student_status_events",
+        verbose_name="Группа",
+        help_text="Группа студента на момент события (уход — прежняя группа, возврат — новая группа).",
+    )
+
+    event_date = models.DateField(
+        verbose_name="Дата события",
+        help_text="Для деактивации — дата ухода (сегодня). Для возврата — выбранная дата возвращения.",
+    )
+
+    performed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="student_status_events_performed",
+        verbose_name="Кто оформил",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания записи")
+
+    class Meta:
+        verbose_name = "Событие статуса студента"
+        verbose_name_plural = "События статуса студентов"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["student", "-created_at"], name="ix_stustatus_student_created"),
+            models.Index(fields=["event_type", "event_date"], name="ix_stustatus_type_date"),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.get_event_type_display()} ({self.event_date})"
+
+    def clean(self):
+        if self.event_type == self.EventType.DEACTIVATED and not self.reason:
+            raise ValidationError({"reason": "Причина обязательна для деактивации."})
+        if self.event_type == self.EventType.DEACTIVATED and self.reason == self.Reason.OTHER and not self.comment.strip():
+            raise ValidationError({"comment": "Для причины «Другая причина» комментарий обязателен."})
+
+
+# ---------------------------------------------------------------------------
 # Groups
 # ---------------------------------------------------------------------------
 

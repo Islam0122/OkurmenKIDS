@@ -220,19 +220,15 @@
             <i class="bi bi-pencil"></i> Редактировать
           </a>
 
-          <form method="post" action="{{ toggle_active_url }}">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.path }}">
-            {% if student.is_active %}
-              <button type="submit" class="ok-btn-secondary ok-btn-block ok-student-danger-action">
-                <i class="bi bi-slash-circle"></i> Деактивировать
-              </button>
-            {% else %}
-              <button type="submit" class="ok-btn-secondary ok-btn-block">
-                <i class="bi bi-check2-circle"></i> Активировать студента
-              </button>
-            {% endif %}
-          </form>
+          {% if student.is_active %}
+            <button type="button" class="ok-btn-secondary ok-btn-block ok-student-danger-action" onclick="document.getElementById('ok-modal-deactivate').showModal()">
+              <i class="bi bi-slash-circle"></i> Деактивировать
+            </button>
+          {% else %}
+            <button type="button" class="ok-btn-secondary ok-btn-block" onclick="document.getElementById('ok-modal-reactivate').showModal()">
+              <i class="bi bi-check2-circle"></i> Повторно активировать
+            </button>
+          {% endif %}
 
           <a href="{{ changelist_url }}" class="ok-btn-secondary ok-btn-block">
             <i class="bi bi-arrow-left"></i> Назад к студентам
@@ -241,5 +237,52 @@
       </div>
     </div>
   </div>
+
+  <!-- История статуса -->
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-clock-history"></i><span>История статуса</span></div>
+    <div class="ok-card-body">
+      {% if status_events %}
+        <div class="ok-student-table-wrap">
+          <table class="ok-student-table">
+            <thead>
+              <tr>
+                <th>Событие</th><th>Причина</th><th>Группа</th><th>Дата</th><th>Кто оформил</th>
+                <th>Возврат</th><th>Сумма возврата</th><th>Дата возврата</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for event in status_events %}
+                <tr>
+                  <td>
+                    {% if event.event_type == "deactivated" %}
+                      <span class="ok-badge ok-badge-danger">{{ event.get_event_type_display }}</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-success">{{ event.get_event_type_display }}</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ event.get_reason_display|default:"—" }}{% if event.comment %}<div class="ok-help-text">{{ event.comment }}</div>{% endif %}</td>
+                  <td>{{ event.group.name|default:"—" }}</td>
+                  <td>{{ event.event_date|date:"d.m.Y" }}</td>
+                  <td>{{ event.performed_by|default:"—" }}</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="ok-help-text" style="margin-top:0.6rem;">
+          В проекте пока нет модуля учёта платежей — колонки возврата всегда показывают «—», а не выдуманные суммы.
+        </p>
+      {% else %}
+        <p class="ok-help-text" style="margin:0;">Событий деактивации/активации пока нет.</p>
+      {% endif %}
+    </div>
+  </div>
 </div>
+
+{% include "admin/academy/student/_deactivate_modal.html" %}
+{% include "admin/academy/student/_reactivate_modal.html" %}
 {% endblock %}

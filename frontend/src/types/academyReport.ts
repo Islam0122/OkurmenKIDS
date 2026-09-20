@@ -77,12 +77,25 @@ export interface AcademyReportKPI {
   total: number
 }
 
+export interface AcademyReportReasonBreakdownRow {
+  reason: string
+  reason_display: string
+  count: number
+  percent: number
+}
+
 export interface AcademyReportMovement {
   left: number
+  /** `null` means the schema has no such status yet ("Функция пока не
+   * поддерживается") — never rendered as "Нет данных" or 0. */
   paused: number | null
   continued: number | null
-  returned: number | null
-  reasons: Record<string, unknown>[] | null
+  /** Reactivation is a fully supported event type — always a real count,
+   * 0 when there are none this month, never `null`. */
+  returned: number
+  /** Always a real (possibly empty) list — empty means no departures were
+   * recorded this period, not "unsupported". */
+  reasons: AcademyReportReasonBreakdownRow[]
 }
 
 export interface AcademyReportAttentionItem {

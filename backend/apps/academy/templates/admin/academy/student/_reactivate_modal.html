@@ -1,0 +1,48 @@
+<dialog id="ok-modal-reactivate" class="ok-modal"{% if open_reactivate_modal %} open{% endif %}>
+  <form method="post" action="{{ reactivate_url }}" class="ok-modal-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url|default:request.path }}">
+    <div class="ok-modal-header">
+      <span><i class="bi bi-check2-circle" style="color:var(--ok-primary);"></i> Повторно активировать студента?</span>
+      <button type="button" class="ok-modal-close" onclick="document.getElementById('ok-modal-reactivate').close()" aria-label="Закрыть">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="ok-modal-body">
+      <p class="ok-static-value" style="margin:0 0 1.1rem;"><strong>{{ student }}</strong></p>
+
+      {% for error in reactivate_form.non_field_errors %}
+        <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+      {% endfor %}
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ reactivate_form.group.id_for_label }}">{{ reactivate_form.group.label }} *</label>
+        {{ reactivate_form.group }}
+        {% for error in reactivate_form.group.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ reactivate_form.event_date.id_for_label }}">{{ reactivate_form.event_date.label }} *</label>
+        {{ reactivate_form.event_date }}
+        {% for error in reactivate_form.event_date.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ reactivate_form.comment.id_for_label }}">{{ reactivate_form.comment.label }}</label>
+        {{ reactivate_form.comment }}
+        <span class="ok-help-text">Необязательно.</span>
+        {% for error in reactivate_form.comment.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary" onclick="document.getElementById('ok-modal-reactivate').close()">Отмена</button>
+      <button type="submit" class="ok-btn-primary"><i class="bi bi-check2-circle"></i> Подтвердить активацию</button>
+    </div>
+  </form>
+</dialog>

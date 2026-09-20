@@ -550,7 +550,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   border-radius: var(--ok-radius-lg);
 }
 
-.ok-btn-primary, .ok-btn-secondary {
+.ok-btn-primary, .ok-btn-secondary, .ok-btn-danger {
   padding: 0.62rem 1.25rem;
   border-radius: var(--ok-radius-sm);
   font-weight: 600;
@@ -567,6 +567,11 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .ok-btn-primary:hover { background: var(--ok-primary-hover); color: var(--ok-on-primary); }
 .ok-btn-secondary { background: var(--ok-surface); border-color: var(--ok-border); color: var(--ok-text-secondary); }
 .ok-btn-secondary:hover { background: var(--ok-surface-hover); color: var(--ok-text); }
+/* Destructive confirm (spec: "Подтверждение должно быть красным") — same
+   sizing as the other two buttons, just the danger palette already used by
+   `.ok-student-danger-action`. */
+.ok-btn-danger { background: var(--ok-danger); color: var(--ok-on-primary); }
+.ok-btn-danger:hover { background: var(--ok-danger); filter: brightness(0.92); color: var(--ok-on-primary); }
 
 /* Profile summary strip (used on the change-password screen) */
 .ok-person-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }

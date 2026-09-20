@@ -14,6 +14,7 @@ import {
   Gauge,
   GraduationCap,
   MessageSquareText,
+  PieChart,
   TrendingUp,
   Users2,
 } from 'lucide-react'
@@ -115,8 +116,8 @@ export function AcademyReportDetailPage() {
               <div className="divide-y divide-border">
                 <WorkRow label="Всего активных студентов" value={stats.students.active} />
                 <WorkRow label="Новые студенты" value={stats.students.new} />
-                <WorkRow label="Завершили обучение" value={stats.students.completed} />
-                <WorkRow label="Приостановили обучение" value={stats.students.paused} />
+                <WorkRow label="Завершили обучение" value={stats.students.completed} nullLabel="Функция пока не поддерживается" />
+                <WorkRow label="Приостановили обучение" value={stats.students.paused} nullLabel="Функция пока не поддерживается" />
                 <WorkRow label="Вышли из курса" value={stats.students.left} />
               </div>
             </section>
@@ -173,15 +174,28 @@ export function AcademyReportDetailPage() {
               <SectionHeader icon={DoorOpen} title="Движение студентов" />
               <div className="divide-y divide-border">
                 <WorkRow label="Вышли из курса за месяц" value={stats.movement.left} />
-                <WorkRow label="Приостановили обучение" value={stats.movement.paused} />
-                <WorkRow label="Продолжили обучение" value={stats.movement.continued} />
+                <WorkRow label="Приостановили обучение" value={stats.movement.paused} nullLabel="Функция пока не поддерживается" />
+                <WorkRow label="Продолжили обучение" value={stats.movement.continued} nullLabel="Функция пока не поддерживается" />
                 <WorkRow label="Вернулись после паузы" value={stats.movement.returned} />
               </div>
-              {stats.movement.reasons === null ? (
-                <p className="mt-3 text-xs text-ink-muted">
-                  Разбивка по причинам ухода недоступна — в системе пока нет отдельного модуля учёта причин.
-                </p>
-              ) : null}
+            </section>
+
+            <section className="rounded-xl border border-border bg-surface p-5">
+              <SectionHeader icon={PieChart} title="Разбивка по причинам ухода" />
+              {stats.movement.reasons.length === 0 ? (
+                <p className="text-sm text-ink-muted">За выбранный период уходов студентов не зарегистрировано.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {stats.movement.reasons.map((row) => (
+                    <div key={row.reason} className="flex items-center justify-between py-2.5 text-sm">
+                      <span className="text-ink-secondary">{row.reason_display}</span>
+                      <span className="font-semibold text-ink">
+                        {row.count} · {formatRuPercent(row.percent)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             {stats.attention.length > 0 ? (
@@ -233,11 +247,22 @@ function SectionHeader({
   )
 }
 
-function WorkRow({ label, value }: { label: string; value: number | string | null }) {
+function WorkRow({
+  label,
+  value,
+  nullLabel = 'Нет данных',
+}: {
+  label: string
+  value: number | string | null
+  /** Shown when `value` is null — "Нет данных" (feature exists, nothing to
+   * show) and "Функция пока не поддерживается" (no such status yet) must
+   * never be confused, so callers pick which one applies. */
+  nullLabel?: string
+}) {
   return (
     <div className="flex items-center justify-between py-2.5 text-sm">
       <span className="text-ink-secondary">{label}</span>
-      <span className="font-semibold text-ink">{value === null ? 'Нет данных' : value}</span>
+      <span className="font-semibold text-ink">{value === null ? nullLabel : value}</span>
     </div>
   )
 }

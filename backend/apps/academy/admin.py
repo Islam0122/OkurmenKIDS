@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
@@ -45,11 +48,13 @@ from .admin_views import (
     homework_monitor_view,
     homeworkresult_detail_view,
     homeworkresult_monitor_view,
+    inactive_students_view,
     lesson_detail_view,
     lesson_monitor_view,
     monthly_report_detail_view,
     monthly_report_monitor_view,
     schedule_view,
+    student_departure_history_view,
 )
 from .help_center import help_center_view
 from .models import (
@@ -66,7 +71,9 @@ from .models import (
     MonthlyTeacherReport,
     Room,
     Student,
+    StudentStatusEvent,
 )
+from .services.student_status import deactivate_student, reactivate_student
 from .services.import_export import (
     StudentImportValidationError,
     build_student_import_template,
@@ -307,6 +314,45 @@ class StudentAssignGroupForm(forms.Form):
     )
 
 
+class StudentDeactivateForm(forms.Form):
+    reason = forms.ChoiceField(
+        choices=[("", "— Выберите причину —")] + list(StudentStatusEvent.Reason.choices),
+        label="Причина деактивации",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    comment = forms.CharField(
+        required=False,
+        label="Комментарий",
+        widget=forms.Textarea(attrs={"class": "ok-input", "rows": 3}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        reason = cleaned.get("reason")
+        comment = (cleaned.get("comment") or "").strip()
+        if reason == StudentStatusEvent.Reason.OTHER and not comment:
+            self.add_error("comment", "Для причины «Другая причина» комментарий обязателен.")
+        return cleaned
+
+
+class StudentReactivateForm(forms.Form):
+    group = forms.ModelChoiceField(
+        queryset=Group.objects.all(),
+        label="Группа",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    event_date = forms.DateField(
+        label="Дата возвращения",
+        initial=dt.date.today,
+        widget=forms.DateInput(attrs={"class": "ok-input", "type": "date"}),
+    )
+    comment = forms.CharField(
+        required=False,
+        label="Комментарий",
+        widget=forms.Textarea(attrs={"class": "ok-input", "rows": 3}),
+    )
+
+
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
     list_display = ("student_column", "group_column", "phone", "active_badge", "created_at", "row_actions")
@@ -429,9 +475,14 @@ class StudentAdmin(admin.ModelAdmin):
                 name="academy_student_detail",
             ),
             path(
-                "<int:student_id>/toggle-active/",
-                self.admin_site.admin_view(self.toggle_active_view),
-                name="academy_student_toggle_active",
+                "<int:student_id>/deactivate/",
+                self.admin_site.admin_view(self.deactivate_view),
+                name="academy_student_deactivate",
+            ),
+            path(
+                "<int:student_id>/reactivate/",
+                self.admin_site.admin_view(self.reactivate_view),
+                name="academy_student_reactivate",
             ),
         ]
         return custom_urls + super().get_urls()
@@ -582,9 +633,7 @@ class StudentAdmin(admin.ModelAdmin):
         }
         return render(request, "admin/academy/student/assign_group.html", context)
 
-    def detail_view(self, request, student_id):
-        student = get_object_or_404(Student.objects.select_related("group__course"), pk=student_id)
-
+    def _detail_context(self, request, student, *, deactivate_form=None, reactivate_form=None):
         attendance_qs = Attendance.objects.filter(student=student)
         attendance_total = attendance_qs.count()
         attendance_present = attendance_qs.filter(status=Attendance.Status.PRESENT).count()
@@ -604,7 +653,11 @@ class StudentAdmin(admin.ModelAdmin):
         )
         homework_pending = max(homework_assigned - homework_submitted, 0) if student.group_id else None
 
-        context = {
+        status_events = list(
+            student.status_events.select_related("group", "performed_by").order_by("-created_at")
+        )
+
+        return {
             **self.admin_site.each_context(request),
             "title": str(student),
             "opts": self.model._meta,
@@ -623,9 +676,13 @@ class StudentAdmin(admin.ModelAdmin):
                 "checked": homework_checked,
                 "pending": homework_pending,
             },
+            "status_events": status_events,
+            "deactivate_form": deactivate_form or StudentDeactivateForm(),
+            "reactivate_form": reactivate_form or StudentReactivateForm(initial={"group": student.group_id}),
             "change_url": reverse("admin:academy_student_change", args=[student.pk]),
             "changelist_url": reverse("admin:academy_student_changelist"),
-            "toggle_active_url": reverse("admin:academy_student_toggle_active", args=[student.pk]),
+            "deactivate_url": reverse("admin:academy_student_deactivate", args=[student.pk]),
+            "reactivate_url": reverse("admin:academy_student_reactivate", args=[student.pk]),
             "attendance_url": (
                 f"{reverse('admin:academy_attendance_changelist')}?student={student.pk}"
             ),
@@ -636,25 +693,67 @@ class StudentAdmin(admin.ModelAdmin):
                 reverse("admin:academy_group_change", args=[student.group_id]) if student.group_id else None
             ),
         }
+
+    def detail_view(self, request, student_id):
+        student = get_object_or_404(Student.objects.select_related("group__course"), pk=student_id)
+        context = self._detail_context(request, student)
         return render(request, "admin/academy/student/detail.html", context)
 
-    def toggle_active_view(self, request, student_id):
+    def deactivate_view(self, request, student_id):
         student = get_object_or_404(Student, pk=student_id)
         if request.method != "POST" or not self.has_change_permission(request, student):
             raise PermissionDenied
 
-        student.is_active = not student.is_active
-        student.save(update_fields=["is_active", "updated_at"])
-        if student.is_active:
-            self.message_user(request, f"«{student}» активирован.", messages.SUCCESS)
-        else:
-            self.message_user(
-                request,
-                f"«{student}» деактивирован. Посещаемость, домашние задания и история сохранены.",
-                messages.SUCCESS,
-            )
-        next_url = request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id])
-        return redirect(next_url)
+        form = StudentDeactivateForm(request.POST)
+        if form.is_valid():
+            try:
+                deactivate_student(
+                    student,
+                    reason=form.cleaned_data["reason"],
+                    comment=form.cleaned_data["comment"],
+                    performed_by=request.user,
+                )
+            except DjangoValidationError as exc:
+                for error in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                    messages.error(request, error)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+            else:
+                self.message_user(request, "Студент успешно деактивирован.", messages.SUCCESS)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+
+        # Invalid form (missing reason, missing comment for "Другая причина")
+        # — re-render the same detail page with the modal reopened and the
+        # errors shown inside it, never a bare redirect that would lose them.
+        context = self._detail_context(request, student, deactivate_form=form)
+        context["open_deactivate_modal"] = True
+        return render(request, "admin/academy/student/detail.html", context)
+
+    def reactivate_view(self, request, student_id):
+        student = get_object_or_404(Student, pk=student_id)
+        if request.method != "POST" or not self.has_change_permission(request, student):
+            raise PermissionDenied
+
+        form = StudentReactivateForm(request.POST)
+        if form.is_valid():
+            try:
+                reactivate_student(
+                    student,
+                    group=form.cleaned_data["group"],
+                    event_date=form.cleaned_data["event_date"],
+                    comment=form.cleaned_data["comment"],
+                    performed_by=request.user,
+                )
+            except DjangoValidationError as exc:
+                for error in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                    messages.error(request, error)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+            else:
+                self.message_user(request, "Студент успешно активирован.", messages.SUCCESS)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+
+        context = self._detail_context(request, student, reactivate_form=form)
+        context["open_reactivate_modal"] = True
+        return render(request, "admin/academy/student/detail.html", context)
 
 
 # ---------------------------------------------------------------------------
@@ -1298,6 +1397,16 @@ def _get_urls_with_schedule():
             "academy/reports/<int:object_id>/",
             admin.site.admin_view(academy_report_detail_view),
             name="academy_report_detail",
+        ),
+        path(
+            "academy/students/inactive/",
+            admin.site.admin_view(inactive_students_view),
+            name="academy_inactive_students",
+        ),
+        path(
+            "academy/students/departure-history/",
+            admin.site.admin_view(student_departure_history_view),
+            name="academy_student_departure_history",
         ),
     ]
     return custom_urls + _original_get_urls()
