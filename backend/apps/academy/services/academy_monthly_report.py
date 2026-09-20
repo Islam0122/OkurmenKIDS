@@ -29,6 +29,7 @@ point-in-time count of the current database state (spec: "не хранить
 from __future__ import annotations
 
 import datetime as dt
+from collections import defaultdict
 
 from django.db.models import Avg, Count, Q
 from django.db.models.functions import Coalesce
@@ -36,7 +37,7 @@ from django.utils import timezone
 
 from apps.users.models import Teacher
 
-from ..models import Attendance, Group, HomeworkResult, StudentStatusEvent
+from ..models import Attendance, Group, HomeworkResult, Lesson, StudentStatusEvent
 from .analytics import homework as homework_analytics
 from .analytics import insights as insights_analytics
 from .analytics.attendance import build as build_attendance_section
@@ -61,20 +62,42 @@ def _group_attendance_rate(group_id: int, date_range: DateRange) -> float:
 
 
 def _groups_breakdown(scope: AnalyticsScope, date_range: DateRange) -> list[dict]:
-    active_group_ids = list(
-        scope.lessons_qs(date_range=date_range).values_list("group_id", flat=True).distinct()
-    )
+    """Per-group row for the month's "Группы" table. `lessons_count` and
+    `students_count` must use the *same* definitions the report's summary
+    cards do (`lessons_completed` / `students_count` above), or the table's
+    totals silently disagree with the header — same reasoning as
+    services.monthly_report.compute_monthly_stats's own `groups` list:
+    `lessons_count` counts only COMPLETED lessons this period (never every
+    Lesson regardless of status), and `students_count` is the distinct
+    students who actually have an Attendance record on one of this group's
+    lessons this period — never `Group.students_count` (that property is
+    the group's *current* active roster, live and un-scoped by period, so
+    it can disagree with what actually happened this month in either
+    direction)."""
+    lessons_in_range = scope.lessons_qs(date_range=date_range)
+    active_group_ids = list(lessons_in_range.values_list("group_id", flat=True).distinct())
     groups = Group.objects.filter(id__in=active_group_ids).order_by("name")
+
+    completed_lessons_by_group = dict(
+        lessons_in_range.filter(status=Lesson.Status.COMPLETED)
+        .values("group_id")
+        .annotate(n=Count("id"))
+        .values_list("group_id", "n")
+    )
+    students_by_group: dict[int, set] = defaultdict(set)
+    for group_id, student_id in Attendance.objects.filter(lesson__in=lessons_in_range).values_list(
+        "lesson__group_id", "student_id"
+    ).distinct():
+        students_by_group[group_id].add(student_id)
 
     rows = []
     for group in groups:
-        lessons_count = scope.lessons_qs(date_range=date_range).filter(group_id=group.id).count()
         rows.append(
             {
                 "id": group.id,
                 "name": group.name,
-                "students_count": group.students_count,
-                "lessons_count": lessons_count,
+                "students_count": len(students_by_group.get(group.id, ())),
+                "lessons_count": completed_lessons_by_group.get(group.id, 0),
                 "attendance_rate": _group_attendance_rate(group.id, date_range),
                 "status": group.status,
                 "status_display": group.get_status_display(),
