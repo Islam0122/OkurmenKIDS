@@ -1198,10 +1198,23 @@ class AcademyReportStudentsSerializer(serializers.Serializer):
     active = serializers.IntegerField()
     new = serializers.IntegerField()
     left = serializers.IntegerField()
-    # Real StudentStatusEvent-backed counts (see services.student_status) —
-    # always an int, 0 when there were no such events this month, never null.
+    # Real StudentStatusEvent-backed count (see services.student_status) —
+    # always an int, 0 when nobody completed this month, never null.
     completed = serializers.IntegerField()
-    paused = serializers.IntegerField()
+
+
+class AcademyReportGroupStatsSerializer(serializers.Serializer):
+    """Current (not month-scoped) group roster — spec §4: total/active/
+    completed groups, and how many students currently sit in each. Always a
+    live count of the current database state, computed by
+    services.academy_monthly_report._group_stats (which itself reuses
+    services.analytics.groups._snapshot — no duplicate calculation)."""
+
+    total = serializers.IntegerField()
+    active = serializers.IntegerField()
+    completed = serializers.IntegerField()
+    students_active = serializers.IntegerField()
+    students_completed = serializers.IntegerField()
 
 
 class AcademyReportGroupRowSerializer(serializers.Serializer):
@@ -1259,11 +1272,10 @@ class AcademyReportReasonBreakdownRowSerializer(serializers.Serializer):
 
 
 class AcademyReportEducationStatusMetricSerializer(serializers.Serializer):
-    """`{count, supported}` — `supported` is always True for these four
-    (Завершили/Приостановили/Продолжили обучение, Вернулись после паузы):
-    each has a real StudentStatusEvent type and a working action behind it
-    (see services.student_status). `count` is 0, never null, when the
-    period has no matching events — 0 and "unsupported" must never be
+    """`{count, supported}` — `supported` is always True for "Завершили
+    обучение": it has a real StudentStatusEvent type and a working action
+    behind it (see services.student_status). `count` is 0, never null, when
+    the period has no matching events — 0 and "unsupported" must never be
     confused (spec: "Различай 0 — функция работает, событий нет / unsupported
     — функция действительно не реализована")."""
 
@@ -1272,11 +1284,16 @@ class AcademyReportEducationStatusMetricSerializer(serializers.Serializer):
 
 
 class AcademyReportMovementSerializer(serializers.Serializer):
+    """spec §3: "Вышли из курса за месяц / Завершили обучение / Активные
+    группы / Завершённые группы" — replaces the old pause/continue/
+    returned-after-pause block. `active_groups`/`completed_groups` are the
+    same current group counts as `group_stats` (see
+    AcademyReportGroupStatsSerializer), not a second computation."""
+
     left = serializers.IntegerField()
     completed = AcademyReportEducationStatusMetricSerializer()
-    paused = AcademyReportEducationStatusMetricSerializer()
-    continued = AcademyReportEducationStatusMetricSerializer()
-    returned_after_pause = AcademyReportEducationStatusMetricSerializer()
+    active_groups = serializers.IntegerField()
+    completed_groups = serializers.IntegerField()
     reasons = AcademyReportReasonBreakdownRowSerializer(many=True)
 
 
@@ -1297,6 +1314,7 @@ class AcademyMonthlyReportStatsSerializer(serializers.Serializer):
     lessons_completed = serializers.IntegerField()
     attendance = AcademyReportAttendanceSerializer()
     students = AcademyReportStudentsSerializer()
+    group_stats = AcademyReportGroupStatsSerializer()
     groups = AcademyReportGroupRowSerializer(many=True)
     teachers = AcademyReportTeacherRowSerializer(many=True)
     lessons = AcademyReportLessonsSerializer()

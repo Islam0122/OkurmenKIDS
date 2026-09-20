@@ -142,12 +142,31 @@ def _draw_students(doc: _Doc, stats: dict) -> None:
         ("Всего активных студентов", str(students["active"])),
         ("Новые студенты", str(students["new"])),
         ("Завершили обучение", str(students["completed"])),
-        ("Приостановили обучение", str(students["paused"])),
         ("Вышли из курса", str(students["left"])),
     ]
     row_h = 22
     doc.ensure_space(_TITLE_HEIGHT + row_h * len(rows) + 10)
     _section_title(doc, "Студенты")
+    for label, value in rows:
+        doc.text(MARGIN, doc.y - 15, label, font=_REGULAR, size=10, color=INK_SECONDARY)
+        doc.text(PAGE_W - MARGIN, doc.y - 15, value, font=_BOLD, size=10.5, color=INK, align="right")
+        doc.y -= row_h
+        doc.hline(doc.y + 4, color=BORDER, width=0.5)
+    doc.y -= 4
+
+
+def _draw_group_stats(doc: _Doc, stats: dict) -> None:
+    group_stats = stats["group_stats"]
+    rows = [
+        ("Всего групп", str(group_stats["total"])),
+        ("Активные группы", str(group_stats["active"])),
+        ("Завершённые группы", str(group_stats["completed"])),
+        ("Студентов в активных группах", str(group_stats["students_active"])),
+        ("Студентов в завершённых группах", str(group_stats["students_completed"])),
+    ]
+    row_h = 22
+    doc.ensure_space(_TITLE_HEIGHT + row_h * len(rows) + 10)
+    _section_title(doc, "Статистика групп")
     for label, value in rows:
         doc.text(MARGIN, doc.y - 15, label, font=_REGULAR, size=10, color=INK_SECONDARY)
         doc.text(PAGE_W - MARGIN, doc.y - 15, value, font=_BOLD, size=10.5, color=INK, align="right")
@@ -392,9 +411,8 @@ def _draw_movement(doc: _Doc, stats: dict) -> None:
     rows = [
         ("Вышли из курса за месяц", str(movement["left"])),
         ("Завершили обучение", str(movement["completed"]["count"])),
-        ("Приостановили обучение", str(movement["paused"]["count"])),
-        ("Продолжили обучение", str(movement["continued"]["count"])),
-        ("Вернулись после паузы", str(movement["returned_after_pause"]["count"])),
+        ("Активные группы", str(movement["active_groups"])),
+        ("Завершённые группы", str(movement["completed_groups"])),
     ]
     row_h = 20
     doc.ensure_space(_TITLE_HEIGHT + row_h * len(rows) + 10)
@@ -497,6 +515,7 @@ def build_academy_monthly_report_pdf(report) -> bytes:
     else:
         _draw_kpi_cards(doc, stats)
         _draw_students(doc, stats)
+        _draw_group_stats(doc, stats)
         _draw_groups_table(doc, stats)
         _draw_teachers_table(doc, stats)
         _draw_study_process(doc, stats)

@@ -117,8 +117,18 @@ export function AcademyReportDetailPage() {
                 <WorkRow label="Всего активных студентов" value={stats.students.active} />
                 <WorkRow label="Новые студенты" value={stats.students.new} />
                 <WorkRow label="Завершили обучение" value={stats.students.completed} />
-                <WorkRow label="Приостановили обучение" value={stats.students.paused} />
                 <WorkRow label="Вышли из курса" value={stats.students.left} />
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-surface p-5">
+              <SectionHeader icon={FolderOpen} title="Статистика групп" />
+              <div className="divide-y divide-border">
+                <WorkRow label="Всего групп" value={stats.group_stats.total} />
+                <WorkRow label="Активные группы" value={stats.group_stats.active} />
+                <WorkRow label="Завершённые группы" value={stats.group_stats.completed} />
+                <WorkRow label="Студентов в активных группах" value={stats.group_stats.students_active} />
+                <WorkRow label="Студентов в завершённых группах" value={stats.group_stats.students_completed} />
               </div>
             </section>
 
@@ -175,9 +185,8 @@ export function AcademyReportDetailPage() {
               <div className="divide-y divide-border">
                 <WorkRow label="Вышли из курса за месяц" value={stats.movement.left} />
                 <WorkRow label="Завершили обучение" value={stats.movement.completed.count} />
-                <WorkRow label="Приостановили обучение" value={stats.movement.paused.count} />
-                <WorkRow label="Продолжили обучение" value={stats.movement.continued.count} />
-                <WorkRow label="Вернулись после паузы" value={stats.movement.returned_after_pause.count} />
+                <WorkRow label="Активные группы" value={stats.movement.active_groups} />
+                <WorkRow label="Завершённые группы" value={stats.movement.completed_groups} />
               </div>
             </section>
 
@@ -254,16 +263,17 @@ function WorkRow({
   nullLabel = 'Нет данных',
 }: {
   label: string
-  value: number | string | null
-  /** Shown when `value` is null — "Нет данных" (feature exists, nothing to
-   * show) and "Функция пока не поддерживается" (no such status yet) must
-   * never be confused, so callers pick which one applies. */
+  value: number | string | null | undefined
+  /** Shown when `value` is null/undefined/NaN — "Нет данных" (feature
+   * exists, nothing to show) and "Функция пока не поддерживается" (no such
+   * status yet) must never be confused, so callers pick which one applies. */
   nullLabel?: string
 }) {
+  const isMissing = value === null || value === undefined || (typeof value === 'number' && Number.isNaN(value))
   return (
     <div className="flex items-center justify-between py-2.5 text-sm">
       <span className="text-ink-secondary">{label}</span>
-      <span className="font-semibold text-ink">{value === null ? nullLabel : value}</span>
+      <span className="font-semibold text-ink">{isMissing ? nullLabel : value}</span>
     </div>
   )
 }

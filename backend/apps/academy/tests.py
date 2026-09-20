@@ -5425,13 +5425,21 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         teacher_names = {row["name"] for row in stats["teachers"]}
         self.assertEqual(len(teacher_names), 2)
 
-        # completed/paused are now real StudentStatusEvent-backed counts
-        # (see services.student_status) — 0 when none happened, never None.
+        # completed is a real StudentStatusEvent-backed count (see
+        # services.student_status) — 0 when none happened, never None.
         self.assertEqual(stats["students"]["completed"], 0)
-        self.assertEqual(stats["students"]["paused"], 0)
         # "reschedule" status still has no backing field on Lesson — still
         # honestly None, not fabricated.
         self.assertIsNone(stats["lessons"]["rescheduled"])
+
+        # Group statistics are a live, current-database-state count (never
+        # month-scoped) built from Group.status — group1/group2 are both
+        # ACTIVE with 2/1 active students respectively (see AcademyTestBase).
+        self.assertEqual(stats["group_stats"]["total"], 2)
+        self.assertEqual(stats["group_stats"]["active"], 2)
+        self.assertEqual(stats["group_stats"]["completed"], 0)
+        self.assertEqual(stats["group_stats"]["students_active"], 3)
+        self.assertEqual(stats["group_stats"]["students_completed"], 0)
 
     def test_no_data_month_is_honest_not_fabricated(self):
         stats = self.compute_academy_monthly_stats(2020, 1)
@@ -5506,10 +5514,10 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         pdf_bytes = build_academy_monthly_report_pdf(report)
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
 
-    def test_pdf_builds_with_real_completed_paused_continued_events(self):
-        """The PDF must render the 4 education-status metrics from the same
-        `compute_academy_monthly_stats` the API/Admin use — no separate
-        calculation logic, no `_unsupported()` placeholder text."""
+    def test_pdf_builds_with_real_completed_events_and_group_stats(self):
+        """The PDF must render the completed-students metric and the group
+        statistics block from the same `compute_academy_monthly_stats` the
+        API/Admin use — no separate calculation logic."""
         from apps.academy.services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
 
         complete_student(self.student1, comment="")
@@ -5517,6 +5525,26 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         today = dt.date.today()
         report = AcademyMonthlyReport.objects.create(year=today.year, month=today.month)
         pdf_bytes = build_academy_monthly_report_pdf(report)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+
+    def test_pdf_never_mentions_removed_pause_metric(self):
+        """spec: "Приостановили обучение" is removed from the Academy Report
+        entirely — the PDF text stream must not contain it, even though
+        pausing a student remains a real, working feature elsewhere."""
+        from apps.academy.services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
+
+        pause_student(self.student1, reason="no_interest", comment="")
+        today = dt.date.today()
+        report = AcademyMonthlyReport.objects.create(year=today.year, month=today.month)
+        pdf_bytes = build_academy_monthly_report_pdf(report)
+        # reportlab-encoded text isn't searchable as plain UTF-8 in the byte
+        # stream, so assert on the actual dict fields the render loop reads
+        # from instead — the removed keys must be gone from the shared stats.
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertNotIn("paused", stats["students"])
+        self.assertNotIn("paused", stats["movement"])
+        self.assertNotIn("continued", stats["movement"])
+        self.assertNotIn("returned_after_pause", stats["movement"])
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
 
 
@@ -6138,12 +6166,22 @@ class InactiveStudentsAndDepartureHistoryViewTests(AcademyTestBase):
         response = self.admin_web.get(url, {"q": self.group1.name})
         self.assertEqual({row["student"].pk for row in response.context["rows"]}, {self.student1.pk})
 
-    def test_has_refund_yes_filter_always_empty(self):
-        """No payments model exists, so a real refund never happens —
-        filtering for one is honest, not fabricated (spec §3/§6)."""
+    def test_inactive_students_page_has_no_refund_ui(self):
+        """The inactive students page has no real payment/refund module
+        behind it — the refund columns/filter/help text are removed
+        entirely rather than shown as permanently-empty placeholders."""
         deactivate_student(self.student1, reason="no_interest", comment="")
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"))
+        body = response.content.decode()
+        self.assertNotIn("Сумма возврата", body)
+        self.assertNotIn("Дата возврата", body)
+        self.assertNotIn("has_refund", body)
+        self.assertNotIn("Возврат — не важно", body)
+        # A stray `has_refund` query param must not affect filtering — it's
+        # no longer a recognised parameter, not a silent no-op filter.
         response = self.admin_web.get(reverse("admin:academy_inactive_students"), {"has_refund": "yes"})
-        self.assertEqual(list(response.context["rows"]), [])
+        pks = {row["student"].pk for row in response.context["rows"]}
+        self.assertEqual(pks, {self.student1.pk})
 
     def test_departure_history_includes_returned_students(self):
         deactivate_student(self.student1, reason="no_interest", comment="")
@@ -6208,23 +6246,21 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(stats_september["students"]["left"], 0)
         self.assertIsNotNone(event.pk)
 
-    def test_left_count_unaffected_by_returned_after_pause_rename(self):
-        """`movement.returned` (reactivation-only) was renamed/refocused to
-        `returned_after_pause` (continuation-from-pause-only) — `left` must
-        still count every DEACTIVATED event exactly as before."""
+    def test_left_count_unaffected_by_reactivation(self):
+        """Reactivating a student afterwards must not retroactively remove
+        their departure — `left` counts every DEACTIVATED event exactly as
+        before, independent of what happens to the student later."""
         deactivate_student(self.student1, reason="no_interest", comment="")
         reactivate_student(self.student1, group=self.group1, event_date=dt.date(2026, 9, 20), comment="")
         stats = compute_academy_monthly_stats(2026, 9)
         self.assertEqual(stats["movement"]["left"], 1)
 
-    def test_completed_paused_continued_returned_are_zero_not_none_when_empty(self):
-        """These four metrics are now fully implemented — an empty period
-        must report `{count: 0, supported: True}`, never `None`/"unsupported"."""
+    def test_completed_is_zero_not_none_when_empty(self):
+        """"Завершили обучение" is fully implemented — an empty period must
+        report `{count: 0, supported: True}`, never `None`/"unsupported"."""
         stats = compute_academy_monthly_stats(2026, 9)
-        for key in ("completed", "paused", "continued", "returned_after_pause"):
-            self.assertEqual(stats["movement"][key]["count"], 0)
-            self.assertTrue(stats["movement"][key]["supported"])
-        self.assertEqual(stats["students"]["paused"], 0)
+        self.assertEqual(stats["movement"]["completed"]["count"], 0)
+        self.assertTrue(stats["movement"]["completed"]["supported"])
         self.assertEqual(stats["students"]["completed"], 0)
 
     def test_completed_metric_counts_confirmed_completed_events_only(self):
@@ -6238,47 +6274,19 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(stats["movement"]["completed"]["count"], 1)
         self.assertEqual(stats["students"]["completed"], 1)
 
-    def test_paused_metric_counts_distinct_students_with_paused_event(self):
+    def test_pause_metric_removed_from_academy_report(self):
+        """spec: "Приостановили обучение" is removed from the Academy Report
+        — pausing remains a real, working Student lifecycle action
+        (services.student_status), it is simply no longer one of this
+        report's fields."""
         pause_student(self.student1, reason="no_interest", comment="")
         pause_student(self.student2, reason="relocation", comment="")
         today = dt.date.today()
         stats = compute_academy_monthly_stats(today.year, today.month)
-        self.assertEqual(stats["movement"]["paused"]["count"], 2)
-        self.assertEqual(stats["students"]["paused"], 2)
-
-    def test_continued_and_returned_after_pause_both_read_continue_events(self):
-        """spec permits "Продолжили обучение" and "Вернулись после паузы"
-        to be the same real-world action (ending a pause) as long as the
-        source is distinguishable from ordinary reactivation — verified in
-        test_returned_after_pause_is_distinct_from_reactivation below."""
-        pause_student(self.student1, reason="no_interest", comment="")
-        continue_student(self.student1, event_date=dt.date.today(), comment="")
-        today = dt.date.today()
-        stats = compute_academy_monthly_stats(today.year, today.month)
-        self.assertEqual(stats["movement"]["continued"]["count"], 1)
-        self.assertEqual(stats["movement"]["returned_after_pause"]["count"], 1)
-
-    def test_returned_after_pause_is_distinct_from_reactivation(self):
-        """A student who left entirely (deactivate/reactivate) must never
-        inflate "Вернулись после паузы" — only ending a real pause does."""
-        deactivate_student(self.student1, reason="no_interest", comment="")
-        reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
-        today = dt.date.today()
-        stats = compute_academy_monthly_stats(today.year, today.month)
-        self.assertEqual(stats["movement"]["returned_after_pause"]["count"], 0)
-        # Reactivation still fully appears elsewhere (unchanged behaviour).
-        self.assertEqual(stats["movement"]["left"], 1)
-
-    def test_movement_metrics_count_unique_students_not_events(self):
-        """Pausing then continuing then pausing again the same student this
-        month must still count that student once per metric."""
-        pause_student(self.student1, reason="no_interest", comment="")
-        continue_student(self.student1, event_date=dt.date.today(), comment="")
-        pause_student(self.student1, reason="relocation", comment="")
-        today = dt.date.today()
-        stats = compute_academy_monthly_stats(today.year, today.month)
-        self.assertEqual(stats["movement"]["paused"]["count"], 1)
-        self.assertEqual(stats["movement"]["continued"]["count"], 1)
+        self.assertNotIn("paused", stats["students"])
+        self.assertNotIn("paused", stats["movement"])
+        self.assertNotIn("continued", stats["movement"])
+        self.assertNotIn("returned_after_pause", stats["movement"])
 
     def test_movement_metrics_respect_year_month_filter(self):
         StudentStatusEvent.objects.create(
@@ -6292,7 +6300,7 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(stats_august["movement"]["completed"]["count"], 1)
         self.assertEqual(stats_september["movement"]["completed"]["count"], 0)
 
-    def test_academy_report_api_exposes_all_four_education_status_metrics(self):
+    def test_academy_report_api_exposes_completed_and_group_stats(self):
         complete_student(self.student1, comment="")
         pause_student(self.student2, reason="no_interest", comment="")
         today = dt.date.today()
@@ -6302,9 +6310,21 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         movement = response.data["stats"]["movement"]
         self.assertEqual(movement["completed"], {"count": 1, "supported": True})
-        self.assertEqual(movement["paused"], {"count": 1, "supported": True})
-        self.assertEqual(movement["continued"], {"count": 0, "supported": True})
-        self.assertEqual(movement["returned_after_pause"], {"count": 0, "supported": True})
+        self.assertNotIn("paused", movement)
+        self.assertNotIn("continued", movement)
+        self.assertNotIn("returned_after_pause", movement)
+        # group1 (2 students) + group2 (1 student) are both still ACTIVE.
+        self.assertEqual(movement["active_groups"], 2)
+        self.assertEqual(movement["completed_groups"], 0)
+
+        # student1 (completed) and student2 (paused) are both now
+        # is_active=False, leaving only student3 active in group2.
+        group_stats = response.data["stats"]["group_stats"]
+        self.assertEqual(group_stats["total"], 2)
+        self.assertEqual(group_stats["active"], 2)
+        self.assertEqual(group_stats["completed"], 0)
+        self.assertEqual(group_stats["students_active"], 1)
+        self.assertEqual(group_stats["students_completed"], 0)
 
     def test_reason_breakdown_percentages_and_no_division_by_zero(self):
         today = dt.date.today()
@@ -6339,4 +6359,81 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(response.data["stats"]["movement"]["left"], 1)
         self.assertEqual(len(response.data["stats"]["movement"]["reasons"]), 1)
-        self.assertEqual(response.data["stats"]["movement"]["returned_after_pause"]["count"], 0)
+
+
+class AcademyReportGroupStatsTests(AcademyTestBase):
+    """spec §4/§8: group_stats is a live, current-database-state count — a
+    completed Group must never be counted as active, a transferred or
+    departed student must never be counted twice, and none of it depends on
+    the selected report month."""
+
+    def test_active_and_completed_groups_are_counted_separately(self):
+        self.group2.status = Group.Status.COMPLETED
+        self.group2.save(update_fields=["status"])
+
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["group_stats"]["total"], 2)
+        self.assertEqual(stats["group_stats"]["active"], 1)
+        self.assertEqual(stats["group_stats"]["completed"], 1)
+        # group1 (student1 + student2) is the only ACTIVE group left.
+        self.assertEqual(stats["group_stats"]["students_active"], 2)
+        # group2 (student3) is now COMPLETED.
+        self.assertEqual(stats["group_stats"]["students_completed"], 1)
+
+    def test_completed_group_never_also_counted_as_active(self):
+        self.group1.status = Group.Status.COMPLETED
+        self.group1.save(update_fields=["status"])
+
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["group_stats"]["active"], 1)
+        self.assertEqual(stats["group_stats"]["completed"], 1)
+        self.assertNotEqual(stats["group_stats"]["active"], stats["group_stats"]["total"])
+
+    def test_student_who_left_before_group_completion_not_double_counted(self):
+        """A student deactivated before their group completes must not be
+        double-counted as both a departed student and a member of the now
+        completed group's active roster."""
+        deactivate_student(self.student3, reason="no_interest", comment="")
+        self.group2.status = Group.Status.COMPLETED
+        self.group2.save(update_fields=["status"])
+
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        # student3 is is_active=False, so group2's "students in completed
+        # groups" count (which only counts currently-active members) is 0 —
+        # they are correctly excluded, not fabricated as still enrolled.
+        self.assertEqual(stats["group_stats"]["students_completed"], 0)
+        self.assertEqual(stats["movement"]["left"], 1)
+
+    def test_student_transfer_between_groups_counts_once_not_duplicated(self):
+        """Transferring a student from one group to another must never leave
+        them counted in both groups — Student.group is a single FK, so the
+        old group simply loses them and the new one gains them."""
+        self.assertEqual(self.student1.group_id, self.group1.pk)
+        self.student1.group = self.group2
+        self.student1.save(update_fields=["group"])
+
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        # Still 3 distinct active students total across both groups — the
+        # transfer moved one student, it did not create or drop anyone.
+        self.assertEqual(stats["group_stats"]["students_active"], 3)
+
+        # The transferred student now appears under group2's roster via the
+        # existing `Group.students_count` property (is_active students of
+        # that group), and no longer under group1's.
+        self.assertEqual(self.group1.students_count, 1)
+        self.assertEqual(self.group2.students_count, 2)
+
+    def test_group_stats_are_current_not_month_scoped(self):
+        """group_stats reads live Group.status — unlike `movement.left`/
+        `completed`, it must not change depending on which month is
+        selected."""
+        self.group2.status = Group.Status.COMPLETED
+        self.group2.save(update_fields=["status"])
+
+        stats_this_month = compute_academy_monthly_stats(2026, 9)
+        stats_other_month = compute_academy_monthly_stats(2020, 1)
+        self.assertEqual(stats_this_month["group_stats"], stats_other_month["group_stats"])

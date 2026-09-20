@@ -39,6 +39,13 @@ def _snapshot(scope: AnalyticsScope, date_range: DateRange) -> dict:
     active_students_total = sum(g._active_students for g in groups)
     average_per_group = round(active_students_total / total, 1) if total else 0.0
 
+    students_in_active_groups = sum(
+        g._active_students for g in groups if g.status == Group.Status.ACTIVE
+    )
+    students_in_completed_groups = sum(
+        g._active_students for g in groups if g.status == Group.Status.COMPLETED
+    )
+
     return {
         "total": total,
         "active": by_status.get(Group.Status.ACTIVE, 0),
@@ -47,6 +54,12 @@ def _snapshot(scope: AnalyticsScope, date_range: DateRange) -> dict:
         "cancelled": by_status.get(Group.Status.CANCELLED, 0),
         "average_students_per_group": average_per_group,
         "near_capacity": near_capacity,
+        # Consumed by services.academy_monthly_report's own "Group Statistics"
+        # block — kept here rather than recomputed there, since this
+        # snapshot already annotates every Group with its active-student
+        # count (`_active_students`) needed to derive them.
+        "students_in_active_groups": students_in_active_groups,
+        "students_in_completed_groups": students_in_completed_groups,
     }
 
 
