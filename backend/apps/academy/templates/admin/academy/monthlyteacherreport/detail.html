@@ -160,8 +160,13 @@
         </div>
         <div>
           <p class="ok-kpi-mini-label">Прогресс студентов</p>
-          <p class="ok-kpi-mini-value">{{ stats.kpi.student_progress|ru_percent }}</p>
-          <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.student_progress|unlocalize }}%;"></div></div>
+          {% if stats.kpi.student_progress is None %}
+            <p class="ok-kpi-mini-value">Нет данных</p>
+            <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:0%;"></div></div>
+          {% else %}
+            <p class="ok-kpi-mini-value">{{ stats.kpi.student_progress|ru_percent }}</p>
+            <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.student_progress|unlocalize }}%;"></div></div>
+          {% endif %}
         </div>
       </div>
       <div class="ok-kpi-total">

@@ -111,10 +111,20 @@ def compute_monthly_stats(teacher: Teacher, year: int, month: int) -> dict:
         )
 
     lessons_rate = round(lessons_completed / lessons_total * 100, 1) if lessons_total else 0.0
-    student_progress_rate = round(average_score / 10 * 100, 1) if average_score is not None else 0.0
+    # `None` — not a fabricated 0.0 — when nobody has a graded homework score
+    # yet this month (mirrors `average_score` itself, already nullable):
+    # a teacher with no reviewed homework has *no* progress figure to show,
+    # which is different from a real 0% progress. Excluded from kpi_components
+    # below rather than dragging kpi_total down for missing data (matches
+    # services.academy_monthly_report's own handling of this exact metric —
+    # both must agree, since academy_monthly_report reuses this function's
+    # `kpi.total` for each teacher's row).
+    student_progress_rate = round(average_score / 10 * 100, 1) if average_score is not None else None
 
     has_data = lessons_total > 0 or groups_count > 0
-    kpi_components = [attendance_rate, homework_submission_rate, lessons_rate, student_progress_rate]
+    kpi_components = [attendance_rate, homework_submission_rate, lessons_rate]
+    if student_progress_rate is not None:
+        kpi_components.append(student_progress_rate)
     kpi_total = round(sum(kpi_components) / len(kpi_components), 1) if has_data else 0.0
 
     return {

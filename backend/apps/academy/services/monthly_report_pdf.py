@@ -396,8 +396,11 @@ def _draw_kpi_breakdown(doc: _Doc, stats: dict) -> None:
         x = MARGIN + col * (cell_w + gap_x)
         y = top - row * (cell_h + gap_y)
         doc.text(x, y - 10, label, font=_REGULAR, size=9, color=INK_SECONDARY)
-        doc.text(x, y - 27, _fmt_percent(percent), font=_BOLD, size=15, color=INK)
-        _progress_bar(doc.c, x, y - 36, cell_w, bar_h, percent, BRAND)
+        if percent is None:
+            doc.text(x, y - 27, "Нет данных", font=_BOLD, size=13, color=INK_MUTED)
+        else:
+            doc.text(x, y - 27, _fmt_percent(percent), font=_BOLD, size=15, color=INK)
+            _progress_bar(doc.c, x, y - 36, cell_w, bar_h, percent, BRAND)
 
     doc.y = top - rows * cell_h - (rows - 1) * gap_y - 8
     _rounded_rect(doc.c, MARGIN, doc.y - 40, CONTENT_W, 40, 10, fill=BRAND_SOFT)

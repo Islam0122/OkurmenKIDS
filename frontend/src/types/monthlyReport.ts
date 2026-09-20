@@ -42,7 +42,9 @@ export interface MonthlyReportKPI {
   attendance: number
   homework: number
   lessons: number
-  student_progress: number
+  /** `null` when no homework has been graded yet this month — never a
+   * fabricated 0% (mirrors `homework.average_score`, already nullable). */
+  student_progress: number | null
   total: number
 }
 
