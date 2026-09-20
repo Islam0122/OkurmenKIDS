@@ -40,6 +40,7 @@ from .models import (
     Student,
 )
 from .services.analytics import get_dashboard
+from .services.chart_geometry import nice_domain, nice_ticks, ratio_in_domain
 from .services.group_schedule_conflicts import overlapping_groups
 from .services.lesson_status import attention_q, lesson_status_counts
 from .services.monthly_report import compute_monthly_stats
@@ -2161,8 +2162,8 @@ def monthly_report_monitor_view(request):
 
     context = {
         **admin.site.each_context(request),
-        "title": "Отчёты тренеров",
-        "subtitle": "Ежемесячные отчёты о работе тренеров — статистика считается автоматически.",
+        "title": "Отчёты преподавателей",
+        "subtitle": "Ежемесячные отчёты о работе преподавателей — статистика считается автоматически.",
         "rows": rows,
         "page_obj": page_obj,
         "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),
@@ -2174,6 +2175,76 @@ def monthly_report_monitor_view(request):
     return render(request, "admin/academy/monthlyteacherreport/change_list.html", context)
 
 
+def _num(value: float) -> str:
+    """Plain `"34.0"`-style string for an SVG coordinate — never a raw
+    float. `{{ }}` on a raw float renders through Django's active-locale
+    number formatting (LANGUAGE_CODE="ru-ru" here), which turns "34.0"
+    into "34,0" — invalid inside an SVG/CSS numeric attribute, so browsers
+    silently drop or mis-parse it. Pre-stringifying in Python sidesteps
+    that entirely, the same way `path` below already had to."""
+    return f"{value:.1f}"
+
+
+def _weekly_dynamics_chart(weeks: list[dict]) -> dict:
+    """Geometry for an inline `<svg viewBox="0 0 {W} {H}">` line chart —
+    same auto-scaled-domain approach as the PDF's chart (see
+    services.chart_geometry), so a strong, stable month still reads as a
+    real line instead of four points glued to the top of a 0-100% scale."""
+    if len(weeks) < 2:
+        return {"has_data": False}
+
+    width, height = 600, 180
+    plot_x0, plot_x1 = 34, width - 10
+    plot_y0, plot_y1 = 22, height - 24
+
+    values = [w["percent"] for w in weeks]
+    domain_lo, domain_hi = nice_domain(values)
+
+    def x_for(index: int) -> float:
+        if len(weeks) == 1:
+            return (plot_x0 + plot_x1) / 2
+        return plot_x0 + (index / (len(weeks) - 1)) * (plot_x1 - plot_x0)
+
+    def y_for(value: float) -> float:
+        ratio = ratio_in_domain(value, domain_lo, domain_hi)
+        return plot_y1 - ratio * (plot_y1 - plot_y0)
+
+    # Every coordinate the template needs is pre-computed and pre-formatted
+    # here — including offsets (value label above a point, axis label next
+    # to a gridline) — so the template never has to run arithmetic on a
+    # value that might be a string (Django's `add` filter silently returns
+    # "" when it can't coerce both sides to int, which a "58.6"-style
+    # string can't be).
+    points = [
+        {
+            "x": _num(x_for(i)),
+            "y": _num(y_for(w["percent"])),
+            "value_label_y": _num(y_for(w["percent"]) - 10),
+            "label": w["label"],
+            "value": w["percent"],
+        }
+        for i, w in enumerate(weeks)
+    ]
+    path = " ".join(f"{'M' if i == 0 else 'L'}{p['x']},{p['y']}" for i, p in enumerate(points))
+    ticks = [
+        {"value": int(t), "y": _num(y_for(t)), "label_y": _num(y_for(t) + 3)}
+        for t in nice_ticks(domain_lo, domain_hi)
+    ]
+
+    return {
+        "has_data": True,
+        "width": width,
+        "height": height,
+        "plot_x0": plot_x0,
+        "plot_x1": plot_x1,
+        "axis_label_x": plot_x0 - 6,
+        "week_label_y": height - 6,
+        "points": points,
+        "path": path,
+        "ticks": ticks,
+    }
+
+
 def monthly_report_detail_view(request, object_id):
     _require_admin(request)
     report = get_object_or_404(MonthlyTeacherReport.objects.select_related("teacher__user"), pk=object_id)
@@ -2181,10 +2252,11 @@ def monthly_report_detail_view(request, object_id):
 
     context = {
         **admin.site.each_context(request),
-        "title": "Отчёт тренера",
+        "title": "Отчёт преподавателя",
         "report": report,
         "teacher": report.teacher,
         "stats": stats,
+        "chart": _weekly_dynamics_chart(stats["weekly_dynamics"]),
         "month_label": f"{MONTH_NAMES_RU[report.month]} {report.year}",
         "changelist_url": reverse("admin:academy_monthlyteacherreport_changelist"),
         "teacher_url": reverse("admin:users_teacher_change", args=[report.teacher_id]),

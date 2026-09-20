@@ -1,12 +1,12 @@
 {% extends "admin/base_site.html" %}
-{% load i18n %}
+{% load i18n l10n academy_extras %}
 
-{% block content_title %}Отчёт тренера{% endblock %}
+{% block content_title %}Отчёт преподавателя{% endblock %}
 
 {% block breadcrumbs %}
 <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
-    <li class="breadcrumb-item"><a href="{{ changelist_url }}">Отчёты тренеров</a></li>
+    <li class="breadcrumb-item"><a href="{{ changelist_url }}">Отчёты преподавателей</a></li>
     <li class="breadcrumb-item">{{ teacher }} — {{ month_label }}</li>
 </ol>
 {% endblock %}
@@ -23,7 +23,7 @@
         {% endif %}
         <div>
           <div class="ok-mon-detail-title">{{ teacher }}</div>
-          <div class="ok-help-text" style="margin:0.2rem 0 0;">{{ teacher.position|default:"Тренер" }} · {{ month_label }}</div>
+          <div class="ok-help-text" style="margin:0.2rem 0 0;">{{ teacher.position|default:"Преподаватель" }} · {{ month_label }}</div>
         </div>
       </div>
       <a href="{% url 'monthly-report-pdf' report.pk %}" class="ok-btn-primary ok-btn-sm" target="_blank" rel="noopener">
@@ -36,9 +36,9 @@
     <div class="ok-empty-state">
       <i class="bi bi-calendar-x"></i>
       <h4>Нет данных за этот месяц</h4>
-      <p>У тренера не было занятий в {{ month_label }}.</p>
+      <p>У преподавателя не было занятий в {{ month_label }}.</p>
     </div>
-  {% endif %}
+  {% else %}
 
   <div class="ok-kpi-grid">
     <div class="ok-kpi-card">
@@ -58,34 +58,34 @@
     </div>
     <div class="ok-kpi-card">
       <div class="ok-kpi-icon"><i class="bi bi-calendar-check"></i></div>
-      <div class="ok-kpi-value">{{ stats.attendance.rate }}%</div>
-      <div class="ok-kpi-label">Attendance</div>
+      <div class="ok-kpi-value">{{ stats.attendance.rate|ru_percent }}</div>
+      <div class="ok-kpi-label">Посещаемость</div>
     </div>
     <div class="ok-kpi-card">
       <div class="ok-kpi-icon"><i class="bi bi-journal-check"></i></div>
-      <div class="ok-kpi-value">{{ stats.homework.submission_rate }}%</div>
-      <div class="ok-kpi-label">Homework</div>
+      <div class="ok-kpi-value">{{ stats.homework.submission_rate|ru_percent }}</div>
+      <div class="ok-kpi-label">Домашние задания</div>
     </div>
     <div class="ok-kpi-card">
       <div class="ok-kpi-icon"><i class="bi bi-trophy"></i></div>
-      <div class="ok-kpi-value">{{ stats.kpi.total }}%</div>
-      <div class="ok-kpi-label">KPI</div>
+      <div class="ok-kpi-value">{{ stats.kpi.total|ru_percent }}</div>
+      <div class="ok-kpi-label">Итоговый KPI</div>
     </div>
   </div>
 
   <div class="ok-card">
-    <div class="ok-card-header"><i class="bi bi-clipboard-data"></i><span>Работа тренера</span></div>
+    <div class="ok-card-header"><i class="bi bi-clipboard-data"></i><span>Работа преподавателя</span></div>
     <div class="ok-card-body">
       <div class="ok-report-row">
         <span class="ok-report-row-label">Проведено занятий</span>
         <span class="ok-report-row-value">{{ stats.lessons_completed }}</span>
       </div>
       <div class="ok-report-row">
-        <span class="ok-report-row-label">Выдано Homework</span>
+        <span class="ok-report-row-label">Выдано домашних заданий</span>
         <span class="ok-report-row-value">{{ stats.homework.assigned }}</span>
       </div>
       <div class="ok-report-row">
-        <span class="ok-report-row-label">Проверено Homework</span>
+        <span class="ok-report-row-label">Проверено домашних заданий</span>
         <span class="ok-report-row-value">{{ stats.homework.checked }}</span>
       </div>
       <div class="ok-report-row">
@@ -116,18 +116,23 @@
   </div>
 
   <div class="ok-card">
-    <div class="ok-card-header"><i class="bi bi-graph-up"></i><span>Динамика по неделям</span></div>
+    <div class="ok-card-header"><i class="bi bi-graph-up"></i><span>Динамика посещаемости</span></div>
     <div class="ok-card-body">
-      {% if stats.weekly_dynamics|length > 1 %}
-        <div class="ok-week-chart">
-          {% for week in stats.weekly_dynamics %}
-            <div class="ok-week-col">
-              <span class="ok-week-col-value">{{ week.percent }}%</span>
-              <div class="ok-week-col-bar" style="height:{{ week.percent }}%;"></div>
-              <span class="ok-week-col-label">{{ week.label }}</span>
-            </div>
+      {% if chart.has_data %}
+        <p class="ok-help-text" style="margin:-0.4rem 0 0.9rem;">Посещаемость по неделям</p>
+        <svg class="ok-chart-svg" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img"
+             aria-label="Динамика посещаемости по неделям">
+          {% for tick in chart.ticks %}
+            <line class="ok-chart-grid-line" x1="{{ chart.plot_x0 }}" x2="{{ chart.plot_x1 }}" y1="{{ tick.y }}" y2="{{ tick.y }}"></line>
+            <text class="ok-chart-axis-label" x="{{ chart.axis_label_x }}" y="{{ tick.label_y }}" text-anchor="end">{{ tick.value }}%</text>
           {% endfor %}
-        </div>
+          <path class="ok-chart-line" d="{{ chart.path }}"></path>
+          {% for point in chart.points %}
+            <circle class="ok-chart-point" cx="{{ point.x }}" cy="{{ point.y }}" r="4"></circle>
+            <text class="ok-chart-value-label" x="{{ point.x }}" y="{{ point.value_label_y }}" text-anchor="middle">{{ point.value|ru_percent }}</text>
+            <text class="ok-chart-week-label" x="{{ point.x }}" y="{{ chart.week_label_y }}" text-anchor="middle">{{ point.label }}</text>
+          {% endfor %}
+        </svg>
       {% else %}
         <p class="ok-help-text">Недостаточно данных для динамики.</p>
       {% endif %}
@@ -135,34 +140,38 @@
   </div>
 
   <div class="ok-card">
-    <div class="ok-card-header"><i class="bi bi-speedometer2"></i><span>KPI</span></div>
+    <div class="ok-card-header"><i class="bi bi-speedometer2"></i><span>Показатели KPI</span></div>
     <div class="ok-card-body">
-      <div class="ok-kpi-bar-row">
-        <span class="ok-kpi-bar-label">Attendance</span>
-        <div class="ok-kpi-bar-track"><div class="ok-kpi-bar-fill" style="width:{{ stats.kpi.attendance }}%;"></div></div>
-        <span class="ok-kpi-bar-value">{{ stats.kpi.attendance }}%</span>
-      </div>
-      <div class="ok-kpi-bar-row">
-        <span class="ok-kpi-bar-label">Homework</span>
-        <div class="ok-kpi-bar-track"><div class="ok-kpi-bar-fill" style="width:{{ stats.kpi.homework }}%;"></div></div>
-        <span class="ok-kpi-bar-value">{{ stats.kpi.homework }}%</span>
-      </div>
-      <div class="ok-kpi-bar-row">
-        <span class="ok-kpi-bar-label">Lessons</span>
-        <div class="ok-kpi-bar-track"><div class="ok-kpi-bar-fill" style="width:{{ stats.kpi.lessons }}%;"></div></div>
-        <span class="ok-kpi-bar-value">{{ stats.kpi.lessons }}%</span>
-      </div>
-      <div class="ok-kpi-bar-row">
-        <span class="ok-kpi-bar-label">Student Progress</span>
-        <div class="ok-kpi-bar-track"><div class="ok-kpi-bar-fill" style="width:{{ stats.kpi.student_progress }}%;"></div></div>
-        <span class="ok-kpi-bar-value">{{ stats.kpi.student_progress }}%</span>
+      <div class="ok-kpi-mini-grid">
+        <div>
+          <p class="ok-kpi-mini-label">Посещаемость</p>
+          <p class="ok-kpi-mini-value">{{ stats.kpi.attendance|ru_percent }}</p>
+          <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.attendance|unlocalize }}%;"></div></div>
+        </div>
+        <div>
+          <p class="ok-kpi-mini-label">Домашние задания</p>
+          <p class="ok-kpi-mini-value">{{ stats.kpi.homework|ru_percent }}</p>
+          <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.homework|unlocalize }}%;"></div></div>
+        </div>
+        <div>
+          <p class="ok-kpi-mini-label">Проведённые занятия</p>
+          <p class="ok-kpi-mini-value">{{ stats.kpi.lessons|ru_percent }}</p>
+          <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.lessons|unlocalize }}%;"></div></div>
+        </div>
+        <div>
+          <p class="ok-kpi-mini-label">Прогресс студентов</p>
+          <p class="ok-kpi-mini-value">{{ stats.kpi.student_progress|ru_percent }}</p>
+          <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.student_progress|unlocalize }}%;"></div></div>
+        </div>
       </div>
       <div class="ok-kpi-total">
-        <span class="ok-kpi-total-label">Total KPI</span>
-        <span class="ok-kpi-total-value">{{ stats.kpi.total }}%</span>
+        <span class="ok-kpi-total-label">Итоговый KPI</span>
+        <span class="ok-kpi-total-value">{{ stats.kpi.total|ru_percent }}</span>
       </div>
     </div>
   </div>
+
+  {% endif %}
 
   <div class="ok-card">
     <div class="ok-card-header"><i class="bi bi-chat-square-text"></i><span>Итог месяца</span></div>
@@ -170,7 +179,7 @@
       <p class="ok-static-value" style="white-space:pre-wrap;">{{ report.comment|default:"Комментарий за этот месяц ещё не добавлен."|linebreaksbr }}</p>
       <div class="ok-signatures">
         <div>
-          <div class="ok-signature-label">Тренер</div>
+          <div class="ok-signature-label">Преподаватель</div>
           <div class="ok-signature-value">{{ teacher }}</div>
         </div>
         <div>
@@ -187,7 +196,7 @@
 
   <div class="ok-card">
     <div class="ok-card-body ok-quick-actions">
-      <a href="{{ teacher_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-person-badge"></i> Открыть тренера</a>
+      <a href="{{ teacher_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-person-badge"></i> Открыть преподавателя</a>
       <a href="{{ changelist_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-arrow-left"></i> Назад к списку</a>
     </div>
   </div>

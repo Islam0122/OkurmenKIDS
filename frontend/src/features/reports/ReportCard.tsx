@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/Badge'
 import type { MonthlyTeacherReport } from '@/types/monthlyReport'
-import { formatMonthYear } from '@/utils/format'
+import { formatMonthYear, formatRuPercent } from '@/utils/format'
 
 export function ReportCard({ report }: { report: MonthlyTeacherReport }) {
   const { stats } = report
@@ -35,7 +35,7 @@ export function ReportCard({ report }: { report: MonthlyTeacherReport }) {
         {stats.has_data ? (
           <p className="text-sm">
             <span className="text-ink-secondary">KPI </span>
-            <span className="font-semibold text-ink">{stats.kpi.total}%</span>
+            <span className="font-semibold text-ink">{formatRuPercent(stats.kpi.total)}</span>
           </p>
         ) : (
           <span />

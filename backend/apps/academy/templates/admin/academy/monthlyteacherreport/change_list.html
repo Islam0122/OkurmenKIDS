@@ -1,14 +1,14 @@
 {% extends "admin/base_site.html" %}
-{% load i18n %}
+{% load i18n academy_extras %}
 
 {% block bodyclass %}{{ block.super }} ok-mon-page-body{% endblock %}
 
-{% block content_title %}Отчёты тренеров{% endblock %}
+{% block content_title %}Отчёты преподавателей{% endblock %}
 
 {% block breadcrumbs %}
 <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
-    <li class="breadcrumb-item">Отчёты тренеров</li>
+    <li class="breadcrumb-item">Отчёты преподавателей</li>
 </ol>
 {% endblock %}
 
@@ -21,7 +21,7 @@
     <div class="ok-card-body">
       <form method="get" class="ok-group-toolbar">
         <select name="teacher" class="ok-input">
-          <option value="">Все тренеры</option>
+          <option value="">Все преподаватели</option>
           {% for t in teachers %}
             <option value="{{ t.pk }}" {% if selected.teacher == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}</option>
           {% endfor %}
@@ -52,8 +52,8 @@
           <table class="ok-student-table">
             <thead>
               <tr>
-                <th>Тренер</th><th>Месяц</th><th>Занятия</th><th>Студенты</th><th>Группы</th>
-                <th>Attendance</th><th>KPI</th><th>Создан</th><th></th>
+                <th>Преподаватель</th><th>Месяц</th><th>Занятия</th><th>Студенты</th><th>Группы</th>
+                <th>Посещаемость</th><th>Итоговый KPI</th><th>Создан</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -65,13 +65,13 @@
                   <td>{{ row.stats.students_count }}</td>
                   <td>{{ row.stats.groups_count }}</td>
                   <td>
-                    {% if row.stats.has_data %}{{ row.stats.attendance.rate }}%{% else %}—{% endif %}
+                    {% if row.stats.has_data %}{{ row.stats.attendance.rate|ru_percent }}{% else %}—{% endif %}
                   </td>
                   <td>
                     {% if row.stats.has_data %}
-                      {% if row.stats.kpi.total >= 85 %}<span class="ok-badge ok-badge-success">{{ row.stats.kpi.total }}%</span>
-                      {% elif row.stats.kpi.total >= 60 %}<span class="ok-badge ok-badge-warning">{{ row.stats.kpi.total }}%</span>
-                      {% else %}<span class="ok-badge ok-badge-danger">{{ row.stats.kpi.total }}%</span>{% endif %}
+                      {% if row.stats.kpi.total >= 85 %}<span class="ok-badge ok-badge-success">{{ row.stats.kpi.total|ru_percent }}</span>
+                      {% elif row.stats.kpi.total >= 60 %}<span class="ok-badge ok-badge-warning">{{ row.stats.kpi.total|ru_percent }}</span>
+                      {% else %}<span class="ok-badge ok-badge-danger">{{ row.stats.kpi.total|ru_percent }}</span>{% endif %}
                     {% else %}<span class="ok-badge ok-badge-muted">Нет данных</span>{% endif %}
                   </td>
                   <td>{{ row.report.created_at|date:"d.m.Y" }}</td>
@@ -93,7 +93,7 @@
         <div class="ok-empty-state">
           <i class="bi bi-file-earmark-text"></i>
           <h4>Отчётов пока нет</h4>
-          <p>Тренеры создают ежемесячные отчёты сами, в своём кабинете — здесь они появятся автоматически.</p>
+          <p>Преподаватели создают ежемесячные отчёты сами, в своём кабинете — здесь они появятся автоматически.</p>
         </div>
       {% endif %}
     </div>
