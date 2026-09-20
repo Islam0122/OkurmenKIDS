@@ -10,11 +10,21 @@ implementation of "what counts as active/completed/KPI/...". Where a figure
 the spec asks for has no real backing data in the current schema (a lesson
 "reschedule" status), the corresponding field is `None` rather than a
 fabricated number — callers (serializer/PDF/frontend) render that as "Нет
-данных". "Завершили"/"Приостановили"/"Продолжили обучение"/"Вернулись после
-паузы" *do* have real backing data (Student.status + StudentStatusEvent —
-see services.student_status) and are always `{"count": int, "supported":
-True}`, never `None`: 0 real departures/pauses this month is a fact, not
-missing data, and must never render as "Нет данных"/"не поддерживается".
+данных". "Завершили обучение" *does* have real backing data (Student.status
++ StudentStatusEvent — see services.student_status) and is always
+`{"count": int, "supported": True}`, never `None`: 0 real completions this
+month is a fact, not missing data, and must never render as "Нет
+данных"/"не поддерживается". Pausing studies remains a real, working
+Student lifecycle action (services.student_status.pause_student/
+continue_student) — it is simply not one of this report's metrics any
+more, by design, not because the feature was removed.
+
+Group counts (total/active/completed groups, and how many students
+currently sit in each) reuse `services.analytics.groups._snapshot` — the
+one existing computation of "what is a Group's current status/roster" —
+rather than a second implementation here; they are always a live,
+point-in-time count of the current database state (spec: "не хранить
+устаревшие данные"), never scoped to the selected month.
 """
 from __future__ import annotations
 
@@ -30,6 +40,7 @@ from ..models import Attendance, Group, HomeworkResult, StudentStatusEvent
 from .analytics import homework as homework_analytics
 from .analytics import insights as insights_analytics
 from .analytics.attendance import build as build_attendance_section
+from .analytics.groups import _snapshot as _groups_snapshot
 from .analytics.homework import build as build_homework_section
 from .analytics.lessons import build as build_lessons_section
 from .analytics.period import DateRange
@@ -251,32 +262,33 @@ def _distinct_students_with_event(event_type: str, date_range: DateRange) -> int
     )
 
 
-def _education_status_counts(date_range: DateRange) -> dict:
-    """The 4 previously-"Функция пока не поддерживается" movement metrics —
-    all real now that StudentStatusEvent tracks COMPLETED/PAUSED/CONTINUED
-    (see services.student_status). Every entry is `{count, supported}`:
-    `supported` is always True here (each of these 4 has a real, working
-    action behind it now) and `count` is 0, not `None`, when the period has
-    no matching events — "0" and "not supported" must never be confused.
-
-    "continued" and "returned_after_pause" deliberately read the exact same
-    CONTINUED event set: in this project, continuing one's studies *is*
-    returning from a pause (services.student_status.continue_student is the
-    only "come back" action reachable from PAUSED) — there is no separate
-    enrollment-renewal concept that would make them different numbers. This
-    is one shared computation exposed under the two labels the report has
-    always shown, not two independent (and here, identical-by-coincidence)
-    calculations.
-    """
+def _completed_count(date_range: DateRange) -> dict:
+    """Students who completed their education *this month* — real
+    StudentStatusEvent-backed data (see services.student_status), never
+    inferred from a Group's own status (spec: "не считай завершившими всех
+    студентов завершённой группы без проверки существующего правила"; this
+    project's actual completion rule is the explicit "Завершить обучение"
+    action, independent of any Group.status change). `{"count", "supported"}`:
+    `supported` is always True (a real, working action backs this), `count`
+    is 0 — not `None` — when nobody completed this month; "0" and "not
+    supported" must never be confused."""
     completed = _distinct_students_with_event(StudentStatusEvent.EventType.COMPLETED, date_range)
-    paused = _distinct_students_with_event(StudentStatusEvent.EventType.PAUSED, date_range)
-    continued = _distinct_students_with_event(StudentStatusEvent.EventType.CONTINUED, date_range)
+    return {"count": completed, "supported": True}
 
+
+def _group_stats(scope: AnalyticsScope, date_range: DateRange) -> dict:
+    """Total/active/completed groups and how many students currently sit in
+    each — always the *current* database state (spec: "текущие метрики —
+    не за месяц"), reusing `analytics.groups._snapshot` rather than a second
+    group-counting implementation. A completed group is never counted as
+    active: each group contributes to exactly one status bucket."""
+    snapshot = _groups_snapshot(scope, date_range)
     return {
-        "completed": {"count": completed, "supported": True},
-        "paused": {"count": paused, "supported": True},
-        "continued": {"count": continued, "supported": True},
-        "returned_after_pause": {"count": continued, "supported": True},
+        "total": snapshot["total"],
+        "active": snapshot["active"],
+        "completed": snapshot["completed"],
+        "students_active": snapshot["students_in_active_groups"],
+        "students_completed": snapshot["students_in_completed_groups"],
     }
 
 
@@ -323,7 +335,8 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
 
     attention = _attention_items(scope, date_range, lessons_section, pending_review)
     left_count, reason_breakdown = _departures(date_range)
-    education_status = _education_status_counts(date_range)
+    completed = _completed_count(date_range)
+    group_stats = _group_stats(scope, date_range)
 
     return {
         "period": {"year": year, "month": month, "start_date": start, "end_date": end},
@@ -349,9 +362,9 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
             "active": students_section["active_students"]["value"],
             "new": students_section["new_students"]["value"],
             "left": left_count,
-            "completed": education_status["completed"]["count"],
-            "paused": education_status["paused"]["count"],
+            "completed": completed["count"],
         },
+        "group_stats": group_stats,
         "groups": _groups_breakdown(scope, date_range),
         "teachers": _teachers_breakdown(scope, date_range, year, month),
         "lessons": {
@@ -377,10 +390,9 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
         },
         "movement": {
             "left": left_count,
-            "completed": education_status["completed"],
-            "paused": education_status["paused"],
-            "continued": education_status["continued"],
-            "returned_after_pause": education_status["returned_after_pause"],
+            "completed": completed,
+            "active_groups": group_stats["active"],
+            "completed_groups": group_stats["completed"],
             "reasons": reason_breakdown,
         },
         "attention": attention,

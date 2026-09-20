@@ -46,19 +46,11 @@
             <option value="{{ g.pk }}" {% if selected.group == g.pk|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
           {% endfor %}
         </select>
-        <select name="has_refund" class="ok-input">
-          <option value="">Возврат — не важно</option>
-          <option value="yes" {% if selected.has_refund == "yes" %}selected{% endif %}>Есть возврат</option>
-          <option value="no" {% if selected.has_refund == "no" %}selected{% endif %}>Без возврата</option>
-        </select>
         <input type="date" name="date_from" class="ok-input" value="{{ selected.date_from }}" title="Дата с">
         <input type="date" name="date_to" class="ok-input" value="{{ selected.date_to }}" title="Дата по">
         <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-search"></i> Найти</button>
         <a href="{{ reset_url }}" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
       </form>
-      <p class="ok-help-text" style="margin:0.6rem 0 0;">
-        В проекте пока нет модуля учёта платежей, поэтому «возврат» никогда не бывает «есть» — фильтр отражает это честно, а не скрывает отсутствие данных.
-      </p>
     </div>
   </div>
 
@@ -71,7 +63,7 @@
             <thead>
               <tr>
                 <th>Студент</th><th>ID</th><th>Последняя группа</th><th>Дата деактивации</th>
-                <th>Причина</th><th>Сумма возврата</th><th>Дата возврата</th><th>Статус</th><th></th>
+                <th>Причина</th><th>Статус</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -82,8 +74,6 @@
                   <td>{{ row.last_event.group.name|default:row.student.group.name|default:"—" }}</td>
                   <td>{{ row.last_event.event_date|date:"d.m.Y"|default:"—" }}</td>
                   <td>{{ row.last_event.get_reason_display|default:"—" }}</td>
-                  <td>—</td>
-                  <td>—</td>
                   <td><span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неактивен</span></td>
                   <td class="ok-student-actions">
                     <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:academy_student_detail' row.student.pk %}" title="Открыть профиль">

@@ -27,7 +27,16 @@ export interface AcademyReportStudents {
   new: number
   left: number
   completed: number
-  paused: number
+}
+
+/** Current (not month-scoped) group roster — spec §4: total/active/
+ * completed groups, and how many students currently sit in each. */
+export interface AcademyReportGroupStats {
+  total: number
+  active: number
+  completed: number
+  students_active: number
+  students_completed: number
 }
 
 export interface AcademyReportGroupRow {
@@ -95,11 +104,10 @@ export interface AcademyReportEducationStatusMetric {
 export interface AcademyReportMovement {
   left: number
   completed: AcademyReportEducationStatusMetric
-  paused: AcademyReportEducationStatusMetric
-  continued: AcademyReportEducationStatusMetric
-  /** Distinct from reactivation-after-withdrawal: this reads only
-   * `CONTINUED` events (ending a pause), never `REACTIVATED` ones. */
-  returned_after_pause: AcademyReportEducationStatusMetric
+  /** Same current group counts as `AcademyReportStats.group_stats` — not a
+   * second computation. */
+  active_groups: number
+  completed_groups: number
   /** Always a real (possibly empty) list — empty means no departures were
    * recorded this period, not "unsupported". */
   reasons: AcademyReportReasonBreakdownRow[]
@@ -121,6 +129,7 @@ export interface AcademyReportStats {
   lessons_completed: number
   attendance: AcademyReportAttendance
   students: AcademyReportStudents
+  group_stats: AcademyReportGroupStats
   groups: AcademyReportGroupRow[]
   teachers: AcademyReportTeacherRow[]
   lessons: AcademyReportLessons

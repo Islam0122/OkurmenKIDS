@@ -82,12 +82,34 @@
         <span class="ok-report-row-value">{{ stats.students.completed }}</span>
       </div>
       <div class="ok-report-row">
-        <span class="ok-report-row-label">Приостановили обучение</span>
-        <span class="ok-report-row-value">{{ stats.students.paused }}</span>
-      </div>
-      <div class="ok-report-row">
         <span class="ok-report-row-label">Вышли из курса</span>
         <span class="ok-report-row-value">{{ stats.students.left }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-diagram-3"></i><span>Статистика групп</span></div>
+    <div class="ok-card-body">
+      <div class="ok-report-row">
+        <span class="ok-report-row-label">Всего групп</span>
+        <span class="ok-report-row-value">{{ stats.group_stats.total }}</span>
+      </div>
+      <div class="ok-report-row">
+        <span class="ok-report-row-label">Активные группы</span>
+        <span class="ok-report-row-value">{{ stats.group_stats.active }}</span>
+      </div>
+      <div class="ok-report-row">
+        <span class="ok-report-row-label">Завершённые группы</span>
+        <span class="ok-report-row-value">{{ stats.group_stats.completed }}</span>
+      </div>
+      <div class="ok-report-row">
+        <span class="ok-report-row-label">Студентов в активных группах</span>
+        <span class="ok-report-row-value">{{ stats.group_stats.students_active }}</span>
+      </div>
+      <div class="ok-report-row">
+        <span class="ok-report-row-label">Студентов в завершённых группах</span>
+        <span class="ok-report-row-value">{{ stats.group_stats.students_completed }}</span>
       </div>
     </div>
   </div>
@@ -270,16 +292,12 @@
         <span class="ok-report-row-value">{{ stats.movement.completed.count }}</span>
       </div>
       <div class="ok-report-row">
-        <span class="ok-report-row-label">Приостановили обучение</span>
-        <span class="ok-report-row-value">{{ stats.movement.paused.count }}</span>
+        <span class="ok-report-row-label">Активные группы</span>
+        <span class="ok-report-row-value">{{ stats.movement.active_groups }}</span>
       </div>
       <div class="ok-report-row">
-        <span class="ok-report-row-label">Продолжили обучение</span>
-        <span class="ok-report-row-value">{{ stats.movement.continued.count }}</span>
-      </div>
-      <div class="ok-report-row">
-        <span class="ok-report-row-label">Вернулись после паузы</span>
-        <span class="ok-report-row-value">{{ stats.movement.returned_after_pause.count }}</span>
+        <span class="ok-report-row-label">Завершённые группы</span>
+        <span class="ok-report-row-value">{{ stats.movement.completed_groups }}</span>
       </div>
     </div>
   </div>

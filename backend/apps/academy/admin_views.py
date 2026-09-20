@@ -2396,7 +2396,6 @@ def inactive_students_view(request):
     month = _int_or_none(request.GET.get("month"))
     reason = request.GET.get("reason") or ""
     group_id = request.GET.get("group") or ""
-    has_refund = request.GET.get("has_refund") or ""
     date_from = request.GET.get("date_from") or ""
     date_to = request.GET.get("date_to") or ""
     query = request.GET.get("q") or ""
@@ -2428,12 +2427,6 @@ def inactive_students_view(request):
             continue
         if date_to and (last_event is None or last_event.event_date > dt.date.fromisoformat(date_to)):
             continue
-        # No payments/refunds model exists anywhere in the project (see
-        # StudentStatusEvent's docstring) — a real refund never exists, so
-        # "есть возврат" can never match a real row; kept as a filter option
-        # only so the control is honest about what it will find, not hidden.
-        if has_refund == "yes":
-            continue
 
         rows.append({"student": student, "last_event": last_event})
 
@@ -2463,7 +2456,6 @@ def inactive_students_view(request):
             "month": request.GET.get("month") or "",
             "reason": reason,
             "group": group_id,
-            "has_refund": has_refund,
             "date_from": date_from,
             "date_to": date_to,
             "q": query,
