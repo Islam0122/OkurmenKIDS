@@ -34,7 +34,9 @@ export interface AcademyReportStudents {
 export interface AcademyReportGroupStats {
   total: number
   active: number
+  paused: number
   completed: number
+  cancelled: number
   students_active: number
   students_completed: number
 }
