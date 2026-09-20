@@ -2381,9 +2381,15 @@ def _int_or_none(value: str) -> int | None:
 
 
 def inactive_students_view(request):
-    """Only *currently* inactive students — a reactivated student's
-    `is_active` flips back to True (see services.student_status), so they
-    drop off this list on their own without any extra bookkeeping here."""
+    """Only students who *left the academy entirely* — a reactivated
+    student's `status` flips back to `active` (see services.student_status),
+    so they drop off this list on their own without any extra bookkeeping
+    here. Filtered by `status=WITHDRAWN` rather than `is_active=False`: a
+    paused or completed student is also `is_active=False`, but pausing or
+    completing studies is a different business process from departing and
+    must never show up on this "who left" page (spec: "Не смешивай её с
+    обычной повторной активацией после деактивации, если это разные
+    бизнес-процессы")."""
     _require_admin(request)
 
     year = _int_or_none(request.GET.get("year"))
@@ -2395,7 +2401,7 @@ def inactive_students_view(request):
     date_to = request.GET.get("date_to") or ""
     query = request.GET.get("q") or ""
 
-    students_qs = Student.objects.filter(is_active=False).select_related("group")
+    students_qs = Student.objects.filter(status=Student.Status.WITHDRAWN).select_related("group")
     if group_id:
         students_qs = students_qs.filter(group_id=group_id)
     if query:

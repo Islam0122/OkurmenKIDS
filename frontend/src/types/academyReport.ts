@@ -26,8 +26,8 @@ export interface AcademyReportStudents {
   active: number
   new: number
   left: number
-  completed: number | null
-  paused: number | null
+  completed: number
+  paused: number
 }
 
 export interface AcademyReportGroupRow {
@@ -84,15 +84,22 @@ export interface AcademyReportReasonBreakdownRow {
   percent: number
 }
 
+/** `{count, supported}` — always render `count`; `supported` distinguishes
+ * "0 real events this period" from a genuinely unimplemented metric,
+ * though every field below is `supported: true` today. */
+export interface AcademyReportEducationStatusMetric {
+  count: number
+  supported: boolean
+}
+
 export interface AcademyReportMovement {
   left: number
-  /** `null` means the schema has no such status yet ("Функция пока не
-   * поддерживается") — never rendered as "Нет данных" or 0. */
-  paused: number | null
-  continued: number | null
-  /** Reactivation is a fully supported event type — always a real count,
-   * 0 when there are none this month, never `null`. */
-  returned: number
+  completed: AcademyReportEducationStatusMetric
+  paused: AcademyReportEducationStatusMetric
+  continued: AcademyReportEducationStatusMetric
+  /** Distinct from reactivation-after-withdrawal: this reads only
+   * `CONTINUED` events (ending a pause), never `REACTIVATED` ones. */
+  returned_after_pause: AcademyReportEducationStatusMetric
   /** Always a real (possibly empty) list — empty means no departures were
    * recorded this period, not "unsupported". */
   reasons: AcademyReportReasonBreakdownRow[]

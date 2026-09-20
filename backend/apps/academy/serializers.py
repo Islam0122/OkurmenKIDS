@@ -1198,8 +1198,10 @@ class AcademyReportStudentsSerializer(serializers.Serializer):
     active = serializers.IntegerField()
     new = serializers.IntegerField()
     left = serializers.IntegerField()
-    completed = serializers.IntegerField(allow_null=True)
-    paused = serializers.IntegerField(allow_null=True)
+    # Real StudentStatusEvent-backed counts (see services.student_status) —
+    # always an int, 0 when there were no such events this month, never null.
+    completed = serializers.IntegerField()
+    paused = serializers.IntegerField()
 
 
 class AcademyReportGroupRowSerializer(serializers.Serializer):
@@ -1256,18 +1258,25 @@ class AcademyReportReasonBreakdownRowSerializer(serializers.Serializer):
     percent = serializers.FloatField()
 
 
+class AcademyReportEducationStatusMetricSerializer(serializers.Serializer):
+    """`{count, supported}` — `supported` is always True for these four
+    (Завершили/Приостановили/Продолжили обучение, Вернулись после паузы):
+    each has a real StudentStatusEvent type and a working action behind it
+    (see services.student_status). `count` is 0, never null, when the
+    period has no matching events — 0 and "unsupported" must never be
+    confused (spec: "Различай 0 — функция работает, событий нет / unsupported
+    — функция действительно не реализована")."""
+
+    count = serializers.IntegerField()
+    supported = serializers.BooleanField()
+
+
 class AcademyReportMovementSerializer(serializers.Serializer):
     left = serializers.IntegerField()
-    # "paused"/"continued" have no backing status in the current schema
-    # (spec §7: not every deactivation reason implies a pause, and there is
-    # no separate "paused" student status) — `null` means "Функция пока не
-    # поддерживается", never a fabricated number.
-    paused = serializers.IntegerField(allow_null=True)
-    continued = serializers.IntegerField(allow_null=True)
-    # Reactivation IS a real, supported event type — always a real count,
-    # 0 when there are none this month, never `null` (spec §7: "Не путать
-    # `0` и `unsupported`").
-    returned = serializers.IntegerField()
+    completed = AcademyReportEducationStatusMetricSerializer()
+    paused = AcademyReportEducationStatusMetricSerializer()
+    continued = AcademyReportEducationStatusMetricSerializer()
+    returned_after_pause = AcademyReportEducationStatusMetricSerializer()
     reasons = AcademyReportReasonBreakdownRowSerializer(many=True)
 
 

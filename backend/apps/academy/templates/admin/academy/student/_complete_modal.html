@@ -1,0 +1,35 @@
+<dialog id="ok-modal-complete" class="ok-modal"{% if open_complete_modal %} open{% endif %}>
+  <form method="post" action="{{ complete_url }}" class="ok-modal-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url|default:request.path }}">
+    <div class="ok-modal-header">
+      <span><i class="bi bi-mortarboard-fill" style="color:var(--ok-info);"></i> Завершить обучение?</span>
+      <button type="button" class="ok-modal-close" onclick="document.getElementById('ok-modal-complete').close()" aria-label="Закрыть">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="ok-modal-body">
+      <p class="ok-static-value" style="margin:0 0 0.35rem;"><strong>{{ student }}</strong></p>
+      <p class="ok-help-text" style="margin:0 0 1.1rem;">
+        Студент будет помечен как завершивший обучение. Посещаемость, домашние задания и вся история сохраняются.
+      </p>
+
+      {% for error in complete_form.non_field_errors %}
+        <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+      {% endfor %}
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ complete_form.comment.id_for_label }}">{{ complete_form.comment.label }}</label>
+        {{ complete_form.comment }}
+        <span class="ok-help-text">Необязательно.</span>
+        {% for error in complete_form.comment.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary" onclick="document.getElementById('ok-modal-complete').close()">Отмена</button>
+      <button type="submit" class="ok-btn-primary"><i class="bi bi-check2-circle"></i> Подтвердить завершение</button>
+    </div>
+  </form>
+</dialog>

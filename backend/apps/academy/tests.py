@@ -48,7 +48,13 @@ from apps.academy.models import (
     StudentStatusEvent,
 )
 from apps.academy.services.academy_monthly_report import compute_academy_monthly_stats
-from apps.academy.services.student_status import deactivate_student, reactivate_student
+from apps.academy.services.student_status import (
+    complete_student,
+    continue_student,
+    deactivate_student,
+    pause_student,
+    reactivate_student,
+)
 from apps.academy.services.analytics import (
     COMPARE_CHOICES,
     PERIOD_CHOICES,
@@ -5419,9 +5425,12 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         teacher_names = {row["name"] for row in stats["teachers"]}
         self.assertEqual(len(teacher_names), 2)
 
-        # No fabricated figures for statuses the schema can't distinguish.
-        self.assertIsNone(stats["students"]["completed"])
-        self.assertIsNone(stats["students"]["paused"])
+        # completed/paused are now real StudentStatusEvent-backed counts
+        # (see services.student_status) — 0 when none happened, never None.
+        self.assertEqual(stats["students"]["completed"], 0)
+        self.assertEqual(stats["students"]["paused"], 0)
+        # "reschedule" status still has no backing field on Lesson — still
+        # honestly None, not fabricated.
         self.assertIsNone(stats["lessons"]["rescheduled"])
 
     def test_no_data_month_is_honest_not_fabricated(self):
@@ -5494,6 +5503,19 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         from apps.academy.services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
 
         report = AcademyMonthlyReport.objects.create(year=2020, month=1)
+        pdf_bytes = build_academy_monthly_report_pdf(report)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+
+    def test_pdf_builds_with_real_completed_paused_continued_events(self):
+        """The PDF must render the 4 education-status metrics from the same
+        `compute_academy_monthly_stats` the API/Admin use — no separate
+        calculation logic, no `_unsupported()` placeholder text."""
+        from apps.academy.services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
+
+        complete_student(self.student1, comment="")
+        pause_student(self.student2, reason="no_interest", comment="")
+        today = dt.date.today()
+        report = AcademyMonthlyReport.objects.create(year=today.year, month=today.month)
         pdf_bytes = build_academy_monthly_report_pdf(report)
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
 
@@ -5737,6 +5759,147 @@ class StudentStatusServiceTests(AcademyTestBase):
         self.assertNotIn("refund_date", field_names)
 
 
+class StudentPauseContinueCompleteServiceTests(AcademyTestBase):
+    """`services.student_status.pause_student` / `continue_student` /
+    `complete_student` — the three new lifecycle transitions backing the
+    Academy Report's "Приостановили" / "Продолжили" / "Завершили" metrics."""
+
+    # -- pause_student -----------------------------------------------------
+
+    def test_pause_success_creates_event_and_flips_status(self):
+        event = pause_student(
+            self.student1, reason="not_enough_time", expected_return_date=dt.date(2026, 10, 1),
+            comment="", performed_by=self.admin,
+        )
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.PAUSED)
+        self.assertFalse(self.student1.is_active)
+        self.assertEqual(event.event_type, StudentStatusEvent.EventType.PAUSED)
+        self.assertEqual(event.expected_return_date, dt.date(2026, 10, 1))
+        self.assertEqual(event.previous_status, Student.Status.ACTIVE)
+        self.assertEqual(event.performed_by_id, self.admin.id)
+
+    def test_pause_requires_reason(self):
+        with self.assertRaises(DjangoValidationError):
+            pause_student(self.student1, reason="", comment="")
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.ACTIVE)
+        self.assertEqual(StudentStatusEvent.objects.count(), 0)
+
+    def test_pause_other_reason_requires_comment(self):
+        with self.assertRaises(DjangoValidationError):
+            pause_student(self.student1, reason="other", comment="  ")
+        self.assertEqual(StudentStatusEvent.objects.count(), 0)
+
+    def test_cannot_pause_already_paused_student(self):
+        pause_student(self.student1, reason="no_interest", comment="")
+        with self.assertRaises(DjangoValidationError):
+            pause_student(self.student1, reason="relocation", comment="")
+        self.assertEqual(StudentStatusEvent.objects.filter(student=self.student1).count(), 1)
+
+    def test_cannot_pause_completed_student(self):
+        complete_student(self.student1, comment="")
+        with self.assertRaises(DjangoValidationError):
+            pause_student(self.student1, reason="no_interest", comment="")
+
+    def test_cannot_pause_withdrawn_student(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        with self.assertRaises(DjangoValidationError):
+            pause_student(self.student1, reason="relocation", comment="")
+
+    def test_pause_is_atomic_on_validation_failure(self):
+        with self.assertRaises(DjangoValidationError):
+            pause_student(self.student1, reason="not_a_real_reason", comment="")
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.ACTIVE)
+        self.assertEqual(StudentStatusEvent.objects.count(), 0)
+
+    # -- continue_student ----------------------------------------------------
+
+    def test_continue_success_creates_event_and_flips_status(self):
+        pause_student(self.student1, reason="no_interest", comment="")
+        event = continue_student(
+            self.student1, group=self.group2, event_date=dt.date(2026, 9, 20), comment="Вернулась",
+            performed_by=self.admin,
+        )
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.ACTIVE)
+        self.assertTrue(self.student1.is_active)
+        self.assertEqual(self.student1.group_id, self.group2.id)
+        self.assertEqual(event.event_type, StudentStatusEvent.EventType.CONTINUED)
+        self.assertEqual(event.previous_status, Student.Status.PAUSED)
+
+    def test_continue_defaults_to_current_group_when_not_given(self):
+        pause_student(self.student1, reason="no_interest", comment="")
+        continue_student(self.student1, event_date=dt.date.today(), comment="")
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.group_id, self.group1.id)
+
+    def test_cannot_continue_active_student(self):
+        with self.assertRaises(DjangoValidationError):
+            continue_student(self.student1, event_date=dt.date.today(), comment="")
+
+    def test_cannot_continue_withdrawn_student(self):
+        """spec: continuing must not be conflated with ordinary
+        reactivation-after-withdrawal — a withdrawn student cannot use
+        `continue_student` at all, only `reactivate_student`."""
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        with self.assertRaises(DjangoValidationError):
+            continue_student(self.student1, event_date=dt.date.today(), comment="")
+
+    def test_double_continue_is_safe_not_duplicated(self):
+        pause_student(self.student1, reason="no_interest", comment="")
+        continue_student(self.student1, event_date=dt.date.today(), comment="")
+        with self.assertRaises(DjangoValidationError):
+            continue_student(self.student1, event_date=dt.date.today(), comment="")
+        self.assertEqual(
+            StudentStatusEvent.objects.filter(
+                student=self.student1, event_type=StudentStatusEvent.EventType.CONTINUED
+            ).count(),
+            1,
+        )
+
+    # -- complete_student ----------------------------------------------------
+
+    def test_complete_from_active_creates_event_and_flips_status(self):
+        event = complete_student(self.student1, comment="Отличные результаты", performed_by=self.admin)
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.COMPLETED)
+        self.assertFalse(self.student1.is_active)
+        self.assertEqual(event.event_type, StudentStatusEvent.EventType.COMPLETED)
+        self.assertEqual(event.previous_status, Student.Status.ACTIVE)
+
+    def test_complete_from_paused_is_allowed(self):
+        pause_student(self.student1, reason="no_interest", comment="")
+        event = complete_student(self.student1, comment="")
+        self.assertEqual(event.previous_status, Student.Status.PAUSED)
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.COMPLETED)
+
+    def test_cannot_complete_already_completed_student(self):
+        complete_student(self.student1, comment="")
+        with self.assertRaises(DjangoValidationError):
+            complete_student(self.student1, comment="")
+        self.assertEqual(StudentStatusEvent.objects.filter(student=self.student1).count(), 1)
+
+    def test_cannot_complete_withdrawn_student(self):
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        with self.assertRaises(DjangoValidationError):
+            complete_student(self.student1, comment="")
+
+    def test_complete_is_atomic_row_locked_against_concurrent_duplicate(self):
+        """Simulates a retried/double-submit request: the second call must
+        see the already-updated status and fail cleanly rather than writing
+        a second COMPLETED event."""
+        complete_student(self.student1, comment="")
+        with self.assertRaises(DjangoValidationError):
+            complete_student(self.student1, comment="")
+        events = StudentStatusEvent.objects.filter(
+            student=self.student1, event_type=StudentStatusEvent.EventType.COMPLETED
+        )
+        self.assertEqual(events.count(), 1)
+
+
 class StudentDeactivateReactivateAdminViewTests(AcademyTestBase):
     """The Student Detail admin page's modal-driven flow — same red
     "Деактивировать" button, now backed by a required reason instead of an
@@ -5819,6 +5982,95 @@ class StudentDeactivateReactivateAdminViewTests(AcademyTestBase):
         self.assertIn("<td>—</td>", body)
 
 
+class StudentPauseContinueCompleteAdminViewTests(AcademyTestBase):
+    """The Student Detail admin page's Pause/Continue/Complete modals —
+    same POST-only, permission-checked, modal-reopen-on-error pattern as
+    Deactivate/Reactivate."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    def test_pause_without_reason_reopens_modal_with_error(self):
+        url = reverse("admin:academy_student_pause", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"reason": "", "comment": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["open_pause_modal"])
+        self.assertTrue(response.context["pause_form"].errors)
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.ACTIVE)
+
+    def test_pause_success_redirects_and_shows_russian_message(self):
+        url = reverse("admin:academy_student_pause", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"reason": "no_interest", "comment": ""}, follow=True)
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.PAUSED)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertIn("Обучение приостановлено.", messages_text)
+
+    def test_double_pause_shows_russian_error_not_a_crash(self):
+        url = reverse("admin:academy_student_pause", args=[self.student1.pk])
+        self.admin_web.post(url, {"reason": "no_interest", "comment": ""})
+        response = self.admin_web.post(url, {"reason": "relocation", "comment": ""}, follow=True)
+        self.assertEqual(response.status_code, 200)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertTrue(any("уже находится на паузе" in m for m in messages_text))
+        self.assertEqual(StudentStatusEvent.objects.filter(student=self.student1).count(), 1)
+
+    def test_continue_success_redirects_and_shows_russian_message(self):
+        pause_student(self.student1, reason="no_interest", comment="")
+        url = reverse("admin:academy_student_continue", args=[self.student1.pk])
+        response = self.admin_web.post(
+            url, {"group": self.group1.pk, "event_date": "2026-09-20", "comment": ""}, follow=True
+        )
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.ACTIVE)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertIn("Обучение продолжено.", messages_text)
+
+    def test_continue_on_active_student_reopens_modal_with_error(self):
+        url = reverse("admin:academy_student_continue", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"group": "", "event_date": "2026-09-20", "comment": ""}, follow=True)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertTrue(any("только для студента на паузе" in m for m in messages_text))
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.ACTIVE)
+
+    def test_complete_success_redirects_and_shows_russian_message(self):
+        url = reverse("admin:academy_student_complete", args=[self.student1.pk])
+        response = self.admin_web.post(url, {"comment": ""}, follow=True)
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.COMPLETED)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertIn("Обучение завершено.", messages_text)
+
+    def test_double_complete_shows_russian_error_not_a_crash(self):
+        url = reverse("admin:academy_student_complete", args=[self.student1.pk])
+        self.admin_web.post(url, {"comment": ""})
+        response = self.admin_web.post(url, {"comment": ""}, follow=True)
+        messages_text = [str(m) for m in response.context["messages"]]
+        self.assertTrue(any("уже завершено" in m for m in messages_text))
+        self.assertEqual(StudentStatusEvent.objects.filter(student=self.student1).count(), 1)
+
+    def test_teacher_cannot_pause_continue_or_complete(self):
+        pause_url = reverse("admin:academy_student_pause", args=[self.student1.pk])
+        self.assertEqual(self.teacher_web.post(pause_url, {"reason": "no_interest"}).status_code, 302)
+        complete_url = reverse("admin:academy_student_complete", args=[self.student1.pk])
+        self.assertEqual(self.teacher_web.post(complete_url, {"comment": ""}).status_code, 302)
+        self.student1.refresh_from_db()
+        self.assertEqual(self.student1.status, Student.Status.ACTIVE)
+
+    def test_status_history_shows_new_event_types(self):
+        pause_student(self.student1, reason="no_interest", comment="Тестовая пауза")
+        response = self.admin_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
+        body = response.content.decode()
+        self.assertIn("Приостановка обучения", body)
+        self.assertIn("Тестовая пауза", body)
+
+
 class InactiveStudentsAndDepartureHistoryViewTests(AcademyTestBase):
     def setUp(self):
         super().setUp()
@@ -5826,6 +6078,21 @@ class InactiveStudentsAndDepartureHistoryViewTests(AcademyTestBase):
         self.admin_web.force_login(self.admin)
         self.teacher_web = DjangoClient()
         self.teacher_web.force_login(self.teacher1.user)
+
+    def test_paused_and_completed_students_never_appear_on_inactive_list(self):
+        """`is_active=False` is now also true for PAUSED/COMPLETED students,
+        but this page is specifically about departures (`status=WITHDRAWN`)
+        — mixing pause/completion into "who left" would misrepresent a
+        different business process (spec: "Не смешивай её с обычной
+        повторной активацией после деактивации, если это разные
+        бизнес-процессы")."""
+        pause_student(self.student1, reason="no_interest", comment="")
+        complete_student(self.student2, comment="")
+        deactivate_student(self.student3, reason="relocation", comment="")
+
+        response = self.admin_web.get(reverse("admin:academy_inactive_students"))
+        pks = {row["student"].pk for row in response.context["rows"]}
+        self.assertEqual(pks, {self.student3.pk})
 
     def test_reactivated_student_disappears_from_inactive_list(self):
         deactivate_student(self.student1, reason="no_interest", comment="")
@@ -5941,23 +6208,103 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(stats_september["students"]["left"], 0)
         self.assertIsNotNone(event.pk)
 
-    def test_returned_is_zero_not_none_when_supported_and_empty(self):
-        stats = compute_academy_monthly_stats(2026, 9)
-        self.assertEqual(stats["movement"]["returned"], 0)
-        self.assertIsNotNone(stats["movement"]["returned"])
-
-    def test_returned_counts_real_reactivation_events(self):
+    def test_left_count_unaffected_by_returned_after_pause_rename(self):
+        """`movement.returned` (reactivation-only) was renamed/refocused to
+        `returned_after_pause` (continuation-from-pause-only) — `left` must
+        still count every DEACTIVATED event exactly as before."""
         deactivate_student(self.student1, reason="no_interest", comment="")
         reactivate_student(self.student1, group=self.group1, event_date=dt.date(2026, 9, 20), comment="")
         stats = compute_academy_monthly_stats(2026, 9)
-        self.assertEqual(stats["movement"]["returned"], 1)
+        self.assertEqual(stats["movement"]["left"], 1)
 
-    def test_paused_and_continued_are_unsupported_none(self):
+    def test_completed_paused_continued_returned_are_zero_not_none_when_empty(self):
+        """These four metrics are now fully implemented — an empty period
+        must report `{count: 0, supported: True}`, never `None`/"unsupported"."""
         stats = compute_academy_monthly_stats(2026, 9)
-        self.assertIsNone(stats["movement"]["paused"])
-        self.assertIsNone(stats["movement"]["continued"])
-        self.assertIsNone(stats["students"]["paused"])
-        self.assertIsNone(stats["students"]["completed"])
+        for key in ("completed", "paused", "continued", "returned_after_pause"):
+            self.assertEqual(stats["movement"][key]["count"], 0)
+            self.assertTrue(stats["movement"][key]["supported"])
+        self.assertEqual(stats["students"]["paused"], 0)
+        self.assertEqual(stats["students"]["completed"], 0)
+
+    def test_completed_metric_counts_confirmed_completed_events_only(self):
+        """spec: "Не считай студентов по текущему статусу, если событие
+        завершения отсутствует" — a student paused (not completed) this
+        month must not be counted as completed."""
+        complete_student(self.student1, comment="", performed_by=self.admin)
+        pause_student(self.student2, reason="no_interest", comment="")
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["movement"]["completed"]["count"], 1)
+        self.assertEqual(stats["students"]["completed"], 1)
+
+    def test_paused_metric_counts_distinct_students_with_paused_event(self):
+        pause_student(self.student1, reason="no_interest", comment="")
+        pause_student(self.student2, reason="relocation", comment="")
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["movement"]["paused"]["count"], 2)
+        self.assertEqual(stats["students"]["paused"], 2)
+
+    def test_continued_and_returned_after_pause_both_read_continue_events(self):
+        """spec permits "Продолжили обучение" and "Вернулись после паузы"
+        to be the same real-world action (ending a pause) as long as the
+        source is distinguishable from ordinary reactivation — verified in
+        test_returned_after_pause_is_distinct_from_reactivation below."""
+        pause_student(self.student1, reason="no_interest", comment="")
+        continue_student(self.student1, event_date=dt.date.today(), comment="")
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["movement"]["continued"]["count"], 1)
+        self.assertEqual(stats["movement"]["returned_after_pause"]["count"], 1)
+
+    def test_returned_after_pause_is_distinct_from_reactivation(self):
+        """A student who left entirely (deactivate/reactivate) must never
+        inflate "Вернулись после паузы" — only ending a real pause does."""
+        deactivate_student(self.student1, reason="no_interest", comment="")
+        reactivate_student(self.student1, group=self.group1, event_date=dt.date.today(), comment="")
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["movement"]["returned_after_pause"]["count"], 0)
+        # Reactivation still fully appears elsewhere (unchanged behaviour).
+        self.assertEqual(stats["movement"]["left"], 1)
+
+    def test_movement_metrics_count_unique_students_not_events(self):
+        """Pausing then continuing then pausing again the same student this
+        month must still count that student once per metric."""
+        pause_student(self.student1, reason="no_interest", comment="")
+        continue_student(self.student1, event_date=dt.date.today(), comment="")
+        pause_student(self.student1, reason="relocation", comment="")
+        today = dt.date.today()
+        stats = compute_academy_monthly_stats(today.year, today.month)
+        self.assertEqual(stats["movement"]["paused"]["count"], 1)
+        self.assertEqual(stats["movement"]["continued"]["count"], 1)
+
+    def test_movement_metrics_respect_year_month_filter(self):
+        StudentStatusEvent.objects.create(
+            student=self.student1,
+            event_type=StudentStatusEvent.EventType.COMPLETED,
+            group=self.group1,
+            event_date=dt.date(2026, 8, 15),
+        )
+        stats_august = compute_academy_monthly_stats(2026, 8)
+        stats_september = compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats_august["movement"]["completed"]["count"], 1)
+        self.assertEqual(stats_september["movement"]["completed"]["count"], 0)
+
+    def test_academy_report_api_exposes_all_four_education_status_metrics(self):
+        complete_student(self.student1, comment="")
+        pause_student(self.student2, reason="no_interest", comment="")
+        today = dt.date.today()
+        response = self.admin_client.post(
+            "/api/v1/academy-reports/", {"year": today.year, "month": today.month}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        movement = response.data["stats"]["movement"]
+        self.assertEqual(movement["completed"], {"count": 1, "supported": True})
+        self.assertEqual(movement["paused"], {"count": 1, "supported": True})
+        self.assertEqual(movement["continued"], {"count": 0, "supported": True})
+        self.assertEqual(movement["returned_after_pause"], {"count": 0, "supported": True})
 
     def test_reason_breakdown_percentages_and_no_division_by_zero(self):
         today = dt.date.today()
@@ -5992,4 +6339,4 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(response.data["stats"]["movement"]["left"], 1)
         self.assertEqual(len(response.data["stats"]["movement"]["reasons"]), 1)
-        self.assertEqual(response.data["stats"]["movement"]["returned"], 0)
+        self.assertEqual(response.data["stats"]["movement"]["returned_after_pause"]["count"], 0)

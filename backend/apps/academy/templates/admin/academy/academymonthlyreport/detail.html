@@ -79,11 +79,11 @@
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Завершили обучение</span>
-        <span class="ok-report-row-value">{% if stats.students.completed is None %}Функция пока не поддерживается{% else %}{{ stats.students.completed }}{% endif %}</span>
+        <span class="ok-report-row-value">{{ stats.students.completed }}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Приостановили обучение</span>
-        <span class="ok-report-row-value">{% if stats.students.paused is None %}Функция пока не поддерживается{% else %}{{ stats.students.paused }}{% endif %}</span>
+        <span class="ok-report-row-value">{{ stats.students.paused }}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Вышли из курса</span>
@@ -266,16 +266,20 @@
         <span class="ok-report-row-value">{{ stats.movement.left }}</span>
       </div>
       <div class="ok-report-row">
+        <span class="ok-report-row-label">Завершили обучение</span>
+        <span class="ok-report-row-value">{{ stats.movement.completed.count }}</span>
+      </div>
+      <div class="ok-report-row">
         <span class="ok-report-row-label">Приостановили обучение</span>
-        <span class="ok-report-row-value">{% if stats.movement.paused is None %}Функция пока не поддерживается{% else %}{{ stats.movement.paused }}{% endif %}</span>
+        <span class="ok-report-row-value">{{ stats.movement.paused.count }}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Продолжили обучение</span>
-        <span class="ok-report-row-value">{% if stats.movement.continued is None %}Функция пока не поддерживается{% else %}{{ stats.movement.continued }}{% endif %}</span>
+        <span class="ok-report-row-value">{{ stats.movement.continued.count }}</span>
       </div>
       <div class="ok-report-row">
         <span class="ok-report-row-label">Вернулись после паузы</span>
-        <span class="ok-report-row-value">{{ stats.movement.returned }}</span>
+        <span class="ok-report-row-value">{{ stats.movement.returned_after_pause.count }}</span>
       </div>
     </div>
   </div>

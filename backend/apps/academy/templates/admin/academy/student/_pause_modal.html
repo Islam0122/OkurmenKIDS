@@ -1,0 +1,65 @@
+<dialog id="ok-modal-pause" class="ok-modal"{% if open_pause_modal %} open{% endif %}>
+  <form method="post" action="{{ pause_url }}" class="ok-modal-form" id="ok-pause-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url|default:request.path }}">
+    <div class="ok-modal-header">
+      <span><i class="bi bi-pause-circle-fill" style="color:var(--ok-warning);"></i> Приостановить обучение?</span>
+      <button type="button" class="ok-modal-close" onclick="document.getElementById('ok-modal-pause').close()" aria-label="Закрыть">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="ok-modal-body">
+      <p class="ok-static-value" style="margin:0 0 1.1rem;"><strong>{{ student }}</strong></p>
+
+      {% for error in pause_form.non_field_errors %}
+        <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+      {% endfor %}
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ pause_form.reason.id_for_label }}">{{ pause_form.reason.label }} *</label>
+        {{ pause_form.reason }}
+        {% for error in pause_form.reason.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ pause_form.expected_return_date.id_for_label }}">{{ pause_form.expected_return_date.label }}</label>
+        {{ pause_form.expected_return_date }}
+        <span class="ok-help-text">Необязательно — предполагаемая дата возвращения к обучению.</span>
+        {% for error in pause_form.expected_return_date.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ pause_form.comment.id_for_label }}">{{ pause_form.comment.label }}</label>
+        {{ pause_form.comment }}
+        <span class="ok-help-text">Необязательно — кроме причины «Другая причина», для неё комментарий обязателен.</span>
+        {% for error in pause_form.comment.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary" onclick="document.getElementById('ok-modal-pause').close()">Отмена</button>
+      <button type="submit" class="ok-btn-primary"><i class="bi bi-pause-circle"></i> Подтвердить приостановку</button>
+    </div>
+  </form>
+</dialog>
+<script>
+  (function () {
+    var form = document.getElementById('ok-pause-form');
+    if (!form) return;
+    var reasonField = form.querySelector('[name="reason"]');
+    var commentField = form.querySelector('[name="comment"]');
+    function syncCommentRequired() {
+      if (!reasonField || !commentField) return;
+      commentField.required = reasonField.value === 'other';
+    }
+    if (reasonField) {
+      reasonField.addEventListener('change', syncCommentRequired);
+      syncCommentRequired();
+    }
+  })();
+</script>
