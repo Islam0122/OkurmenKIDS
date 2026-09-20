@@ -2447,6 +2447,11 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
 .ok-report-row-label { color: var(--ok-text-secondary); }
 .ok-report-row-value { font-weight: 700; color: var(--ok-text); }
 
+/* Neutral, count-based "requires attention" bullets (Academy Report) —
+   plain list items, no alarming color, matching .ok-help-text's tone. */
+.ok-attention-list { margin: 0; padding-left: 1.1rem; list-style: disc; }
+.ok-attention-list li { padding: 0.3rem 0; color: var(--ok-text-secondary); font-size: 0.88rem; }
+
 /* Compact 2x2 KPI grid — replaces 4 full-width progress-bar rows, which
    read as "KPI takes up the whole width of the screen" on a wide admin
    column. */

@@ -15,6 +15,9 @@ from apps.data_io.admin_mixin import TemplatedIOAdminMixin
 from apps.users.import_export.formats import UnsupportedFileFormat, is_valid_phone
 
 from .admin_views import (
+    academy_report_detail_view,
+    academy_report_monitor_view,
+    academy_report_open_view,
     analytics_view,
     attendance_detail_view,
     attendance_monitor_view,
@@ -1289,6 +1292,13 @@ def _get_urls_with_schedule():
         ),
         path("academy/analytics/", admin.site.admin_view(analytics_view), name="academy_analytics"),
         path("academy/help/", admin.site.admin_view(help_center_view), name="academy_help"),
+        path("academy/reports/", admin.site.admin_view(academy_report_monitor_view), name="academy_report_monitor"),
+        path("academy/reports/open/", admin.site.admin_view(academy_report_open_view), name="academy_report_open"),
+        path(
+            "academy/reports/<int:object_id>/",
+            admin.site.admin_view(academy_report_detail_view),
+            name="academy_report_detail",
+        ),
     ]
     return custom_urls + _original_get_urls()
 

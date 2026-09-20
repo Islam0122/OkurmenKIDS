@@ -5485,3 +5485,128 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         report = AcademyMonthlyReport.objects.create(year=2020, month=1)
         pdf_bytes = build_academy_monthly_report_pdf(report)
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+
+
+class AcademyReportAdminViewTests(AcademyTestBase):
+    """The Django Admin "Отчёт академии" sidebar entry + monitor/detail
+    views — the server-rendered counterpart of the API/React feature,
+    reachable from the Jazzmin sidebar under "Аналитика" (spec: add a
+    Sidebar entry, backend-enforced, no dead/404 link)."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+        self.teacher_web = DjangoClient()
+        self.teacher_web.force_login(self.teacher1.user)
+
+    # -- Sidebar --------------------------------------------------------
+
+    def test_sidebar_shows_academy_report_link_for_admin(self):
+        response = self.admin_web.get(reverse("admin:index"))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("Отчёт академии", body)
+        self.assertIn(reverse("admin:academy_report_monitor"), body)
+
+    def test_existing_sidebar_links_still_present(self):
+        """Adding the new entry must not break the ones already there.
+
+        The "Отчёты преподавателей" entry is a Jazzmin "model"-type
+        custom_link, which renders the *model's* verbose_name_plural
+        (title-cased by Jazzmin) rather than the link's own "name" — hence
+        matching the admin URL fragment instead of hardcoding that casing.
+        """
+        response = self.admin_web.get(reverse("admin:index"))
+        body = response.content.decode()
+        self.assertIn("Аналитика", body)
+        self.assertIn(reverse("admin:academy_analytics"), body)
+        self.assertIn("academy/monthlyteacherreport/", body)
+
+    # -- Monitor view -----------------------------------------------------
+
+    def test_admin_can_access_monitor(self):
+        response = self.admin_web.get(reverse("admin:academy_report_monitor"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Отчёт академии", response.content.decode())
+
+    def test_teacher_cannot_access_monitor(self):
+        response = self.teacher_web.get(reverse("admin:academy_report_monitor"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_staff_non_admin_forbidden(self):
+        # is_staff=True gets past admin_view()'s login gate, but the role
+        # check inside the view (_require_admin) must still refuse them.
+        self.teacher1.user.is_staff = True
+        self.teacher1.user.save(update_fields=["is_staff"])
+        staff_teacher_web = DjangoClient()
+        staff_teacher_web.force_login(self.teacher1.user)
+        response = staff_teacher_web.get(reverse("admin:academy_report_monitor"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_anonymous_redirected_to_login(self):
+        response = DjangoClient().get(reverse("admin:academy_report_monitor"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    # -- Open (get-or-create) ----------------------------------------------
+
+    def test_open_creates_report_and_redirects_to_detail(self):
+        self.assertEqual(AcademyMonthlyReport.objects.count(), 0)
+        response = self.admin_web.post(reverse("admin:academy_report_open"), {"year": 2026, "month": 9})
+        self.assertEqual(response.status_code, 302)
+        report = AcademyMonthlyReport.objects.get(year=2026, month=9)
+        self.assertIn(reverse("admin:academy_report_detail", args=[report.pk]), response.url)
+
+    def test_open_is_idempotent_per_month(self):
+        self.admin_web.post(reverse("admin:academy_report_open"), {"year": 2026, "month": 9})
+        self.admin_web.post(reverse("admin:academy_report_open"), {"year": 2026, "month": 9})
+        self.assertEqual(AcademyMonthlyReport.objects.filter(year=2026, month=9).count(), 1)
+
+    def test_open_rejects_invalid_month(self):
+        response = self.admin_web.post(reverse("admin:academy_report_open"), {"year": 2026, "month": 13})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(AcademyMonthlyReport.objects.count(), 0)
+
+    def test_teacher_cannot_open_report(self):
+        response = self.teacher_web.post(reverse("admin:academy_report_open"), {"year": 2026, "month": 9})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+        self.assertEqual(AcademyMonthlyReport.objects.count(), 0)
+
+    # -- Detail view ------------------------------------------------------
+
+    def test_detail_view_renders_real_stats(self):
+        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        Attendance.objects.create(student=self.student1, lesson=lesson, status="present")
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+
+        response = self.admin_web.get(reverse("admin:academy_report_detail", args=[report.pk]))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("Отчёт академии", body)
+        self.assertIn("Сентябрь 2026", body)
+        stats = response.context["stats"]
+        self.assertTrue(stats["has_data"])
+        self.assertEqual(stats["attendance"]["present"], 1)
+
+    def test_detail_view_404_for_missing_report(self):
+        response = self.admin_web.get(reverse("admin:academy_report_detail", args=[999999]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_teacher_cannot_access_detail(self):
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+        response = self.teacher_web.get(reverse("admin:academy_report_detail", args=[report.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_detail_pdf_link_present_and_downloadable(self):
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+        response = self.admin_web.get(reverse("admin:academy_report_detail", args=[report.pk]))
+        pdf_url = reverse("academy-report-pdf", args=[report.pk])
+        self.assertIn(pdf_url, response.content.decode())
+
+        pdf_response = self.admin_web.get(pdf_url)
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response["Content-Type"], "application/pdf")

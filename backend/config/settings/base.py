@@ -300,6 +300,17 @@ JAZZMIN_SETTINGS = {
 
         "аналитика": [
             {"name": "Аналитика", "url": "admin:academy_analytics", "icon": "bi bi-graph-up-arrow"},
+            {
+                "name": "Отчёт академии",
+                "url": "admin:academy_report_monitor",
+                "icon": "bi bi-building",
+                # Sidebar-level gate on top of the real one (`_require_admin`
+                # in academy_report_monitor_view/academy_report_detail_view)
+                # — a superuser/Admin always passes `has_perm` regardless of
+                # explicit grants, so this only ever hides the entry for a
+                # non-admin staff account, never the backend check itself.
+                "permissions": ["academy.view_academymonthlyreport"],
+            },
         ],
 
         # "система": [
