@@ -5950,6 +5950,147 @@ class ReportPDFTruncationTests(AcademyTestBase):
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
 
 
+class AcademyReportConsistencyAuditTests(AcademyTestBase):
+    """Third-pass verification audit: locks in behaviors confirmed correct
+    against a real generated dataset but not previously covered by a test —
+    a cancelled group's exclusion from the group table, a still-SCHEDULED
+    ("planned") lesson never counting as conducted, the Teacher table
+    summing back to the Academy summary, and why "total active students"
+    and "students in active groups" are two different, both-correct
+    numbers."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.academy.services.academy_monthly_report import compute_academy_monthly_stats
+
+        self.compute_academy_monthly_stats = staticmethod(compute_academy_monthly_stats)
+        self.g1_lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+        self.g2_lessons = list(Lesson.objects.filter(group=self.group2).order_by("lesson_number"))
+
+    # -- item 1: cancelled groups are absent from the table *because* they
+    #    have no lesson this period, not via a hidden status filter — a
+    #    cancelled group that still has a lesson this period must still
+    #    show, with its real historical figures ------------------------
+
+    def test_cancelled_group_is_excluded_only_when_it_has_no_lesson_this_period(self):
+        cancelled = Group.objects.create(
+            name="Cancelled No Lessons", course=self.course, start_date=dt.date(2026, 9, 1),
+            status=Group.Status.CANCELLED,
+        )
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        self.assertNotIn(cancelled.id, [g["id"] for g in stats["groups"]])
+
+    def test_cancelled_group_with_a_lesson_this_period_still_appears(self):
+        cancelled = Group.objects.create(
+            name="Cancelled With A Lesson", course=self.course, start_date=dt.date(2026, 9, 1),
+            status=Group.Status.CANCELLED,
+        )
+        gt = GroupTeacher.objects.create(group=cancelled, teacher=self.teacher1, subject=self.subject_python)
+        Lesson.objects.create(
+            group=cancelled, group_teacher=gt, teacher=self.teacher1, subject=self.subject_python,
+            lesson_number=1, date=dt.date(2026, 9, 10), start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+            status=Lesson.Status.COMPLETED,
+        )
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        row = next((g for g in stats["groups"] if g["id"] == cancelled.id), None)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["lessons_count"], 1)
+        self.assertEqual(row["status"], Group.Status.CANCELLED)
+
+    # -- item 5: a SCHEDULED ("planned") lesson is real future/unresolved
+    #    work — it must be visible as "planned", and must never be counted
+    #    as conducted anywhere (summary, group row, or per-teacher row) --
+
+    def test_scheduled_lesson_counts_as_planned_never_as_conducted(self):
+        # Resolve every pre-existing September lesson first (AcademyTestBase
+        # generates them SCHEDULED by default — a real dataset never leaves
+        # a past lesson unresolved), so the one lesson added below is the
+        # only SCHEDULED lesson left this period.
+        Lesson.objects.filter(date__year=2026, date__month=9).update(status=Lesson.Status.COMPLETED)
+        completed_g1_count = Lesson.objects.filter(group=self.group1, status=Lesson.Status.COMPLETED).count()
+
+        gt1 = self.group1.teachers.get(teacher=self.teacher1)
+        Lesson.objects.create(
+            group=self.group1, group_teacher=gt1, teacher=self.teacher1, subject=self.subject_python,
+            lesson_number=901, date=dt.date(2026, 9, 25), start_time=dt.time(15, 0), end_time=dt.time(16, 30),
+            status=Lesson.Status.SCHEDULED,
+        )
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats["lessons"]["scheduled"], 1)
+        group_row = next(g for g in stats["groups"] if g["id"] == self.group1.pk)
+        # The new SCHEDULED lesson must not be counted as conducted — the
+        # group's own lessons_count stays at its pre-existing completed
+        # count, not completed_count + 1.
+        self.assertEqual(group_row["lessons_count"], completed_g1_count)
+
+    # -- item 6: Academy summary, Group table and Teacher table must use
+    #    the exact same conducted-lesson definition — summing the Teacher
+    #    table's own lessons_completed must reproduce the Academy total,
+    #    since every Lesson has exactly one effective teacher -------------
+
+    def test_teacher_table_lessons_sum_matches_academy_summary(self):
+        self.g1_lessons[0].status = Lesson.Status.COMPLETED
+        self.g1_lessons[0].save(update_fields=["status"])
+        self.g2_lessons[0].status = Lesson.Status.COMPLETED
+        self.g2_lessons[0].save(update_fields=["status"])
+
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(
+            stats["lessons_completed"], sum(t["lessons_completed"] for t in stats["teachers"])
+        )
+
+    # -- item 3: "total active students" vs "students in active groups" —
+    #    both real, both correct, different questions. An active student
+    #    whose Group is paused/completed/cancelled still counts in the
+    #    first, never in the second -----------------------------------
+
+    def test_active_student_in_a_non_active_group_counts_in_total_not_in_active_groups(self):
+        paused = Group.objects.create(
+            name="Paused With A Student", course=self.course, start_date=dt.date(2026, 9, 1),
+            status=Group.Status.PAUSED,
+        )
+        Student.objects.create(first_name="Пауза", last_name="Студент", group=paused, is_active=True)
+
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats["students_count"], 4)  # student1/2/3 + the new one, all is_active=True
+        # Only students in a currently-ACTIVE group count here — the new
+        # student's group is PAUSED, so they must not inflate this figure.
+        self.assertEqual(stats["group_stats"]["students_active"], 3)  # student1 + student2 + student3
+
+    # -- item 7: duplicates are prevented at the database level, not just
+    #    "none found by luck" — each of these constraints must actually
+    #    reject a duplicate insert ---------------------------------------
+
+    def test_duplicate_attendance_for_same_student_and_lesson_is_rejected(self):
+        from django.db import IntegrityError, transaction
+
+        Attendance.objects.create(student=self.student1, lesson=self.g1_lessons[0], status="present")
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Attendance.objects.create(student=self.student1, lesson=self.g1_lessons[0], status="absent")
+
+    def test_duplicate_homework_result_for_same_student_and_homework_is_rejected(self):
+        from django.db import IntegrityError, transaction
+
+        homework = Homework.objects.create(lesson=self.g1_lessons[0], title="ДЗ")
+        HomeworkResult.objects.create(homework=homework, student=self.student1, status="submitted")
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                HomeworkResult.objects.create(homework=homework, student=self.student1, status="checked")
+
+    def test_duplicate_lesson_number_for_same_teaching_program_is_rejected(self):
+        from django.db import IntegrityError, transaction
+
+        gt1 = self.g1_lessons[0].group_teacher
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Lesson.objects.create(
+                    group=self.group1, group_teacher=gt1, teacher=self.teacher1, subject=self.subject_python,
+                    lesson_number=self.g1_lessons[0].lesson_number, date=dt.date(2026, 9, 11),
+                    start_time=dt.time(9, 0), end_time=dt.time(10, 0), status=Lesson.Status.SCHEDULED,
+                )
+
+
 class AcademyReportAdminViewTests(AcademyTestBase):
     """The Django Admin "Отчёт академии" sidebar entry + monitor/detail
     views — the server-rendered counterpart of the API/React feature,
