@@ -8,6 +8,7 @@ from apps.users.serializers import SubjectSerializer, TeacherSerializer
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
 from .services.analytics import PERIOD_CHOICES
 from .models import (
+    AcademyMonthlyReport,
     Attendance,
     Course,
     CourseLessonPlan,
@@ -1164,4 +1165,154 @@ class MonthlyTeacherReportCommentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MonthlyTeacherReport
+        fields = ["comment"]
+
+
+# ---------------------------------------------------------------------------
+# Academy Monthly Reports — the Admin-facing, whole-academy counterpart of
+# the Monthly Teacher Report above. Same reasoning throughout: every figure
+# comes from `services.academy_monthly_report.compute_academy_monthly_stats`,
+# computed fresh on every request, never stored. A field that has no honest
+# answer from the current data (a lesson reschedule count, a student's
+# reason for leaving, ...) is serialized as `null` — the frontend/PDF render
+# that as "Нет данных", never a fabricated number.
+# ---------------------------------------------------------------------------
+
+class AcademyReportPeriodSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    month = serializers.IntegerField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+
+
+class AcademyReportAttendanceSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    present = serializers.IntegerField()
+    late = serializers.IntegerField()
+    absent = serializers.IntegerField()
+    excused = serializers.IntegerField()
+    rate = serializers.FloatField()
+
+
+class AcademyReportStudentsSerializer(serializers.Serializer):
+    active = serializers.IntegerField()
+    new = serializers.IntegerField()
+    left = serializers.IntegerField()
+    completed = serializers.IntegerField(allow_null=True)
+    paused = serializers.IntegerField(allow_null=True)
+
+
+class AcademyReportGroupRowSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    students_count = serializers.IntegerField()
+    lessons_count = serializers.IntegerField()
+    attendance_rate = serializers.FloatField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+
+
+class AcademyReportTeacherRowSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    lessons_completed = serializers.IntegerField()
+    students_count = serializers.IntegerField()
+    attendance_rate = serializers.FloatField()
+    kpi_total = serializers.FloatField(allow_null=True)
+
+
+class AcademyReportLessonsSerializer(serializers.Serializer):
+    scheduled = serializers.IntegerField()
+    completed = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
+    rescheduled = serializers.IntegerField(allow_null=True)
+    attendance_rate = serializers.FloatField()
+
+
+class AcademyReportHomeworkSerializer(serializers.Serializer):
+    assigned = serializers.IntegerField()
+    checked = serializers.IntegerField()
+    pending_review = serializers.IntegerField()
+    checked_rate = serializers.FloatField(allow_null=True)
+
+
+class AcademyReportWeekPointSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    percent = serializers.FloatField()
+
+
+class AcademyReportKPISerializer(serializers.Serializer):
+    attendance = serializers.FloatField()
+    homework = serializers.FloatField()
+    lessons = serializers.FloatField()
+    student_progress = serializers.FloatField(allow_null=True)
+    total = serializers.FloatField()
+
+
+class AcademyReportMovementSerializer(serializers.Serializer):
+    left = serializers.IntegerField()
+    paused = serializers.IntegerField(allow_null=True)
+    continued = serializers.IntegerField(allow_null=True)
+    returned = serializers.IntegerField(allow_null=True)
+    reasons = serializers.ListField(child=serializers.DictField(), allow_null=True)
+
+
+class AcademyReportAttentionItemSerializer(serializers.Serializer):
+    type = serializers.CharField()
+    message = serializers.CharField()
+
+
+class AcademyMonthlyReportStatsSerializer(serializers.Serializer):
+    """`services.academy_monthly_report.compute_academy_monthly_stats` —
+    computed fresh on every request, never stored."""
+
+    period = AcademyReportPeriodSerializer()
+    has_data = serializers.BooleanField()
+    students_count = serializers.IntegerField()
+    groups_count = serializers.IntegerField()
+    teachers_count = serializers.IntegerField()
+    lessons_completed = serializers.IntegerField()
+    attendance = AcademyReportAttendanceSerializer()
+    students = AcademyReportStudentsSerializer()
+    groups = AcademyReportGroupRowSerializer(many=True)
+    teachers = AcademyReportTeacherRowSerializer(many=True)
+    lessons = AcademyReportLessonsSerializer()
+    homework = AcademyReportHomeworkSerializer()
+    weekly_dynamics = AcademyReportWeekPointSerializer(many=True)
+    kpi = AcademyReportKPISerializer()
+    movement = AcademyReportMovementSerializer()
+    attention = AcademyReportAttentionItemSerializer(many=True)
+
+
+class AcademyMonthlyReportSerializer(serializers.ModelSerializer):
+    """Read shape of an academy report — the model's own fields plus its
+    always freshly-computed `stats` (see `AcademyMonthlyReportStatsSerializer`)."""
+
+    stats = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AcademyMonthlyReport
+        fields = ["id", "year", "month", "comment", "stats", "created_at", "updated_at"]
+        read_only_fields = ["id", "year", "month", "stats", "created_at", "updated_at"]
+
+    def get_stats(self, obj) -> dict:
+        from .services.academy_monthly_report import compute_academy_monthly_stats
+
+        return AcademyMonthlyReportStatsSerializer(compute_academy_monthly_stats(obj.year, obj.month)).data
+
+
+class AcademyMonthlyReportCreateSerializer(serializers.Serializer):
+    """`POST /academy-reports/` — Admin picks only the month; every figure
+    inside it is always computed, never entered."""
+
+    year = serializers.IntegerField(min_value=2000, max_value=2100)
+    month = serializers.IntegerField(min_value=1, max_value=12)
+
+
+class AcademyMonthlyReportCommentSerializer(serializers.ModelSerializer):
+    """`PATCH /academy-reports/<id>/` — the only field an Admin may ever
+    write on an academy report; every other field is server-computed."""
+
+    class Meta:
+        model = AcademyMonthlyReport
         fields = ["comment"]

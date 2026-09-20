@@ -52,6 +52,7 @@ from .help_center import help_center_view
 from .models import (
     Attendance,
     Course,
+    AcademyMonthlyReport,
     CourseLessonPlan,
     Group,
     GroupTeacher,
@@ -1239,6 +1240,28 @@ class MonthlyTeacherReportAdmin(admin.ModelAdmin):
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         return monthly_report_detail_view(request, object_id)
+
+
+@admin.register(AcademyMonthlyReport)
+class AcademyMonthlyReportAdmin(admin.ModelAdmin):
+    """Read-only in Django Admin, same as MonthlyTeacherReportAdmin above —
+    a report is only ever created/commented on through the API (see
+    AcademyMonthlyReportViewSet), never by hand here."""
+
+    list_display = ("__str__", "created_at", "updated_at")
+    list_filter = ("year", "month")
+    readonly_fields = ("year", "month", "comment", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    actions = None
 
 
 # ---------------------------------------------------------------------------

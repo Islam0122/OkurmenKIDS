@@ -10,15 +10,21 @@ import type { User } from '@/types/auth'
 
 import { AuthContext, type AuthStatus } from './AuthContext'
 
-/** Mirrors the backend's own login gate (see `LoginSerializer.validate`) so the UI never shows an "authenticated" screen the API would reject anyway. */
-function isEligibleTeacher(user: User): boolean {
-  return user.role === 'teacher' && user.is_verified && user.is_active
+/** Mirrors the backend's own login gate (see `LoginSerializer.validate`) so
+ * the UI never shows an "authenticated" screen the API would reject anyway.
+ * Verification gating applies to Teacher accounts only — an Admin account
+ * (created via `createsuperuser`) is trusted from the start, same rule the
+ * backend itself applies. */
+function isEligibleUser(user: User): boolean {
+  if (!user.is_active) return false
+  if (user.role === 'teacher') return user.is_verified
+  return user.role === 'admin'
 }
 
 function describeIneligibility(user: User): string {
-  if (user.role !== 'teacher') return 'Этот кабинет доступен только тренерам.'
-  if (!user.is_verified) return 'Аккаунт ещё не подтверждён администратором.'
-  return 'Аккаунт деактивирован.'
+  if (!user.is_active) return 'Аккаунт деактивирован.'
+  if (user.role === 'teacher' && !user.is_verified) return 'Аккаунт ещё не подтверждён администратором.'
+  return 'Доступ к личному кабинету недоступен для этой роли.'
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -55,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const me = await authApi.me()
         if (cancelled) return
         setUser(me)
-        setStatus(isEligibleTeacher(me) ? 'authenticated' : 'forbidden')
+        setStatus(isEligibleUser(me) ? 'authenticated' : 'forbidden')
       } catch (error) {
         if (cancelled) return
         // The backend being unreachable (down, offline, CORS misconfigured)
@@ -84,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Re-verify against `/me/` rather than trusting the login payload alone —
     // the same check every reload does, so both paths can never disagree.
     const me = await authApi.me()
-    if (!isEligibleTeacher(me)) {
+    if (!isEligibleUser(me)) {
       tokenStorage.clear()
       setStatus('guest')
       throw new Error(describeIneligibility(me))

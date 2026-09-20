@@ -1267,3 +1267,52 @@ class MonthlyTeacherReport(models.Model):
     def __str__(self):
         return f"{self.teacher} — {self.month:02d}.{self.year}"
 
+
+# ---------------------------------------------------------------------------
+# Academy Monthly Report — the Admin-facing counterpart of
+# MonthlyTeacherReport: one report per calendar month for the *whole*
+# academy (every Teacher/Group/Student/Lesson), not a single teacher's own
+# slice. Same shape, same reasoning: every figure it shows (students,
+# groups, teachers, lessons, attendance, homework, KPI, weekly dynamics,
+# ...) is computed on demand for (year, month) from the existing
+# Lesson/Attendance/Homework/HomeworkResult/Group/Student/Teacher data — see
+# services.academy_monthly_report.compute_academy_monthly_stats — never
+# stored here, so there is nothing to keep in sync or go stale. This model
+# only ever holds which month an Admin has opened a report for, and their
+# own closing comment about it.
+# ---------------------------------------------------------------------------
+
+class AcademyMonthlyReport(models.Model):
+    year = models.PositiveIntegerField(
+        validators=[MinValueValidator(2000), MaxValueValidator(2100)],
+        verbose_name="Год",
+    )
+
+    month = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(12)],
+        verbose_name="Месяц",
+    )
+
+    comment = models.TextField(
+        blank=True,
+        verbose_name="Итог месяца",
+        help_text="Комментарий администратора о работе академии за месяц.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Отчёт академии"
+        verbose_name_plural = "Отчёты академии"
+        ordering = ["-year", "-month"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["year", "month"],
+                name="unique_academy_monthly_report",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Академия — {self.month:02d}.{self.year}"
+
