@@ -73,7 +73,13 @@ from .models import (
     Student,
     StudentStatusEvent,
 )
-from .services.student_status import deactivate_student, reactivate_student
+from .services.student_status import (
+    complete_student,
+    continue_student,
+    deactivate_student,
+    pause_student,
+    reactivate_student,
+)
 from .services.import_export import (
     StudentImportValidationError,
     build_student_import_template,
@@ -344,8 +350,62 @@ class StudentReactivateForm(forms.Form):
     event_date = forms.DateField(
         label="Дата возвращения",
         initial=dt.date.today,
-        widget=forms.DateInput(attrs={"class": "ok-input", "type": "date"}),
+        widget=forms.DateInput(attrs={"class": "ok-input", "type": "date"}, format="%Y-%m-%d"),
     )
+    comment = forms.CharField(
+        required=False,
+        label="Комментарий",
+        widget=forms.Textarea(attrs={"class": "ok-input", "rows": 3}),
+    )
+
+
+class StudentPauseForm(forms.Form):
+    reason = forms.ChoiceField(
+        choices=[("", "— Выберите причину —")] + list(StudentStatusEvent.Reason.choices),
+        label="Причина приостановки",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    expected_return_date = forms.DateField(
+        required=False,
+        label="Ожидаемая дата возвращения",
+        widget=forms.DateInput(attrs={"class": "ok-input", "type": "date"}, format="%Y-%m-%d"),
+    )
+    comment = forms.CharField(
+        required=False,
+        label="Комментарий",
+        widget=forms.Textarea(attrs={"class": "ok-input", "rows": 3}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        reason = cleaned.get("reason")
+        comment = (cleaned.get("comment") or "").strip()
+        if reason == StudentStatusEvent.Reason.OTHER and not comment:
+            self.add_error("comment", "Для причины «Другая причина» комментарий обязателен.")
+        return cleaned
+
+
+class StudentContinueForm(forms.Form):
+    group = forms.ModelChoiceField(
+        queryset=Group.objects.all(),
+        required=False,
+        label="Группа",
+        help_text="Оставьте пустым, чтобы сохранить текущую группу студента.",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    event_date = forms.DateField(
+        label="Дата продолжения обучения",
+        initial=dt.date.today,
+        widget=forms.DateInput(attrs={"class": "ok-input", "type": "date"}, format="%Y-%m-%d"),
+    )
+    comment = forms.CharField(
+        required=False,
+        label="Комментарий",
+        widget=forms.Textarea(attrs={"class": "ok-input", "rows": 3}),
+    )
+
+
+class StudentCompleteForm(forms.Form):
     comment = forms.CharField(
         required=False,
         label="Комментарий",
@@ -356,17 +416,17 @@ class StudentReactivateForm(forms.Form):
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
     list_display = ("student_column", "group_column", "phone", "active_badge", "created_at", "row_actions")
-    list_filter = ("group", "is_active")
+    list_filter = ("group", "status")
     search_fields = ("first_name", "last_name", "phone", "parent_phone")
     ordering = ("last_name", "first_name")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("status", "created_at", "updated_at")
     autocomplete_fields = ("group",)
     list_per_page = 25
     actions = ["activate_students", "deactivate_students", "assign_group_action", "export_selected_csv"]
     change_list_template = "admin/academy/student/change_list.html"
 
     fieldsets = (
-        ("Основная информация", {"fields": ("first_name", "last_name", "group", "is_active")}),
+        ("Основная информация", {"fields": ("first_name", "last_name", "group", "is_active", "status")}),
         ("Контакты", {"fields": ("phone", "parent_phone")}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
@@ -417,9 +477,15 @@ class StudentAdmin(admin.ModelAdmin):
         url = reverse("admin:academy_group_change", args=[obj.group_id])
         return format_html('<a class="ok-student-group" href="{}">{}</a>', url, obj.group.name)
 
-    @admin.display(description="Статус", ordering="is_active")
+    @admin.display(description="Статус", ordering="status")
     def active_badge(self, obj: Student) -> str:
-        return _badge("ok-badge-success", "Активен") if obj.is_active else _badge("ok-badge-danger", "Неактивен")
+        badge_css = {
+            Student.Status.ACTIVE: "ok-badge-success",
+            Student.Status.PAUSED: "ok-badge-warning",
+            Student.Status.COMPLETED: "ok-badge-info",
+            Student.Status.WITHDRAWN: "ok-badge-danger",
+        }[obj.status]
+        return _badge(badge_css, obj.get_status_display())
 
     @admin.display(description="")
     def row_actions(self, obj: Student) -> str:
@@ -483,6 +549,21 @@ class StudentAdmin(admin.ModelAdmin):
                 "<int:student_id>/reactivate/",
                 self.admin_site.admin_view(self.reactivate_view),
                 name="academy_student_reactivate",
+            ),
+            path(
+                "<int:student_id>/pause/",
+                self.admin_site.admin_view(self.pause_view),
+                name="academy_student_pause",
+            ),
+            path(
+                "<int:student_id>/continue/",
+                self.admin_site.admin_view(self.continue_view),
+                name="academy_student_continue",
+            ),
+            path(
+                "<int:student_id>/complete/",
+                self.admin_site.admin_view(self.complete_view),
+                name="academy_student_complete",
             ),
         ]
         return custom_urls + super().get_urls()
@@ -633,7 +714,17 @@ class StudentAdmin(admin.ModelAdmin):
         }
         return render(request, "admin/academy/student/assign_group.html", context)
 
-    def _detail_context(self, request, student, *, deactivate_form=None, reactivate_form=None):
+    def _detail_context(
+        self,
+        request,
+        student,
+        *,
+        deactivate_form=None,
+        reactivate_form=None,
+        pause_form=None,
+        continue_form=None,
+        complete_form=None,
+    ):
         attendance_qs = Attendance.objects.filter(student=student)
         attendance_total = attendance_qs.count()
         attendance_present = attendance_qs.filter(status=Attendance.Status.PRESENT).count()
@@ -679,10 +770,16 @@ class StudentAdmin(admin.ModelAdmin):
             "status_events": status_events,
             "deactivate_form": deactivate_form or StudentDeactivateForm(),
             "reactivate_form": reactivate_form or StudentReactivateForm(initial={"group": student.group_id}),
+            "pause_form": pause_form or StudentPauseForm(),
+            "continue_form": continue_form or StudentContinueForm(initial={"group": student.group_id}),
+            "complete_form": complete_form or StudentCompleteForm(),
             "change_url": reverse("admin:academy_student_change", args=[student.pk]),
             "changelist_url": reverse("admin:academy_student_changelist"),
             "deactivate_url": reverse("admin:academy_student_deactivate", args=[student.pk]),
             "reactivate_url": reverse("admin:academy_student_reactivate", args=[student.pk]),
+            "pause_url": reverse("admin:academy_student_pause", args=[student.pk]),
+            "continue_url": reverse("admin:academy_student_continue", args=[student.pk]),
+            "complete_url": reverse("admin:academy_student_complete", args=[student.pk]),
             "attendance_url": (
                 f"{reverse('admin:academy_attendance_changelist')}?student={student.pk}"
             ),
@@ -753,6 +850,85 @@ class StudentAdmin(admin.ModelAdmin):
 
         context = self._detail_context(request, student, reactivate_form=form)
         context["open_reactivate_modal"] = True
+        return render(request, "admin/academy/student/detail.html", context)
+
+    def pause_view(self, request, student_id):
+        student = get_object_or_404(Student, pk=student_id)
+        if request.method != "POST" or not self.has_change_permission(request, student):
+            raise PermissionDenied
+
+        form = StudentPauseForm(request.POST)
+        if form.is_valid():
+            try:
+                pause_student(
+                    student,
+                    reason=form.cleaned_data["reason"],
+                    expected_return_date=form.cleaned_data["expected_return_date"],
+                    comment=form.cleaned_data["comment"],
+                    performed_by=request.user,
+                )
+            except DjangoValidationError as exc:
+                for error in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                    messages.error(request, error)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+            else:
+                self.message_user(request, "Обучение приостановлено.", messages.SUCCESS)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+
+        context = self._detail_context(request, student, pause_form=form)
+        context["open_pause_modal"] = True
+        return render(request, "admin/academy/student/detail.html", context)
+
+    def continue_view(self, request, student_id):
+        student = get_object_or_404(Student, pk=student_id)
+        if request.method != "POST" or not self.has_change_permission(request, student):
+            raise PermissionDenied
+
+        form = StudentContinueForm(request.POST)
+        if form.is_valid():
+            try:
+                continue_student(
+                    student,
+                    group=form.cleaned_data["group"],
+                    event_date=form.cleaned_data["event_date"],
+                    comment=form.cleaned_data["comment"],
+                    performed_by=request.user,
+                )
+            except DjangoValidationError as exc:
+                for error in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                    messages.error(request, error)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+            else:
+                self.message_user(request, "Обучение продолжено.", messages.SUCCESS)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+
+        context = self._detail_context(request, student, continue_form=form)
+        context["open_continue_modal"] = True
+        return render(request, "admin/academy/student/detail.html", context)
+
+    def complete_view(self, request, student_id):
+        student = get_object_or_404(Student, pk=student_id)
+        if request.method != "POST" or not self.has_change_permission(request, student):
+            raise PermissionDenied
+
+        form = StudentCompleteForm(request.POST)
+        if form.is_valid():
+            try:
+                complete_student(
+                    student,
+                    comment=form.cleaned_data["comment"],
+                    performed_by=request.user,
+                )
+            except DjangoValidationError as exc:
+                for error in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                    messages.error(request, error)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+            else:
+                self.message_user(request, "Обучение завершено.", messages.SUCCESS)
+                return redirect(request.POST.get("next") or reverse("admin:academy_student_detail", args=[student_id]))
+
+        context = self._detail_context(request, student, complete_form=form)
+        context["open_complete_modal"] = True
         return render(request, "admin/academy/student/detail.html", context)
 
 

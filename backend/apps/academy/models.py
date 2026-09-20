@@ -186,6 +186,12 @@ class Room(models.Model):
 
 
 class Student(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Активен"
+        PAUSED = "paused", "На паузе"
+        COMPLETED = "completed", "Завершил обучение"
+        WITHDRAWN = "withdrawn", "Деактивирован"
+
     first_name = models.CharField(
         max_length=100,
         verbose_name="Имя",
@@ -222,6 +228,18 @@ class Student(models.Model):
         default=True,
         db_index=True,
         verbose_name="Активен",
+        help_text="Производное от «Статус обучения» — True только при статусе «Активен». "
+        "Меняется исключительно через services.student_status, никогда напрямую.",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+        verbose_name="Статус обучения",
+        help_text="Управляется действиями «Деактивировать» / «Приостановить» / "
+        "«Завершить обучение» / «Продолжить обучение» / «Активировать» — не редактируется напрямую.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
@@ -258,6 +276,9 @@ class StudentStatusEvent(models.Model):
     class EventType(models.TextChoices):
         DEACTIVATED = "deactivated", "Деактивация"
         REACTIVATED = "reactivated", "Повторная активация"
+        COMPLETED = "completed", "Завершение обучения"
+        PAUSED = "paused", "Приостановка обучения"
+        CONTINUED = "continued", "Продолжение обучения"
 
     class Reason(models.TextChoices):
         NO_INTEREST = "no_interest", "Нет интереса"
@@ -291,7 +312,26 @@ class StudentStatusEvent(models.Model):
         blank=True,
         db_index=True,
         verbose_name="Причина",
-        help_text="Заполняется только для деактивации.",
+        help_text="Заполняется для деактивации и приостановки обучения.",
+    )
+
+    previous_status = models.CharField(
+        max_length=20,
+        choices=Student.Status.choices,
+        blank=True,
+        verbose_name="Статус до события",
+        help_text=(
+            "Снимок Student.status непосредственно перед этим событием — источник для "
+            "различения, например, «вернулся после паузы» (previous_status=paused) от "
+            "«повторно активирован после ухода» (previous_status=withdrawn)."
+        ),
+    )
+
+    expected_return_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Ожидаемая дата возвращения",
+        help_text="Только для приостановки обучения — предполагаемая дата, когда студент вернётся.",
     )
 
     comment = models.TextField(
@@ -324,6 +364,12 @@ class StudentStatusEvent(models.Model):
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания записи")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления записи")
+
+    # Event types whose `reason` field is meaningful and required — a
+    # deactivation or a pause both need a real reason; a completion/
+    # continuation/reactivation is a plain fact with no "why" to record.
+    REASON_REQUIRED_TYPES = ("deactivated", "paused")
 
     class Meta:
         verbose_name = "Событие статуса студента"
@@ -338,10 +384,15 @@ class StudentStatusEvent(models.Model):
         return f"{self.student} — {self.get_event_type_display()} ({self.event_date})"
 
     def clean(self):
-        if self.event_type == self.EventType.DEACTIVATED and not self.reason:
-            raise ValidationError({"reason": "Причина обязательна для деактивации."})
-        if self.event_type == self.EventType.DEACTIVATED and self.reason == self.Reason.OTHER and not self.comment.strip():
-            raise ValidationError({"comment": "Для причины «Другая причина» комментарий обязателен."})
+        if self.event_type in self.REASON_REQUIRED_TYPES:
+            if not self.reason:
+                raise ValidationError({"reason": "Причина обязательна."})
+            if self.reason == self.Reason.OTHER and not self.comment.strip():
+                raise ValidationError({"comment": "Для причины «Другая причина» комментарий обязателен."})
+        if self.expected_return_date is not None and self.event_type != self.EventType.PAUSED:
+            raise ValidationError(
+                {"expected_return_date": "Ожидаемая дата возвращения указывается только для приостановки обучения."}
+            )
 
 
 # ---------------------------------------------------------------------------

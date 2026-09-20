@@ -16,8 +16,12 @@
             <h2 class="ok-trainer-name">{{ student }}</h2>
             <div class="ok-trainer-username">Student ID: #{{ student.pk }}</div>
             <div class="ok-trainer-badges">
-              <span class="ok-badge {% if student.is_active %}ok-badge-success{% else %}ok-badge-danger{% endif %}">
-                <span class="ok-badge-dot"></span>{% if student.is_active %}Активен{% else %}Неактивен{% endif %}
+              <span class="ok-badge
+                {% if student.status == 'active' %}ok-badge-success
+                {% elif student.status == 'paused' %}ok-badge-warning
+                {% elif student.status == 'completed' %}ok-badge-info
+                {% else %}ok-badge-danger{% endif %}">
+                <span class="ok-badge-dot"></span>{{ student.get_status_display }}
               </span>
               {% if student.group %}
                 <span class="ok-badge ok-badge-muted"><i class="bi bi-diagram-3"></i>{{ student.group.name }}</span>
@@ -35,7 +39,23 @@
         </div>
       </div>
 
-      {% if not student.is_active %}
+      {% if student.status == 'paused' %}
+        <div class="ok-alert ok-alert-warning">
+          <i class="bi bi-pause-circle"></i>
+          <div>
+            <strong>Обучение приостановлено.</strong>
+            История обучения, посещаемость и домашние задания сохранены.
+          </div>
+        </div>
+      {% elif student.status == 'completed' %}
+        <div class="ok-alert ok-alert-warning">
+          <i class="bi bi-mortarboard"></i>
+          <div>
+            <strong>Студент завершил обучение.</strong>
+            История обучения, посещаемость и домашние задания сохранены.
+          </div>
+        </div>
+      {% elif student.status == 'withdrawn' %}
         <div class="ok-alert ok-alert-warning">
           <i class="bi bi-exclamation-triangle"></i>
           <div>
@@ -220,11 +240,24 @@
             <i class="bi bi-pencil"></i> Редактировать
           </a>
 
-          {% if student.is_active %}
+          {% if student.status == 'active' %}
+            <button type="button" class="ok-btn-secondary ok-btn-block" onclick="document.getElementById('ok-modal-pause').showModal()">
+              <i class="bi bi-pause-circle"></i> Приостановить обучение
+            </button>
+            <button type="button" class="ok-btn-secondary ok-btn-block" onclick="document.getElementById('ok-modal-complete').showModal()">
+              <i class="bi bi-mortarboard"></i> Завершить обучение
+            </button>
             <button type="button" class="ok-btn-secondary ok-btn-block ok-student-danger-action" onclick="document.getElementById('ok-modal-deactivate').showModal()">
               <i class="bi bi-slash-circle"></i> Деактивировать
             </button>
-          {% else %}
+          {% elif student.status == 'paused' %}
+            <button type="button" class="ok-btn-primary ok-btn-block" onclick="document.getElementById('ok-modal-continue').showModal()">
+              <i class="bi bi-play-circle"></i> Продолжить обучение
+            </button>
+            <button type="button" class="ok-btn-secondary ok-btn-block" onclick="document.getElementById('ok-modal-complete').showModal()">
+              <i class="bi bi-mortarboard"></i> Завершить обучение
+            </button>
+          {% elif student.status == 'withdrawn' %}
             <button type="button" class="ok-btn-secondary ok-btn-block" onclick="document.getElementById('ok-modal-reactivate').showModal()">
               <i class="bi bi-check2-circle"></i> Повторно активировать
             </button>
@@ -257,6 +290,10 @@
                   <td>
                     {% if event.event_type == "deactivated" %}
                       <span class="ok-badge ok-badge-danger">{{ event.get_event_type_display }}</span>
+                    {% elif event.event_type == "paused" %}
+                      <span class="ok-badge ok-badge-warning">{{ event.get_event_type_display }}</span>
+                    {% elif event.event_type == "completed" %}
+                      <span class="ok-badge ok-badge-info">{{ event.get_event_type_display }}</span>
                     {% else %}
                       <span class="ok-badge ok-badge-success">{{ event.get_event_type_display }}</span>
                     {% endif %}
@@ -285,4 +322,7 @@
 
 {% include "admin/academy/student/_deactivate_modal.html" %}
 {% include "admin/academy/student/_reactivate_modal.html" %}
+{% include "admin/academy/student/_pause_modal.html" %}
+{% include "admin/academy/student/_continue_modal.html" %}
+{% include "admin/academy/student/_complete_modal.html" %}
 {% endblock %}

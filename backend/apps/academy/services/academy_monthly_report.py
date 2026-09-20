@@ -8,10 +8,13 @@ building blocks (services.analytics) and the Monthly Teacher Report's own
 KPI formula (services.monthly_report) — never a second, independent
 implementation of "what counts as active/completed/KPI/...". Where a figure
 the spec asks for has no real backing data in the current schema (a lesson
-"reschedule" status, a student's reason for leaving, a distinction between
-"completed the course" and "paused"), the corresponding field is `None`
-rather than a fabricated number — callers (serializer/PDF/frontend) render
-that as "Нет данных".
+"reschedule" status), the corresponding field is `None` rather than a
+fabricated number — callers (serializer/PDF/frontend) render that as "Нет
+данных". "Завершили"/"Приостановили"/"Продолжили обучение"/"Вернулись после
+паузы" *do* have real backing data (Student.status + StudentStatusEvent —
+see services.student_status) and are always `{"count": int, "supported":
+True}`, never `None`: 0 real departures/pauses this month is a fact, not
+missing data, and must never render as "Нет данных"/"не поддерживается".
 """
 from __future__ import annotations
 
@@ -235,14 +238,10 @@ def _departures(date_range: DateRange) -> tuple[int, list[dict]]:
     return left_count, breakdown
 
 
-def _returned_count(date_range: DateRange) -> int:
-    """Distinct students with a confirmed reactivation event in the period —
-    always a real number (0 when there are none), never `None`: unlike
-    "paused"/"continued", reactivation is a real, fully-supported event type
-    (spec §7: "Если функция поддерживается и событий нет — показывать 0")."""
+def _distinct_students_with_event(event_type: str, date_range: DateRange) -> int:
     return (
         StudentStatusEvent.objects.filter(
-            event_type=StudentStatusEvent.EventType.REACTIVATED,
+            event_type=event_type,
             event_date__gte=date_range.start,
             event_date__lte=date_range.end,
         )
@@ -250,6 +249,35 @@ def _returned_count(date_range: DateRange) -> int:
         .distinct()
         .count()
     )
+
+
+def _education_status_counts(date_range: DateRange) -> dict:
+    """The 4 previously-"Функция пока не поддерживается" movement metrics —
+    all real now that StudentStatusEvent tracks COMPLETED/PAUSED/CONTINUED
+    (see services.student_status). Every entry is `{count, supported}`:
+    `supported` is always True here (each of these 4 has a real, working
+    action behind it now) and `count` is 0, not `None`, when the period has
+    no matching events — "0" and "not supported" must never be confused.
+
+    "continued" and "returned_after_pause" deliberately read the exact same
+    CONTINUED event set: in this project, continuing one's studies *is*
+    returning from a pause (services.student_status.continue_student is the
+    only "come back" action reachable from PAUSED) — there is no separate
+    enrollment-renewal concept that would make them different numbers. This
+    is one shared computation exposed under the two labels the report has
+    always shown, not two independent (and here, identical-by-coincidence)
+    calculations.
+    """
+    completed = _distinct_students_with_event(StudentStatusEvent.EventType.COMPLETED, date_range)
+    paused = _distinct_students_with_event(StudentStatusEvent.EventType.PAUSED, date_range)
+    continued = _distinct_students_with_event(StudentStatusEvent.EventType.CONTINUED, date_range)
+
+    return {
+        "completed": {"count": completed, "supported": True},
+        "paused": {"count": paused, "supported": True},
+        "continued": {"count": continued, "supported": True},
+        "returned_after_pause": {"count": continued, "supported": True},
+    }
 
 
 def _pluralize_lesson(n: int) -> str:
@@ -295,7 +323,7 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
 
     attention = _attention_items(scope, date_range, lessons_section, pending_review)
     left_count, reason_breakdown = _departures(date_range)
-    returned_count = _returned_count(date_range)
+    education_status = _education_status_counts(date_range)
 
     return {
         "period": {"year": year, "month": month, "start_date": start, "end_date": end},
@@ -321,8 +349,8 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
             "active": students_section["active_students"]["value"],
             "new": students_section["new_students"]["value"],
             "left": left_count,
-            "completed": None,
-            "paused": None,
+            "completed": education_status["completed"]["count"],
+            "paused": education_status["paused"]["count"],
         },
         "groups": _groups_breakdown(scope, date_range),
         "teachers": _teachers_breakdown(scope, date_range, year, month),
@@ -349,9 +377,10 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
         },
         "movement": {
             "left": left_count,
-            "paused": None,
-            "continued": None,
-            "returned": returned_count,
+            "completed": education_status["completed"],
+            "paused": education_status["paused"],
+            "continued": education_status["continued"],
+            "returned_after_pause": education_status["returned_after_pause"],
             "reasons": reason_breakdown,
         },
         "attention": attention,

@@ -1,0 +1,49 @@
+<dialog id="ok-modal-continue" class="ok-modal"{% if open_continue_modal %} open{% endif %}>
+  <form method="post" action="{{ continue_url }}" class="ok-modal-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url|default:request.path }}">
+    <div class="ok-modal-header">
+      <span><i class="bi bi-play-circle-fill" style="color:var(--ok-primary);"></i> Продолжить обучение?</span>
+      <button type="button" class="ok-modal-close" onclick="document.getElementById('ok-modal-continue').close()" aria-label="Закрыть">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="ok-modal-body">
+      <p class="ok-static-value" style="margin:0 0 1.1rem;"><strong>{{ student }}</strong></p>
+
+      {% for error in continue_form.non_field_errors %}
+        <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+      {% endfor %}
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ continue_form.group.id_for_label }}">{{ continue_form.group.label }}</label>
+        {{ continue_form.group }}
+        <span class="ok-help-text">{{ continue_form.group.help_text }}</span>
+        {% for error in continue_form.group.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ continue_form.event_date.id_for_label }}">{{ continue_form.event_date.label }} *</label>
+        {{ continue_form.event_date }}
+        {% for error in continue_form.event_date.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="ok-field-group">
+        <label class="ok-label" for="{{ continue_form.comment.id_for_label }}">{{ continue_form.comment.label }}</label>
+        {{ continue_form.comment }}
+        <span class="ok-help-text">Необязательно.</span>
+        {% for error in continue_form.comment.errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary" onclick="document.getElementById('ok-modal-continue').close()">Отмена</button>
+      <button type="submit" class="ok-btn-primary"><i class="bi bi-play-circle"></i> Подтвердить продолжение</button>
+    </div>
+  </form>
+</dialog>

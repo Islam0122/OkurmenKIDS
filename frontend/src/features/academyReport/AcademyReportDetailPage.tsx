@@ -116,8 +116,8 @@ export function AcademyReportDetailPage() {
               <div className="divide-y divide-border">
                 <WorkRow label="Всего активных студентов" value={stats.students.active} />
                 <WorkRow label="Новые студенты" value={stats.students.new} />
-                <WorkRow label="Завершили обучение" value={stats.students.completed} nullLabel="Функция пока не поддерживается" />
-                <WorkRow label="Приостановили обучение" value={stats.students.paused} nullLabel="Функция пока не поддерживается" />
+                <WorkRow label="Завершили обучение" value={stats.students.completed} />
+                <WorkRow label="Приостановили обучение" value={stats.students.paused} />
                 <WorkRow label="Вышли из курса" value={stats.students.left} />
               </div>
             </section>
@@ -174,9 +174,10 @@ export function AcademyReportDetailPage() {
               <SectionHeader icon={DoorOpen} title="Движение студентов" />
               <div className="divide-y divide-border">
                 <WorkRow label="Вышли из курса за месяц" value={stats.movement.left} />
-                <WorkRow label="Приостановили обучение" value={stats.movement.paused} nullLabel="Функция пока не поддерживается" />
-                <WorkRow label="Продолжили обучение" value={stats.movement.continued} nullLabel="Функция пока не поддерживается" />
-                <WorkRow label="Вернулись после паузы" value={stats.movement.returned} />
+                <WorkRow label="Завершили обучение" value={stats.movement.completed.count} />
+                <WorkRow label="Приостановили обучение" value={stats.movement.paused.count} />
+                <WorkRow label="Продолжили обучение" value={stats.movement.continued.count} />
+                <WorkRow label="Вернулись после паузы" value={stats.movement.returned_after_pause.count} />
               </div>
             </section>
 

@@ -51,14 +51,6 @@ def _na(value, formatter=str) -> str:
     return "Нет данных" if value is None else formatter(value)
 
 
-def _unsupported(value, formatter=str) -> str:
-    """Same as `_na`, but for a metric the schema genuinely has no feature
-    for yet (spec: "паузы"/"продолжения" have no dedicated status) — distinct
-    wording from "Нет данных" (feature exists, nothing to show this period)
-    so the two are never confused."""
-    return "Функция пока не поддерживается" if value is None else formatter(value)
-
-
 class _Doc:
     """Same cursor-based canvas wrapper as `monthly_report_pdf._Doc` — kept
     as a private copy rather than an imported shared class, so this report's
@@ -149,8 +141,8 @@ def _draw_students(doc: _Doc, stats: dict) -> None:
     rows = [
         ("Всего активных студентов", str(students["active"])),
         ("Новые студенты", str(students["new"])),
-        ("Завершили обучение", _unsupported(students["completed"])),
-        ("Приостановили обучение", _unsupported(students["paused"])),
+        ("Завершили обучение", str(students["completed"])),
+        ("Приостановили обучение", str(students["paused"])),
         ("Вышли из курса", str(students["left"])),
     ]
     row_h = 22
@@ -399,9 +391,10 @@ def _draw_movement(doc: _Doc, stats: dict) -> None:
     movement = stats["movement"]
     rows = [
         ("Вышли из курса за месяц", str(movement["left"])),
-        ("Приостановили обучение", _unsupported(movement["paused"])),
-        ("Продолжили обучение", _unsupported(movement["continued"])),
-        ("Вернулись после паузы", str(movement["returned"])),
+        ("Завершили обучение", str(movement["completed"]["count"])),
+        ("Приостановили обучение", str(movement["paused"]["count"])),
+        ("Продолжили обучение", str(movement["continued"]["count"])),
+        ("Вернулись после паузы", str(movement["returned_after_pause"]["count"])),
     ]
     row_h = 20
     doc.ensure_space(_TITLE_HEIGHT + row_h * len(rows) + 10)
