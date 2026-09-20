@@ -35,6 +35,7 @@ from .monthly_report_pdf import (
     _fmt_percent,
     _progress_bar,
     _rounded_rect,
+    _truncate_text,
     _wrap_text,
 )
 
@@ -160,7 +161,9 @@ def _draw_group_stats(doc: _Doc, stats: dict) -> None:
     rows = [
         ("Всего групп", str(group_stats["total"])),
         ("Активные группы", str(group_stats["active"])),
+        ("Приостановленные группы", str(group_stats["paused"])),
         ("Завершённые группы", str(group_stats["completed"])),
+        ("Отменённые группы", str(group_stats["cancelled"])),
         ("Студентов в активных группах", str(group_stats["students_active"])),
         ("Студентов в завершённых группах", str(group_stats["students_completed"])),
     ]
@@ -202,7 +205,7 @@ def _draw_groups_table(doc: _Doc, stats: dict) -> None:
         doc.ensure_space(row_h)
         x = MARGIN + 10
         values = [
-            group["name"],
+            _truncate_text(group["name"], _REGULAR, 9, col_widths[0] - 16),
             str(group["students_count"]),
             str(group["lessons_count"]),
             _fmt_percent(group["attendance_rate"]),
@@ -243,7 +246,7 @@ def _draw_teachers_table(doc: _Doc, stats: dict) -> None:
         doc.ensure_space(row_h)
         x = MARGIN + 10
         values = [
-            teacher["name"],
+            _truncate_text(teacher["name"], _REGULAR, 9, col_widths[0] - 16),
             str(teacher["lessons_completed"]),
             str(teacher["students_count"]),
             _fmt_percent(teacher["attendance_rate"]),
@@ -281,7 +284,7 @@ def _draw_homework(doc: _Doc, stats: dict) -> None:
     homework = stats["homework"]
     rows = [
         ("Выдано домашних заданий", str(homework["assigned"])),
-        ("Проверено домашних заданий", str(homework["checked"])),
+        ("Проверено работ студентов", str(homework["checked"])),
         ("Ожидают проверки", str(homework["pending_review"])),
         ("Процент проверки", _na(homework["checked_rate"], _fmt_percent)),
     ]

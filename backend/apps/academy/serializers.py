@@ -1214,7 +1214,9 @@ class AcademyReportGroupStatsSerializer(serializers.Serializer):
 
     total = serializers.IntegerField()
     active = serializers.IntegerField()
+    paused = serializers.IntegerField()
     completed = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
     students_active = serializers.IntegerField()
     students_completed = serializers.IntegerField()
 

@@ -115,7 +115,7 @@ export function ReportDetailPage() {
                 <div className="mt-1 divide-y divide-border">
                   <WorkRow label="Проведено занятий" value={stats.lessons_completed} />
                   <WorkRow label="Выдано домашних заданий" value={stats.homework.assigned} />
-                  <WorkRow label="Проверено домашних заданий" value={stats.homework.checked} />
+                  <WorkRow label="Проверено работ студентов" value={stats.homework.checked} />
                   <WorkRow label="Работа со студентами" value={stats.students_count} />
                 </div>
               </section>

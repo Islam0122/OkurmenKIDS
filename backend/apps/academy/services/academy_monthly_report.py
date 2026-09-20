@@ -150,10 +150,10 @@ def _weekly_dynamics(start: dt.date, end: dt.date) -> list[dict]:
 
 
 def _homework_checked_rate(scope: AnalyticsScope, date_range: DateRange) -> tuple[int, float | None, float | None]:
-    """`(pending_review, checked_rate, average_score)` — computed directly
-    (not read off `homework.build()`'s already-rounded figures) so a month
-    with zero HomeworkResult rows can honestly report `checked_rate=None`
-    ("Нет данных") instead of a misleading 0%.
+    """`(pending_review, checked_rate, student_progress_rate)` — computed
+    directly (not read off `homework.build()`'s already-rounded figures) so
+    a month with zero HomeworkResult rows can honestly report
+    `checked_rate=None` ("Нет данных") instead of a misleading 0%.
 
     `checked_rate`'s denominator is `submitted_total` (checked + submitted +
     late) — the same population `pending_review` is drawn from — never the
@@ -163,6 +163,14 @@ def _homework_checked_rate(scope: AnalyticsScope, date_range: DateRange) -> tupl
     student who never submitted is a submission problem, not a review
     backlog, and must not silently deflate the review-completion figure by
     inflating its denominator.
+
+    `student_progress_rate` is derived from the raw (unrounded)
+    `Avg("score")` — never from a display-rounded average first (regression:
+    rounding the average to one decimal *before* scaling it to a percentage
+    can shift the result by a full point, e.g. a raw average of 8.26 scales
+    to 82.6%, but rounding it to "8.3" first and *then* scaling gives
+    round(8.3/10*100,1) = 83.0% — the two must never be chained). Round
+    only once, at the very end, straight from the raw aggregate.
     """
     results_qs = homework_analytics._results_qs(scope, date_range)
     agg = results_qs.aggregate(
@@ -175,8 +183,9 @@ def _homework_checked_rate(scope: AnalyticsScope, date_range: DateRange) -> tupl
     pending_review = (agg["submitted"] or 0) + (agg["late"] or 0)
     submitted_total = checked + pending_review
     checked_rate = round(checked / submitted_total * 100, 1) if submitted_total else None
-    average_score = round(agg["avg_score"], 1) if agg["avg_score"] is not None else None
-    return pending_review, checked_rate, average_score
+    raw_avg_score = agg["avg_score"]
+    student_progress_rate = round(raw_avg_score / 10 * 100, 1) if raw_avg_score is not None else None
+    return pending_review, checked_rate, student_progress_rate
 
 
 def _attention_items(
@@ -327,16 +336,24 @@ def _completed_count(date_range: DateRange) -> dict:
 
 
 def _group_stats(scope: AnalyticsScope, date_range: DateRange) -> dict:
-    """Total/active/completed groups and how many students currently sit in
-    each — always the *current* database state (spec: "текущие метрики —
-    не за месяц"), reusing `analytics.groups._snapshot` rather than a second
-    group-counting implementation. A completed group is never counted as
-    active: each group contributes to exactly one status bucket."""
+    """Total/active/paused/completed/cancelled groups and how many students
+    currently sit in active vs. completed ones — always the *current*
+    database state (spec: "текущие метрики — не за месяц"), reusing
+    `analytics.groups._snapshot` rather than a second group-counting
+    implementation. Every group contributes to exactly one status bucket,
+    and `total` always equals `active + paused + completed + cancelled`
+    (regression: this used to report only `active`/`completed`, silently
+    dropping paused/cancelled groups from the breakdown even though
+    `_snapshot` already counted them — `total` then looked unreconcilable
+    against the two buckets actually shown, e.g. 30 total vs. 25 active + 1
+    completed with no visible home for the other 4)."""
     snapshot = _groups_snapshot(scope, date_range)
     return {
         "total": snapshot["total"],
         "active": snapshot["active"],
+        "paused": snapshot["paused"],
         "completed": snapshot["completed"],
+        "cancelled": snapshot["cancelled"],
         "students_active": snapshot["students_in_active_groups"],
         "students_completed": snapshot["students_in_completed_groups"],
     }
@@ -369,14 +386,13 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
     lessons_completed = lessons_section["lessons_completed"]["value"]
     lessons_total = scope.lessons_qs(date_range=date_range).count()
 
-    pending_review, checked_rate, avg_score = _homework_checked_rate(scope, date_range)
+    pending_review, checked_rate, student_progress_rate = _homework_checked_rate(scope, date_range)
 
     has_data = lessons_total > 0 or active_groups_count > 0
 
     attendance_rate = attendance_section["attendance_rate"]["value"]
     homework_submission_rate = homework_section["submission_rate"]["value"]
     lessons_rate = round(lessons_completed / lessons_total * 100, 1) if lessons_total else 0.0
-    student_progress_rate = round(avg_score / 10 * 100, 1) if avg_score is not None else None
 
     kpi_components = [attendance_rate, homework_submission_rate, lessons_rate]
     if student_progress_rate is not None:

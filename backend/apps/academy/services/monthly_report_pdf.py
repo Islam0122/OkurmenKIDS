@@ -65,6 +65,26 @@ def _fmt_percent(value: float) -> str:
     return f"{value:g}".replace(".", ",") + "%"
 
 
+def _truncate_text(text: str, font: str, size: float, max_width: float) -> str:
+    """Truncates `text` with a trailing ellipsis so it never exceeds
+    `max_width` at the given font/size. A table row has no line wrapping —
+    an un-clamped free-text value (a long Group/Teacher name) drawn at a
+    fixed column x-position would otherwise silently run past its column
+    boundary and print flush against the next column's value with no gap,
+    reading as one garbled token (e.g. a group named "…— Группа 03" next
+    to a students count of 10 rendering as "…Группа 0310"). Every table
+    column holding a free-text name must run its value through this before
+    drawing it."""
+    if pdfmetrics.stringWidth(text, font, size) <= max_width:
+        return text
+    ellipsis = "…"
+    ellipsis_width = pdfmetrics.stringWidth(ellipsis, font, size)
+    truncated = text
+    while truncated and pdfmetrics.stringWidth(truncated, font, size) + ellipsis_width > max_width:
+        truncated = truncated[:-1]
+    return (truncated.rstrip() + ellipsis) if truncated else ellipsis
+
+
 def _wrap_text(text: str, font: str, size: float, max_width: float) -> list[str]:
     words = text.split()
     if not words:
@@ -240,7 +260,7 @@ def _draw_work_rows(doc: _Doc, stats: dict) -> None:
     rows = [
         ("Проведено занятий", str(stats["lessons_completed"])),
         ("Выдано домашних заданий", str(stats["homework"]["assigned"])),
-        ("Проверено домашних заданий", str(stats["homework"]["checked"])),
+        ("Проверено работ студентов", str(stats["homework"]["checked"])),
         ("Работа со студентами", str(stats["students_count"])),
     ]
     row_h = 22
@@ -279,7 +299,8 @@ def _draw_groups_table(doc: _Doc, stats: dict) -> None:
     for group in groups:
         doc.ensure_space(row_h)
         x = MARGIN + 12
-        values = [group["name"], str(group["students_count"]), str(group["lessons_count"])]
+        name = _truncate_text(group["name"], _REGULAR, 9.5, col_widths[0] - 14)
+        values = [name, str(group["students_count"]), str(group["lessons_count"])]
         for width, value in zip(col_widths, values):
             doc.text(x, doc.y - row_h + 7, value, font=_REGULAR, size=9.5, color=INK)
             x += width

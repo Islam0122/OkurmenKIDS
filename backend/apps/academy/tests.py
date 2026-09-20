@@ -5485,6 +5485,26 @@ class MonthlyReportServiceTests(AcademyTestBase):
         self.assertEqual(stats["students_count"], 0)
         self.assertEqual(stats["kpi"]["total"], 0.0)
 
+    # -- student_progress_rate must never be double-rounded ----------------
+
+    def test_student_progress_rate_not_double_rounded(self):
+        """Regression: `student_progress_rate` must be derived from the raw
+        `Avg('score')` aggregate, never from the already-rounded
+        `average_score` display value. Scores 8/8/9 average to 8.333...,
+        which displays as "8.3" but must scale to
+        round(8.333.../10*100, 1) = 83.3%, not the double-rounded
+        round(8.3/10*100, 1) = 83.0%."""
+        self._complete(self.g1_lessons[0])
+        homework = Homework.objects.create(lesson=self.g1_lessons[0], title="ДЗ")
+        extra_student = Student.objects.create(first_name="Доп", last_name="Студент", group=self.group1)
+        HomeworkResult.objects.create(homework=homework, student=self.student1, status="checked", score=8)
+        HomeworkResult.objects.create(homework=homework, student=self.student2, status="checked", score=8)
+        HomeworkResult.objects.create(homework=homework, student=extra_student, status="checked", score=9)
+
+        stats = self.compute_monthly_stats(self.teacher1, 2026, 9)
+        self.assertEqual(stats["homework"]["average_score"], 8.3)  # display value stays correctly rounded
+        self.assertEqual(stats["kpi"]["student_progress"], 83.3)  # not the double-rounded 83.0
+
 
 class AcademyMonthlyReportTests(AcademyTestBase):
     """The Admin-only, whole-academy Monthly Report (spec: aggregate across
@@ -5788,6 +5808,146 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         # Attendance record this month (see setUp) — both count, since
         # "worked with" means attendance was taken, not that they attended.
         self.assertEqual(group_names["Python Beginner"]["students_count"], 2)
+
+    # -- group_stats: every Group.Status bucket must be visible and must
+    #    reconcile with `total` (regression: found via a real academy PDF
+    #    showing "Всего групп: 30" against only "Активные: 25" +
+    #    "Завершённые: 1" — 4 groups silently missing, because paused/
+    #    cancelled groups were dropped from the breakdown even though
+    #    `analytics.groups._snapshot` already counted them) -------------
+
+    def test_group_stats_accounts_for_every_group_status(self):
+        Group.objects.create(
+            name="Paused Group", course=self.course, start_date=dt.date(2026, 9, 1),
+            status=Group.Status.PAUSED,
+        )
+        Group.objects.create(
+            name="Cancelled Group", course=self.course, start_date=dt.date(2026, 9, 1),
+            status=Group.Status.CANCELLED,
+        )
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        gs = stats["group_stats"]
+        self.assertEqual(gs["active"], 2)  # group1 + group2, both ACTIVE by default
+        self.assertEqual(gs["paused"], 1)
+        self.assertEqual(gs["completed"], 0)
+        self.assertEqual(gs["cancelled"], 1)
+        self.assertEqual(gs["total"], gs["active"] + gs["paused"] + gs["completed"] + gs["cancelled"])
+
+    def test_academy_report_serializer_exposes_paused_and_cancelled(self):
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+        response = self.admin_client.get(f"/api/v1/academy-reports/{report.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        group_stats = response.data["stats"]["group_stats"]
+        self.assertIn("paused", group_stats)
+        self.assertIn("cancelled", group_stats)
+
+    # -- student_progress_rate must never be double-rounded ----------------
+
+    def test_student_progress_rate_not_double_rounded(self):
+        """Regression: `student_progress_rate` must be derived from the raw
+        `Avg('score')` aggregate, never from the already-rounded
+        `average_score` display value — chaining two roundings can shift
+        the percentage by a full point. Scores 8/8/9 average to 8.333...,
+        which displays as "8.3" but must scale to
+        round(8.333.../10*100, 1) = 83.3%, not round(8.3/10*100, 1) =
+        83.0% (the bug this guards against, found via a real report
+        showing "Прогресс студентов: 79%" that didn't match the raw
+        HomeworkResult scores in the database)."""
+        homework1 = Homework.objects.get(lesson=self.g1_lessons[0])
+        HomeworkResult.objects.filter(homework=homework1).delete()
+        HomeworkResult.objects.create(homework=homework1, student=self.student1, status="checked", score=8)
+        HomeworkResult.objects.create(homework=homework1, student=self.student2, status="checked", score=8)
+        HomeworkResult.objects.create(homework=homework1, student=self.student3, status="checked", score=9)
+
+        stats = self.compute_academy_monthly_stats(2026, 9)
+        self.assertEqual(stats["kpi"]["student_progress"], 83.3)
+
+
+class ReportPDFTruncationTests(AcademyTestBase):
+    """PDF table columns are drawn at fixed x-positions with no line
+    wrapping — an un-clamped free-text value (a long Group/Teacher name)
+    drawn wider than its column silently runs into the next column with no
+    gap, so the two values read as one garbled token. Regression: a real
+    generated academy report PDF showed rows like
+    "[MOCK] FastAPI Backend — Группа 0310  6  75%  Активна" — the group's
+    own "10" (students) fused onto the end of its name ("...Группа 03" +
+    "10") because the name overflowed its column. `_truncate_text` (see
+    monthly_report_pdf.py) must clamp every such column to its column
+    width."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.academy.services.monthly_report_pdf import _REGULAR, _ensure_fonts
+
+        _ensure_fonts()
+        self._REGULAR = _REGULAR
+
+    def test_truncate_text_never_exceeds_max_width(self):
+        from reportlab.pdfbase import pdfmetrics
+
+        from apps.academy.services.monthly_report_pdf import _truncate_text
+
+        long_name = "[MOCK] Frontend Beginner (HTML/CSS/JS) — Группа 24"
+        for max_width in (50, 100, 150, 173.8):
+            result = _truncate_text(long_name, self._REGULAR, 9, max_width)
+            self.assertLessEqual(pdfmetrics.stringWidth(result, self._REGULAR, 9), max_width)
+
+    def test_truncate_text_leaves_short_text_untouched(self):
+        from apps.academy.services.monthly_report_pdf import _truncate_text
+
+        short_name = "Python PRO"
+        self.assertEqual(_truncate_text(short_name, self._REGULAR, 9, 200), short_name)
+
+    def test_truncate_text_never_returns_empty_string(self):
+        from apps.academy.services.monthly_report_pdf import _truncate_text
+
+        result = _truncate_text("Очень длинное название группы", self._REGULAR, 9, 4)
+        self.assertTrue(result)
+
+    def test_academy_group_and_teacher_names_fit_their_pdf_column(self):
+        """End-to-end: this is exactly the shape of the reported bug — a
+        real Group/Teacher name that is longer than its column, run through
+        the same helper the PDF drawing code now uses before drawing."""
+        from reportlab.pdfbase import pdfmetrics
+
+        from apps.academy.services.academy_monthly_report import compute_academy_monthly_stats
+        from apps.academy.services.academy_monthly_report_pdf import CONTENT_W
+        from apps.academy.services.monthly_report_pdf import _truncate_text
+
+        Group.objects.filter(pk=self.group1.pk).update(
+            name="[MOCK] Frontend Beginner (HTML/CSS/JS) — Группа 24"
+        )
+        group_col = CONTENT_W * 0.34 - 16
+        teacher_col = CONTENT_W * 0.36 - 16
+
+        stats = compute_academy_monthly_stats(2026, 9)
+        for group in stats["groups"]:
+            truncated = _truncate_text(group["name"], self._REGULAR, 9, group_col)
+            self.assertLessEqual(pdfmetrics.stringWidth(truncated, self._REGULAR, 9), group_col)
+        for teacher in stats["teachers"]:
+            truncated = _truncate_text(teacher["name"], self._REGULAR, 9, teacher_col)
+            self.assertLessEqual(pdfmetrics.stringWidth(truncated, self._REGULAR, 9), teacher_col)
+
+    def test_academy_pdf_builds_with_a_long_group_name(self):
+        from apps.academy.models import AcademyMonthlyReport
+        from apps.academy.services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
+
+        Group.objects.filter(pk=self.group1.pk).update(
+            name="[MOCK] Frontend Beginner (HTML/CSS/JS) — Группа 24"
+        )
+        report = AcademyMonthlyReport.objects.create(year=2026, month=9)
+        pdf_bytes = build_academy_monthly_report_pdf(report)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+
+    def test_teacher_pdf_builds_with_a_long_group_name(self):
+        from apps.academy.services.monthly_report_pdf import build_monthly_report_pdf
+
+        Group.objects.filter(pk=self.group1.pk).update(
+            name="[MOCK] Frontend Beginner (HTML/CSS/JS) — Группа 24"
+        )
+        report = MonthlyTeacherReport.objects.create(teacher=self.teacher1, year=2026, month=9)
+        pdf_bytes = build_monthly_report_pdf(report)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
 
 
 class AcademyReportAdminViewTests(AcademyTestBase):

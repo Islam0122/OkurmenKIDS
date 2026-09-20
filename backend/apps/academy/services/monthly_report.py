@@ -145,7 +145,15 @@ def compute_monthly_stats(teacher: Teacher, year: int, month: int) -> dict:
     # services.academy_monthly_report's own handling of this exact metric —
     # both must agree, since academy_monthly_report reuses this function's
     # `kpi.total` for each teacher's row).
-    student_progress_rate = round(average_score / 10 * 100, 1) if average_score is not None else None
+    #
+    # Derived from the raw `results_agg["avg_score"]` — never from the
+    # already-rounded `average_score` display value (regression: chaining
+    # two roundings can shift the result by a full point, e.g. a raw
+    # average of 8.26 scales to 82.6%, but rounding it to "8.3" first and
+    # *then* scaling gives round(8.3/10*100,1) = 83.0%). Round only once,
+    # at the very end, straight from the raw aggregate.
+    raw_avg_score = results_agg["avg_score"]
+    student_progress_rate = round(raw_avg_score / 10 * 100, 1) if raw_avg_score is not None else None
 
     has_data = lessons_total > 0 or groups_count > 0
     kpi_components = [attendance_rate, homework_submission_rate, lessons_rate]

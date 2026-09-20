@@ -126,7 +126,9 @@ export function AcademyReportDetailPage() {
               <div className="divide-y divide-border">
                 <WorkRow label="Всего групп" value={stats.group_stats.total} />
                 <WorkRow label="Активные группы" value={stats.group_stats.active} />
+                <WorkRow label="Приостановленные группы" value={stats.group_stats.paused} />
                 <WorkRow label="Завершённые группы" value={stats.group_stats.completed} />
+                <WorkRow label="Отменённые группы" value={stats.group_stats.cancelled} />
                 <WorkRow label="Студентов в активных группах" value={stats.group_stats.students_active} />
                 <WorkRow label="Студентов в завершённых группах" value={stats.group_stats.students_completed} />
               </div>
@@ -158,7 +160,7 @@ export function AcademyReportDetailPage() {
                 <SectionHeader icon={ClipboardCheck} title="Домашние задания" />
                 <div className="divide-y divide-border">
                   <WorkRow label="Выдано домашних заданий" value={stats.homework.assigned} />
-                  <WorkRow label="Проверено домашних заданий" value={stats.homework.checked} />
+                  <WorkRow label="Проверено работ студентов" value={stats.homework.checked} />
                   <WorkRow label="Ожидают проверки" value={stats.homework.pending_review} />
                   <WorkRow
                     label="Процент проверки"
