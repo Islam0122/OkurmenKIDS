@@ -142,6 +142,11 @@ STATICFILES_DIRS = [
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Whether Django itself serves MEDIA_URL when DEBUG is off (see
+# config/urls.py). Off by default; production.py turns it on because there
+# is no separate web server/CDN in front of the app on Railway.
+SERVE_MEDIA = False
+
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

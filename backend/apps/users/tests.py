@@ -1,3 +1,9 @@
+import importlib
+import io
+import shutil
+import sys
+import tempfile
+from pathlib import Path
 from unittest import mock
 
 from django.core import mail
@@ -5,8 +11,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import Client as DjangoClient
-from django.test import TestCase
-from django.urls import NoReverseMatch, reverse
+from django.test import TestCase, override_settings
+from django.urls import NoReverseMatch, clear_url_caches, reverse
+from PIL import Image
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
@@ -718,3 +725,219 @@ class InitProductionGuardTests(TestCase):
         buffer = StringIO()
         call_command("init_production", stdout=buffer)
         return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Media serving (Teacher.image) — config/urls.py + SERVE_MEDIA
+# ---------------------------------------------------------------------------
+
+def _png_bytes() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), (40, 160, 90)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _reload_urlconf():
+    # config/urls.py decides at import time whether a media route exists, so
+    # it has to be re-imported for DEBUG/SERVE_MEDIA overrides to apply.
+    import config.urls
+
+    clear_url_caches()
+    importlib.reload(config.urls)
+
+
+class MediaServingTests(TestCase):
+    """Uploaded files (Teacher.image) must be reachable under MEDIA_URL in
+    development (DEBUG=True) and in production (DEBUG=False + SERVE_MEDIA),
+    and never leak anything outside MEDIA_ROOT."""
+
+    def setUp(self):
+        self.tmp_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp_dir, ignore_errors=True)
+        self.media_root = self.tmp_dir / "media"
+        (self.media_root / "teachers").mkdir(parents=True)
+        self.png = _png_bytes()
+        (self.media_root / "teachers" / "probe.png").write_bytes(self.png)
+        # Sits next to MEDIA_ROOT, never inside it — must stay unreachable.
+        (self.tmp_dir / "secret.txt").write_text("TOP-SECRET")
+
+    def _get(self, url, **overrides):
+        try:
+            with override_settings(MEDIA_ROOT=self.media_root, **overrides):
+                _reload_urlconf()
+                return self.client.get(url)
+        finally:
+            _reload_urlconf()
+
+    def test_debug_true_serves_media(self):
+        response = self._get("/media/teachers/probe.png", DEBUG=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertEqual(b"".join(response.streaming_content), self.png)
+
+    def test_production_with_serve_media_serves_media(self):
+        response = self._get("/media/teachers/probe.png", DEBUG=False, SERVE_MEDIA=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertEqual(b"".join(response.streaming_content), self.png)
+
+    def test_production_without_serve_media_does_not_serve_media(self):
+        response = self._get("/media/teachers/probe.png", DEBUG=False, SERVE_MEDIA=False)
+        self.assertEqual(response.status_code, 404)
+
+    def test_missing_file_returns_404(self):
+        response = self._get("/media/teachers/missing.png", DEBUG=False, SERVE_MEDIA=True)
+        self.assertEqual(response.status_code, 404)
+
+    def test_directory_listing_is_not_served(self):
+        response = self._get("/media/teachers/", DEBUG=False, SERVE_MEDIA=True)
+        self.assertEqual(response.status_code, 404)
+
+    def test_path_traversal_outside_media_root_is_blocked(self):
+        for url in (
+            "/media/../secret.txt",
+            "/media/%2e%2e/secret.txt",
+            "/media/teachers/..%2f..%2fsecret.txt",
+            "/media/%2Fetc%2Fpasswd",
+            "/media//etc/passwd",
+        ):
+            with self.subTest(url=url):
+                response = self._get(url, DEBUG=False, SERVE_MEDIA=True)
+                self.assertIn(response.status_code, (400, 404))
+                body = b"".join(response.streaming_content) if response.streaming else response.content
+                self.assertNotIn(b"TOP-SECRET", body)
+                self.assertNotIn(b"root:", body)
+
+    def test_existing_routes_still_resolve_with_media_route_enabled(self):
+        admin = make_admin(username="media_admin", email="media_admin@okurmenkids.local")
+        self.client.force_login(admin)
+        try:
+            with override_settings(MEDIA_ROOT=self.media_root, DEBUG=False, SERVE_MEDIA=True):
+                _reload_urlconf()
+                self.assertEqual(self.client.get(reverse("users-health")).status_code, 200)
+                self.assertEqual(self.client.get(reverse("admin:users_teacher_changelist")).status_code, 200)
+                self.assertEqual(self.client.get(reverse("schema")).status_code, 200)
+                self.assertEqual(reverse("trainer-list"), "/api/v1/trainers/")
+                self.assertEqual(reverse("auth-login"), "/api/v1/auth/login/")
+        finally:
+            _reload_urlconf()
+
+
+class TeacherImageUploadTests(TestCase):
+    """End-to-end: an image uploaded through the Teacher admin change form is
+    stored under MEDIA_ROOT/teachers/, and is then served, shown in the admin
+    and the API, and embedded in the monthly report PDF."""
+
+    def setUp(self):
+        self.media_root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        overrides = override_settings(MEDIA_ROOT=self.media_root, DEBUG=False, SERVE_MEDIA=True)
+        overrides.enable()
+        self.addCleanup(_reload_urlconf)
+        self.addCleanup(overrides.disable)
+        _reload_urlconf()
+
+        self.admin = make_admin(username="upload_admin", email="upload_admin@okurmenkids.local")
+        self.teacher, _ = make_teacher(username="photo_teacher", email="photo_teacher@okurmenkids.local")
+        self.png = _png_bytes()
+
+    def _upload_via_admin(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("admin:users_teacher_change", args=[self.teacher.pk]),
+            {
+                "user": self.teacher.user.pk,
+                "phone": "",
+                "position": "Тренер",
+                "experience_years": 1,
+                "hire_date": "",
+                "subjects": [],
+                "is_active": "on",
+                "bio": "",
+                "image": SimpleUploadedFile("avatar.png", self.png, content_type="image/png"),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.teacher.refresh_from_db()
+
+    def test_admin_upload_is_stored_under_media_root_and_served(self):
+        self._upload_via_admin()
+
+        self.assertTrue(self.teacher.image.name.startswith("teachers/"))
+        stored = self.media_root / self.teacher.image.name
+        self.assertTrue(stored.is_file())
+        self.assertEqual(Path(self.teacher.image.path), stored)
+        self.assertEqual(self.teacher.image.url, f"/media/{self.teacher.image.name}")
+
+        response = self.client.get(self.teacher.image.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), self.png)
+
+    def test_uploaded_image_is_shown_in_admin_and_api(self):
+        self._upload_via_admin()
+        url = self.teacher.image.url
+
+        changelist = self.client.get(reverse("admin:users_teacher_changelist"))
+        self.assertContains(changelist, f'src="{url}"')
+        change = self.client.get(reverse("admin:users_teacher_change", args=[self.teacher.pk]))
+        self.assertContains(change, f'src="{url}"')
+
+        api = APIClient()
+        api.force_authenticate(self.teacher.user)
+        me = api.get(reverse("trainer-me"))
+        self.assertEqual(me.status_code, 200)
+        self.assertTrue(me.data["image"].endswith(url))
+
+    def test_monthly_report_pdf_embeds_uploaded_image(self):
+        from apps.academy.models import MonthlyTeacherReport
+        from apps.academy.services.monthly_report_pdf import build_monthly_report_pdf
+
+        report = MonthlyTeacherReport.objects.create(teacher=self.teacher, year=2026, month=9)
+        without_image = build_monthly_report_pdf(report)
+        self.assertNotIn(b"/Subtype /Image", without_image)
+
+        self._upload_via_admin()
+        report.refresh_from_db()
+        with_image = build_monthly_report_pdf(report)
+        self.assertTrue(with_image.startswith(b"%PDF"))
+        self.assertIn(b"/Subtype /Image", with_image)
+
+
+class ProductionMediaSettingsTests(TestCase):
+    """production.py reads MEDIA_ROOT / SERVE_MEDIA from the environment,
+    defaulting to the Railway Volume mount path and to serving media."""
+
+    BASE_ENV = {
+        "ALLOWED_HOST": "example.up.railway.app",
+        "EMAIL_HOST_USER": "noreply@okurmenkids.local",
+        "EMAIL_HOST_PASSWORD": "x",
+    }
+
+    def _load(self, **env):
+        name = "config.settings.production"
+        with mock.patch.dict("os.environ", {**self.BASE_ENV, **env}):
+            sys.modules.pop(name, None)
+            try:
+                return importlib.import_module(name)
+            finally:
+                sys.modules.pop(name, None)
+
+    def test_defaults_point_at_railway_volume(self):
+        with mock.patch.dict("os.environ", {}, clear=False) as environ:
+            environ.pop("MEDIA_ROOT", None)
+            environ.pop("SERVE_MEDIA", None)
+            production = self._load()
+        self.assertEqual(production.MEDIA_ROOT, Path("/app/media"))
+        self.assertIs(production.SERVE_MEDIA, True)
+        self.assertIs(production.DEBUG, False)
+        self.assertEqual(production.MEDIA_URL, "/media/")
+
+    def test_env_overrides(self):
+        production = self._load(MEDIA_ROOT="/data/uploads", SERVE_MEDIA="False")
+        self.assertEqual(production.MEDIA_ROOT, Path("/data/uploads"))
+        self.assertIs(production.SERVE_MEDIA, False)
+
+    def test_base_settings_do_not_serve_media(self):
+        from config.settings import base
+
+        self.assertIs(base.SERVE_MEDIA, False)

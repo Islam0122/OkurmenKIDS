@@ -19,6 +19,15 @@ DATABASES = {
     }
 }
 
+# Uploaded files (Teacher.image etc.) must live on the Railway Volume mounted
+# at this path — the container's own filesystem is wiped on every redeploy.
+MEDIA_ROOT = Path(env("MEDIA_ROOT", default="/app/media"))
+
+# WhiteNoise only serves collected static files, never uploads, so Django
+# serves MEDIA_URL itself (django.views.static.serve, see config/urls.py).
+# Set SERVE_MEDIA=False once media moves to external storage (R2/S3).
+SERVE_MEDIA = env.bool("SERVE_MEDIA", default=True)
+
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
