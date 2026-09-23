@@ -28,6 +28,21 @@ MEDIA_ROOT = Path(env("MEDIA_ROOT", default="/app/media"))
 # Set SERVE_MEDIA=False once media moves to external storage (R2/S3).
 SERVE_MEDIA = env.bool("SERVE_MEDIA", default=True)
 
+# Django's default LOGGING only mails 500 tracebacks to ADMINS (empty here)
+# when DEBUG is off, so they never reached the Railway logs. Send them —
+# and every other WARNING+ record — to stderr, which gunicorn passes through.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": env("LOG_LEVEL", default="WARNING"),
+    },
+}
+
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
