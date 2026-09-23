@@ -559,10 +559,11 @@ class SubjectAssignmentSerializer(serializers.Serializer):
 
     subject = serializers.IntegerField()
     subject_name = serializers.CharField()
-    plan_lessons = serializers.IntegerField()
+    plan_lessons = serializers.IntegerField(help_text="Сколько строк общего плана курса относится к предмету.")
+    generated_lessons = serializers.IntegerField(help_text="Сколько занятий по предмету уже создано в группе.")
     teachers = serializers.ListField(child=serializers.DictField())
     legacy_teachers = serializers.ListField(child=serializers.DictField())
-    status = serializers.ChoiceField(choices=["assigned", "multiple", "legacy_slot", "unassigned"])
+    status = serializers.ChoiceField(choices=["assigned", "multiple", "legacy_slot", "individual", "unassigned"])
     status_label = serializers.CharField()
 
 

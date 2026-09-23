@@ -34,27 +34,31 @@ Subject, its own Schedule, its own Lesson Plan, and its own Lessons.
 
 ## Lesson generation and trainer assignment
 
-Who teaches a generated lesson is decided by the **subject** of its lesson
-plan row, not by who owns the weekly slot it lands in:
+A group has one shared course plan (e.g. 144 rows: IT 48 + Soft Skills 48 +
+English 48) and one program (`/programs/`, GroupTeacher = trainer +
+subject) per subject, each with its own weekly slots (`/schedules/`). The
+plan is split **by subject**: each subject's rows are generated only into
+that subject's own program slots, with that program's trainer — 144 is the
+group's total, never 144 per program.
 
-- `POST /api/v1/programs/` with `{group, teacher, subject}` (no schedule
-  needed) assigns a trainer to a subject in a group. The trainer must be an
-  active account with the Trainer role, and the subject must belong to the
-  group's course.
 - `GET /api/v1/groups/{id}/subject-assignments/` lists every subject of the
-  course plan with its trainer(s) and a `status`: `assigned`, `multiple`,
-  `legacy_slot` (covered by an old subject-less slot's teacher) or
-  `unassigned`.
+  course plan: `plan_lessons` (its share of the plan), `generated_lessons`,
+  trainer(s) and `status` — `assigned`, `multiple`, `legacy_slot` (taught in
+  an old subject-less slot), `individual` (the program uses its own plan)
+  or `unassigned` (no program with a schedule: its lessons are not generated).
 - `POST /api/v1/groups/{id}/generate-lessons/` (admin only) is the **only**
   way lessons are generated — saving schedule slots no longer triggers it.
   It is idempotent (201 when something was created, 200 for a no-op
-  re-run, 400 when nothing could be generated because of an error). Lessons
-  of a subject with no trainer are *not* created and not given to anyone
-  else; their dates are kept free, the response's `warnings` names them,
-  and a re-run after assigning the trainer fills exactly those dates.
+  re-run, 400 when nothing could be generated because of an error). A
+  subject without a program schedule is not generated and not moved into
+  another subject's slots; the response's `warnings` names it and a re-run
+  after adding its program fills it in without touching anything else.
   Response: `created_count`, `first_lesson`, `last_lesson`, `first_date`,
   `last_date`, `already_existed`, `expected_total`, `missing_count`,
   `conflicts`, `warnings`, `errors`.
+- A program with its own individual plan (`/program-lesson-plans/`) is
+  numbered 1..N on its own slots; the shared plan's rows for its subject
+  are then not used.
 - `GET /api/v1/lessons/` additionally filters by `room` and `teacher`
   (the lesson's effective trainer; for a trainer it only ever narrows their
   own lessons).

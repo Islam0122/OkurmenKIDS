@@ -4,44 +4,46 @@
 {% block workspace_content %}
 <div class="ok-card">
   <div class="ok-card-header">
-    <i class="bi bi-diagram-3"></i><span>Назначения по предметам</span>
-    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_teacher_url }}">
-      <i class="bi bi-person-plus"></i> Назначить тренера на предмет
+    <i class="bi bi-diagram-3"></i><span>Предметы учебного плана</span>
+    <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_program_url }}">
+      <i class="bi bi-plus-circle"></i> Добавить программу предмета
     </a>
   </div>
   <div class="ok-card-body">
     <p class="ok-section-subtitle">
-      Тренер каждого занятия определяется по предмету из плана курса, а не по владельцу слота
-      расписания. Занятия предмета без тренера не создаются — никто не получает их автоматически.
+      Общий план курса делится по предметам: занятия каждого предмета создаются только в расписании
+      программы этого предмета и достаются её тренеру. Предмет без программы с расписанием не
+      генерируется — его занятия никому не передаются.
     </p>
     {% if unassigned_count %}
       <div class="ok-badge ok-badge-danger" style="margin-bottom:0.75rem;">
-        <span class="ok-badge-dot"></span>Предметов без тренера: {{ unassigned_count }} — их занятия не будут сгенерированы
+        <span class="ok-badge-dot"></span>Предметов без программы с расписанием: {{ unassigned_count }} — их занятия не будут сгенерированы
       </div>
     {% endif %}
     {% if subject_assignments %}
       <table class="ok-student-table">
         <thead>
-          <tr><th>Предмет</th><th>Занятий в плане</th><th>Тренер</th><th>Статус</th><th></th></tr>
+          <tr><th>Предмет</th><th>Занятий в плане</th><th>Создано</th><th>Тренер</th><th>Статус</th><th></th></tr>
         </thead>
         <tbody>
           {% for item in subject_assignments %}
             <tr>
               <td>{{ item.row.subject_name }}</td>
               <td>{{ item.row.plan_lessons }}</td>
+              <td>{{ item.row.generated_lessons }}</td>
               <td>
                 {% for teacher in item.row.teachers %}{{ teacher }}{% if not forloop.last %}, {% endif %}{% empty %}
                   {% for teacher in item.row.legacy_teachers %}{{ teacher }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
                 {% endfor %}
               </td>
               <td>
-                <span class="ok-badge {% if item.row.status == 'assigned' %}ok-badge-success{% elif item.row.status == 'unassigned' %}ok-badge-danger{% else %}ok-badge-warning{% endif %}">
+                <span class="ok-badge {% if item.row.status == 'assigned' or item.row.status == 'individual' %}ok-badge-success{% elif item.row.status == 'unassigned' %}ok-badge-danger{% else %}ok-badge-warning{% endif %}">
                   <span class="ok-badge-dot"></span>{{ item.row.status_label }}
                 </span>
               </td>
               <td>
-                {% if item.row.status != 'assigned' %}
-                  <a class="ok-btn-secondary ok-btn-sm" href="{{ item.assign_url }}">Назначить</a>
+                {% if item.row.status == 'unassigned' %}
+                  <a class="ok-btn-secondary ok-btn-sm" href="{{ item.assign_url }}">Добавить программу</a>
                 {% endif %}
               </td>
             </tr>
