@@ -7,11 +7,21 @@ set -e
 # (RAILWAY_RUN_UID=0), hand the media directory to "django" and re-run this
 # script as that user — migrations and gunicorn never run as root.
 # Started as "django" (the image default), this block is skipped.
+MEDIA_DIR="${MEDIA_ROOT:-/app/media}"
 if [ "$(id -u)" = "0" ]; then
-    MEDIA_DIR="${MEDIA_ROOT:-/app/media}"
     mkdir -p "$MEDIA_DIR"
     chown -R django:django "$MEDIA_DIR"
     exec python -c 'import os, pwd, sys; u = pwd.getpwnam("django"); os.setgroups([]); os.setgid(u.pw_gid); os.setuid(u.pw_uid); os.environ["HOME"] = u.pw_dir; os.execvp(sys.argv[1], sys.argv[1:])' sh "$0" "$@"
+fi
+
+# Without RAILWAY_RUN_UID=0 the block above is skipped and a root-owned
+# Volume stays read-only for "django": every photo upload then fails with
+# PermissionError (HTTP 500). Say so at boot instead of only at upload time.
+if [ ! -d "$MEDIA_DIR" ]; then
+    echo "WARNING: MEDIA_ROOT $MEDIA_DIR does not exist — is the Railway Volume mounted there?" >&2
+elif [ ! -w "$MEDIA_DIR" ]; then
+    echo "ERROR: MEDIA_ROOT $MEDIA_DIR is not writable by user $(id -un) (uid $(id -u))." >&2
+    echo "ERROR: uploads will fail with PermissionError. Set RAILWAY_RUN_UID=0 in Railway Variables and redeploy." >&2
 fi
 
 python manage.py collectstatic --noinput

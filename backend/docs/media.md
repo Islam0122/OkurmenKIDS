@@ -41,6 +41,12 @@ name, the URL then returns 404).
    still never run as root.
 4. Redeploy.
 
+If `RAILWAY_RUN_UID=0` is missing, the deploy log shows
+`ERROR: MEDIA_ROOT /app/media is not writable by user django` at boot, and
+every photo upload/replacement returns HTTP 500 with
+`PermissionError: [Errno 13] Permission denied: '/app/media/teachers'` in the
+logs (production `LOGGING` sends 500 tracebacks to stderr).
+
 Limitations of a volume: it is attached to a single service instance (no
 horizontal replicas), and deploys of a service with a volume have a short
 downtime while the volume is re-attached.
