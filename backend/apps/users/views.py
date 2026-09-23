@@ -97,7 +97,7 @@ class TrainerViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         teacher = serializer.save()
         result = getattr(serializer, "_creation_result", None)
-        data = TeacherSerializer(teacher).data
+        data = TeacherSerializer(teacher, context=self.get_serializer_context()).data
         if result is not None and not result.email_sent:
             data["_warning"] = (
                 "Trainer создан, но письмо с учётными данными не отправлено. "
@@ -124,14 +124,14 @@ class TrainerViewSet(viewsets.ModelViewSet):
         teacher = getattr(request.user, "teacher_profile", None)
         if teacher is None:
             raise PermissionDenied("У этого пользователя нет профиля тренера.")
-        return Response(TeacherSerializer(teacher).data)
+        return Response(TeacherSerializer(teacher, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="verify", permission_classes=[IsAuthenticated, IsAdmin])
     def verify(self, request, pk=None):
         teacher = self.get_object()
         teacher.user.is_verified = True
         teacher.user.save(update_fields=["is_verified", "updated_at"])
-        return Response(TeacherSerializer(teacher).data)
+        return Response(TeacherSerializer(teacher, context=self.get_serializer_context()).data)
 
     @extend_schema(
         tags=["Trainers"],

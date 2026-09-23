@@ -886,7 +886,7 @@ class TeacherImageUploadTests(TestCase):
         api.force_authenticate(self.teacher.user)
         me = api.get(reverse("trainer-me"))
         self.assertEqual(me.status_code, 200)
-        self.assertTrue(me.data["image"].endswith(url))
+        self.assertEqual(me.data["image"], f"http://testserver{url}")
 
     def test_monthly_report_pdf_embeds_uploaded_image(self):
         from apps.academy.models import MonthlyTeacherReport
@@ -901,6 +901,88 @@ class TeacherImageUploadTests(TestCase):
         with_image = build_monthly_report_pdf(report)
         self.assertTrue(with_image.startswith(b"%PDF"))
         self.assertIn(b"/Subtype /Image", with_image)
+
+
+class TeacherImageAbsoluteUrlTests(APITestCase):
+    """Every API response carrying a Teacher returns `image` as an absolute
+    URL on the API's own host — the SPA runs on a different origin (Vercel),
+    so a root-relative `/media/...` would be fetched from the wrong host."""
+
+    def setUp(self):
+        self.media_root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        overrides = override_settings(MEDIA_ROOT=self.media_root)
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+
+        self.admin = make_admin(username="abs_admin", email="abs_admin@okurmenkids.local")
+        self.teacher, _ = make_teacher(username="abs_teacher", email="abs_teacher@okurmenkids.local")
+        self.teacher.image = SimpleUploadedFile("avatar.png", _png_bytes(), content_type="image/png")
+        self.teacher.save()
+        self.expected = f"http://testserver{self.teacher.image.url}"
+
+    def test_me_returns_absolute_image_url(self):
+        self.client.force_authenticate(self.teacher.user)
+        response = self.client.get(reverse("trainer-me"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["image"], self.expected)
+
+    @override_settings(SECURE_PROXY_SSL_HEADER=("HTTP_X_FORWARDED_PROTO", "https"))
+    def test_me_uses_https_behind_the_railway_proxy(self):
+        self.client.force_authenticate(self.teacher.user)
+        # Real requests always carry Host; without it the test client adds :80.
+        response = self.client.get(
+            reverse("trainer-me"), HTTP_HOST="testserver", HTTP_X_FORWARDED_PROTO="https"
+        )
+        self.assertEqual(response.data["image"], f"https://testserver{self.teacher.image.url}")
+
+    def test_me_returns_null_without_image(self):
+        teacher, _ = make_teacher(username="no_photo", email="no_photo@okurmenkids.local")
+        self.client.force_authenticate(teacher.user)
+        response = self.client.get(reverse("trainer-me"))
+        self.assertIsNone(response.data["image"])
+
+    def test_verify_returns_absolute_image_url(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(reverse("trainer-verify", args=[self.teacher.pk]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["image"], self.expected)
+
+    def test_create_returns_absolute_image_url(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            reverse("trainer-list"),
+            {
+                "username": "created_with_photo",
+                "email": "created_with_photo@okurmenkids.local",
+                "first_name": "Айгерим",
+                "password": "Python2026!",
+                "password_confirm": "Python2026!",
+                "image": SimpleUploadedFile("new.png", _png_bytes(), content_type="image/png"),
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        created = Teacher.objects.get(user__username="created_with_photo")
+        self.assertEqual(response.data["image"], f"http://testserver{created.image.url}")
+
+    def test_retrieve_and_list_match_the_same_absolute_url(self):
+        self.client.force_authenticate(self.admin)
+        detail = self.client.get(reverse("trainer-detail", args=[self.teacher.pk]))
+        self.assertEqual(detail.data["image"], self.expected)
+        listing = self.client.get(reverse("trainer-list"))
+        row = next(r for r in listing.data["results"] if r["id"] == self.teacher.pk)
+        self.assertEqual(row["image"], self.expected)
+
+    def test_teacher_availability_returns_absolute_image_url(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(
+            reverse("teacher-availability"),
+            {"date": "2026-09-14", "start_time": "10:00", "end_time": "11:00"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(r for r in response.data["available"] if r["id"] == self.teacher.pk)
+        self.assertEqual(row["image"], self.expected)
 
 
 class ProductionMediaSettingsTests(TestCase):
