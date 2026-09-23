@@ -1,6 +1,7 @@
 import tempfile
 
 from .base import *
+from .base import env
 
 DEBUG = False
 
