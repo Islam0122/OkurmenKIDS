@@ -3,7 +3,7 @@ import axios, { isAxiosError, type AxiosError, type InternalAxiosRequestConfig }
 import { tokenStorage } from '@/lib/tokenStorage'
 import type { RefreshResponse } from '@/types/auth'
 
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
+export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,

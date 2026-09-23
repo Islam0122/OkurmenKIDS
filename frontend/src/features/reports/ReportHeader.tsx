@@ -1,5 +1,6 @@
 import { User as UserIcon } from 'lucide-react'
 
+import { resolveMediaUrl } from '@/lib/mediaUrl'
 import type { MonthlyTeacherReport } from '@/types/monthlyReport'
 import { formatMonthYear } from '@/utils/format'
 
@@ -17,13 +18,14 @@ const AVATAR_CLASSES = 'size-[72px] shrink-0 overflow-hidden rounded-xl sm:size-
 export function ReportHeader({ report }: { report: MonthlyTeacherReport }) {
   const { teacher } = report
   const fullName = `${teacher.user.last_name} ${teacher.user.first_name}`.trim() || teacher.user.username
+  const imageUrl = resolveMediaUrl(teacher.image)
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
       <div className="flex items-center gap-4">
-        {teacher.image ? (
+        {imageUrl ? (
           <span className={AVATAR_CLASSES}>
-            <img src={teacher.image} alt={fullName} className="size-full object-cover" />
+            <img src={imageUrl} alt={fullName} className="size-full object-cover" />
           </span>
         ) : (
           <span className={`${AVATAR_CLASSES} flex items-center justify-center bg-brand-50 text-lg font-bold text-brand-700`}>

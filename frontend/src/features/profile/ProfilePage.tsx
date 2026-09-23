@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { resolveMediaUrl } from '@/lib/mediaUrl'
 import { formatDate, pluralize } from '@/utils/format'
 
 import { useTeacherProfile } from './useTeacherProfile'
@@ -15,6 +16,7 @@ export function ProfilePage() {
   if (isError || !teacher) return <ErrorState onRetry={() => void refetch()} />
 
   const fullName = `${teacher.user.last_name} ${teacher.user.first_name}`.trim() || teacher.user.username
+  const imageUrl = resolveMediaUrl(teacher.image)
 
   return (
     <div>
@@ -22,8 +24,8 @@ export function ProfilePage() {
 
       <div className="rounded-xl border border-border bg-surface p-5">
         <div className="flex flex-col items-center gap-4 border-b border-border pb-5 sm:flex-row sm:items-start">
-          {teacher.image ? (
-            <img src={teacher.image} alt={fullName} className="size-20 shrink-0 rounded-full object-cover" />
+          {imageUrl ? (
+            <img src={imageUrl} alt={fullName} className="size-20 shrink-0 rounded-full object-cover" />
           ) : (
             <span className="flex size-20 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
               <UserIcon className="size-8" aria-hidden />
