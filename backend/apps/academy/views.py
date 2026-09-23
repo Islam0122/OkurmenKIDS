@@ -23,7 +23,6 @@ from apps.users.serializers import (
     ImportFileRequestSerializer,
     ImportPreviewSerializer,
     ImportResultSerializer,
-    TeacherSerializer,
 )
 
 from .filters import (
@@ -1072,10 +1071,13 @@ class TeacherAvailabilityView(APIView):
             "date": date_,
             "start_time": start_time,
             "end_time": end_time,
-            "available": TeacherSerializer(available_teachers, many=True).data,
+            # Model instances, not pre-serialized dicts: the nested
+            # TeacherSerializer would otherwise re-serialize `image` from a
+            # plain string and always return None.
+            "available": available_teachers,
             "occupied": occupied,
         }
-        return Response(TeacherAvailabilitySerializer(payload).data)
+        return Response(TeacherAvailabilitySerializer(payload, context={"request": request}).data)
 
 
 # ---------------------------------------------------------------------------
