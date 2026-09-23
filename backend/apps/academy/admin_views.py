@@ -2092,6 +2092,8 @@ def lesson_detail_view(request, object_id):
             "teacher__user",
             "group_teacher__teacher__user",
             "group_teacher__subject",
+            "rescheduled_from",
+            "rescheduled_to",
         ),
         pk=object_id,
     )

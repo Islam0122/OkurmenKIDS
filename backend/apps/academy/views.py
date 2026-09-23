@@ -72,6 +72,7 @@ from .serializers import (
     HomeworkResultSerializer,
     HomeworkSerializer,
     LessonCancelRequestSerializer,
+    LessonRescheduleResultSerializer,
     LessonSerializer,
     MonthlyTeacherReportCommentSerializer,
     MonthlyTeacherReportCreateSerializer,
@@ -97,6 +98,7 @@ from .services.import_export import (
     preview_students_import,
 )
 from .services.lesson_generator import generate_lessons_for_group_with_report
+from .services.lesson_reschedule import cancel_and_reschedule, reschedule_cancelled_lesson
 from .services.subject_assignments import subject_assignment_overview
 
 
@@ -698,7 +700,9 @@ class LessonViewSet(
     ordering = ["date", "start_time"]
 
     def get_queryset(self):
-        qs = Lesson.objects.select_related("group__teacher__user", "teacher__user", "room", "subject", "plan")
+        qs = Lesson.objects.select_related(
+            "group__teacher__user", "teacher__user", "room", "subject", "plan", "rescheduled_to",
+        )
         user = self.request.user
         if _is_admin(user):
             return qs
@@ -804,7 +808,10 @@ class LessonViewSet(
         responses=LessonSerializer,
         description=(
             "SCHEDULED/IN_PROGRESS → CANCELLED. A completed lesson can never be cancelled. "
-            "Idempotent — cancelling an already cancelled lesson is a no-op."
+            "By default (`reschedule: true`) the cancelled topic moves to the program's next lesson "
+            "date and every later open topic shifts one date forward — see services.lesson_reschedule; "
+            "the response then carries a `reschedule` object. Idempotent — cancelling an already "
+            "cancelled lesson is a no-op and never shifts the program twice."
         ),
     )
     @action(detail=True, methods=["post"], url_path="cancel")
@@ -813,10 +820,37 @@ class LessonViewSet(
         body = LessonCancelRequestSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         try:
-            lesson = lesson_lifecycle.cancel_lesson(lesson, request.user, reason=body.validated_data.get("reason", ""))
+            lesson, result = cancel_and_reschedule(
+                lesson, request.user,
+                reason=body.validated_data.get("reason", ""),
+                reschedule=body.validated_data.get("reschedule", True),
+            )
         except DjangoValidationError as exc:
             raise _as_drf_validation_error(exc)
-        return Response(LessonSerializer(lesson, context=self.get_serializer_context()).data)
+        lesson = self.get_queryset().get(pk=lesson.pk)
+        data = LessonSerializer(lesson, context=self.get_serializer_context()).data
+        if result is not None:
+            data["reschedule"] = LessonRescheduleResultSerializer.from_result(result)
+        return Response(data)
+
+    @extend_schema(
+        tags=["Lessons"],
+        request=None,
+        responses=LessonRescheduleResultSerializer,
+        description=(
+            "Move an already cancelled lesson's topic forward (see `cancel`) — e.g. after a cancel "
+            "with `reschedule: false`, or after adding a schedule slot when the first attempt found no "
+            "free date. Idempotent: returns the existing make-up lesson (`created: false`) if there is one."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="reschedule")
+    def reschedule(self, request, pk=None):
+        lesson = self.get_object()
+        try:
+            result = reschedule_cancelled_lesson(lesson)
+        except DjangoValidationError as exc:
+            raise _as_drf_validation_error(exc)
+        return Response(LessonRescheduleResultSerializer.from_result(result))
 
     @extend_schema(
         tags=["Lessons"],

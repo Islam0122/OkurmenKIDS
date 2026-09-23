@@ -588,6 +588,7 @@ class LessonSerializer(_RequestAwareSerializer):
     attendance_summary = serializers.SerializerMethodField()
     homework_summary = serializers.SerializerMethodField()
     attendance_editable = serializers.SerializerMethodField()
+    rescheduled_to = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
@@ -630,6 +631,8 @@ class LessonSerializer(_RequestAwareSerializer):
             "attendance_summary",
             "homework_summary",
             "attendance_editable",
+            "rescheduled_from",
+            "rescheduled_to",
             "created_at",
             "updated_at",
         ]
@@ -643,13 +646,22 @@ class LessonSerializer(_RequestAwareSerializer):
         read_only_fields = [
             "id", "group", "group_teacher", "plan", "individual_plan", "lesson_number", "teacher",
             "status", "cancellation_reason", "homework_not_required",
-            "started_at", "completed_at", "completed_by",
+            "started_at", "completed_at", "completed_by", "rescheduled_from",
             "created_at", "updated_at",
         ]
 
     def get_teacher_name(self, obj: Lesson) -> str | None:
         teacher = obj.effective_teacher
         return str(teacher) if teacher else None
+
+    def get_rescheduled_to(self, obj: Lesson) -> dict | None:
+        """The make-up lesson a cancelled lesson's topic was moved to (see
+        services.lesson_reschedule), or None."""
+        try:
+            makeup = obj.rescheduled_to
+        except Lesson.DoesNotExist:
+            return None
+        return {"id": makeup.pk, "date": makeup.date, "start_time": makeup.start_time}
 
     def get_completed_by_name(self, obj: Lesson) -> str | None:
         return str(obj.completed_by) if obj.completed_by_id else None
@@ -736,6 +748,34 @@ class GroupScheduleSerializer(serializers.Serializer):
 
 class LessonCancelRequestSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+    reschedule = serializers.BooleanField(
+        required=False, default=True,
+        help_text=(
+            "Перенести тему отменённого занятия на следующую дату программы и сдвинуть последующие "
+            "темы (по умолчанию — да). См. services.lesson_reschedule."
+        ),
+    )
+
+
+class LessonRescheduleResultSerializer(serializers.Serializer):
+    makeup_lesson = serializers.IntegerField(allow_null=True, help_text="Занятие, на которое перенесена тема.")
+    makeup_date = serializers.DateField(allow_null=True)
+    shifted = serializers.IntegerField(help_text="Сколько последующих занятий сдвинуто на одну дату вперёд.")
+    created = serializers.BooleanField(help_text="False — перенос уже был выполнен раньше (повторный вызов).")
+    warning = serializers.CharField(allow_blank=True)
+
+    @classmethod
+    def from_result(cls, result) -> dict:
+        makeup = result.makeup
+        return cls(
+            {
+                "makeup_lesson": makeup.pk if makeup else None,
+                "makeup_date": makeup.date if makeup else None,
+                "shifted": result.shifted,
+                "created": result.created,
+                "warning": result.warning,
+            }
+        ).data
 
 
 class HomeworkNotRequiredRequestSerializer(serializers.Serializer):

@@ -1145,6 +1145,20 @@ class Lesson(models.Model):
         verbose_name="Завершил",
     )
 
+    rescheduled_from = models.OneToOneField(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rescheduled_to",
+        verbose_name="Перенос отменённого занятия",
+        help_text=(
+            "Отменённое занятие, тема которого перенесена на это занятие (см. "
+            "services.lesson_reschedule). У одного отменённого занятия может быть только "
+            "один перенос — это же защищает от повторного запуска переноса."
+        ),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
@@ -1153,9 +1167,14 @@ class Lesson(models.Model):
         verbose_name_plural = "Занятия"
         ordering = ["date", "start_time"]
         constraints = [
+            # One *live* lesson per topic number within a program. A
+            # cancelled lesson stays in the table as history, and its topic's
+            # make-up lesson (see services.lesson_reschedule) carries the
+            # same lesson_number — so cancelled rows are excluded here.
             models.UniqueConstraint(
                 fields=["group_teacher", "lesson_number"],
-                name="unique_group_teacher_lesson_number",
+                condition=~models.Q(status="cancelled"),
+                name="unique_active_group_teacher_lesson_number",
             ),
         ]
         indexes = [
