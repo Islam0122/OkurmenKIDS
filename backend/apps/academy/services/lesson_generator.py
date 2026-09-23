@@ -337,9 +337,11 @@ def _create_homework_if_planned(lesson: Lesson, plan) -> None:
 
 
 def _get_or_create_lesson(kwargs: dict) -> tuple[Lesson, bool]:
-    """Deterministic identity: `(group_teacher, lesson_number)` — the exact
-    pair the database's own `unique_group_teacher_lesson_number` constraint
-    enforces (see models.Lesson.Meta.constraints) — is the one and only
+    """Deterministic identity: `(group_teacher, lesson_number)` among
+    non-cancelled lessons — the exact pair the database's own
+    `unique_active_group_teacher_lesson_number` constraint enforces (see
+    models.Lesson.Meta.constraints; a cancelled lesson and its make-up share
+    a lesson_number, see services.lesson_reschedule) — is the one and only
     thing that identifies "this Lesson" for idempotency purposes.
 
     Using `get_or_create` (backed by that constraint) instead of a blind
@@ -352,7 +354,7 @@ def _get_or_create_lesson(kwargs: dict) -> tuple[Lesson, bool]:
     """
     lookup = {"group_teacher": kwargs["group_teacher"], "lesson_number": kwargs["lesson_number"]}
     defaults = {key: value for key, value in kwargs.items() if key not in lookup}
-    return Lesson.objects.get_or_create(defaults=defaults, **lookup)
+    return Lesson.objects.exclude(status=Lesson.Status.CANCELLED).get_or_create(defaults=defaults, **lookup)
 
 
 def _walk_and_generate(*, group: Group, slots_by_weekday, take_next, remaining, lesson_kwargs_for,

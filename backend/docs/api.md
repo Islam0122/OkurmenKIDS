@@ -63,6 +63,23 @@ group's total, never 144 per program.
   (the lesson's effective trainer; for a trainer it only ever narrows their
   own lessons).
 
+## Cancelling a lesson (topic reschedule)
+
+`POST /api/v1/lessons/{id}/cancel/` with `{"reason": "...", "reschedule": true}`
+(`reschedule` defaults to true) cancels the lesson and moves its topic to
+the program's next lesson date: a new make-up lesson (same topic/plan/
+lesson_number, `rescheduled_from` = the cancelled lesson) takes the date of
+the program's next open lesson, every later open lesson (scheduled, never
+started) of the same program shifts one date forward, and the last one
+moves to the program's next free slot. Completed/in-progress lessons and
+the cancelled lesson itself never move; attendance and graded homework stay
+where they are. The response is the cancelled lesson (with `rescheduled_to`)
+plus a `reschedule` object: `makeup_lesson`, `makeup_date`, `shifted`,
+`created`, `warning`. Repeating the call never shifts anything twice.
+`POST /api/v1/lessons/{id}/reschedule/` retries the move for an already
+cancelled lesson (e.g. after `reschedule: false`, or when no free date was
+left before the group's end date).
+
 Existing data produced by the old behaviour can be audited (read-only) and,
 per group, rebuilt with `python manage.py repair_group_lessons` — see that
 command's docstring.

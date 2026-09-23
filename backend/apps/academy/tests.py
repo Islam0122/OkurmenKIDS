@@ -81,6 +81,7 @@ from apps.academy.services.lesson_generator import (
     generate_lessons_for_group_with_report,
     planned_lessons_by_program,
 )
+from apps.academy.services.lesson_reschedule import cancel_and_reschedule, reschedule_cancelled_lesson
 from apps.academy.services.subject_assignments import subject_assignment_overview
 from apps.academy.services import lesson_lifecycle
 from apps.academy.services.lesson_status import lesson_status_counts
@@ -7294,3 +7295,266 @@ class ProgSoftPlanDistributionTests(TestCase):
             self.assertEqual(lessons.count(), 48)
             self.assertEqual({l.effective_teacher.pk for l in lessons}, {teacher.pk})
         self.assertFalse(self.lessons(date__year__gte=2028).exists())
+
+
+# ---------------------------------------------------------------------------
+# Cancelling a lesson moves its topic to the program's next lesson date and
+# shifts every later open topic one date forward (services.lesson_reschedule).
+# ---------------------------------------------------------------------------
+
+class LessonCancelRescheduleTests(TestCase):
+    TOPICS = [
+        "Что такое интернет", "Браузер — окно в интернет", "Что такое сайт", "Клиент и сервер",
+        "IP-адрес", "Домен и DNS", "HTTP и HTTPS", "Персональные данные", "Безопасность паролей",
+    ]
+
+    def setUp(self):
+        self.admin = make_admin("resched_admin")
+        self.islam = make_teacher("islam_resched")
+        self.nurisa = make_teacher("nurisa_resched")
+        self.it = Subject.objects.get_or_create(name="IT")[0]
+        self.soft = Subject.objects.get_or_create(name="Soft Skills")[0]
+        self.course = Course.objects.create(name="Resched course", count_lesson=len(self.TOPICS) * 2)
+        self.course.subjects.set([self.it, self.soft])
+        for index, topic in enumerate(self.TOPICS):
+            CourseLessonPlan.objects.create(
+                course=self.course, lesson_number=2 * index + 1, subject=self.it, topic=topic,
+                homework_title=f"ДЗ: {topic}",
+            )
+            CourseLessonPlan.objects.create(
+                course=self.course, lesson_number=2 * index + 2, subject=self.soft, topic=f"Soft {index + 1}",
+            )
+        self.room = Room.objects.create(name="Resched Room", capacity=20)
+        self.group = Group.objects.create(name="Prog SOFT 1 (resched)", course=self.course, start_date=PROG_SOFT_START)
+        self.student = Student.objects.create(first_name="Айдай", group=self.group)
+        for day in ("mon", "wed", "fri"):
+            GroupSchedule.objects.create(
+                group=self.group, teacher=self.islam, subject=self.it, day_of_week=day,
+                start_time=dt.time(8, 0), end_time=dt.time(9, 0), room=self.room,
+            )
+            GroupSchedule.objects.create(
+                group=self.group, teacher=self.nurisa, subject=self.soft, day_of_week=day,
+                start_time=dt.time(9, 0), end_time=dt.time(9, 30), room=self.room,
+            )
+        generate_lessons_for_group(self.group)
+
+        # 09.09–18.09 conducted, exactly as in the task's table.
+        for lesson in self.it_lessons()[:5]:
+            Attendance.objects.create(student=self.student, lesson=lesson, status=Attendance.Status.PRESENT)
+            homework = lesson.homeworks.get()
+            HomeworkResult.objects.create(homework=homework, student=self.student, status=HomeworkResult.Status.CHECKED)
+            lesson_lifecycle.start_lesson(lesson, self.islam.user)
+            lesson_lifecycle.complete_lesson(lesson, self.islam.user)
+
+        self.islam_client = APIClient()
+        self.islam_client.force_authenticate(self.islam.user)
+
+    def it_lessons(self):
+        return list(Lesson.objects.filter(group=self.group, subject=self.it).order_by("date", "start_time", "pk"))
+
+    def it_lesson_on(self, day, month=9, **filters):
+        return Lesson.objects.filter(group=self.group, subject=self.it, date=dt.date(2026, month, day), **filters).get()
+
+    def table(self):
+        return [(l.date.strftime("%d.%m"), l.topic, l.status) for l in self.it_lessons()]
+
+    def cancel(self, day, month=9, reason="Праздник"):
+        return cancel_and_reschedule(self.it_lesson_on(day, month, status=Lesson.Status.SCHEDULED), self.admin, reason)
+
+    # --- the task's example -------------------------------------------------
+
+    def test_cancel_in_the_middle_shifts_later_topics_one_date_forward(self):
+        cancelled, result = self.cancel(21)
+        C, S, X = Lesson.Status.COMPLETED, Lesson.Status.SCHEDULED, Lesson.Status.CANCELLED
+        self.assertEqual(self.table(), [
+            ("09.09", "Что такое интернет", C),
+            ("11.09", "Браузер — окно в интернет", C),
+            ("14.09", "Что такое сайт", C),
+            ("16.09", "Клиент и сервер", C),
+            ("18.09", "IP-адрес", C),
+            ("21.09", "Домен и DNS", X),
+            ("23.09", "Домен и DNS", S),  # scheduled: never "completed" just by date
+            ("25.09", "HTTP и HTTPS", S),
+            ("28.09", "Персональные данные", S),
+            ("30.09", "Безопасность паролей", S),
+        ])
+        self.assertEqual(cancelled.cancellation_reason, "Праздник")
+        self.assertEqual(result.makeup.rescheduled_from_id, cancelled.pk)
+        self.assertEqual(result.makeup.lesson_number, cancelled.lesson_number)
+        self.assertEqual(result.shifted, 3)
+        self.assertEqual((result.makeup.start_time, result.makeup.room_id), (dt.time(8, 0), self.room.id))
+
+    def test_other_programs_of_the_group_are_untouched(self):
+        soft_before = list(Lesson.objects.filter(group=self.group, subject=self.soft).values_list("pk", "date", "start_time"))
+        self.cancel(21)
+        soft_after = list(Lesson.objects.filter(group=self.group, subject=self.soft).values_list("pk", "date", "start_time"))
+        self.assertEqual(soft_before, soft_after)
+
+    # --- first / last lesson ----------------------------------------------
+
+    def test_cancel_first_lesson(self):
+        Lesson.objects.filter(group=self.group).update(status=Lesson.Status.SCHEDULED, started_at=None, completed_at=None)
+        self.cancel(9)
+        topics = [(d, t) for d, t, status in self.table() if status != Lesson.Status.CANCELLED]
+        self.assertEqual(topics[0], ("11.09", "Что такое интернет"))
+        self.assertEqual(topics[1], ("14.09", "Браузер — окно в интернет"))
+        self.assertEqual(topics[-1], ("30.09", "Безопасность паролей"))
+        self.assertEqual(len(topics), 9)
+
+    def test_cancel_last_lesson(self):
+        cancelled, result = self.cancel(28)
+        self.assertEqual(result.shifted, 0)
+        self.assertEqual(result.makeup.date, dt.date(2026, 9, 30))
+        self.assertEqual(result.makeup.topic, "Безопасность паролей")
+        self.assertEqual(self.it_lesson_on(25).topic, "Персональные данные")
+
+    # --- repeated / invalid cancellations ------------------------------------
+
+    def test_repeated_cancel_never_shifts_twice(self):
+        cancelled, first = self.cancel(21)
+        snapshot = self.table()
+        again, second = cancel_and_reschedule(cancelled, self.admin, "ещё раз")
+        self.assertFalse(second.created)
+        self.assertEqual(second.makeup.pk, first.makeup.pk)
+        self.assertEqual(self.table(), snapshot)
+        self.assertEqual(again.cancellation_reason, "Праздник")  # history is never overwritten
+
+    def test_rerunning_the_reschedule_is_a_no_op(self):
+        cancelled, first = self.cancel(21)
+        snapshot = self.table()
+        for _ in range(3):
+            result = reschedule_cancelled_lesson(cancelled)
+            self.assertFalse(result.created)
+            self.assertEqual(result.makeup.pk, first.makeup.pk)
+        self.assertEqual(self.table(), snapshot)
+        self.assertEqual(generate_lessons_for_group(self.group), [])
+        self.assertEqual(Lesson.objects.filter(group=self.group, subject=self.it).count(), 10)
+
+    def test_completed_lesson_cannot_be_cancelled_or_moved(self):
+        snapshot = self.table()
+        with self.assertRaises(DjangoValidationError):
+            cancel_and_reschedule(self.it_lesson_on(18), self.admin)
+        with self.assertRaises(DjangoValidationError):
+            reschedule_cancelled_lesson(self.it_lesson_on(18))
+        self.assertEqual(self.table(), snapshot)
+
+        response = self.islam_client.post(f"/api/v1/lessons/{self.it_lesson_on(18).pk}/cancel/", {"reason": "x"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.table(), snapshot)
+
+    def test_several_cancellations_in_a_row(self):
+        _, first = self.cancel(21)
+        # The make-up lesson itself is cancelled too, then another later one.
+        cancel_and_reschedule(first.makeup, self.admin, "болезнь")
+        self.cancel(30)
+        scheduled = [(d, t) for d, t, s in self.table() if s == Lesson.Status.SCHEDULED]
+        self.assertEqual(scheduled, [
+            ("25.09", "Домен и DNS"),
+            ("28.09", "HTTP и HTTPS"),
+            ("02.10", "Персональные данные"),
+            ("05.10", "Безопасность паролей"),
+        ])
+        cancelled = [(d, t) for d, t, s in self.table() if s == Lesson.Status.CANCELLED]
+        self.assertEqual(cancelled, [("21.09", "Домен и DNS"), ("23.09", "Домен и DNS"), ("30.09", "Персональные данные")])
+        # Every topic still has exactly one live lesson.
+        live = Lesson.objects.filter(group=self.group, subject=self.it).exclude(status=Lesson.Status.CANCELLED)
+        self.assertEqual(live.count(), len(self.TOPICS))
+        self.assertEqual(live.values("lesson_number").distinct().count(), len(self.TOPICS))
+
+    # --- related data -------------------------------------------------------
+
+    def test_attendance_homework_and_results_are_preserved(self):
+        completed = self.it_lessons()[:5]
+        before = [(l.pk, l.date, l.status) for l in completed]
+        moving = self.it_lesson_on(23)  # "HTTP и HTTPS", will move to 25.09 with its homework
+        moving_homework = moving.homeworks.get()
+        cancelled_lesson = self.it_lesson_on(21)
+        graded = Homework.objects.create(lesson=cancelled_lesson, title="Уже сдавали")
+        HomeworkResult.objects.create(homework=graded, student=self.student, status=HomeworkResult.Status.CHECKED)
+
+        cancelled, result = self.cancel(21)
+
+        self.assertEqual([(l.pk, l.date, l.status) for l in self.it_lessons()[:5]], before)
+        self.assertEqual(Attendance.objects.filter(lesson__in=[l.pk for l in completed]).count(), 5)
+        self.assertEqual(HomeworkResult.objects.filter(homework__lesson__in=[l.pk for l in completed]).count(), 5)
+        # The planned homework follows the topic to its new date…
+        self.assertEqual(result.makeup.homeworks.get().title, "ДЗ: Домен и DNS")
+        moving_homework.refresh_from_db()
+        self.assertEqual(moving_homework.lesson_id, moving.pk)
+        self.assertEqual(Lesson.objects.get(pk=moving.pk).date, dt.date(2026, 9, 25))
+        # …while homework that already has results stays with the cancelled lesson.
+        self.assertEqual(list(cancelled.homeworks.values_list("title", flat=True)), ["Уже сдавали"])
+
+    def test_in_progress_lesson_is_not_moved(self):
+        started = self.it_lesson_on(25)
+        lesson_lifecycle.start_lesson(started, self.islam.user)
+        self.cancel(21)
+        started.refresh_from_db()
+        self.assertEqual((started.date, started.status), (dt.date(2026, 9, 25), Lesson.Status.IN_PROGRESS))
+        self.assertEqual(self.it_lesson_on(23, status=Lesson.Status.SCHEDULED).topic, "Домен и DNS")
+        self.assertEqual(self.it_lesson_on(28).topic, "HTTP и HTTPS")
+
+    # --- no free date ---------------------------------------------------------
+
+    def test_no_free_slot_before_end_date_leaves_everything_in_place(self):
+        self.group.end_date = dt.date(2026, 9, 28)
+        self.group.save(update_fields=["end_date"])
+        snapshot = [(d, t) for d, t, s in self.table()]
+        cancelled, result = self.cancel(21)
+        self.assertIsNone(result.makeup)
+        self.assertIn("не перенесена", result.warning)
+        self.assertEqual([(d, t) for d, t, s in self.table()], snapshot)
+        self.assertEqual(cancelled.status, Lesson.Status.CANCELLED)
+
+        self.group.end_date = None
+        self.group.save(update_fields=["end_date"])
+        response = self.islam_client.post(f"/api/v1/lessons/{cancelled.pk}/reschedule/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["created"])
+        self.assertEqual(response.data["makeup_date"], "2026-09-23")
+
+    # --- API ------------------------------------------------------------------
+
+    def test_cancel_api_reports_the_reschedule(self):
+        lesson = self.it_lesson_on(21)
+        response = self.islam_client.post(f"/api/v1/lessons/{lesson.pk}/cancel/", {"reason": "Праздник"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "cancelled")
+        self.assertEqual(response.data["reschedule"]["makeup_date"], "2026-09-23")
+        self.assertEqual(response.data["reschedule"]["shifted"], 3)
+        self.assertEqual(response.data["rescheduled_to"]["date"], dt.date(2026, 9, 23))
+
+        makeup = Lesson.objects.get(rescheduled_from=lesson)
+        detail = self.islam_client.get(f"/api/v1/lessons/{makeup.pk}/").data
+        self.assertEqual(detail["rescheduled_from"], lesson.pk)
+
+        again = self.islam_client.post(f"/api/v1/lessons/{lesson.pk}/cancel/", {"reason": "Праздник"})
+        self.assertFalse(again.data["reschedule"]["created"])
+        self.assertEqual(Lesson.objects.filter(group=self.group, subject=self.it).count(), 10)
+
+    def test_cancel_api_without_reschedule_keeps_the_old_behaviour(self):
+        snapshot = [(d, t) for d, t, s in self.table()]
+        lesson = self.it_lesson_on(21)
+        response = self.islam_client.post(f"/api/v1/lessons/{lesson.pk}/cancel/", {"reschedule": False})
+        self.assertEqual(response.data["status"], "cancelled")
+        self.assertNotIn("reschedule", response.data)
+        self.assertEqual([(d, t) for d, t, s in self.table()], snapshot)
+
+    def test_other_trainer_cannot_cancel_or_reschedule(self):
+        nurisa_client = APIClient()
+        nurisa_client.force_authenticate(self.nurisa.user)
+        lesson = self.it_lesson_on(21)
+        self.assertEqual(nurisa_client.post(f"/api/v1/lessons/{lesson.pk}/cancel/").status_code,
+                         status.HTTP_404_NOT_FOUND)
+        self.assertEqual(nurisa_client.post(f"/api/v1/lessons/{lesson.pk}/reschedule/").status_code,
+                         status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Lesson.objects.get(pk=lesson.pk).status, Lesson.Status.SCHEDULED)
+
+    def test_admin_lesson_page_shows_the_reschedule_link(self):
+        cancelled, result = self.cancel(21)
+        web = DjangoClient()
+        web.force_login(self.admin)
+        response = web.get(reverse("admin:academy_lesson_change", args=[cancelled.pk]))
+        self.assertContains(response, "Перенесено на 23.09.2026")
+        response = web.get(reverse("admin:academy_lesson_change", args=[result.makeup.pk]))
+        self.assertContains(response, "Перенос с отменённого занятия")

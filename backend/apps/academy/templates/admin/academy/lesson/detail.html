@@ -111,6 +111,26 @@
             <div class="ok-static-value">{{ lesson.cancellation_reason }}</div>
           </div>
         {% endif %}
+        {% if lesson.status == "cancelled" %}
+          <div class="ok-field-group ok-grid-full">
+            <label class="ok-label">Перенос темы</label>
+            <div class="ok-static-value">
+              {% if lesson.rescheduled_to %}
+                <a href="{% url 'admin:academy_lesson_change' lesson.rescheduled_to.pk %}">Перенесено на {{ lesson.rescheduled_to.date|date:"d.m.Y" }} {{ lesson.rescheduled_to.start_time|time:"H:i" }}</a>
+              {% else %}
+                Не перенесена
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+        {% if lesson.rescheduled_from %}
+          <div class="ok-field-group ok-grid-full">
+            <label class="ok-label">Перенос с отменённого занятия</label>
+            <div class="ok-static-value">
+              <a href="{% url 'admin:academy_lesson_change' lesson.rescheduled_from.pk %}">{{ lesson.rescheduled_from.date|date:"d.m.Y" }} {{ lesson.rescheduled_from.start_time|time:"H:i" }}</a>
+            </div>
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
