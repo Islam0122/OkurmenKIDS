@@ -140,7 +140,7 @@ STATICFILES_DIRS = [
 # on every check/test run.
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))
 
 # Whether Django itself serves MEDIA_URL when DEBUG is off (see
 # config/urls.py). Off by default; production.py turns it on because there
