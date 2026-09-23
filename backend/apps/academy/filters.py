@@ -8,6 +8,7 @@ filtering across a relation (e.g. Attendance by its lesson's group/date).
 from __future__ import annotations
 
 import django_filters as filters
+from django.db.models import Q
 
 from .models import (
     Attendance,
@@ -42,10 +43,17 @@ class GroupFilter(filters.FilterSet):
 class LessonFilter(filters.FilterSet):
     date_from = filters.DateFilter(field_name="date", lookup_expr="gte")
     date_to = filters.DateFilter(field_name="date", lookup_expr="lte")
+    teacher = filters.NumberFilter(method="filter_teacher")
 
     class Meta:
         model = Lesson
-        fields = ["group", "subject", "status", "date"]
+        fields = ["group", "subject", "status", "date", "room"]
+
+    def filter_teacher(self, queryset, name, value):
+        # The lesson's effective teacher (see Lesson.effective_teacher) —
+        # only ever narrows the viewset's own queryset, which is already
+        # scoped to the requesting teacher's lessons for non-admins.
+        return queryset.filter(Q(teacher_id=value) | Q(teacher__isnull=True, group_teacher__teacher_id=value))
 
 
 class AttendanceFilter(filters.FilterSet):

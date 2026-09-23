@@ -80,6 +80,7 @@ from .serializers import (
     RoomAvailabilitySerializer,
     RoomSerializer,
     StudentSerializer,
+    SubjectAssignmentSerializer,
     TeacherAvailabilityRequestSerializer,
     TeacherAvailabilitySerializer,
 )
@@ -95,7 +96,8 @@ from .services.import_export import (
     import_students,
     preview_students_import,
 )
-from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+from .services.lesson_generator import generate_lessons_for_group_with_report
+from .services.subject_assignments import subject_assignment_overview
 
 
 def _teacher_profile(request):
@@ -458,28 +460,50 @@ class GroupViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=["post"], url_path="generate-lessons", permission_classes=[IsAuthenticated, IsAdmin])
     def generate_lessons(self, request, pk=None):
+        """Idempotent: fills in only the missing lessons of the group's
+        plan(s). 201 when something was created, 200 for a no-op re-run, 400
+        when nothing could be generated because of an error. `warnings`
+        lists every plan lesson that was deliberately *not* created (no
+        trainer assigned to its subject, a clash, the group's period ended)
+        — see services.lesson_generator."""
         group = self.get_object()
-        try:
-            created = generate_lessons_for_group(group)
-        except LessonGenerationError as exc:
-            raise DRFValidationError(str(exc))
+        report = generate_lessons_for_group_with_report(group)
+        if report.errors and not report.created:
+            raise DRFValidationError(" ".join(report.errors))
 
-        if created:
-            first_lesson, last_lesson = created[0], created[-1]
+        if report.created_lessons:
+            first_lesson, last_lesson = report.created_lessons[0], report.created_lessons[-1]
         else:
             existing = list(group.lessons.order_by("lesson_number"))
             first_lesson = existing[0] if existing else None
             last_lesson = existing[-1] if existing else None
 
         payload = {
-            "created_count": len(created),
+            "created_count": report.created,
             "first_lesson": first_lesson.lesson_number if first_lesson else None,
             "last_lesson": last_lesson.lesson_number if last_lesson else None,
             "first_date": first_lesson.date if first_lesson else None,
             "last_date": last_lesson.date if last_lesson else None,
+            "already_existed": report.already_existed,
+            "expected_total": report.expected,
+            "missing_count": report.missing,
+            "conflicts": report.conflicts,
+            "warnings": report.warnings,
+            "errors": report.errors,
         }
-        response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        response_status = status.HTTP_201_CREATED if report.created else status.HTTP_200_OK
         return Response(GenerateLessonsResponseSerializer(payload).data, status=response_status)
+
+    @extend_schema(tags=["Groups"], responses=SubjectAssignmentSerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="subject-assignments")
+    def subject_assignments(self, request, pk=None):
+        """Who teaches each subject of the group's course plan — the same
+        resolution lesson generation uses. `status == "unassigned"` means
+        that subject's lessons will not be generated until an admin assigns
+        a trainer (POST /programs/ with group/teacher/subject)."""
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        rows = [row.as_dict() for row in subject_assignment_overview(group)]
+        return Response(SubjectAssignmentSerializer(rows, many=True).data)
 
     @extend_schema(tags=["Groups"], responses=GroupScheduleSerializer)
     @action(detail=True, methods=["get"], url_path="schedule")
@@ -584,10 +608,12 @@ class GroupScheduleViewSet(viewsets.ModelViewSet):
 class GroupTeacherViewSet(viewsets.ModelViewSet):
     """"This Teacher teaches this Subject in this Group" — see models.GroupTeacher.
 
-    Get-or-created automatically from GroupSchedule (typically via the Group
-    admin page's inline) — this viewset mainly exists to *read* a group's
-    teacher assignments (see `GroupSerializer.teachers`) and to toggle
-    `is_active`; Admin manages it, a Teacher only reads their own.
+    Also the group's subject → trainer assignment: creating one here
+    (group + teacher + subject, no schedule needed) is how an admin makes
+    e.g. the English trainer the owner of every English lesson of the group
+    on the next generation run (see services.lesson_generator,
+    `GET /groups/{id}/subject-assignments/`). Get-or-created automatically
+    from GroupSchedule as well. Admin manages it, a Teacher only reads their own.
     """
 
     serializer_class = GroupTeacherSerializer

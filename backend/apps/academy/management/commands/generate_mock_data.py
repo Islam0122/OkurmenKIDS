@@ -31,13 +31,12 @@ and is always COMPLETED or CANCELLED, never SCHEDULED/IN_PROGRESS (spec:
 "не создавай завершённые уроки в будущем" / "не создавай записи в будущем
 после 20 сентября 2026 года").
 
-Automatic lesson generation (see academy/signals.py) is deliberately
-deferred on every Group/GroupSchedule save here via the same
-`_defer_schedule_sync` flag the Group Admin page's own bulk saves use (see
-signals.py's module docstring) — this command builds every Lesson itself,
-with full control over historical dates/status/attendance, rather than
-racing the signal-driven generator (which only knows how to walk forward
-from `group.start_date` with no upper cutoff).
+This command builds every Lesson itself, with full control over
+historical dates/status/attendance, rather than calling the lesson
+generator (which only knows how to walk forward from `group.start_date`
+with no upper cutoff). The `_defer_schedule_sync` flags it still sets are
+harmless no-ops now that saving a schedule never generates lessons (see
+signals.py).
 
 Idempotent by construction: every catalogue object (Subject/Course/Room/
 Teacher/Group/GroupSchedule) is matched by its natural unique key before

@@ -6,11 +6,13 @@
   <div class="ok-card-header"><i class="bi bi-person-plus"></i><span>Добавить преподавателя</span></div>
   <div class="ok-card-body">
     <p class="ok-section-subtitle">
-      Создаёт независимую учебную программу для этого тренера и предмета. Расписание можно
-      добавить сразу после сохранения.
+      Назначает тренера на предмет в этой группе: все занятия этого предмета из плана курса будут
+      закреплены за ним при следующей генерации — в том числе в общих слотах расписания группы.
+      Отдельное расписание для него не обязательно.
     </p>
     <form method="post" class="ok-group-inline-form">
       {% csrf_token %}
+      {% for error in form.non_field_errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
       <div class="ok-field-group">
         <label class="ok-label">{{ form.teacher.label }}</label>
         {{ form.teacher }}
