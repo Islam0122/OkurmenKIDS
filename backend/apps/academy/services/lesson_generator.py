@@ -1,63 +1,48 @@
 """Turns a lesson-plan template into real, dated Lesson rows for a Group.
 
-Three independent sources of truth are combined here — and only here:
+Three sources of truth are combined here — and only here:
 
 * **The lesson plan** decides *what* each lesson is: its number, subject,
-  topic, materials and homework (CourseLessonPlan, or a GroupTeacher's own
-  GroupTeacherLessonPlan).
-* **The group's schedule** decides *when/where*: weekday, time range, room
-  (every active GroupSchedule slot of the group).
-* **The subject → teacher assignment** decides *who*: an active GroupTeacher
-  row (group, teacher, subject) says "this teacher teaches this subject in
-  this group". A lesson's teacher is resolved from the *plan row's subject*,
-  never from "whoever happens to own the time slot" — so a group whose three
-  weekly slots all belong to its IT trainer still gets its Soft Skills and
-  English lessons assigned to the Soft Skills/English trainers.
+  topic, materials and homework (the group's shared CourseLessonPlan, or a
+  program's own GroupTeacherLessonPlan).
+* **The program (GroupTeacher)** decides *who*: one trainer teaching one
+  subject in the group ("Islam — IT", "Нуриса — Soft Skills").
+* **The program's schedule** (its GroupSchedule slots) decides *when/where*.
 
-Teacher resolution for one (slot, plan row with subject S) pair, in order —
-see `_resolve_program`:
+Shared course plan (one course, e.g. 144 rows = IT 48 + Soft Skills 48 +
+English 48): the rows are split **by subject**, and each subject's rows fill
+**only that subject's own program slots**, in lesson_number order — IT's 48
+rows go into the IT program's Mon/Wed/Fri 08:00 slots with Islam, Soft
+Skills' 48 rows into the Soft Skills program's Mon/Wed/Fri 09:00 slots with
+Нуриса. A subject never takes another subject's slots or rows, so 144 means
+144 for the whole group, never 144 per program. See _SubjectRouting:
 
-1. The slot is dedicated to S (`slot.subject == S`) → the slot's own teacher.
-2. The group has an active assignment for S → that teacher. Several
-   different teachers assigned to S → the slot's own teacher if they are
-   one of them, otherwise the lesson is ambiguous and is *not* created.
-3. The slot has no fixed subject (a legacy slot migrated from the old
-   Group.teacher field — "this teacher runs whatever the plan puts here")
-   and nobody is assigned to S → the slot's teacher. This keeps every
-   pre-existing single-teacher group generating exactly as before.
-4. Otherwise S has no teacher → the lesson is *not* created. There is no
-   hidden fallback to "the group's main teacher".
+1. The subject has slots of its own (a program with that subject) → its
+   rows go there; each lesson belongs to that slot's program and trainer.
+2. Otherwise the subject is taught in the group's legacy subject-less
+   slots, if any (migrated from the old Group.teacher/start_time fields):
+   by its assigned trainer when the group has a subject assignment for it,
+   else by the slot's own trainer — unchanged legacy behaviour.
+3. The subject's program uses its own individual plan → the shared plan's
+   rows for it are not used (reported).
+4. Otherwise the subject has no schedule at all → its rows are *not*
+   created and are reported; nobody else's slots or trainer are borrowed.
 
-A plan row that can't be created (rule 4, an ambiguous assignment, or the
-resolved teacher/room is already busy at that exact date/time) still
-*reserves* its slot occurrence: the calendar is not shifted, and a warning
-names the subject/lesson numbers. Once the admin fixes the cause (assigns a
-teacher, resolves the clash) the next generation run places exactly those
-lessons into exactly those reserved dates — every other lesson keeps its
-date.
+A row that can't be created in its slot occurrence (the trainer or room is
+already busy at that exact date/time, an ambiguous legacy assignment) still
+*reserves* that occurrence: the subject's calendar is not shifted, and a
+warning names the lesson. The next generation run, after the cause is
+fixed, places exactly that lesson on exactly that date.
 
-Two plan sources are supported, chosen per GroupTeacher:
-
-* **Individual plan** — the GroupTeacher has its own GroupTeacherLessonPlan
-  rows. Lessons are generated from those, walking only that teacher's own
-  active schedule slots, numbered 1..N independently of every other teacher
-  in the group.
-
-* **Shared plan** — the GroupTeacher has no GroupTeacherLessonPlan of its
-  own. The group's shared `Course.lesson_plans` template is walked in
-  lesson_number order across all such teachers' active slots together, one
-  plan row per slot occurrence (day by day, by start time), with the teacher
-  of each lesson resolved per subject as described above.
+Individual plan: a program with its own GroupTeacherLessonPlan rows walks
+only its own slots, numbered 1..N independently of every other program.
 
 Generation is **explicit** (the "Сгенерировать занятия" button, the admin
 action, or `POST /groups/{id}/generate-lessons/`) — never triggered by
-saving a single schedule slot: walking the plan against a half-configured
-timetable (e.g. only the Monday slot saved so far) would greedily spread
-all 144 plan rows over Mondays alone, years past the group's real period.
-See signals.py.
+saving a single schedule slot. See signals.py.
 
-Both paths are idempotent: only missing lesson_numbers are filled in, into
-slot occurrences no existing lesson of the group already occupies; existing
+Idempotent: only missing lesson_numbers are filled in, into slot
+occurrences no existing lesson of the group already occupies; existing
 Lesson rows (and their attendance/homework) are never modified or
 duplicated, whatever their status.
 """
@@ -65,7 +50,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from django.db import transaction
@@ -104,8 +89,10 @@ class _GenerationRun:
     slot_conflicts: int = 0
     slot_skips: int = 0
     lesson_conflicts: int = 0
-    # subject name -> lesson numbers not created because nobody teaches it
-    unassigned: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
+    # subject name -> lesson numbers not created because no program schedule teaches the subject
+    unscheduled: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
+    # subject name -> shared-plan lesson numbers left out because the subject's program has an individual plan
+    individual_skipped: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
     # subject name -> lesson numbers not created because several teachers are assigned to it
     ambiguous: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
     busy: list[str] = field(default_factory=list)
@@ -114,14 +101,20 @@ class _GenerationRun:
 
     def warnings(self) -> list[str]:
         messages = []
-        for subject, numbers in sorted(self.unassigned.items()):
+        for subject, numbers in sorted(self.unscheduled.items()):
             messages.append(
-                f"Предмет «{subject}»: тренер не назначен — не создано занятий: {len(numbers)} "
-                f"({_format_numbers(numbers)}). Назначьте тренера на предмет и запустите генерацию ещё раз."
+                f"Предмет «{subject}»: нет программы с расписанием (тренер + слоты этого предмета) — "
+                f"не создано занятий: {len(numbers)} ({_format_numbers(numbers)}). Добавьте учебную "
+                "программу предмета с расписанием и запустите генерацию ещё раз."
+            )
+        for subject, numbers in sorted(self.individual_skipped.items()):
+            messages.append(
+                f"Предмет «{subject}» ведётся по индивидуальному плану программы — {len(numbers)} "
+                f"строк общего плана курса не используются ({_format_numbers(numbers)})."
             )
         for subject, numbers in sorted(self.ambiguous.items()):
             messages.append(
-                f"Предмет «{subject}»: назначено несколько тренеров, и ни один из них не ведёт этот слот — "
+                f"Предмет «{subject}»: назначено несколько тренеров, и ни один из них не ведёт слот «без предмета» — "
                 f"не создано занятий: {len(numbers)} ({_format_numbers(numbers)}). "
                 "Оставьте одно активное назначение на предмет."
             )
@@ -362,66 +355,69 @@ def _get_or_create_lesson(kwargs: dict) -> tuple[Lesson, bool]:
     return Lesson.objects.get_or_create(defaults=defaults, **lookup)
 
 
-def _walk_and_generate(*, group: Group, slots_by_weekday, plans_to_generate, lesson_kwargs_for,
+def _walk_and_generate(*, group: Group, slots_by_weekday, take_next, remaining, lesson_kwargs_for,
                        occupancy: _Occupancy, run: _GenerationRun, label: str,
                        not_before: dt.date | None = None) -> None:
-    """Shared walk-forward-by-calendar-day loop: consumes `plans_to_generate`
-    in order, one per free slot occurrence encountered (in weekday/start_time
-    order), from `group.start_date` up to `group.end_date` (or a hard scan
-    cap).
+    """Shared walk-forward-by-calendar-day loop, from `group.start_date` up to
+    `group.end_date` (or a hard scan cap), visiting every slot occurrence in
+    weekday/start_time order.
 
+    `take_next(slot)` pops the next plan row *this slot* may carry (the
+    head of its own subject's queue — see _SubjectRouting), or returns None
+    when the slot has nothing left to teach. `remaining()` lists the plan
+    rows no slot has taken yet; the walk stops as soon as it is empty.
     `lesson_kwargs_for(slot, plan, date)` returns the concrete Lesson
-    identity/content for one (slot, plan) pairing, or None when that plan row
-    can't be given a teacher (it has then already recorded why on `run`).
+    identity/content, or None when the row can't be given a teacher (it has
+    then already recorded why on `run`).
+
     An occurrence the group already has a lesson in is skipped without
-    consuming a plan row; an occurrence whose plan row can't be created
-    (no/ambiguous teacher, teacher or room busy that day) is *reserved* for
+    taking a plan row; an occurrence whose row can't be created (no/
+    ambiguous teacher, teacher or room busy that day) is *reserved* for
     that row — see the module docstring. `not_before` (repair_group_lessons
     only) starts the walk later than the group's start date, so a rebuild of
     the remaining plan never back-fills dates that have already passed.
     """
     current_date = max(group.start_date, not_before) if not_before else group.start_date
-    plan_iter = iter(plans_to_generate)
-    plan = next(plan_iter, None)
     scanned = 0
 
-    while plan is not None and scanned < _MAX_DAYS_TO_SCAN:
+    while remaining() and scanned < _MAX_DAYS_TO_SCAN:
         if group.end_date and current_date > group.end_date:
             break
 
         for slot in slots_by_weekday.get(current_date.weekday(), []):
-            if plan is None:
-                break
             if occupancy.group_busy(current_date, slot.start_time, slot.end_time):
+                continue
+            plan = take_next(slot)
+            if plan is None:
                 continue
 
             kwargs = lesson_kwargs_for(slot, plan, current_date)
-            if kwargs is not None:
-                problem = _lesson_level_conflict(kwargs, occupancy)
-                if problem:
-                    run.lesson_conflicts += 1
-                    run.busy.append(
-                        f"Занятие №{plan.lesson_number} ({current_date:%d.%m.%Y} "
-                        f"{slot.start_time:%H:%M}) не создано: {problem}"
-                    )
-                    logger.warning("[lesson_generator] %s: lesson #%s not created — %s", label, plan.lesson_number, problem)
-                else:
-                    lesson, was_created = _get_or_create_lesson(kwargs)
-                    if was_created:
-                        run.created.append(lesson)
-                        _create_homework_if_planned(lesson, plan)
-                    occupancy.add(lesson)
-            plan = next(plan_iter, None)
+            if kwargs is None:
+                continue
+            problem = _lesson_level_conflict(kwargs, occupancy)
+            if problem:
+                run.lesson_conflicts += 1
+                run.busy.append(
+                    f"Занятие №{plan.lesson_number} ({current_date:%d.%m.%Y} "
+                    f"{slot.start_time:%H:%M}) не создано: {problem}"
+                )
+                logger.warning("[lesson_generator] %s: lesson #%s not created — %s", label, plan.lesson_number, problem)
+                continue
+            lesson, was_created = _get_or_create_lesson(kwargs)
+            if was_created:
+                run.created.append(lesson)
+                _create_homework_if_planned(lesson, plan)
+            occupancy.add(lesson)
 
         current_date += dt.timedelta(days=1)
         scanned += 1
 
-    remaining = ([plan] if plan is not None else []) + list(plan_iter)
-    if remaining:
-        numbers = [p.lesson_number for p in remaining]
+    left = remaining()
+    if left:
+        numbers = sorted(p.lesson_number for p in left)
         period = f"до {group.end_date:%d.%m.%Y}" if group.end_date else "в допустимый период генерации"
         run.not_fitting.append(
-            f"{label}: {len(numbers)} занятий плана не поместились в расписание группы {period} "
+            f"{label}: {len(numbers)} занятий плана не поместились в расписание {period} "
             f"({_format_numbers(numbers)})."
         )
 
@@ -432,8 +428,9 @@ def _lesson_level_conflict(kwargs: dict, occupancy: _Occupancy) -> str | None:
     date, start, end = kwargs["date"], kwargs["start_time"], kwargs["end_time"]
     if teacher.pk != slot.teacher_id:
         # The slot-level checks in _without_conflicting_slots only vetted the
-        # slot's *own* teacher; a subject-assigned teacher teaching in it may
-        # have a recurring slot of their own elsewhere at this time.
+        # slot's *own* teacher; a subject-assigned teacher teaching in a
+        # legacy subject-less slot may have a recurring slot of their own
+        # elsewhere at this time.
         conflict = occupancy.recurring_teacher_conflict(teacher, slot)
         if conflict is not None:
             return (
@@ -448,7 +445,7 @@ def _lesson_level_conflict(kwargs: dict, occupancy: _Occupancy) -> str | None:
     return None
 
 
-def _subject_assignments(group_teachers: list[GroupTeacher], run: _GenerationRun) -> dict[int, list[GroupTeacher]]:
+def _subject_assignments(group_teachers: list[GroupTeacher], run: _GenerationRun | None = None) -> dict[int, list[GroupTeacher]]:
     """subject_id -> the active GroupTeacher assignments for it. An
     assignment whose Teacher account was deactivated is ignored (and
     reported) rather than silently handed new lessons."""
@@ -457,21 +454,82 @@ def _subject_assignments(group_teachers: list[GroupTeacher], run: _GenerationRun
         if gt.subject_id is None:
             continue
         if not gt.teacher.is_active:
-            run.inactive_assignments.append(
-                f"Назначение «{gt}» не используется: тренер деактивирован."
-            )
+            if run is not None:
+                run.inactive_assignments.append(f"Назначение «{gt}» не используется: тренер деактивирован.")
             continue
         by_subject[gt.subject_id].append(gt)
     return by_subject
 
 
-def _resolve_program(slot: GroupSchedule, plan, assignments: dict[int, list[GroupTeacher]]):
-    """(GroupTeacher, None) for the program that teaches `plan` in `slot`,
-    or (None, reason) — "unassigned"/"ambiguous". See module docstring."""
-    subject_id = plan.subject_id
-    if slot.subject_id is not None and slot.subject_id == subject_id:
-        return slot.group_teacher, None
+ROUTE_DEDICATED = "dedicated"
+ROUTE_LEGACY = "legacy"
+ROUTE_INDIVIDUAL = "individual"
+ROUTE_UNSCHEDULED = "unscheduled"
 
+
+@dataclass
+class _SubjectRouting:
+    """Where each subject of the shared course plan is taught.
+
+    * ``dedicated`` — the subject has its own active slots (its program's
+      schedule, e.g. Soft Skills Mon/Wed/Fri 09:00–09:30). Its plan rows go
+      into those slots only, never into another subject's slots.
+    * ``legacy`` — no dedicated slot, but the group has subject-less legacy
+      slots (migrated from the old Group.teacher/start_time fields): those
+      keep running "whatever the plan says", as they always did.
+    * ``individual`` — the subject's program has its own individual plan
+      (GroupTeacherLessonPlan); the shared plan's rows for it are not used.
+    * ``unscheduled`` — nowhere to put it: its rows are not generated.
+    """
+
+    route: dict[int, str]
+    dedicated_slots: dict[int, list[GroupSchedule]]
+    legacy_slots: list[GroupSchedule]
+    assignments: dict[int, list[GroupTeacher]]
+
+    def owners(self, subject_id: int) -> list[GroupTeacher]:
+        """The program(s) a subject's rows are expected to belong to."""
+        route = self.route.get(subject_id)
+        if route == ROUTE_DEDICATED:
+            owners = [slot.group_teacher for slot in self.dedicated_slots[subject_id]]
+        elif route == ROUTE_LEGACY:
+            owners = self.assignments.get(subject_id) or [slot.group_teacher for slot in self.legacy_slots]
+        else:
+            owners = []
+        return list({gt.pk: gt for gt in owners}.values())
+
+
+def _route_subjects(plans, slots: list[GroupSchedule], assignments, individual_subject_ids: set[int]) -> _SubjectRouting:
+    dedicated: dict[int, list[GroupSchedule]] = defaultdict(list)
+    legacy: list[GroupSchedule] = []
+    for slot in slots:
+        if slot.subject_id is None:
+            legacy.append(slot)
+        else:
+            dedicated[slot.subject_id].append(slot)
+
+    route: dict[int, str] = {}
+    for plan in plans:
+        subject_id = plan.subject_id
+        if subject_id in route:
+            continue
+        if subject_id in dedicated:
+            route[subject_id] = ROUTE_DEDICATED
+        elif subject_id in individual_subject_ids:
+            route[subject_id] = ROUTE_INDIVIDUAL
+        elif legacy:
+            route[subject_id] = ROUTE_LEGACY
+        else:
+            route[subject_id] = ROUTE_UNSCHEDULED
+    return _SubjectRouting(route=route, dedicated_slots=dedicated, legacy_slots=legacy, assignments=assignments)
+
+
+def _resolve_legacy_program(slot: GroupSchedule, subject_id: int, assignments: dict[int, list[GroupTeacher]]):
+    """Program for a row taught in a legacy subject-less slot: the subject's
+    assigned trainer if there is exactly one, the slot's own trainer if
+    they are one of several, otherwise the slot's own trainer when nobody
+    is assigned at all (unchanged legacy behaviour). (None, "ambiguous")
+    when several trainers are assigned and the slot's isn't one of them."""
     assigned = assignments.get(subject_id, [])
     if len(assigned) == 1:
         return assigned[0], None
@@ -480,38 +538,47 @@ def _resolve_program(slot: GroupSchedule, plan, assignments: dict[int, list[Grou
             if gt.teacher_id == slot.teacher_id:
                 return gt, None
         return None, "ambiguous"
+    return slot.group_teacher, None
 
-    if slot.subject_id is None:
-        return slot.group_teacher, None
-    return None, "unassigned"
+
+def _shared_plan_setup(group: Group, group_teachers: list[GroupTeacher], individual_group_teachers: list[GroupTeacher],
+                       run: _GenerationRun | None = None, *, label: str = ""):
+    """(plans, clean slots, routing) for the shared course plan — the single
+    place both generation and the per-program counters (see
+    planned_lessons_by_program) derive "which rows belong to which program"."""
+    plans = list(group.course.lesson_plans.select_related("subject").order_by("lesson_number"))
+    slots = list(
+        GroupSchedule.objects.filter(group_teacher__in=group_teachers, is_active=True)
+        .select_related("teacher", "subject", "room", "group", "group_teacher")
+    )
+    if run is not None:
+        slots = _without_conflicting_slots(slots, label=label, run=run)
+    assignments = _subject_assignments(group_teachers, run)
+    individual_subject_ids = {gt.subject_id for gt in individual_group_teachers if gt.subject_id}
+    return plans, slots, _route_subjects(plans, slots, assignments, individual_subject_ids)
 
 
 def _generate_from_course_plan(group: Group, group_teachers: list[GroupTeacher], run: _GenerationRun,
-                               not_before: dt.date | None = None) -> None:
-    """Shared path: every one of `group_teachers`' active slots consumes the
-    *same* shared `group.course.lesson_plans` cursor, with each lesson's
-    teacher resolved from its subject — see this module's docstring."""
-    plans = list(group.course.lesson_plans.select_related("subject").order_by("lesson_number"))
+                               not_before: dt.date | None = None,
+                               individual_group_teachers: list[GroupTeacher] | None = None) -> None:
+    """Shared path: the course plan's rows are split by subject, and each
+    subject's rows (in lesson_number order) fill only that subject's own
+    program slots — see _SubjectRouting. IT's 48 rows go to the IT slots,
+    Soft Skills' 48 rows to the Soft Skills slots, and so on; no subject
+    ever consumes another subject's rows or slots."""
+    label = f"Группа «{group.name}» (общий план курса)"
+    plans, slots, routing = _shared_plan_setup(
+        group, group_teachers, individual_group_teachers or [], run, label=label,
+    )
     if not plans:
         raise LessonGenerationError("У курса нет плана занятий.")
-
     if len(plans) != group.course.count_lesson:
         raise LessonGenerationError(
             f"Количество занятий в плане курса ({len(plans)}) не совпадает "
             f"с полем count_lesson курса ({group.course.count_lesson})."
         )
-
-    slots = list(
-        GroupSchedule.objects.filter(group_teacher__in=group_teachers, is_active=True)
-        .select_related("teacher", "subject", "room", "group", "group_teacher")
-    )
-    label = f"Группа «{group.name}» (общий план курса)"
-    slots = _without_conflicting_slots(slots, label=label, run=run)
-    slots_by_weekday = _weekday_slots(slots)
-    if not slots_by_weekday:
+    if not slots:
         raise LessonGenerationError("У группы не задано расписание (нет активных слотов).")
-
-    assignments = _subject_assignments(group_teachers, run)
 
     # Only shared-plan lessons count here — a teacher with an individual
     # plan numbers their own lessons 1..N independently (see
@@ -520,22 +587,52 @@ def _generate_from_course_plan(group: Group, group_teachers: list[GroupTeacher],
     existing_numbers = set(
         Lesson.objects.filter(group=group, individual_plan__isnull=True).values_list("lesson_number", flat=True)
     )
-    plans_to_generate = [p for p in plans if p.lesson_number not in existing_numbers]
-    if not plans_to_generate:
+
+    queues: dict[int, deque] = defaultdict(deque)
+    for plan in plans:
+        if plan.lesson_number in existing_numbers:
+            continue
+        route = routing.route[plan.subject_id]
+        if route == ROUTE_UNSCHEDULED:
+            run.unscheduled[plan.subject.name].append(plan.lesson_number)
+        elif route == ROUTE_INDIVIDUAL:
+            run.individual_skipped[plan.subject.name].append(plan.lesson_number)
+        else:
+            queues[plan.subject_id].append(plan)
+    if not queues:
         return
 
+    legacy_subject_ids = [sid for sid, route in routing.route.items() if route == ROUTE_LEGACY]
+
+    def take_next(slot: GroupSchedule):
+        if slot.subject_id is not None:
+            queue = queues.get(slot.subject_id)
+            return queue.popleft() if queue else None
+        # A legacy subject-less slot serves every subject without slots of
+        # its own, in plan order — exactly the old single-teacher behaviour.
+        heads = [queues[sid] for sid in legacy_subject_ids if queues.get(sid)]
+        if not heads:
+            return None
+        return min(heads, key=lambda q: q[0].lesson_number).popleft()
+
+    def remaining():
+        return [plan for queue in queues.values() for plan in queue]
+
+    slots_by_weekday = _weekday_slots(slots)
     teacher_ids = {slot.teacher_id for slot in slots} | {
-        gt.teacher_id for gts in assignments.values() for gt in gts
+        gt.teacher_id for gts in routing.assignments.values() for gt in gts
     }
     room_ids = {slot.room_id for slot in slots if slot.room_id}
     occupancy = _Occupancy(group=group, teacher_ids=teacher_ids, room_ids=room_ids)
 
     def lesson_kwargs_for(slot: GroupSchedule, plan, date):
-        program, reason = _resolve_program(slot, plan, assignments)
-        if program is None:
-            bucket = run.unassigned if reason == "unassigned" else run.ambiguous
-            bucket[plan.subject.name].append(plan.lesson_number)
-            return None
+        if slot.subject_id is not None:
+            program = slot.group_teacher
+        else:
+            program, reason = _resolve_legacy_program(slot, plan.subject_id, routing.assignments)
+            if program is None:
+                run.ambiguous[plan.subject.name].append(plan.lesson_number)
+                return None
         return dict(
             group=group,
             group_teacher=program,
@@ -555,7 +652,7 @@ def _generate_from_course_plan(group: Group, group_teachers: list[GroupTeacher],
         )
 
     _walk_and_generate(
-        group=group, slots_by_weekday=slots_by_weekday, plans_to_generate=plans_to_generate,
+        group=group, slots_by_weekday=slots_by_weekday, take_next=take_next, remaining=remaining,
         lesson_kwargs_for=lesson_kwargs_for, occupancy=occupancy, run=run, label=label, not_before=not_before,
     )
 
@@ -581,8 +678,8 @@ def _generate_from_individual_plan(group: Group, group_teacher: GroupTeacher, ru
     existing_numbers = set(
         Lesson.objects.filter(group_teacher=group_teacher).values_list("lesson_number", flat=True)
     )
-    plans_to_generate = [p for p in plans if p.lesson_number not in existing_numbers]
-    if not plans_to_generate:
+    queue = deque(p for p in plans if p.lesson_number not in existing_numbers)
+    if not queue:
         return
 
     occupancy = _Occupancy(
@@ -611,9 +708,40 @@ def _generate_from_individual_plan(group: Group, group_teacher: GroupTeacher, ru
         )
 
     _walk_and_generate(
-        group=group, slots_by_weekday=slots_by_weekday, plans_to_generate=plans_to_generate,
+        group=group, slots_by_weekday=slots_by_weekday,
+        take_next=lambda slot: queue.popleft() if queue else None, remaining=lambda: list(queue),
         lesson_kwargs_for=lesson_kwargs_for, occupancy=occupancy, run=run, label=label, not_before=not_before,
     )
+
+
+def planned_lessons_by_program(group: Group) -> dict[int, int]:
+    """GroupTeacher id -> how many plan rows that program is responsible
+    for: its own individual plan, or its subject's share of the shared
+    course plan (e.g. 48 of 144) — by the very same routing generation uses.
+    Powers the "План занятий N/N" counters, instead of showing the whole
+    course plan's size on every program card."""
+    group_teachers = list(group.teachers.filter(is_active=True).select_related("teacher", "subject"))
+    individual = [gt for gt in group_teachers if gt.lesson_plans.exists()]
+    individual_ids = {gt.pk for gt in individual}
+    shared = [gt for gt in group_teachers if gt.pk not in individual_ids]
+
+    planned: dict[int, int] = defaultdict(int)
+    for gt in individual:
+        planned[gt.pk] = gt.lesson_plans.count()
+    if shared:
+        plans, _slots, routing = _shared_plan_setup(group, shared, individual)
+        rows_by_subject: dict[int, int] = defaultdict(int)
+        for plan in plans:
+            rows_by_subject[plan.subject_id] += 1
+        for subject_id, count in rows_by_subject.items():
+            for gt in routing.owners(subject_id):
+                planned[gt.pk] += count
+        # A program with a subject but no slots yet is still responsible
+        # for that subject's rows — it just can't generate them yet.
+        for gt in shared:
+            if gt.subject_id and gt.pk not in planned and routing.route.get(gt.subject_id) == ROUTE_UNSCHEDULED:
+                planned[gt.pk] = rows_by_subject.get(gt.subject_id, 0)
+    return dict(planned)
 
 
 @transaction.atomic
@@ -642,7 +770,7 @@ def _run_generation(group: Group, not_before: dt.date | None = None) -> _Generat
 
     if shared_group_teachers:
         try:
-            _generate_from_course_plan(group, shared_group_teachers, run, not_before)
+            _generate_from_course_plan(group, shared_group_teachers, run, not_before, individual_group_teachers)
         except LessonGenerationError as exc:
             run.errors.append(str(exc))
 
@@ -714,12 +842,26 @@ class LessonGenerationReport:
 
 
 def _expected_lesson_count(group: Group) -> int:
-    course_plan = group.course.lesson_plans.count()
-    shared_in_use = group.teachers.filter(is_active=True, lesson_plans__isnull=True).exists()
-    individual = sum(
-        gt.lesson_plans.count() for gt in group.teachers.filter(is_active=True, lesson_plans__isnull=False).distinct()
+    """How many lessons the group's plan(s) call for: every shared course
+    plan row (unless its subject's program uses an individual plan) plus
+    every individual plan row."""
+    return sum(planned_lessons_by_program(group).values()) + _unowned_shared_rows(group)
+
+
+def _unowned_shared_rows(group: Group) -> int:
+    """Shared plan rows no program owns yet (a subject with no program at
+    all) — still part of what the group is expected to have."""
+    group_teachers = list(group.teachers.filter(is_active=True).select_related("teacher", "subject"))
+    individual = [gt for gt in group_teachers if gt.lesson_plans.exists()]
+    shared = [gt for gt in group_teachers if gt not in individual]
+    if not shared:
+        return 0
+    plans, _slots, routing = _shared_plan_setup(group, shared, individual)
+    owned_subjects = {gt.subject_id for gt in shared if gt.subject_id}
+    return sum(
+        1 for plan in plans
+        if routing.route.get(plan.subject_id) == ROUTE_UNSCHEDULED and plan.subject_id not in owned_subjects
     )
-    return (course_plan if shared_in_use else 0) + individual
 
 
 def generate_lessons_for_group_with_report(group: Group, *, not_before: dt.date | None = None) -> LessonGenerationReport:

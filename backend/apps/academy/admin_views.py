@@ -48,7 +48,11 @@ from .services.group_schedule_conflicts import overlapping_groups
 from .services.lesson_status import attention_q, lesson_status_counts
 from .services.monthly_report import compute_monthly_stats
 from .services.monthly_report_pdf import MONTH_NAMES_RU
-from .services.lesson_generator import LessonGenerationReport, generate_lessons_for_group_with_report
+from .services.lesson_generator import (
+    LessonGenerationReport,
+    generate_lessons_for_group_with_report,
+    planned_lessons_by_program,
+)
 from .services.subject_assignments import STATUS_UNASSIGNED, subject_assignment_overview
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
@@ -448,7 +452,10 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
     lessons = list(lessons_qs)
     lesson_stats = {
         "generated": len(lessons),
-        "planned_total": len(lesson_plans) or group.course.count_lesson,
+        # This program's own share of the plan (its individual plan, or its
+        # subject's rows of the shared course plan — e.g. 48 of 144), never
+        # the whole course plan.
+        "planned_total": planned_lessons_by_program(group).get(group_teacher.pk, 0),
         "completed": sum(1 for lesson in lessons if lesson.status == Lesson.Status.COMPLETED),
         "cancelled": sum(1 for lesson in lessons if lesson.status == Lesson.Status.CANCELLED),
         "upcoming": sum(
@@ -809,6 +816,7 @@ def _teaching_program_cards(group: Group) -> list[dict]:
         .annotate(_plan_count=Count("lesson_plans", distinct=True))
     )
 
+    planned = planned_lessons_by_program(group)
     cards = []
     for gt in programs:
         active_slots = sorted(
@@ -817,7 +825,6 @@ def _teaching_program_cards(group: Group) -> list[dict]:
         )
         lessons = Lesson.objects.filter(group_teacher=gt)
         has_individual_plan = gt._plan_count > 0
-        plan_filled = gt._plan_count if has_individual_plan else group.course.lesson_plans.count()
         cards.append(
             {
                 "obj": gt,
@@ -834,8 +841,12 @@ def _teaching_program_cards(group: Group) -> list[dict]:
                 "upcoming_count": lessons.filter(status=Lesson.Status.SCHEDULED, date__gte=today).count(),
                 "plan_count": gt._plan_count,
                 "has_individual_plan": has_individual_plan,
-                "plan_filled": plan_filled,
-                "plan_total": group.course.count_lesson,
+                # "Lessons created / lessons this program is responsible
+                # for": its subject's share of the shared course plan (e.g.
+                # 48 of 144) or its own individual plan — see
+                # services.lesson_generator.planned_lessons_by_program.
+                "plan_filled": lessons.count(),
+                "plan_total": planned.get(gt.pk, 0),
                 "workspace_url": reverse("admin:academy_groupteacher_workspace", args=[gt.pk]),
                 "edit_url": reverse("admin:academy_groupteacher_change", args=[gt.pk]),
                 "lesson_plan_url": (
@@ -858,13 +869,13 @@ def group_workspace_teachers_view(request, group_id):
 
     context = _workspace_context(request, group, "teachers")
     assignments = subject_assignment_overview(group)
-    add_teacher_url = reverse("admin:academy_group_workspace_teachers_add", args=[group.pk])
+    add_program_url = reverse("admin:academy_group_workspace_programs_add", args=[group.pk])
     context.update(
         {
             "title": f"{group.name} — Преподаватели",
             "cards": _teaching_program_cards(group),
             "subject_assignments": [
-                {"row": row, "assign_url": f"{add_teacher_url}?subject={row.subject_id}"} for row in assignments
+                {"row": row, "assign_url": f"{add_program_url}?subject={row.subject_id}"} for row in assignments
             ],
             "unassigned_count": sum(1 for row in assignments if row.status == STATUS_UNASSIGNED),
         }
@@ -916,9 +927,8 @@ def group_workspace_add_teacher_view(request, group_id):
                 group_teacher.save()
                 messages.success(
                     request,
-                    f"«{teacher}» назначен на предмет «{subject.name}». Занятия этого предмета в общем "
-                    "расписании группы будут закреплены за ним при следующей генерации "
-                    "(«Сгенерировать занятия»). Отдельные слоты расписания для него не обязательны.",
+                    f"«{teacher}» назначен на предмет «{subject.name}». Чтобы по предмету создавались "
+                    "занятия, добавьте этой программе расписание, затем нажмите «Сгенерировать занятия».",
                 )
                 return redirect(reverse("admin:academy_group_workspace_teachers", args=[group.pk]))
     else:
@@ -1045,7 +1055,11 @@ def group_workspace_add_program_view(request, group_id):
                     return redirect(reverse("admin:academy_groupteacher_change", args=[group_teacher.pk]))
                 return redirect(reverse("admin:academy_group_workspace_programs", args=[group.pk]))
     else:
-        form = AddTeachingProgramForm(group=group)
+        initial = {}
+        subject_id = request.GET.get("subject")
+        if subject_id and subject_id.isdigit():
+            initial["subject"] = subject_id
+        form = AddTeachingProgramForm(group=group, initial=initial)
 
     context = _workspace_context(request, group, "programs")
     context.update({"title": f"{group.name} — Добавить учебную программу", "form": form})
