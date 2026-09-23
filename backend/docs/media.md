@@ -33,7 +33,13 @@ name, the URL then returns 404).
 2. **Mount path: `/app/media`** (the image's `WORKDIR` is `/app`, so this is
    exactly the default `MEDIA_ROOT`). If you mount it elsewhere, set
    `MEDIA_ROOT` to the same path.
-3. Redeploy.
+3. Service → **Variables**: add `RAILWAY_RUN_UID=0`. Railway mounts the
+   volume owned by root, while the image runs as the unprivileged `django`
+   user, which cannot write to it. With this variable the container starts
+   as root, `deployment/server-entrypoint.sh` does `chown` on `MEDIA_ROOT`
+   and immediately re-runs itself as `django` — migrations and gunicorn
+   still never run as root.
+4. Redeploy.
 
 Limitations of a volume: it is attached to a single service instance (no
 horizontal replicas), and deploys of a service with a volume have a short
