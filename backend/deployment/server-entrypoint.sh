@@ -19,4 +19,8 @@ python manage.py migrate --noinput
 
 python manage.py shell -c "from django.contrib.auth import get_user_model; User=get_user_model(); User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@example.com', 'admin')"
 
-exec gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000}
+# Gunicorn >= 25.1 opens a control socket (for `gunicornc`) under
+# $XDG_RUNTIME_DIR or $HOME/.gunicorn/. The "django" system user's HOME is
+# /nonexistent, so that fails with "Control server error: Permission denied"
+# on every boot. gunicornc is not used on Railway — disable the socket.
+exec gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --no-control-socket
