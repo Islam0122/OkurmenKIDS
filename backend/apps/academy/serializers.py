@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.users.models import Subject, Teacher, User
@@ -437,6 +438,22 @@ class GroupTeacherSerializer(serializers.ModelSerializer):
         annotated = getattr(obj, "_plan_count", None)
         return annotated if annotated is not None else obj.lesson_plans.count()
 
+    def validate(self, attrs):
+        # Same rules as GroupTeacher.clean() (active teacher account with the
+        # Trainer role, subject belongs to the group's course) — a subject
+        # assignment decides who gets every lesson of that subject, so an
+        # invalid one must be rejected here, not discovered at generation.
+        instance = GroupTeacher(
+            group=attrs.get("group", getattr(self.instance, "group", None)),
+            teacher=attrs.get("teacher", getattr(self.instance, "teacher", None)),
+            subject=attrs.get("subject", getattr(self.instance, "subject", None)),
+        )
+        try:
+            instance.clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict)
+        return attrs
+
 
 class GroupSerializer(serializers.ModelSerializer):
     """teacher/room/start_time/end_time/days_of_week are legacy fields on
@@ -526,6 +543,27 @@ class GenerateLessonsResponseSerializer(serializers.Serializer):
     last_lesson = serializers.IntegerField(allow_null=True)
     first_date = serializers.DateField(allow_null=True)
     last_date = serializers.DateField(allow_null=True)
+    already_existed = serializers.IntegerField(help_text="Занятий группы до этого запуска.")
+    expected_total = serializers.IntegerField(help_text="Сколько занятий предусматривает план(ы) группы.")
+    missing_count = serializers.IntegerField(help_text="Сколько занятий плана всё ещё не создано.")
+    conflicts = serializers.IntegerField()
+    warnings = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Почему часть занятий не создана (тренер не назначен на предмет, конфликт, конец периода группы).",
+    )
+    errors = serializers.ListField(child=serializers.CharField())
+
+
+class SubjectAssignmentSerializer(serializers.Serializer):
+    """One row of services.subject_assignments.subject_assignment_overview."""
+
+    subject = serializers.IntegerField()
+    subject_name = serializers.CharField()
+    plan_lessons = serializers.IntegerField()
+    teachers = serializers.ListField(child=serializers.DictField())
+    legacy_teachers = serializers.ListField(child=serializers.DictField())
+    status = serializers.ChoiceField(choices=["assigned", "multiple", "legacy_slot", "unassigned"])
+    status_label = serializers.CharField()
 
 
 # ---------------------------------------------------------------------------

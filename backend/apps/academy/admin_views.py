@@ -48,11 +48,8 @@ from .services.group_schedule_conflicts import overlapping_groups
 from .services.lesson_status import attention_q, lesson_status_counts
 from .services.monthly_report import compute_monthly_stats
 from .services.monthly_report_pdf import MONTH_NAMES_RU
-from .services.lesson_generator import (
-    LessonGenerationError,
-    generate_lessons_for_group,
-    generate_lessons_for_group_with_report,
-)
+from .services.lesson_generator import LessonGenerationReport, generate_lessons_for_group_with_report
+from .services.subject_assignments import STATUS_UNASSIGNED, subject_assignment_overview
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
 WEEKDAY_SHORT_LABELS = {code: WEEKDAY_LABELS_SHORT[code] for code in WEEKDAY_CODES}
@@ -282,21 +279,45 @@ def schedule_view(request):
     return render(request, "admin/academy/schedule.html", context)
 
 
+def add_generation_messages(request, report: LessonGenerationReport, *, prefix: str = "") -> None:
+    """One place that turns a generation report into admin flash messages —
+    shared by the Schedule page's quick action, the Group Workspace button
+    and the Group changelist action, so all three tell the admin the same
+    thing, including which lessons were *not* created and why."""
+    summary_parts = [f"Создано: {report.created}", f"Уже существовало: {report.already_existed}"]
+    if report.expected:
+        summary_parts.append(f"По плану: {report.expected}")
+    if report.missing:
+        summary_parts.append(f"Не создано: {report.missing}")
+    if report.skipped:
+        summary_parts.append(f"Пропущено: {report.skipped}")
+    if report.conflicts:
+        summary_parts.append(f"Конфликтов: {report.conflicts}")
+    summary_parts.append(f"Ошибок: {len(report.errors)}")
+
+    if report.errors and not report.created:
+        level = messages.ERROR
+    elif report.warnings or report.errors:
+        level = messages.WARNING
+    elif report.created:
+        level = messages.SUCCESS
+    else:
+        level = messages.INFO
+    messages.add_message(request, level, prefix + " · ".join(summary_parts))
+    for warning in report.warnings:
+        messages.warning(request, prefix + warning)
+    for error in report.errors:
+        messages.error(request, prefix + error)
+
+
 @require_POST
 def generate_lessons_for_group_view(request, group_id: int):
     if not _is_admin_user(request.user):
         raise PermissionDenied("Действие доступно только администратору.")
 
     group = get_object_or_404(Group, pk=group_id)
-    try:
-        created = generate_lessons_for_group(group)
-    except LessonGenerationError as exc:
-        messages.error(request, f"«{group.name}»: {exc}")
-    else:
-        if created:
-            messages.success(request, f"«{group.name}»: создано занятий — {len(created)}.")
-        else:
-            messages.warning(request, f"«{group.name}»: новых занятий не создано (уже сгенерированы).")
+    report = generate_lessons_for_group_with_report(group)
+    add_generation_messages(request, report, prefix=f"«{group.name}»: ")
 
     return redirect(f"{reverse('admin:academy_schedule')}?group={group_id}")
 
@@ -836,7 +857,18 @@ def group_workspace_teachers_view(request, group_id):
     group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
 
     context = _workspace_context(request, group, "teachers")
-    context.update({"title": f"{group.name} — Преподаватели", "cards": _teaching_program_cards(group)})
+    assignments = subject_assignment_overview(group)
+    add_teacher_url = reverse("admin:academy_group_workspace_teachers_add", args=[group.pk])
+    context.update(
+        {
+            "title": f"{group.name} — Преподаватели",
+            "cards": _teaching_program_cards(group),
+            "subject_assignments": [
+                {"row": row, "assign_url": f"{add_teacher_url}?subject={row.subject_id}"} for row in assignments
+            ],
+            "unassigned_count": sum(1 for row in assignments if row.status == STATUS_UNASSIGNED),
+        }
+    )
     return render(request, "admin/academy/group/workspace/teachers.html", context)
 
 
@@ -870,20 +902,31 @@ def group_workspace_add_teacher_view(request, group_id):
         if form.is_valid():
             teacher = form.cleaned_data["teacher"]
             subject = form.cleaned_data["subject"]
-            group_teacher, created = GroupTeacher.objects.get_or_create(
-                group=group, teacher=teacher, subject=subject
-            )
-            if created:
+            existing = GroupTeacher.objects.filter(group=group, teacher=teacher, subject=subject).first()
+            if existing is not None:
+                messages.warning(request, f"«{teacher}» уже преподаёт «{subject.name}» в этой группе.")
+                return redirect(reverse("admin:academy_group_workspace_teachers", args=[group.pk]))
+            group_teacher = GroupTeacher(group=group, teacher=teacher, subject=subject)
+            try:
+                group_teacher.full_clean()
+            except DjangoValidationError as exc:
+                for message in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
+                    form.add_error(None, message)
+            else:
+                group_teacher.save()
                 messages.success(
                     request,
-                    f"Преподаватель «{teacher}» добавлен ({subject.name}). "
-                    "Теперь добавьте для него расписание.",
+                    f"«{teacher}» назначен на предмет «{subject.name}». Занятия этого предмета в общем "
+                    "расписании группы будут закреплены за ним при следующей генерации "
+                    "(«Сгенерировать занятия»). Отдельные слоты расписания для него не обязательны.",
                 )
-            else:
-                messages.warning(request, f"«{teacher}» уже преподаёт «{subject.name}» в этой группе.")
-            return redirect(reverse("admin:academy_group_workspace_teachers", args=[group.pk]))
+                return redirect(reverse("admin:academy_group_workspace_teachers", args=[group.pk]))
     else:
-        form = AddTeacherAssignmentForm(group=group)
+        initial = {}
+        subject_id = request.GET.get("subject")
+        if subject_id and subject_id.isdigit():
+            initial["subject"] = subject_id
+        form = AddTeacherAssignmentForm(group=group, initial=initial)
 
     context = _workspace_context(request, group, "teachers")
     context.update({"title": f"{group.name} — Добавить преподавателя", "form": form})
@@ -990,7 +1033,8 @@ def group_workspace_add_program_view(request, group_id):
                 messages.success(
                     request,
                     f"Учебная программа добавлена: {teacher} — {subject.name} "
-                    f"({len(new_slots)} слот(ов) расписания).",
+                    f"({len(new_slots)} слот(ов) расписания). Когда расписание группы будет "
+                    "полностью настроено, нажмите «Сгенерировать занятия».",
                 )
                 if wants_individual_plan:
                     # Reuses the existing GroupTeacherLessonPlanInline on
@@ -1119,7 +1163,11 @@ def group_workspace_add_schedule_view(request, group_id):
                     messages.error(request, message)
             else:
                 slot.save()
-                messages.success(request, "Слот расписания добавлен.")
+                messages.success(
+                    request,
+                    "Слот расписания добавлен. Когда расписание группы будет полностью настроено, "
+                    "нажмите «Сгенерировать занятия».",
+                )
                 return redirect(reverse("admin:academy_group_workspace_schedule", args=[group.pk]))
     else:
         initial = {}
@@ -1340,18 +1388,7 @@ def group_workspace_generate_lessons_view(request, group_id):
     _require_admin(request)
     group = get_object_or_404(Group, pk=group_id)
     report = generate_lessons_for_group_with_report(group)
-
-    summary_parts = [f"Создано: {report.created}", f"Уже существовало: {report.already_existed}"]
-    if report.skipped:
-        summary_parts.append(f"Пропущено: {report.skipped}")
-    if report.conflicts:
-        summary_parts.append(f"Конфликтов: {report.conflicts}")
-    summary_parts.append(f"Ошибок: {len(report.errors)}")
-
-    level = messages.SUCCESS if report.created or not report.errors else messages.WARNING
-    messages.add_message(request, level, " · ".join(summary_parts))
-    for error in report.errors:
-        messages.error(request, error)
+    add_generation_messages(request, report)
 
     next_url = request.POST.get("next") or reverse("admin:academy_group_workspace", args=[group.pk])
     return redirect(next_url)

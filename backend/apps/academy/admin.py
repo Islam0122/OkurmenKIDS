@@ -21,6 +21,7 @@ from .admin_views import (
     academy_report_detail_view,
     academy_report_monitor_view,
     academy_report_open_view,
+    add_generation_messages,
     analytics_view,
     attendance_detail_view,
     attendance_monitor_view,
@@ -87,7 +88,7 @@ from .services.import_export import (
     import_students,
     preview_students_import_rows,
 )
-from .services.lesson_generator import LessonGenerationError, generate_lessons_for_group
+from .services.lesson_generator import generate_lessons_for_group_with_report
 from .widgets import SubjectCardsWidget
 
 
@@ -1264,19 +1265,9 @@ class GroupAdmin(admin.ModelAdmin):
     @admin.action(description="Сгенерировать занятия по плану курса")
     def generate_lessons_action(self, request, queryset):
         for group in queryset:
-            try:
-                created = generate_lessons_for_group(group)
-            except LessonGenerationError as exc:
-                self.message_user(request, f"«{group.name}»: {exc}", messages.ERROR)
-                continue
-            if created:
-                self.message_user(
-                    request, f"«{group.name}»: создано занятий — {len(created)}.", messages.SUCCESS
-                )
-            else:
-                self.message_user(
-                    request, f"«{group.name}»: новых занятий не создано (уже сгенерированы).", messages.WARNING
-                )
+            add_generation_messages(
+                request, generate_lessons_for_group_with_report(group), prefix=f"«{group.name}»: "
+            )
 
     @admin.action(description="Приостановить выбранные группы")
     def pause_groups(self, request, queryset):

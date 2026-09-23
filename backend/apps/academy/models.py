@@ -401,16 +401,25 @@ class StudentStatusEvent(models.Model):
 
 class GroupQuerySet(models.QuerySet):
     def for_teacher(self, teacher):
-        """Every Group `teacher` has a real stake in, via any of their own
-        active GroupSchedule slots — a group can have several teachers
-        across different slots, and any of them gets full access to the
-        group. Deliberately does *not* also check the legacy `Group.teacher`
-        field: every Group that ever had one already got an equivalent
-        GroupTeacher/GroupSchedule row from the one-off backfill migration
-        (see services.group_schedule_sync), so GroupSchedule alone is a
-        complete, correct source of truth here.
+        """Every Group `teacher` has a real stake in: via any of their own
+        active GroupSchedule slots, or via an active subject assignment
+        (GroupTeacher with a subject) — e.g. the English trainer of a group
+        whose weekly slots all belong to its IT trainer still teaches their
+        own English lessons in those slots (see services.lesson_generator)
+        and needs the group/student roster for them. A group can have
+        several teachers, and any of them gets access to the group itself;
+        each one's *lessons* stay private (see LessonQuerySet.for_teacher).
+
+        Deliberately does *not* check the legacy `Group.teacher` field, nor a
+        subject-less legacy GroupTeacher on its own (access for those comes
+        from their schedule slots) — every Group that ever had one already
+        got an equivalent GroupTeacher/GroupSchedule row from the one-off
+        backfill migration (see services.group_schedule_sync).
         """
-        return self.filter(schedules__teacher=teacher, schedules__is_active=True).distinct()
+        return self.filter(
+            models.Q(schedules__teacher=teacher, schedules__is_active=True)
+            | models.Q(teachers__teacher=teacher, teachers__is_active=True, teachers__subject__isnull=False)
+        ).distinct()
 
 
 class Group(models.Model):
@@ -561,11 +570,14 @@ class Group(models.Model):
 # GroupTeacherLessonPlan and see their own Lessons, independent of every
 # other teacher in the same group.
 #
-# Never created directly by an admin/API call — always get-or-created
-# automatically from a GroupSchedule save, so adding a Teacher Program is
-# just: add a GroupSchedule row for that (teacher, subject) pair (typically
-# via the Group admin page's schedule inline) — no separate "create the
-# program first" step.
+# A GroupTeacher with a subject is also the group's *subject → teacher
+# assignment* ("Islam teaches IT in Prog SOFT 1", "Aizada teaches English in
+# Prog SOFT 1"): lesson generation resolves every lesson's teacher from the
+# lesson plan row's subject through these rows (see services.lesson_generator),
+# so an assignment needs no schedule slot of its own — the English trainer
+# can teach in the group's shared weekly slots. It is get-or-created
+# automatically from a GroupSchedule save, or created directly (Workspace
+# "Добавить преподавателя", the /programs/ API) as a bare assignment.
 # ---------------------------------------------------------------------------
 
 class GroupTeacher(models.Model):
@@ -640,10 +652,20 @@ class GroupTeacher(models.Model):
 
     def clean(self):
         errors = {}
-        if self.teacher_id and not self.teacher.is_active:
-            errors["teacher"] = "Тренер должен быть активным."
+        if self.teacher_id:
+            if not self.teacher.is_active:
+                errors["teacher"] = "Тренер должен быть активным."
+            elif not self.teacher.user.is_active or self.teacher.user.role != User.Role.TEACHER:
+                errors["teacher"] = "Назначить можно только активный аккаунт с ролью «Тренер»."
         if self.subject_id and not self.subject.is_active:
             errors["subject"] = "Предмет должен быть активным."
+        if (
+            self.subject_id
+            and self.group_id
+            and "subject" not in errors
+            and not self.group.course.subjects.filter(pk=self.subject_id).exists()
+        ):
+            errors["subject"] = "Предмет не входит в курс этой группы."
         if errors:
             raise ValidationError(errors)
 
@@ -1152,18 +1174,23 @@ class Lesson(models.Model):
         # to. The generator always sets it explicitly (see
         # services.lesson_generator); this fallback only matters for a
         # Lesson created some other way (e.g. by hand in Admin) — it derives
-        # the same GroupTeacher `schedule.group_teacher` would resolve to,
-        # falling back to the group's own primary teacher, so such a Lesson
-        # still gets correct duplicate protection without the caller having
-        # to know GroupTeacher exists.
+        # the same GroupTeacher `schedule.group_teacher` would resolve to, or
+        # the lesson's own explicit `teacher`, so such a Lesson still gets
+        # correct duplicate protection without the caller having to know
+        # GroupTeacher exists. It never falls back to the legacy
+        # `Group.teacher` field: a lesson with no known teacher stays
+        # without one rather than being silently handed to "the group's
+        # main teacher".
         if self.group_teacher_id is None and self.group_id:
             if self.schedule_id and self.schedule.group_teacher_id:
                 self.group_teacher_id = self.schedule.group_teacher_id
-            else:
-                teacher_id = self.teacher_id or self.group.teacher_id
+            elif self.teacher_id:
                 group_teacher, _ = GroupTeacher.objects.get_or_create(
                     group_id=self.group_id,
-                    teacher_id=teacher_id,
+                    teacher_id=self.teacher_id,
+                    # Subject-less on purpose: a hand-made lesson must never
+                    # create a subject -> teacher assignment as a side effect
+                    # (see services.lesson_generator).
                     subject_id=None,
                     defaults={"is_legacy_primary": True},
                 )

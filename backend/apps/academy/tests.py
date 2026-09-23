@@ -542,34 +542,36 @@ class LessonGenerationTests(AcademyTestBase):
     (GroupSchedule) to observe generation happening from a clean slate.
     """
 
-    def test_adding_a_teacher_program_automatically_generates_lessons(self):
-        """The core workflow guarantee: Admin never has to click anything —
-        adding a GroupSchedule row (a Teacher Program's slot) is enough; the
-        `post_save` signal (see apps.academy.signals) does the rest. A bare
-        Group with no Teacher Program yet has zero lessons — there is no
-        special "the group's own fields" shortcut anymore (see Group's
-        teacher/room/start_time/end_time/days_of_week help_text)."""
+    def test_saving_a_schedule_slot_does_not_generate_lessons_by_itself(self):
+        """Generation is an explicit action (see apps.academy.signals): a
+        single slot save used to trigger it, and a program whose Mon/Wed/Fri
+        slots were saved one by one then got the whole course plan spread
+        over Mondays alone — the "lessons in 2029" bug. Nothing is generated
+        until the admin asks for it, after the whole schedule is in place."""
         group = Group.objects.create(
             name="Auto-generated group", course=self.course, start_date=dt.date(2026, 9, 7),
         )
-        self.assertEqual(Lesson.objects.filter(group=group).count(), 0)
-
-        # A single row is enough to prove the point (and avoids the
-        # multi-row-same-request deferral admin.GroupAdmin needs — see
-        # save_model/save_formset/save_related — which doesn't apply here
-        # since nothing else is being added in the same request).
         GroupSchedule.objects.create(
             group=group, teacher=self.teacher1, subject=self.subject_python,
             day_of_week="mon", start_time=dt.time(9, 0), end_time=dt.time(10, 30), room=self.room1,
         )
+        self.assertEqual(Lesson.objects.filter(group=group).count(), 0)
+
+        # The JavaScript rows of the plan belong to teacher2, who teaches in
+        # the same weekly slot (a bare subject assignment, no slot of their own).
+        GroupTeacher.objects.create(group=group, teacher=self.teacher2, subject=self.subject_frontend)
+        generate_lessons_for_group(group)
 
         lessons = list(Lesson.objects.filter(group=group).order_by("lesson_number"))
-        self.assertEqual(len(lessons), 4)
         self.assertEqual(
             [lesson.date for lesson in lessons],
             [dt.date(2026, 9, 7), dt.date(2026, 9, 14), dt.date(2026, 9, 21), dt.date(2026, 9, 28)],
         )
         self.assertEqual([lesson.lesson_number for lesson in lessons], [1, 2, 3, 4])
+        self.assertEqual(
+            [lesson.teacher_id for lesson in lessons],
+            [self.teacher1.id, self.teacher2.id, self.teacher1.id, self.teacher2.id],
+        )
 
     def test_copies_content_from_plan(self):
         lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
@@ -611,6 +613,7 @@ class LessonGenerationTests(AcademyTestBase):
             )
             slot._defer_schedule_sync = True
             slot.save()
+        GroupTeacher.objects.create(group=group, teacher=self.teacher2, subject=self.subject_frontend)
         generate_lessons_for_group(group)
         self.assertEqual(Lesson.objects.filter(group=group).count(), 2)
 
@@ -1438,6 +1441,7 @@ class ScheduleAdminViewTests(AcademyTestBase):
         conflicting_lesson = Lesson.objects.create(
             group=overlapping_group, lesson_number=99, date=dt.date(2026, 9, 7),
             start_time=dt.time(15, 30), end_time=dt.time(17, 0), room=self.room2,
+            teacher=self.teacher1,
         )
 
         response = self._get({"date_from": "2026-09-07", "date_to": "2026-09-07"})
@@ -6883,3 +6887,405 @@ class AcademyReportGroupStatsTests(AcademyTestBase):
         stats_this_month = compute_academy_monthly_stats(2026, 9)
         stats_other_month = compute_academy_monthly_stats(2020, 1)
         self.assertEqual(stats_this_month["group_stats"], stats_other_month["group_stats"])
+
+
+# ---------------------------------------------------------------------------
+# Subject -> trainer resolution ("Prog SOFT 1"): a group whose only weekly
+# slots (Mon/Wed/Fri 08:00-09:00) belong to its IT trainer, a 144-lesson IT
+# program mixing IT/CyberSecurity/Python/HTML/Soft Skills/English, and a
+# separate trainer per non-IT subject. See services.lesson_generator.
+# ---------------------------------------------------------------------------
+
+PROG_SOFT_START = dt.date(2026, 9, 9)  # a Wednesday
+
+
+def _mwf_dates(start: dt.date, count: int) -> list[dt.date]:
+    dates, day = [], start
+    while len(dates) < count:
+        if day.weekday() in (0, 2, 4):
+            dates.append(day)
+        day += dt.timedelta(days=1)
+    return dates
+
+
+class ProgSoftSubjectTeacherTests(TestCase):
+    ROTATION = ["IT", "Python", "English", "HTML/CSS/JS", "Soft Skills", "CyberSecurity"]
+
+    def setUp(self):
+        self.admin = make_admin("prog_admin")
+        self.islam = make_teacher("islam_prog")
+        self.teacher_b = make_teacher("softskills_prog")
+        self.teacher_c = make_teacher("english_prog")
+
+        self.subjects = {name: Subject.objects.get_or_create(name=name)[0] for name in self.ROTATION}
+        self.it_subjects = [self.subjects[n] for n in ("IT", "Python", "HTML/CSS/JS", "CyberSecurity")]
+
+        self.course = Course.objects.create(name="IT Program (Prog SOFT)", count_lesson=144)
+        self.course.subjects.set(self.subjects.values())
+        for number in range(1, 145):
+            name = self.ROTATION[(number - 1) % len(self.ROTATION)]
+            CourseLessonPlan.objects.create(
+                course=self.course, lesson_number=number, subject=self.subjects[name], topic=f"{name} #{number}",
+            )
+
+        self.room = Room.objects.create(name="Prog Room 15", capacity=20)
+        self.group = Group.objects.create(name="Prog SOFT 1", course=self.course, start_date=PROG_SOFT_START)
+        self.student = Student.objects.create(first_name="Айдай", group=self.group)
+
+        # Exactly what the Workspace's "Добавить учебную программу" form does:
+        # one IT program, its Mon/Wed/Fri slots saved one after another.
+        for day in ("mon", "wed", "fri"):
+            GroupSchedule.objects.create(
+                group=self.group, teacher=self.islam, subject=self.subjects["IT"], day_of_week=day,
+                start_time=dt.time(8, 0), end_time=dt.time(9, 0), room=self.room,
+            )
+
+        self.admin_client = APIClient()
+        self.admin_client.force_authenticate(self.admin)
+        self.islam_client = APIClient()
+        self.islam_client.force_authenticate(self.islam.user)
+        self.c_client = APIClient()
+        self.c_client.force_authenticate(self.teacher_c.user)
+
+    def assign(self, teacher, subject_name):
+        return GroupTeacher.objects.get_or_create(group=self.group, teacher=teacher, subject=self.subjects[subject_name])[0]
+
+    def assign_everyone(self):
+        for name in ("Python", "HTML/CSS/JS", "CyberSecurity"):
+            self.assign(self.islam, name)
+        self.assign(self.teacher_b, "Soft Skills")
+        self.assign(self.teacher_c, "English")
+
+    def lessons(self, **filters):
+        return Lesson.objects.filter(group=self.group, **filters)
+
+    # Test 8 (root cause of the 2029 dates) ------------------------------
+
+    def test_saving_slots_one_by_one_never_spreads_the_plan_over_mondays(self):
+        # Before the fix the Monday save alone generated all 144 lessons on
+        # 144 consecutive Mondays: 14.09.2026 … 11.06.2029.
+        self.assertFalse(self.lessons().exists())
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        self.assertEqual(self.lessons().count(), 144)
+        self.assertEqual(self.lessons().order_by("date").first().date, PROG_SOFT_START)
+        self.assertLess(self.lessons().order_by("-date").first().date, dt.date(2028, 1, 1))
+        self.assertFalse(self.lessons(date__year=2029).exists())
+
+    # Tests 1-3 -----------------------------------------------------------
+
+    def test_islam_gets_only_his_it_subjects(self):
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        islam_lessons = Lesson.objects.for_teacher(self.islam).filter(group=self.group)
+        self.assertEqual(set(islam_lessons.values_list("subject__name", flat=True)),
+                         {"IT", "Python", "HTML/CSS/JS", "CyberSecurity"})
+        self.assertEqual(islam_lessons.count(), 96)  # 4 of every 6 plan rows
+
+    def test_soft_skills_goes_to_its_trainer_not_islam(self):
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        soft = self.lessons(subject=self.subjects["Soft Skills"])
+        self.assertEqual(soft.count(), 24)
+        self.assertEqual(set(soft.values_list("teacher_id", flat=True)), {self.teacher_b.id})
+        # Taught in the group's shared (IT-program) slot, owned by B's own assignment.
+        self.assertEqual(set(soft.values_list("group_teacher__teacher_id", flat=True)), {self.teacher_b.id})
+
+    def test_english_goes_to_its_trainer_not_islam(self):
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        english = self.lessons(subject=self.subjects["English"])
+        self.assertEqual(english.count(), 24)
+        self.assertEqual(set(english.values_list("teacher_id", flat=True)), {self.teacher_c.id})
+        self.assertFalse(Lesson.objects.for_teacher(self.islam).filter(subject=self.subjects["English"]).exists())
+
+    def test_two_it_trainers_each_get_their_own_subject(self):
+        teacher_d = make_teacher("cyber_prog")
+        self.assign_everyone()
+        GroupTeacher.objects.filter(group=self.group, subject=self.subjects["CyberSecurity"]).delete()
+        self.assign(teacher_d, "CyberSecurity")
+        generate_lessons_for_group(self.group)
+        self.assertEqual(
+            set(self.lessons(subject=self.subjects["CyberSecurity"]).values_list("teacher_id", flat=True)),
+            {teacher_d.id},
+        )
+        self.assertEqual(
+            set(self.lessons(subject=self.subjects["Python"]).values_list("teacher_id", flat=True)), {self.islam.id},
+        )
+
+    # Test 4 --------------------------------------------------------------
+
+    def test_unassigned_subject_is_skipped_with_a_warning_then_filled_into_the_same_dates(self):
+        self.assign_everyone()
+        GroupTeacher.objects.filter(group=self.group, subject=self.subjects["English"]).delete()
+
+        report = generate_lessons_for_group_with_report(self.group)
+
+        self.assertEqual(report.created, 120)
+        self.assertEqual(report.missing, 24)
+        self.assertTrue(any("English" in w and "не назначен" in w for w in report.warnings))
+        self.assertFalse(self.lessons(subject=self.subjects["English"]).exists())
+        self.assertFalse(Lesson.objects.for_teacher(self.islam).filter(subject=self.subjects["English"]).exists())
+        # The calendar is not shifted: every other lesson already sits on its final date.
+        expected_dates = _mwf_dates(PROG_SOFT_START, 144)
+        for lesson in self.lessons():
+            self.assertEqual(lesson.date, expected_dates[lesson.lesson_number - 1])
+
+        # Admin assigns the English trainer and simply generates again.
+        self.assign(self.teacher_c, "English")
+        report = generate_lessons_for_group_with_report(self.group)
+        self.assertEqual(report.created, 24)
+        self.assertEqual(report.warnings, [])
+        dates = list(self.lessons().order_by("lesson_number").values_list("date", flat=True))
+        self.assertEqual(dates, expected_dates)
+
+    def test_subject_assignments_endpoint_flags_the_unassigned_subject(self):
+        self.assign(self.teacher_b, "Soft Skills")
+        response = self.admin_client.get(f"/api/v1/groups/{self.group.id}/subject-assignments/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = {row["subject_name"]: row for row in response.data}
+        self.assertEqual(rows["Soft Skills"]["status"], "assigned")
+        self.assertEqual(rows["IT"]["status"], "assigned")  # via Islam's IT slots
+        self.assertEqual(rows["English"]["status"], "unassigned")
+        self.assertEqual(rows["English"]["plan_lessons"], 24)
+
+    # Test 5 --------------------------------------------------------------
+
+    def test_generates_all_144_lessons_in_plan_order_on_the_group_schedule(self):
+        self.assign_everyone()
+        response = self.admin_client.post(f"/api/v1/groups/{self.group.id}/generate-lessons/")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["created_count"], 144)
+        self.assertEqual(response.data["missing_count"], 0)
+        self.assertEqual(response.data["warnings"], [])
+
+        lessons = list(self.lessons().select_related("subject", "plan").order_by("date", "start_time"))
+        self.assertEqual([l.lesson_number for l in lessons], list(range(1, 145)))
+        self.assertEqual([l.date for l in lessons], _mwf_dates(PROG_SOFT_START, 144))
+        self.assertEqual(lessons[-1].date, dt.date(2027, 8, 9))
+        for lesson in lessons:
+            self.assertEqual(lesson.subject_id, lesson.plan.subject_id)
+            self.assertEqual((lesson.start_time, lesson.end_time), (dt.time(8, 0), dt.time(9, 0)))
+
+    # Test 6 --------------------------------------------------------------
+
+    def test_regeneration_is_idempotent(self):
+        self.assign_everyone()
+        first = self.admin_client.post(f"/api/v1/groups/{self.group.id}/generate-lessons/")
+        second = self.admin_client.post(f"/api/v1/groups/{self.group.id}/generate-lessons/")
+        self.assertEqual(first.data["created_count"], 144)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.data["created_count"], 0)
+        self.assertEqual(self.lessons().count(), 144)
+
+    def test_regeneration_after_deleting_a_lesson_refills_its_own_date_only(self):
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        lesson = self.lessons().get(lesson_number=50)
+        original_date = lesson.date
+        lesson.delete()
+        self.assertEqual(len(generate_lessons_for_group(self.group)), 1)
+        self.assertEqual(self.lessons().get(lesson_number=50).date, original_date)
+        self.assertEqual(self.lessons().filter(date=original_date).count(), 1)
+
+    # Test 7 --------------------------------------------------------------
+
+    def test_trainer_week_view_shows_exactly_their_lessons(self):
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        week = {"date_from": "2026-09-07", "date_to": "2026-09-13"}
+
+        islam_week = self.islam_client.get("/api/v1/lessons/", week).data["results"]
+        # 09.09 lesson #1 IT, 11.09 lesson #2 Python — English #3 is on 14.09.
+        self.assertEqual([(l["date"], l["subject_name"]) for l in islam_week],
+                         [("2026-09-09", "IT"), ("2026-09-11", "Python")])
+
+        c_next_week = self.c_client.get("/api/v1/lessons/", {"date_from": "2026-09-14", "date_to": "2026-09-20"})
+        self.assertEqual([(l["date"], l["subject_name"]) for l in c_next_week.data["results"]],
+                         [("2026-09-14", "English")])
+
+    def test_subject_only_trainer_can_see_the_group_and_its_students(self):
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        self.assertEqual(self.c_client.get(f"/api/v1/groups/{self.group.id}/").status_code, status.HTTP_200_OK)
+        response = self.c_client.get(f"/api/v1/groups/{self.group.id}/students/")
+        self.assertEqual([s["id"] for s in response.data], [self.student.id])
+        # …but the group's schedule endpoint still only lists C's own lessons.
+        schedule = self.c_client.get(f"/api/v1/groups/{self.group.id}/schedule/").data["lessons"]
+        self.assertEqual({l["subject_name"] for l in schedule}, {"English"})
+
+    # Test 9 --------------------------------------------------------------
+
+    def test_assigned_trainer_busy_elsewhere_is_not_double_booked(self):
+        self.assign_everyone()
+        other_course = Course.objects.create(name="English Club", count_lesson=1)
+        other_course.subjects.add(self.subjects["English"])
+        CourseLessonPlan.objects.create(course=other_course, lesson_number=1, subject=self.subjects["English"], topic="Hi")
+        other_group = Group.objects.create(name="English Club 1", course=other_course, start_date=PROG_SOFT_START)
+        GroupSchedule.objects.create(
+            group=other_group, teacher=self.teacher_c, subject=self.subjects["English"],
+            day_of_week="mon", start_time=dt.time(8, 30), end_time=dt.time(9, 30),
+        )
+
+        report = generate_lessons_for_group_with_report(self.group)
+
+        # With this 6-subject rotation over Mon/Wed/Fri every English lesson
+        # falls on a Monday 08:00 — exactly when C teaches English Club.
+        self.assertFalse(self.lessons(subject=self.subjects["English"]).exists())
+        self.assertEqual(report.created, 120)
+        self.assertEqual(report.conflicts, 24)
+        self.assertTrue(any("English Club 1" in w for w in report.warnings))
+        # Nobody else was silently put in C's place, and the calendar did not shift.
+        expected_dates = _mwf_dates(PROG_SOFT_START, 144)
+        for lesson in self.lessons():
+            self.assertEqual(lesson.date, expected_dates[lesson.lesson_number - 1])
+
+    def test_existing_group_lesson_at_a_slot_is_never_double_booked(self):
+        self.assign_everyone()
+        Lesson.objects.create(
+            group=self.group, teacher=self.islam, subject=self.subjects["IT"], lesson_number=999,
+            date=PROG_SOFT_START, start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+        )
+        generate_lessons_for_group(self.group)
+        self.assertEqual(self.lessons(date=PROG_SOFT_START).count(), 1)
+        self.assertEqual(self.lessons().get(lesson_number=1).date, dt.date(2026, 9, 11))
+
+    # Test 10 -------------------------------------------------------------
+
+    def test_trainer_cannot_reach_another_trainers_lesson(self):
+        self.assign_everyone()
+        generate_lessons_for_group(self.group)
+        english_lesson = self.lessons(subject=self.subjects["English"]).first()
+
+        self.assertEqual(self.islam_client.get(f"/api/v1/lessons/{english_lesson.id}/").status_code,
+                         status.HTTP_404_NOT_FOUND)
+        self.assertEqual(
+            self.islam_client.patch(f"/api/v1/lessons/{english_lesson.id}/", {"topic": "x"}).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertIn(
+            self.islam_client.post(
+                f"/api/v1/lessons/{english_lesson.id}/attendance/",
+                [{"student": self.student.id, "status": "present"}], format="json",
+            ).status_code,
+            (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND),
+        )
+        # Asking for C's lessons by query parameter never widens Islam's scope.
+        response = self.islam_client.get("/api/v1/lessons/", {"teacher": self.teacher_c.id})
+        self.assertEqual(response.data["count"], 0)
+        # Only an admin can generate or assign.
+        self.assertEqual(
+            self.islam_client.post(f"/api/v1/groups/{self.group.id}/generate-lessons/").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.islam_client.post(
+                "/api/v1/programs/",
+                {"group": self.group.id, "teacher": self.islam.id, "subject": self.subjects["English"].id},
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    # Assignment validation ------------------------------------------------
+
+    def test_assignment_rejects_a_subject_outside_the_course(self):
+        foreign = Subject.objects.create(name="Chess (not in course)")
+        response = self.admin_client.post(
+            "/api/v1/programs/", {"group": self.group.id, "teacher": self.teacher_b.id, "subject": foreign.id},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("subject", response.data)
+
+    def test_assignment_rejects_a_non_trainer_account(self):
+        self.teacher_b.user.role = User.Role.ADMIN
+        self.teacher_b.user.save(update_fields=["role"])
+        response = self.admin_client.post(
+            "/api/v1/programs/",
+            {"group": self.group.id, "teacher": self.teacher_b.id, "subject": self.subjects["Soft Skills"].id},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_deactivated_assignment_is_not_used(self):
+        self.assign_everyone()
+        GroupTeacher.objects.filter(teacher=self.teacher_b).update(is_active=False)
+        report = generate_lessons_for_group_with_report(self.group)
+        self.assertFalse(self.lessons(subject=self.subjects["Soft Skills"]).exists())
+        self.assertTrue(any("Soft Skills" in w for w in report.warnings))
+
+    # Admin Workspace ------------------------------------------------------
+
+    def test_workspace_teachers_tab_shows_subject_assignments_and_assigns(self):
+        web = DjangoClient()
+        web.force_login(self.admin)
+        response = web.get(reverse("admin:academy_group_workspace_teachers", args=[self.group.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Назначения по предметам")
+        self.assertContains(response, "Предметов без тренера: 5")
+
+        url = reverse("admin:academy_group_workspace_teachers_add", args=[self.group.pk])
+        response = web.post(url, {"teacher": self.teacher_c.id, "subject": self.subjects["English"].id})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            GroupTeacher.objects.filter(group=self.group, teacher=self.teacher_c, subject=self.subjects["English"]).exists()
+        )
+
+        response = web.post(
+            reverse("admin:academy_group_workspace_generate_lessons", args=[self.group.pk]), follow=True,
+        )
+        self.assertContains(response, "тренер не назначен")
+        self.assertTrue(self.lessons(subject=self.subjects["English"], teacher=self.teacher_c).exists())
+        self.assertFalse(self.lessons(subject=self.subjects["Soft Skills"]).exists())
+
+    # Data repair ----------------------------------------------------------
+
+    def _build_legacy_monday_only_data(self):
+        """Reproduce what the old generator left behind: Islam's legacy
+        (subject-less) Monday slot generated all 144 lessons on Mondays."""
+        GroupSchedule.objects.filter(group=self.group).delete()
+        GroupTeacher.objects.filter(group=self.group).delete()
+        GroupSchedule.objects.create(
+            group=self.group, teacher=self.islam, subject=None, day_of_week="mon",
+            start_time=dt.time(8, 0), end_time=dt.time(9, 0), room=self.room,
+        )
+        generate_lessons_for_group(self.group)
+        self.assertEqual(self.lessons().order_by("-date").first().date, dt.date(2029, 6, 11))
+        for day in ("wed", "fri"):
+            GroupSchedule.objects.create(
+                group=self.group, teacher=self.islam, subject=None, day_of_week=day,
+                start_time=dt.time(8, 0), end_time=dt.time(9, 0), room=self.room,
+            )
+        self.assign(self.islam, "IT")
+        self.assign_everyone()
+
+    def test_repair_command_is_read_only_by_default(self):
+        self._build_legacy_monday_only_data()
+        before = list(self.lessons().order_by("pk").values_list("pk", "date", "teacher_id"))
+        out = StringIO()
+        call_command("repair_group_lessons", group=self.group.id, stdout=out)
+        self.assertIn("тренер не совпадает с назначением", out.getvalue())
+        self.assertEqual(list(self.lessons().order_by("pk").values_list("pk", "date", "teacher_id")), before)
+
+    def test_repair_command_rebuilds_untouched_lessons_and_keeps_conducted_ones(self):
+        self._build_legacy_monday_only_data()
+        conducted = self.lessons().get(lesson_number=1)  # 14.09.2026, attendance already taken
+        Attendance.objects.create(student=self.student, lesson=conducted, status=Attendance.Status.PRESENT)
+
+        call_command("repair_group_lessons", group=self.group.id, apply=True, from_date=dt.date(2026, 9, 15),
+                     stdout=StringIO())
+
+        conducted.refresh_from_db()
+        self.assertEqual(conducted.date, dt.date(2026, 9, 14))
+        self.assertTrue(Attendance.objects.filter(lesson=conducted).exists())
+        self.assertEqual(self.lessons().count(), 144)
+        self.assertEqual(sorted(self.lessons().values_list("lesson_number", flat=True)), list(range(1, 145)))
+        self.assertLess(self.lessons().order_by("-date").first().date, dt.date(2027, 9, 1))
+        self.assertEqual(
+            set(self.lessons(subject=self.subjects["English"]).values_list("teacher_id", flat=True)),
+            {self.teacher_c.id},
+        )
+        self.assertEqual(
+            set(self.lessons(subject=self.subjects["Soft Skills"]).values_list("teacher_id", flat=True)),
+            {self.teacher_b.id},
+        )
+        rebuilt = self.lessons(date__gte=dt.date(2026, 9, 15))
+        self.assertEqual(set(d.weekday() for d in rebuilt.values_list("date", flat=True)), {0, 2, 4})

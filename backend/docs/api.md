@@ -11,8 +11,8 @@ implementation detail, never part of its URL.
 | `/api/v1/auth/` | `login/`, `refresh/`, `me/` | users |
 | `/api/v1/trainers/` | Teacher accounts (`me`, `verify`, `export`, `import`, `import/preview`) | users |
 | `/api/v1/subjects/` | Subject catalogue | users |
-| `/api/v1/groups/` | Groups (`schedule`, `students`, `generate-lessons` actions) | academy |
-| `/api/v1/programs/` | GroupTeacher — one Teaching Program (teacher + subject + schedule + lesson plan + lessons) | academy |
+| `/api/v1/groups/` | Groups (`schedule`, `students`, `generate-lessons`, `subject-assignments` actions) | academy |
+| `/api/v1/programs/` | GroupTeacher — one Teaching Program (teacher + subject + schedule + lesson plan + lessons); also the group's subject → trainer assignment | academy |
 | `/api/v1/program-lesson-plans/` | GroupTeacherLessonPlan — a program's own lesson-by-lesson plan | academy |
 | `/api/v1/schedules/` | GroupSchedule — a program's weekly recurring slots | academy |
 | `/api/v1/lessons/` | Generated lessons (`attendance` action) | academy |
@@ -31,6 +31,37 @@ architecture — deliberately named `programs` in the URL (not
 `group-teachers`) to read the way the rest of the system talks about it:
 a Group has several independent Programs, each with one Teacher, one
 Subject, its own Schedule, its own Lesson Plan, and its own Lessons.
+
+## Lesson generation and trainer assignment
+
+Who teaches a generated lesson is decided by the **subject** of its lesson
+plan row, not by who owns the weekly slot it lands in:
+
+- `POST /api/v1/programs/` with `{group, teacher, subject}` (no schedule
+  needed) assigns a trainer to a subject in a group. The trainer must be an
+  active account with the Trainer role, and the subject must belong to the
+  group's course.
+- `GET /api/v1/groups/{id}/subject-assignments/` lists every subject of the
+  course plan with its trainer(s) and a `status`: `assigned`, `multiple`,
+  `legacy_slot` (covered by an old subject-less slot's teacher) or
+  `unassigned`.
+- `POST /api/v1/groups/{id}/generate-lessons/` (admin only) is the **only**
+  way lessons are generated — saving schedule slots no longer triggers it.
+  It is idempotent (201 when something was created, 200 for a no-op
+  re-run, 400 when nothing could be generated because of an error). Lessons
+  of a subject with no trainer are *not* created and not given to anyone
+  else; their dates are kept free, the response's `warnings` names them,
+  and a re-run after assigning the trainer fills exactly those dates.
+  Response: `created_count`, `first_lesson`, `last_lesson`, `first_date`,
+  `last_date`, `already_existed`, `expected_total`, `missing_count`,
+  `conflicts`, `warnings`, `errors`.
+- `GET /api/v1/lessons/` additionally filters by `room` and `teacher`
+  (the lesson's effective trainer; for a trainer it only ever narrows their
+  own lessons).
+
+Existing data produced by the old behaviour can be audited (read-only) and,
+per group, rebuilt with `python manage.py repair_group_lessons` — see that
+command's docstring.
 
 ## Cross-cutting behavior
 
