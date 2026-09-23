@@ -114,10 +114,22 @@ def reschedule_cancelled_lesson(lesson: Lesson) -> RescheduleResult:
 
     Returns a result with `makeup=None` and a `warning` (and changes
     nothing) when the program has no free slot left for its last topic
-    before the group's end date, or no active schedule at all."""
+    before the group's end date, no active schedule at all, or the lesson
+    has no program (group_teacher is NULL). Raises ValidationError only if
+    the lesson isn't cancelled."""
     with transaction.atomic():
         Group.objects.select_for_update().get(pk=lesson.group_id)
-        lesson = Lesson.objects.select_for_update().select_related("group", "group_teacher").get(pk=lesson.pk)
+        # of=("self",): lock only the lesson row. Lesson.group_teacher is a
+        # nullable FK, so select_related() turns it into a LEFT OUTER JOIN,
+        # and a bare FOR UPDATE would try to lock that join's nullable side
+        # too — which PostgreSQL rejects ("FOR UPDATE cannot be applied to
+        # the nullable side of an outer join"). The group row is already
+        # locked just above; the program row is only read here.
+        lesson = (
+            Lesson.objects.select_for_update(of=("self",))
+            .select_related("group", "group_teacher")
+            .get(pk=lesson.pk)
+        )
 
         if lesson.status != Lesson.Status.CANCELLED:
             raise ValidationError({"status": ["Перенести можно только отменённое занятие."]})
@@ -125,7 +137,18 @@ def reschedule_cancelled_lesson(lesson: Lesson) -> RescheduleResult:
         if existing is not None:
             return RescheduleResult(makeup=existing)
         if lesson.group_teacher_id is None:
-            raise ValidationError({"group_teacher": ["У занятия нет учебной программы — перенос невозможен."]})
+            # A lesson whose program was deleted (Lesson.group_teacher is
+            # SET_NULL) has no schedule to move its topic into. Reported like
+            # "no free slot" — never raised: raising here would roll back the
+            # surrounding cancel_and_reschedule() transaction and make such a
+            # lesson impossible to cancel at all.
+            return RescheduleResult(
+                makeup=None,
+                warning=(
+                    f"Тема «{lesson.topic}» не перенесена: у занятия нет учебной программы "
+                    "(программа удалена), поэтому нет расписания для переноса."
+                ),
+            )
 
         chain = list(
             Lesson.objects.select_for_update()

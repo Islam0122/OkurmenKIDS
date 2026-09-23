@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import threading
 from io import StringIO
-from unittest import mock
+from unittest import mock, skipUnless
 
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
@@ -10,9 +11,9 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from django.test import Client as DjangoClient
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -7302,7 +7303,10 @@ class ProgSoftPlanDistributionTests(TestCase):
 # shifts every later open topic one date forward (services.lesson_reschedule).
 # ---------------------------------------------------------------------------
 
-class LessonCancelRescheduleTests(TestCase):
+class LessonRescheduleFixture:
+    """Prog SOFT 1 IT program (Mon/Wed/Fri 08:00) + Soft Skills (09:00), the
+    task's nine IT topics, 09.09–18.09 conducted with attendance/homework."""
+
     TOPICS = [
         "Что такое интернет", "Браузер — окно в интернет", "Что такое сайт", "Клиент и сервер",
         "IP-адрес", "Домен и DNS", "HTTP и HTTPS", "Персональные данные", "Безопасность паролей",
@@ -7361,6 +7365,8 @@ class LessonCancelRescheduleTests(TestCase):
     def cancel(self, day, month=9, reason="Праздник"):
         return cancel_and_reschedule(self.it_lesson_on(day, month, status=Lesson.Status.SCHEDULED), self.admin, reason)
 
+
+class LessonCancelRescheduleTests(LessonRescheduleFixture, TestCase):
     # --- the task's example -------------------------------------------------
 
     def test_cancel_in_the_middle_shifts_later_topics_one_date_forward(self):
@@ -7558,3 +7564,137 @@ class LessonCancelRescheduleTests(TestCase):
         self.assertContains(response, "Перенесено на 23.09.2026")
         response = web.get(reverse("admin:academy_lesson_change", args=[result.makeup.pk]))
         self.assertContains(response, "Перенос с отменённого занятия")
+
+
+class LessonCancelLockingTests(LessonRescheduleFixture, TestCase):
+    """PostgreSQL row locking in cancel/reschedule. Regression for
+    `NotSupportedError: FOR UPDATE cannot be applied to the nullable side of
+    an outer join` — Lesson.group_teacher is nullable, so select_related()
+    LEFT-OUTER-JOINs it and the lock must be restricted to the lesson row
+    (`FOR UPDATE OF "academy_lesson"`). The SQL assertions need PostgreSQL
+    (SQLite ignores select_for_update); run with TEST_DATABASE_URL set."""
+
+    def test_cancel_without_reschedule(self):
+        snapshot = [(d, t) for d, t, s in self.table()]
+        lesson, result = cancel_and_reschedule(self.it_lesson_on(21), self.admin, "Праздник", reschedule=False)
+        self.assertIsNone(result)
+        self.assertEqual(lesson.status, Lesson.Status.CANCELLED)
+        self.assertFalse(Lesson.objects.filter(rescheduled_from=lesson).exists())
+        self.assertEqual([(d, t) for d, t, s in self.table()], snapshot)
+
+    def test_cancel_with_reschedule_and_a_valid_group_teacher(self):
+        lesson = self.it_lesson_on(21)
+        self.assertIsNotNone(lesson.group_teacher_id)
+        cancelled, result = cancel_and_reschedule(lesson, self.admin, "Праздник")
+        self.assertEqual(cancelled.status, Lesson.Status.CANCELLED)
+        self.assertTrue(result.created)
+        self.assertEqual(result.makeup.group_teacher_id, lesson.group_teacher_id)
+        self.assertEqual(result.makeup.teacher_id, self.islam.id)
+        self.assertEqual(result.makeup.date, dt.date(2026, 9, 23))
+
+    def test_lesson_without_group_teacher_can_still_be_cancelled(self):
+        lesson = self.it_lesson_on(21)
+        # Every nullable link gone (program, its slot and the trainer were
+        # deleted — all three FKs are SET_NULL), so Lesson.save() has
+        # nothing to re-derive a program from.
+        Lesson.objects.filter(pk=lesson.pk).update(group_teacher=None, schedule=None, teacher=None)
+        snapshot = [(d, t) for d, t, s in self.table()]
+
+        cancelled, result = cancel_and_reschedule(lesson, self.admin, "Праздник")
+
+        self.assertEqual(cancelled.status, Lesson.Status.CANCELLED)
+        self.assertIsNone(cancelled.group_teacher_id)
+        self.assertIsNone(result.makeup)
+        self.assertIn("нет учебной программы", result.warning)
+        self.assertEqual([(d, t) for d, t, s in self.table()], snapshot)
+
+    def test_lesson_of_a_deleted_program_can_still_be_cancelled_via_api(self):
+        lesson = self.it_lesson_on(21)
+        GroupTeacher.objects.filter(pk=lesson.group_teacher_id).delete()  # slots cascade, lessons SET_NULL
+        lesson.refresh_from_db()
+        self.assertIsNone(lesson.group_teacher_id)
+
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        response = client.post(f"/api/v1/lessons/{lesson.pk}/cancel/", {"reason": "Праздник"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "cancelled")
+        self.assertIsNone(response.data["reschedule"]["makeup_lesson"])
+        self.assertTrue(response.data["reschedule"]["warning"])
+
+    def test_duplicate_reschedule_is_prevented(self):
+        cancelled, first = cancel_and_reschedule(self.it_lesson_on(21), self.admin)
+        second = reschedule_cancelled_lesson(cancelled)
+        _, third = cancel_and_reschedule(cancelled, self.admin)
+        self.assertEqual({second.makeup.pk, third.makeup.pk}, {first.makeup.pk})
+        self.assertFalse(second.created or third.created)
+        self.assertEqual(Lesson.objects.filter(rescheduled_from=cancelled).count(), 1)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            # The OneToOne column itself refuses a second make-up lesson.
+            Lesson.objects.create(
+                group=self.group, group_teacher=first.makeup.group_teacher, lesson_number=999,
+                date=dt.date(2026, 12, 1), start_time=dt.time(8, 0), end_time=dt.time(9, 0),
+                rescheduled_from=cancelled,
+            )
+
+    def test_failure_during_reschedule_rolls_back_the_whole_cancellation(self):
+        lesson = self.it_lesson_on(21)
+        snapshot = [(d, t, s) for d, t, s in self.table()]
+        with mock.patch(
+            "apps.academy.services.lesson_reschedule.Homework.objects.filter", side_effect=RuntimeError("boom"),
+        ):
+            with self.assertRaises(RuntimeError):
+                cancel_and_reschedule(lesson, self.admin, "Праздник")
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.status, Lesson.Status.SCHEDULED)
+        self.assertEqual(lesson.cancellation_reason, "")
+        self.assertFalse(Lesson.objects.filter(rescheduled_from=lesson).exists())
+        self.assertEqual(self.table(), snapshot)
+
+    @skipUnless(connection.vendor == "postgresql", "row locks are only emitted on PostgreSQL")
+    def test_lesson_lock_is_restricted_to_the_lesson_row(self):
+        lesson = self.it_lesson_on(21)
+        with CaptureQueriesContext(connection) as ctx:
+            cancel_and_reschedule(lesson, self.admin, "Праздник")
+        locking = [q["sql"] for q in ctx.captured_queries if "FOR UPDATE" in q["sql"]]
+        joined = [sql for sql in locking if "LEFT OUTER JOIN" in sql]
+        self.assertTrue(joined, "the lesson is still loaded with its nullable group_teacher join")
+        for sql in joined:
+            self.assertIn('FOR UPDATE OF "academy_lesson"', sql)
+
+
+@skipUnless(connection.vendor == "postgresql", "needs real concurrent transactions (PostgreSQL)")
+class LessonCancelConcurrencyTests(LessonRescheduleFixture, TransactionTestCase):
+    """Two simultaneous "Отменить занятие" requests for the same lesson must
+    cancel it once and shift the program exactly once."""
+
+    def test_concurrent_cancellations_shift_once(self):
+        lesson = self.it_lesson_on(21)
+        barrier = threading.Barrier(2)
+        results, errors = [], []
+
+        def worker():
+            try:
+                barrier.wait(timeout=10)
+                results.append(cancel_and_reschedule(Lesson.objects.get(pk=lesson.pk), self.admin, "Праздник")[1])
+            except Exception as exc:  # surfaced by the assertions below
+                errors.append(exc)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(r.created for r in results), [False, True])
+        self.assertEqual(len({r.makeup.pk for r in results}), 1)
+        self.assertEqual(Lesson.objects.filter(rescheduled_from=lesson).count(), 1)
+        scheduled = [(d, t) for d, t, s in self.table() if s == Lesson.Status.SCHEDULED]
+        self.assertEqual(scheduled, [
+            ("23.09", "Домен и DNS"), ("25.09", "HTTP и HTTPS"),
+            ("28.09", "Персональные данные"), ("30.09", "Безопасность паролей"),
+        ])
