@@ -1,7 +1,10 @@
+import re
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as serve_media
 
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -41,3 +44,15 @@ if settings.DEBUG:
         settings.MEDIA_URL,
         document_root=settings.MEDIA_ROOT,
     )
+elif settings.SERVE_MEDIA:
+    # static() is a no-op once DEBUG is off, so production (Railway, no
+    # separate web server) routes uploads through the same serve() view
+    # directly. serve() resolves paths inside document_root only — "..",
+    # absolute paths and directory listings are rejected.
+    urlpatterns += [
+        re_path(
+            r"^%s(?P<path>.*)$" % re.escape(settings.MEDIA_URL.lstrip("/")),
+            serve_media,
+            {"document_root": settings.MEDIA_ROOT},
+        ),
+    ]
