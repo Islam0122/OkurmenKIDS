@@ -56,6 +56,16 @@ group's total, never 144 per program.
   Response: `created_count`, `first_lesson`, `last_lesson`, `first_date`,
   `last_date`, `already_existed`, `expected_total`, `missing_count`,
   `conflicts`, `warnings`, `errors`.
+- Before generating, lessons shown without a program ("—") are cleaned
+  up: a non-cancelled lesson whose program was deleted (`group_teacher`
+  NULL), or that sits in an old subject-less program while its subject now
+  has its own program, is deleted **only if** it was generated from a plan
+  row and is untouched (scheduled, never started, no attendance, no
+  homework results, no hand-added homework, not a cancel/reschedule pair)
+  — the generator then recreates it in the right program. Everything else
+  is kept and listed in `warnings`; deleted ones are listed in
+  `deleted_orphans`. `python manage.py repair_group_lessons --group <id>`
+  previews the same scope without changing anything.
 - A program with its own individual plan (`/program-lesson-plans/`) is
   numbered 1..N on its own slots; the shared plan's rows for its subject
   are then not used.

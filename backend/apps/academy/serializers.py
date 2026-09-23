@@ -552,6 +552,13 @@ class GenerateLessonsResponseSerializer(serializers.Serializer):
         help_text="Почему часть занятий не создана (тренер не назначен на предмет, конфликт, конец периода группы).",
     )
     errors = serializers.ListField(child=serializers.CharField())
+    deleted_orphans = serializers.ListField(
+        child=serializers.CharField(),
+        help_text=(
+            "Удалённые перед генерацией занятия без программы — только не проведённые, без посещаемости "
+            "и результатов ДЗ, созданные из строки плана (см. services.lesson_generator.find_orphan_lessons)."
+        ),
+    )
 
 
 class SubjectAssignmentSerializer(serializers.Serializer):
