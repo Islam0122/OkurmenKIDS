@@ -35,9 +35,12 @@ from .admin_views import (
     group_workspace_analytics_view,
     group_workspace_attendance_view,
     group_workspace_generate_lessons_view,
+    group_workspace_generate_preview_view,
     group_workspace_homework_view,
     group_workspace_lessons_view,
     group_workspace_overview_view,
+    group_workspace_program_edit_view,
+    group_workspace_program_schedule_add_view,
     group_workspace_programs_view,
     group_workspace_remove_schedule_view,
     group_workspace_remove_student_view,
@@ -89,6 +92,7 @@ from .services.import_export import (
     preview_students_import_rows,
 )
 from .services.lesson_generator import generate_lessons_for_group_with_report
+from .services.program_editing import update_teaching_program, validate_program_change
 from .widgets import SubjectCardsWidget
 
 
@@ -980,6 +984,29 @@ class GroupTeacherLessonPlanInline(admin.TabularInline):
     verbose_name_plural = "Индивидуальный план занятий"
 
 
+class GroupTeacherAdminForm(forms.ModelForm):
+    """Editing an existing program here goes through
+    services.program_editing, same as the Workspace drawer and the API —
+    so its schedule slots and future lessons follow a teacher change."""
+
+    class Meta:
+        model = GroupTeacher
+        fields = "__all__"
+
+    def clean(self):
+        cleaned = super().clean()
+        instance = self.instance
+        if instance.pk and not self.errors and cleaned.get("teacher"):
+            original = GroupTeacher.objects.select_related("group__course").get(pk=instance.pk)
+            try:
+                validate_program_change(original, teacher=cleaned["teacher"], subject=cleaned.get("subject"))
+            except DjangoValidationError as exc:
+                for field_name, messages_ in exc.message_dict.items():
+                    for message in messages_:
+                        self.add_error(field_name if field_name in self.fields else None, message)
+        return cleaned
+
+
 @admin.register(GroupTeacher)
 class GroupTeacherAdmin(admin.ModelAdmin):
     """Every Teacher Program of every group, all equally: no field here
@@ -994,6 +1021,7 @@ class GroupTeacherAdmin(admin.ModelAdmin):
     search_fields = ("group__name", "teacher__user__first_name", "teacher__user__last_name", "subject__name")
     autocomplete_fields = ("group", "teacher", "subject")
     readonly_fields = ("created_at", "updated_at", "is_legacy_primary", "workspace_link_detail")
+    form = GroupTeacherAdminForm
     inlines = [GroupTeacherLessonPlanInline]
     ordering = ("group", "id")
     list_per_page = 30
@@ -1005,6 +1033,22 @@ class GroupTeacherAdmin(admin.ModelAdmin):
             {"fields": ("is_legacy_primary", "created_at", "updated_at"), "classes": ("collapse",)},
         ),
     )
+
+    def get_readonly_fields(self, request, obj=None):
+        # A program belongs to its group for good: its slots, plan and
+        # lessons all live there.
+        fields = super().get_readonly_fields(request, obj)
+        return (*fields, "group") if obj is not None else fields
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            return super().save_model(request, obj, form, change)
+        result = update_teaching_program(
+            obj, teacher=obj.teacher, subject=obj.subject, is_active=obj.is_active,
+        )
+        if result.lessons_reassigned:
+            messages.info(request, f"Новому тренеру передано будущих занятий: {result.lessons_reassigned}.")
+        obj.refresh_from_db()
 
     def get_urls(self):
         custom_urls = [
@@ -1332,6 +1376,16 @@ class GroupAdmin(admin.ModelAdmin):
                 name="academy_group_workspace_programs_add",
             ),
             path(
+                "<int:group_id>/workspace/programs/<int:group_teacher_id>/edit/",
+                self.admin_site.admin_view(group_workspace_program_edit_view),
+                name="academy_group_workspace_programs_edit",
+            ),
+            path(
+                "<int:group_id>/workspace/programs/<int:group_teacher_id>/schedule/add/",
+                self.admin_site.admin_view(group_workspace_program_schedule_add_view),
+                name="academy_group_workspace_programs_schedule_add",
+            ),
+            path(
                 "<int:group_id>/workspace/schedule/",
                 self.admin_site.admin_view(group_workspace_schedule_view),
                 name="academy_group_workspace_schedule",
@@ -1370,6 +1424,11 @@ class GroupAdmin(admin.ModelAdmin):
                 "<int:group_id>/workspace/generate-lessons/",
                 self.admin_site.admin_view(group_workspace_generate_lessons_view),
                 name="academy_group_workspace_generate_lessons",
+            ),
+            path(
+                "<int:group_id>/workspace/generate-lessons/preview/",
+                self.admin_site.admin_view(group_workspace_generate_preview_view),
+                name="academy_group_workspace_generate_preview",
             ),
         ]
         return custom_urls + super().get_urls()

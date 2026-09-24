@@ -48,6 +48,7 @@ duplicated, whatever their status.
 """
 from __future__ import annotations
 
+import contextvars
 import datetime as dt
 import logging
 from collections import defaultdict, deque
@@ -56,7 +57,7 @@ from dataclasses import dataclass, field
 from django.db import transaction
 from django.db.models import Count, Q
 
-from ..constants import WEEKDAY_CODES
+from ..constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
 from ..models import Group, GroupSchedule, GroupTeacher, Homework, Lesson
 from .group_schedule_conflicts import (
     find_schedule_group_conflict,
@@ -65,6 +66,20 @@ from .group_schedule_conflicts import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Set while preview_generation() runs the real algorithm inside a
+# rolled-back transaction: its "deleting orphan lesson"/"lesson not created"
+# log lines describe things that never happen, so they are dropped rather
+# than written to the production log as if they had.
+_DRY_RUN = contextvars.ContextVar("lesson_generator_dry_run", default=False)
+
+
+class _DryRunLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not _DRY_RUN.get()
+
+
+logger.addFilter(_DryRunLogFilter())
 
 # A misconfigured group (an empty days_of_week that somehow bypassed
 # validation, say) must never turn this into an infinite loop.
@@ -853,7 +868,8 @@ def find_orphan_lessons(group: Group) -> OrphanScan:
     return scan
 
 
-def _remove_orphan_lessons(group: Group, run: _GenerationRun, not_before: dt.date | None = None) -> None:
+def _remove_orphan_lessons(group: Group, run: _GenerationRun, not_before: dt.date | None = None,
+                           *, cleanup: bool = True) -> None:
     """Delete find_orphan_lessons()'s `deletable` lessons (their auto-created
     homework cascades with them; by construction they have no attendance or
     results) and log each one. Runs inside _run_generation's transaction,
@@ -870,6 +886,18 @@ def _remove_orphan_lessons(group: Group, run: _GenerationRun, not_before: dt.dat
         )
     if not scan.deletable:
         return
+    if not cleanup:
+        # The caller hasn't confirmed the deletion (the Workspace's preview
+        # step): keep every orphan — its lesson_number simply stays taken,
+        # exactly as if it were a kept one — and say so.
+        run.orphans_kept.append(
+            f"Занятий без программы, которые можно пересоздать: {len(scan.deletable)} — не удалены, "
+            "удаление не подтверждено ("
+            + "; ".join(_orphan_label(lesson) for lesson in scan.deletable[:_MAX_NUMBERS_IN_WARNING])
+            + (", …" if len(scan.deletable) > _MAX_NUMBERS_IN_WARNING else "")
+            + ")."
+        )
+        return
     for lesson in scan.deletable:
         label = _orphan_label(lesson)
         run.orphans_deleted.append(label)
@@ -881,7 +909,7 @@ def _remove_orphan_lessons(group: Group, run: _GenerationRun, not_before: dt.dat
 
 
 @transaction.atomic
-def _run_generation(group: Group, not_before: dt.date | None = None) -> _GenerationRun:
+def _run_generation(group: Group, not_before: dt.date | None = None, *, cleanup_orphans: bool = True) -> _GenerationRun:
     # Serialise concurrent generation of the same group (a double-click,
     # two admins) on databases that support row locks — the second call
     # then sees the first one's lessons as existing. get_or_create in
@@ -903,7 +931,7 @@ def _run_generation(group: Group, not_before: dt.date | None = None) -> _Generat
     individual_group_teachers = [gt for gt in group_teachers if gt.pk in individual_ids]
 
     run = _GenerationRun()
-    _remove_orphan_lessons(group, run, not_before)
+    _remove_orphan_lessons(group, run, not_before, cleanup=cleanup_orphans)
 
     if shared_group_teachers:
         try:
@@ -1011,16 +1039,20 @@ def _unowned_shared_rows(group: Group) -> int:
     )
 
 
-def generate_lessons_for_group_with_report(group: Group, *, not_before: dt.date | None = None) -> LessonGenerationReport:
+def generate_lessons_for_group_with_report(group: Group, *, not_before: dt.date | None = None,
+                                           cleanup_orphans: bool = True) -> LessonGenerationReport:
     """Same generation as generate_lessons_for_group() — this only adds the
     Created / Already existed / Skipped / Conflicts / Warnings / Errors
     summary on top, so there's exactly one place the actual generation
     algorithm lives. `not_before` is for the repair_group_lessons command:
-    place missing lessons only on or after that date."""
+    place missing lessons only on or after that date. `cleanup_orphans=False`
+    keeps every orphan lesson (see find_orphan_lessons) instead of deleting
+    the untouched ones — the Group Workspace passes it until the admin has
+    confirmed the deletion in the generation preview."""
     already_existed = Lesson.objects.filter(group=group).count()
 
     try:
-        run = _run_generation(group, not_before)
+        run = _run_generation(group, not_before, cleanup_orphans=cleanup_orphans)
     except LessonGenerationError as exc:
         return LessonGenerationReport(
             created=0, already_existed=already_existed, skipped=0, conflicts=0, errors=[str(exc)],
@@ -1040,4 +1072,120 @@ def generate_lessons_for_group_with_report(group: Group, *, not_before: dt.date 
         missing=max(expected - total, 0),
         created_lessons=list(run.created),
         orphans_deleted=list(run.orphans_deleted),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Preview ("what would «Сгенерировать занятия» do right now?")
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ProgramGenerationPreview:
+    """One program's share of a generation preview."""
+
+    group_teacher_id: int | None
+    subject: str
+    teacher: str
+    schedule: list[str]
+    planned: int
+    existing: int
+    to_create: int
+    first_date: dt.date | None = None
+    last_date: dt.date | None = None
+
+
+@dataclass
+class GenerationPreview:
+    """Exactly what generate_lessons_for_group_with_report() would do now —
+    produced by running that very algorithm and rolling it back, so the
+    preview can never drift from the real thing. `orphans_to_delete` are
+    the lessons the real run deletes (only with the admin's confirmation,
+    see cleanup_orphans); `warnings` explain every plan row that will be
+    skipped, `errors` what blocks generation outright."""
+
+    programs: list[ProgramGenerationPreview]
+    to_create: int
+    existing: int
+    expected: int
+    missing_after: int
+    orphans_to_delete: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def has_changes(self) -> bool:
+        return bool(self.to_create or self.orphans_to_delete)
+
+
+def preview_generation(group: Group) -> GenerationPreview:
+    """Read-only: run the real generation inside a transaction that is
+    always rolled back (lessons, their auto-homework and any orphan cleanup
+    included), and describe what it did. Nothing is written — see
+    _DRY_RUN for the log lines it would otherwise emit."""
+    planned = planned_lessons_by_program(group)
+    group_teachers = list(
+        group.teachers.select_related("teacher__user", "subject").prefetch_related("schedules__room")
+    )
+    existing_by_program: dict[int | None, int] = defaultdict(int)
+    for row in Lesson.objects.filter(group=group).values("group_teacher_id").annotate(n=Count("id")):
+        existing_by_program[row["group_teacher_id"]] = row["n"]
+    existing_total = sum(existing_by_program.values())
+
+    token = _DRY_RUN.set(True)
+    errors: list[str] = []
+    created: list[Lesson] = []
+    run: _GenerationRun | None = None
+    try:
+        with transaction.atomic():
+            try:
+                run = _run_generation(group)
+                created = list(run.created)
+                errors = list(run.errors)
+            except LessonGenerationError as exc:
+                errors = [str(exc)]
+            transaction.set_rollback(True)
+    finally:
+        _DRY_RUN.reset(token)
+
+    created_by_program: dict[int | None, list[Lesson]] = defaultdict(list)
+    for lesson in created:
+        created_by_program[lesson.group_teacher_id].append(lesson)
+
+    programs = []
+    for gt in group_teachers:
+        new = sorted(created_by_program.get(gt.pk, []), key=lambda lesson: (lesson.date, lesson.start_time))
+        slots = sorted(
+            (s for s in gt.schedules.all() if s.is_active),
+            key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
+        )
+        programs.append(
+            ProgramGenerationPreview(
+                group_teacher_id=gt.pk,
+                subject=gt.subject.name if gt.subject_id else "Без предмета",
+                teacher=str(gt.teacher),
+                schedule=[
+                    f"{WEEKDAY_LABELS_SHORT.get(s.day_of_week, s.day_of_week)} {s.start_time:%H:%M}–{s.end_time:%H:%M}"
+                    for s in slots
+                ],
+                planned=planned.get(gt.pk, 0),
+                existing=existing_by_program.get(gt.pk, 0),
+                to_create=len(new),
+                first_date=new[0].date if new else None,
+                last_date=new[-1].date if new else None,
+            )
+        )
+
+    expected = _expected_lesson_count(group)
+    to_create = len(created)
+    deleted = len(run.orphans_deleted) if run else 0
+    return GenerationPreview(
+        programs=programs,
+        to_create=to_create,
+        existing=existing_total,
+        expected=expected,
+        missing_after=max(expected - (existing_total - deleted + to_create), 0),
+        orphans_to_delete=list(run.orphans_deleted) if run else [],
+        warnings=run.warnings() if run else [],
+        errors=errors,
     )

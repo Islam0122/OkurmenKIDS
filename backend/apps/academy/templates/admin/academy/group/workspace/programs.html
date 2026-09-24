@@ -4,40 +4,121 @@
 {% block workspace_content %}
 <div class="ok-card">
   <div class="ok-card-header">
-    <i class="bi bi-kanban"></i><span>Программы</span>
+    <i class="bi bi-kanban"></i><span>Учебные программы</span>
     <a class="ok-btn-primary ok-btn-sm ok-card-header-action" href="{{ add_program_url }}">
       <i class="bi bi-plus-lg"></i> Добавить программу
     </a>
   </div>
   <div class="ok-card-body">
-    {% if cards %}
-      <div class="ok-group-program-grid">
-        {% for card in cards %}
-          <div class="ok-group-program-card">
-            <div class="ok-group-program-title">{{ card.obj.subject.name|default:"Без предмета" }}</div>
-            <div class="ok-group-program-teacher">Тренер: {{ card.obj.teacher }}</div>
-            <div class="ok-group-program-slots">
-              {% for slot in card.slots %}
-                <div>{{ slot.day_label }} · {{ slot.time_label }} · {{ slot.room }}</div>
-              {% empty %}
-                <div class="ok-help-text">нет активных слотов</div>
-              {% endfor %}
-            </div>
-            <div class="okan-mini-stats">
-              <div class="okan-mini-stat">Занятий: {{ card.lesson_count }}</div>
-              <div class="okan-mini-stat">Завершено: {{ card.completed_count }}</div>
-              <div class="okan-mini-stat">Предстоит: {{ card.upcoming_count }}</div>
-              <div class="okan-mini-stat">План занятий: {{ card.plan_filled }}/{{ card.plan_total }}</div>
-            </div>
-            <div class="ok-badge {% if card.obj.is_active %}ok-badge-success{% else %}ok-badge-danger{% endif %}" style="margin-bottom:0.5rem;">
-              <span class="ok-badge-dot"></span>{% if card.obj.is_active %}Активна{% else %}Неактивна{% endif %}
-            </div>
-            <div class="ok-group-program-actions">
-              <a class="ok-btn-primary ok-btn-sm" href="{{ card.workspace_url }}"><i class="bi bi-kanban"></i> Открыть</a>
-              <a class="ok-btn-secondary ok-btn-sm" href="{{ card.edit_url }}"><i class="bi bi-pencil"></i> Изменить программу</a>
-            </div>
-          </div>
-        {% endfor %}
+    <p class="ok-section-subtitle">
+      Каждая программа — это предмет, преподаватель, своё расписание и свой план занятий.
+      Занятия предмета создаются только в слотах его программы и достаются её преподавателю.
+    </p>
+
+    {% if unassigned_subjects %}
+      <div class="ok-callout ok-callout-danger">
+        <i class="bi bi-exclamation-triangle"></i>
+        <div>
+          <strong>Предметов без программы: {{ unassigned_subjects|length }}.</strong>
+          Их занятия не будут созданы, пока не добавлена программа с расписанием.
+        </div>
+      </div>
+    {% endif %}
+
+    {% if cards or unassigned_subjects %}
+      <div class="ok-prog-table-wrap">
+        <table class="ok-prog-table">
+          <thead>
+            <tr>
+              <th>Предмет</th>
+              <th>Преподаватель</th>
+              <th class="ok-num">План</th>
+              <th class="ok-num">Создано</th>
+              <th>Прогресс</th>
+              <th>Следующее занятие</th>
+              <th>Статус</th>
+              <th class="ok-actions-col"><span class="ok-visually-hidden">Действия</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for card in cards %}
+              <tr class="{% if not card.obj.is_active %}is-muted{% endif %}{% if preview.focus_program_id == card.obj.pk %} is-focused{% endif %}">
+                <td data-label="Предмет">
+                  <div class="ok-prog-subject">{{ card.obj.subject.name|default:"Без предмета" }}</div>
+                  <div class="ok-prog-meta">
+                    {% for slot in card.slots %}{{ slot.day_label }} {{ slot.time_label }}{% if not forloop.last %} · {% endif %}{% empty %}нет слотов расписания{% endfor %}
+                  </div>
+                  <div class="ok-prog-meta">{% if card.has_individual_plan %}Индивидуальный план · {{ card.plan_count }} зан.{% else %}Общий план курса{% endif %}</div>
+                </td>
+                <td data-label="Преподаватель">
+                  <div class="ok-group-teacher-row" style="margin:0;">
+                    <span class="ok-person-avatar ok-group-student-avatar">{{ card.obj.teacher.user.first_name|first|upper }}{{ card.obj.teacher.user.last_name|first|upper }}</span>
+                    <span>{{ card.obj.teacher }}</span>
+                  </div>
+                </td>
+                <td data-label="План" class="ok-num">{{ card.plan_total }}</td>
+                <td data-label="Создано" class="ok-num">
+                  {{ card.plan_filled }}/{{ card.plan_total }}
+                  {% if card.cancelled_count %}<div class="ok-prog-meta">отменено: {{ card.cancelled_count }}</div>{% endif %}
+                </td>
+                <td data-label="Прогресс">
+                  {% if card.progress is not None %}
+                    <div class="ok-progress" role="progressbar" aria-valuenow="{{ card.progress }}" aria-valuemin="0" aria-valuemax="100" aria-label="Проведено {{ card.completed_count }} из {{ card.plan_total }}">
+                      <div class="ok-progress-fill" style="width: {{ card.progress }}%;"></div>
+                    </div>
+                    <div class="ok-prog-meta">{{ card.completed_count }} из {{ card.plan_total }} · {{ card.progress }}%</div>
+                  {% else %}
+                    <span class="ok-prog-meta">нет плана</span>
+                  {% endif %}
+                </td>
+                <td data-label="Следующее занятие">
+                  {% if card.next_lesson_date %}{{ card.next_lesson_date|date:"d.m.Y" }}{% else %}<span class="ok-prog-meta">—</span>{% endif %}
+                </td>
+                <td data-label="Статус">
+                  <span class="ok-badge {{ card.status_class }}"><span class="ok-badge-dot"></span>{{ card.status_label }}</span>
+                </td>
+                <td class="ok-actions-col">
+                  <div class="ok-row-actions">
+                    <a class="ok-btn-secondary ok-btn-sm" href="{{ card.edit_url }}"><i class="bi bi-pencil"></i> Изменить</a>
+                    <details class="ok-menu">
+                      <summary class="ok-btn-secondary ok-btn-sm ok-menu-trigger" aria-label="Действия программы"><i class="bi bi-three-dots-vertical"></i></summary>
+                      <div class="ok-menu-list ok-menu-list-right">
+                        <a href="{{ card.edit_url }}"><i class="bi bi-person-gear"></i> Назначить преподавателя</a>
+                        <a href="{{ card.schedule_url }}"><i class="bi bi-calendar-week"></i> Настроить расписание</a>
+                        <a href="{{ card.lesson_plan_url }}"><i class="bi bi-list-ol"></i> Изменить план занятий</a>
+                        <a href="{{ card.lessons_url }}"><i class="bi bi-calendar-check"></i> Просмотреть занятия</a>
+                        <a href="{{ card.analytics_url }}"><i class="bi bi-graph-up-arrow"></i> Аналитика предмета</a>
+                        <a href="{{ card.generate_url }}"><i class="bi bi-magic"></i> Сгенерировать занятия</a>
+                        <a href="{{ card.workspace_url }}"><i class="bi bi-box-arrow-up-right"></i> Открыть программу</a>
+                        <form method="post" action="{{ card.remove_url }}" data-ok-confirm="Удалить программу «{{ card.obj.subject.name|default:'без предмета' }} — {{ card.obj.teacher }}»? Её расписание будет удалено; занятия, посещаемость и ДЗ сохранятся без программы.">
+                          {% csrf_token %}
+                          <input type="hidden" name="next" value="{{ programs_url }}">
+                          <button type="submit" class="ok-menu-danger"><i class="bi bi-trash3"></i> Удалить программу</button>
+                        </form>
+                      </div>
+                    </details>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+            {% for item in unassigned_subjects %}
+              <tr class="is-missing">
+                <td data-label="Предмет"><div class="ok-prog-subject">{{ item.row.subject_name }}</div></td>
+                <td data-label="Преподаватель"><span class="ok-prog-meta">не назначен</span></td>
+                <td data-label="План" class="ok-num">{{ item.row.plan_lessons }}</td>
+                <td data-label="Создано" class="ok-num">{{ item.row.generated_lessons }}/{{ item.row.plan_lessons }}</td>
+                <td data-label="Прогресс"><span class="ok-prog-meta">—</span></td>
+                <td data-label="Следующее занятие"><span class="ok-prog-meta">—</span></td>
+                <td data-label="Статус"><span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Нет программы</span></td>
+                <td class="ok-actions-col">
+                  <div class="ok-row-actions">
+                    <a class="ok-btn-primary ok-btn-sm" href="{{ item.assign_url }}"><i class="bi bi-plus-lg"></i> Создать программу</a>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     {% else %}
       <div class="ok-group-empty-state">
@@ -49,4 +130,7 @@
     {% endif %}
   </div>
 </div>
+
+{% if drawer %}{% include "admin/academy/group/workspace/_program_drawer.html" %}{% endif %}
+{% if preview %}{% include "admin/academy/group/workspace/_generate_preview.html" %}{% endif %}
 {% endblock %}

@@ -25,6 +25,7 @@ from .models import (
     Student,
 )
 from .services import lesson_lifecycle, lesson_summary
+from .services.program_editing import update_teaching_program
 from .services.group_schedule_conflicts import (
     find_schedule_group_conflict,
     find_schedule_room_conflict,
@@ -439,6 +440,8 @@ class GroupTeacherSerializer(serializers.ModelSerializer):
         return annotated if annotated is not None else obj.lesson_plans.count()
 
     def validate(self, attrs):
+        if self.instance is not None and "group" in attrs and attrs["group"] != self.instance.group:
+            raise serializers.ValidationError({"group": "Программу нельзя перенести в другую группу."})
         # Same rules as GroupTeacher.clean() (active teacher account with the
         # Trainer role, subject belongs to the group's course) — a subject
         # assignment decides who gets every lesson of that subject, so an
@@ -453,6 +456,24 @@ class GroupTeacherSerializer(serializers.ModelSerializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict)
         return attrs
+
+    def update(self, instance, validated_data):
+        """Through services.program_editing, so the program's schedule
+        slots — and its future scheduled lessons — follow a teacher change
+        instead of silently staying with the previous trainer."""
+        try:
+            update_teaching_program(
+                instance,
+                teacher=validated_data.get("teacher", instance.teacher),
+                subject=validated_data.get("subject", instance.subject),
+                is_active=validated_data.get("is_active", instance.is_active),
+            )
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(
+                exc.message_dict if hasattr(exc, "error_dict") else {"non_field_errors": exc.messages}
+            )
+        instance.refresh_from_db()
+        return instance
 
 
 class GroupSerializer(serializers.ModelSerializer):
@@ -559,6 +580,74 @@ class GenerateLessonsResponseSerializer(serializers.Serializer):
             "и результатов ДЗ, созданные из строки плана (см. services.lesson_generator.find_orphan_lessons)."
         ),
     )
+
+
+class ProgramGenerationPreviewSerializer(serializers.Serializer):
+    program = serializers.IntegerField(source="group_teacher_id", allow_null=True)
+    subject = serializers.CharField()
+    teacher = serializers.CharField()
+    schedule = serializers.ListField(child=serializers.CharField())
+    planned = serializers.IntegerField(help_text="Занятий программы по плану.")
+    existing = serializers.IntegerField(help_text="Уже созданных занятий программы.")
+    to_create = serializers.IntegerField(help_text="Сколько занятий будет создано.")
+    first_date = serializers.DateField(allow_null=True)
+    last_date = serializers.DateField(allow_null=True)
+
+
+class GenerateLessonsPreviewSerializer(serializers.Serializer):
+    """services.lesson_generator.preview_generation — nothing is written."""
+
+    to_create = serializers.IntegerField()
+    existing = serializers.IntegerField()
+    expected = serializers.IntegerField()
+    missing_after = serializers.IntegerField(help_text="Сколько занятий плана останется не созданными после генерации.")
+    programs = ProgramGenerationPreviewSerializer(many=True)
+    orphans_to_delete = serializers.ListField(child=serializers.CharField())
+    warnings = serializers.ListField(child=serializers.CharField(), help_text="Что будет пропущено и почему.")
+    errors = serializers.ListField(child=serializers.CharField())
+
+
+class GroupAnalyticsProgramSerializer(serializers.Serializer):
+    program = serializers.IntegerField(allow_null=True, help_text="null — занятия без программы.")
+    subject = serializers.CharField()
+    teacher = serializers.CharField()
+    is_active = serializers.BooleanField()
+    plan_total = serializers.IntegerField()
+    lessons = serializers.IntegerField(help_text="Занятий в выборке без отменённых.")
+    completed = serializers.IntegerField()
+    upcoming = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
+    attention = serializers.IntegerField()
+    attendance_rate = serializers.FloatField(allow_null=True)
+    homework_rate = serializers.FloatField(allow_null=True)
+    completed_all_time = serializers.IntegerField()
+    progress = serializers.FloatField(allow_null=True)
+    next_lesson_date = serializers.DateField(allow_null=True)
+
+
+class GroupAnalyticsSummarySerializer(serializers.Serializer):
+    students = serializers.IntegerField()
+    programs = serializers.IntegerField()
+    lessons = serializers.IntegerField()
+    completed = serializers.IntegerField()
+    upcoming = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
+    attention = serializers.IntegerField()
+    plan_total = serializers.IntegerField()
+    completed_all_time = serializers.IntegerField()
+    attendance_rate = serializers.FloatField(allow_null=True)
+    homework_rate = serializers.FloatField(allow_null=True)
+    progress = serializers.FloatField(allow_null=True)
+
+
+class GroupAnalyticsSerializer(serializers.Serializer):
+    """services.group_analytics.get_group_analytics."""
+
+    filters = serializers.DictField()
+    date_from = serializers.DateField(allow_null=True)
+    date_to = serializers.DateField(allow_null=True)
+    summary = GroupAnalyticsSummarySerializer()
+    programs = GroupAnalyticsProgramSerializer(many=True)
 
 
 class SubjectAssignmentSerializer(serializers.Serializer):

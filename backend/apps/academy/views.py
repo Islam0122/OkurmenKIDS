@@ -61,7 +61,9 @@ from .serializers import (
     BulkHomeworkResultItemSerializer,
     CourseLessonPlanSerializer,
     CourseSerializer,
+    GenerateLessonsPreviewSerializer,
     GenerateLessonsResponseSerializer,
+    GroupAnalyticsSerializer,
     GroupScheduleLessonSerializer,
     GroupScheduleSerializer,
     GroupScheduleSlotSerializer,
@@ -97,7 +99,8 @@ from .services.import_export import (
     import_students,
     preview_students_import,
 )
-from .services.lesson_generator import generate_lessons_for_group_with_report
+from .services.group_analytics import GroupAnalyticsFilters, get_group_analytics
+from .services.lesson_generator import generate_lessons_for_group_with_report, preview_generation
 from .services.lesson_reschedule import cancel_and_reschedule, reschedule_cancelled_lesson
 from .services.subject_assignments import subject_assignment_overview
 
@@ -500,6 +503,40 @@ class GroupViewSet(viewsets.ModelViewSet):
         }
         response_status = status.HTTP_201_CREATED if report.created else status.HTTP_200_OK
         return Response(GenerateLessonsResponseSerializer(payload).data, status=response_status)
+
+    @extend_schema(tags=["Groups"], responses=GenerateLessonsPreviewSerializer)
+    @action(
+        detail=True, methods=["get"], url_path="generate-lessons/preview",
+        permission_classes=[IsAuthenticated, IsAdmin],
+    )
+    def generate_lessons_preview(self, request, pk=None):
+        """What `POST generate-lessons/` would do right now — per program:
+        plan, existing, to be created (and the date range); what will be
+        skipped and why; which orphan lessons would be deleted. Computed by
+        running the real generator in a rolled-back transaction: nothing
+        is written."""
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        return Response(GenerateLessonsPreviewSerializer(preview_generation(group)).data)
+
+    @extend_schema(
+        tags=["Groups"],
+        responses=GroupAnalyticsSerializer,
+        parameters=[
+            OpenApiParameter("program", int, description="GroupTeacher id"),
+            OpenApiParameter("teacher", int),
+            OpenApiParameter("subject", int),
+            OpenApiParameter("period", str, enum=["course", "month", "week"]),
+            OpenApiParameter("status", str, enum=[value for value, _ in Lesson.Status.choices]),
+        ],
+    )
+    @action(detail=True, methods=["get"], url_path="analytics", permission_classes=[IsAuthenticated, IsAdmin])
+    def analytics(self, request, pk=None):
+        """Group Analytics across every Teaching Program of the group (see
+        services.group_analytics). Admin only: it puts every trainer's
+        programs side by side."""
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        data = get_group_analytics(group, GroupAnalyticsFilters.from_query(request.query_params)).as_dict()
+        return Response(GroupAnalyticsSerializer(data).data)
 
     @extend_schema(tags=["Groups"], responses=SubjectAssignmentSerializer(many=True))
     @action(detail=True, methods=["get"], url_path="subject-assignments")

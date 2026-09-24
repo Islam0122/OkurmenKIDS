@@ -3,49 +3,176 @@
 
 {% block workspace_content %}
 <div class="ok-card">
-  <div class="ok-card-header"><i class="bi bi-graph-up-arrow"></i><span>Аналитика группы</span></div>
+  <div class="ok-card-header"><i class="bi bi-graph-up-arrow"></i><span>Аналитика группы — все программы</span></div>
   <div class="ok-card-body">
+    <form method="get" class="ok-group-toolbar ok-group-lesson-filters ok-analytics-filters" aria-label="Фильтры аналитики">
+      <select name="program" class="ok-input" aria-label="Программа">
+        <option value="">Все предметы</option>
+        {% for p in filter_options.programs %}
+          <option value="{{ p.pk }}" {% if selected.program_id == p.pk %}selected{% endif %}>{{ p.subject.name|default:"Без предмета" }} — {{ p.teacher }}</option>
+        {% endfor %}
+      </select>
+      <select name="teacher" class="ok-input" aria-label="Преподаватель">
+        <option value="">Все преподаватели</option>
+        {% for t in filter_options.teachers %}
+          <option value="{{ t.pk }}" {% if selected.teacher_id == t.pk %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+      <select name="period" class="ok-input" aria-label="Период">
+        {% for value, label in filter_options.periods %}
+          <option value="{{ value }}" {% if selected.period == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select name="status" class="ok-input" aria-label="Статус занятия">
+        <option value="">Все статусы</option>
+        {% for value, label in filter_options.statuses %}
+          <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-funnel"></i> Применить</button>
+      {% if has_filters %}<a class="ok-link-muted" href="{{ request.path }}">Сбросить</a>{% endif %}
+    </form>
+    {% if analytics.date_range %}
+      <p class="ok-help-text" style="margin-top:-0.4rem;">Период: {{ analytics.date_range.0|date:"d.m.Y" }} – {{ analytics.date_range.1|date:"d.m.Y" }}. Прогресс плана считается за весь курс.</p>
+    {% endif %}
+
     <div class="ok-kpi-grid ok-group-kpi">
-      <div class="ok-kpi-card">
-        <div class="ok-kpi-icon"><i class="bi bi-people"></i></div>
-        <div class="ok-kpi-value">{{ stats.students_count }}</div>
-        <div class="ok-kpi-label">Студенты</div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-people"></i></div><div class="ok-kpi-value">{{ summary.students }}</div><div class="ok-kpi-label">Студенты</div></div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-calendar3"></i></div><div class="ok-kpi-value">{{ summary.lessons }}</div><div class="ok-kpi-label">Занятий (без отменённых)</div></div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div><div class="ok-kpi-value">{{ summary.completed }}</div><div class="ok-kpi-label">Проведено</div></div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-calendar-check"></i></div><div class="ok-kpi-value">{{ summary.upcoming }}</div><div class="ok-kpi-label">Предстоит</div></div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div><div class="ok-kpi-value">{{ summary.cancelled }}</div><div class="ok-kpi-label">Отменено</div></div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-person-check"></i></div><div class="ok-kpi-value">{{ summary_bars.attendance.label }}</div><div class="ok-kpi-label">Средняя посещаемость</div></div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-journal-check"></i></div><div class="ok-kpi-value">{{ summary_bars.homework.label }}</div><div class="ok-kpi-label">Домашние задания сданы</div></div>
+      <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-flag"></i></div><div class="ok-kpi-value">{{ summary_bars.progress.label }}</div><div class="ok-kpi-label">Прогресс плана ({{ summary.completed_all_time }}/{{ summary.plan_total }})</div></div>
+    </div>
+    {% if summary.attention %}
+      <div class="ok-callout ok-callout-warning" style="margin-top:1rem;">
+        <i class="bi bi-exclamation-triangle"></i>
+        <div>Занятий требуют внимания: <strong>{{ summary.attention }}</strong> — дата прошла, а занятие не проведено и не отменено.</div>
       </div>
-      <div class="ok-kpi-card">
-        <div class="ok-kpi-icon"><i class="bi bi-person-badge"></i></div>
-        <div class="ok-kpi-value">{{ stats.programs_count }}</div>
-        <div class="ok-kpi-label">Активные программы</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-table"></i><span>По предметам</span></div>
+  <div class="ok-card-body">
+    {% if rows %}
+      <div class="ok-prog-table-wrap">
+        <table class="ok-prog-table">
+          <thead>
+            <tr>
+              <th>Предмет</th><th>Преподаватель</th>
+              <th class="ok-num">Занятий</th><th class="ok-num">Проведено</th><th class="ok-num">Отменено</th>
+              <th class="ok-num">Посещаемость</th><th class="ok-num">ДЗ</th><th>Прогресс плана</th><th class="ok-actions-col"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in rows %}
+              <tr class="{% if not item.row.is_active %}is-muted{% endif %}">
+                <td data-label="Предмет"><div class="ok-prog-subject">{{ item.row.subject }}</div>{% if not item.row.is_active and item.row.group_teacher_id %}<div class="ok-prog-meta">приостановлена</div>{% endif %}</td>
+                <td data-label="Преподаватель">{{ item.row.teacher }}</td>
+                <td data-label="Занятий" class="ok-num">{{ item.row.lessons }}</td>
+                <td data-label="Проведено" class="ok-num">{{ item.row.completed }}</td>
+                <td data-label="Отменено" class="ok-num">{{ item.row.cancelled }}</td>
+                <td data-label="Посещаемость" class="ok-num">{{ item.attendance_bar.label }}</td>
+                <td data-label="ДЗ" class="ok-num">{{ item.homework_bar.label }}</td>
+                <td data-label="Прогресс плана">
+                  {% if item.row.plan_total %}
+                    <div class="ok-progress" aria-hidden="true"><div class="ok-progress-fill" style="width: {{ item.progress_bar.width }}%;"></div></div>
+                    <div class="ok-prog-meta">{{ item.row.completed_all_time }} из {{ item.row.plan_total }} · {{ item.progress_bar.label }}</div>
+                  {% else %}<span class="ok-prog-meta">—</span>{% endif %}
+                </td>
+                <td class="ok-actions-col">
+                  {% if item.lessons_url %}
+                    <div class="ok-row-actions">
+                      <a class="ok-btn-secondary ok-btn-sm" href="{{ item.lessons_url }}" aria-label="Занятия {{ item.row.subject }}"><i class="bi bi-calendar-check"></i></a>
+                      <a class="ok-btn-secondary ok-btn-sm" href="{{ item.edit_url }}" aria-label="Изменить {{ item.row.subject }}"><i class="bi bi-pencil"></i></a>
+                    </div>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      <div class="ok-kpi-card">
-        <div class="ok-kpi-icon"><i class="bi bi-check2-circle"></i></div>
-        <div class="ok-kpi-value">{{ stats.completed_lessons }}</div>
-        <div class="ok-kpi-label">Завершённые занятия</div>
+    {% else %}
+      <div class="ok-group-empty-state">
+        <i class="bi bi-graph-up-arrow"></i>
+        <h4>Нет данных для выбранных фильтров</h4>
+        <p>Измените фильтры или добавьте учебные программы и сгенерируйте занятия.</p>
+        {% if has_filters %}<a class="ok-btn-secondary ok-btn-sm" href="{{ request.path }}">Сбросить фильтры</a>{% endif %}
       </div>
-      <div class="ok-kpi-card">
-        <div class="ok-kpi-icon"><i class="bi bi-calendar-check"></i></div>
-        <div class="ok-kpi-value">{{ stats.upcoming_lessons }}</div>
-        <div class="ok-kpi-label">Предстоящие занятия</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if rows %}
+<div class="ok-chart-grid">
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-person-check"></i><span>Посещаемость по предметам</span></div>
+    <div class="ok-card-body">
+      <ul class="ok-hbar-chart">
+        {% for item in rows %}
+          <li title="{{ item.row.subject }} — {{ item.row.teacher }}: {{ item.attendance_bar.label }}">
+            <span class="ok-hbar-label">{{ item.row.subject }}</span>
+            <span class="ok-hbar-track"><span class="ok-hbar-fill" style="width: {{ item.attendance_bar.width }}%;"></span></span>
+            <span class="ok-hbar-value">{{ item.attendance_bar.label }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-journal-check"></i><span>Выполнение домашних заданий</span></div>
+    <div class="ok-card-body">
+      <ul class="ok-hbar-chart">
+        {% for item in rows %}
+          <li title="{{ item.row.subject }} — {{ item.row.teacher }}: {{ item.homework_bar.label }}">
+            <span class="ok-hbar-label">{{ item.row.subject }}</span>
+            <span class="ok-hbar-track"><span class="ok-hbar-fill" style="width: {{ item.homework_bar.width }}%;"></span></span>
+            <span class="ok-hbar-value">{{ item.homework_bar.label }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-flag"></i><span>Прогресс учебного плана</span></div>
+    <div class="ok-card-body">
+      <ul class="ok-hbar-chart">
+        {% for item in rows %}{% if item.row.plan_total %}
+          <li title="{{ item.row.subject }}: проведено {{ item.row.completed_all_time }} из {{ item.row.plan_total }}">
+            <span class="ok-hbar-label">{{ item.row.subject }}</span>
+            <span class="ok-hbar-track"><span class="ok-hbar-fill" style="width: {{ item.progress_bar.width }}%;"></span></span>
+            <span class="ok-hbar-value">{{ item.progress_bar.label }}</span>
+          </li>
+        {% endif %}{% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-bar-chart"></i><span>Запланированные и проведённые занятия</span></div>
+    <div class="ok-card-body">
+      <div class="ok-hbar-legend">
+        <span><span class="ok-hbar-swatch is-track"></span>Запланировано</span>
+        <span><span class="ok-hbar-swatch"></span>Проведено</span>
       </div>
-      <div class="ok-kpi-card">
-        <div class="ok-kpi-icon"><i class="bi bi-x-circle"></i></div>
-        <div class="ok-kpi-value">{{ stats.cancelled_lessons }}</div>
-        <div class="ok-kpi-label">Отменённые занятия</div>
-      </div>
-      {% if stats.attendance_rate is not None %}
-        <div class="ok-kpi-card">
-          <div class="ok-kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
-          <div class="ok-kpi-value">{{ stats.attendance_rate }}%</div>
-          <div class="ok-kpi-label">Посещаемость</div>
-        </div>
-      {% endif %}
-      {% if stats.homework_completion_rate is not None %}
-        <div class="ok-kpi-card">
-          <div class="ok-kpi-icon"><i class="bi bi-journal-check"></i></div>
-          <div class="ok-kpi-value">{{ stats.homework_completion_rate }}%</div>
-          <div class="ok-kpi-label">ДЗ проверено</div>
-        </div>
-      {% endif %}
+      <ul class="ok-hbar-chart">
+        {% for item in rows %}
+          <li title="{{ item.row.subject }}: проведено {{ item.row.completed }} из {{ item.row.lessons }}">
+            <span class="ok-hbar-label">{{ item.row.subject }}</span>
+            <span class="ok-hbar-track is-planned"><span class="ok-hbar-fill" style="width: {{ item.completed_width }}%;"></span></span>
+            <span class="ok-hbar-value">{{ item.row.completed }}/{{ item.row.lessons }}</span>
+          </li>
+        {% endfor %}
+      </ul>
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}
