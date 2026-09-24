@@ -1,0 +1,91 @@
+{% comment %}
+  «Сгенерировать занятия», step 1: what the generator would do right now,
+  computed by running it in a rolled-back transaction
+  (services.lesson_generator.preview_generation). The form posts to the
+  real generation endpoint; deleting orphan lessons needs its own tick.
+{% endcomment %}
+{% with p=preview.data %}
+<dialog class="ok-modal ok-modal-wide" data-ok-dialog data-auto-open data-close-url="{{ programs_url }}" aria-labelledby="ok-preview-title">
+  <form method="post" action="{{ generate_lessons_url }}" class="ok-modal-form" data-ok-guard>
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ preview.next_url }}">
+    <div class="ok-modal-header">
+      <span id="ok-preview-title"><i class="bi bi-magic" style="color:var(--ok-primary);"></i> Генерация занятий — предпросмотр</span>
+      <button type="button" class="ok-modal-close" data-ok-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="ok-modal-body">
+      <div class="ok-preview-kpis">
+        <div><span class="ok-preview-kpi-value">{{ p.to_create }}</span><span class="ok-preview-kpi-label">будет создано</span></div>
+        <div><span class="ok-preview-kpi-value">{{ p.existing }}</span><span class="ok-preview-kpi-label">уже существует</span></div>
+        <div><span class="ok-preview-kpi-value">{{ p.expected }}</span><span class="ok-preview-kpi-label">по плану</span></div>
+        <div><span class="ok-preview-kpi-value{% if p.missing_after %} is-warning{% endif %}">{{ p.missing_after }}</span><span class="ok-preview-kpi-label">останется не создано</span></div>
+      </div>
+
+      <p class="ok-help-text">
+        Генерация добавляет только недостающие занятия во всех активных программах группы.
+        Существующие занятия, посещаемость и домашние задания не изменяются.
+      </p>
+
+      {% for error in p.errors %}
+        <div class="ok-callout ok-callout-danger"><i class="bi bi-x-circle"></i><div>{{ error }}</div></div>
+      {% endfor %}
+
+      <div class="ok-prog-table-wrap">
+        <table class="ok-prog-table ok-prog-table-compact">
+          <thead>
+            <tr><th>Предмет</th><th>Преподаватель</th><th>Расписание</th><th class="ok-num">План</th><th class="ok-num">Есть</th><th class="ok-num">Будет создано</th></tr>
+          </thead>
+          <tbody>
+            {% for row in p.programs %}
+              <tr class="{% if preview.focus_program_id == row.group_teacher_id %}is-focused{% endif %}">
+                <td data-label="Предмет">{{ row.subject }}</td>
+                <td data-label="Преподаватель">{{ row.teacher }}</td>
+                <td data-label="Расписание">{% for slot in row.schedule %}{{ slot }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="ok-prog-meta">нет слотов</span>{% endfor %}</td>
+                <td data-label="План" class="ok-num">{{ row.planned }}</td>
+                <td data-label="Есть" class="ok-num">{{ row.existing }}</td>
+                <td data-label="Будет создано" class="ok-num">
+                  <strong>{{ row.to_create }}</strong>
+                  {% if row.first_date %}<div class="ok-prog-meta">{{ row.first_date|date:"d.m.Y" }}{% if row.last_date != row.first_date %} – {{ row.last_date|date:"d.m.Y" }}{% endif %}</div>{% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="ok-prog-meta">У группы нет учебных программ.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if p.warnings %}
+        <h4 class="ok-preview-subtitle"><i class="bi bi-skip-forward"></i> Будет пропущено ({{ p.warnings|length }})</h4>
+        <ul class="ok-preview-list">
+          {% for warning in p.warnings %}<li>{{ warning }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if p.orphans_to_delete %}
+        <div class="ok-callout ok-callout-warning">
+          <i class="bi bi-exclamation-triangle"></i>
+          <div>
+            <strong>Занятия без программы: {{ p.orphans_to_delete|length }}.</strong>
+            Они не проведены, без посещаемости и оценок и мешают созданию занятий в правильной программе.
+            <ul class="ok-preview-list">{% for label in p.orphans_to_delete %}<li>{{ label }}</li>{% endfor %}</ul>
+            <label class="ok-check">
+              <input type="checkbox" name="confirm_cleanup" value="1">
+              <span>Удалить их и создать заново в своих программах</span>
+            </label>
+            <span class="ok-help-text">Без отметки эти занятия останутся как есть.</span>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary" data-ok-close>Отмена</button>
+      {% if p.has_changes %}
+        <button type="submit" class="ok-btn-primary"><i class="bi bi-magic"></i> Создать занятия ({{ p.to_create }})</button>
+      {% else %}
+        <button type="submit" class="ok-btn-primary" disabled title="Нечего создавать">Нечего создавать</button>
+      {% endif %}
+    </div>
+  </form>
+</dialog>
+{% endwith %}

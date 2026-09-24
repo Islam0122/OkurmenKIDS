@@ -1,0 +1,138 @@
+{% comment %}
+  Right-side drawer over the Programs tab: edit one Teaching Program
+  (trainer, subject, status) and its weekly slots without leaving the
+  group. Rendered open by group_workspace_program_edit_view; closing it
+  just returns the URL to the Programs tab.
+{% endcomment %}
+<dialog class="ok-drawer" data-ok-dialog data-auto-open data-close-url="{{ programs_url }}" aria-labelledby="ok-drawer-title">
+  <div class="ok-drawer-header">
+    <div>
+      <div class="ok-drawer-eyebrow">Учебная программа</div>
+      <h2 id="ok-drawer-title" class="ok-drawer-title">{{ drawer.program.subject.name|default:"Без предмета" }} — {{ drawer.program.teacher }}</h2>
+      <div class="ok-prog-meta">
+        Создано {{ drawer.card.plan_filled }}/{{ drawer.card.plan_total }} · проведено {{ drawer.card.completed_count }}
+        {% if drawer.card.next_lesson_date %}· следующее {{ drawer.card.next_lesson_date|date:"d.m.Y" }}{% endif %}
+      </div>
+    </div>
+    <button type="button" class="ok-modal-close" data-ok-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="ok-drawer-body">
+    <form method="post" action="{{ drawer.action_url }}" id="ok-program-form" data-ok-guard novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ programs_url }}">
+      <section class="ok-drawer-section">
+        <h3 class="ok-drawer-section-title"><i class="bi bi-person-gear"></i> Преподаватель и предмет</h3>
+
+        {% for error in drawer.form.non_field_errors %}
+          <div class="ok-callout ok-callout-danger"><i class="bi bi-x-circle"></i><div>{{ error }}</div></div>
+        {% endfor %}
+
+        <div class="ok-field-group">
+          <label class="ok-label" for="{{ drawer.form.teacher.id_for_label }}">{{ drawer.form.teacher.label }} *</label>
+          {{ drawer.form.teacher }}
+          {% for error in drawer.form.teacher.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+
+        {% if drawer.future_lessons_count %}
+          <label class="ok-check">
+            {{ drawer.form.reassign_future_lessons }}
+            <span>
+              {{ drawer.form.reassign_future_lessons.label }} ({{ drawer.future_lessons_count }})
+              <span class="ok-help-text">Проведённые и отменённые занятия останутся за прежним преподавателем.</span>
+            </span>
+          </label>
+        {% endif %}
+
+        <div class="ok-field-group">
+          <label class="ok-label" for="{{ drawer.form.subject.id_for_label }}">{{ drawer.form.subject.label }}</label>
+          {{ drawer.form.subject }}
+          {% if drawer.form.subject.help_text %}<span class="ok-help-text">{{ drawer.form.subject.help_text }}</span>{% endif %}
+          {% for error in drawer.form.subject.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+
+        <div class="ok-field-group">
+          <label class="ok-label" for="{{ drawer.form.status.id_for_label }}">{{ drawer.form.status.label }}</label>
+          {{ drawer.form.status }}
+          <span class="ok-help-text">Приостановленная программа не участвует в генерации занятий; уже созданные занятия не меняются.</span>
+          {% for error in drawer.form.status.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+        </div>
+      </section>
+
+      <section class="ok-drawer-section">
+        <h3 class="ok-drawer-section-title"><i class="bi bi-list-ol"></i> План занятий</h3>
+        <p class="ok-help-text" style="margin:0 0 0.5rem;">
+          {% if drawer.card.has_individual_plan %}
+            Индивидуальный план программы: {{ drawer.card.plan_count }} занятий.
+          {% else %}
+            Общий план курса — на этот предмет приходится {{ drawer.card.plan_total }} занятий.
+          {% endif %}
+        </p>
+        <a class="ok-btn-secondary ok-btn-sm" href="{{ drawer.card.lesson_plan_url }}"><i class="bi bi-box-arrow-up-right"></i> Открыть план занятий</a>
+      </section>
+    </form>
+
+    <section class="ok-drawer-section" id="schedule">
+      <h3 class="ok-drawer-section-title"><i class="bi bi-calendar-week"></i> Расписание программы</h3>
+      {% if drawer.slots %}
+        <ul class="ok-slot-list">
+          {% for slot in drawer.slots %}
+            <li class="{% if not slot.obj.is_active %}is-muted{% endif %}">
+              <span><strong>{{ slot.label }}</strong> · {{ slot.room }}{% if not slot.obj.is_active %} · неактивен{% endif %}</span>
+              <form method="post" action="{{ slot.remove_url }}" data-ok-confirm="Удалить слот {{ slot.label }}? Уже созданные занятия не изменятся.">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ drawer.action_url }}#schedule">
+                <button type="submit" class="ok-icon-btn" aria-label="Удалить слот {{ slot.label }}"><i class="bi bi-trash3"></i></button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="ok-help-text">У программы нет слотов — её занятия не будут созданы. Добавьте расписание ниже.</p>
+      {% endif %}
+
+      <details class="ok-drawer-add"{% if drawer.open_schedule or not drawer.slots %} open{% endif %}>
+        <summary><i class="bi bi-plus-circle"></i> Добавить слоты</summary>
+        <form method="post" action="{{ drawer.schedule_add_url }}" data-ok-guard novalidate>
+          {% csrf_token %}
+          {% for error in drawer.schedule_form.non_field_errors %}
+            <div class="ok-callout ok-callout-danger"><i class="bi bi-x-circle"></i><div>{{ error }}</div></div>
+          {% endfor %}
+          <div class="ok-field-group">
+            <span class="ok-label">Дни недели *</span>
+            <div class="ok-group-day-checkboxes">
+              {% for checkbox in drawer.schedule_form.day_of_week %}<label>{{ checkbox.tag }} {{ checkbox.choice_label }}</label>{% endfor %}
+            </div>
+            {% for error in drawer.schedule_form.day_of_week.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+          </div>
+          <div class="ok-drawer-row">
+            <div class="ok-field-group">
+              <label class="ok-label" for="{{ drawer.schedule_form.start_time.id_for_label }}">Начало *</label>
+              {{ drawer.schedule_form.start_time }}
+              {% for error in drawer.schedule_form.start_time.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+            </div>
+            <div class="ok-field-group">
+              <label class="ok-label" for="{{ drawer.schedule_form.end_time.id_for_label }}">Окончание *</label>
+              {{ drawer.schedule_form.end_time }}
+              {% for error in drawer.schedule_form.end_time.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+            </div>
+          </div>
+          <div class="ok-field-group">
+            <label class="ok-label" for="{{ drawer.schedule_form.room.id_for_label }}">Кабинет</label>
+            {{ drawer.schedule_form.room }}
+          </div>
+          <button type="submit" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-plus-lg"></i> Добавить в расписание</button>
+          <span class="ok-help-text">Конфликты преподавателя, кабинета и группы проверяются для каждого дня.</span>
+        </form>
+      </details>
+    </section>
+  </div>
+
+  <div class="ok-drawer-footer">
+    <a class="ok-link-muted" href="{{ drawer.card.admin_edit_url }}">Расширенные настройки</a>
+    <div class="ok-drawer-footer-actions">
+      <button type="button" class="ok-btn-secondary" data-ok-close>Отмена</button>
+      <button type="submit" class="ok-btn-primary" form="ok-program-form"><i class="bi bi-check2"></i> Сохранить</button>
+    </div>
+  </div>
+</dialog>

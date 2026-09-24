@@ -17,10 +17,12 @@ from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Avg, Count, Prefetch, Q
+from django.db.models import Avg, Count, Min, Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.formats import number_format
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from apps.users.models import Subject, Teacher, User
@@ -48,11 +50,14 @@ from .services.group_schedule_conflicts import overlapping_groups
 from .services.lesson_status import attention_q, lesson_status_counts
 from .services.monthly_report import compute_monthly_stats
 from .services.monthly_report_pdf import MONTH_NAMES_RU
+from .services.group_analytics import PERIOD_CHOICES, GroupAnalyticsFilters, get_group_analytics
 from .services.lesson_generator import (
     LessonGenerationReport,
     generate_lessons_for_group_with_report,
     planned_lessons_by_program,
+    preview_generation,
 )
+from .services.program_editing import build_schedule_slots, future_lessons, update_teaching_program
 from .services.subject_assignments import STATUS_UNASSIGNED, subject_assignment_overview
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
@@ -568,26 +573,33 @@ def group_teacher_workspace_view(request, group_teacher_id: int):
 # ---------------------------------------------------------------------------
 
 def _workspace_tabs(group: Group) -> list[dict]:
-    # Attendance/Homework kept as their own URLs/views (still reachable, still
-    # tested) but folded out of the primary tab bar — this spec's tab list is
-    # exactly Overview/Students/Teachers/Programs/Weekly Schedule/Lessons/
-    # Analytics; their numbers already surface on Analytics.
-    return [
-        {"key": "overview", "label": "Обзор", "icon": "bi-clipboard-data",
-         "url": reverse("admin:academy_group_workspace", args=[group.pk])},
-        {"key": "students", "label": "Студенты", "icon": "bi-people",
-         "url": reverse("admin:academy_group_workspace_students", args=[group.pk])},
-        {"key": "teachers", "label": "Преподаватели", "icon": "bi-person-badge",
-         "url": reverse("admin:academy_group_workspace_teachers", args=[group.pk])},
-        {"key": "programs", "label": "Программы", "icon": "bi-kanban",
-         "url": reverse("admin:academy_group_workspace_programs", args=[group.pk])},
-        {"key": "schedule", "label": "Расписание", "icon": "bi-calendar-week",
-         "url": reverse("admin:academy_group_workspace_schedule", args=[group.pk])},
-        {"key": "lessons", "label": "Занятия", "icon": "bi-calendar-check",
-         "url": reverse("admin:academy_group_workspace_lessons", args=[group.pk])},
-        {"key": "analytics", "label": "Аналитика", "icon": "bi-graph-up-arrow",
-         "url": reverse("admin:academy_group_workspace_analytics", args=[group.pk])},
+    """The canonical Group Workspace sections, in order."""
+    tabs = [
+        ("overview", "Обзор", "bi-clipboard-data", "academy_group_workspace"),
+        ("students", "Студенты", "bi-people", "academy_group_workspace_students"),
+        ("teachers", "Преподаватели", "bi-person-badge", "academy_group_workspace_teachers"),
+        ("programs", "Программы", "bi-kanban", "academy_group_workspace_programs"),
+        ("schedule", "Расписание", "bi-calendar-week", "academy_group_workspace_schedule"),
+        ("lessons", "Занятия", "bi-calendar-check", "academy_group_workspace_lessons"),
+        ("attendance", "Посещаемость", "bi-person-check", "academy_group_workspace_attendance"),
+        ("homework", "Домашние задания", "bi-journal-text", "academy_group_workspace_homework"),
+        ("analytics", "Аналитика", "bi-graph-up-arrow", "academy_group_workspace_analytics"),
     ]
+    return [
+        {"key": key, "label": label, "icon": icon, "url": reverse(f"admin:{name}", args=[group.pk])}
+        for key, label, icon, name in tabs
+    ]
+
+
+def _safe_next(request, default: str) -> str:
+    """`next` from the POST/GET data if it points back into this site,
+    else `default` — never an open redirect to another host."""
+    candidate = request.POST.get("next") or request.GET.get("next")
+    if candidate and url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return candidate
+    return default
 
 
 def _workspace_context(request, group: Group, active_tab: str) -> dict:
@@ -606,6 +618,8 @@ def _workspace_context(request, group: Group, active_tab: str) -> dict:
         "add_program_url": reverse("admin:academy_group_workspace_programs_add", args=[group.pk]),
         "add_schedule_url": reverse("admin:academy_group_workspace_schedule_add", args=[group.pk]),
         "generate_lessons_url": reverse("admin:academy_group_workspace_generate_lessons", args=[group.pk]),
+        "generate_preview_url": reverse("admin:academy_group_workspace_generate_preview", args=[group.pk]),
+        "programs_url": reverse("admin:academy_group_workspace_programs", args=[group.pk]),
     }
 
 
@@ -801,91 +815,381 @@ def group_workspace_remove_student_view(request, group_id, student_id):
 
 
 # -- Teaching Programs ------------------------------------------------------
+#
+# The Programs tab is the group's control panel: one row per Teaching
+# Program (GroupTeacher) — subject, trainer, plan vs. created lessons,
+# progress, next lesson, status — plus one row per course subject nobody
+# teaches yet. Everyday edits (trainer, subject, status, weekly slots)
+# happen in a right-side drawer on the same page
+# (group_workspace_program_edit_view), and "Сгенерировать занятия" always
+# goes through a preview first (group_workspace_generate_preview_view) —
+# no detour through the generic GroupTeacher admin form for simple changes.
 
-def group_workspace_programs_view(request, group_id):
-    _require_admin(request)
-    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
-
-    context = _workspace_context(request, group, "programs")
-    context.update({"title": f"{group.name} — Программы", "cards": _teaching_program_cards(group)})
-    return render(request, "admin/academy/group/workspace/programs.html", context)
+def _program_status(card: dict) -> tuple[str, str]:
+    """(badge css class, label) — the one status a program row shows."""
+    if not card["obj"].is_active:
+        return "ok-badge-muted", "Приостановлена"
+    if not card["slots"]:
+        return "ok-badge-danger", "Нет расписания"
+    live_lessons = card["lesson_count"] - card["cancelled_count"]
+    if card["plan_total"] and card["completed_count"] >= card["plan_total"]:
+        return "ok-badge-info", "Программа пройдена"
+    if card["plan_total"] and live_lessons < card["plan_total"]:
+        return "ok-badge-warning", "Не все занятия созданы"
+    return "ok-badge-success", "Идёт по расписанию"
 
 
 def _teaching_program_cards(group: Group) -> list[dict]:
     """One dict per GroupTeacher (Teaching Program) of `group` — shared by
-    both the Teachers tab (roster: add/remove the assignment) and the
-    Programs tab (business view: schedule/lesson-plan progress/generate),
-    so the same query runs once and both tabs render the same real numbers.
-    """
+    the Programs tab (table), the Teachers tab (roster grouped by trainer)
+    and the edit drawer. Lesson counters come from one grouped query for
+    the whole group, not several queries per program."""
     today = timezone.localdate()
     programs = list(
         group.teachers.select_related("teacher__user", "subject")
         .prefetch_related("schedules__room")
         .annotate(_plan_count=Count("lesson_plans", distinct=True))
+        .order_by("-is_active", "subject__name", "id")
     )
+    lesson_counts = {
+        row["group_teacher_id"]: row
+        for row in Lesson.objects.filter(group=group, group_teacher__isnull=False)
+        .values("group_teacher_id")
+        .annotate(
+            total=Count("id"),
+            completed=Count("id", filter=Q(status=Lesson.Status.COMPLETED)),
+            cancelled=Count("id", filter=Q(status=Lesson.Status.CANCELLED)),
+            upcoming=Count("id", filter=Q(status=Lesson.Status.SCHEDULED, date__gte=today)),
+            next_date=Min("date", filter=Q(status=Lesson.Status.SCHEDULED, date__gte=today)),
+        )
+    }
 
     planned = planned_lessons_by_program(group)
+    course_plan_url = f"{reverse('admin:academy_courselessonplan_changelist')}?course__id__exact={group.course_id}"
     cards = []
     for gt in programs:
         active_slots = sorted(
             (s for s in gt.schedules.all() if s.is_active),
             key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
         )
-        lessons = Lesson.objects.filter(group_teacher=gt)
+        counts = lesson_counts.get(gt.pk, {})
+        lesson_count = counts.get("total", 0)
+        completed = counts.get("completed", 0)
+        plan_total = planned.get(gt.pk, 0)
         has_individual_plan = gt._plan_count > 0
-        cards.append(
-            {
-                "obj": gt,
-                "slots": [
-                    {
-                        "day_label": WEEKDAY_SHORT_LABELS.get(s.day_of_week, s.day_of_week),
-                        "time_label": f"{s.start_time:%H:%M}–{s.end_time:%H:%M}",
-                        "room": s.room.name if s.room_id else "без кабинета",
-                    }
-                    for s in active_slots
-                ],
-                "lesson_count": lessons.count(),
-                "completed_count": lessons.filter(status=Lesson.Status.COMPLETED).count(),
-                "upcoming_count": lessons.filter(status=Lesson.Status.SCHEDULED, date__gte=today).count(),
-                "plan_count": gt._plan_count,
-                "has_individual_plan": has_individual_plan,
-                # "Lessons created / lessons this program is responsible
-                # for": its subject's share of the shared course plan (e.g.
-                # 48 of 144) or its own individual plan — see
-                # services.lesson_generator.planned_lessons_by_program.
-                "plan_filled": lessons.count(),
-                "plan_total": planned.get(gt.pk, 0),
-                "workspace_url": reverse("admin:academy_groupteacher_workspace", args=[gt.pk]),
-                "edit_url": reverse("admin:academy_groupteacher_change", args=[gt.pk]),
-                "lesson_plan_url": (
-                    reverse("admin:academy_groupteacher_change", args=[gt.pk])
-                    if has_individual_plan
-                    else f"{reverse('admin:academy_courselessonplan_changelist')}?course__id__exact={group.course_id}"
-                ),
-                "schedule_url": reverse("admin:academy_group_workspace_schedule", args=[group.pk]),
-                "remove_url": reverse("admin:academy_group_workspace_teachers_remove", args=[group.pk, gt.pk]),
-            }
-        )
+        admin_edit_url = reverse("admin:academy_groupteacher_change", args=[gt.pk])
+        card = {
+            "obj": gt,
+            "slots": [
+                {
+                    "obj": s,
+                    "day_label": WEEKDAY_SHORT_LABELS.get(s.day_of_week, s.day_of_week),
+                    "time_label": f"{s.start_time:%H:%M}–{s.end_time:%H:%M}",
+                    "room": s.room.name if s.room_id else "без кабинета",
+                }
+                for s in active_slots
+            ],
+            "lesson_count": lesson_count,
+            "completed_count": completed,
+            "cancelled_count": counts.get("cancelled", 0),
+            "upcoming_count": counts.get("upcoming", 0),
+            "next_lesson_date": counts.get("next_date"),
+            "plan_count": gt._plan_count,
+            "has_individual_plan": has_individual_plan,
+            # "Lessons created / lessons this program is responsible
+            # for": its subject's share of the shared course plan (e.g.
+            # 48 of 144) or its own individual plan — see
+            # services.lesson_generator.planned_lessons_by_program.
+            "plan_filled": lesson_count,
+            "plan_total": plan_total,
+            "progress": min(round(100 * completed / plan_total), 100) if plan_total else None,
+            "workspace_url": reverse("admin:academy_groupteacher_workspace", args=[gt.pk]),
+            "edit_url": reverse("admin:academy_group_workspace_programs_edit", args=[group.pk, gt.pk]),
+            "admin_edit_url": admin_edit_url,
+            "lesson_plan_url": admin_edit_url if has_individual_plan else course_plan_url,
+            "lessons_url": f"{reverse('admin:academy_group_workspace_lessons', args=[group.pk])}?program={gt.pk}",
+            "analytics_url": f"{reverse('admin:academy_group_workspace_analytics', args=[group.pk])}?program={gt.pk}",
+            "schedule_url": reverse("admin:academy_group_workspace_programs_edit", args=[group.pk, gt.pk]) + "#schedule",
+            "generate_url": (
+                f"{reverse('admin:academy_group_workspace_generate_preview', args=[group.pk])}?program={gt.pk}"
+            ),
+            "remove_url": reverse("admin:academy_group_workspace_teachers_remove", args=[group.pk, gt.pk]),
+        }
+        card["status_class"], card["status_label"] = _program_status(card)
+        cards.append(card)
     return cards
+
+
+def _unassigned_subject_rows(group: Group) -> list[dict]:
+    """Course subjects whose plan rows no program will teach — shown as
+    rows of their own so the gap is visible before generating."""
+    add_program_url = reverse("admin:academy_group_workspace_programs_add", args=[group.pk])
+    return [
+        {"row": row, "assign_url": f"{add_program_url}?subject={row.subject_id}"}
+        for row in subject_assignment_overview(group)
+        if row.status == STATUS_UNASSIGNED
+    ]
+
+
+class EditProgramForm(forms.Form):
+    """The drawer's form: trainer, subject and status of one program."""
+
+    STATUS_CHOICES = [("active", "Активна"), ("inactive", "Приостановлена")]
+
+    teacher = forms.ModelChoiceField(
+        queryset=Teacher.objects.none(), label="Преподаватель", widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    subject = forms.ModelChoiceField(
+        queryset=Subject.objects.none(), required=False, label="Предмет",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    status = forms.ChoiceField(
+        choices=STATUS_CHOICES, label="Статус программы", widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+    reassign_future_lessons = forms.BooleanField(
+        required=False, initial=True, label="Передать новому преподавателю будущие запланированные занятия",
+    )
+
+    def __init__(self, *args, group_teacher: GroupTeacher, has_lessons: bool, **kwargs):
+        kwargs.setdefault(
+            "initial",
+            {
+                "teacher": group_teacher.teacher_id,
+                "subject": group_teacher.subject_id,
+                "status": "active" if group_teacher.is_active else "inactive",
+                "reassign_future_lessons": True,
+            },
+        )
+        super().__init__(*args, **kwargs)
+        self.group_teacher = group_teacher
+        # The current trainer stays selectable even if deactivated since —
+        # validation then explains why it can't be kept.
+        self.fields["teacher"].queryset = Teacher.objects.filter(
+            Q(is_active=True) | Q(pk=group_teacher.teacher_id)
+        ).select_related("user")
+        self.fields["subject"].queryset = group_teacher.group.course.subjects.filter(
+            Q(is_active=True) | Q(pk=group_teacher.subject_id)
+        )
+        if has_lessons:
+            # A lesson's subject is copied from its plan row — see
+            # services.program_editing. Disabled fields keep their initial
+            # value whatever the POST says.
+            self.fields["subject"].disabled = True
+            self.fields["subject"].help_text = "У программы уже есть занятия — предмет изменить нельзя."
+
+    def clean_subject(self):
+        subject = self.cleaned_data.get("subject")
+        if subject is None and self.group_teacher.subject_id is not None:
+            raise forms.ValidationError("Выберите предмет.")
+        return subject
+
+
+class ProgramScheduleForm(forms.Form):
+    """Add weekly slots to one program from its drawer — several weekdays
+    at the same time in one go."""
+
+    day_of_week = forms.MultipleChoiceField(
+        choices=GroupSchedule.DAY_CHOICES, label="Дни недели", widget=forms.CheckboxSelectMultiple,
+    )
+    start_time = forms.TimeField(
+        label="Начало", widget=forms.TimeInput(attrs={"class": "ok-input", "type": "time"})
+    )
+    end_time = forms.TimeField(
+        label="Окончание", widget=forms.TimeInput(attrs={"class": "ok-input", "type": "time"})
+    )
+    room = forms.ModelChoiceField(
+        queryset=Room.objects.filter(is_active=True), required=False, label="Кабинет",
+        widget=forms.Select(attrs={"class": "ok-input"}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("start_time"), cleaned.get("end_time")
+        if start and end and end <= start:
+            self.add_error("end_time", "Время окончания должно быть позже времени начала.")
+        return cleaned
+
+
+def _add_validation_errors(form: forms.Form, exc: DjangoValidationError) -> None:
+    if hasattr(exc, "error_dict"):
+        for field_name, errors in exc.message_dict.items():
+            target = field_name if field_name in form.fields else None
+            for message in errors:
+                form.add_error(target, message)
+    else:
+        for message in exc.messages:
+            form.add_error(None, message)
+
+
+def _render_programs(request, group: Group, *, drawer: dict | None = None, preview: dict | None = None,
+                     status: int = 200):
+    context = _workspace_context(request, group, "programs")
+    cards = _teaching_program_cards(group)
+    context.update(
+        {
+            "title": f"{group.name} — Программы",
+            "cards": cards,
+            "unassigned_subjects": _unassigned_subject_rows(group),
+            "active_programs_count": sum(1 for card in cards if card["obj"].is_active),
+            "drawer": drawer,
+            "preview": preview,
+        }
+    )
+    return render(request, "admin/academy/group/workspace/programs.html", context, status=status)
+
+
+def group_workspace_programs_view(request, group_id):
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    return _render_programs(request, group)
+
+
+def _drawer_context(group: Group, group_teacher: GroupTeacher, *, form=None, schedule_form=None) -> dict:
+    has_lessons = Lesson.objects.filter(group_teacher=group_teacher).exists()
+    card = next(c for c in _teaching_program_cards(group) if c["obj"].pk == group_teacher.pk)
+    return {
+        "program": group_teacher,
+        "card": card,
+        "form": form or EditProgramForm(group_teacher=group_teacher, has_lessons=has_lessons),
+        "schedule_form": schedule_form or ProgramScheduleForm(),
+        "future_lessons_count": future_lessons(group_teacher).count(),
+        "action_url": reverse("admin:academy_group_workspace_programs_edit", args=[group.pk, group_teacher.pk]),
+        "schedule_add_url": reverse(
+            "admin:academy_group_workspace_programs_schedule_add", args=[group.pk, group_teacher.pk]
+        ),
+        "slots": [
+            {
+                "obj": slot,
+                "label": f"{WEEKDAY_SHORT_LABELS.get(slot.day_of_week, slot.day_of_week)} "
+                         f"{slot.start_time:%H:%M}–{slot.end_time:%H:%M}",
+                "room": slot.room.name if slot.room_id else "без кабинета",
+                "remove_url": reverse("admin:academy_group_workspace_schedule_remove", args=[group.pk, slot.pk]),
+            }
+            for slot in sorted(
+                group_teacher.schedules.select_related("room"),
+                key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
+            )
+        ],
+        "open_schedule": schedule_form is not None and schedule_form.is_bound,
+    }
+
+
+def group_workspace_program_edit_view(request, group_id, group_teacher_id):
+    """Right-side drawer over the Programs tab: GET opens it for one
+    program, POST saves trainer/subject/status through
+    services.program_editing (slots and future lessons follow the trainer),
+    re-rendering the drawer with field errors on failure."""
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    group_teacher = get_object_or_404(
+        GroupTeacher.objects.select_related("teacher__user", "subject", "group__course"), pk=group_teacher_id,
+        group=group,
+    )
+
+    if request.method == "POST":
+        has_lessons = Lesson.objects.filter(group_teacher=group_teacher).exists()
+        form = EditProgramForm(request.POST, group_teacher=group_teacher, has_lessons=has_lessons)
+        if form.is_valid():
+            try:
+                change = update_teaching_program(
+                    group_teacher,
+                    teacher=form.cleaned_data["teacher"],
+                    subject=form.cleaned_data["subject"],
+                    is_active=form.cleaned_data["status"] == "active",
+                    reassign_future_lessons=form.cleaned_data["reassign_future_lessons"],
+                )
+            except DjangoValidationError as exc:
+                _add_validation_errors(form, exc)
+            else:
+                if not change.changed:
+                    messages.info(request, "Изменений нет — программа осталась прежней.")
+                else:
+                    parts = []
+                    if change.teacher_changed:
+                        parts.append(f"преподаватель — {form.cleaned_data['teacher']}")
+                        if change.lessons_reassigned:
+                            parts.append(f"передано будущих занятий: {change.lessons_reassigned}")
+                    if change.subject_changed:
+                        subject = form.cleaned_data["subject"]
+                        parts.append(f"предмет — {subject.name if subject else 'без предмета'}")
+                    if change.status_changed:
+                        parts.append("статус — " + dict(EditProgramForm.STATUS_CHOICES)[form.cleaned_data["status"]])
+                    messages.success(request, "Программа сохранена: " + "; ".join(parts) + ".")
+                return redirect(_safe_next(request, reverse("admin:academy_group_workspace_programs", args=[group.pk])))
+        group_teacher.refresh_from_db()
+        drawer = _drawer_context(group, group_teacher, form=form)
+        return _render_programs(request, group, drawer=drawer)
+
+    return _render_programs(request, group, drawer=_drawer_context(group, group_teacher))
+
+
+@require_POST
+def group_workspace_program_schedule_add_view(request, group_id, group_teacher_id):
+    """Add weekly slots (one per selected weekday) to a program from its
+    drawer; every day is validated (teacher/room/group conflicts) before
+    any is saved."""
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    group_teacher = get_object_or_404(
+        GroupTeacher.objects.select_related("teacher__user", "subject"), pk=group_teacher_id, group=group,
+    )
+    form = ProgramScheduleForm(request.POST)
+    if form.is_valid():
+        try:
+            slots = build_schedule_slots(
+                group=group, teacher=group_teacher.teacher, subject=group_teacher.subject,
+                days=form.cleaned_data["day_of_week"], start_time=form.cleaned_data["start_time"],
+                end_time=form.cleaned_data["end_time"], room=form.cleaned_data.get("room"),
+            )
+        except DjangoValidationError as exc:
+            _add_validation_errors(form, exc)
+        else:
+            with transaction.atomic():
+                for slot in slots:
+                    slot.save()
+            messages.success(
+                request,
+                f"Добавлено слотов расписания: {len(slots)}. Когда расписание будет готово, "
+                "нажмите «Сгенерировать занятия».",
+            )
+            return redirect(
+                reverse("admin:academy_group_workspace_programs_edit", args=[group.pk, group_teacher.pk]) + "#schedule"
+            )
+    drawer = _drawer_context(group, group_teacher, schedule_form=form)
+    return _render_programs(request, group, drawer=drawer)
 
 
 # -- Teachers ---------------------------------------------------------------
 
 def group_workspace_teachers_view(request, group_id):
+    """People view of the same programs: one card per trainer with every
+    subject they teach in this group, so "who teaches what, how much" is
+    answered at a glance. Editing still opens the program's drawer on the
+    Programs tab."""
     _require_admin(request)
     group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
 
+    cards = _teaching_program_cards(group)
+    by_teacher: dict[int, dict] = {}
+    for card in cards:
+        teacher = card["obj"].teacher
+        entry = by_teacher.setdefault(
+            teacher.pk,
+            {"teacher": teacher, "programs": [], "weekly_slots": 0, "upcoming": 0, "completed": 0},
+        )
+        entry["programs"].append(card)
+        if card["obj"].is_active:
+            entry["weekly_slots"] += len(card["slots"])
+        entry["upcoming"] += card["upcoming_count"]
+        entry["completed"] += card["completed_count"]
+
     context = _workspace_context(request, group, "teachers")
-    assignments = subject_assignment_overview(group)
-    add_program_url = reverse("admin:academy_group_workspace_programs_add", args=[group.pk])
     context.update(
         {
             "title": f"{group.name} — Преподаватели",
-            "cards": _teaching_program_cards(group),
-            "subject_assignments": [
-                {"row": row, "assign_url": f"{add_program_url}?subject={row.subject_id}"} for row in assignments
-            ],
-            "unassigned_count": sum(1 for row in assignments if row.status == STATUS_UNASSIGNED),
+            "cards": cards,
+            "teachers": sorted(by_teacher.values(), key=lambda entry: str(entry["teacher"])),
+            "unassigned_subjects": _unassigned_subject_rows(group),
         }
     )
     return render(request, "admin/academy/group/workspace/teachers.html", context)
@@ -965,7 +1269,7 @@ def group_workspace_remove_teacher_view(request, group_id, group_teacher_id):
     label = f"{group_teacher.teacher} — {group_teacher.subject.name if group_teacher.subject_id else 'без предмета'}"
     group_teacher.delete()
     messages.success(request, f"Назначение «{label}» удалено.")
-    return redirect(reverse("admin:academy_group_workspace_teachers", args=[group.pk]))
+    return redirect(_safe_next(request, reverse("admin:academy_group_workspace_teachers", args=[group.pk])))
 
 
 class AddTeachingProgramForm(forms.Form):
@@ -1026,25 +1330,15 @@ def group_workspace_add_program_view(request, group_id):
             end_time = form.cleaned_data["end_time"]
             room = form.cleaned_data.get("room")
             wants_individual_plan = form.cleaned_data["lesson_plan_source"] == "individual"
-            day_labels = dict(GroupSchedule.DAY_CHOICES)
-
-            new_slots = []
-            has_errors = False
-            for day in days:
-                slot = GroupSchedule(
-                    group=group, teacher=teacher, subject=subject,
-                    day_of_week=day, start_time=start_time, end_time=end_time, room=room,
+            try:
+                new_slots = build_schedule_slots(
+                    group=group, teacher=teacher, subject=subject, days=days,
+                    start_time=start_time, end_time=end_time, room=room,
                 )
-                try:
-                    slot.full_clean()
-                except DjangoValidationError as exc:
-                    has_errors = True
-                    for message in (exc.messages if hasattr(exc, "messages") else [str(exc)]):
-                        messages.error(request, f"{day_labels.get(day, day)}: {message}")
-                else:
-                    new_slots.append(slot)
-
-            if not has_errors:
+            except DjangoValidationError as exc:
+                for message in exc.messages:
+                    messages.error(request, message)
+            else:
                 with transaction.atomic():
                     for slot in new_slots:
                         slot.save()
@@ -1210,8 +1504,8 @@ def group_workspace_remove_schedule_view(request, group_id, schedule_id):
     group = get_object_or_404(Group, pk=group_id)
     slot = get_object_or_404(GroupSchedule, pk=schedule_id, group=group)
     slot.delete()
-    messages.success(request, "Слот расписания удалён.")
-    return redirect(reverse("admin:academy_group_workspace_schedule", args=[group.pk]))
+    messages.success(request, "Слот расписания удалён. Уже созданные занятия не изменились.")
+    return redirect(_safe_next(request, reverse("admin:academy_group_workspace_schedule", args=[group.pk])))
 
 
 # -- Lessons ------------------------------------------------------------
@@ -1365,38 +1659,79 @@ def group_workspace_homework_view(request, group_id):
 
 # -- Analytics ------------------------------------------------------------
 
+def _bar(value: float | None) -> dict:
+    """Width/label for a server-rendered horizontal bar (0–100%). `width`
+    is a pre-formatted CSS number: a float rendered by the template would
+    be localized ("82,1") and silently break the style."""
+    if value is None:
+        return {"width": "0", "label": "—", "empty": True}
+    width = max(0.0, min(float(value), 100.0))
+    return {"width": f"{width:.1f}", "label": f"{number_format(value)}%", "empty": False}
+
+
 def group_workspace_analytics_view(request, group_id):
+    """Group Analytics: every Teaching Program of the group side by side
+    plus a group-wide summary, filtered by program/teacher/subject/period/
+    lesson status — see services.group_analytics for every definition."""
     _require_admin(request)
-    group = get_object_or_404(Group, pk=group_id)
-    today = timezone.localdate()
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    filters = GroupAnalyticsFilters.from_query(request.GET)
+    analytics = get_group_analytics(group, filters)
+    summary = analytics.summary
 
-    lesson_kpi = _lesson_status_kpi(Lesson.objects.filter(group=group), today)
-    attendance_qs = Attendance.objects.filter(lesson__group=group)
-    attendance_total = attendance_qs.count()
-    attendance_present = attendance_qs.filter(
-        status__in=[Attendance.Status.PRESENT, Attendance.Status.LATE]
-    ).count()
+    rows = []
+    for row in analytics.rows:
+        rows.append(
+            {
+                "row": row,
+                "attendance_bar": _bar(row.attendance_rate),
+                "homework_bar": _bar(row.homework_rate),
+                "progress_bar": _bar(row.progress),
+                # Planned vs conducted: the track is the planned lessons,
+                # the fill the conducted share of them.
+                "completed_width": f"{100 * row.completed / row.lessons:.1f}" if row.lessons else "0",
+                "lessons_url": (
+                    f"{reverse('admin:academy_group_workspace_lessons', args=[group.pk])}?program={row.group_teacher_id}"
+                    if row.group_teacher_id else None
+                ),
+                "edit_url": (
+                    reverse("admin:academy_group_workspace_programs_edit", args=[group.pk, row.group_teacher_id])
+                    if row.group_teacher_id else None
+                ),
+            }
+        )
 
-    results_qs = HomeworkResult.objects.filter(homework__lesson__group=group)
-    results_total = results_qs.count()
-    results_checked = results_qs.filter(status=HomeworkResult.Status.CHECKED).count()
-
+    programs = list(group.teachers.select_related("teacher__user", "subject").order_by("subject__name", "id"))
     context = _workspace_context(request, group, "analytics")
     context.update(
         {
             "title": f"{group.name} — Аналитика",
+            "analytics": analytics,
+            "summary": summary,
+            "rows": rows,
+            "has_filters": bool(filters.as_query()),
+            "summary_bars": {
+                "attendance": _bar(summary["attendance_rate"]),
+                "homework": _bar(summary["homework_rate"]),
+                "progress": _bar(summary["progress"]),
+            },
+            "filter_options": {
+                "programs": programs,
+                "teachers": sorted({gt.teacher for gt in programs}, key=str),
+                "subjects": sorted({gt.subject for gt in programs if gt.subject_id}, key=lambda s: s.name),
+                "periods": PERIOD_CHOICES,
+                "statuses": Lesson.Status.choices,
+            },
+            "selected": filters,
+            # Kept for the tab's long-standing context contract.
             "stats": {
-                "students_count": group.students_count,
+                "students_count": summary["students"],
                 "programs_count": group.teachers.filter(is_active=True).count(),
-                "completed_lessons": lesson_kpi["completed"],
-                "cancelled_lessons": lesson_kpi["cancelled"],
-                "upcoming_lessons": lesson_kpi["upcoming"],
-                "attendance_rate": (
-                    round(100 * attendance_present / attendance_total, 1) if attendance_total else None
-                ),
-                "homework_completion_rate": (
-                    round(100 * results_checked / results_total, 1) if results_total else None
-                ),
+                "completed_lessons": summary["completed"],
+                "cancelled_lessons": summary["cancelled"],
+                "upcoming_lessons": summary["upcoming"],
+                "attendance_rate": summary["attendance_rate"],
+                "homework_completion_rate": summary["homework_rate"],
             },
         }
     )
@@ -1405,15 +1740,40 @@ def group_workspace_analytics_view(request, group_id):
 
 # -- Generate lessons -----------------------------------------------------
 
+def group_workspace_generate_preview_view(request, group_id):
+    """Step 1 of «Сгенерировать занятия»: exactly what the generator would
+    do right now (per program: plan, existing, to be created and when;
+    what is skipped and why; which orphan lessons would be deleted) — by
+    running it in a rolled-back transaction, see
+    services.lesson_generator.preview_generation. Nothing is written; the
+    confirmation form posts to group_workspace_generate_lessons_view."""
+    _require_admin(request)
+    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
+    preview = preview_generation(group)
+    focus = request.GET.get("program")
+    return _render_programs(
+        request, group,
+        preview={
+            "data": preview,
+            "focus_program_id": int(focus) if focus and focus.isdigit() else None,
+            "next_url": reverse("admin:academy_group_workspace_programs", args=[group.pk]),
+        },
+    )
+
+
 @require_POST
 def group_workspace_generate_lessons_view(request, group_id):
+    """Step 2: generate. Idempotent — only missing lessons are created,
+    existing ones are never modified. Untouched orphan lessons (see
+    find_orphan_lessons) are deleted and recreated only when the admin
+    ticked the confirmation in the preview (`confirm_cleanup`); otherwise
+    they are kept and reported."""
     _require_admin(request)
     group = get_object_or_404(Group, pk=group_id)
-    report = generate_lessons_for_group_with_report(group)
+    report = generate_lessons_for_group_with_report(group, cleanup_orphans=bool(request.POST.get("confirm_cleanup")))
     add_generation_messages(request, report)
 
-    next_url = request.POST.get("next") or reverse("admin:academy_group_workspace", args=[group.pk])
-    return redirect(next_url)
+    return redirect(_safe_next(request, reverse("admin:academy_group_workspace", args=[group.pk])))
 
 
 # ---------------------------------------------------------------------------

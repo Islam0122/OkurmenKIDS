@@ -7144,7 +7144,7 @@ class ProgSoftPlanDistributionTests(TestCase):
         for name in self.SUBJECTS:
             self.assertEqual(cards[name]["lesson_count"], 48)
             self.assertEqual((cards[name]["plan_filled"], cards[name]["plan_total"]), (48, 48))
-        self.assertContains(response, "План занятий: 48/48", count=3)
+        self.assertContains(response, "48/48", count=3)
 
         response = web.get(reverse("admin:academy_groupteacher_workspace", args=[soft.pk]))
         self.assertEqual(response.context["lesson_stats"]["generated"], 48)
@@ -7927,12 +7927,18 @@ class OrphanLessonCleanupTests(OrphanLessonFixture, TestCase):
         self.assertEqual(len(response.data["deleted_orphans"]), 1)
         self.assertIn("Exam", response.data["deleted_orphans"][0])
 
-        self.orphan("Final")
+        final = self.orphan("Final")
         web = DjangoClient()
         web.force_login(self.admin)
-        response = web.post(
-            reverse("admin:academy_group_workspace_generate_lessons", args=[self.group.pk]), follow=True,
-        )
+        url = reverse("admin:academy_group_workspace_generate_lessons", args=[self.group.pk])
+        # The Workspace deletes orphans only once the admin confirmed it in
+        # the preview — without the tick they are kept and reported.
+        response = web.post(url, follow=True)
+        self.assertNotContains(response, "Удалено занятий без программы")
+        self.assertContains(response, "удаление не подтверждено")
+        self.assertTrue(Lesson.objects.filter(pk=final.pk).exists())
+
+        response = web.post(url, {"confirm_cleanup": "1"}, follow=True)
         self.assertContains(response, "Удалено занятий без программы: 1")
 
     def test_audit_command_previews_the_scope_without_deleting(self):
@@ -7980,3 +7986,433 @@ class OrphanLessonConcurrencyTests(OrphanLessonFixture, TransactionTestCase):
         self.assertEqual(sum(r.created for r in reports), 1)
         self.assertFalse(Lesson.objects.filter(pk=exam.pk).exists())
         self.assertEqual(Lesson.objects.filter(group=self.group).count(), len(self.PLAN))
+
+
+# ---------------------------------------------------------------------------
+# Group Workspace — program management (drawer), generation preview and
+# Group Analytics across every program. Own fixture: two subject programs
+# of one group, far enough in the future that "future lessons" is
+# controlled by the `today` each test passes/patches.
+# ---------------------------------------------------------------------------
+
+from apps.academy.services.group_analytics import GroupAnalyticsFilters, get_group_analytics  # noqa: E402
+from apps.academy.services.lesson_generator import preview_generation  # noqa: E402
+from apps.academy.services.program_editing import (  # noqa: E402
+    build_schedule_slots,
+    update_teaching_program,
+)
+
+WS_START = dt.date(2030, 1, 7)  # a Monday
+WS_TODAY = dt.date(2030, 1, 10)  # Thursday of the first week
+
+
+class WorkspaceProgramFixture(TestCase):
+    def setUp(self):
+        self.admin = make_admin()
+        self.teacher1 = make_teacher("ws_teacher1")
+        self.teacher2 = make_teacher("ws_teacher2")
+        self.teacher3 = make_teacher("ws_teacher3")
+        self.python = Subject.objects.create(name="WS Python")
+        self.js = Subject.objects.create(name="WS JavaScript")
+        self.course = Course.objects.create(name="WS Course", count_lesson=4)
+        self.course.subjects.set([self.python, self.js])
+        for number, subject, topic in [(1, self.python, "Vars"), (2, self.js, "HTML"),
+                                       (3, self.python, "Funcs"), (4, self.js, "CSS")]:
+            CourseLessonPlan.objects.create(
+                course=self.course, lesson_number=number, subject=subject, topic=topic,
+                homework_title=f"HW {topic}",
+            )
+        self.room = Room.objects.create(name="WS Room", capacity=20)
+        self.group = Group.objects.create(name="WS Group", course=self.course, start_date=WS_START)
+        self.python_program = self.add_program(self.group, self.teacher1, self.python, "mon")
+        self.js_program = self.add_program(self.group, self.teacher2, self.js, "tue")
+        self.student_a = Student.objects.create(first_name="A", last_name="One", group=self.group)
+        self.student_b = Student.objects.create(first_name="B", last_name="Two", group=self.group)
+
+        self.web = DjangoClient()
+        self.web.force_login(self.admin)
+
+    def add_program(self, group, teacher, subject, day, start=dt.time(10, 0), end=dt.time(11, 0)):
+        slot = GroupSchedule(group=group, teacher=teacher, subject=subject, day_of_week=day,
+                             start_time=start, end_time=end, room=self.room if group == self.group else None)
+        slot.full_clean()
+        slot.save()
+        return slot.group_teacher
+
+    def lesson(self, number):
+        return Lesson.objects.get(group=self.group, lesson_number=number)
+
+    def url(self, name, *args):
+        return reverse(f"admin:academy_group_workspace{name}", args=[self.group.pk, *args])
+
+
+class ProgramEditingServiceTests(WorkspaceProgramFixture):
+    def setUp(self):
+        super().setUp()
+        generate_lessons_for_group(self.group)
+        # Lesson 1 (07.01) is in the past and conducted; lesson 3 (14.01) is ahead.
+        Lesson.objects.filter(pk=self.lesson(1).pk).update(status=Lesson.Status.COMPLETED)
+
+    def test_teacher_change_moves_slots_and_future_lessons_only(self):
+        change = update_teaching_program(
+            self.python_program, teacher=self.teacher3, subject=self.python, is_active=True, today=WS_TODAY,
+        )
+        self.assertTrue(change.teacher_changed)
+        self.assertEqual(change.lessons_reassigned, 1)
+        self.python_program.refresh_from_db()
+        self.assertEqual(self.python_program.teacher, self.teacher3)
+        self.assertEqual(set(self.python_program.schedules.values_list("teacher_id", flat=True)), {self.teacher3.pk})
+        self.assertEqual(self.lesson(3).teacher, self.teacher3)
+        self.assertEqual(self.lesson(1).teacher, self.teacher1)  # history stays with the old trainer
+
+    def test_slot_save_after_teacher_change_does_not_create_a_second_program(self):
+        update_teaching_program(
+            self.python_program, teacher=self.teacher3, subject=self.python, is_active=True, today=WS_TODAY,
+        )
+        slot = self.python_program.schedules.get()
+        slot.end_time = dt.time(11, 30)
+        slot.full_clean()
+        slot.save()
+        self.assertEqual(slot.group_teacher_id, self.python_program.pk)
+        self.assertEqual(self.group.teachers.count(), 2)
+
+    def test_teacher_change_without_reassigning_keeps_future_lessons(self):
+        change = update_teaching_program(
+            self.python_program, teacher=self.teacher3, subject=self.python, is_active=True,
+            reassign_future_lessons=False, today=WS_TODAY,
+        )
+        self.assertEqual(change.lessons_reassigned, 0)
+        self.assertEqual(self.lesson(3).teacher, self.teacher1)
+
+    def test_teacher_change_rejected_when_new_teacher_slot_conflicts(self):
+        other = Group.objects.create(name="WS Other", course=self.course, start_date=WS_START)
+        self.add_program(other, self.teacher3, self.python, "mon", dt.time(10, 30), dt.time(11, 30))
+        with self.assertRaises(DjangoValidationError) as ctx:
+            update_teaching_program(
+                self.python_program, teacher=self.teacher3, subject=self.python, is_active=True, today=WS_TODAY,
+            )
+        self.assertIn("teacher", ctx.exception.message_dict)
+        self.python_program.refresh_from_db()
+        self.assertEqual(self.python_program.teacher, self.teacher1)
+        self.assertEqual(self.lesson(3).teacher, self.teacher1)
+
+    def test_teacher_change_rejected_when_a_reassigned_lesson_clashes(self):
+        other = Group.objects.create(name="WS Other", course=self.course, start_date=WS_START)
+        other_program = self.add_program(other, self.teacher3, self.python, "wed")
+        Lesson.objects.create(
+            group=other, group_teacher=other_program, teacher=self.teacher3, lesson_number=1,
+            date=dt.date(2030, 1, 14), start_time=dt.time(10, 30), end_time=dt.time(11, 30), subject=self.python,
+        )
+        with self.assertRaises(DjangoValidationError) as ctx:
+            update_teaching_program(
+                self.python_program, teacher=self.teacher3, subject=self.python, is_active=True, today=WS_TODAY,
+            )
+        self.assertIn("14.01.2030", " ".join(ctx.exception.message_dict["teacher"]))
+        # Keeping the lessons with the old trainer avoids the clash.
+        change = update_teaching_program(
+            self.python_program, teacher=self.teacher3, subject=self.python, is_active=True,
+            reassign_future_lessons=False, today=WS_TODAY,
+        )
+        self.assertTrue(change.teacher_changed)
+
+    def test_subject_change_blocked_once_program_has_lessons(self):
+        with self.assertRaises(DjangoValidationError) as ctx:
+            update_teaching_program(self.python_program, teacher=self.teacher1, subject=self.js, is_active=True)
+        self.assertIn("subject", ctx.exception.message_dict)
+
+    def test_subject_change_allowed_without_lessons_and_follows_to_slots(self):
+        program = GroupTeacher.objects.create(group=self.group, teacher=self.teacher3, subject=self.python)
+        update_teaching_program(program, teacher=self.teacher3, subject=self.js, is_active=True)
+        program.refresh_from_db()
+        self.assertEqual(program.subject, self.js)
+
+    def test_duplicate_program_rejected(self):
+        with self.assertRaises(DjangoValidationError) as ctx:
+            update_teaching_program(self.js_program, teacher=self.teacher1, subject=self.python, is_active=True)
+        self.assertIn("teacher", ctx.exception.message_dict)
+
+    def test_status_change_only(self):
+        change = update_teaching_program(
+            self.js_program, teacher=self.teacher2, subject=self.js, is_active=False,
+        )
+        self.assertEqual((change.status_changed, change.teacher_changed), (True, False))
+        self.js_program.refresh_from_db()
+        self.assertFalse(self.js_program.is_active)
+
+    def test_build_schedule_slots_validates_every_day_before_saving(self):
+        with self.assertRaises(DjangoValidationError) as ctx:
+            build_schedule_slots(
+                group=self.group, teacher=self.teacher1, subject=self.python, days=["tue", "thu"],
+                start_time=dt.time(10, 0), end_time=dt.time(11, 0), room=None,
+            )
+        self.assertTrue(any(message.startswith("Вторник") for message in ctx.exception.messages))
+        self.assertFalse(GroupSchedule.objects.filter(group=self.group, day_of_week="thu").exists())
+
+    def test_api_patch_uses_the_same_rules(self):
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        with mock.patch("apps.academy.services.program_editing.timezone.localdate", return_value=WS_TODAY):
+            response = client.patch(f"/api/v1/programs/{self.python_program.pk}/", {"teacher": self.teacher3.pk},
+                                    format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(set(self.python_program.schedules.values_list("teacher_id", flat=True)), {self.teacher3.pk})
+        self.assertEqual(self.lesson(3).teacher, self.teacher3)
+
+        other = Group.objects.create(name="WS Other", course=self.course, start_date=WS_START)
+        response = client.patch(f"/api/v1/programs/{self.python_program.pk}/", {"group": other.pk}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class ProgramDrawerViewTests(WorkspaceProgramFixture):
+    def test_programs_tab_shows_table_and_unassigned_subject(self):
+        english = Subject.objects.create(name="WS English")
+        self.course.subjects.add(english)
+        CourseLessonPlan.objects.create(course=self.course, lesson_number=5, subject=english, topic="Hello")
+        Course.objects.filter(pk=self.course.pk).update(count_lesson=5)
+        response = self.web.get(self.url("_programs"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({c["obj"].pk for c in response.context["cards"]}, {self.python_program.pk, self.js_program.pk})
+        self.assertEqual([i["row"].subject_name for i in response.context["unassigned_subjects"]], ["WS English"])
+        self.assertContains(response, "Нет программы")
+
+    def test_program_status_labels(self):
+        cards = {c["obj"].pk: c for c in self.web.get(self.url("_programs")).context["cards"]}
+        self.assertEqual(cards[self.python_program.pk]["status_label"], "Не все занятия созданы")
+        generate_lessons_for_group(self.group)
+        cards = {c["obj"].pk: c for c in self.web.get(self.url("_programs")).context["cards"]}
+        self.assertEqual(cards[self.python_program.pk]["status_label"], "Идёт по расписанию")
+        self.assertEqual(cards[self.python_program.pk]["plan_total"], 2)
+
+    def test_edit_drawer_opens_on_programs_tab(self):
+        response = self.web.get(self.url("_programs_edit", self.python_program.pk))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["drawer"]["program"], self.python_program)
+        self.assertContains(response, 'class="ok-drawer"')
+
+    def test_edit_drawer_saves_teacher_change(self):
+        response = self.web.post(
+            self.url("_programs_edit", self.python_program.pk),
+            {"teacher": self.teacher3.pk, "subject": self.python.pk, "status": "active",
+             "reassign_future_lessons": "on"},
+            follow=True,
+        )
+        self.assertRedirects(response, self.url("_programs"))
+        self.assertContains(response, "Программа сохранена")
+        self.python_program.refresh_from_db()
+        self.assertEqual(self.python_program.teacher, self.teacher3)
+
+    def test_edit_drawer_shows_errors_and_changes_nothing(self):
+        response = self.web.post(
+            self.url("_programs_edit", self.js_program.pk),
+            {"teacher": self.teacher1.pk, "subject": self.python.pk, "status": "active"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["drawer"]["form"].errors)
+        self.js_program.refresh_from_db()
+        self.assertEqual((self.js_program.teacher, self.js_program.subject), (self.teacher2, self.js))
+
+    def test_edit_drawer_program_must_belong_to_group(self):
+        other = Group.objects.create(name="WS Other", course=self.course, start_date=WS_START)
+        response = self.web.get(reverse("admin:academy_group_workspace_programs_edit",
+                                        args=[other.pk, self.python_program.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_drawer_adds_several_slots_at_once(self):
+        response = self.web.post(
+            self.url("_programs_schedule_add", self.python_program.pk),
+            {"day_of_week": ["wed", "fri"], "start_time": "12:00", "end_time": "13:00"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            set(self.python_program.schedules.values_list("day_of_week", flat=True)), {"mon", "wed", "fri"}
+        )
+
+    def test_drawer_schedule_conflict_rejects_all_days(self):
+        response = self.web.post(
+            self.url("_programs_schedule_add", self.python_program.pk),
+            {"day_of_week": ["tue", "thu"], "start_time": "10:00", "end_time": "11:00"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["drawer"]["open_schedule"])
+        self.assertEqual(self.python_program.schedules.count(), 1)
+
+    def test_drawer_requires_admin_role(self):
+        self.teacher1.user.is_staff = True
+        self.teacher1.user.save(update_fields=["is_staff"])
+        web = DjangoClient()
+        web.force_login(self.teacher1.user)
+        self.assertEqual(web.get(self.url("_programs_edit", self.python_program.pk)).status_code, 403)
+        response = web.post(self.url("_programs_edit", self.python_program.pk),
+                            {"teacher": self.teacher3.pk, "subject": self.python.pk, "status": "active"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.python_program.teacher, self.teacher1)
+
+    def test_teachers_tab_groups_programs_by_teacher(self):
+        GroupSchedule(group=self.group, teacher=self.teacher1, subject=self.js, day_of_week="thu",
+                      start_time=dt.time(10, 0), end_time=dt.time(11, 0)).save()
+        response = self.web.get(self.url("_teachers"))
+        entries = {entry["teacher"].pk: entry for entry in response.context["teachers"]}
+        self.assertEqual(len(entries[self.teacher1.pk]["programs"]), 2)
+        self.assertEqual(len(entries[self.teacher2.pk]["programs"]), 1)
+
+    def test_every_canonical_tab_is_present(self):
+        response = self.web.get(self.url(""))
+        self.assertEqual(
+            [tab["key"] for tab in response.context["tabs"]],
+            ["overview", "students", "teachers", "programs", "schedule", "lessons", "attendance", "homework",
+             "analytics"],
+        )
+
+
+class GenerationPreviewTests(WorkspaceProgramFixture):
+    def test_preview_writes_nothing_and_matches_the_real_run(self):
+        homework_before = Homework.objects.count()
+        preview = preview_generation(self.group)
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), 0)
+        self.assertEqual(Homework.objects.count(), homework_before)
+
+        self.assertEqual((preview.to_create, preview.existing, preview.expected), (4, 0, 4))
+        rows = {row.group_teacher_id: row for row in preview.programs}
+        self.assertEqual(rows[self.python_program.pk].to_create, 2)
+        self.assertEqual(rows[self.python_program.pk].first_date, WS_START)
+        self.assertEqual(rows[self.js_program.pk].first_date, WS_START + dt.timedelta(days=1))
+        self.assertEqual(len(generate_lessons_for_group(self.group)), preview.to_create)
+
+    def test_preview_after_generation_has_nothing_to_create(self):
+        generate_lessons_for_group(self.group)
+        preview = preview_generation(self.group)
+        self.assertFalse(preview.has_changes)
+        self.assertEqual((preview.to_create, preview.existing, preview.missing_after), (0, 4, 0))
+
+    def test_preview_reports_skipped_subjects(self):
+        self.js_program.schedules.all().delete()
+        preview = preview_generation(self.group)
+        self.assertEqual(preview.to_create, 2)
+        self.assertTrue(any("WS JavaScript" in warning for warning in preview.warnings))
+        self.assertEqual(preview.missing_after, 2)
+
+    def test_preview_lists_orphans_but_keeps_them(self):
+        generate_lessons_for_group(self.group)
+        orphan = self.lesson(3)
+        Lesson.objects.filter(pk=orphan.pk).update(group_teacher=None, schedule=None)
+        preview = preview_generation(self.group)
+        self.assertEqual(len(preview.orphans_to_delete), 1)
+        self.assertTrue(Lesson.objects.filter(pk=orphan.pk).exists())
+
+    def test_preview_page_renders_modal_and_generate_endpoint_stays_post_only(self):
+        response = self.web.get(self.url("_generate_preview"), {"program": self.python_program.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["preview"]["focus_program_id"], self.python_program.pk)
+        self.assertContains(response, "Создать занятия (4)")
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), 0)
+        self.assertEqual(self.web.get(self.url("_generate_lessons")).status_code, 405)
+
+    def test_generate_ignores_offsite_next(self):
+        response = self.web.post(self.url("_generate_lessons"), {"next": "https://evil.example/"})
+        self.assertEqual(response.url, self.url(""))
+        response = self.web.post(self.url("_generate_lessons"), {"next": self.url("_programs")})
+        self.assertEqual(response.url, self.url("_programs"))
+
+    def test_api_preview_is_admin_only_and_read_only(self):
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        response = client.get(f"/api/v1/groups/{self.group.pk}/generate-lessons/preview/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["to_create"], 4)
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), 0)
+        teacher_client = APIClient()
+        teacher_client.force_authenticate(self.teacher1.user)
+        response = teacher_client.get(f"/api/v1/groups/{self.group.pk}/generate-lessons/preview/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class GroupAnalyticsTests(WorkspaceProgramFixture):
+    def setUp(self):
+        super().setUp()
+        generate_lessons_for_group(self.group)
+        first = self.lesson(1)  # python, 07.01
+        Lesson.objects.filter(pk=first.pk).update(status=Lesson.Status.COMPLETED)
+        Attendance.objects.create(student=self.student_a, lesson=first, status=Attendance.Status.PRESENT)
+        Attendance.objects.create(student=self.student_b, lesson=first, status=Attendance.Status.ABSENT)
+        homework = first.homeworks.get()
+        HomeworkResult.objects.create(homework=homework, student=self.student_a, status=HomeworkResult.Status.CHECKED)
+        HomeworkResult.objects.create(
+            homework=homework, student=self.student_b, status=HomeworkResult.Status.NOT_SUBMITTED,
+        )
+        Lesson.objects.filter(pk=self.lesson(2).pk).update(status=Lesson.Status.CANCELLED)  # js, 08.01
+
+    def rows(self, analytics):
+        return {row.group_teacher_id: row for row in analytics.rows}
+
+    def test_rows_per_program_and_weighted_summary(self):
+        analytics = get_group_analytics(self.group, today=WS_TODAY)
+        rows = self.rows(analytics)
+        python, js = rows[self.python_program.pk], rows[self.js_program.pk]
+        self.assertEqual((python.lessons, python.completed, python.upcoming), (2, 1, 1))
+        self.assertEqual((python.attendance_rate, python.homework_rate, python.progress), (50.0, 50.0, 50.0))
+        self.assertEqual((js.lessons, js.cancelled, js.attendance_rate, js.progress), (1, 1, None, 0.0))
+
+        summary = analytics.summary
+        self.assertEqual(summary["students"], 2)
+        self.assertEqual((summary["lessons"], summary["completed"], summary["cancelled"]), (3, 1, 1))
+        self.assertEqual((summary["plan_total"], summary["progress"]), (4, 25.0))
+        self.assertEqual(summary["attendance_rate"], 50.0)
+
+    def test_filters(self):
+        only_js = get_group_analytics(self.group, GroupAnalyticsFilters(program_id=self.js_program.pk), today=WS_TODAY)
+        self.assertEqual([row.group_teacher_id for row in only_js.rows], [self.js_program.pk])
+
+        by_teacher = get_group_analytics(self.group, GroupAnalyticsFilters(teacher_id=self.teacher1.pk), today=WS_TODAY)
+        self.assertEqual([row.group_teacher_id for row in by_teacher.rows], [self.python_program.pk])
+
+        week = get_group_analytics(self.group, GroupAnalyticsFilters(period="week"), today=WS_TODAY)
+        self.assertEqual(week.date_range, (WS_START, WS_START + dt.timedelta(days=6)))
+        self.assertEqual(week.summary["lessons"] + week.summary["cancelled"], 2)
+        self.assertEqual(week.summary["completed_all_time"], 1)  # progress ignores the period
+
+        completed = get_group_analytics(self.group, GroupAnalyticsFilters(status="completed"), today=WS_TODAY)
+        self.assertEqual(completed.summary["lessons"], 1)
+
+    def test_lessons_without_program_get_their_own_row(self):
+        Lesson.objects.filter(pk=self.lesson(4).pk).update(group_teacher=None)
+        rows = self.rows(get_group_analytics(self.group, today=WS_TODAY))
+        self.assertEqual(rows[None].lessons, 1)
+        self.assertEqual(rows[None].subject, "Без программы")
+
+    def test_filters_parsed_defensively(self):
+        filters = GroupAnalyticsFilters.from_query({"program": "abc", "period": "year", "status": "bogus"})
+        self.assertEqual(filters, GroupAnalyticsFilters())
+
+    def test_analytics_tab(self):
+        response = self.web.get(self.url("_analytics"), {"program": self.python_program.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 1)
+        self.assertEqual(response.context["stats"]["students_count"], 2)
+        self.assertContains(response, "Посещаемость по предметам")
+
+    def test_analytics_tab_empty_state(self):
+        response = self.web.get(self.url("_analytics"), {"teacher": self.teacher3.pk})
+        self.assertContains(response, "Нет данных для выбранных фильтров")
+
+    def test_api_analytics_admin_only(self):
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        response = client.get(f"/api/v1/groups/{self.group.pk}/analytics/", {"period": "course"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["programs"]), 2)
+        self.assertEqual(response.data["summary"]["students"], 2)
+        teacher_client = APIClient()
+        teacher_client.force_authenticate(self.teacher1.user)
+        response = teacher_client.get(f"/api/v1/groups/{self.group.pk}/analytics/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_query_count_does_not_grow_with_programs(self):
+        with CaptureQueriesContext(connection) as two_programs:
+            get_group_analytics(self.group, today=WS_TODAY)
+        for index, day in enumerate(["wed", "thu", "fri"]):
+            subject = Subject.objects.create(name=f"WS Extra {index}")
+            self.course.subjects.add(subject)
+            self.add_program(self.group, self.teacher3, subject, day)
+        with CaptureQueriesContext(connection) as five_programs:
+            get_group_analytics(self.group, today=WS_TODAY)
+        self.assertLessEqual(len(five_programs), len(two_programs) + 6)

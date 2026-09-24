@@ -11,7 +11,7 @@ implementation detail, never part of its URL.
 | `/api/v1/auth/` | `login/`, `refresh/`, `me/` | users |
 | `/api/v1/trainers/` | Teacher accounts (`me`, `verify`, `export`, `import`, `import/preview`) | users |
 | `/api/v1/subjects/` | Subject catalogue | users |
-| `/api/v1/groups/` | Groups (`schedule`, `students`, `generate-lessons`, `subject-assignments` actions) | academy |
+| `/api/v1/groups/` | Groups (`schedule`, `students`, `generate-lessons`, `generate-lessons/preview`, `analytics`, `subject-assignments` actions) | academy |
 | `/api/v1/programs/` | GroupTeacher — one Teaching Program (teacher + subject + schedule + lesson plan + lessons); also the group's subject → trainer assignment | academy |
 | `/api/v1/program-lesson-plans/` | GroupTeacherLessonPlan — a program's own lesson-by-lesson plan | academy |
 | `/api/v1/schedules/` | GroupSchedule — a program's weekly recurring slots | academy |
@@ -66,12 +66,42 @@ group's total, never 144 per program.
   is kept and listed in `warnings`; deleted ones are listed in
   `deleted_orphans`. `python manage.py repair_group_lessons --group <id>`
   previews the same scope without changing anything.
+- `GET /api/v1/groups/{id}/generate-lessons/preview/` (admin only) shows
+  what `generate-lessons` would do right now, without writing anything
+  (the real generator runs in a rolled-back transaction): `to_create`,
+  `existing`, `expected`, `missing_after`, per-program `programs[]`
+  (`planned`, `existing`, `to_create`, `first_date`/`last_date`),
+  `orphans_to_delete`, `warnings` (what is skipped and why), `errors`.
+  The admin Group Workspace always shows this preview first and deletes
+  orphan lessons only after an explicit tick.
+- `PATCH /api/v1/programs/{id}/` changing `teacher` moves the program's
+  schedule slots to the new trainer and hands over its future scheduled
+  lessons (never started, dated today or later); conducted/cancelled ones
+  keep their trainer. Rejected (400) if the new trainer's slots or lessons
+  clash, if `subject` changes on a program that already has lessons, if
+  the (group, teacher, subject) program already exists, or if `group`
+  changes.
 - A program with its own individual plan (`/program-lesson-plans/`) is
   numbered 1..N on its own slots; the shared plan's rows for its subject
   are then not used.
 - `GET /api/v1/lessons/` additionally filters by `room` and `teacher`
   (the lesson's effective trainer; for a trainer it only ever narrows their
   own lessons).
+
+## Group analytics
+
+`GET /api/v1/groups/{id}/analytics/` (admin only) — every program of the
+group side by side plus a group-wide `summary`. Filters: `program`
+(GroupTeacher id), `teacher`, `subject`, `period` (`course` default,
+`month` = current calendar month, `week` = current Mon–Sun), `status`
+(lesson status). Per program: `lessons` (non-cancelled), `completed`,
+`upcoming`, `cancelled`, `attention`, `attendance_rate` ((present + late)
+/ records), `homework_rate` ((submitted + checked + late) / results),
+`plan_total`, `completed_all_time`, `progress` (conducted / plan share —
+course-wide, ignores `period`/`status`), `next_lesson_date`. Rates are
+`null` when there is nothing to divide by; summary rates are weighted by
+records, not averaged. Lessons whose program was deleted form a
+`program: null` row.
 
 ## Cancelling a lesson (topic reschedule)
 
