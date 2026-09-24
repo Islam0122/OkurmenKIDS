@@ -7698,3 +7698,285 @@ class LessonCancelConcurrencyTests(LessonRescheduleFixture, TransactionTestCase)
             ("23.09", "Домен и DNS"), ("25.09", "HTTP и HTTPS"),
             ("28.09", "Персональные данные"), ("30.09", "Безопасность паролей"),
         ])
+
+
+# ---------------------------------------------------------------------------
+# "Сгенерировать занятия" removes untouched lessons without a program ("—")
+# that were generated from a plan row, and keeps everything historical or
+# hand-made (services.lesson_generator.find_orphan_lessons).
+# ---------------------------------------------------------------------------
+
+class OrphanLessonFixture:
+    PLAN = [
+        ("IT", "Интернет"), ("English", "Greetings"), ("IT", "Браузер"),
+        ("English", "Exam"), ("IT", "Сайт"), ("English", "Final"),
+    ]
+
+    def setUp(self):
+        self.admin = make_admin("orphan_admin")
+        self.islam = make_teacher("islam_orphan")
+        self.aizhan = make_teacher("aizhan_orphan")
+        self.it = Subject.objects.get_or_create(name="IT")[0]
+        self.english = Subject.objects.get_or_create(name="English")[0]
+        self.course = Course.objects.create(name="Orphan course", count_lesson=len(self.PLAN))
+        self.course.subjects.set([self.it, self.english])
+        self.rows = {}
+        for number, (subject, topic) in enumerate(self.PLAN, start=1):
+            self.rows[topic] = CourseLessonPlan.objects.create(
+                course=self.course, lesson_number=number, topic=topic,
+                subject=self.it if subject == "IT" else self.english,
+            )
+        self.group = Group.objects.create(name="Prog SOFT 1 (orphans)", course=self.course, start_date=PROG_SOFT_START)
+        self.student = Student.objects.create(first_name="Айдай", group=self.group)
+        self.room = Room.objects.create(name="Orphan room", capacity=20)
+        for day in ("mon", "wed", "fri"):
+            GroupSchedule.objects.create(
+                group=self.group, teacher=self.islam, subject=self.it, day_of_week=day,
+                start_time=dt.time(8, 0), end_time=dt.time(9, 0), room=self.room,
+            )
+        for day in ("tue", "thu"):
+            GroupSchedule.objects.create(
+                group=self.group, teacher=self.aizhan, subject=self.english, day_of_week=day,
+                start_time=dt.time(10, 0), end_time=dt.time(11, 0), room=self.room,
+            )
+        self.english_program = GroupTeacher.objects.get(group=self.group, subject=self.english)
+
+    def lesson(self, topic, **filters):
+        return Lesson.objects.get(group=self.group, topic=topic, **filters)
+
+    def orphan(self, topic):
+        """Detach a generated lesson from its program, as deleting the
+        program (Lesson.group_teacher / schedule are SET_NULL) does."""
+        lesson = self.lesson(topic)
+        Lesson.objects.filter(pk=lesson.pk).update(group_teacher=None, schedule=None)
+        return lesson
+
+    def program_label(self, lesson):
+        """What the Workspace Lessons tab shows in the "Программа" column."""
+        lesson = Lesson.objects.select_related("group_teacher__subject").get(pk=lesson.pk)
+        return lesson.group_teacher.subject.name if lesson.group_teacher_id and lesson.group_teacher.subject_id else "—"
+
+
+class OrphanLessonCleanupTests(OrphanLessonFixture, TestCase):
+    # 2. unwanted lessons without a program ----------------------------------
+
+    def test_orphan_is_replaced_by_the_programs_own_lesson(self):
+        generate_lessons_for_group(self.group)
+        exam = self.orphan("Exam")
+        self.assertEqual(self.program_label(exam), "—")
+        valid_before = set(Lesson.objects.filter(group=self.group).exclude(pk=exam.pk).values_list("pk", "date", "group_teacher_id"))
+
+        report = generate_lessons_for_group_with_report(self.group)
+
+        self.assertFalse(Lesson.objects.filter(pk=exam.pk).exists())
+        self.assertEqual(len(report.orphans_deleted), 1)
+        self.assertIn("Exam", report.orphans_deleted[0])
+        new_exam = self.lesson("Exam")
+        self.assertEqual(new_exam.group_teacher_id, self.english_program.pk)
+        self.assertEqual(new_exam.teacher_id, self.aizhan.id)
+        self.assertEqual(new_exam.date, exam.date)  # back into the date it held
+        self.assertEqual(self.program_label(new_exam), "English")
+        # 1. every lesson with a program is untouched
+        self.assertTrue(valid_before <= set(Lesson.objects.filter(group=self.group).values_list("pk", "date", "group_teacher_id")))
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), len(self.PLAN))
+
+    def test_legacy_subjectless_lesson_no_longer_blocks_the_real_program(self):
+        # The screenshot's row: Айжан / English / "Exam" / Программа "—" —
+        # a lesson attached to a legacy program without a subject (what
+        # Lesson.save() creates for a lesson made without a slot).
+        legacy_exam = Lesson.objects.create(
+            group=self.group, teacher=self.aizhan, subject=self.english, plan=self.rows["Exam"],
+            lesson_number=self.rows["Exam"].lesson_number, topic="Exam",
+            date=dt.date(2026, 9, 10), start_time=dt.time(12, 0), end_time=dt.time(13, 0),
+        )
+        self.assertEqual(self.program_label(legacy_exam), "—")
+
+        report = generate_lessons_for_group_with_report(self.group)
+
+        self.assertFalse(Lesson.objects.filter(pk=legacy_exam.pk).exists())
+        self.assertEqual(len(report.orphans_deleted), 1)
+        english = Lesson.objects.filter(group=self.group, subject=self.english)
+        self.assertEqual(english.count(), 3)
+        self.assertEqual(set(english.values_list("group_teacher_id", flat=True)), {self.english_program.pk})
+        self.assertFalse(any(self.program_label(l) == "—" for l in Lesson.objects.filter(group=self.group)))
+
+    def test_legacy_program_that_still_teaches_its_lessons_is_not_an_orphan(self):
+        group = Group.objects.create(name="Legacy only", course=self.course, start_date=PROG_SOFT_START)
+        GroupSchedule.objects.create(
+            group=group, teacher=self.islam, subject=None, day_of_week="mon",
+            start_time=dt.time(15, 0), end_time=dt.time(16, 0),
+        )
+        generate_lessons_for_group(group)
+        ids = set(Lesson.objects.filter(group=group).values_list("pk", flat=True))
+        self.assertEqual(len(ids), len(self.PLAN))
+        report = generate_lessons_for_group_with_report(group)
+        self.assertEqual(report.orphans_deleted, [])
+        self.assertEqual(set(Lesson.objects.filter(group=group).values_list("pk", flat=True)), ids)
+
+    # 3. historical / manual lessons are protected ------------------------------
+
+    def test_historical_and_hand_made_orphans_are_kept_and_reported(self):
+        generate_lessons_for_group(self.group)
+        completed = self.orphan("Интернет")
+        Lesson.objects.filter(pk=completed.pk).update(status=Lesson.Status.COMPLETED)
+        with_attendance = self.orphan("Браузер")
+        Attendance.objects.create(student=self.student, lesson=with_attendance, status=Attendance.Status.PRESENT)
+        graded = self.orphan("Сайт")
+        HomeworkResult.objects.create(
+            homework=Homework.objects.create(lesson=graded, title="ДЗ"), student=self.student,
+            status=HomeworkResult.Status.CHECKED,
+        )
+        cancelled = self.orphan("Greetings")
+        Lesson.objects.filter(pk=cancelled.pk).update(status=Lesson.Status.CANCELLED)
+        hand_made = Lesson.objects.create(
+            group=self.group, subject=self.english, lesson_number=99, topic="Экзамен (вручную)",
+            date=dt.date(2026, 12, 1), start_time=dt.time(12, 0), end_time=dt.time(13, 0),
+        )
+        self.assertIsNone(hand_made.group_teacher_id)
+        protected = {completed.pk, with_attendance.pk, graded.pk, cancelled.pk, hand_made.pk}
+
+        report = generate_lessons_for_group_with_report(self.group)
+
+        self.assertEqual(report.orphans_deleted, [])
+        self.assertEqual(set(Lesson.objects.filter(pk__in=protected).values_list("pk", flat=True)), protected)
+        self.assertEqual(Attendance.objects.filter(lesson=with_attendance).count(), 1)
+        self.assertEqual(HomeworkResult.objects.filter(homework__lesson=graded).count(), 1)
+        kept = [w for w in report.warnings if "без программы оставлено" in w]
+        self.assertEqual(len(kept), 4)  # cancelled lessons are history, not reported
+        self.assertTrue(any("Экзамен (вручную)" in w and "вручную" in w for w in kept))
+
+    def test_reschedule_pairs_are_kept(self):
+        generate_lessons_for_group(self.group)
+        _, result = cancel_and_reschedule(self.lesson("Интернет"), self.admin, "Праздник")
+        makeup = result.makeup
+        Lesson.objects.filter(pk=makeup.pk).update(group_teacher=None, schedule=None)
+        report = generate_lessons_for_group_with_report(self.group)
+        self.assertTrue(Lesson.objects.filter(pk=makeup.pk).exists())
+        self.assertTrue(any("переносом" in w for w in report.warnings))
+
+    def test_other_groups_are_never_touched(self):
+        other = Group.objects.create(name="Other group (orphans)", course=self.course, start_date=PROG_SOFT_START)
+        foreign = Lesson.objects.create(
+            group=other, subject=self.english, plan=self.rows["Exam"], lesson_number=4, topic="Exam",
+            date=dt.date(2026, 9, 10), start_time=dt.time(10, 0), end_time=dt.time(11, 0),
+        )
+        generate_lessons_for_group(self.group)
+        self.assertTrue(Lesson.objects.filter(pk=foreign.pk).exists())
+
+    # 4 & 7. no duplicates, repeated generation ---------------------------------
+
+    def test_repeated_generation_creates_no_duplicates(self):
+        generate_lessons_for_group(self.group)
+        self.orphan("Exam")
+        first = generate_lessons_for_group_with_report(self.group)
+        snapshot = sorted(Lesson.objects.filter(group=self.group).values_list("pk", "lesson_number", "date"))
+        for _ in range(2):
+            again = generate_lessons_for_group_with_report(self.group)
+            self.assertEqual((again.created, again.orphans_deleted), (0, []))
+        self.assertEqual(len(first.orphans_deleted), 1)
+        self.assertEqual(sorted(Lesson.objects.filter(group=self.group).values_list("pk", "lesson_number", "date")), snapshot)
+        live = Lesson.objects.filter(group=self.group).exclude(status=Lesson.Status.CANCELLED)
+        self.assertEqual(live.values("lesson_number").distinct().count(), live.count())
+
+    # 5. rollback ---------------------------------------------------------------
+
+    def test_failed_generation_rolls_the_cleanup_back(self):
+        generate_lessons_for_group(self.group)
+        exam = self.orphan("Exam")
+        self.course.count_lesson = 99  # plan/course mismatch: nothing can be generated
+        self.course.save(update_fields=["count_lesson"])
+
+        report = generate_lessons_for_group_with_report(self.group)
+
+        self.assertTrue(report.errors)
+        self.assertEqual(report.orphans_deleted, [])
+        self.assertTrue(Lesson.objects.filter(pk=exam.pk).exists())
+
+    def test_crash_during_generation_rolls_the_cleanup_back(self):
+        generate_lessons_for_group(self.group)
+        exam = self.orphan("Exam")
+        with mock.patch(
+            "apps.academy.services.lesson_generator._generate_from_course_plan", side_effect=RuntimeError("boom"),
+        ):
+            with self.assertRaises(RuntimeError):
+                generate_lessons_for_group(self.group)
+        self.assertTrue(Lesson.objects.filter(pk=exam.pk).exists())
+
+    # 6. cancellation / rescheduling still work ---------------------------------
+
+    def test_cancel_and_reschedule_work_after_cleanup(self):
+        generate_lessons_for_group(self.group)
+        self.orphan("Exam")
+        generate_lessons_for_group(self.group)
+        cancelled, result = cancel_and_reschedule(self.lesson("Greetings"), self.admin, "Праздник")
+        self.assertTrue(result.created)
+        self.assertEqual(result.makeup.group_teacher_id, self.english_program.pk)
+        report = generate_lessons_for_group_with_report(self.group)
+        self.assertEqual((report.created, report.orphans_deleted), (0, []))
+        self.assertEqual(Lesson.objects.get(pk=cancelled.pk).status, Lesson.Status.CANCELLED)
+
+    # entry points ------------------------------------------------------------
+
+    def test_api_and_workspace_report_the_cleanup(self):
+        generate_lessons_for_group(self.group)
+        self.orphan("Exam")
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        response = client.post(f"/api/v1/groups/{self.group.id}/generate-lessons/")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["deleted_orphans"]), 1)
+        self.assertIn("Exam", response.data["deleted_orphans"][0])
+
+        self.orphan("Final")
+        web = DjangoClient()
+        web.force_login(self.admin)
+        response = web.post(
+            reverse("admin:academy_group_workspace_generate_lessons", args=[self.group.pk]), follow=True,
+        )
+        self.assertContains(response, "Удалено занятий без программы: 1")
+
+    def test_audit_command_previews_the_scope_without_deleting(self):
+        generate_lessons_for_group(self.group)
+        exam = self.orphan("Exam")
+        out = StringIO()
+        call_command("repair_group_lessons", group=self.group.id, stdout=out)
+        self.assertIn("будет удалено и сгенерировано заново", out.getvalue())
+        self.assertIn(f"id={exam.pk}", out.getvalue())
+        self.assertTrue(Lesson.objects.filter(pk=exam.pk).exists())
+
+    def test_repair_from_date_keeps_earlier_orphans(self):
+        generate_lessons_for_group(self.group)
+        exam = self.orphan("Exam")
+        call_command("repair_group_lessons", group=self.group.id, apply=True,
+                     from_date=exam.date + dt.timedelta(days=1), stdout=StringIO())
+        self.assertTrue(Lesson.objects.filter(pk=exam.pk).exists())
+
+
+@skipUnless(connection.vendor == "postgresql", "needs real concurrent transactions (PostgreSQL)")
+class OrphanLessonConcurrencyTests(OrphanLessonFixture, TransactionTestCase):
+    def test_simultaneous_generation_requests_do_not_corrupt_data(self):
+        generate_lessons_for_group(self.group)
+        exam = self.orphan("Exam")
+        barrier = threading.Barrier(2)
+        reports, errors = [], []
+
+        def worker():
+            try:
+                barrier.wait(timeout=10)
+                reports.append(generate_lessons_for_group_with_report(Group.objects.get(pk=self.group.pk)))
+            except Exception as exc:  # surfaced by the assertions below
+                errors.append(exc)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(len(r.orphans_deleted) for r in reports), [0, 1])
+        self.assertEqual(sum(r.created for r in reports), 1)
+        self.assertFalse(Lesson.objects.filter(pk=exam.pk).exists())
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), len(self.PLAN))

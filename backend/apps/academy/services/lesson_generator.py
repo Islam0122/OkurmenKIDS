@@ -54,7 +54,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 
 from ..constants import WEEKDAY_CODES
 from ..models import Group, GroupSchedule, GroupTeacher, Homework, Lesson
@@ -97,6 +97,10 @@ class _GenerationRun:
     ambiguous: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
     busy: list[str] = field(default_factory=list)
     not_fitting: list[str] = field(default_factory=list)
+    # Lessons without a program removed before generating (see find_orphan_lessons)
+    orphans_deleted: list[str] = field(default_factory=list)
+    # Lessons without a program that were deliberately kept, with why
+    orphans_kept: list[str] = field(default_factory=list)
     inactive_assignments: list[str] = field(default_factory=list)
 
     def warnings(self) -> list[str]:
@@ -119,6 +123,7 @@ class _GenerationRun:
                 "Оставьте одно активное назначение на предмет."
             )
         messages.extend(self.inactive_assignments)
+        messages.extend(self.orphans_kept)
         messages.extend(self.busy)
         messages.extend(self.not_fitting)
         return messages
@@ -746,6 +751,135 @@ def planned_lessons_by_program(group: Group) -> dict[int, int]:
     return dict(planned)
 
 
+ORPHAN_NO_PROGRAM = "no_program"
+ORPHAN_LEGACY_SUPERSEDED = "legacy_superseded"
+
+_ORPHAN_REASONS = {
+    ORPHAN_NO_PROGRAM: "нет программы",
+    ORPHAN_LEGACY_SUPERSEDED: "старая программа «без предмета», предмет теперь ведёт своя программа",
+}
+
+
+@dataclass
+class OrphanScan:
+    """Lessons of a group that show "—" as their program and that the
+    current generation would not own. `deletable` are safe to remove and
+    regenerate; `kept` pairs a lesson with the reason it must stay."""
+
+    deletable: list[Lesson] = field(default_factory=list)
+    kept: list[tuple[Lesson, str]] = field(default_factory=list)
+    reasons: dict[int, str] = field(default_factory=dict)
+
+
+def _orphan_label(lesson: Lesson) -> str:
+    subject = lesson.subject.name if lesson.subject_id else "без предмета"
+    return f"№{lesson.lesson_number} {lesson.date:%d.%m.%Y} «{lesson.topic or '—'}» ({subject})"
+
+
+def find_orphan_lessons(group: Group) -> OrphanScan:
+    """Read-only: which of `group`'s lessons are orphans, and which of those
+    are safe to delete. Never looks outside `group`.
+
+    Orphan (shows "—" in the Program column): a non-cancelled lesson whose
+    `group_teacher` is NULL (its program was deleted — Lesson.group_teacher
+    is SET_NULL), or whose program is a legacy one without a subject while
+    the lesson's plan subject is now taught by a real subject program with
+    its own slots (see _SubjectRouting). Both kinds block regeneration: the
+    generator treats their lesson_number as already taken, so the real
+    program never gets that plan row.
+
+    Deletable only if the lesson is also *untouched and reproducible*:
+    status "Запланирован", never started, no attendance, no homework
+    results, no homework beyond the one auto-created from its plan row, not
+    part of a cancel/reschedule pair, and generated from a plan row (so the
+    generator can recreate it in the right program). Everything else —
+    conducted/started lessons, lessons with any student data, hand-made
+    lessons without a plan row — is kept and reported for a manual decision.
+    Cancelled lessons are history and are not touched or reported.
+    """
+    scan = OrphanScan()
+    candidates = list(
+        Lesson.objects.filter(group=group)
+        .exclude(status=Lesson.Status.CANCELLED)
+        .filter(Q(group_teacher__isnull=True) | Q(group_teacher__subject__isnull=True))
+        .select_related("subject", "plan", "group_teacher", "rescheduled_to")
+        .annotate(
+            _attendance_count=Count("attendance_records", distinct=True),
+            _result_count=Count("homeworks__results", distinct=True),
+            _homework_count=Count("homeworks", distinct=True),
+        )
+        .order_by("date", "start_time", "pk")
+    )
+    if not candidates:
+        return scan
+
+    dedicated_subject_ids: set[int] = set()
+    if any(lesson.group_teacher_id for lesson in candidates):
+        group_teachers = list(group.teachers.filter(is_active=True).select_related("teacher", "subject"))
+        individual = [gt for gt in group_teachers if gt.lesson_plans.exists()]
+        shared = [gt for gt in group_teachers if gt not in individual]
+        if shared:
+            _plans, _slots, routing = _shared_plan_setup(
+                group, shared, individual, _GenerationRun(), label=f"Группа «{group.name}» (проверка)",
+            )
+            dedicated_subject_ids = {sid for sid, route in routing.route.items() if route == ROUTE_DEDICATED}
+
+    for lesson in candidates:
+        if lesson.group_teacher_id is None:
+            reason = ORPHAN_NO_PROGRAM
+        elif lesson.plan_id and lesson.plan.subject_id in dedicated_subject_ids:
+            reason = ORPHAN_LEGACY_SUPERSEDED
+        else:
+            continue  # a legacy program that still legitimately teaches this lesson
+        scan.reasons[lesson.pk] = reason
+
+        auto_homework = 1 if lesson.plan_id and lesson.plan.homework_title else 0
+        try:
+            has_makeup = lesson.rescheduled_to is not None
+        except Lesson.DoesNotExist:
+            has_makeup = False
+        if lesson.status != Lesson.Status.SCHEDULED or lesson.started_at is not None:
+            scan.kept.append((lesson, f"статус «{lesson.get_status_display()}»"))
+        elif lesson._attendance_count or lesson._result_count:
+            scan.kept.append((lesson, "есть посещаемость или результаты ДЗ"))
+        elif lesson._homework_count > auto_homework:
+            scan.kept.append((lesson, "добавлено домашнее задание вручную"))
+        elif lesson.rescheduled_from_id or has_makeup:
+            scan.kept.append((lesson, "связано с переносом отменённого занятия"))
+        elif not lesson.plan_id and not lesson.individual_plan_id:
+            scan.kept.append((lesson, "создано вручную, без строки учебного плана"))
+        else:
+            scan.deletable.append(lesson)
+    return scan
+
+
+def _remove_orphan_lessons(group: Group, run: _GenerationRun, not_before: dt.date | None = None) -> None:
+    """Delete find_orphan_lessons()'s `deletable` lessons (their auto-created
+    homework cascades with them; by construction they have no attendance or
+    results) and log each one. Runs inside _run_generation's transaction,
+    under its group row lock. With `not_before` (repair_group_lessons
+    --from-date) earlier lessons are kept, as that command promises."""
+    scan = find_orphan_lessons(group)
+    if not_before:
+        earlier = [lesson for lesson in scan.deletable if lesson.date < not_before]
+        scan.deletable = [lesson for lesson in scan.deletable if lesson.date >= not_before]
+        scan.kept += [(lesson, f"дата раньше {not_before:%d.%m.%Y}") for lesson in earlier]
+    for lesson, why in scan.kept:
+        run.orphans_kept.append(
+            f"Занятие без программы оставлено: {_orphan_label(lesson)} — {why}. Проверьте его вручную."
+        )
+    if not scan.deletable:
+        return
+    for lesson in scan.deletable:
+        label = _orphan_label(lesson)
+        run.orphans_deleted.append(label)
+        logger.warning(
+            "[lesson_generator] Group id=%s: deleting orphan lesson id=%s %s — %s.",
+            group.pk, lesson.pk, label, _ORPHAN_REASONS[scan.reasons[lesson.pk]],
+        )
+    Lesson.objects.filter(pk__in=[lesson.pk for lesson in scan.deletable], group=group).delete()
+
+
 @transaction.atomic
 def _run_generation(group: Group, not_before: dt.date | None = None) -> _GenerationRun:
     # Serialise concurrent generation of the same group (a double-click,
@@ -769,6 +903,7 @@ def _run_generation(group: Group, not_before: dt.date | None = None) -> _Generat
     individual_group_teachers = [gt for gt in group_teachers if gt.pk in individual_ids]
 
     run = _GenerationRun()
+    _remove_orphan_lessons(group, run, not_before)
 
     if shared_group_teachers:
         try:
@@ -784,6 +919,15 @@ def _run_generation(group: Group, not_before: dt.date | None = None) -> _Generat
 
     if run.errors and not run.created:
         logger.info("[lesson_generator] Nothing generated for group id=%s: %s", group.pk, " ".join(run.errors))
+        if run.orphans_deleted:
+            # Generation failed outright: don't leave the group with its
+            # orphans deleted but nothing regenerated in their place.
+            transaction.set_rollback(True)
+            logger.warning(
+                "[lesson_generator] Group id=%s: rolled back deletion of %s orphan lesson(s).",
+                group.pk, len(run.orphans_deleted),
+            )
+            run.orphans_deleted = []
     elif run.errors:
         logger.warning(
             "[lesson_generator] Group id=%s: %s lesson(s) created, but %s program(s) failed: %s",
@@ -841,6 +985,7 @@ class LessonGenerationReport:
     expected: int = 0
     missing: int = 0
     created_lessons: list[Lesson] = field(default_factory=list)
+    orphans_deleted: list[str] = field(default_factory=list)
 
 
 def _expected_lesson_count(group: Group) -> int:
@@ -894,4 +1039,5 @@ def generate_lessons_for_group_with_report(group: Group, *, not_before: dt.date 
         expected=expected,
         missing=max(expected - total, 0),
         created_lessons=list(run.created),
+        orphans_deleted=list(run.orphans_deleted),
     )

@@ -467,7 +467,11 @@ class GroupViewSet(viewsets.ModelViewSet):
         when nothing could be generated because of an error. `warnings`
         lists every plan lesson that was deliberately *not* created (no
         trainer assigned to its subject, a clash, the group's period ended)
-        — see services.lesson_generator."""
+        — see services.lesson_generator. Before generating, untouched
+        lessons without a program ("—") that were generated from a plan row
+        are removed and listed in `deleted_orphans`; conducted, graded or
+        hand-made ones are kept and reported in `warnings` (see
+        find_orphan_lessons)."""
         group = self.get_object()
         report = generate_lessons_for_group_with_report(group)
         if report.errors and not report.created:
@@ -492,6 +496,7 @@ class GroupViewSet(viewsets.ModelViewSet):
             "conflicts": report.conflicts,
             "warnings": report.warnings,
             "errors": report.errors,
+            "deleted_orphans": report.orphans_deleted,
         }
         response_status = status.HTTP_201_CREATED if report.created else status.HTTP_200_OK
         return Response(GenerateLessonsResponseSerializer(payload).data, status=response_status)

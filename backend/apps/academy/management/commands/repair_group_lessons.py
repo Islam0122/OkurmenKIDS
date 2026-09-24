@@ -35,7 +35,7 @@ from django.utils import timezone
 
 from apps.academy.constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
 from apps.academy.models import Group, GroupTeacher, Lesson
-from apps.academy.services.lesson_generator import generate_lessons_for_group_with_report
+from apps.academy.services.lesson_generator import find_orphan_lessons, generate_lessons_for_group_with_report
 from apps.academy.services.subject_assignments import STATUS_UNASSIGNED, subject_assignment_overview
 
 
@@ -145,6 +145,13 @@ class Command(BaseCommand):
         if unassigned:
             problems.append("предметы без тренера: " + ", ".join(row.subject_name for row in unassigned))
 
+        orphans = find_orphan_lessons(group)
+        if orphans.deletable or orphans.kept:
+            problems.append(
+                f"занятий без программы: {len(orphans.deletable) + len(orphans.kept)} "
+                f"(удалит «Сгенерировать занятия»: {len(orphans.deletable)}, требуют решения: {len(orphans.kept)})"
+            )
+
         span = f"{lessons[0].date:%d.%m.%Y} – {lessons[-1].date:%d.%m.%Y}" if lessons else "—"
         status = self.style.ERROR("ПРОБЛЕМЫ") if problems else self.style.SUCCESS("OK")
         self.stdout.write(
@@ -170,6 +177,16 @@ class Command(BaseCommand):
             f"  С {from_date:%d.%m.%Y}: нетронутых занятий (будут перестроены при --apply) — {len(rebuildable)}, "
             f"с активностью (останутся как есть) — {len(kept_future)}."
         )
+        for lesson in orphans.deletable:
+            self.stdout.write(
+                f"  Без программы, будет удалено и сгенерировано заново кнопкой «Сгенерировать занятия»: "
+                f"занятие №{lesson.lesson_number} {lesson.date:%d.%m.%Y} «{lesson.topic}» (id={lesson.pk})"
+            )
+        for lesson, why in orphans.kept:
+            self.stdout.write(self.style.WARNING(
+                f"  Без программы, останется (требует ручного решения): занятие №{lesson.lesson_number} "
+                f"{lesson.date:%d.%m.%Y} «{lesson.topic}» (id={lesson.pk}) — {why}"
+            ))
         for lesson in wrong_teacher:
             if lesson.date < from_date or not _is_untouched(lesson):
                 self.stdout.write(self.style.WARNING(

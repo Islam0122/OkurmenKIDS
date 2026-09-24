@@ -289,6 +289,8 @@ def add_generation_messages(request, report: LessonGenerationReport, *, prefix: 
     and the Group changelist action, so all three tell the admin the same
     thing, including which lessons were *not* created and why."""
     summary_parts = [f"Создано: {report.created}", f"Уже существовало: {report.already_existed}"]
+    if report.orphans_deleted:
+        summary_parts.append(f"Удалено занятий без программы: {len(report.orphans_deleted)}")
     if report.expected:
         summary_parts.append(f"По плану: {report.expected}")
     if report.missing:
@@ -308,6 +310,12 @@ def add_generation_messages(request, report: LessonGenerationReport, *, prefix: 
     else:
         level = messages.INFO
     messages.add_message(request, level, prefix + " · ".join(summary_parts))
+    if report.orphans_deleted:
+        messages.info(
+            request,
+            prefix + "Удалены занятия без программы (не проведённые, без посещаемости и оценок; созданы "
+            "заново в своих программах, если предмет ведётся): " + "; ".join(report.orphans_deleted),
+        )
     for warning in report.warnings:
         messages.warning(request, prefix + warning)
     for error in report.errors:
