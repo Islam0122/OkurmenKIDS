@@ -7,6 +7,8 @@
     the submitted data are identical either way, and the server re-validates.
 {% endcomment %}
 
+{% block body_class %}fb-audience-{% if is_student %}student{% else %}parent{% endif %}{% endblock %}
+
 {% block content %}
 {% if preview %}
     <div class="fb-banner fb-banner-warn" role="note">
@@ -87,7 +89,7 @@
 
         {% if offers_choice %}
             <div class="fb-group{% if errors.visibility %} has-error{% endif %}" role="radiogroup" aria-labelledby="fb-vis-label" {% if errors.visibility %}aria-describedby="fb-err-visibility"{% endif %}>
-                <p class="fb-label" id="fb-vis-label">Как отправить отзыв? <span class="fb-tag fb-tag-required">Обязательно</span></p>
+                <p class="fb-label" id="fb-vis-label">Как отправить отзыв?</p>
                 <div class="fb-options fb-options-2">
                     <label class="fb-option fb-option-rich">
                         <input class="fb-option-input" type="radio" name="visibility" value="open" {% if visibility == "open" %}checked{% endif %}>
@@ -110,7 +112,7 @@
 
         {% if "open" in allowed_visibilities %}
             <div class="fb-group{% if errors.respondent_name %} has-error{% endif %}" data-show-for="open">
-                <label class="fb-label" for="fb-name">{% if is_student %}Твоё имя{% else %}Ваше имя{% endif %} <span class="fb-tag fb-tag-required">Обязательно</span></label>
+                <label class="fb-label" for="fb-name">{% if is_student %}Твоё имя{% else %}Ваше имя{% endif %}</label>
                 {% if offers_choice %}<p class="fb-hint fb-nojs-only">Только для отзыва с именем.</p>{% endif %}
                 <input class="fb-input" id="fb-name" type="text" name="respondent_name" maxlength="150" autocomplete="name"
                        placeholder="{% if is_student %}Например: Айбек{% else %}Например: Айгуль Садыкова{% endif %}"
@@ -122,8 +124,8 @@
         {% if child_mode_open != "not_collected" or child_mode_anonymous != "not_collected" %}
             <div class="fb-group{% if errors.child_name %} has-error{% endif %}" data-child-field>
                 <label class="fb-label" for="fb-child">Имя и фамилия ребёнка
-                    <span class="fb-tag fb-tag-required" data-child-req {% if child_mode_open != "required" and child_mode_anonymous != "required" %}hidden{% endif %}>Обязательно</span>
-                    <span class="fb-tag" data-child-opt {% if child_mode_open == "required" or child_mode_anonymous == "required" %}hidden{% endif %}>Необязательно</span>
+                    <span class="fb-visually-hidden" data-child-req {% if child_mode_open != "required" and child_mode_anonymous != "required" %}hidden{% endif %}>(обязательно)</span>
+                    <span class="fb-optional" data-child-opt {% if child_mode_open == "required" or child_mode_anonymous == "required" %}hidden{% endif %}>необязательно</span>
                 </label>
                 <input class="fb-input" id="fb-child" type="text" name="child_name" maxlength="150" placeholder="Например: Нурлан Садыков"
                        value="{{ values.child_name }}" {% if errors.child_name %}aria-invalid="true" aria-describedby="fb-err-child"{% endif %}>
@@ -149,7 +151,7 @@
             <legend class="fb-visually-hidden">Вопрос {{ row.index }}</legend>
             <div class="fb-qhead">
                 <span class="fb-qnum" aria-hidden="true">{{ row.index|stringformat:"02d" }}</span>
-                <span class="fb-tag{% if q.is_required %} fb-tag-required{% endif %}" id="fb-q{{ q.id }}-meta">{% if q.is_required %}Обязательный вопрос{% else %}Необязательный вопрос{% endif %}</span>
+                <span class="fb-qmeta{% if q.is_required %} is-required{% endif %}" id="fb-q{{ q.id }}-meta">{% if q.is_required %}Обязательный вопрос{% else %}Необязательный вопрос{% endif %}</span>
             </div>
             {% if q.question_type == "text" %}
                 <label class="fb-qtitle" id="fb-q{{ q.id }}-title" for="fb-{{ row.name }}" tabindex="-1">{{ q.text }}</label>
@@ -207,7 +209,7 @@
 
     {# -- Navigation ---------------------------------------------------------------- #}
     <div class="fb-nav" id="fb-nav">
-        <button type="button" class="fb-button fb-button-secondary fb-js-only" data-action="back">Назад</button>
+        <button type="button" class="fb-button fb-button-ghost fb-js-only" data-action="back"><svg aria-hidden="true" viewBox="0 0 24 24"><path fill="currentColor" d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>Назад</button>
         <button type="button" class="fb-button fb-js-only" data-action="next">Далее</button>
         <button type="submit" class="fb-button" id="fb-submit" data-action="submit" {% if preview %}disabled{% endif %}>
             <span class="fb-spinner" aria-hidden="true"></span>
