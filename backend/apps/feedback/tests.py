@@ -876,3 +876,22 @@ class PublicPageRedesignTests(FeedbackTestBase):
         mark_submitted(cookie_carrier, self.survey)
         self.client.cookies.update(cookie_carrier.cookies)
         self.assertContains(self.client.get(self.url), "Ты уже ответил(а)")
+
+
+class PublicPageLightThemeTests(FeedbackTestBase):
+    """The public survey is always the light White + Okurmen Green theme —
+    it must not switch to dark when the phone is in dark mode."""
+
+    def test_page_declares_light_only(self):
+        self.publish()
+        page = self.client.get(reverse("feedback_public", args=[self.survey.public_token]))
+        self.assertContains(page, '<meta name="color-scheme" content="only light">')
+
+    def test_stylesheet_has_no_dark_mode_override(self):
+        from django.contrib.staticfiles import finders
+
+        css = open(finders.find("feedback/css/public.css"), encoding="utf-8").read()
+        self.assertNotIn("prefers-color-scheme", css)
+        self.assertIn("color-scheme: only light", css)
+        for token in ("#F6F9F7", "#FFFFFF", "#35A866", "#2B9258", "#E8F6ED", "#1F2937", "#6B7280", "#E5E7EB"):
+            self.assertIn(token, css)

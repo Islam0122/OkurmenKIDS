@@ -12,7 +12,9 @@
         another site — it's only ever sent back to this server.
     {% endcomment %}
     <meta name="referrer" content="same-origin">
-    <meta name="theme-color" content="#2F8F5B">
+    {# Always light: also stops browsers/WebViews from auto-darkening the page. #}
+    <meta name="color-scheme" content="only light">
+    <meta name="theme-color" content="#F6F9F7">
     <title>{% block title %}{{ survey.title }}{% endblock %} · OkurmenKIDS</title>
     <link rel="icon" href="{% static 'images/logo.png' %}">
     <link rel="stylesheet" href="{% static 'feedback/css/public.css' %}">
