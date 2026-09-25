@@ -1,0 +1,155 @@
+{% extends "admin/feedback/survey/workspace_base.html" %}
+{% load static %}
+
+{% block workspace_content %}
+{% if publish_problems %}
+  <div class="ok-callout ok-callout-warning">
+    <i class="bi bi-info-circle"></i>
+    <div><strong>Перед публикацией:</strong>
+      <ul class="okfb-problem-list">{% for p in publish_problems %}<li>{{ p }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+{% endif %}
+{% if response_count %}
+  <div class="ok-callout ok-callout-warning">
+    <i class="bi bi-lock"></i>
+    <div>На опрос уже есть ответы. Вопросы с ответами защищены: их тип нельзя поменять, а сами вопросы и выбранные варианты — удалить.
+      Текст можно исправлять, новые вопросы и варианты — добавлять. Для другой структуры сделайте копию опроса.</div>
+  </div>
+{% endif %}
+
+<div id="okfb-builder"
+     data-survey-id="{{ survey.pk }}"
+     data-api-base="{{ api_base }}"
+     data-csrf="{{ csrf_token }}">
+  <div class="okfb-builder-toolbar">
+    <div>
+      <h2 class="okfb-section-title">Вопросы <span class="okfb-count" id="okfb-count"></span></h2>
+      <p class="ok-help-text">Перетащите карточку за <i class="bi bi-grip-vertical"></i> или используйте стрелки, чтобы изменить порядок.</p>
+    </div>
+    <button type="button" class="ok-btn-primary ok-btn-sm" data-okfb-add><i class="bi bi-plus-lg"></i> Добавить вопрос</button>
+  </div>
+
+  <div id="okfb-status" class="okfb-status" role="status" aria-live="polite"></div>
+
+  <ol class="okfb-questions" id="okfb-questions" aria-label="Вопросы опроса">
+    <li class="okfb-loading"><i class="bi bi-hourglass-split"></i> Загрузка вопросов…</li>
+  </ol>
+
+  <div class="ok-empty-state okfb-empty" id="okfb-empty" hidden>
+    <i class="bi bi-ui-checks"></i>
+    <h4>Пока нет вопросов</h4>
+    <p>Добавьте первый вопрос: текстовый ответ, один вариант или несколько вариантов.</p>
+    <div class="ok-empty-state-actions">
+      <button type="button" class="ok-btn-primary ok-btn-sm" data-okfb-add><i class="bi bi-plus-lg"></i> Добавить вопрос</button>
+    </div>
+  </div>
+
+  <button type="button" class="okfb-add-bottom" data-okfb-add hidden id="okfb-add-bottom"><i class="bi bi-plus-lg"></i> Добавить вопрос</button>
+</div>
+
+<dialog id="okfb-editor" class="ok-modal okfb-editor" aria-labelledby="okfb-editor-title">
+  <form class="ok-modal-form" id="okfb-editor-form" novalidate>
+    <div class="ok-modal-header">
+      <span id="okfb-editor-title"><i class="bi bi-pencil-square"></i> Вопрос</span>
+      <button type="button" class="ok-modal-close" data-okfb-dismiss aria-label="Закрыть"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="ok-modal-body">
+      <div class="ok-callout ok-callout-warning" id="okfb-locked-note" hidden>
+        <i class="bi bi-lock"></i><div>На вопрос уже отвечали: тип изменить нельзя, выбранные ранее варианты нельзя удалить.</div>
+      </div>
+      <div class="okfb-form-error" id="okfb-err-detail" hidden></div>
+
+      <fieldset class="okfb-field">
+        <legend class="ok-label">Тип вопроса</legend>
+        <div class="okfb-type-picker" role="radiogroup">
+          <label><input type="radio" name="question_type" value="text"><span><i class="bi bi-textarea-t"></i> Текст</span></label>
+          <label><input type="radio" name="question_type" value="single_choice"><span><i class="bi bi-ui-radios"></i> Один вариант</span></label>
+          <label><input type="radio" name="question_type" value="multiple_choice"><span><i class="bi bi-ui-checks"></i> Несколько</span></label>
+        </div>
+        <div class="okfb-err" data-err="question_type"></div>
+      </fieldset>
+
+      <div class="okfb-field">
+        <label class="ok-label" for="okfb-q-text">Текст вопроса <span class="ok-label-required">*</span></label>
+        <textarea class="ok-input" id="okfb-q-text" name="text" rows="2" maxlength="500" required></textarea>
+        <div class="okfb-err" data-err="text"></div>
+      </div>
+
+      <div class="okfb-field">
+        <label class="ok-label" for="okfb-q-help">Подсказка <span class="okfb-optional">(необязательно)</span></label>
+        <input class="ok-input" id="okfb-q-help" name="help_text" type="text" maxlength="300">
+        <div class="okfb-err" data-err="help_text"></div>
+      </div>
+
+      <label class="okfb-switch">
+        <input type="checkbox" name="is_required" checked>
+        <span>Обязательный вопрос</span>
+      </label>
+
+      <div class="okfb-type-section" data-for-types="text">
+        <label class="okfb-switch">
+          <input type="checkbox" name="is_multiline" checked>
+          <span>Многострочный ответ</span>
+        </label>
+        <div class="okfb-grid-2">
+          <div class="okfb-field">
+            <label class="ok-label" for="okfb-min-length">Мин. длина</label>
+            <input class="ok-input" id="okfb-min-length" name="min_length" type="number" min="0" max="5000" inputmode="numeric" placeholder="—">
+            <div class="okfb-err" data-err="min_length"></div>
+          </div>
+          <div class="okfb-field">
+            <label class="ok-label" for="okfb-max-length">Макс. длина</label>
+            <input class="ok-input" id="okfb-max-length" name="max_length" type="number" min="1" max="5000" inputmode="numeric" placeholder="5000">
+            <div class="okfb-err" data-err="max_length"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="okfb-type-section" data-for-types="single_choice multiple_choice">
+        <div class="okfb-field">
+          <span class="ok-label">Варианты ответа</span>
+          <ol class="okfb-option-list" id="okfb-options"></ol>
+          <button type="button" class="ok-btn-secondary ok-btn-sm" id="okfb-add-option"><i class="bi bi-plus"></i> Добавить вариант</button>
+          <div class="okfb-err" data-err="options"></div>
+        </div>
+      </div>
+
+      <div class="okfb-type-section" data-for-types="multiple_choice">
+        <div class="okfb-grid-2">
+          <div class="okfb-field">
+            <label class="ok-label" for="okfb-min-sel">Мин. выбранных</label>
+            <input class="ok-input" id="okfb-min-sel" name="min_selections" type="number" min="0" inputmode="numeric" placeholder="—">
+            <div class="okfb-err" data-err="min_selections"></div>
+          </div>
+          <div class="okfb-field">
+            <label class="ok-label" for="okfb-max-sel">Макс. выбранных</label>
+            <input class="ok-input" id="okfb-max-sel" name="max_selections" type="number" min="1" inputmode="numeric" placeholder="—">
+            <div class="okfb-err" data-err="max_selections"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary ok-btn-sm" data-okfb-dismiss>Отмена</button>
+      <button type="submit" class="ok-btn-primary ok-btn-sm" id="okfb-save"><i class="bi bi-check-lg"></i> Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="okfb-delete-dialog" class="ok-modal">
+  <form class="ok-modal-form" method="dialog">
+    <div class="ok-modal-header"><span><i class="bi bi-trash"></i> Удалить вопрос?</span>
+      <button type="button" class="ok-modal-close" data-okfb-dismiss aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></div>
+    <div class="ok-modal-body" id="okfb-delete-text"></div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary ok-btn-sm" data-okfb-dismiss>Отмена</button>
+      <button type="button" class="ok-btn-danger ok-btn-sm" id="okfb-delete-confirm">Удалить</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block workspace_scripts %}
+  <script src="{% static 'feedback/js/builder.js' %}"></script>
+{% endblock %}

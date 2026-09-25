@@ -1,0 +1,178 @@
+/* Public feedback survey — mobile-first, same brand tokens as the admin
+   theme (apps/users/static/okurmenkids/css/theme.css), no external fonts
+   so it loads fast inside WhatsApp/Telegram in-app browsers. */
+
+:root {
+  --fb-primary: #2F8F5B;
+  --fb-primary-hover: #287A4D;
+  --fb-primary-soft: #E7F3EC;
+  --fb-on-primary: #FFFFFF;
+  --fb-bg: #F7F9F7;
+  --fb-surface: #FFFFFF;
+  --fb-text: #202622;
+  --fb-text-secondary: #68736C;
+  --fb-border: #E1E7E2;
+  --fb-border-strong: #CBD6CF;
+  --fb-danger: #C7402E;
+  --fb-danger-soft: #FBEAE7;
+  --fb-warning: #8A5C08;
+  --fb-warning-soft: #FBF1DF;
+  --fb-radius: 14px;
+  --fb-shadow: 0 1px 2px rgba(20, 30, 24, 0.04), 0 2px 10px rgba(20, 30, 24, 0.05);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fb-primary: #4CAF72;
+    --fb-primary-hover: #5ABB80;
+    --fb-primary-soft: rgba(76, 175, 114, 0.14);
+    --fb-on-primary: #0C130F;
+    --fb-bg: #101512;
+    --fb-surface: #151C18;
+    --fb-text: #E1E7E3;
+    --fb-text-secondary: #A5B0A9;
+    --fb-border: #28332C;
+    --fb-border-strong: #36453C;
+    --fb-danger: #E0665A;
+    --fb-danger-soft: rgba(224, 102, 90, 0.14);
+    --fb-warning: #D9A441;
+    --fb-warning-soft: rgba(217, 164, 65, 0.14);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--fb-bg);
+  color: var(--fb-text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.fb-brand {
+  display: flex; align-items: center; gap: 10px;
+  max-width: 680px; margin: 0 auto; padding: 16px 16px 4px;
+  font-weight: 700; font-size: 17px; color: var(--fb-primary);
+}
+.fb-brand img { border-radius: 8px; }
+
+.fb-main { max-width: 680px; margin: 0 auto; padding: 8px 16px 24px; }
+.fb-footer { text-align: center; color: var(--fb-text-secondary); font-size: 13px; padding: 8px 16px 32px; }
+
+.fb-card {
+  background: var(--fb-surface);
+  border: 1px solid var(--fb-border);
+  border-radius: var(--fb-radius);
+  box-shadow: var(--fb-shadow);
+  padding: 20px 18px;
+  margin-bottom: 14px;
+}
+.fb-intro { border-top: 5px solid var(--fb-primary); }
+
+.fb-title { font-size: 22px; line-height: 1.3; margin: 0 0 8px; }
+.fb-description { margin: 0 0 10px; color: var(--fb-text-secondary); overflow-wrap: anywhere; }
+.fb-context { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.fb-context li { background: var(--fb-primary-soft); color: var(--fb-text); border-radius: 999px; padding: 4px 12px; font-size: 14px; }
+.fb-context li span { color: var(--fb-text-secondary); }
+
+.fb-section-title { font-size: 17px; margin: 0 0 12px; }
+.fb-muted { color: var(--fb-text-secondary); margin: 6px 0 0; }
+.fb-small { font-size: 13px; }
+.fb-req { color: var(--fb-danger); font-weight: 700; }
+.fb-optional { color: var(--fb-text-secondary); font-weight: 400; font-size: 14px; }
+.fb-note { background: var(--fb-primary-soft); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: 15px; }
+
+.fb-preview-banner {
+  background: var(--fb-warning-soft); color: var(--fb-warning);
+  border-radius: var(--fb-radius); padding: 12px 16px; margin-bottom: 14px; font-size: 15px;
+}
+
+.fb-alert {
+  background: var(--fb-danger-soft); color: var(--fb-danger);
+  border: 1px solid var(--fb-danger); border-radius: var(--fb-radius);
+  padding: 12px 16px; margin-bottom: 14px; font-weight: 600;
+}
+.fb-alert:focus { outline: 3px solid var(--fb-danger); outline-offset: 2px; }
+
+.fb-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.fb-field { margin-top: 14px; }
+.fb-field:first-child { margin-top: 0; }
+.fb-label { display: block; font-weight: 600; margin-bottom: 6px; padding: 0; }
+.fb-qtitle { display: block; font-weight: 650; font-size: 17px; line-height: 1.4; margin: 0 0 6px; padding: 0; overflow-wrap: anywhere; }
+.fb-qnum { color: var(--fb-primary); }
+.fb-hint { color: var(--fb-text-secondary); font-size: 14px; margin: 0 0 8px; }
+.fb-warn { color: var(--fb-warning); margin-top: 8px; }
+
+.fb-input {
+  display: block; width: 100%;
+  font: inherit; font-size: 16px; /* 16px stops iOS zoom-on-focus */
+  color: var(--fb-text); background: var(--fb-surface);
+  border: 1.5px solid var(--fb-border-strong); border-radius: 10px;
+  padding: 12px 14px; min-height: 48px;
+}
+.fb-textarea { min-height: 110px; resize: vertical; }
+.fb-input:focus { outline: none; border-color: var(--fb-primary); box-shadow: 0 0 0 3px var(--fb-primary-soft); }
+
+.fb-options { display: grid; gap: 8px; }
+.fb-choice {
+  display: flex; align-items: flex-start; gap: 12px;
+  border: 1.5px solid var(--fb-border); border-radius: 12px;
+  padding: 12px 14px; min-height: 48px; cursor: pointer;
+  transition: border-color .15s, background-color .15s;
+}
+.fb-choice input { width: 22px; height: 22px; margin: 1px 0 0; flex: none; accent-color: var(--fb-primary); }
+.fb-choice span { overflow-wrap: anywhere; }
+.fb-choice:hover { border-color: var(--fb-border-strong); }
+.fb-choice:has(input:checked) { border-color: var(--fb-primary); background: var(--fb-primary-soft); }
+.fb-choice:has(input:focus-visible) { box-shadow: 0 0 0 3px var(--fb-primary-soft); }
+.fb-choice:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+
+.fb-choice-grid { display: grid; gap: 8px; }
+@media (min-width: 520px) { .fb-choice-grid { grid-template-columns: 1fr 1fr; } }
+.fb-choice-card span { display: flex; flex-direction: column; gap: 2px; }
+.fb-choice-card small { color: var(--fb-text-secondary); font-size: 13px; line-height: 1.4; }
+
+.has-error .fb-input { border-color: var(--fb-danger); }
+.fb-question.has-error, .fb-fieldset.has-error { border-color: var(--fb-danger); }
+.fb-error { color: var(--fb-danger); font-size: 14px; font-weight: 600; margin: 8px 0 0; }
+
+.fb-progress {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--fb-bg); padding: 8px 0; margin-bottom: 6px;
+  font-size: 13px; color: var(--fb-text-secondary);
+}
+.fb-progress-track { flex: 1; height: 6px; background: var(--fb-border); border-radius: 999px; overflow: hidden; }
+.fb-progress-fill { height: 100%; width: 0; background: var(--fb-primary); transition: width .2s; }
+
+.fb-submit-bar { margin-top: 18px; text-align: center; }
+.fb-button {
+  width: 100%; min-height: 52px; border: 0; border-radius: 12px;
+  background: var(--fb-primary); color: var(--fb-on-primary);
+  font: inherit; font-size: 17px; font-weight: 700; cursor: pointer;
+}
+.fb-button:hover { background: var(--fb-primary-hover); }
+.fb-button:focus-visible { outline: 3px solid var(--fb-primary); outline-offset: 3px; }
+.fb-button:disabled { opacity: .6; cursor: not-allowed; }
+
+.fb-message { text-align: center; padding: 36px 20px; }
+.fb-message-icon {
+  width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--fb-primary-soft); color: var(--fb-primary);
+}
+.fb-message-icon-lock { background: var(--fb-warning-soft); color: var(--fb-warning); }
+.fb-message-title { font-size: 22px; margin: 0 0 8px; }
+.fb-message-text { margin: 0 0 6px; font-size: 17px; }
+
+/* JS on: hide the "only for open feedback" hint (fields toggle instead). */
+.fb-js .fb-nojs-only { display: none; }
+[hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

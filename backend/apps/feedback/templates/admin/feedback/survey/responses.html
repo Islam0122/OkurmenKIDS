@@ -1,0 +1,101 @@
+{% extends "admin/feedback/survey/workspace_base.html" %}
+
+{% block workspace_content %}
+<form method="get" class="okfb-filters" role="search">
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-search">Поиск по текстовым ответам</label>
+    <input id="okfb-search" class="ok-input" type="search" name="search" value="{{ search }}" placeholder="Например: домашнее задание">
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-vis">Тип отзыва</label>
+    <select id="okfb-vis" class="ok-input" name="visibility">
+      <option value="">Все</option>
+      {% for value, label in visibility_choices %}<option value="{{ value }}" {% if filters.visibility == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-from">С</label>
+    <input id="okfb-from" class="ok-input" type="date" name="date_from" value="{{ filters.date_from|date:'Y-m-d' }}">
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-to">По</label>
+    <input id="okfb-to" class="ok-input" type="date" name="date_to" value="{{ filters.date_to|date:'Y-m-d' }}">
+  </div>
+  <div class="okfb-filter-actions">
+    <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-funnel"></i> Применить</button>
+    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:feedback_survey_responses' survey.pk %}">Сбросить</a>
+    <a class="ok-btn-secondary ok-btn-sm" href="{{ export_url }}"><i class="bi bi-download"></i> CSV</a>
+  </div>
+</form>
+
+<p class="ok-help-text okfb-privacy-note"><i class="bi bi-shield-lock"></i>
+  Анонимные ответы хранятся без имени, телефона и IP-адреса — узнать автора невозможно.
+  {% if survey.is_parent_survey %}Имя ребёнка указано родителем и не сверяется с базой студентов.{% endif %}
+</p>
+
+{% if page.object_list %}
+  <div class="okfb-response-list">
+    {% for r in page.object_list %}
+      <article class="ok-card okfb-response">
+        <header class="okfb-response-head">
+          <div class="okfb-response-who">
+            {% if r.visibility == "anonymous" %}
+              <span class="okfb-avatar is-anon" aria-hidden="true"><i class="bi bi-incognito"></i></span>
+              <strong>Аноним</strong>
+            {% else %}
+              <span class="okfb-avatar" aria-hidden="true"><i class="bi bi-person"></i></span>
+              <strong>{{ r.respondent_name }}</strong>
+            {% endif %}
+            {% if r.child_name %}<span class="okfb-child">ребёнок: {{ r.child_name }} <small>(со слов {% if survey.is_parent_survey %}родителя{% else %}респондента{% endif %})</small></span>{% endif %}
+          </div>
+          <div class="okfb-response-meta">
+            <span class="ok-badge {% if r.visibility == 'anonymous' %}ok-badge-muted{% else %}ok-badge-info{% endif %}"><span class="ok-badge-dot"></span>{{ r.get_visibility_display }}</span>
+            <time datetime="{{ r.submitted_at|date:'c' }}">{{ r.submitted_at|date:"d.m.Y H:i" }}</time>
+            <details class="ok-menu">
+              <summary class="okfb-icon-btn" aria-label="Действия с ответом"><i class="bi bi-three-dots-vertical"></i></summary>
+              <div class="ok-menu-list ok-menu-list-right">
+                <form method="post" action="{% url 'admin:feedback_survey_response_delete' survey.pk r.pk %}" onsubmit="return confirm('Удалить этот ответ без возможности восстановления?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="okfb-danger-link"><i class="bi bi-trash"></i> Удалить ответ</button>
+                </form>
+              </div>
+            </details>
+          </div>
+        </header>
+        <dl class="okfb-answers">
+          {% for a in r.answers.all %}
+            <dt>{{ a.question.text }}</dt>
+            <dd>
+              {% if a.question.question_type == "text" %}
+                <p class="okfb-text-answer">{{ a.text_value|linebreaksbr }}</p>
+              {% else %}
+                {% for link in a.option_links.all %}<span class="ok-chip">{{ link.option.text }}</span>{% endfor %}
+              {% endif %}
+            </dd>
+          {% empty %}
+            <dd class="ok-help-text">Без ответов на вопросы.</dd>
+          {% endfor %}
+        </dl>
+      </article>
+    {% endfor %}
+  </div>
+
+  {% if page.has_other_pages %}
+    <nav class="okfb-pagination" aria-label="Страницы">
+      {% if page.has_previous %}<a class="ok-btn-secondary ok-btn-sm" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page.previous_page_number }}"><i class="bi bi-chevron-left"></i> Назад</a>{% endif %}
+      <span>Страница {{ page.number }} из {{ page.paginator.num_pages }} · {{ page.paginator.count }} ответов</span>
+      {% if page.has_next %}<a class="ok-btn-secondary ok-btn-sm" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page.next_page_number }}">Дальше <i class="bi bi-chevron-right"></i></a>{% endif %}
+    </nav>
+  {% endif %}
+{% else %}
+  <div class="ok-empty-state">
+    <i class="bi bi-chat-left-text"></i>
+    {% if search or filters.visibility or filters.date_from or filters.date_to %}
+      <h4>Ничего не найдено</h4><p>Попробуйте изменить фильтры.</p>
+    {% else %}
+      <h4>Ответов пока нет</h4><p>{% if availability == "available" %}Отправьте ссылку родителям или студентам через WhatsApp или Telegram.{% else %}Опубликуйте опрос, чтобы начать собирать ответы.{% endif %}</p>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

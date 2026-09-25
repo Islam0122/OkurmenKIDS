@@ -1,0 +1,143 @@
+{% extends "feedback/public_base.html" %}
+{% load static %}
+
+{% block content %}
+{% if preview %}
+    <div class="fb-preview-banner" role="note">
+        <strong>Предпросмотр.</strong> Так опрос увидят {% if survey.is_parent_survey %}родители{% else %}студенты{% endif %}. Отправка ответа отключена.
+    </div>
+{% endif %}
+
+<section class="fb-card fb-intro">
+    <h1 class="fb-title">{{ survey.title }}</h1>
+    {% if survey.description %}<p class="fb-description">{{ survey.description|linebreaksbr }}</p>{% endif %}
+    {% if context_lines %}
+        <ul class="fb-context">
+            {% for label, value in context_lines %}<li><span>{{ label }}:</span> {{ value }}</li>{% endfor %}
+        </ul>
+    {% endif %}
+    {% if required_count %}<p class="fb-muted fb-small"><span class="fb-req" aria-hidden="true">*</span> — обязательный вопрос</p>{% endif %}
+</section>
+
+<div class="fb-progress" id="fb-progress" hidden aria-hidden="true">
+    <div class="fb-progress-track"><div class="fb-progress-fill" id="fb-progress-fill"></div></div>
+    <span id="fb-progress-label"></span>
+</div>
+
+{% if errors %}
+    <div class="fb-alert" role="alert" id="fb-errors" tabindex="-1">
+        {% if form_error %}{{ form_error }}{% else %}Проверьте, пожалуйста, отмеченные поля.{% endif %}
+    </div>
+{% endif %}
+
+<form method="post" {% if preview %}action="#" onsubmit="return false;"{% endif %} novalidate id="fb-form"
+      data-offers-choice="{{ offers_choice|yesno:'1,0' }}"
+      data-child-open="{{ child_mode_open }}" data-child-anonymous="{{ child_mode_anonymous }}">
+    {% if not preview %}{% csrf_token %}{% endif %}
+
+    {% if offers_choice or "open" in allowed_visibilities or child_mode_open != "not_collected" or child_mode_anonymous != "not_collected" %}
+    <section class="fb-card">
+        <h2 class="fb-section-title">{% if survey.is_parent_survey %}О вас и ребёнке{% else %}О вас{% endif %}</h2>
+
+        {% if offers_choice %}
+            <fieldset class="fb-fieldset{% if errors.visibility %} has-error{% endif %}">
+                <legend class="fb-label">Как отправить отзыв? <span class="fb-req">*</span></legend>
+                <div class="fb-choice-grid">
+                    <label class="fb-choice fb-choice-card">
+                        <input type="radio" name="visibility" value="open" {% if visibility == "open" %}checked{% endif %}>
+                        <span><strong>Открыто</strong><small>С вашим именем — администратор увидит, кто написал.</small></span>
+                    </label>
+                    <label class="fb-choice fb-choice-card">
+                        <input type="radio" name="visibility" value="anonymous" {% if visibility == "anonymous" %}checked{% endif %}>
+                        <span><strong>Анонимно</strong><small>Без имени. Мы не сохраняем ваш телефон, e-mail или IP-адрес.</small></span>
+                    </label>
+                </div>
+                {% if errors.visibility %}<p class="fb-error">{{ errors.visibility }}</p>{% endif %}
+            </fieldset>
+        {% elif visibility == "anonymous" %}
+            <p class="fb-note">Это анонимный опрос: мы не спрашиваем и не сохраняем ваше имя, телефон, e-mail или IP-адрес.</p>
+            <input type="hidden" name="visibility" value="anonymous">
+        {% else %}
+            <p class="fb-note">Это открытый опрос: администратор академии увидит ваше имя рядом с ответом.</p>
+            <input type="hidden" name="visibility" value="open">
+        {% endif %}
+
+        {% if "open" in allowed_visibilities %}
+            <div class="fb-field{% if errors.respondent_name %} has-error{% endif %}" data-show-for="open">
+                <label class="fb-label" for="fb-name">{% if survey.is_parent_survey %}Ваше имя (родителя){% else %}Ваше имя{% endif %} <span class="fb-req">*</span></label>
+                {% if offers_choice %}<p class="fb-hint fb-nojs-only">Только для открытого отзыва.</p>{% endif %}
+                <input class="fb-input" id="fb-name" type="text" name="respondent_name" maxlength="150" autocomplete="name" value="{{ values.respondent_name }}">
+                {% if errors.respondent_name %}<p class="fb-error">{{ errors.respondent_name }}</p>{% endif %}
+            </div>
+        {% endif %}
+
+        {% if child_mode_open != "not_collected" or child_mode_anonymous != "not_collected" %}
+            <div class="fb-field{% if errors.child_name %} has-error{% endif %}" data-child-field>
+                <label class="fb-label" for="fb-child">Имя и фамилия ребёнка
+                    <span class="fb-req" data-child-req {% if child_mode_open != "required" and child_mode_anonymous != "required" %}hidden{% endif %}>*</span>
+                    <span class="fb-optional" data-child-opt {% if child_mode_open == "required" or child_mode_anonymous == "required" %}hidden{% endif %}>(необязательно)</span>
+                </label>
+                <input class="fb-input" id="fb-child" type="text" name="child_name" maxlength="150" value="{{ values.child_name }}">
+                {% if child_mode_anonymous != "not_collected" %}
+                    <p class="fb-hint fb-warn" data-show-for="anonymous">Имя ребёнка может косвенно указать на вас — такой отзыв не полностью анонимный.</p>
+                {% endif %}
+                {% if errors.child_name %}<p class="fb-error">{{ errors.child_name }}</p>{% endif %}
+            </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% for row in questions %}
+        {% with q=row.q %}
+        <section class="fb-card fb-question{% if row.error %} has-error{% endif %}" data-question data-required="{{ q.is_required|yesno:'1,0' }}" data-type="{{ q.question_type }}" id="question-{{ q.id }}">
+            {% if q.question_type == "text" %}
+                <label class="fb-qtitle" for="fb-{{ row.name }}"><span class="fb-qnum">{{ row.index }}.</span> {{ q.text }}{% if q.is_required %} <span class="fb-req">*</span>{% endif %}</label>
+                {% if q.help_text %}<p class="fb-hint">{{ q.help_text }}</p>{% endif %}
+                {% if q.is_multiline %}
+                    <textarea class="fb-input fb-textarea" id="fb-{{ row.name }}" name="{{ row.name }}" rows="4" maxlength="{{ q.effective_max_length }}" {% if q.min_length %}minlength="{{ q.min_length }}"{% endif %}>{{ row.value }}</textarea>
+                {% else %}
+                    <input class="fb-input" type="text" id="fb-{{ row.name }}" name="{{ row.name }}" maxlength="{{ q.effective_max_length }}" {% if q.min_length %}minlength="{{ q.min_length }}"{% endif %} value="{{ row.value }}">
+                {% endif %}
+                {% if q.min_length or q.max_length %}
+                    <p class="fb-hint">{% if q.min_length %}Минимум {{ q.min_length }} симв.{% endif %}{% if q.min_length and q.max_length %} · {% endif %}{% if q.max_length %}Максимум {{ q.max_length }} симв.{% endif %}</p>
+                {% endif %}
+            {% else %}
+                <fieldset class="fb-fieldset">
+                    <legend class="fb-qtitle"><span class="fb-qnum">{{ row.index }}.</span> {{ q.text }}{% if q.is_required %} <span class="fb-req">*</span>{% endif %}</legend>
+                    {% if q.help_text %}<p class="fb-hint">{{ q.help_text }}</p>{% endif %}
+                    {% if q.question_type == "multiple_choice" %}
+                        <p class="fb-hint">Можно выбрать несколько{% if q.min_selections %} · минимум {{ q.min_selections }}{% endif %}{% if q.max_selections %} · не больше {{ q.max_selections }}{% endif %}</p>
+                    {% endif %}
+                    <div class="fb-options">
+                        {% for option in row.options %}
+                            <label class="fb-choice">
+                                {% if q.question_type == "single_choice" %}
+                                    <input type="radio" name="{{ row.name }}" value="{{ option.id }}" {% if option.id|stringformat:"s" in row.selected %}checked{% endif %}>
+                                {% else %}
+                                    <input type="checkbox" name="{{ row.name }}" value="{{ option.id }}" {% if option.id|stringformat:"s" in row.selected %}checked{% endif %} {% if q.max_selections %}data-max="{{ q.max_selections }}"{% endif %}>
+                                {% endif %}
+                                <span>{{ option.text }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+            {% endif %}
+            {% if row.error %}<p class="fb-error">{{ row.error }}</p>{% endif %}
+        </section>
+        {% endwith %}
+    {% endfor %}
+
+    <div class="fb-submit-bar">
+        {% if preview %}
+            <button type="button" class="fb-button" disabled>Отправка отключена в предпросмотре</button>
+        {% else %}
+            <button type="submit" class="fb-button" id="fb-submit">Отправить ответ</button>
+        {% endif %}
+        <p class="fb-muted fb-small">Ответы видит только администрация OkurmenKIDS.</p>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+    <script src="{% static 'feedback/js/public.js' %}" defer></script>
+{% endblock %}
