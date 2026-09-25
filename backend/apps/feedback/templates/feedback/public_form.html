@@ -1,139 +1,218 @@
 {% extends "feedback/public_base.html" %}
 {% load static %}
+{% comment %}
+    Public survey form. Without JavaScript every section is visible and the
+    form posts as one page. public.js turns the same markup into a step flow
+    (intro → [about you] → one question per step → review) — field names and
+    the submitted data are identical either way, and the server re-validates.
+{% endcomment %}
 
 {% block content %}
 {% if preview %}
-    <div class="fb-preview-banner" role="note">
-        <strong>Предпросмотр.</strong> Так опрос увидят {% if survey.is_parent_survey %}родители{% else %}студенты{% endif %}. Отправка ответа отключена.
+    <div class="fb-banner fb-banner-warn" role="note">
+        <strong>Предпросмотр.</strong> Так опрос увидят {% if is_student %}студенты{% else %}родители{% endif %}. Отправка ответа отключена.
     </div>
 {% endif %}
 
-<section class="fb-card fb-intro">
-    <h1 class="fb-title">{{ survey.title }}</h1>
-    {% if survey.description %}<p class="fb-description">{{ survey.description|linebreaksbr }}</p>{% endif %}
-    {% if context_lines %}
-        <ul class="fb-context">
-            {% for label, value in context_lines %}<li><span>{{ label }}:</span> {{ value }}</li>{% endfor %}
-        </ul>
-    {% endif %}
-    {% if required_count %}<p class="fb-muted fb-small"><span class="fb-req" aria-hidden="true">*</span> — обязательный вопрос</p>{% endif %}
-</section>
-
-<div class="fb-progress" id="fb-progress" hidden aria-hidden="true">
-    <div class="fb-progress-track"><div class="fb-progress-fill" id="fb-progress-fill"></div></div>
-    <span id="fb-progress-label"></span>
-</div>
-
-{% if errors %}
-    <div class="fb-alert" role="alert" id="fb-errors" tabindex="-1">
-        {% if form_error %}{{ form_error }}{% else %}Проверьте, пожалуйста, отмеченные поля.{% endif %}
-    </div>
-{% endif %}
-
-<form method="post" {% if preview %}action="#" onsubmit="return false;"{% endif %} novalidate id="fb-form"
+<form method="post" {% if preview %}action="#" data-preview="1"{% endif %} novalidate id="fb-form" class="fb-form"
       data-offers-choice="{{ offers_choice|yesno:'1,0' }}"
-      data-child-open="{{ child_mode_open }}" data-child-anonymous="{{ child_mode_anonymous }}">
+      data-child-open="{{ child_mode_open }}" data-child-anonymous="{{ child_mode_anonymous }}"
+      data-student="{{ is_student|yesno:'1,0' }}"
+      data-has-errors="{{ errors|yesno:'1,0' }}">
     {% if not preview %}{% csrf_token %}{% endif %}
 
-    {% if offers_choice or "open" in allowed_visibilities or child_mode_open != "not_collected" or child_mode_anonymous != "not_collected" %}
-    <section class="fb-card">
-        <h2 class="fb-section-title">{% if survey.is_parent_survey %}О вас и ребёнке{% else %}О вас{% endif %}</h2>
+    {# -- Intro ---------------------------------------------------------------- #}
+    <section class="fb-intro fb-step is-current" data-step="intro" aria-labelledby="fb-title">
+        <p class="fb-eyebrow">{% if is_student %}Отзыв студента{% else %}Отзыв родителей{% endif %}</p>
+        <h1 class="fb-title" id="fb-title" tabindex="-1">{{ survey.title }}</h1>
+        {% if survey.description %}
+            <p class="fb-description">{{ survey.description|linebreaksbr }}</p>
+        {% endif %}
+        <p class="fb-welcome">
+            {% if is_student %}Поделись своим мнением — это поможет нам сделать обучение ещё интереснее.
+            {% else %}Ваше мнение помогает нам улучшать обучение вашего ребёнка.{% endif %}
+        </p>
+
+        <ul class="fb-facts" aria-label="Об опросе">
+            <li><svg aria-hidden="true" viewBox="0 0 24 24"><path fill="currentColor" d="M9 7h11v2H9zm0 4h11v2H9zm0 4h11v2H9zM4 7h2v2H4zm0 4h2v2H4zm0 4h2v2H4z"/></svg>{{ question_count_label }}</li>
+            <li><svg aria-hidden="true" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16m.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z"/></svg>≈ {{ minutes }} мин</li>
+            {% for label, value in context_lines %}<li class="fb-fact-context"><span>{{ label }}:</span>&nbsp;{{ value }}</li>{% endfor %}
+        </ul>
+
+        <div class="fb-privacy fb-privacy-{{ privacy_mode }}">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path fill="currentColor" d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11z"/></svg>
+            <p>
+                {% if privacy_mode == "anonymous" %}
+                    {% if is_student %}Твой ответ анонимный: мы не спрашиваем имя и не сохраняем телефон, e-mail или IP-адрес.
+                    {% else %}Ваш ответ отправляется анонимно: мы не спрашиваем ваше имя и не сохраняем телефон, e-mail или IP-адрес.{% endif %}
+                {% elif privacy_mode == "anonymous_child" %}
+                    Мы не спрашиваем ваше имя и не сохраняем телефон, e-mail или IP-адрес. Но опрос просит имя ребёнка — по нему можно понять, кто написал, поэтому ответ не полностью анонимный.
+                {% elif privacy_mode == "open" %}
+                    {% if is_student %}Это открытый отзыв: администратор увидит твоё имя рядом с ответом.
+                    {% else %}Это открытый отзыв: администратор увидит ваше имя рядом с ответом.{% endif %}
+                {% else %}
+                    {% if is_student %}Ты сам(а) выберешь, как отправить отзыв: с именем или анонимно.
+                    {% else %}Вы сами выберете, как отправить отзыв: с вашим именем или анонимно.{% endif %}
+                {% endif %}
+                Ответы видит только администрация OkurmenKIDS.
+            </p>
+        </div>
+
+        <div class="fb-js-only fb-intro-actions">
+            <button type="button" class="fb-button" data-action="start">{% if is_student %}Начать{% else %}Начать опрос{% endif %}</button>
+        </div>
+    </section>
+
+    {# -- Progress (shown by JS once the survey is started) --------------------- #}
+    <div class="fb-progress" id="fb-progress" hidden>
+        <div class="fb-progress-text"><span id="fb-progress-label">—</span><span id="fb-progress-pct" aria-hidden="true"></span></div>
+        <div class="fb-progress-track" role="progressbar" aria-labelledby="fb-progress-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="fb-progress-bar">
+            <div class="fb-progress-fill" id="fb-progress-fill"></div>
+        </div>
+    </div>
+
+    <div class="fb-alert" role="alert" id="fb-errors" tabindex="-1" {% if not errors %}hidden{% endif %}>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path fill="currentColor" d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></svg>
+        <span id="fb-errors-text">{% if form_error %}{{ form_error }}{% else %}Пожалуйста, проверьте отмеченные ответы.{% endif %}</span>
+        <button type="button" class="fb-link-button fb-js-only" data-action="retry" hidden>Попробовать снова</button>
+    </div>
+
+    {# -- About you ------------------------------------------------------------ #}
+    {% if has_identity_step %}
+    <fieldset class="fb-card fb-step" data-step="identity" aria-labelledby="fb-identity-title">
+        <legend class="fb-visually-hidden">Данные респондента</legend>
+        <h2 class="fb-step-title" id="fb-identity-title" tabindex="-1">
+            {% if is_student %}О тебе{% elif asks_child %}О вас и ребёнке{% else %}О вас{% endif %}
+        </h2>
 
         {% if offers_choice %}
-            <fieldset class="fb-fieldset{% if errors.visibility %} has-error{% endif %}">
-                <legend class="fb-label">Как отправить отзыв? <span class="fb-req">*</span></legend>
-                <div class="fb-choice-grid">
-                    <label class="fb-choice fb-choice-card">
-                        <input type="radio" name="visibility" value="open" {% if visibility == "open" %}checked{% endif %}>
-                        <span><strong>Открыто</strong><small>С вашим именем — администратор увидит, кто написал.</small></span>
+            <div class="fb-group{% if errors.visibility %} has-error{% endif %}" role="radiogroup" aria-labelledby="fb-vis-label" {% if errors.visibility %}aria-describedby="fb-err-visibility"{% endif %}>
+                <p class="fb-label" id="fb-vis-label">Как отправить отзыв? <span class="fb-tag fb-tag-required">Обязательно</span></p>
+                <div class="fb-options fb-options-2">
+                    <label class="fb-option fb-option-rich">
+                        <input class="fb-option-input" type="radio" name="visibility" value="open" {% if visibility == "open" %}checked{% endif %}>
+                        <span class="fb-option-mark fb-mark-radio" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.55 17.6 4.3 12.35l1.4-1.4 3.85 3.85 8.75-8.75 1.4 1.4z"/></svg></span>
+                        <span class="fb-option-text"><strong>С именем</strong>
+                            <small>{% if is_student %}Администратор увидит, кто написал.{% else %}Администратор увидит ваше имя рядом с ответом.{% endif %}</small></span>
                     </label>
-                    <label class="fb-choice fb-choice-card">
-                        <input type="radio" name="visibility" value="anonymous" {% if visibility == "anonymous" %}checked{% endif %}>
-                        <span><strong>Анонимно</strong><small>Без имени. Мы не сохраняем ваш телефон, e-mail или IP-адрес.</small></span>
+                    <label class="fb-option fb-option-rich">
+                        <input class="fb-option-input" type="radio" name="visibility" value="anonymous" {% if visibility == "anonymous" %}checked{% endif %}>
+                        <span class="fb-option-mark fb-mark-radio" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.55 17.6 4.3 12.35l1.4-1.4 3.85 3.85 8.75-8.75 1.4 1.4z"/></svg></span>
+                        <span class="fb-option-text"><strong>Анонимно</strong>
+                            <small>Без имени. Телефон, e-mail и IP-адрес не сохраняются.</small></span>
                     </label>
                 </div>
-                {% if errors.visibility %}<p class="fb-error">{{ errors.visibility }}</p>{% endif %}
-            </fieldset>
-        {% elif visibility == "anonymous" %}
-            <p class="fb-note">Это анонимный опрос: мы не спрашиваем и не сохраняем ваше имя, телефон, e-mail или IP-адрес.</p>
-            <input type="hidden" name="visibility" value="anonymous">
+                <p class="fb-error" id="fb-err-visibility" data-error-for="visibility" {% if not errors.visibility %}hidden{% endif %}>{{ errors.visibility }}</p>
+            </div>
         {% else %}
-            <p class="fb-note">Это открытый опрос: администратор академии увидит ваше имя рядом с ответом.</p>
-            <input type="hidden" name="visibility" value="open">
+            <input type="hidden" name="visibility" value="{{ visibility }}">
         {% endif %}
 
         {% if "open" in allowed_visibilities %}
-            <div class="fb-field{% if errors.respondent_name %} has-error{% endif %}" data-show-for="open">
-                <label class="fb-label" for="fb-name">{% if survey.is_parent_survey %}Ваше имя (родителя){% else %}Ваше имя{% endif %} <span class="fb-req">*</span></label>
-                {% if offers_choice %}<p class="fb-hint fb-nojs-only">Только для открытого отзыва.</p>{% endif %}
-                <input class="fb-input" id="fb-name" type="text" name="respondent_name" maxlength="150" autocomplete="name" value="{{ values.respondent_name }}">
-                {% if errors.respondent_name %}<p class="fb-error">{{ errors.respondent_name }}</p>{% endif %}
+            <div class="fb-group{% if errors.respondent_name %} has-error{% endif %}" data-show-for="open">
+                <label class="fb-label" for="fb-name">{% if is_student %}Твоё имя{% else %}Ваше имя{% endif %} <span class="fb-tag fb-tag-required">Обязательно</span></label>
+                {% if offers_choice %}<p class="fb-hint fb-nojs-only">Только для отзыва с именем.</p>{% endif %}
+                <input class="fb-input" id="fb-name" type="text" name="respondent_name" maxlength="150" autocomplete="name"
+                       placeholder="{% if is_student %}Например: Айбек{% else %}Например: Айгуль Садыкова{% endif %}"
+                       value="{{ values.respondent_name }}" {% if errors.respondent_name %}aria-invalid="true" aria-describedby="fb-err-name"{% endif %}>
+                <p class="fb-error" id="fb-err-name" data-error-for="respondent_name" {% if not errors.respondent_name %}hidden{% endif %}>{{ errors.respondent_name }}</p>
             </div>
         {% endif %}
 
         {% if child_mode_open != "not_collected" or child_mode_anonymous != "not_collected" %}
-            <div class="fb-field{% if errors.child_name %} has-error{% endif %}" data-child-field>
+            <div class="fb-group{% if errors.child_name %} has-error{% endif %}" data-child-field>
                 <label class="fb-label" for="fb-child">Имя и фамилия ребёнка
-                    <span class="fb-req" data-child-req {% if child_mode_open != "required" and child_mode_anonymous != "required" %}hidden{% endif %}>*</span>
-                    <span class="fb-optional" data-child-opt {% if child_mode_open == "required" or child_mode_anonymous == "required" %}hidden{% endif %}>(необязательно)</span>
+                    <span class="fb-tag fb-tag-required" data-child-req {% if child_mode_open != "required" and child_mode_anonymous != "required" %}hidden{% endif %}>Обязательно</span>
+                    <span class="fb-tag" data-child-opt {% if child_mode_open == "required" or child_mode_anonymous == "required" %}hidden{% endif %}>Необязательно</span>
                 </label>
-                <input class="fb-input" id="fb-child" type="text" name="child_name" maxlength="150" value="{{ values.child_name }}">
+                <input class="fb-input" id="fb-child" type="text" name="child_name" maxlength="150" placeholder="Например: Нурлан Садыков"
+                       value="{{ values.child_name }}" {% if errors.child_name %}aria-invalid="true" aria-describedby="fb-err-child"{% endif %}>
                 {% if child_mode_anonymous != "not_collected" %}
-                    <p class="fb-hint fb-warn" data-show-for="anonymous">Имя ребёнка может косвенно указать на вас — такой отзыв не полностью анонимный.</p>
+                    <p class="fb-hint fb-hint-warn" data-show-for="anonymous">Имя ребёнка может указать на вас — такой отзыв уже не полностью анонимный.</p>
                 {% endif %}
-                {% if errors.child_name %}<p class="fb-error">{{ errors.child_name }}</p>{% endif %}
+                <p class="fb-error" id="fb-err-child" data-error-for="child_name" {% if not errors.child_name %}hidden{% endif %}>{{ errors.child_name }}</p>
             </div>
         {% endif %}
-    </section>
+    </fieldset>
     {% endif %}
 
+    {# -- Questions -------------------------------------------------------------- #}
     {% for row in questions %}
         {% with q=row.q %}
-        <section class="fb-card fb-question{% if row.error %} has-error{% endif %}" data-question data-required="{{ q.is_required|yesno:'1,0' }}" data-type="{{ q.question_type }}" id="question-{{ q.id }}">
+        <fieldset class="fb-card fb-step fb-question{% if row.error %} has-error{% endif %}" data-step="question" data-question
+                  data-required="{{ q.is_required|yesno:'1,0' }}" data-type="{{ q.question_type }}"
+                  {% if q.min_length %}data-min-length="{{ q.min_length }}"{% endif %}
+                  {% if q.min_selections %}data-min-selections="{{ q.min_selections }}"{% endif %}
+                  {% if q.max_selections %}data-max-selections="{{ q.max_selections }}"{% endif %}
+                  id="question-{{ q.id }}" aria-labelledby="fb-q{{ q.id }}-title"
+                  aria-describedby="fb-q{{ q.id }}-meta{% if q.help_text %} fb-q{{ q.id }}-help{% endif %}{% if row.error %} fb-q{{ q.id }}-error{% endif %}">
+            <legend class="fb-visually-hidden">Вопрос {{ row.index }}</legend>
+            <div class="fb-qhead">
+                <span class="fb-qnum" aria-hidden="true">{{ row.index|stringformat:"02d" }}</span>
+                <span class="fb-tag{% if q.is_required %} fb-tag-required{% endif %}" id="fb-q{{ q.id }}-meta">{% if q.is_required %}Обязательный вопрос{% else %}Необязательный вопрос{% endif %}</span>
+            </div>
             {% if q.question_type == "text" %}
-                <label class="fb-qtitle" for="fb-{{ row.name }}"><span class="fb-qnum">{{ row.index }}.</span> {{ q.text }}{% if q.is_required %} <span class="fb-req">*</span>{% endif %}</label>
-                {% if q.help_text %}<p class="fb-hint">{{ q.help_text }}</p>{% endif %}
+                <label class="fb-qtitle" id="fb-q{{ q.id }}-title" for="fb-{{ row.name }}" tabindex="-1">{{ q.text }}</label>
+            {% else %}
+                <h2 class="fb-qtitle" id="fb-q{{ q.id }}-title" tabindex="-1">{{ q.text }}</h2>
+            {% endif %}
+            {% if q.help_text %}<p class="fb-hint" id="fb-q{{ q.id }}-help">{{ q.help_text }}</p>{% endif %}
+
+            {% if q.question_type == "text" %}
                 {% if q.is_multiline %}
-                    <textarea class="fb-input fb-textarea" id="fb-{{ row.name }}" name="{{ row.name }}" rows="4" maxlength="{{ q.effective_max_length }}" {% if q.min_length %}minlength="{{ q.min_length }}"{% endif %}>{{ row.value }}</textarea>
+                    <textarea class="fb-input fb-textarea" id="fb-{{ row.name }}" name="{{ row.name }}" rows="5" maxlength="{{ q.effective_max_length }}"
+                              placeholder="{% if is_student %}Напиши свой ответ…{% else %}Напишите ваш ответ…{% endif %}"
+                              {% if row.error %}aria-invalid="true"{% endif %}>{{ row.value }}</textarea>
                 {% else %}
-                    <input class="fb-input" type="text" id="fb-{{ row.name }}" name="{{ row.name }}" maxlength="{{ q.effective_max_length }}" {% if q.min_length %}minlength="{{ q.min_length }}"{% endif %} value="{{ row.value }}">
+                    <input class="fb-input" type="text" id="fb-{{ row.name }}" name="{{ row.name }}" maxlength="{{ q.effective_max_length }}"
+                           placeholder="{% if is_student %}Напиши свой ответ…{% else %}Напишите ваш ответ…{% endif %}"
+                           value="{{ row.value }}" {% if row.error %}aria-invalid="true"{% endif %}>
                 {% endif %}
                 {% if q.min_length or q.max_length %}
-                    <p class="fb-hint">{% if q.min_length %}Минимум {{ q.min_length }} симв.{% endif %}{% if q.min_length and q.max_length %} · {% endif %}{% if q.max_length %}Максимум {{ q.max_length }} симв.{% endif %}</p>
+                    <div class="fb-text-meta">
+                        <span>{% if q.min_length %}Минимум {{ q.min_length }} симв.{% endif %}</span>
+                        {% if q.max_length %}<span class="fb-counter" data-counter-for="fb-{{ row.name }}" aria-live="polite">{{ row.value|length }} / {{ q.max_length }}</span>{% endif %}
+                    </div>
                 {% endif %}
             {% else %}
-                <fieldset class="fb-fieldset">
-                    <legend class="fb-qtitle"><span class="fb-qnum">{{ row.index }}.</span> {{ q.text }}{% if q.is_required %} <span class="fb-req">*</span>{% endif %}</legend>
-                    {% if q.help_text %}<p class="fb-hint">{{ q.help_text }}</p>{% endif %}
-                    {% if q.question_type == "multiple_choice" %}
-                        <p class="fb-hint">Можно выбрать несколько{% if q.min_selections %} · минимум {{ q.min_selections }}{% endif %}{% if q.max_selections %} · не больше {{ q.max_selections }}{% endif %}</p>
-                    {% endif %}
-                    <div class="fb-options">
-                        {% for option in row.options %}
-                            <label class="fb-choice">
-                                {% if q.question_type == "single_choice" %}
-                                    <input type="radio" name="{{ row.name }}" value="{{ option.id }}" {% if option.id|stringformat:"s" in row.selected %}checked{% endif %}>
-                                {% else %}
-                                    <input type="checkbox" name="{{ row.name }}" value="{{ option.id }}" {% if option.id|stringformat:"s" in row.selected %}checked{% endif %} {% if q.max_selections %}data-max="{{ q.max_selections }}"{% endif %}>
-                                {% endif %}
-                                <span>{{ option.text }}</span>
-                            </label>
-                        {% endfor %}
-                    </div>
-                </fieldset>
+                {% if q.question_type == "multiple_choice" %}
+                    <p class="fb-hint">Можно выбрать несколько{% if q.min_selections %} · минимум {{ q.min_selections }}{% endif %}{% if q.max_selections %} · не больше {{ q.max_selections }}{% endif %}</p>
+                {% endif %}
+                <div class="fb-options" {% if q.question_type == "single_choice" %}role="radiogroup" aria-labelledby="fb-q{{ q.id }}-title"{% endif %}>
+                    {% for option in row.options %}
+                        <label class="fb-option">
+                            {% if q.question_type == "single_choice" %}
+                                <input class="fb-option-input" type="radio" name="{{ row.name }}" value="{{ option.id }}" {% if option.id|stringformat:"s" in row.selected %}checked{% endif %}>
+                                <span class="fb-option-mark fb-mark-radio" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.55 17.6 4.3 12.35l1.4-1.4 3.85 3.85 8.75-8.75 1.4 1.4z"/></svg></span>
+                            {% else %}
+                                <input class="fb-option-input" type="checkbox" name="{{ row.name }}" value="{{ option.id }}" {% if option.id|stringformat:"s" in row.selected %}checked{% endif %}>
+                                <span class="fb-option-mark fb-mark-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.55 17.6 4.3 12.35l1.4-1.4 3.85 3.85 8.75-8.75 1.4 1.4z"/></svg></span>
+                            {% endif %}
+                            <span class="fb-option-text">{{ option.text }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
             {% endif %}
-            {% if row.error %}<p class="fb-error">{{ row.error }}</p>{% endif %}
-        </section>
+            <p class="fb-error" id="fb-q{{ q.id }}-error" data-error-for="{{ row.name }}" {% if not row.error %}hidden{% endif %}>{{ row.error }}</p>
+        </fieldset>
         {% endwith %}
     {% endfor %}
 
-    <div class="fb-submit-bar">
-        {% if preview %}
-            <button type="button" class="fb-button" disabled>Отправка отключена в предпросмотре</button>
-        {% else %}
-            <button type="submit" class="fb-button" id="fb-submit">Отправить ответ</button>
-        {% endif %}
-        <p class="fb-muted fb-small">Ответы видит только администрация OkurmenKIDS.</p>
+    {# -- Review (JS only; filled in by public.js) ------------------------------ #}
+    <section class="fb-card fb-step fb-js-only" data-step="review" aria-labelledby="fb-review-title">
+        <h2 class="fb-step-title" id="fb-review-title" tabindex="-1">{% if is_student %}Проверь ответы{% else %}Проверьте ответы{% endif %}</h2>
+        <p class="fb-hint">{% if is_student %}Если что-то нужно поправить — нажми «Изменить».{% else %}Если что-то нужно поправить — нажмите «Изменить».{% endif %}</p>
+        <dl class="fb-review" id="fb-review-list"></dl>
+    </section>
+
+    {# -- Navigation ---------------------------------------------------------------- #}
+    <div class="fb-nav" id="fb-nav">
+        <button type="button" class="fb-button fb-button-secondary fb-js-only" data-action="back">Назад</button>
+        <button type="button" class="fb-button fb-js-only" data-action="next">Далее</button>
+        <button type="submit" class="fb-button" id="fb-submit" data-action="submit" {% if preview %}disabled{% endif %}>
+            <span class="fb-spinner" aria-hidden="true"></span>
+            <span class="fb-button-label">{% if preview %}Отправка отключена в предпросмотре{% else %}Отправить отзыв{% endif %}</span>
+        </button>
     </div>
 </form>
 {% endblock %}
