@@ -114,6 +114,10 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Logs redacted metadata for every CSRF rejection and shows a friendly page
+# on public feedback links — see config/csrf.py. Rejection rules unchanged.
+CSRF_FAILURE_VIEW = "config.csrf.csrf_failure"
+
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
