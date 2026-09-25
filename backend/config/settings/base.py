@@ -49,6 +49,7 @@ LOCAL_APPS = [
     "apps.academy.apps.AcademyConfig",
     "apps.data_io.apps.DataIoConfig",
     "apps.news.apps.NewsConfig",
+    "apps.feedback.apps.FeedbackConfig",
 
 ]
 
@@ -185,6 +186,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "100/hour",
         "user": "1000/hour",
+        # Public feedback survey links (per client IP, no login) — see
+        # apps/feedback/public.py. Shared by the HTML page and the JSON API.
+        "feedback_view": "300/hour",
+        "feedback_submit": "30/hour",
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -203,6 +208,11 @@ SIMPLE_JWT = {
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
+
+# Optional absolute origin for public feedback survey links (e.g.
+# "https://kids.okurmen.kg"). Empty = the host the Admin is using right now,
+# via request.build_absolute_uri — see apps/feedback/public.py.
+FEEDBACK_PUBLIC_BASE_URL = env("FEEDBACK_PUBLIC_BASE_URL", default="")
 
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",
@@ -237,6 +247,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "Homework", "description": "Homework management"},
         {"name": "Analytics", "description": "KPI and performance analytics"},
         {"name": "News", "description": "Teacher-facing news and announcements"},
+        {"name": "Feedback", "description": "Feedback surveys for parents and students"},
     ],
 }
 
@@ -267,7 +278,7 @@ JAZZMIN_SETTINGS = {
     # grouped the way an academy admin actually thinks about them
     # (teaching staff/students, organisation, day-to-day control, system)
     # rather than by Django app label.
-    "hide_apps": ["users", "academy", "data_io", "news"],
+    "hide_apps": ["users", "academy", "data_io", "news", "feedback"],
 
     "custom_links": {
         "центр помощи": [
@@ -303,6 +314,11 @@ JAZZMIN_SETTINGS = {
             {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-check"},
             {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-circle"},
             {"name": "Отчёты преподавателей", "model": "academy.monthlyteacherreport", "icon": "bi bi-file-earmark-text"},
+        ],
+
+        "обратная связь": [
+            {"name": "Опросы", "model": "feedback.survey", "icon": "bi bi-ui-checks"},
+            {"name": "Аналитика отзывов", "url": "admin:feedback_analytics", "icon": "bi bi-bar-chart-line"},
         ],
 
         "ресурсы": [
@@ -360,6 +376,8 @@ JAZZMIN_SETTINGS = {
         "academy.monthlyteacherreport": "bi bi-file-earmark-text",
         "data_io.exporttemplate": "bi bi-file-earmark-ruled",
         "news.news": "bi bi-megaphone",
+        "обратная связь": "bi bi-chat-heart",
+        "feedback.survey": "bi bi-ui-checks",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

@@ -23,6 +23,10 @@ urlpatterns = [
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.academy.urls")),
     path("api/v1/", include("apps.news.urls")),
+    path("api/v1/", include("apps.feedback.urls")),
+
+    # Public feedback survey links (no login) — /feedback/s/<token>/
+    path("feedback/", include("apps.feedback.public_urls")),
 
     # API documentation
     path("schema/", SpectacularAPIView.as_view(), name="schema"),

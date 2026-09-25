@@ -1,0 +1,79 @@
+{% extends "admin/feedback/survey/workspace_base.html" %}
+
+{% block workspace_content %}
+<form method="get" class="okfb-filters">
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-vis">Тип отзыва</label>
+    <select id="okfb-vis" class="ok-input" name="visibility">
+      <option value="">Все</option>
+      {% for value, label in visibility_choices %}<option value="{{ value }}" {% if filters.visibility == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-from">С</label>
+    <input id="okfb-from" class="ok-input" type="date" name="date_from" value="{{ filters.date_from|date:'Y-m-d' }}">
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-to">По</label>
+    <input id="okfb-to" class="ok-input" type="date" name="date_to" value="{{ filters.date_to|date:'Y-m-d' }}">
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="okfb-search">Поиск в текстовых ответах</label>
+    <input id="okfb-search" class="ok-input" type="search" name="search" value="{{ search }}">
+  </div>
+  <div class="okfb-filter-actions">
+    <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-funnel"></i> Применить</button>
+    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:feedback_survey_analytics' survey.pk %}">Сбросить</a>
+  </div>
+</form>
+
+<div class="ok-kpi-grid okfb-kpis">
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-chat-left-text"></i></div><div class="ok-kpi-value">{{ filtered_total }}</div><div class="ok-kpi-label">Ответов</div></div>
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-person"></i></div><div class="ok-kpi-value">{{ open_count }}</div><div class="ok-kpi-label">Открытых</div></div>
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-incognito"></i></div><div class="ok-kpi-value">{{ anonymous_count }}</div><div class="ok-kpi-label">Анонимных</div></div>
+</div>
+<p class="ok-help-text"><i class="bi bi-info-circle"></i> Процент откликов не считается: ссылку можно переслать кому угодно, поэтому число получателей неизвестно. Общий балл по опросу тоже не считается — вопросы разные по смыслу.</p>
+
+{% for s in stats %}
+  <section class="ok-card okfb-stat">
+    <div class="ok-card-header">
+      <span class="okfb-qnum">{{ s.index }}</span>
+      <span class="okfb-stat-title">{{ s.text }}</span>
+      <span class="ok-card-header-action ok-help-text">Ответили: {{ s.answered }}</span>
+    </div>
+    <div class="ok-card-body">
+      {% if s.options is not None %}
+        {% if s.answered %}
+          <ul class="ok-hbar-chart okfb-hbar">
+            {% for o in s.options %}
+              <li title="{{ o.text }}: {{ o.count }}">
+                <span class="ok-hbar-label">{{ o.text }}</span>
+                <span class="ok-hbar-track"><span class="ok-hbar-fill" style="width: {{ o.pct|default:0|stringformat:'.1f' }}%;"></span></span>
+                <span class="ok-hbar-value">{{ o.count }} · {% if o.pct is not None %}{{ o.pct }}%{% else %}—{% endif %}</span>
+              </li>
+            {% endfor %}
+          </ul>
+          <p class="ok-help-text okfb-denominator">{{ s.denominator_note }}.</p>
+        {% else %}
+          <p class="ok-help-text">На этот вопрос пока нет ответов.</p>
+        {% endif %}
+      {% else %}
+        {% if s.texts %}
+          <ul class="okfb-text-list">
+            {% for t in s.texts %}
+              <li><p class="okfb-text-answer">{{ t.text|linebreaksbr }}</p><time>{{ t.submitted_at|date:"d.m.Y H:i" }}</time></li>
+            {% endfor %}
+          </ul>
+          {% if s.text_total > s.texts|length %}
+            <p class="ok-help-text">Показаны последние {{ s.texts|length }} из {{ s.text_total }}. Все ответы — на вкладке «Ответы».</p>
+          {% endif %}
+        {% else %}
+          <p class="ok-help-text">{% if search %}Нет ответов с «{{ search }}».{% else %}Текстовых ответов пока нет.{% endif %}</p>
+        {% endif %}
+      {% endif %}
+    </div>
+  </section>
+{% empty %}
+  <div class="ok-empty-state"><i class="bi bi-bar-chart-line"></i><h4>Нет вопросов</h4><p>Добавьте вопросы в конструкторе.</p></div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'feedback/css/admin.css' %}">
+{% endblock %}
+
+{% block content_title %}Аналитика отзывов{% endblock %}
+
+{% block breadcrumbs %}
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'admin:feedback_survey_changelist' %}">Опросы</a></li>
+    <li class="breadcrumb-item active">Аналитика</li>
+  </ol>
+{% endblock %}
+
+{% block content %}
+<div class="okfb">
+<form method="get" class="okfb-filters">
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-survey">Опрос</label>
+    <select id="f-survey" class="ok-input" name="survey">
+      <option value="">Все</option>
+      {% for s in all_surveys %}<option value="{{ s.id }}" {% if filters.survey_id == s.id %}selected{% endif %}>{{ s.title }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-aud">Аудитория</label>
+    <select id="f-aud" class="ok-input" name="audience">
+      <option value="">Все</option>
+      {% for value, label in audience_choices %}<option value="{{ value }}" {% if filters.audience == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-group">Группа</label>
+    <select id="f-group" class="ok-input" name="group">
+      <option value="">Все</option>
+      {% for g in groups %}<option value="{{ g.id }}" {% if filters.group_id == g.id %}selected{% endif %}>{{ g.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-teacher">Тренер</label>
+    <select id="f-teacher" class="ok-input" name="teacher">
+      <option value="">Все</option>
+      {% for t in teachers %}<option value="{{ t.id }}" {% if filters.teacher_id == t.id %}selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-subject">Предмет</label>
+    <select id="f-subject" class="ok-input" name="subject">
+      <option value="">Все</option>
+      {% for s in subjects %}<option value="{{ s.id }}" {% if filters.subject_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-vis">Тип отзыва</label>
+    <select id="f-vis" class="ok-input" name="visibility">
+      <option value="">Все</option>
+      {% for value, label in visibility_choices %}<option value="{{ value }}" {% if filters.visibility == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-from">С</label>
+    <input id="f-from" class="ok-input" type="date" name="date_from" value="{{ filters.date_from|date:'Y-m-d' }}">
+  </div>
+  <div class="okfb-filter">
+    <label class="ok-label" for="f-to">По</label>
+    <input id="f-to" class="ok-input" type="date" name="date_to" value="{{ filters.date_to|date:'Y-m-d' }}">
+  </div>
+  <div class="okfb-filter-actions">
+    <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-funnel"></i> Применить</button>
+    <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:feedback_analytics' %}">Сбросить</a>
+  </div>
+</form>
+
+<div class="ok-kpi-grid okfb-kpis">
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-ui-checks"></i></div><div class="ok-kpi-value">{{ data.total_surveys }}</div><div class="ok-kpi-label">Опросов</div></div>
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-broadcast"></i></div><div class="ok-kpi-value">{{ data.accepting_surveys }}</div><div class="ok-kpi-label">Принимают ответы</div></div>
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-chat-left-text"></i></div><div class="ok-kpi-value">{{ data.total_responses }}</div><div class="ok-kpi-label">Ответов</div></div>
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-person"></i></div><div class="ok-kpi-value">{{ data.open_responses }}</div><div class="ok-kpi-label">Открытых{% if data.open_pct is not None %} · {{ data.open_pct }}%{% endif %}</div></div>
+  <div class="ok-kpi-card"><div class="ok-kpi-icon"><i class="bi bi-incognito"></i></div><div class="ok-kpi-value">{{ data.anonymous_responses }}</div><div class="ok-kpi-label">Анонимных{% if data.anonymous_pct is not None %} · {{ data.anonymous_pct }}%{% endif %}</div></div>
+</div>
+<p class="ok-help-text"><i class="bi bi-info-circle"></i> Фильтры «Группа», «Тренер», «Предмет» работают по привязке опроса. Процент откликов и общие оценки не считаются: у публичной ссылки нет известного числа получателей, а вопросы разных опросов несопоставимы. Распределение ответов по вопросам — в аналитике конкретного опроса.</p>
+
+<div class="ok-card">
+  <div class="ok-card-header"><i class="bi bi-list-ul"></i> Опросы</div>
+  {% if data.surveys %}
+    <div class="table-responsive">
+      <table class="table okfb-table">
+        <thead><tr><th>Опрос</th><th>Аудитория</th><th>Статус</th><th class="ok-num">Ответов</th><th></th></tr></thead>
+        <tbody>
+          {% for s in data.surveys %}
+            <tr>
+              <td><a href="{% url 'admin:feedback_survey_builder' s.pk %}">{{ s.title }}</a></td>
+              <td>{{ s.get_audience_display }}</td>
+              <td>{{ s.get_status_display }}</td>
+              <td class="ok-num">{{ s.response_count }}</td>
+              <td class="ok-num"><a class="ok-link-muted" href="{% url 'admin:feedback_survey_analytics' s.pk %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">Аналитика <i class="bi bi-arrow-right"></i></a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="ok-card-body"><p class="ok-help-text">Нет опросов под выбранные фильтры.</p></div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

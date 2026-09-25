@@ -1,0 +1,124 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'feedback/css/admin.css' %}">
+{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block breadcrumbs %}
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'admin:feedback_survey_changelist' %}">Опросы</a></li>
+    <li class="breadcrumb-item active">{{ survey.title }}</li>
+  </ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-group-workspace okfb">
+  <div class="ok-group-header">
+    <div class="ok-group-header-main">
+      <div class="ok-group-header-identity">
+        <h1 class="ok-group-title">{{ survey.title }}</h1>
+        <div class="okfb-badges">
+          <span class="ok-badge {% if survey.is_parent_survey %}ok-badge-info{% else %}ok-badge-success{% endif %}"><span class="ok-badge-dot"></span>{{ survey.get_audience_display }}</span>
+          <span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>{{ survey.get_visibility_mode_display }}</span>
+          <span class="ok-badge {{ availability_css }}"><span class="ok-badge-dot"></span>{{ availability_label }}</span>
+          {% if survey.group %}<span class="okfb-meta"><i class="bi bi-people"></i> {{ survey.group.name }}</span>{% endif %}
+          {% if survey.teacher %}<span class="okfb-meta"><i class="bi bi-person-badge"></i> {{ survey.teacher }}</span>{% endif %}
+          {% if survey.subject %}<span class="okfb-meta"><i class="bi bi-book"></i> {{ survey.subject.name }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="ok-group-actions">
+        <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:feedback_survey_preview' survey.pk %}" target="_blank" rel="noopener"><i class="bi bi-eye"></i> Предпросмотр</a>
+        {% if survey.status == "draft" %}
+          <form method="post" action="{% url 'admin:feedback_survey_action' survey.pk 'publish' %}">{% csrf_token %}
+            <button type="submit" class="ok-btn-primary ok-btn-sm" id="okfb-publish"><i class="bi bi-send"></i> Опубликовать</button>
+          </form>
+        {% elif survey.status == "published" %}
+          <button type="button" class="ok-btn-secondary ok-btn-sm" data-okfb-open="okfb-close-dialog"><i class="bi bi-stop-circle"></i> Закрыть опрос</button>
+        {% else %}
+          <form method="post" action="{% url 'admin:feedback_survey_action' survey.pk 'reopen' %}">{% csrf_token %}
+            <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-play-circle"></i> Открыть снова</button>
+          </form>
+        {% endif %}
+        <details class="ok-menu">
+          <summary class="ok-btn-secondary ok-btn-sm ok-menu-trigger" aria-label="Другие действия"><i class="bi bi-three-dots"></i></summary>
+          <div class="ok-menu-list ok-menu-list-right">
+            <a href="{% url 'admin:feedback_survey_change' survey.pk %}"><i class="bi bi-gear"></i> Настройки опроса</a>
+            <form method="post" action="{% url 'admin:feedback_survey_action' survey.pk 'duplicate' %}">{% csrf_token %}
+              <button type="submit"><i class="bi bi-copy"></i> Сделать копию</button>
+            </form>
+            <a href="{% url 'admin:feedback_survey_history' survey.pk %}"><i class="bi bi-clock-history"></i> История изменений</a>
+            {% if not response_count %}
+              <a href="{% url 'admin:feedback_survey_delete' survey.pk %}" class="okfb-danger-link"><i class="bi bi-trash"></i> Удалить опрос</a>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="okfb-link-panel">
+      <div class="okfb-link-row">
+        <label class="ok-label" for="okfb-link">Публичная ссылка</label>
+        <div class="okfb-link-input">
+          <input id="okfb-link" class="ok-input" type="text" readonly value="{{ public_url }}" aria-describedby="okfb-link-hint">
+          <button type="button" class="ok-btn-secondary ok-btn-sm" data-okfb-copy="okfb-link"><i class="bi bi-clipboard"></i> <span>Копировать</span></button>
+          {% if availability == "available" %}
+            <a class="ok-btn-secondary ok-btn-sm" href="{{ public_url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Открыть</a>
+            <a class="ok-btn-secondary ok-btn-sm okfb-share-wa" href="{{ whatsapp_url }}" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i> WhatsApp</a>
+            <a class="ok-btn-secondary ok-btn-sm okfb-share-tg" href="{{ telegram_url }}" target="_blank" rel="noopener"><i class="bi bi-telegram"></i> Telegram</a>
+          {% endif %}
+          <button type="button" class="ok-btn-secondary ok-btn-sm" data-okfb-open="okfb-regenerate-dialog" title="Создать новую ссылку"><i class="bi bi-arrow-repeat"></i></button>
+        </div>
+        <p class="ok-help-text" id="okfb-link-hint">
+          {% if availability == "available" %}Ссылка активна и принимает ответы.
+          {% elif availability == "draft" %}Ссылка заработает после публикации опроса.
+          {% else %}Ссылка сейчас не принимает ответы: {{ availability_label|lower }}.{% endif %}
+        </p>
+      </div>
+    </div>
+
+    <nav class="ok-group-tabs">
+      {% for tab in tabs %}
+        <a class="ok-group-tab{% if tab.key == active_tab %} active{% endif %}" href="{{ tab.url }}"{% if tab.key == active_tab %} aria-current="page"{% endif %}>
+          <i class="bi {{ tab.icon }}"></i> {{ tab.label }}
+        </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <div class="ok-group-section">
+    {% block workspace_content %}{% endblock %}
+  </div>
+</div>
+
+<dialog id="okfb-close-dialog" class="ok-modal">
+  <form method="post" action="{% url 'admin:feedback_survey_action' survey.pk 'close' %}" class="ok-modal-form">{% csrf_token %}
+    <div class="ok-modal-header"><span><i class="bi bi-stop-circle"></i> Закрыть опрос?</span>
+      <button type="button" class="ok-modal-close" data-okfb-dismiss aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></div>
+    <div class="ok-modal-body">Ссылка перестанет принимать ответы. Собранные ответы сохранятся, опрос можно будет открыть снова.</div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary ok-btn-sm" data-okfb-dismiss>Отмена</button>
+      <button type="submit" class="ok-btn-danger ok-btn-sm">Закрыть опрос</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="okfb-regenerate-dialog" class="ok-modal">
+  <form method="post" action="{% url 'admin:feedback_survey_action' survey.pk 'regenerate' %}" class="ok-modal-form">{% csrf_token %}
+    <div class="ok-modal-header"><span><i class="bi bi-arrow-repeat"></i> Создать новую ссылку?</span>
+      <button type="button" class="ok-modal-close" data-okfb-dismiss aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></div>
+    <div class="ok-modal-body">Старая ссылка сразу перестанет работать — у всех, кому вы её отправили. Используйте это, если ссылка попала не туда.</div>
+    <div class="ok-modal-footer">
+      <button type="button" class="ok-btn-secondary ok-btn-sm" data-okfb-dismiss>Отмена</button>
+      <button type="submit" class="ok-btn-danger ok-btn-sm">Создать новую ссылку</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="{% static 'feedback/js/workspace.js' %}"></script>
+{% block workspace_scripts %}{% endblock %}
+{% endblock %}
