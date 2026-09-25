@@ -16,11 +16,22 @@
     <title>{% block title %}{{ survey.title }}{% endblock %} · OkurmenKIDS</title>
     <link rel="icon" href="{% static 'images/logo.png' %}">
     <link rel="stylesheet" href="{% static 'feedback/css/public.css' %}">
+    {% comment %}
+        Marks JS support before first paint so step mode never flashes the full
+        form. Failsafe: if public.js never initialises (blocked/failed download),
+        drop the class again so the plain full form shows and still works.
+    {% endcomment %}
+    <script>
+        document.documentElement.classList.add("fb-js");
+        setTimeout(function () {
+            if (!document.querySelector(".fb-ready")) document.documentElement.classList.remove("fb-js");
+        }, 4000);
+    </script>
 </head>
 <body>
     <header class="fb-brand">
-        <img src="{% static 'images/logo.png' %}" alt="" width="36" height="36">
-        <span>OkurmenKIDS</span>
+        <img src="{% static 'images/logo.png' %}" alt="" width="40" height="40">
+        <span>Okurmen<strong>KIDS</strong></span>
     </header>
     <main class="fb-main">
         {% block content %}{% endblock %}

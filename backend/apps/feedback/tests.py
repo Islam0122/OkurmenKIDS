@@ -794,3 +794,85 @@ class PublicPageCsrfTests(FeedbackTestBase):
                                    HTTP_ORIGIN=self.HOST)
         self.assertEqual(res.status_code, 403)
         self.assertNotContains(res, "Откройте ссылку на опрос заново", status_code=403)
+
+
+class PublicPageRedesignTests(FeedbackTestBase):
+    """Audience-specific wording and honest privacy notices on the public page."""
+
+    def setUp(self):
+        super().setUp()
+        self.publish()
+        self.url = reverse("feedback_public", args=[self.survey.public_token])
+        self.done_url = reverse("feedback_public_done", args=[self.survey.public_token])
+
+    def set(self, **fields):
+        Survey.objects.filter(pk=self.survey.pk).update(**fields)
+
+    def test_parent_intro_step_markup_and_facts(self):
+        page = self.client.get(self.url)
+        for text in ("Отзыв родителей", "Ваше мнение помогает нам улучшать обучение вашего ребёнка",
+                     "3 вопроса", "≈ 2 мин", "Вы сами выберете", "С именем", "Анонимно",
+                     "Имя и фамилия ребёнка", "Обязательный вопрос", "Необязательный вопрос",
+                     'data-action="start"', 'data-action="next"', 'data-action="back"', 'data-step="review"'):
+            self.assertContains(page, text)
+        self.assertNotContains(page, "{#")  # template comments never leak into the page
+
+    def test_student_wording_and_no_parent_fields(self):
+        self.set(audience=Survey.Audience.STUDENT, visibility_mode=Survey.VisibilityMode.OPEN,
+                 child_name_mode=Survey.ChildNameMode.REQUIRED)
+        page = self.client.get(self.url)
+        for text in ("Отзыв студента", "Поделись своим мнением", "О тебе", "Твоё имя", "увидит твоё имя"):
+            self.assertContains(page, text)
+        self.assertContains(page, '<p class="fb-eyebrow">Отзыв студента</p>', html=False)
+        # (the fixture's own title is "Отзыв родителей" — admin content, not UI copy)
+        for text in ("ребёнка", 'name="child_name"', '<p class="fb-eyebrow">Отзыв родителей</p>'):
+            self.assertNotContains(page, text)
+
+    def test_anonymous_claim_only_when_nothing_identifying_is_asked(self):
+        self.set(visibility_mode=Survey.VisibilityMode.ANONYMOUS)
+        page = self.client.get(self.url)
+        self.assertContains(page, "Ваш ответ отправляется анонимно")
+        self.assertNotContains(page, 'name="child_name"')
+        self.set(ask_child_name_when_anonymous=True)
+        page = self.client.get(self.url)
+        self.assertContains(page, "не полностью анонимный")
+        self.assertNotContains(page, "отправляется анонимно")
+        self.assertContains(page, 'name="child_name"')
+
+    def test_open_mode_notice(self):
+        self.set(visibility_mode=Survey.VisibilityMode.OPEN)
+        self.assertContains(self.client.get(self.url), "администратор увидит ваше имя рядом с ответом")
+
+    def test_question_count_pluralisation(self):
+        from apps.feedback.public_views import _plural
+
+        self.assertEqual([_plural(n, "вопрос", "вопроса", "вопросов") for n in (1, 2, 5, 11, 21, 22)],
+                         ["вопрос", "вопроса", "вопросов", "вопросов", "вопрос", "вопроса"])
+
+    def test_character_counter_only_when_admin_set_a_limit(self):
+        page = self.client.get(self.url)
+        self.assertContains(page, "0 / 50")  # q_text has max_length=50
+        builder.update_question(self.q_text, {"text": "Без лимита", "question_type": QT.TEXT})
+        self.assertNotContains(self.client.get(self.url), "data-counter-for")
+
+    def test_success_screen_by_audience_uses_backend_message(self):
+        self.set(confirmation_message="Спасибо от академии!")
+        page = self.client.get(self.done_url)
+        self.assertContains(page, "Спасибо за отзыв!")
+        self.assertContains(page, "Спасибо от академии!")
+        self.assertContains(page, "улучшить обучение вашего ребёнка")
+        self.set(audience=Survey.Audience.STUDENT)
+        page = self.client.get(self.done_url)
+        self.assertContains(page, "Твоё мнение важно для нас")
+        self.assertNotContains(page, "ребёнка")
+
+    def test_already_answered_uses_student_wording(self):
+        self.set(audience=Survey.Audience.STUDENT)
+        from django.http import HttpResponse
+
+        from apps.feedback.public import mark_submitted
+
+        cookie_carrier = HttpResponse()  # the signed "already answered" cookie
+        mark_submitted(cookie_carrier, self.survey)
+        self.client.cookies.update(cookie_carrier.cookies)
+        self.assertContains(self.client.get(self.url), "Ты уже ответил(а)")
