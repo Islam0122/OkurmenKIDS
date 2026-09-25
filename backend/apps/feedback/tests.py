@@ -673,3 +673,124 @@ class AdminPageTests(FeedbackTestBase):
         )
         self.assertEqual(res["Location"], reverse("admin:feedback_survey_responses", args=[self.survey.pk]))
         self.assertFalse(SurveyResponse.objects.exists())
+
+
+class PublicPageCsrfTests(FeedbackTestBase):
+    """Regression tests for the production 403 "Origin checking failed - null
+    does not match any trusted origins" on the public survey form.
+
+    Root cause: the public template shipped `<meta name="referrer"
+    content="no-referrer">`, which makes browsers send `Origin: null` (and no
+    Referer) with the page's own form POST. These tests run over HTTPS with
+    the headers a real browser sends, and CSRF checks enforced, like Railway.
+    """
+
+    HOST = "https://testserver"
+
+    def setUp(self):
+        super().setUp()
+        self.publish()
+        self.url = reverse("feedback_public", args=[self.survey.public_token])
+        self.client = Client(enforce_csrf_checks=True)
+
+    def form_data(self, token):
+        return {
+            "csrfmiddlewaretoken": token,
+            "visibility": "anonymous",
+            f"q_{self.q_text.id}": "Всё отлично",
+            f"q_{self.q_single.id}": str(self.opt(self.q_single, 0)),
+        }
+
+    def load_form(self):
+        page = self.client.get(self.url, secure=True)
+        self.assertEqual(page.status_code, 200)
+        return page, str(page.context["csrf_token"])
+
+    def browser_post(self, data, **headers):
+        """A same-origin form POST as a browser sends it under our
+        same-origin referrer policy."""
+        headers.setdefault("HTTP_ORIGIN", self.HOST)
+        headers.setdefault("HTTP_REFERER", self.HOST + self.url)
+        return self.client.post(self.url, data, secure=True, **headers)
+
+    def test_get_page_sets_csrf_cookie_and_keeps_origin_sending_referrer_policy(self):
+        page, _ = self.load_form()
+        self.assertIn("csrftoken", page.cookies)
+        self.assertContains(page, 'name="csrfmiddlewaretoken"')
+        self.assertContains(page, '<meta name="referrer" content="same-origin">')
+        self.assertNotContains(page, "no-referrer")
+        self.assertEqual(page["Referrer-Policy"], "same-origin")
+
+    def test_valid_anonymous_submission_over_https_is_accepted(self):
+        _, token = self.load_form()
+        res = self.browser_post(self.form_data(token))
+        self.assertRedirects(res, reverse("feedback_public_done", args=[self.survey.public_token]), fetch_redirect_response=False)
+        response = self.survey.responses.get()
+        self.assertEqual((response.visibility, response.respondent_name), ("anonymous", ""))
+
+    def test_origin_null_is_rejected_and_logged_without_secrets(self):
+        _, token = self.load_form()
+        with self.assertLogs("okurmenkids.security.csrf", "WARNING") as logs:
+            res = self.browser_post(self.form_data(token), HTTP_ORIGIN="null", HTTP_REFERER="")
+        self.assertEqual(res.status_code, 403)
+        self.assertContains(res, "Откройте ссылку на опрос заново", status_code=403)
+        line = logs.output[0]
+        self.assertIn("Origin checking failed - null does not match any trusted origins", line)
+        self.assertIn("method=POST path=/feedback/s/<token>/ origin=null", line)
+        self.assertIn("csrf_cookie=True", line)
+        self.assertNotIn(self.survey.public_token, line)
+        self.assertNotIn(token, line)
+        self.assertNotIn(self.client.cookies["csrftoken"].value, line)
+        self.assertFalse(self.survey.responses.exists())
+
+    def test_https_post_without_origin_or_referer_is_rejected(self):
+        # What a no-referrer page produces in browsers that omit Origin.
+        _, token = self.load_form()
+        res = self.client.post(self.url, self.form_data(token), secure=True)
+        self.assertEqual(res.status_code, 403)
+        self.assertFalse(self.survey.responses.exists())
+
+    def test_missing_csrf_token_is_rejected(self):
+        self.load_form()
+        data = self.form_data("")
+        del data["csrfmiddlewaretoken"]
+        with self.assertLogs("okurmenkids.security.csrf", "WARNING") as logs:
+            res = self.browser_post(data)
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("CSRF token missing", logs.output[0])
+        self.assertFalse(self.survey.responses.exists())
+
+    def test_invalid_csrf_token_is_rejected(self):
+        self.load_form()
+        with self.assertLogs("okurmenkids.security.csrf", "WARNING") as logs:
+            res = self.browser_post(self.form_data("x" * 64))
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("CSRF token from POST incorrect", logs.output[0])
+        self.assertFalse(self.survey.responses.exists())
+
+    def test_cross_site_origin_is_rejected(self):
+        _, token = self.load_form()
+        res = self.browser_post(self.form_data(token), HTTP_ORIGIN="https://evil.example",
+                                HTTP_REFERER="https://evil.example/page")
+        self.assertEqual(res.status_code, 403)
+        self.assertFalse(self.survey.responses.exists())
+
+    @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+    def test_html_submissions_are_rate_limited(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        Survey.objects.filter(pk=self.survey.pk).update(allow_multiple_submissions=True)
+        _, token = self.load_form()
+        codes = [self.browser_post(self.form_data(token)).status_code for _ in range(31)]
+        self.assertEqual(codes[:30], [302] * 30)
+        self.assertEqual(codes[30], 429)
+        self.assertEqual(self.survey.responses.count(), 30)
+        cache.clear()
+
+    def test_other_paths_keep_djangos_default_csrf_page(self):
+        with self.assertLogs("okurmenkids.security.csrf", "WARNING"):
+            res = self.client.post(reverse("admin:login"), {"username": "a", "password": "b"}, secure=True,
+                                   HTTP_ORIGIN=self.HOST)
+        self.assertEqual(res.status_code, 403)
+        self.assertNotContains(res, "Откройте ссылку на опрос заново", status_code=403)

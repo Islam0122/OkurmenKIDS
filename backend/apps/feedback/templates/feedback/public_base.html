@@ -4,7 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="robots" content="noindex, nofollow">
-    <meta name="referrer" content="no-referrer">
+    {% comment %}
+        Must stay "same-origin", never "no-referrer": under no-referrer the
+        browser sends `Origin: null` (and no Referer) with this page's own form
+        POST, which Django's CSRF check rightly rejects with a 403.
+        "same-origin" still keeps the secret link token out of every request to
+        another site — it's only ever sent back to this server.
+    {% endcomment %}
+    <meta name="referrer" content="same-origin">
     <meta name="theme-color" content="#2F8F5B">
     <title>{% block title %}{{ survey.title }}{% endblock %} · OkurmenKIDS</title>
     <link rel="icon" href="{% static 'images/logo.png' %}">

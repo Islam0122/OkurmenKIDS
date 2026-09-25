@@ -13,6 +13,6 @@
     </div>
     <h1 class="fb-message-title">{{ title }}</h1>
     <p class="fb-message-text">{{ message|linebreaksbr }}</p>
-    <p class="fb-muted">{{ survey.title }}</p>
+    {% if survey %}<p class="fb-muted">{{ survey.title }}</p>{% endif %}
 </section>
 {% endblock %}
