@@ -1,0 +1,43 @@
+{% extends "admin/base_site.html" %}
+
+{% block content_title %}{{ title }}{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}">Стипендиальные периоды</a></li>
+  <li class="breadcrumb-item">Сформировать</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-form-container">
+  <div class="ok-card">
+    <div class="ok-card-header"><i class="bi bi-lightning-charge"></i><span>Новый стипендиальный рейтинг</span></div>
+    <div class="ok-card-body">
+      <p class="ok-help-text">
+        Оценивается завершённый месячный период, закончившийся накануне даты начисления:
+        для цикла 1-го числа — весь прошлый календарный месяц, для цикла 15-го — с 15-го прошлого месяца по 14-е текущего.
+        Повторное формирование того же периода не создаёт дубликатов.
+      </p>
+      {% if form.non_field_errors %}<div class="ok-alert ok-alert-danger">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <form method="post">{% csrf_token %}
+        <div class="ok-grid-2">
+          {% for field in form %}
+            <div class="ok-field-group">
+              <label class="ok-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}<div class="ok-help-text">{{ field.help_text }}</div>{% endif %}
+              {% for error in field.errors %}<div class="ok-error-text">{{ error }}</div>{% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+        <div class="ok-form-actions">
+          <a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}" class="ok-btn-secondary">Отмена</a>
+          <button type="submit" class="ok-btn-primary">Сформировать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

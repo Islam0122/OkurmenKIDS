@@ -239,6 +239,7 @@ class StudentSerializer(_RequestAwareSerializer):
             "parent_phone",
             "group",
             "group_name",
+            "enrollment_date",
             "is_active",
             "created_at",
             "updated_at",

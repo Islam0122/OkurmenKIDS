@@ -431,7 +431,7 @@ class StudentAdmin(admin.ModelAdmin):
     change_list_template = "admin/academy/student/change_list.html"
 
     fieldsets = (
-        ("Основная информация", {"fields": ("first_name", "last_name", "group", "is_active", "status")}),
+        ("Основная информация", {"fields": ("first_name", "last_name", "group", "enrollment_date", "is_active", "status")}),
         ("Контакты", {"fields": ("phone", "parent_phone")}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )

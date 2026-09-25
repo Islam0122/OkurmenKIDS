@@ -1,0 +1,44 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  {% if can_generate %}
+    <li><a href="{% url 'admin:scholarships_generate' %}" class="btn btn-success"><i class="bi bi-lightning-charge"></i> Сформировать рейтинг</a></li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}
+
+{% block content %}
+<div class="ok-card mb-3">
+  <div class="ok-card-header"><i class="bi bi-award"></i><span>Стипендиальная программа</span></div>
+  <div class="ok-card-body">
+    {% if active_configuration %}
+      <p class="mb-2">
+        <strong>{{ active_configuration.name }}</strong> —
+        {{ active_configuration.get_award_mode_display }},
+        до <strong>{{ active_configuration.max_recipients }}</strong> получателей за цикл,
+        веса: посещаемость {{ active_configuration.attendance_weight }},
+        ДЗ {{ active_configuration.homework_weight }},
+        оценка тренера {{ active_configuration.feedback_weight }}.
+        {% if active_configuration.auto_approve %}Рейтинг утверждается автоматически.{% else %}Рейтинг требует утверждения администратором.{% endif %}
+        <a href="{% url 'admin:scholarships_scholarshipconfiguration_change' active_configuration.pk %}">Изменить настройки</a>
+      </p>
+    {% else %}
+      <div class="ok-alert ok-alert-warning">Нет активной конфигурации стипендий — формирование рейтинга невозможно.
+        <a href="{% url 'admin:scholarships_scholarshipconfiguration_changelist' %}">Настроить</a></div>
+    {% endif %}
+    {% if awards_by_month %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Месяц начисления</th><th>Стипендий</th><th>Из них утверждено</th></tr></thead>
+          <tbody>
+          {% for row in awards_by_month %}
+            <tr><td>{{ row.month|stringformat:"02d" }}.{{ row.year }}</td><td>{{ row.total }}</td><td>{{ row.approved }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{{ block.super }}
+{% endblock %}

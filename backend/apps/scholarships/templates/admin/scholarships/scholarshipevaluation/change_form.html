@@ -1,0 +1,29 @@
+{% extends "admin/change_form.html" %}
+
+{% block after_related_objects %}
+  {{ block.super }}
+  {% if history %}
+  <div class="ok-card mt-3">
+    <div class="ok-card-header"><i class="bi bi-clock-history"></i><span>История оценок студента</span></div>
+    <div class="ok-card-body">
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Период</th><th>Цикл</th><th>Итог</th><th>Место</th><th>Допуск</th><th>Стипендия</th></tr></thead>
+          <tbody>
+          {% for ev in history %}
+            <tr{% if ev.pk == original.pk %} class="table-active"{% endif %}>
+              <td><a href="{% url 'admin:scholarships_scholarshipevaluation_change' ev.pk %}">{{ ev.period.period_start|date:"d.m.Y" }} – {{ ev.period.period_end|date:"d.m.Y" }}</a></td>
+              <td>{{ ev.period.award_day }}-е</td>
+              <td>{{ ev.overall_score|default:"—" }}</td>
+              <td>{{ ev.rank|default:"—" }}</td>
+              <td>{{ ev.get_eligibility_status_display }}</td>
+              <td>{% if ev.award %}{{ ev.award.get_status_display }}{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}

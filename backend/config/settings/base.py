@@ -50,6 +50,7 @@ LOCAL_APPS = [
     "apps.data_io.apps.DataIoConfig",
     "apps.news.apps.NewsConfig",
     "apps.feedback.apps.FeedbackConfig",
+    "apps.scholarships.apps.ScholarshipsConfig",
 
 ]
 
@@ -252,6 +253,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "Analytics", "description": "KPI and performance analytics"},
         {"name": "News", "description": "Teacher-facing news and announcements"},
         {"name": "Feedback", "description": "Feedback surveys for parents and students"},
+        {"name": "Scholarships", "description": "Monthly scholarship evaluation, ranking and trainer feedback"},
     ],
 }
 
@@ -282,7 +284,7 @@ JAZZMIN_SETTINGS = {
     # grouped the way an academy admin actually thinks about them
     # (teaching staff/students, organisation, day-to-day control, system)
     # rather than by Django app label.
-    "hide_apps": ["users", "academy", "data_io", "news", "feedback"],
+    "hide_apps": ["users", "academy", "data_io", "news", "feedback", "scholarships"],
 
     "custom_links": {
         "центр помощи": [
@@ -323,6 +325,15 @@ JAZZMIN_SETTINGS = {
         "обратная связь": [
             {"name": "Опросы", "model": "feedback.survey", "icon": "bi bi-ui-checks"},
             {"name": "Аналитика отзывов", "url": "admin:feedback_analytics", "icon": "bi bi-bar-chart-line"},
+        ],
+
+        "стипендии": [
+            {"name": "Рейтинги и периоды", "model": "scholarships.scholarshipperiod", "icon": "bi bi-trophy"},
+            {"name": "Оценки студентов", "model": "scholarships.scholarshipevaluation", "icon": "bi bi-person-lines-fill"},
+            {"name": "Стипендии", "model": "scholarships.scholarshipaward", "icon": "bi bi-award"},
+            {"name": "Оценки тренеров", "model": "scholarships.trainerfeedback", "icon": "bi bi-chat-square-text"},
+            {"name": "Настройки стипендии", "model": "scholarships.scholarshipconfiguration", "icon": "bi bi-sliders"},
+            {"name": "Журнал запусков", "model": "scholarships.scholarshiprunlog", "icon": "bi bi-journal-text"},
         ],
 
         "ресурсы": [
@@ -382,6 +393,13 @@ JAZZMIN_SETTINGS = {
         "news.news": "bi bi-megaphone",
         "обратная связь": "bi bi-chat-heart",
         "feedback.survey": "bi bi-ui-checks",
+        "стипендии": "bi bi-award",
+        "scholarships.scholarshipperiod": "bi bi-trophy",
+        "scholarships.scholarshipevaluation": "bi bi-person-lines-fill",
+        "scholarships.scholarshipaward": "bi bi-award",
+        "scholarships.trainerfeedback": "bi bi-chat-square-text",
+        "scholarships.scholarshipconfiguration": "bi bi-sliders",
+        "scholarships.scholarshiprunlog": "bi bi-journal-text",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

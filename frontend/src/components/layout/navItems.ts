@@ -1,4 +1,5 @@
 import {
+  Award,
   BarChart3,
   BookOpen,
   CalendarDays,
@@ -45,6 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/kpi', label: 'KPI', icon: BarChart3 },
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },
   { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin'] },
+  { to: '/app/scholarships', label: 'Стипендии', icon: Award },
   { to: '/app/news', label: 'Новости', icon: Megaphone },
 ]
 

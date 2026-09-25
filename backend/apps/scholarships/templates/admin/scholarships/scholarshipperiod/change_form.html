@@ -1,0 +1,96 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .ok-sch-stats { display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem; }
+    .ok-sch-stat { flex:1 1 140px; background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,0.65rem); padding:0.75rem 1rem; }
+    .ok-sch-stat .label { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--ok-text-muted,#89938D); }
+    .ok-sch-stat .value { font-size:1.4rem; font-weight:700; color:var(--ok-text,#202622); }
+    .ok-sch-actions { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
+    .ok-sch-actions form { margin:0; }
+    .ok-sch-table td, .ok-sch-table th { vertical-align:middle; }
+    .ok-sch-table th, .ok-sch-table td.ok-sch-num { white-space:nowrap; }
+    .ok-sch-table tr.ok-sch-winner { background:rgba(47,143,91,0.07); }
+    .ok-sch-subjects { font-size:0.8rem; color:var(--ok-text-secondary,#68736C); white-space:normal; min-width:160px; max-width:240px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+{% if original %}
+<div class="ok-card mb-3">
+  <div class="ok-card-header"><i class="bi bi-trophy"></i><span>Рейтинг за {{ original.period_start|date:"d.m.Y" }} – {{ original.period_end|date:"d.m.Y" }} · начисление {{ original.evaluation_date|date:"d.m.Y" }}</span></div>
+  <div class="ok-card-body">
+    <div class="ok-sch-actions">
+      {% if original.is_draft %}
+        {% if can_generate %}
+          <form method="post" action="{% url 'admin:scholarships_recalculate' original.pk %}">{% csrf_token %}
+            <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-arrow-repeat"></i> Пересчитать</button>
+          </form>
+        {% endif %}
+        {% if can_approve %}
+          <form method="post" action="{% url 'admin:scholarships_approve' original.pk %}" onsubmit="return confirm('Утвердить {{ analytics.total_recipients }} стипендий? После утверждения пересчёт невозможен.');">{% csrf_token %}
+            <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-check2-circle"></i> Утвердить стипендии</button>
+          </form>
+        {% endif %}
+      {% else %}
+        <span class="ok-badge ok-badge-success align-self-center">Утверждено {{ original.approved_at|date:"d.m.Y H:i" }}{% if original.approved_by %} · {{ original.approved_by }}{% endif %}</span>
+      {% endif %}
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'admin:scholarships_export' original.pk %}"><i class="bi bi-download"></i> Экспорт CSV</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'admin:scholarships_trainerfeedback_changelist' %}?period__id__exact={{ original.pk }}"><i class="bi bi-chat-square-text"></i> Оценки тренеров</a>
+    </div>
+
+    <div class="ok-sch-stats">
+      <div class="ok-sch-stat"><div class="label">Оценено</div><div class="value">{{ analytics.total_evaluated }}</div></div>
+      <div class="ok-sch-stat"><div class="label">Допущено</div><div class="value">{{ analytics.total_eligible }}</div></div>
+      <div class="ok-sch-stat"><div class="label">Стипендий</div><div class="value">{{ analytics.total_recipients }} / {{ analytics.max_recipients }}</div></div>
+      <div class="ok-sch-stat"><div class="label">Неполные данные</div><div class="value">{{ analytics.incomplete_data }}</div></div>
+      <div class="ok-sch-stat"><div class="label">Средний балл</div><div class="value">{{ analytics.averages.overall|default:"—" }}</div></div>
+      <div class="ok-sch-stat"><div class="label">Посещаемость / ДЗ / Тренер</div><div class="value" style="font-size:1rem">{{ analytics.averages.attendance|default:"—" }} / {{ analytics.averages.homework|default:"—" }} / {{ analytics.averages.feedback|default:"—" }}</div></div>
+    </div>
+
+    {% if analytics.subjects %}
+      <h6 class="mt-2">Успеваемость по предметам (допущенные и недопущенные студенты)</h6>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm ok-sch-table">
+          <thead><tr><th>Предмет</th><th>Студентов</th><th>Балл</th><th>Посещаемость</th><th>ДЗ</th><th>Тренер</th></tr></thead>
+          <tbody>
+            {% for s in analytics.subjects %}
+              <tr><td>{{ s.subject_name }}</td><td>{{ s.students }}</td><td>{{ s.subject_score|default:"—" }}</td><td>{{ s.attendance|default:"—" }}</td><td>{{ s.homework|default:"—" }}</td><td>{{ s.feedback|default:"—" }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+    <h6>Рейтинг</h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover ok-sch-table">
+        <thead>
+          <tr><th>#</th><th>Студент</th><th>Группа</th><th>Итог</th><th>Посещ.</th><th>ДЗ</th><th>Тренер</th><th>Предметы</th><th>Допуск</th><th>Стипендия</th></tr>
+        </thead>
+        <tbody>
+        {% for ev in ranking %}
+          <tr class="{% if ev.award %}ok-sch-winner{% endif %}">
+            <td>{{ ev.rank|default:"—" }}</td>
+            <td><a href="{% url 'admin:scholarships_scholarshipevaluation_change' ev.pk %}">{{ ev.student_name }}</a>{% if ev.data_warnings %} <i class="bi bi-exclamation-triangle text-warning" title="{{ ev.data_warnings|join:' | ' }}"></i>{% endif %}</td>
+            <td>{{ ev.group_name|default:"—" }}</td>
+            <td class="ok-sch-num"><strong>{{ ev.overall_score|default:"—" }}</strong></td>
+            <td class="ok-sch-num">{{ ev.attendance_score|default:"—" }}</td>
+            <td class="ok-sch-num">{{ ev.homework_score|default:"—" }}</td>
+            <td class="ok-sch-num">{{ ev.feedback_score|default:"—" }}</td>
+            <td class="ok-sch-subjects">{% for s in ev.subject_scores.all %}{{ s.subject_name }}: {{ s.subject_score|default:"—" }}{% if not forloop.last %}; {% endif %}{% endfor %}</td>
+            <td><span class="ok-badge ok-badge-{% if ev.eligibility_status == 'eligible' %}success{% elif ev.eligibility_status == 'incomplete_data' %}warning{% elif ev.eligibility_status == 'inactive' %}danger{% elif ev.eligibility_status == 'not_full_period' %}info{% else %}muted{% endif %}" title="{{ ev.ineligibility_reason }}">{{ ev.get_eligibility_status_display }}</span></td>
+            <td>{% if ev.award %}{{ ev.award.get_status_display }}{% else %}—{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="10" class="text-center text-muted">Нет студентов для оценки за этот период.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{{ block.super }}
+{% endblock %}
