@@ -167,7 +167,7 @@ class _PeriodData:
     unmarked_by_student: dict  # student_id -> list[dict] (lesson rows)
     homework_by_lesson: dict  # lesson_id -> list[homework_id]
     results: dict  # (homework_id, student_id) -> status
-    feedback: dict  # (student_id, subject_id) -> list[Decimal]
+    feedback: dict  # student_id -> {subject_id: list[Decimal]}
     events_by_student: dict  # student_id -> list[StudentStatusEvent]
 
 
@@ -241,9 +241,9 @@ def _load_period_data(period: ScholarshipPeriod, students: list[Student]) -> _Pe
         ).values_list("homework_id", "student_id", "status")
     }
 
-    feedback: dict[tuple, list[Decimal]] = defaultdict(list)
+    feedback: dict[int, dict] = defaultdict(lambda: defaultdict(list))
     for item in TrainerFeedback.objects.filter(period=period, student_id__in=student_ids).order_by("id"):
-        feedback[(item.student_id, item.subject_id)].append(item.score)
+        feedback[item.student_id][item.subject_id].append(item.score)
 
     events_by_student: dict[int, list] = defaultdict(list)
     for event in StudentStatusEvent.objects.filter(
@@ -304,8 +304,8 @@ def _collect_subjects(student: Student, data: _PeriodData, settings: ScoringSett
     for row in data.unmarked_by_student.get(student.id, []):
         bucket(row["subject_id"], row["subject__name"]).lessons_unmarked += 1
 
-    for (student_id, subject_id), scores in data.feedback.items():
-        if student_id == student.id and subject_id in subjects:
+    for subject_id, scores in data.feedback.get(student.id, {}).items():
+        if subject_id in subjects:
             subjects[subject_id].feedback_scores.extend(scores)
 
     return subjects
