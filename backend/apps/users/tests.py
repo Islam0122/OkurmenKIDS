@@ -1023,3 +1023,106 @@ class ProductionMediaSettingsTests(TestCase):
         from config.settings import base
 
         self.assertIs(base.SERVE_MEDIA, False)
+
+
+class TeacherChangelistFormatHtmlRegressionTests(TestCase):
+    """Regression guard for `IndexError: Replacement index 2 out of range for
+    positional args tuple` on /admin/users/teacher/ — raised by
+    django.utils.html.format_html when a format string has more `{}`
+    placeholders than arguments. Two layers:
+
+    * every render path of the Teacher changelist (all list_display columns
+      with photo / no photo / no subjects / many subjects, pagination,
+      search, every filter, sorting, popup mode, an admin action) is
+      exercised with data full of literal braces, with exceptions re-raised
+      instead of turned into a 500 page;
+    * a static check over every format_html() call in the project, so a
+      placeholder/argument mismatch fails the suite even on a code path no
+      test happens to render.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="fmt_admin", email="fmt_admin@okurmen.kg", password="Str0ngPassw0rd!", first_name="Admin"
+        )
+        subjects = [Subject.objects.get_or_create(name=name)[0] for name in ("Python", "English", "Soft {Skills} {2}")]
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4)).save(buffer, "PNG")
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        with override_settings(MEDIA_ROOT=self.media_root):
+            for i in range(25):  # > list_per_page (20) → pagination renders
+                user = User.objects.create_user(
+                    username=f"fmt_t{i}", email=f"fmt_t{i}@okurmen.kg", password="x",
+                    first_name="" if i == 0 else f"Имя {{{i}}}", last_name="{0}{1}{2}" if i == 1 else "",
+                    role=User.Role.TEACHER, is_verified=i % 2 == 0,
+                )
+                teacher = Teacher.objects.create(user=user, is_active=i % 3 != 0, phone="{2}")
+                if i == 2:
+                    teacher.image = SimpleUploadedFile("a.png", buffer.getvalue(), content_type="image/png")
+                    teacher.save()
+                teacher.subjects.set(subjects[: i % 4])
+        self.subject = subjects[2]
+        self.web = DjangoClient(raise_request_exception=True)
+        self.web.force_login(self.admin)
+
+    def test_every_changelist_render_path(self):
+        url = reverse("admin:users_teacher_changelist")
+        with override_settings(MEDIA_ROOT=self.media_root):
+            for query in (
+                "", "?p=2", "?q=fmt_t1", "?is_active__exact=0", "?user__is_verified__exact=1",
+                f"?subjects__id__exact={self.subject.pk}", "?o=1", "?o=-3", "?_popup=1", "?all=",
+            ):
+                with self.subTest(query=query):
+                    response = self.web.get(url + query)
+                    self.assertEqual(response.status_code, 200)
+            response = self.web.get(url)
+            self.assertContains(response, "ok-chip")           # subjects_badges
+            self.assertContains(response, "ok-badge-dot")      # verified/active badges
+            self.assertContains(response, "bi-calendar-week")  # schedule_link
+            self.assertContains(response, "bi-key")            # change_password_link
+            self.assertContains(response, "action-select")     # action checkboxes
+            self.assertContains(response, "Имя {24}")          # braces in data render literally
+
+            ids = list(Teacher.objects.values_list("pk", flat=True)[:3])
+            response = self.web.post(url, {"action": "verify_accounts", "_selected_action": ids}, follow=True)
+            self.assertEqual(response.status_code, 200)
+
+    def test_every_format_html_call_has_matching_arguments(self):
+        import ast
+        import string
+
+        apps_dir = Path(__file__).resolve().parent.parent
+        problems = []
+        for path in apps_dir.rglob("*.py"):
+            if "migrations" in path.parts:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), str(path))):
+                func = getattr(node, "func", None)
+                if not isinstance(node, ast.Call) or getattr(func, "id", getattr(func, "attr", None)) != "format_html":
+                    continue
+                where = f"{path.relative_to(apps_dir)}:{node.lineno}"
+                if not node.args and not node.keywords:
+                    problems.append(f"{where}: no format string")
+                    continue
+                fmt, args = node.args[0], node.args[1:]
+                if any(isinstance(a, ast.Starred) for a in args) or node.keywords:
+                    continue  # *args / **kwargs — checked at runtime by the render tests
+                if not (isinstance(fmt, ast.Constant) and isinstance(fmt.value, str)):
+                    problems.append(f"{where}: format string is not a literal ({ast.unparse(fmt)[:60]})")
+                    continue
+                try:
+                    fields = [f for _, f, _, _ in string.Formatter().parse(fmt.value) if f is not None]
+                except ValueError as exc:  # e.g. an unescaped CSS/JS brace
+                    problems.append(f"{where}: invalid format string ({exc})")
+                    continue
+                positional = [f.split(".")[0].split("[")[0].split("!")[0].split(":")[0] for f in fields]
+                needed = max(
+                    [sum(1 for f in positional if f == "")]
+                    + [int(f) + 1 for f in positional if f.isdigit()]
+                )
+                if not args:
+                    problems.append(f"{where}: no arguments (format_html raises TypeError; use mark_safe/escape)")
+                elif needed != len(args):
+                    problems.append(f"{where}: {needed} placeholder(s) but {len(args)} argument(s)")
+        self.assertEqual(problems, [])
