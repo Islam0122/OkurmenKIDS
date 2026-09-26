@@ -1,44 +1,95 @@
 {% extends "admin/change_list.html" %}
+{% load admin_list scholarship_tags %}
 
-{% block object-tools-items %}
-  {% if can_generate %}
-    <li><a href="{% url 'admin:scholarships_generate' %}" class="btn btn-success"><i class="bi bi-lightning-charge"></i> Сформировать рейтинг</a></li>
-  {% endif %}
-  {{ block.super }}
+{% block content_title %}Стипендиальные периоды{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item active">Стипендиальные периоды</li>
+</ol>
 {% endblock %}
 
 {% block content %}
-<div class="ok-card mb-3">
-  <div class="ok-card-header"><i class="bi bi-award"></i><span>Стипендиальная программа</span></div>
-  <div class="ok-card-body">
-    {% if active_configuration %}
-      <p class="mb-2">
-        <strong>{{ active_configuration.name }}</strong> —
-        {{ active_configuration.get_award_mode_display }},
-        до <strong>{{ active_configuration.max_recipients }}</strong> получателей за цикл,
-        веса: посещаемость {{ active_configuration.attendance_weight }},
-        ДЗ {{ active_configuration.homework_weight }},
-        оценка тренера {{ active_configuration.feedback_weight }}.
-        {% if active_configuration.auto_approve %}Рейтинг утверждается автоматически.{% else %}Рейтинг требует утверждения администратором.{% endif %}
-        <a href="{% url 'admin:scholarships_scholarshipconfiguration_change' active_configuration.pk %}">Изменить настройки</a>
-      </p>
-    {% else %}
-      <div class="ok-alert ok-alert-warning">Нет активной конфигурации стипендий — формирование рейтинга невозможно.
-        <a href="{% url 'admin:scholarships_scholarshipconfiguration_changelist' %}">Настроить</a></div>
-    {% endif %}
-    {% if awards_by_month %}
-      <div class="table-responsive">
-        <table class="table table-sm mb-0">
-          <thead><tr><th>Месяц начисления</th><th>Стипендий</th><th>Из них утверждено</th></tr></thead>
-          <tbody>
-          {% for row in awards_by_month %}
-            <tr><td>{{ row.month|stringformat:"02d" }}.{{ row.year }}</td><td>{{ row.total }}</td><td>{{ row.approved }}</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
+{% with current=cl.params.status__exact|default:"" %}
+<div class="col-12">
+  <div class="ok-sch-toolbar">
+    <nav class="ok-sch-chips" aria-label="Фильтр периодов">
+      <a href="?" class="ok-sch-chip{% if not current %} is-active{% endif %}">Все</a>
+      <a href="?status__exact=draft" class="ok-sch-chip{% if current == 'draft' %} is-active{% endif %}"><span class="ok-sch-dot is-progress"></span>В процессе</a>
+      <a href="?status__exact=approved" class="ok-sch-chip{% if current == 'approved' %} is-active{% endif %}"><span class="ok-sch-dot is-done"></span>Завершённые</a>
+    </nav>
+    {% if can_generate %}
+      <a href="{% url 'admin:scholarships_create' %}" class="ok-btn-primary"><i class="bi bi-plus-lg"></i> Создать период</a>
     {% endif %}
   </div>
+
+  {% if not active_configuration %}
+    <div class="ok-alert ok-alert-warning"><i class="bi bi-exclamation-triangle"></i>
+      <div>Нет активных настроек стипендии — создать или рассчитать период нельзя.
+        <a href="{% url 'admin:scholarships_scholarshipconfiguration_changelist' %}">Открыть настройки</a></div>
+    </div>
+  {% endif %}
+
+  {% if cl.result_list %}
+    <div class="ok-sch-grid">
+      {% for period in cl.result_list %}
+        {% url 'admin:scholarships_scholarshipperiod_change' period.pk as open_url %}
+        <article class="ok-sch-card">
+          <header class="ok-sch-card-head">
+            <span class="ok-sch-card-icon"><i class="bi bi-trophy"></i></span>
+            <div class="ok-sch-card-title">
+              <a href="{{ open_url }}" class="ok-sch-card-name">{{ period.title }}</a>
+              <div class="ok-sch-card-dates">{{ period.period_start|date:"d.m.Y" }} — {{ period.period_end|date:"d.m.Y" }}</div>
+            </div>
+            {% include "admin/scholarships/scholarshipperiod/_menu.html" with period=period %}
+          </header>
+
+          <div class="ok-sch-card-status">
+            {% include "admin/scholarships/scholarshipperiod/_status.html" with period=period %}
+          </div>
+
+          <dl class="ok-sch-card-stats">
+            <div class="ok-sch-card-stat is-main">
+              <dt><i class="bi bi-mortarboard"></i> Студенты</dt>
+              <dd>
+                {% if period.is_calculated %}{{ period.recipients_count|default:0 }}{% else %}—{% endif %}
+                <span class="ok-sch-of">/ {% if period.is_unlimited %}∞{% else %}{{ period.max_recipients }}{% endif %}</span>
+              </dd>
+            </div>
+            <div class="ok-sch-card-stat">
+              <dt><i class="bi bi-bar-chart-line"></i> Средний балл</dt>
+              <dd>{{ period.average_score|score }}</dd>
+            </div>
+            <div class="ok-sch-card-stat">
+              <dt><i class="bi bi-cash-coin"></i> Сумма</dt>
+              <dd>{{ period.total_amount|som }}</dd>
+            </div>
+          </dl>
+
+          {% if period.is_unlimited %}
+            <div class="ok-sch-limit-note">Без ограничения · оценено {{ period.evaluations_count|default:0 }}</div>
+          {% else %}
+            <div class="ok-sch-progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ period.max_recipients }}" aria-valuenow="{{ period.recipients_count|default:0 }}" aria-label="Заполнение лимита">
+              <span style="width: {{ period.recipients_count|percent_of:period.max_recipients }}%"></span>
+            </div>
+          {% endif %}
+
+          <footer class="ok-sch-card-foot">
+            <a href="{{ open_url }}" class="ok-btn-secondary ok-sch-open">Открыть <i class="bi bi-arrow-right"></i></a>
+          </footer>
+        </article>
+      {% endfor %}
+    </div>
+    <div class="row mt-2">{% pagination cl %}</div>
+  {% else %}
+    <div class="ok-sch-empty">
+      <span class="ok-sch-card-icon"><i class="bi bi-trophy"></i></span>
+      <h5>Периодов пока нет</h5>
+      <p>Создайте первый стипендиальный период — укажите даты и лимит стипендиатов.</p>
+      {% if can_generate %}<a href="{% url 'admin:scholarships_create' %}" class="ok-btn-primary"><i class="bi bi-plus-lg"></i> Создать период</a>{% endif %}
+    </div>
+  {% endif %}
 </div>
-{{ block.super }}
+{% endwith %}
 {% endblock %}

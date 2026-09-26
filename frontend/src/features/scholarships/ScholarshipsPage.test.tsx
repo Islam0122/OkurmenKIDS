@@ -29,6 +29,7 @@ import { scholarshipsApi } from '@/api/scholarships'
 
 const PERIOD = {
   id: 7,
+  title: 'Стипендия',
   award_day: 1,
   period_start: '2026-09-01',
   period_end: '2026-09-30',

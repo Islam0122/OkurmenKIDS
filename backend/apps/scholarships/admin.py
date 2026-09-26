@@ -6,9 +6,11 @@ from django.db.models import F
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.http import urlencode
 
 from .models import (
     AWARD_DAY_CHOICES,
@@ -24,7 +26,16 @@ from .models import (
 from .permissions import can_manage
 from .services import analytics
 from .services.feedback import validate_feedback_target
-from .services.generation import approve_period, generate_period, recalculate_period
+from .services.generation import (
+    add_award,
+    approve_period,
+    create_period,
+    generate_period,
+    limit_label,
+    recalculate_period,
+    remove_award,
+    update_period,
+)
 from .services.periods import latest_award_date
 
 _STATUS_COLORS = {
@@ -77,7 +88,7 @@ class ScholarshipConfigurationAdmin(admin.ModelAdmin):
 
 
 # ---------------------------------------------------------------------------
-# Periods — the scholarship dashboard
+# Periods — the main container: cards list, dashboard, report
 # ---------------------------------------------------------------------------
 
 class GeneratePeriodForm(forms.Form):
@@ -89,36 +100,100 @@ class GeneratePeriodForm(forms.Form):
     )
 
 
+LIMIT_PRESETS = (10, 20, 30)
+
+
+class PeriodForm(forms.Form):
+    """Create / edit a scholarship period. The same rules are enforced again
+    by services.generation (create_period / update_period) — this form only
+    gives the Admin the errors next to the right field."""
+
+    title = forms.CharField(
+        label="Название", max_length=150, initial="Стипендия",
+        widget=forms.TextInput(attrs={"placeholder": "Стипендия"}),
+    )
+    period_start = forms.DateField(label="Дата начала", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    period_end = forms.DateField(label="Дата окончания", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    limit_enabled = forms.BooleanField(label="Ограничить количество студентов", required=False, initial=True)
+    max_recipients = forms.IntegerField(
+        label="Максимальное количество", required=False, min_value=1, max_value=1000,
+        error_messages={"min_value": "Количество студентов должно быть больше 0."},
+        widget=forms.NumberInput(attrs={"min": 1, "max": 1000, "inputmode": "numeric"}),
+    )
+
+    def __init__(self, *args, period: ScholarshipPeriod | None = None, awarded: int = 0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.period = period
+        self.awarded = awarded
+        self.dates_locked = period is not None and (not period.is_manual or not period.is_draft or period.is_calculated)
+        self.limit_locked = period is not None and not period.is_draft
+        for name in ("period_start", "period_end"):
+            self.fields[name].disabled = self.dates_locked
+        for name in ("limit_enabled", "max_recipients"):
+            self.fields[name].disabled = self.limit_locked
+        if awarded:
+            self.fields["max_recipients"].widget.attrs["min"] = awarded
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("period_start"), cleaned.get("period_end")
+        if start and end and end < start:
+            self.add_error("period_end", "Дата окончания не может быть раньше даты начала.")
+        if cleaned.get("limit_enabled"):
+            limit = cleaned.get("max_recipients")
+            if limit is None and "max_recipients" not in self.errors:
+                self.add_error("max_recipients", "Укажите количество стипендиатов (больше 0) или снимите ограничение.")
+            elif limit is not None and limit < self.awarded:
+                self.add_error(
+                    "max_recipients",
+                    f"Сейчас стипендию получают {self.awarded} студентов — лимит не может быть меньше. "
+                    "Сначала уберите лишних студентов.",
+                )
+            cleaned["limit"] = limit
+        else:
+            cleaned["limit"] = None
+        return cleaned
+
+
+# Ranking filter chips on the period dashboard: ?show=<key>.
+_ROW_FILTERS = {
+    "all": "Все",
+    "awarded": "Стипендиаты",
+    "eligible": "Допущены",
+    "not_eligible": "Не допущены",
+}
+
+
+def _row_state(evaluation) -> tuple[str, str, str]:
+    """(label, badge colour, hint) of one student's outcome in a period."""
+    award = getattr(evaluation, "award", None)
+    if award is not None:
+        if award.status == ScholarshipAward.Status.APPROVED:
+            return "Получил", "success", ""
+        return "Назначена", "success", "Ожидает утверждения периода"
+    if evaluation.is_eligible:
+        return "Без стипендии", "muted", "Допущен, но не вошёл в список стипендиатов"
+    return (
+        evaluation.get_eligibility_status_display(),
+        _STATUS_COLORS.get(evaluation.eligibility_status, "muted"),
+        evaluation.ineligibility_reason,
+    )
+
+
 @admin.register(ScholarshipPeriod)
 class ScholarshipPeriodAdmin(admin.ModelAdmin):
     list_display = (
         "period_label", "award_day", "evaluation_date", "status_badge", "max_recipients",
         "evaluated_count", "eligible_count", "recipients_count", "last_calculated_at",
     )
-    list_filter = ("status", "award_day")
-    date_hierarchy = "period_start"
-    change_form_template = "admin/scholarships/scholarshipperiod/change_form.html"
+    list_filter = ("status",)
+    list_per_page = 24
     change_list_template = "admin/scholarships/scholarshipperiod/change_list.html"
     actions = ["recalculate_action", "approve_action", "export_action"]
-    fieldsets = (
-        ("Период", {"fields": ("award_day", "period_start", "period_end", "evaluation_date", "status")}),
-        ("Параметры расчёта (снимок настроек)", {"fields": (
-            "max_recipients", "attendance_weight", "homework_weight", "feedback_weight", "subject_aggregation",
-            "late_homework_credit", "min_overall_score", "min_marked_lessons", "require_complete_feedback",
-            "award_amount", "configuration",
-        )}),
-        ("История", {"fields": ("generated_by", "last_calculated_at", "approved_by", "approved_at", "created_at")}),
-    )
-
-    def get_readonly_fields(self, request, obj=None):
-        fields = [f for fieldset in self.fieldsets for f in fieldset[1]["fields"]]
-        if obj is not None and obj.is_draft and can_manage(request.user, "generate"):
-            # The one knob an Admin may adjust before approving; takes
-            # effect on the next recalculation.
-            fields.remove("max_recipients")
-        return fields
 
     def has_add_permission(self, request):
+        # Periods are created through the dedicated "Создать период" form
+        # (create_view), which goes through services.generation.
         return False
 
     def has_delete_permission(self, request, obj=None):
@@ -127,17 +202,11 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
     # -- list columns ------------------------------------------------------
 
     def get_queryset(self, request):
-        from django.db.models import Count, Q
-
-        return super().get_queryset(request).annotate(
-            _evaluated=Count("evaluations", distinct=True),
-            _eligible=Count("evaluations", filter=Q(evaluations__eligibility_status=EligibilityStatus.ELIGIBLE), distinct=True),
-            _recipients=Count("awards", distinct=True),
-        )
+        return analytics.annotate_periods(super().get_queryset(request))
 
     @admin.display(description="Период", ordering="period_start")
     def period_label(self, obj):
-        return f"{obj.period_start:%d.%m.%Y} – {obj.period_end:%d.%m.%Y}"
+        return f"{obj.title} {obj.date_range}"
 
     @admin.display(description="Статус", ordering="status")
     def status_badge(self, obj):
@@ -146,45 +215,92 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
 
     @admin.display(description="Оценено")
     def evaluated_count(self, obj):
-        return obj._evaluated
+        return obj.evaluations_count or 0
 
     @admin.display(description="Допущено")
     def eligible_count(self, obj):
-        return obj._eligible
+        return obj.eligible_count or 0
 
     @admin.display(description="Стипендий")
     def recipients_count(self, obj):
-        return f"{obj._recipients} / {obj.max_recipients}"
+        return f"{obj.recipients_count or 0} / {limit_label(obj)}"
 
-    # -- dashboard ---------------------------------------------------------
-
-    def change_view(self, request, object_id, form_url="", extra_context=None):
-        period = get_object_or_404(ScholarshipPeriod, pk=object_id)
-        extra_context = extra_context or {}
-        extra_context.update(
-            analytics=analytics.period_analytics(period),
-            ranking=list(analytics.ranking_queryset(period)),
-            can_generate=can_manage(request.user, "generate"),
-            can_approve=can_manage(request.user, "approve"),
-            status_colors=_STATUS_COLORS,
-        )
-        return super().change_view(request, object_id, form_url, extra_context)
+    # -- list: period cards --------------------------------------------------
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
         extra_context.update(
+            title="Стипендиальные периоды",
             can_generate=can_manage(request.user, "generate"),
-            awards_by_month=analytics.awards_by_month(),
+            can_approve=can_manage(request.user, "approve"),
             active_configuration=ScholarshipConfiguration.objects.active(),
+            today=timezone.localdate(),
         )
         return super().changelist_view(request, extra_context)
 
+    # -- dashboard -----------------------------------------------------------
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        period = get_object_or_404(self.get_queryset(request), pk=object_id)
+        if not self.has_view_permission(request, period):
+            raise PermissionDenied
+
+        ranking = analytics.ranking_queryset(period)
+        row_filter = request.GET.get("show", "all")
+        if row_filter == "awarded":
+            ranking = ranking.filter(award__isnull=False)
+        elif row_filter == "eligible":
+            ranking = ranking.filter(eligibility_status=EligibilityStatus.ELIGIBLE)
+        elif row_filter == "not_eligible":
+            ranking = ranking.exclude(eligibility_status=EligibilityStatus.ELIGIBLE)
+        else:
+            row_filter = "all"
+
+        stats = analytics.period_analytics(period)
+        can_generate = can_manage(request.user, "generate")
+        rows = [(ev, *_row_state(ev)) for ev in ranking]
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": f"{period.title} · {period.date_range}",
+            "period": period,
+            "original": period,
+            "analytics": stats,
+            "rows": rows,
+            "row_filter": row_filter,
+            "row_filters": _ROW_FILTERS,
+            "can_generate": can_generate,
+            "can_approve": can_manage(request.user, "approve"),
+            "can_delete": self.has_delete_permission(request, period),
+            "can_edit_awards": can_generate and period.is_draft and period.is_calculated,
+            "today": timezone.localdate(),
+            "has_ended": period.evaluation_date <= timezone.localdate(),
+            "feedback_count": period.feedback.count(),
+            "run_logs": period.run_logs.select_related("triggered_by")[:30],
+            "limit_message": (
+                f"Лимит стипендиатов достигнут: {stats['total_recipients']} из {period.max_recipients}."
+                if stats["limit_reached"] else ""
+            ),
+        }
+        return TemplateResponse(request, "admin/scholarships/scholarshipperiod/dashboard.html", context)
+
+    # -- urls ----------------------------------------------------------------
+
     def get_urls(self):
+        view = self.admin_site.admin_view
         custom = [
-            path("generate/", self.admin_site.admin_view(self.generate_view), name="scholarships_generate"),
-            path("<int:period_id>/recalculate/", self.admin_site.admin_view(self.recalculate_view), name="scholarships_recalculate"),
-            path("<int:period_id>/approve/", self.admin_site.admin_view(self.approve_view), name="scholarships_approve"),
-            path("<int:period_id>/export/", self.admin_site.admin_view(self.export_view), name="scholarships_export"),
+            path("create/", view(self.create_view), name="scholarships_create"),
+            path("report/", view(self.report_view), name="scholarships_report"),
+            path("generate/", view(self.generate_view), name="scholarships_generate"),
+            path("<int:period_id>/edit/", view(self.edit_view), name="scholarships_edit"),
+            path("<int:period_id>/recalculate/", view(self.recalculate_view), name="scholarships_recalculate"),
+            path("<int:period_id>/approve/", view(self.approve_view), name="scholarships_approve"),
+            path("<int:period_id>/export/", view(self.export_view), name="scholarships_export"),
+            path("<int:period_id>/awards/add/", view(self.award_add_view), name="scholarships_award_add"),
+            path(
+                "<int:period_id>/awards/<int:award_id>/remove/", view(self.award_remove_view),
+                name="scholarships_award_remove",
+            ),
         ]
         return custom + super().get_urls()
 
@@ -192,8 +308,117 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
         if not can_manage(request.user, action_name):
             raise PermissionDenied
 
-    def _period_url(self, period):
-        return reverse("admin:scholarships_scholarshipperiod_change", args=[period.pk])
+    def _require_view(self, request) -> None:
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+
+    def _period_url(self, period, **query):
+        url = reverse("admin:scholarships_scholarshipperiod_change", args=[period.pk])
+        return f"{url}?{urlencode(query)}" if query else url
+
+    def _page(self, request, template, title, **context):
+        return render(request, template, {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": title,
+            **context,
+        })
+
+    # -- create / edit -------------------------------------------------------
+
+    def create_view(self, request):
+        self._require(request, "generate")
+        config = ScholarshipConfiguration.objects.active()
+        if request.method == "POST":
+            form = PeriodForm(request.POST)
+            if form.is_valid():
+                data = form.cleaned_data
+                try:
+                    period = create_period(
+                        title=data["title"], period_start=data["period_start"], period_end=data["period_end"],
+                        max_recipients=data["limit"], user=request.user,
+                    )
+                except ValidationError as exc:
+                    form.add_error(None, exc.messages)
+                else:
+                    messages.success(request, f"Период создан: {period.title} {period.date_range}.")
+                    return HttpResponseRedirect(self._period_url(period))
+        else:
+            form = PeriodForm(initial={
+                "title": "Стипендия",
+                "limit_enabled": True,
+                "max_recipients": config.max_recipients if config else 20,
+            })
+        return self._page(
+            request, "admin/scholarships/scholarshipperiod/period_form.html", "Создать стипендиальный период",
+            form=form, limit_presets=LIMIT_PRESETS, active_configuration=config, is_create=True,
+        )
+
+    def edit_view(self, request, period_id):
+        self._require(request, "generate")
+        period = get_object_or_404(ScholarshipPeriod, pk=period_id)
+        awarded = period.awards.count()
+        if request.method == "POST":
+            form = PeriodForm(request.POST, period=period, awarded=awarded, initial=self._form_initial(period))
+            if form.is_valid():
+                data = form.cleaned_data
+                changes = {"title": data["title"]}
+                if not form.dates_locked:
+                    changes.update(period_start=data["period_start"], period_end=data["period_end"])
+                if not form.limit_locked:
+                    changes["max_recipients"] = data["limit"]
+                try:
+                    update_period(period, user=request.user, **changes)
+                except ValidationError as exc:
+                    form.add_error(None, exc.messages)
+                else:
+                    messages.success(request, "Период сохранён.")
+                    return HttpResponseRedirect(self._period_url(period))
+        else:
+            form = PeriodForm(period=period, awarded=awarded, initial=self._form_initial(period))
+        return self._page(
+            request, "admin/scholarships/scholarshipperiod/period_form.html", "Изменить стипендиальный период",
+            form=form, period=period, awarded=awarded, limit_presets=LIMIT_PRESETS, is_create=False,
+        )
+
+    @staticmethod
+    def _form_initial(period):
+        return {
+            "title": period.title,
+            "period_start": period.period_start,
+            "period_end": period.period_end,
+            "limit_enabled": not period.is_unlimited,
+            "max_recipients": period.max_recipients,
+        }
+
+    # -- report --------------------------------------------------------------
+
+    def report_view(self, request):
+        self._require_view(request)
+        periods = list(analytics.annotate_periods(ScholarshipPeriod.objects.all()))
+        for period in periods:
+            period.not_awarded = (period.eligible_count or 0) - (period.recipients_count or 0)
+        selected = None
+        period_id = request.GET.get("period")
+        if period_id and period_id.isdigit():
+            selected = next((p for p in periods if p.pk == int(period_id)), None)
+        if selected is None and periods:
+            # The newest period that has numbers; a running one is still empty.
+            selected = next((p for p in periods if p.is_calculated), periods[0])
+        totals = {
+            "periods": len(periods),
+            "recipients": sum(p.recipients_count or 0 for p in periods),
+            "approved": sum(p.approved_count or 0 for p in periods),
+            "amount": sum((p.total_amount or 0) for p in periods) if any(p.total_amount for p in periods) else None,
+        }
+        return self._page(
+            request, "admin/scholarships/scholarshipperiod/report.html", "Отчёты по стипендиям",
+            periods=periods, selected=selected,
+            report=analytics.period_analytics(selected) if selected else None,
+            totals=totals, awards_by_month=analytics.awards_by_month(), today=timezone.localdate(),
+        )
+
+    # -- cycle generation (automatic schedule, run by hand) -------------------
 
     def generate_view(self, request):
         self._require(request, "generate")
@@ -216,55 +441,76 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
                     return HttpResponseRedirect(self._period_url(result.period))
         else:
             form = GeneratePeriodForm(initial={"award_day": 1, "award_date": latest_award_date(1, today)})
-        context = {
-            **self.admin_site.each_context(request),
-            "title": "Сформировать стипендиальный рейтинг",
-            "form": form,
-            "opts": self.model._meta,
-            "today": today,
-        }
-        return render(request, "admin/scholarships/scholarshipperiod/generate.html", context)
+        return self._page(
+            request, "admin/scholarships/scholarshipperiod/generate.html", "Сформировать ежемесячный цикл",
+            form=form, today=today,
+        )
+
+    # -- POST actions --------------------------------------------------------
 
     def _post_only(self, request, period_id):
         if request.method != "POST":
             return None, HttpResponseRedirect(reverse("admin:scholarships_scholarshipperiod_change", args=[period_id]))
         return get_object_or_404(ScholarshipPeriod, pk=period_id), None
 
+    def _run(self, request, success_message, func, *args, **kwargs):
+        try:
+            func(*args, user=request.user, **kwargs)
+            messages.success(request, success_message)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+
+    def _back(self, request, period):
+        """Return to the dashboard, keeping its ranking filter."""
+        show = request.POST.get("show")
+        return HttpResponseRedirect(self._period_url(period, **({"show": show} if show in _ROW_FILTERS else {})))
+
     def recalculate_view(self, request, period_id):
         self._require(request, "generate")
         period, redirect = self._post_only(request, period_id)
         if redirect:
             return redirect
-        try:
-            recalculate_period(period, user=request.user)
-            messages.success(request, "Баллы пересчитаны.")
-        except ValidationError as exc:
-            messages.error(request, "; ".join(exc.messages))
-        return HttpResponseRedirect(self._period_url(period))
+        self._run(request, "Баллы рассчитаны.", recalculate_period, period)
+        return self._back(request, period)
 
     def approve_view(self, request, period_id):
         self._require(request, "approve")
         period, redirect = self._post_only(request, period_id)
         if redirect:
             return redirect
-        try:
-            approve_period(period, user=request.user)
-            messages.success(request, "Стипендии утверждены.")
-        except ValidationError as exc:
-            messages.error(request, "; ".join(exc.messages))
-        return HttpResponseRedirect(self._period_url(period))
+        self._run(request, "Стипендии утверждены.", approve_period, period)
+        return self._back(request, period)
+
+    def award_add_view(self, request, period_id):
+        self._require(request, "generate")
+        period, redirect = self._post_only(request, period_id)
+        if redirect:
+            return redirect
+        evaluation = get_object_or_404(ScholarshipEvaluation, pk=request.POST.get("evaluation") or 0, period=period)
+        self._run(request, f"{evaluation.student_name}: стипендия назначена.", add_award, period, evaluation)
+        return self._back(request, period)
+
+    def award_remove_view(self, request, period_id, award_id):
+        self._require(request, "generate")
+        period, redirect = self._post_only(request, period_id)
+        if redirect:
+            return redirect
+        award = get_object_or_404(ScholarshipAward.objects.select_related("evaluation"), pk=award_id, period=period)
+        self._run(request, f"{award.evaluation.student_name}: стипендия убрана.", remove_award, period, award)
+        return self._back(request, period)
 
     def export_view(self, request, period_id):
+        self._require_view(request)
         period = get_object_or_404(ScholarshipPeriod, pk=period_id)
         return self._csv_response(period)
 
     @staticmethod
     def _csv_response(period):
         response = HttpResponse(analytics.export_ranking_csv(period), content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="scholarship-{period.period_start}-{period.award_day}.csv"'
+        response["Content-Disposition"] = f'attachment; filename="scholarship-{period.period_start}-{period.period_end}.csv"'
         return response
 
-    # -- bulk actions --------------------------------------------------------
+    # -- bulk actions (Django changelist actions) ----------------------------
 
     @admin.action(description="Пересчитать баллы")
     def recalculate_action(self, request, queryset):

@@ -42,7 +42,7 @@ const ELIGIBILITY_TONES: Record<EligibilityStatus, BadgeTone> = {
 }
 
 function periodLabel(period: ScholarshipPeriod): string {
-  return `${formatDate(period.period_start)} – ${formatDate(period.period_end)} (цикл ${period.award_day}-го)`
+  return `${period.title || 'Стипендия'} · ${formatDate(period.period_start)} — ${formatDate(period.period_end)}`
 }
 
 function PeriodPicker({
@@ -165,9 +165,10 @@ function AdminRanking({ period }: { period: ScholarshipPeriod }) {
           <StatCard label="Оценено студентов" value={analytics.data.total_evaluated} icon={Users} />
           <StatCard label="Допущено" value={analytics.data.total_eligible} icon={CheckCircle2} />
           <StatCard
-            label="Стипендий"
-            value={`${analytics.data.total_recipients} / ${analytics.data.max_recipients}`}
+            label="Стипендиатов"
+            value={`${analytics.data.total_recipients} / ${analytics.data.max_recipients ?? '∞'}`}
             icon={Award}
+            hint={analytics.data.max_recipients === null ? 'Без ограничения' : undefined}
           />
           <StatCard
             label="Неполные данные"
@@ -289,7 +290,7 @@ export function ScholarshipsPage() {
         <EmptyState
           icon={Award}
           title="Периодов пока нет"
-          description="Стипендиальный период формируется автоматически после окончания месяца."
+          description="Периоды создаёт администратор в разделе «Стипендии» или они формируются автоматически после окончания месяца."
         />
       ) : null}
       {period ? (

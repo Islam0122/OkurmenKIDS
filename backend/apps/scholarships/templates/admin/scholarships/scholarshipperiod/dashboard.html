@@ -1,0 +1,221 @@
+{% extends "admin/base_site.html" %}
+{% load scholarship_tags %}
+
+{% block bodyclass %}{{ block.super }} app-scholarships model-scholarshipperiod change-form ok-sch-page{% endblock %}
+
+{% block content_title %}Стипендиальный период{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}">Стипендиальные периоды</a></li>
+  <li class="breadcrumb-item active">{{ period.date_range }}</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="col-12 ok-sch-dashboard">
+
+  {# ---- Header: title, dates, status, one primary action + ⋮ ---- #}
+  <section class="ok-sch-hero">
+    <span class="ok-sch-card-icon is-lg"><i class="bi bi-trophy"></i></span>
+    <div class="ok-sch-hero-text">
+      <h2 class="ok-sch-hero-title">{{ period.title }}</h2>
+      <div class="ok-sch-hero-dates">{{ period.period_start|date:"d.m.Y" }} — {{ period.period_end|date:"d.m.Y" }}</div>
+      <div class="ok-sch-hero-status">
+        {% include "admin/scholarships/scholarshipperiod/_status.html" with period=period %}
+      </div>
+    </div>
+    <div class="ok-sch-hero-actions">
+      {% if period.is_draft %}
+        {% if period.is_calculated and can_approve %}
+          <form method="post" action="{% url 'admin:scholarships_approve' period.pk %}"
+                onsubmit="return confirm('Утвердить {{ analytics.total_recipients }} стипендий? После утверждения период нельзя пересчитать или изменить.');">{% csrf_token %}
+            <button type="submit" class="ok-btn-primary"><i class="bi bi-check2-circle"></i> Утвердить стипендии</button>
+          </form>
+        {% elif not period.is_calculated and has_ended and can_generate %}
+          <form method="post" action="{% url 'admin:scholarships_recalculate' period.pk %}">{% csrf_token %}
+            <button type="submit" class="ok-btn-primary"><i class="bi bi-calculator"></i> Рассчитать</button>
+          </form>
+        {% endif %}
+      {% endif %}
+      {% include "admin/scholarships/scholarshipperiod/_menu.html" with period=period show=row_filter %}
+    </div>
+  </section>
+
+  {% if not period.is_calculated %}
+    <div class="ok-sch-note">
+      <i class="bi bi-hourglass-split"></i>
+      <div>
+        {% if has_ended %}
+          Период завершён, но ещё не рассчитан. Нажмите «Рассчитать» — система оценит студентов и составит список стипендиатов
+          {% if period.is_unlimited %}(без ограничения){% else %}(до {{ period.max_recipients }}){% endif %}.
+        {% else %}
+          Период идёт до {{ period.period_end|date:"d.m.Y" }}. Тренеры уже могут вносить оценки
+          (внесено: {{ feedback_count }}); рейтинг будет рассчитан после окончания периода.
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# ---- KPI: the four numbers that answer "who gets a scholarship?" ---- #}
+  <div class="ok-sch-kpis">
+    <div class="ok-sch-kpi">
+      <div class="ok-sch-kpi-label"><i class="bi bi-people"></i> Всего студентов</div>
+      <div class="ok-sch-kpi-value">{{ analytics.total_evaluated }}</div>
+      <div class="ok-sch-kpi-hint">допущено {{ analytics.total_eligible }}</div>
+    </div>
+    <div class="ok-sch-kpi is-accent">
+      <div class="ok-sch-kpi-label"><i class="bi bi-trophy"></i> Стипендиатов</div>
+      <div class="ok-sch-kpi-value">{{ analytics.total_recipients }}<span class="ok-sch-of"> / {% if period.is_unlimited %}∞{% else %}{{ period.max_recipients }}{% endif %}</span></div>
+      {% if period.is_unlimited %}
+        <div class="ok-sch-kpi-hint">без ограничения</div>
+      {% else %}
+        <div class="ok-sch-progress"><span style="width: {{ analytics.total_recipients|percent_of:period.max_recipients }}%"></span></div>
+      {% endif %}
+    </div>
+    <div class="ok-sch-kpi">
+      <div class="ok-sch-kpi-label"><i class="bi bi-bar-chart-line"></i> Средний балл</div>
+      <div class="ok-sch-kpi-value">{{ analytics.averages.overall|score }}</div>
+      <div class="ok-sch-kpi-hint">из 100, среди допущенных</div>
+    </div>
+    <div class="ok-sch-kpi">
+      <div class="ok-sch-kpi-label"><i class="bi bi-cash-coin"></i> Общая сумма</div>
+      <div class="ok-sch-kpi-value">{{ analytics.total_amount|som }}</div>
+      <div class="ok-sch-kpi-hint">{% if period.award_amount %}по {{ period.award_amount|som }}{% else %}сумма не задана{% endif %}</div>
+    </div>
+  </div>
+
+  {% if limit_message and can_edit_awards %}
+    <div class="ok-sch-note is-limit" role="status">
+      <i class="bi bi-lock"></i>
+      <div><strong>{{ limit_message }}</strong> Чтобы добавить ещё одного студента,
+        <a href="{% url 'admin:scholarships_edit' period.pk %}">увеличьте лимит</a> или уберите одного из списка.</div>
+    </div>
+  {% endif %}
+
+  {# ---- Tabs: students / subjects / trainer feedback / log ---- #}
+  <div class="ok-card ok-sch-panel">
+    <ul class="nav ok-sch-tabs" role="tablist">
+      <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sch-students" type="button" role="tab">Студенты <span class="ok-sch-count">{{ analytics.total_evaluated }}</span></button></li>
+      {% if analytics.subjects %}<li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sch-subjects" type="button" role="tab">Предметы</button></li>{% endif %}
+      <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sch-report" type="button" role="tab">Отчёт</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sch-log" type="button" role="tab">Журнал</button></li>
+      <li class="nav-item ms-auto"><a class="nav-link" href="{% url 'admin:scholarships_trainerfeedback_changelist' %}?period__id__exact={{ period.pk }}"><i class="bi bi-chat-square-text"></i> Оценки тренеров <span class="ok-sch-count">{{ feedback_count }}</span></a></li>
+    </ul>
+
+    <div class="tab-content">
+      {# Students #}
+      <div class="tab-pane fade show active" id="sch-students" role="tabpanel">
+        <nav class="ok-sch-chips is-inline" aria-label="Фильтр студентов">
+          {% for key, label in row_filters.items %}
+            <a href="?show={{ key }}" class="ok-sch-chip{% if row_filter == key %} is-active{% endif %}">{{ label }}</a>
+          {% endfor %}
+        </nav>
+        <div class="table-responsive">
+          <table class="table ok-sch-table">
+            <thead>
+              <tr>
+                <th class="ok-sch-num">№</th><th>Студент</th><th>Группа</th><th class="ok-sch-num">Средний балл</th>
+                <th class="text-center">Результат</th><th>Статус</th>{% if can_edit_awards %}<th class="text-end"></th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+            {% for ev, state, color, hint in rows %}
+              <tr class="{% if ev.award %}is-winner{% endif %}">
+                <td class="ok-sch-num ok-sch-rank">{{ ev.rank|default:"—" }}</td>
+                <td>
+                  <a href="{% url 'admin:scholarships_scholarshipevaluation_change' ev.pk %}" class="ok-sch-student">{{ ev.student_name }}</a>
+                  {% if ev.data_warnings %}<i class="bi bi-exclamation-triangle text-warning" title="{{ ev.data_warnings|join:' | ' }}"></i>{% endif %}
+                </td>
+                <td class="ok-sch-muted">{{ ev.group_name|default:"—" }}</td>
+                <td class="ok-sch-num" title="Посещаемость {{ ev.attendance_score|score }} · ДЗ {{ ev.homework_score|score }} · Тренер {{ ev.feedback_score|score }}"><strong>{{ ev.overall_score|score }}</strong></td>
+                <td class="text-center">{% if ev.award %}<span class="ok-sch-cup" title="Стипендия">🏆</span>{% else %}<span class="ok-sch-muted">—</span>{% endif %}</td>
+                <td><span class="ok-badge ok-badge-{{ color }}" {% if hint %}title="{{ hint }}"{% endif %}>{{ state }}</span></td>
+                {% if can_edit_awards %}
+                  <td class="text-end">
+                    {% if ev.award %}
+                      <form method="post" action="{% url 'admin:scholarships_award_remove' period.pk ev.award.pk %}" class="d-inline">{% csrf_token %}
+                        <input type="hidden" name="show" value="{{ row_filter }}">
+                        <button type="submit" class="ok-sch-row-btn is-remove"><i class="bi bi-dash-circle"></i> Убрать</button>
+                      </form>
+                    {% elif ev.is_eligible %}
+                      <form method="post" action="{% url 'admin:scholarships_award_add' period.pk %}" class="d-inline">{% csrf_token %}
+                        <input type="hidden" name="evaluation" value="{{ ev.pk }}">
+                        <input type="hidden" name="show" value="{{ row_filter }}">
+                        <button type="submit" class="ok-sch-row-btn is-add" {% if analytics.limit_reached %}disabled title="{{ limit_message }}"{% endif %}><i class="bi bi-plus-circle"></i> Назначить</button>
+                      </form>
+                    {% endif %}
+                  </td>
+                {% endif %}
+              </tr>
+            {% empty %}
+              <tr><td colspan="7" class="text-center ok-sch-muted py-4">
+                {% if period.is_calculated %}Нет студентов для этого фильтра.{% else %}Студенты появятся после расчёта периода.{% endif %}
+              </td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# Subjects #}
+      {% if analytics.subjects %}
+      <div class="tab-pane fade" id="sch-subjects" role="tabpanel">
+        <div class="table-responsive">
+          <table class="table ok-sch-table">
+            <thead><tr><th>Предмет</th><th class="ok-sch-num">Студентов</th><th class="ok-sch-num">Балл</th><th class="ok-sch-num">Посещаемость</th><th class="ok-sch-num">ДЗ</th><th class="ok-sch-num">Тренер</th></tr></thead>
+            <tbody>
+              {% for s in analytics.subjects %}
+                <tr><td>{{ s.subject_name }}</td><td class="ok-sch-num">{{ s.students }}</td><td class="ok-sch-num"><strong>{{ s.subject_score|score }}</strong></td><td class="ok-sch-num">{{ s.attendance|score }}</td><td class="ok-sch-num">{{ s.homework|score }}</td><td class="ok-sch-num">{{ s.feedback|score }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Report #}
+      <div class="tab-pane fade" id="sch-report" role="tabpanel">
+        {% include "admin/scholarships/scholarshipperiod/_report.html" with report=analytics period=period %}
+      </div>
+
+      {# Run log #}
+      <div class="tab-pane fade" id="sch-log" role="tabpanel">
+        <div class="table-responsive">
+          <table class="table ok-sch-table">
+            <thead><tr><th>Время</th><th>Действие</th><th>Результат</th><th>Сообщение</th><th>Пользователь</th></tr></thead>
+            <tbody>
+              {% for log in run_logs %}
+                <tr>
+                  <td class="ok-sch-muted text-nowrap">{{ log.created_at|date:"d.m.Y H:i" }}</td>
+                  <td>{{ log.get_action_display }}</td>
+                  <td><span class="ok-badge ok-badge-{% if log.result == 'success' %}success{% elif log.result == 'failed' %}danger{% else %}muted{% endif %}">{{ log.get_result_display }}</span></td>
+                  <td>{{ log.message }}</td>
+                  <td class="ok-sch-muted">{{ log.triggered_by|default:log.get_trigger_display }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="5" class="text-center ok-sch-muted py-4">Записей пока нет.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <details class="ok-sch-params">
+    <summary>Параметры расчёта</summary>
+    <dl>
+      <div><dt>Веса: посещаемость / ДЗ / тренер</dt><dd>{{ period.attendance_weight }} / {{ period.homework_weight }} / {{ period.feedback_weight }}</dd></div>
+      <div><dt>Агрегация предметов</dt><dd>{{ period.get_subject_aggregation_display }}</dd></div>
+      <div><dt>Минимальный балл</dt><dd>{{ period.min_overall_score }}</dd></div>
+      <div><dt>Минимум отмеченных занятий</dt><dd>{{ period.min_marked_lessons }}</dd></div>
+      <div><dt>Оценка тренера обязательна</dt><dd>{{ period.require_complete_feedback|yesno:"да,нет" }}</dd></div>
+      <div><dt>Тип периода</dt><dd>{% if period.is_manual %}создан вручную{% else %}ежемесячный цикл ({{ period.get_award_day_display }}){% endif %}</dd></div>
+      <div><dt>Последний расчёт</dt><dd>{{ period.last_calculated_at|date:"d.m.Y H:i"|default:"—" }}</dd></div>
+      {% if period.approved_at %}<div><dt>Утвердил</dt><dd>{{ period.approved_by|default:"—" }}, {{ period.approved_at|date:"d.m.Y H:i" }}</dd></div>{% endif %}
+    </dl>
+  </details>
+</div>
+{% endblock %}

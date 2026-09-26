@@ -1,0 +1,10 @@
+{% comment %}Period status pill. Needs `period` and `today`; `compact` hides the hint.{% endcomment %}
+{% if period.is_draft %}
+  <span class="ok-sch-status is-progress"><span class="ok-sch-dot is-progress"></span>В процессе</span>
+  {% if not compact %}<span class="ok-sch-status-hint">
+    {% if period.is_calculated %}ждёт утверждения{% elif period.evaluation_date > today %}идёт до {{ period.period_end|date:"d.m.Y" }}{% else %}готов к расчёту{% endif %}
+  </span>{% endif %}
+{% else %}
+  <span class="ok-sch-status is-done"><span class="ok-sch-dot is-done"></span>Завершён</span>
+  {% if period.approved_at and not compact %}<span class="ok-sch-status-hint">утверждён {{ period.approved_at|date:"d.m.Y" }}</span>{% endif %}
+{% endif %}

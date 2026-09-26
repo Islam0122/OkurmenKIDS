@@ -1,0 +1,104 @@
+{% extends "admin/base_site.html" %}
+{% load scholarship_tags %}
+
+{% block bodyclass %}{{ block.super }} app-scholarships ok-sch-page{% endblock %}
+
+{% block content_title %}Отчёты{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item active">Отчёты по стипендиям</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="col-12 ok-sch-dashboard">
+  {% if not periods %}
+    <div class="ok-sch-empty">
+      <span class="ok-sch-card-icon"><i class="bi bi-bar-chart-line"></i></span>
+      <h5>Отчётов пока нет</h5>
+      <p>Отчёт появится, когда будет создан первый стипендиальный период.</p>
+      <a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}" class="ok-btn-primary">К периодам</a>
+    </div>
+  {% else %}
+    <div class="ok-sch-kpis is-3">
+      <div class="ok-sch-kpi"><div class="ok-sch-kpi-label"><i class="bi bi-calendar3"></i> Периодов</div><div class="ok-sch-kpi-value">{{ totals.periods }}</div></div>
+      <div class="ok-sch-kpi is-accent"><div class="ok-sch-kpi-label"><i class="bi bi-trophy"></i> Стипендий назначено</div><div class="ok-sch-kpi-value">{{ totals.recipients }}</div><div class="ok-sch-kpi-hint">утверждено {{ totals.approved }}</div></div>
+      <div class="ok-sch-kpi"><div class="ok-sch-kpi-label"><i class="bi bi-cash-coin"></i> Общая сумма</div><div class="ok-sch-kpi-value">{{ totals.amount|som }}</div></div>
+    </div>
+
+    {% if selected %}
+    <div class="ok-card ok-sch-panel">
+      <div class="ok-sch-panel-head">
+        <span class="ok-sch-card-icon"><i class="bi bi-trophy"></i></span>
+        <div>
+          <div class="ok-sch-card-name">{{ selected.title }}</div>
+          <div class="ok-sch-card-dates">{{ selected.period_start|date:"d.m.Y" }} — {{ selected.period_end|date:"d.m.Y" }}</div>
+        </div>
+        <form method="get" class="ms-auto ok-sch-picker">
+          <label for="sch-period" class="visually-hidden">Период</label>
+          <select id="sch-period" name="period" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for p in periods %}<option value="{{ p.pk }}"{% if p.pk == selected.pk %} selected{% endif %}>{{ p.title }} · {{ p.date_range }}</option>{% endfor %}
+          </select>
+          <noscript><button type="submit" class="ok-btn-secondary">Показать</button></noscript>
+        </form>
+      </div>
+      <div class="ok-card-body">
+        {% include "admin/scholarships/scholarshipperiod/_report.html" with report=report period=selected %}
+        <div class="ok-sch-report-actions">
+          <a href="{% url 'admin:scholarships_scholarshipperiod_change' selected.pk %}" class="ok-btn-primary">Открыть период <i class="bi bi-arrow-right"></i></a>
+          {% if selected.is_calculated %}<a href="{% url 'admin:scholarships_export' selected.pk %}" class="ok-btn-secondary"><i class="bi bi-download"></i> Экспорт CSV</a>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="ok-card ok-sch-panel">
+      <div class="ok-card-header"><i class="bi bi-table"></i><span>Все периоды</span></div>
+      <div class="table-responsive">
+        <table class="table ok-sch-table mb-0">
+          <thead>
+            <tr>
+              <th>Период</th><th class="ok-sch-num">Всего студентов</th><th class="ok-sch-num">Допущены</th>
+              <th class="ok-sch-num">Стипендиатов</th><th class="ok-sch-num">Утверждено</th><th class="ok-sch-num">Не получили</th>
+              <th class="ok-sch-num">Средний балл</th><th class="ok-sch-num">Сумма</th><th>Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in periods %}
+              <tr{% if p.pk == selected.pk %} class="is-selected"{% endif %}>
+                <td><a href="?period={{ p.pk }}" class="ok-sch-student">{{ p.title }}</a><div class="ok-sch-muted small text-nowrap">{{ p.date_range }}</div></td>
+                <td class="ok-sch-num">{{ p.evaluations_count|default:0 }}</td>
+                <td class="ok-sch-num">{{ p.eligible_count|default:0 }}</td>
+                <td class="ok-sch-num"><strong>{{ p.recipients_count|default:0 }}</strong> / {% if p.is_unlimited %}∞{% else %}{{ p.max_recipients }}{% endif %}</td>
+                <td class="ok-sch-num">{{ p.approved_count|default:0 }}</td>
+                <td class="ok-sch-num">{{ p.not_awarded }}</td>
+                <td class="ok-sch-num">{{ p.average_score|score }}</td>
+                <td class="ok-sch-num text-nowrap">{{ p.total_amount|som }}</td>
+                <td class="text-nowrap">{% include "admin/scholarships/scholarshipperiod/_status.html" with period=p compact=True %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if awards_by_month %}
+    <div class="ok-card ok-sch-panel">
+      <div class="ok-card-header"><i class="bi bi-calendar-month"></i><span>Стипендии по месяцам начисления</span></div>
+      <div class="table-responsive">
+        <table class="table ok-sch-table mb-0">
+          <thead><tr><th>Месяц</th><th class="ok-sch-num">Стипендий</th><th class="ok-sch-num">Утверждено</th></tr></thead>
+          <tbody>
+            {% for row in awards_by_month %}
+              <tr><td>{{ row.month|stringformat:"02d" }}.{{ row.year }}</td><td class="ok-sch-num">{{ row.total }}</td><td class="ok-sch-num">{{ row.approved }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

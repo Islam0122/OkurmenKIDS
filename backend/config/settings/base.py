@@ -327,13 +327,26 @@ JAZZMIN_SETTINGS = {
             {"name": "Аналитика отзывов", "url": "admin:feedback_analytics", "icon": "bi bi-bar-chart-line"},
         ],
 
+        # The period is the one container: student evaluations, trainer
+        # feedback and the run log are reached from inside a period
+        # (its dashboard tabs), not as separate sidebar sections.
         "стипендии": [
-            {"name": "Рейтинги и периоды", "model": "scholarships.scholarshipperiod", "icon": "bi bi-trophy"},
-            {"name": "Оценки студентов", "model": "scholarships.scholarshipevaluation", "icon": "bi bi-person-lines-fill"},
+            {"name": "Стипендиальные периоды", "model": "scholarships.scholarshipperiod", "icon": "bi bi-trophy"},
+            {
+                "name": "Отчёты",
+                "url": "admin:scholarships_report",
+                "icon": "bi bi-bar-chart-line",
+                "permissions": ["scholarships.view_scholarshipperiod"],
+            },
             {"name": "Стипендии", "model": "scholarships.scholarshipaward", "icon": "bi bi-award"},
-            {"name": "Оценки тренеров", "model": "scholarships.trainerfeedback", "icon": "bi bi-chat-square-text"},
-            {"name": "Настройки стипендии", "model": "scholarships.scholarshipconfiguration", "icon": "bi bi-sliders"},
-            {"name": "Журнал запусков", "model": "scholarships.scholarshiprunlog", "icon": "bi bi-journal-text"},
+            {
+                # A "url" link (not "model") so the short label is used —
+                # Jazzmin labels model links with their verbose_name.
+                "name": "Настройки",
+                "url": "admin:scholarships_scholarshipconfiguration_changelist",
+                "icon": "bi bi-sliders",
+                "permissions": ["scholarships.view_scholarshipconfiguration"],
+            },
         ],
 
         "ресурсы": [

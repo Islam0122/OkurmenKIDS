@@ -15,7 +15,9 @@ export type AwardStatus = 'pending' | 'approved'
 /** What a Teacher sees of a period (`TeacherPeriodSerializer`). */
 export interface ScholarshipPeriodBrief {
   id: number
-  award_day: number
+  title: string
+  /** `null` — a period created by hand with arbitrary dates (not a 1st/15th cycle). */
+  award_day: number | null
   period_start: string
   period_end: string
   evaluation_date: string
@@ -24,7 +26,13 @@ export interface ScholarshipPeriodBrief {
 
 /** Admin view (`ScholarshipPeriodSerializer`). */
 export interface ScholarshipPeriod extends ScholarshipPeriodBrief {
-  max_recipients?: number
+  /** `null` — без ограничения. */
+  max_recipients?: number | null
+  is_unlimited?: boolean
+  is_manual?: boolean
+  approved_count?: number | null
+  average_score?: string | null
+  total_amount?: string | null
   attendance_weight?: string
   homework_weight?: string
   feedback_weight?: string
@@ -59,7 +67,13 @@ export interface ScholarshipAnalytics {
   total_evaluated: number
   total_eligible: number
   total_recipients: number
-  max_recipients: number
+  total_approved?: number
+  not_awarded?: number
+  /** `null` — без ограничения. */
+  max_recipients: number | null
+  is_unlimited?: boolean
+  limit_reached?: boolean
+  total_amount?: string | null
   incomplete_data: number
   averages: { overall: string | null; attendance: string | null; homework: string | null; feedback: string | null }
 }
