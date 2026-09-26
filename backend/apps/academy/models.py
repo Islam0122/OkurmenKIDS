@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 from ..users.models import Subject, Teacher, User
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
@@ -240,6 +241,20 @@ class Student(models.Model):
         verbose_name="Статус обучения",
         help_text="Управляется действиями «Деактивировать» / «Приостановить» / "
         "«Завершить обучение» / «Продолжить обучение» / «Активировать» — не редактируется напрямую.",
+    )
+
+    # The date the student actually started learning at the academy —
+    # distinct from `created_at` (when the record was typed in). Scholarship
+    # eligibility (apps.scholarships) keys off this: a student only ever
+    # competes for a period they were enrolled for from its first day.
+    # Nullable because it genuinely can be unknown; the scholarship service
+    # reports a missing value as incomplete data rather than guessing one.
+    enrollment_date = models.DateField(
+        null=True,
+        blank=True,
+        default=timezone.localdate,
+        verbose_name="Дата начала обучения",
+        help_text="Фактическая дата начала обучения. Используется для расчёта права на стипендию.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
