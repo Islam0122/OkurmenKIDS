@@ -6,13 +6,36 @@ import csv
 import io
 from collections import Counter
 
-from django.db.models import Avg, Count, F, Q
+from django.db.models import Avg, Count, F, OuterRef, Q, Subquery, Sum
 
 from ..models import EligibilityStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod, ScholarshipSubjectScore
 
 
 def _avg(value):
     return round(value, 2) if value is not None else None
+
+
+def _subquery(queryset, aggregate):
+    """A correlated per-period aggregate — keeps the counts, average and sum
+    on one period row without the row multiplication of chained joins."""
+    return Subquery(
+        queryset.filter(period=OuterRef("pk")).order_by().values("period").annotate(v=aggregate).values("v")[:1]
+    )
+
+
+def annotate_periods(queryset):
+    """Every number a period card / report row shows, in one query."""
+    evaluations = ScholarshipEvaluation.objects.all()
+    eligible = evaluations.filter(eligibility_status=EligibilityStatus.ELIGIBLE)
+    awards = ScholarshipAward.objects.all()
+    return queryset.annotate(
+        evaluations_count=_subquery(evaluations, Count("id")),
+        eligible_count=_subquery(eligible, Count("id")),
+        recipients_count=_subquery(awards, Count("id")),
+        approved_count=_subquery(awards.filter(status=ScholarshipAward.Status.APPROVED), Count("id")),
+        average_score=_subquery(eligible, Avg("overall_score")),
+        total_amount=_subquery(awards, Sum("amount")),
+    )
 
 
 def period_analytics(period: ScholarshipPeriod) -> dict:
@@ -40,12 +63,26 @@ def period_analytics(period: ScholarshipPeriod) -> dict:
         .order_by("subject_name")
     )
 
+    total_evaluated = evaluations.count()
+    total_eligible = eligible.count()
+    total_recipients = period.awards.count()
     return {
         "period_id": period.id,
-        "total_evaluated": evaluations.count(),
-        "total_eligible": eligible.count(),
-        "total_recipients": period.awards.count(),
+        "title": period.title,
+        "period_start": period.period_start,
+        "period_end": period.period_end,
+        "is_calculated": period.is_calculated,
+        "total_evaluated": total_evaluated,
+        "total_eligible": total_eligible,
+        "total_recipients": total_recipients,
+        "total_approved": period.awards.filter(status=ScholarshipAward.Status.APPROVED).count(),
+        # Eligible, but outside the limit (or removed by the Admin).
+        "not_awarded": total_eligible - total_recipients,
+        "not_eligible": total_evaluated - total_eligible,
         "max_recipients": period.max_recipients,
+        "is_unlimited": period.is_unlimited,
+        "limit_reached": not period.has_room_for(total_recipients),
+        "total_amount": period.awards.aggregate(total=Sum("amount"))["total"],
         "incomplete_data": status_counts.get(EligibilityStatus.INCOMPLETE_DATA, 0),
         "with_data_warnings": evaluations.exclude(data_warnings=[]).count(),
         "ineligible": sum(n for key, n in status_counts.items() if key != EligibilityStatus.ELIGIBLE),

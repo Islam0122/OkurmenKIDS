@@ -19,17 +19,43 @@ class ScholarshipPeriodSerializer(serializers.ModelSerializer):
     evaluations_count = serializers.IntegerField(read_only=True, default=None)
     eligible_count = serializers.IntegerField(read_only=True, default=None)
     recipients_count = serializers.IntegerField(read_only=True, default=None)
+    approved_count = serializers.IntegerField(read_only=True, default=None)
+    average_score = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True, default=None)
+    total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, default=None)
+    is_manual = serializers.BooleanField(read_only=True)
+    is_unlimited = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = ScholarshipPeriod
         fields = [
-            "id", "award_day", "period_start", "period_end", "evaluation_date", "status",
-            "max_recipients", "attendance_weight", "homework_weight", "feedback_weight",
+            "id", "title", "award_day", "is_manual", "period_start", "period_end", "evaluation_date", "status",
+            "max_recipients", "is_unlimited", "attendance_weight", "homework_weight", "feedback_weight",
             "subject_aggregation", "late_homework_credit", "min_overall_score", "min_marked_lessons",
             "require_complete_feedback", "award_amount", "last_calculated_at", "approved_at",
-            "evaluations_count", "eligible_count", "recipients_count", "created_at", "updated_at",
+            "evaluations_count", "eligible_count", "recipients_count", "approved_count", "average_score",
+            "total_amount", "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+
+class PeriodWriteSerializer(serializers.Serializer):
+    """Create / PATCH a period. `max_recipients: null` = без ограничения."""
+
+    title = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    max_recipients = serializers.IntegerField(min_value=1, max_value=1000, allow_null=True)
+
+    def validate(self, attrs):
+        start = attrs.get("period_start", getattr(self.instance, "period_start", None))
+        end = attrs.get("period_end", getattr(self.instance, "period_end", None))
+        if start and end and end < start:
+            raise serializers.ValidationError({"period_end": ["Дата окончания не может быть раньше даты начала."]})
+        return attrs
+
+
+class AwardAddSerializer(serializers.Serializer):
+    evaluation = serializers.PrimaryKeyRelatedField(queryset=ScholarshipEvaluation.objects.all())
 
 
 class TeacherPeriodSerializer(serializers.ModelSerializer):
@@ -38,7 +64,7 @@ class TeacherPeriodSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ScholarshipPeriod
-        fields = ["id", "award_day", "period_start", "period_end", "evaluation_date", "status"]
+        fields = ["id", "title", "award_day", "period_start", "period_end", "evaluation_date", "status"]
         read_only_fields = fields
 
 

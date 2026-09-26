@@ -1,0 +1,169 @@
+{% extends "admin/base_site.html" %}
+
+{% block bodyclass %}{{ block.super }} app-scholarships ok-sch-page{% endblock %}
+
+{% block content_title %}{{ title }}{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}">Стипендиальные периоды</a></li>
+  {% if period %}<li class="breadcrumb-item"><a href="{% url 'admin:scholarships_scholarshipperiod_change' period.pk %}">{{ period.date_range }}</a></li>{% endif %}
+  <li class="breadcrumb-item active">{% if is_create %}Создать{% else %}Изменить{% endif %}</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="ok-form-container ok-sch-form">
+  <form method="post" novalidate id="sch-period-form" data-awarded="{{ awarded|default:0 }}">{% csrf_token %}
+    <div class="ok-card">
+      <div class="ok-card-header"><i class="bi bi-trophy"></i><span>{% if is_create %}Новый стипендиальный период{% else %}{{ period.title }} · {{ period.date_range }}{% endif %}</span></div>
+      <div class="ok-card-body">
+        {% if form.non_field_errors %}<div class="ok-alert ok-alert-danger">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+
+        <div class="ok-field-group mb-3">
+          <label class="ok-label" for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+          {{ form.title }}
+          {% for error in form.title.errors %}<div class="ok-error-text">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="ok-grid-2">
+          <div class="ok-field-group">
+            <label class="ok-label" for="{{ form.period_start.id_for_label }}">{{ form.period_start.label }}</label>
+            {{ form.period_start }}
+            {% for error in form.period_start.errors %}<div class="ok-error-text">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="ok-field-group">
+            <label class="ok-label" for="{{ form.period_end.id_for_label }}">{{ form.period_end.label }}</label>
+            {{ form.period_end }}
+            <div class="ok-error-text" id="sch-end-error" hidden>Дата окончания не может быть раньше даты начала.</div>
+            {% for error in form.period_end.errors %}<div class="ok-error-text">{{ error }}</div>{% endfor %}
+          </div>
+        </div>
+        {% if form.dates_locked %}
+          <div class="ok-help-text mt-2"><i class="bi bi-lock"></i>
+            {% if not period.is_manual %}Даты ежемесячного цикла задаются автоматически.{% else %}Даты можно менять только до расчёта периода.{% endif %}
+          </div>
+        {% elif is_create %}
+          <div class="ok-help-text mt-2">Если период уже закончился, рейтинг будет рассчитан сразу. Иначе — после окончания периода; тренеры смогут вносить оценки уже сейчас.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="ok-card">
+      <div class="ok-card-header"><i class="bi bi-people"></i><span>Количество стипендиатов</span></div>
+      <div class="ok-card-body">
+        <label class="ok-sch-switch">
+          {{ form.limit_enabled }}
+          <span class="ok-sch-switch-track" aria-hidden="true"></span>
+          <span>{{ form.limit_enabled.label }}</span>
+        </label>
+
+        <div class="ok-sch-presets" role="group" aria-label="Быстрый выбор лимита">
+          {% for n in limit_presets %}
+            <button type="button" class="ok-sch-chip" data-limit="{{ n }}" {% if form.limit_locked %}disabled{% endif %}>{{ n }} студентов</button>
+          {% endfor %}
+          <button type="button" class="ok-sch-chip" data-limit="" {% if form.limit_locked %}disabled{% endif %}>Без ограничения</button>
+        </div>
+
+        <div class="ok-field-group ok-sch-limit-field" id="sch-limit-field">
+          <label class="ok-label" for="{{ form.max_recipients.id_for_label }}">{{ form.max_recipients.label }}</label>
+          {{ form.max_recipients }}
+          <div class="ok-error-text" id="sch-limit-error" hidden></div>
+          {% for error in form.max_recipients.errors %}<div class="ok-error-text">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="ok-sch-unlimited" id="sch-unlimited" hidden><i class="bi bi-infinity"></i> Без ограничения — стипендию получат все допущенные студенты.</div>
+
+        {% if form.limit_locked %}
+          <div class="ok-help-text mt-2"><i class="bi bi-lock"></i> Период утверждён — лимит изменить нельзя.</div>
+        {% elif awarded %}
+          <div class="ok-help-text mt-2">Сейчас стипендию получают {{ awarded }} студентов — лимит не может быть меньше.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="ok-form-actions">
+      <a href="{% if period %}{% url 'admin:scholarships_scholarshipperiod_change' period.pk %}{% else %}{% url 'admin:scholarships_scholarshipperiod_changelist' %}{% endif %}" class="ok-btn-secondary">Отмена</a>
+      <button type="submit" class="ok-btn-primary" id="sch-submit">{% if is_create %}<i class="bi bi-plus-lg"></i> Создать период{% else %}Сохранить{% endif %}</button>
+    </div>
+    {% if is_create %}
+      <p class="ok-help-text text-center mt-3">
+        Ежемесячные циклы (1-го / 15-го числа) создаются автоматически по расписанию.
+        {% if active_configuration %}<a href="{% url 'admin:scholarships_generate' %}">Сформировать цикл вручную</a>{% endif %}
+      </p>
+    {% endif %}
+  </form>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById("sch-period-form");
+  if (!form) return;
+  var start = form.querySelector("[name=period_start]");
+  var end = form.querySelector("[name=period_end]");
+  var toggle = form.querySelector("[name=limit_enabled]");
+  var limit = form.querySelector("[name=max_recipients]");
+  var limitField = document.getElementById("sch-limit-field");
+  var unlimited = document.getElementById("sch-unlimited");
+  var endError = document.getElementById("sch-end-error");
+  var limitError = document.getElementById("sch-limit-error");
+  var submit = document.getElementById("sch-submit");
+  var presets = form.querySelectorAll(".ok-sch-presets [data-limit]");
+  var awarded = parseInt(form.dataset.awarded || "0", 10);
+
+  function limitMessage() {
+    if (!toggle.checked) return "";
+    var raw = (limit.value || "").trim();
+    if (raw === "") return "Укажите количество стипендиатов или выберите «Без ограничения».";
+    var value = Number(raw);
+    if (!Number.isInteger(value) || value <= 0) return "Количество студентов должно быть больше 0.";
+    if (value > 1000) return "Не больше 1000 студентов.";
+    if (value < awarded) return "Сейчас стипендию получают " + awarded + " студентов — сначала уберите лишних.";
+    return "";
+  }
+
+  function sync() {
+    var on = toggle.checked;
+    limitField.hidden = !on;
+    unlimited.hidden = on;
+    if (!toggle.disabled) limit.disabled = !on;
+
+    var badDates = start.value && end.value && end.value < start.value;
+    endError.hidden = !badDates;
+    end.classList.toggle("is-invalid", !!badDates);
+
+    var message = limitMessage();
+    limitError.textContent = message;
+    limitError.hidden = !message;
+    limit.classList.toggle("is-invalid", !!message);
+
+    presets.forEach(function (chip) {
+      var target = chip.dataset.limit;
+      chip.classList.toggle("is-active", target === "" ? !on : on && limit.value === target);
+    });
+    submit.disabled = !!badDates || !!message;
+  }
+
+  presets.forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      if (chip.dataset.limit === "") {
+        toggle.checked = false;
+      } else {
+        toggle.checked = true;
+        limit.value = chip.dataset.limit;
+      }
+      sync();
+    });
+  });
+  [start, end, toggle, limit].forEach(function (el) {
+    el.addEventListener("input", sync);
+    el.addEventListener("change", sync);
+  });
+  form.addEventListener("submit", function (event) {
+    sync();
+    if (submit.disabled) event.preventDefault();
+  });
+  sync();
+})();
+</script>
+{% endblock %}

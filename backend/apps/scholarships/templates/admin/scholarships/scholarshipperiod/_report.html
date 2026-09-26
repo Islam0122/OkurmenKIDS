@@ -1,0 +1,20 @@
+{% load scholarship_tags %}
+{% comment %}Period report — the numbers at a glance. Needs `report` (services.analytics.period_analytics) and `period`.{% endcomment %}
+<dl class="ok-sch-report">
+  <div><dt>Всего студентов</dt><dd>{{ report.total_evaluated }}</dd></div>
+  <div><dt>Участвуют в периоде <small>(допущены)</small></dt><dd>{{ report.total_eligible }}</dd></div>
+  <div><dt>Не допущены</dt><dd>{{ report.not_eligible }}</dd></div>
+  <div><dt>Лимит</dt><dd>{% if report.is_unlimited %}<span class="is-text">Без ограничения</span>{% else %}{{ report.max_recipients }}{% endif %}</dd></div>
+  <div class="is-accent"><dt>Выбрано стипендиатов</dt><dd>{{ report.total_recipients }}{% if not report.is_unlimited %} / {{ report.max_recipients }}{% endif %}</dd></div>
+  <div><dt>Получили стипендию <small>(утверждено)</small></dt><dd>{{ report.total_approved }}</dd></div>
+  <div><dt>Не получили <small>(допущены, без стипендии)</small></dt><dd>{{ report.not_awarded }}</dd></div>
+  <div><dt>Средний балл</dt><dd>{{ report.averages.overall|score }}</dd></div>
+  <div><dt>Общая сумма</dt><dd>{{ report.total_amount|som }}</dd></div>
+</dl>
+{% if report.by_status %}
+  <div class="ok-sch-breakdown">
+    {% for row in report.by_status %}{% if row.count %}
+      <span class="ok-sch-breakdown-item">{{ row.label }}: <strong>{{ row.count }}</strong></span>
+    {% endif %}{% endfor %}
+  </div>
+{% endif %}

@@ -1,0 +1,41 @@
+{% comment %}The ⋮ menu of a period: every secondary action lives here. Needs `period`, `can_generate`, `can_approve`, `today`; optional `show` (dashboard filter to return to).{% endcomment %}
+<div class="dropdown ok-sch-menu">
+  <button type="button" class="ok-sch-menu-btn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Действия с периодом">
+    <i class="bi bi-three-dots-vertical"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    {% if can_generate %}
+      <li><a class="dropdown-item" href="{% url 'admin:scholarships_edit' period.pk %}"><i class="bi bi-pencil"></i> Изменить период</a></li>
+      {% if period.is_draft and period.evaluation_date <= today %}
+        <li>
+          <form method="post" action="{% url 'admin:scholarships_recalculate' period.pk %}">{% csrf_token %}
+            {% if show %}<input type="hidden" name="show" value="{{ show }}">{% endif %}
+            <button type="submit" class="dropdown-item"
+              {% if period.is_calculated and period.recipients_count %}onclick="return confirm('Пересчитать период? Список стипендиатов будет заново составлен по рейтингу — ручные изменения списка сбросятся.');"{% endif %}>
+              <i class="bi bi-arrow-repeat"></i> {% if period.is_calculated %}Пересчитать{% else %}Рассчитать{% endif %}
+            </button>
+          </form>
+        </li>
+      {% endif %}
+    {% endif %}
+    {% if can_approve and period.is_draft and period.is_calculated %}
+      <li>
+        <form method="post" action="{% url 'admin:scholarships_approve' period.pk %}">{% csrf_token %}
+          <button type="submit" class="dropdown-item" onclick="return confirm('Утвердить стипендии? После утверждения период нельзя пересчитать или изменить.');">
+            <i class="bi bi-check2-circle"></i> Утвердить стипендии
+          </button>
+        </form>
+      </li>
+    {% endif %}
+    <li><hr class="dropdown-divider"></li>
+    <li><a class="dropdown-item" href="{% url 'admin:scholarships_report' %}?period={{ period.pk }}"><i class="bi bi-bar-chart-line"></i> Отчёт</a></li>
+    {% if period.is_calculated %}
+      <li><a class="dropdown-item" href="{% url 'admin:scholarships_export' period.pk %}"><i class="bi bi-download"></i> Экспорт CSV</a></li>
+    {% endif %}
+    <li><a class="dropdown-item" href="{% url 'admin:scholarships_trainerfeedback_changelist' %}?period__id__exact={{ period.pk }}"><i class="bi bi-chat-square-text"></i> Оценки тренеров</a></li>
+    {% if request.user.is_superuser and period.is_draft %}
+      <li><hr class="dropdown-divider"></li>
+      <li><a class="dropdown-item text-danger" href="{% url 'admin:scholarships_scholarshipperiod_delete' period.pk %}"><i class="bi bi-trash"></i> Удалить</a></li>
+    {% endif %}
+  </ul>
+</div>

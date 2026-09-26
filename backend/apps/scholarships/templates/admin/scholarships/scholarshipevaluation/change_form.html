@@ -8,12 +8,11 @@
     <div class="ok-card-body">
       <div class="table-responsive">
         <table class="table table-sm mb-0">
-          <thead><tr><th>Период</th><th>Цикл</th><th>Итог</th><th>Место</th><th>Допуск</th><th>Стипендия</th></tr></thead>
+          <thead><tr><th>Период</th><th>Итог</th><th>Место</th><th>Допуск</th><th>Стипендия</th></tr></thead>
           <tbody>
           {% for ev in history %}
             <tr{% if ev.pk == original.pk %} class="table-active"{% endif %}>
-              <td><a href="{% url 'admin:scholarships_scholarshipevaluation_change' ev.pk %}">{{ ev.period.period_start|date:"d.m.Y" }} – {{ ev.period.period_end|date:"d.m.Y" }}</a></td>
-              <td>{{ ev.period.award_day }}-е</td>
+              <td><a href="{% url 'admin:scholarships_scholarshipevaluation_change' ev.pk %}">{{ ev.period.title }} · {{ ev.period.date_range }}</a></td>
               <td>{{ ev.overall_score|default:"—" }}</td>
               <td>{{ ev.rank|default:"—" }}</td>
               <td>{{ ev.get_eligibility_status_display }}</td>

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -33,10 +32,12 @@ from .permissions import (
     teacher_profile,
 )
 from .serializers import (
+    AwardAddSerializer,
     AwardSerializer,
     EvaluationDetailSerializer,
     EvaluationListSerializer,
     GenerateRequestSerializer,
+    PeriodWriteSerializer,
     RequiredFeedbackSerializer,
     ScholarshipPeriodSerializer,
     TeacherPeriodSerializer,
@@ -45,11 +46,14 @@ from .serializers import (
 from .services import analytics
 from .services.feedback import required_feedback, validate_feedback_target
 from .services.generation import (
-    ScholarshipError,
+    add_award,
     approve_period,
+    create_period,
     generate_period,
     get_active_configuration,
     recalculate_period,
+    remove_award,
+    update_period,
 )
 from .services.periods import latest_award_date
 
@@ -60,34 +64,98 @@ def _as_drf_error(exc: DjangoValidationError) -> DRFValidationError:
     return DRFValidationError({"detail": exc.messages})
 
 
-@extend_schema_view(list=extend_schema(tags=TAGS), retrieve=extend_schema(tags=TAGS))
-class ScholarshipPeriodViewSet(viewsets.ReadOnlyModelViewSet):
-    """Scholarship periods. Admin sees everything; a Teacher only the period
+@extend_schema_view(
+    list=extend_schema(tags=TAGS),
+    retrieve=extend_schema(tags=TAGS),
+    create=extend_schema(tags=TAGS, request=PeriodWriteSerializer, responses=ScholarshipPeriodSerializer),
+    partial_update=extend_schema(tags=TAGS, request=PeriodWriteSerializer, responses=ScholarshipPeriodSerializer),
+)
+class ScholarshipPeriodViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Scholarship periods — the container of everything else. Admin sees
+    everything and may create/edit periods; a Teacher only the period
     dates/status (to know where feedback is due)."""
 
     permission_classes = [IsAuthenticated, IsAdminOrTeacherReadOnly]
     filterset_fields = ["status", "award_day"]
     ordering_fields = ["period_start", "evaluation_date"]
     ordering = ["-period_start", "-award_day"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         qs = ScholarshipPeriod.objects.all()
         if is_admin(self.request.user):
-            qs = qs.annotate(
-                evaluations_count=Count("evaluations", distinct=True),
-                eligible_count=Count(
-                    "evaluations", filter=Q(evaluations__eligibility_status=EligibilityStatus.ELIGIBLE), distinct=True
-                ),
-                recipients_count=Count("awards", distinct=True),
-            )
+            qs = analytics.annotate_periods(qs)
         return qs
 
     def get_serializer_class(self):
+        if self.action in ("create", "partial_update"):
+            return PeriodWriteSerializer
         return ScholarshipPeriodSerializer if is_admin(self.request.user) else TeacherPeriodSerializer
 
     def _require(self, action_name: str) -> None:
         if not can_manage(self.request.user, action_name):
             raise PermissionDenied("Недостаточно прав для этого действия.")
+
+    def _period_response(self, period, status_code=status.HTTP_200_OK):
+        return Response(ScholarshipPeriodSerializer(self.get_queryset().get(pk=period.pk)).data, status=status_code)
+
+    def create(self, request, *args, **kwargs):
+        self._require("generate")
+        body = PeriodWriteSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            period = create_period(**body.validated_data, user=request.user, trigger=ScholarshipRunLog.Trigger.API)
+        except DjangoValidationError as exc:
+            raise _as_drf_error(exc)
+        return self._period_response(period, status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        if not kwargs.get("partial"):
+            raise DRFValidationError({"detail": ["Используйте PATCH."]})
+        self._require("generate")
+        period = self.get_object()
+        body = PeriodWriteSerializer(period, data=request.data, partial=True)
+        body.is_valid(raise_exception=True)
+        try:
+            period = update_period(period, **body.validated_data, user=request.user, trigger=ScholarshipRunLog.Trigger.API)
+        except DjangoValidationError as exc:
+            raise _as_drf_error(exc)
+        return self._period_response(period)
+
+    @extend_schema(tags=TAGS, request=AwardAddSerializer, responses=AwardSerializer)
+    @action(detail=True, methods=["post"], url_path="awards", permission_classes=[IsAuthenticated, IsScholarshipAdmin])
+    def add_award(self, request, pk=None):
+        """Give an eligible student of a draft period a scholarship by hand
+        (refused once the limit is reached)."""
+        self._require("generate")
+        period = self.get_object()
+        body = AwardAddSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            award = add_award(period, body.validated_data["evaluation"], user=request.user,
+                              trigger=ScholarshipRunLog.Trigger.API)
+        except DjangoValidationError as exc:
+            raise _as_drf_error(exc)
+        return Response(AwardSerializer(award).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(tags=TAGS, request=None, responses={204: None})
+    @action(detail=True, methods=["delete"], url_path=r"awards/(?P<award_id>\d+)",
+            permission_classes=[IsAuthenticated, IsScholarshipAdmin])
+    def remove_award(self, request, pk=None, award_id=None):
+        self._require("generate")
+        period = self.get_object()
+        award = get_object_or_404(ScholarshipAward, pk=award_id, period=period)
+        try:
+            remove_award(period, award, user=request.user, trigger=ScholarshipRunLog.Trigger.API)
+        except DjangoValidationError as exc:
+            raise _as_drf_error(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(tags=TAGS, request=GenerateRequestSerializer, responses=ScholarshipPeriodSerializer)
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, IsScholarshipAdmin])
@@ -148,7 +216,7 @@ class ScholarshipPeriodViewSet(viewsets.ReadOnlyModelViewSet):
     def export(self, request, pk=None):
         period = self.get_object()
         response = HttpResponse(analytics.export_ranking_csv(period), content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="scholarship-{period.period_start}-{period.award_day}.csv"'
+        response["Content-Disposition"] = f'attachment; filename="scholarship-{period.period_start}-{period.period_end}.csv"'
         return response
 
     @extend_schema(tags=TAGS, responses={200: dict})
