@@ -35,6 +35,8 @@ from .scoring import StudentResult, evaluate_period, quantize, ranking_key
 
 logger = logging.getLogger("apps.scholarships")
 
+_BATCH = 1000
+
 
 class ScholarshipError(ValidationError):
     """A business-rule refusal with a user-facing (Russian) message."""
@@ -78,61 +80,75 @@ def _persist(period: ScholarshipPeriod, results: list[StudentResult]) -> None:
     eligible = sorted((r for r in results if r.eligibility_status == "eligible"), key=ranking_key)
     rank_by_student = {r.student.id: index for index, r in enumerate(eligible, start=1)}
 
-    for result in sorted(results, key=lambda r: r.student.id):
-        student = result.student
-        group = student.group
-        evaluation = ScholarshipEvaluation.objects.create(
-            period=period,
-            student=student,
-            student_name=str(student),
-            group=group,
-            group_name=group.name if group else "",
-            course_name=group.course.name if group else "",
-            enrollment_date=student.enrollment_date,
-            overall_score=result.overall_score,
-            attendance_score=result.attendance_score,
-            homework_score=result.homework_score,
-            feedback_score=result.feedback_score,
-            lessons_count=result.lessons_count,
-            subjects_count=len(result.counted_subjects),
-            rank=rank_by_student.get(student.id),
-            eligibility_status=result.eligibility_status,
-            ineligibility_reason=result.ineligibility_reason,
-            data_warnings=result.warnings,
-        )
-        ScholarshipSubjectScore.objects.bulk_create(
-            [
-                ScholarshipSubjectScore(
-                    evaluation=evaluation,
-                    subject_id=s.subject_id,
-                    subject_name=s.subject_name,
-                    lessons_attended=s.lessons_attended,
-                    lessons_missed=s.lessons_missed,
-                    lessons_excused=s.lessons_excused,
-                    lessons_unmarked=s.lessons_unmarked,
-                    homework_required=s.homework_required,
-                    homework_completed=s.homework_completed,
-                    feedback_expected=len(s.teacher_ids),
-                    feedback_received=len(s.feedback_scores),
-                    attendance_score=quantize(s.attendance_score),
-                    homework_score=quantize(s.homework_score),
-                    feedback_score=quantize(s.feedback_score),
-                    subject_score=quantize(s.subject_score),
-                    aggregation_weight=s.aggregation_weight,
-                )
-                for s in result.subjects
-            ]
-        )
-        rank = rank_by_student.get(student.id)
-        if rank is not None and rank <= period.max_recipients:
-            ScholarshipAward.objects.create(
+    # Three bulk INSERTs per period (evaluations, subject rows, awards) —
+    # never one query per student. bulk_create sets primary keys on
+    # PostgreSQL and SQLite, which the subject rows and awards need.
+    ordered = sorted(results, key=lambda r: r.student.id)
+    evaluations = ScholarshipEvaluation.objects.bulk_create(
+        [
+            ScholarshipEvaluation(
                 period=period,
-                student=student,
+                student=result.student,
+                student_name=str(result.student),
+                group=result.student.group,
+                group_name=result.student.group.name if result.student.group else "",
+                course_name=result.student.group.course.name if result.student.group else "",
+                enrollment_date=result.student.enrollment_date,
+                overall_score=result.overall_score,
+                attendance_score=result.attendance_score,
+                homework_score=result.homework_score,
+                feedback_score=result.feedback_score,
+                lessons_count=result.lessons_count,
+                subjects_count=len(result.counted_subjects),
+                rank=rank_by_student.get(result.student.id),
+                eligibility_status=result.eligibility_status,
+                ineligibility_reason=result.ineligibility_reason,
+                data_warnings=result.warnings,
+            )
+            for result in ordered
+        ],
+        batch_size=_BATCH,
+    )
+    ScholarshipSubjectScore.objects.bulk_create(
+        [
+            ScholarshipSubjectScore(
                 evaluation=evaluation,
-                rank=rank,
+                subject_id=s.subject_id,
+                subject_name=s.subject_name,
+                lessons_attended=s.lessons_attended,
+                lessons_missed=s.lessons_missed,
+                lessons_excused=s.lessons_excused,
+                lessons_unmarked=s.lessons_unmarked,
+                homework_required=s.homework_required,
+                homework_completed=s.homework_completed,
+                feedback_expected=len(s.teacher_ids),
+                feedback_received=len(s.feedback_scores),
+                attendance_score=quantize(s.attendance_score),
+                homework_score=quantize(s.homework_score),
+                feedback_score=quantize(s.feedback_score),
+                subject_score=quantize(s.subject_score),
+                aggregation_weight=s.aggregation_weight,
+            )
+            for result, evaluation in zip(ordered, evaluations)
+            for s in result.subjects
+        ],
+        batch_size=_BATCH,
+    )
+    ScholarshipAward.objects.bulk_create(
+        [
+            ScholarshipAward(
+                period=period,
+                student=result.student,
+                evaluation=evaluation,
+                rank=evaluation.rank,
                 award_date=period.evaluation_date,
                 amount=period.award_amount,
             )
+            for result, evaluation in zip(ordered, evaluations)
+            if evaluation.rank is not None and evaluation.rank <= period.max_recipients
+        ],
+        batch_size=_BATCH,
+    )
 
     period.last_calculated_at = timezone.now()
     period.save(update_fields=["last_calculated_at", "updated_at"])
