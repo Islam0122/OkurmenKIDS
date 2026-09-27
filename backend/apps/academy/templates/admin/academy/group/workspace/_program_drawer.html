@@ -21,6 +21,8 @@
     <form method="post" action="{{ drawer.action_url }}" id="ok-program-form" data-ok-guard novalidate>
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ programs_url }}">
+      {# The schedule list as JSON — pre-filled with the saved slots, kept current by the script below. #}
+      {{ drawer.form.schedule }}
       <section class="ok-drawer-section">
         <h3 class="ok-drawer-section-title"><i class="bi bi-person-gear"></i> Преподаватель и предмет</h3>
 
@@ -77,8 +79,6 @@
         <i class="bi bi-calendar-week"></i> Расписание программы
         <span class="ok-badge ok-badge-warning" data-ok-schedule-dirty hidden>Несохранённые изменения</span>
       </h3>
-      {{ drawer.form.schedule }}
-
       {% if drawer.schedule_errors %}
         <div class="ok-callout ok-callout-danger">
           <i class="bi bi-x-circle"></i>
@@ -98,10 +98,10 @@
       <p class="ok-help-text" data-ok-slot-empty{% if drawer.has_slots %} hidden{% endif %}>
         У программы нет слотов — её занятия не будут созданы. Добавьте расписание ниже.
       </p>
-      <p class="ok-help-text" data-ok-slot-removed hidden></p>
+      <p class="ok-help-text" data-ok-schedule-summary hidden></p>
 
       <details class="ok-drawer-add"{% if not drawer.has_slots %} open{% endif %}>
-        <summary><i class="bi bi-plus-circle"></i> Добавить слоты</summary>
+        <summary><i class="bi bi-plus-circle"></i> Новые слоты: дни, время, кабинет</summary>
         <div class="ok-drawer-add-body" data-ok-slot-add>
           <div class="ok-callout ok-callout-danger" data-ok-slot-add-error hidden><i class="bi bi-x-circle"></i><div></div></div>
           <div class="ok-field-group">
@@ -141,57 +141,91 @@
 </dialog>
 {{ drawer.schedule_data|json_script:"ok-schedule-data" }}
 <script>
-  /* "Расписание программы": the slot list lives in the browser until
-     "Сохранить". "Добавить слоты", the pencil and the trash icon only
-     change this local list; "Сохранить" posts it whole (hidden
-     `schedule` field of #ok-program-form) and the server brings the
-     database to exactly this list. "Отмена"/closing drops the changes. */
+  /* "Расписание программы".
+
+     initialSchedule — snapshot of the saved slots, taken when the drawer
+     opens; currentSchedule — the list the admin is editing. "Добавить
+     слоты", the pencil and the trash icon change only currentSchedule.
+     scheduleDiff() compares the two *normalized* (order- and
+     format-independent) and says what was created / updated / deleted;
+     hasScheduleChanges() is "that diff is not empty".
+
+     "Сохранить" posts currentSchedule whole in the hidden `schedule` field
+     of #ok-program-form and the server brings the database to exactly
+     that list (services.program_editing.save_teaching_program).
+     "Отмена"/closing the drawer resets currentSchedule to the snapshot. */
   (function () {
     var data = JSON.parse(document.getElementById('ok-schedule-data').textContent);
     var section = document.querySelector('[data-ok-schedule]');
     var form = document.getElementById('ok-program-form');
     var dialog = section.closest('dialog');
-    var hidden = section.querySelector('input[name="schedule"]');
+    var hidden = form.querySelector('input[name="schedule"]');
+    var saveBtn = document.querySelector('[data-ok-save-btn]');
     var list = section.querySelector('[data-ok-slot-list]');
     var emptyNote = section.querySelector('[data-ok-slot-empty]');
-    var removedNote = section.querySelector('[data-ok-slot-removed]');
+    var summaryNote = section.querySelector('[data-ok-schedule-summary]');
     var dirtyBadge = section.querySelector('[data-ok-schedule-dirty]');
     var addBox = section.querySelector('[data-ok-slot-add]');
     var addError = addBox.querySelector('[data-ok-slot-add-error]');
+    var dayBoxes = addBox.querySelectorAll('input[type="checkbox"]');
+    var startInput = addBox.querySelector('input[name="start_time"]');
+    var endInput = addBox.querySelector('input[name="end_time"]');
     var roomSelect = addBox.querySelector('select');
     var dayOrder = Object.keys(data.dayNames);
-    var slots, editingIndex = null, nextKey = 1;
+    var nextKey = 1, editingIndex = null;
 
-    function copy(items) {
-      return items.map(function (s) { return Object.assign({ key: 'k' + (nextKey++) }, s); });
+    /* -- normalization ------------------------------------------------ */
+    function normTime(t) {
+      var m = /^(\d{1,2}):(\d{2})/.exec(String(t || '').trim());
+      return m ? ('0' + (+m[1])).slice(-2) + ':' + m[2] : '';
     }
-    function toMinutes(t) { var p = (t || '').split(':'); return p.length < 2 ? NaN : (+p[0]) * 60 + (+p[1]); }
-    function sortSlots() {
-      slots.sort(function (a, b) {
-        return dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day) || toMinutes(a.start) - toMinutes(b.start);
+    function normId(v) { var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+    function normalize(s) {
+      // Fixed key order, numbers for ids, "HH:MM" times, null for "no room".
+      return { id: normId(s.id), day: String(s.day), start: normTime(s.start), end: normTime(s.end), room: normId(s.room) };
+    }
+    function slotKey(s) { return [s.day, s.start, s.end, s.room === null ? '' : s.room].join('|'); }
+    function toMinutes(t) { var p = normTime(t).split(':'); return p.length < 2 ? NaN : (+p[0]) * 60 + (+p[1]); }
+    function bySchedule(a, b) {
+      return dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day) || toMinutes(a.start) - toMinutes(b.start) ||
+        toMinutes(a.end) - toMinutes(b.end) || (a.room || 0) - (b.room || 0);
+    }
+
+    /* -- state -------------------------------------------------------- */
+    var initialSchedule = data.saved.map(normalize);          // what the database holds
+    var activeById = {};
+    data.saved.forEach(function (s) { activeById[s.id] = s.active !== false; });
+    var currentSchedule;
+
+    function withKey(s) { var n = normalize(s); n.key = 'k' + (nextKey++); return n; }
+    function setCurrent(items) { currentSchedule = items.map(withKey); editingIndex = null; currentSchedule.sort(bySchedule); }
+    function isActive(s) { return s.id === null || activeById[s.id] !== false; }
+
+    function scheduleDiff() {
+      var initialById = {};
+      initialSchedule.forEach(function (s) { initialById[s.id] = s; });
+      var keptIds = {};
+      var created = [], updated = [];
+      currentSchedule.forEach(function (s) {
+        if (s.id === null || !initialById[s.id]) { created.push(s); return; }
+        keptIds[s.id] = true;
+        if (slotKey(s) !== slotKey(initialById[s.id])) updated.push(s);
       });
+      var deleted = initialSchedule.filter(function (s) { return !keptIds[s.id]; });
+      return { created: created, updated: updated, deleted: deleted };
     }
-    function label(s) { return (data.days[s.day] || s.day) + ' ' + s.start + '–' + s.end; }
-    function roomName(id) { return id ? (data.rooms[String(id)] || 'кабинет #' + id) : 'без кабинета'; }
-    function savedById(id) { return data.saved.filter(function (s) { return s.id === id; })[0]; }
-    function isChanged(s) {
-      var o = savedById(s.id);
-      return o && (o.day !== s.day || o.start !== s.start || o.end !== s.end || o.room !== s.room);
+    function hasScheduleChanges() {
+      var d = scheduleDiff();
+      return d.created.length + d.updated.length + d.deleted.length > 0;
     }
     function payload() {
-      return slots.map(function (s) { return { id: s.id, day: s.day, start: s.start, end: s.end, room: s.room }; });
+      return currentSchedule.map(function (s) { return { id: s.id, day: s.day, start: s.start, end: s.end, room: s.room }; });
     }
-    function isDirty() {
-      var saved = data.saved.map(function (s) { return { id: s.id, day: s.day, start: s.start, end: s.end, room: s.room }; });
-      return JSON.stringify(payload()) !== JSON.stringify(saved);
-    }
-    function overlapsOther(candidate, ignoreKey) {
-      return slots.filter(function (s) {
-        return s.key !== ignoreKey && s.active !== false && s.day === candidate.day &&
-          toMinutes(candidate.start) < toMinutes(s.end) && toMinutes(s.start) < toMinutes(candidate.end);
-      })[0];
-    }
+    function writePayload() { hidden.value = JSON.stringify(payload()); }
 
+    /* -- rendering ---------------------------------------------------- */
+    function label(s) { return (data.days[s.day] || s.day) + ' ' + s.start + '–' + s.end; }
+    function roomName(id) { return id ? (data.rooms[String(id)] || 'кабинет #' + id) : 'без кабинета'; }
     function el(tag, attrs, children) {
       var node = document.createElement(tag);
       Object.keys(attrs || {}).forEach(function (k) {
@@ -206,25 +240,32 @@
       btn.addEventListener('click', onClick);
       return btn;
     }
+    function overlapsOther(candidate, ignoreKey) {
+      return currentSchedule.filter(function (s) {
+        return s.key !== ignoreKey && isActive(s) && s.day === candidate.day &&
+          toMinutes(candidate.start) < toMinutes(s.end) && toMinutes(s.start) < toMinutes(candidate.end);
+      })[0];
+    }
 
-    function renderRow(s, index) {
+    function renderRow(s, index, diff) {
       var info = el('span', {}, [el('strong', { text: label(s) }), document.createTextNode(' · ' + roomName(s.room))]);
-      if (s.active === false) info.appendChild(document.createTextNode(' · неактивен'));
-      if (!s.id) info.appendChild(el('span', { 'class': 'ok-slot-tag', text: 'новый' }));
-      else if (isChanged(s)) info.appendChild(el('span', { 'class': 'ok-slot-tag', text: 'изменён' }));
+      if (!isActive(s)) info.appendChild(document.createTextNode(' · неактивен'));
+      var isNew = diff.created.indexOf(s) !== -1, isUpdated = diff.updated.indexOf(s) !== -1;
+      if (isNew) info.appendChild(el('span', { 'class': 'ok-slot-tag', text: 'новый' }));
+      else if (isUpdated) info.appendChild(el('span', { 'class': 'ok-slot-tag', text: 'изменён' }));
       var actions = el('span', { 'class': 'ok-slot-actions' }, [
         iconBtn('bi-pencil', 'Изменить слот ' + label(s), function () { editingIndex = index; render(); }),
         iconBtn('bi-trash3', 'Удалить слот ' + label(s), function () {
-          slots.splice(index, 1); editingIndex = null; changed();
+          currentSchedule.splice(index, 1); editingIndex = null; changed();
         }),
       ]);
       var li = el('li', {}, [info, actions]);
-      if (s.active === false) li.className = 'is-muted';
-      if (!s.id || isChanged(s)) li.classList.add('is-pending');
+      if (!isActive(s)) li.className = 'is-muted';
+      if (isNew || isUpdated) li.classList.add('is-pending');
       return li;
     }
 
-    function renderEditor(s, index) {
+    function renderEditor(s) {
       var day = el('select', { 'class': 'ok-input', 'aria-label': 'День недели' });
       dayOrder.forEach(function (code) {
         var opt = el('option', { value: code, text: data.dayNames[code] });
@@ -244,13 +285,13 @@
                     [el('i', { 'class': 'bi bi-check2' }), document.createTextNode(' Готово')]);
       var cancel = el('button', { type: 'button', 'class': 'ok-link-muted ok-slot-cancel', text: 'Отмена' });
       done.addEventListener('click', function () {
-        var candidate = { day: day.value, start: start.value, end: end.value, room: room.value ? +room.value : null };
-        var problem = null;
+        var candidate = normalize({ id: s.id, day: day.value, start: start.value, end: end.value, room: room.value });
+        var problem = null, clash;
         if (!candidate.start || !candidate.end) problem = 'Укажите время начала и окончания.';
         else if (toMinutes(candidate.end) <= toMinutes(candidate.start)) problem = 'Время окончания должно быть позже времени начала.';
-        else if (s.active !== false && overlapsOther(candidate, s.key)) problem = 'Пересекается со слотом ' + label(overlapsOther(candidate, s.key)) + '.';
+        else if (isActive(s) && (clash = overlapsOther(candidate, s.key))) problem = 'Пересекается со слотом ' + label(clash) + '.';
         if (problem) { error.textContent = problem; error.hidden = false; return; }
-        Object.assign(s, candidate);
+        s.day = candidate.day; s.start = candidate.start; s.end = candidate.end; s.room = candidate.room;
         editingIndex = null;
         changed();
       });
@@ -263,69 +304,102 @@
     }
 
     function render() {
+      var diff = scheduleDiff();
       list.innerHTML = '';
-      slots.forEach(function (s, i) { list.appendChild(i === editingIndex ? renderEditor(s, i) : renderRow(s, i)); });
-      emptyNote.hidden = slots.length > 0;
-      var keptIds = slots.map(function (s) { return s.id; });
-      var removed = data.saved.filter(function (s) { return keptIds.indexOf(s.id) === -1; }).length;
-      removedNote.hidden = !removed;
-      removedNote.textContent = removed ? 'Будет удалено при сохранении: ' + removed + '.' : '';
-      hidden.value = JSON.stringify(payload());
-      dirtyBadge.hidden = !isDirty();
+      currentSchedule.forEach(function (s, i) {
+        list.appendChild(i === editingIndex ? renderEditor(s) : renderRow(s, i, diff));
+      });
+      emptyNote.hidden = currentSchedule.length > 0;
+      var parts = [];
+      if (diff.created.length) parts.push('добавить: ' + diff.created.length);
+      if (diff.updated.length) parts.push('изменить: ' + diff.updated.length);
+      if (diff.deleted.length) parts.push('удалить: ' + diff.deleted.length);
+      summaryNote.hidden = !parts.length;
+      summaryNote.textContent = parts.length ? 'При сохранении будет — ' + parts.join(', ') + '.' : '';
+      dirtyBadge.hidden = !parts.length;
+      writePayload();
     }
     function changed() {
-      sortSlots();
+      currentSchedule.sort(bySchedule);
       render();
       // Lets the Workspace's unsaved-changes guard know (see base.html).
       form.dispatchEvent(new Event('change'));
     }
 
-    section.querySelector('[data-ok-slot-add-btn]').addEventListener('click', function () {
-      var days = Array.prototype.filter.call(addBox.querySelectorAll('input[type="checkbox"]'), function (c) { return c.checked; })
-        .map(function (c) { return c.value; });
-      var start = addBox.querySelector('input[name="start_time"]').value;
-      var end = addBox.querySelector('input[name="end_time"]').value;
-      var room = roomSelect.value ? +roomSelect.value : null;
+    /* -- "Добавить слоты" --------------------------------------------- */
+    function pendingSelection() {
+      return {
+        days: Array.prototype.filter.call(dayBoxes, function (c) { return c.checked; }).map(function (c) { return c.value; }),
+        start: normTime(startInput.value), end: normTime(endInput.value),
+        room: normId(roomSelect.value),
+      };
+    }
+    function addSelectedSlots() {
+      var sel = pendingSelection();
       var problems = [];
-      if (!days.length) problems.push('Выберите хотя бы один день недели.');
-      if (!start || !end) problems.push('Укажите время начала и окончания.');
-      else if (toMinutes(end) <= toMinutes(start)) problems.push('Время окончания должно быть позже времени начала.');
+      if (!sel.days.length) problems.push('Выберите хотя бы один день недели.');
+      if (!sel.start || !sel.end) problems.push('Укажите время начала и окончания.');
+      else if (toMinutes(sel.end) <= toMinutes(sel.start)) problems.push('Время окончания должно быть позже времени начала.');
       if (!problems.length) {
-        days.forEach(function (day) {
-          var clash = overlapsOther({ day: day, start: start, end: end });
+        sel.days.forEach(function (day) {
+          var clash = overlapsOther({ day: day, start: sel.start, end: sel.end });
           if (clash) problems.push((data.days[day] || day) + ': пересекается со слотом ' + label(clash) + '.');
         });
       }
       addError.hidden = !problems.length;
       addError.querySelector('div').textContent = problems.join(' ');
-      if (problems.length) return;
-      days.forEach(function (day) {
-        slots.push({ key: 'k' + (nextKey++), id: null, day: day, start: start, end: end, room: room, active: true });
+      if (problems.length) return false;
+      sel.days.forEach(function (day) {
+        currentSchedule.push(withKey({ id: null, day: day, start: sel.start, end: sel.end, room: sel.room }));
       });
-      addBox.querySelectorAll('input[type="checkbox"]').forEach(function (c) { c.checked = false; });
+      dayBoxes.forEach(function (c) { c.checked = false; });
       editingIndex = null;
       changed();
-    });
+      return true;
+    }
+    section.querySelector('[data-ok-slot-add-btn]').addEventListener('click', addSelectedSlots);
 
-    function reset(items) { slots = copy(items); editingIndex = null; sortSlots(); render(); }
-    reset(data.current);
-    // "Отмена" / closing the drawer: back to what the database holds.
+    /* -- open / cancel / save ----------------------------------------- */
+    setCurrent(data.current);
+    render();
+
+    // "Отмена" / closing the drawer: back to the snapshot, nothing is sent.
     dialog.addEventListener('close', function () {
-      reset(data.saved);
+      setCurrent(initialSchedule);
+      dayBoxes.forEach(function (c) { c.checked = false; });
       addError.hidden = true;
+      render();
     });
 
-    form.addEventListener('submit', function () {
-      hidden.value = JSON.stringify(payload());
-      var btn = document.querySelector('[data-ok-save-btn]');
-      if (btn) btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Сохранение...';
+    form.addEventListener('submit', function (evt) {
+      // Days and time picked but "Добавить слоты" not pressed: those slots
+      // are not in the list yet — ask instead of silently dropping them.
+      var sel = pendingSelection();
+      if (sel.days.length && sel.start && sel.end) {
+        var names = sel.days.map(function (d) { return data.days[d] || d; }).join(', ');
+        if (window.confirm('Выбраны дни (' + names + ') ' + sel.start + '–' + sel.end +
+                           ', но «Добавить слоты» не нажато. Добавить эти слоты и сохранить?')) {
+          if (!addSelectedSlots()) { evt.preventDefault(); evt.stopImmediatePropagation(); return; }
+        }
+      }
+      writePayload();
+      if (saveBtn) saveBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Сохранение...';
     });
+
     // A failed save re-renders the drawer with the admin's unsaved list —
     // keep it guarded once the Workspace script has wired its forms.
     document.addEventListener('DOMContentLoaded', function () {
-      if (isDirty()) form.dispatchEvent(new Event('change'));
+      if (hasScheduleChanges()) form.dispatchEvent(new Event('change'));
       var saveError = section.querySelector(':scope > .ok-callout-danger');
       if (saveError) saveError.scrollIntoView({ block: 'center' });
     });
+
+    // For debugging from DevTools: okProgramSchedule.diff()
+    window.okProgramSchedule = {
+      initial: function () { return initialSchedule; },
+      current: function () { return payload(); },
+      diff: scheduleDiff,
+      hasChanges: hasScheduleChanges,
+    };
   })();
 </script>

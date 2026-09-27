@@ -958,8 +958,11 @@ class EditProgramForm(forms.Form):
     # The drawer's whole list of weekly slots as JSON, kept in the browser
     # while the admin adds ("Добавить слоты"), edits and removes slots and
     # written only by "Сохранить" (services.program_editing.save_teaching_program).
-    # Absent/empty — e.g. without JS — leaves the slots untouched.
-    schedule = forms.CharField(required=False, widget=forms.HiddenInput(attrs={"form": "ok-program-form"}))
+    # Rendered inside the form, pre-filled with the saved slots (see
+    # _drawer_context), so the POST always carries the full list; the
+    # server diffs it against the database. Absent — e.g. an old page or a
+    # plain API-style POST — leaves the slots untouched.
+    schedule = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, group_teacher: GroupTeacher, has_lessons: bool, **kwargs):
         kwargs.setdefault(
@@ -1070,11 +1073,16 @@ def group_workspace_programs_view(request, group_id):
     return _render_programs(request, group)
 
 
-def _slot_state(slot: GroupSchedule) -> dict:
+def _slot_payload(slot: GroupSchedule) -> dict:
+    """A saved slot in the drawer's `schedule` JSON format."""
     return {
         "id": slot.pk, "day": slot.day_of_week, "start": f"{slot.start_time:%H:%M}",
-        "end": f"{slot.end_time:%H:%M}", "room": slot.room_id, "active": slot.is_active,
+        "end": f"{slot.end_time:%H:%M}", "room": slot.room_id,
     }
+
+
+def _slot_state(slot: GroupSchedule) -> dict:
+    return {**_slot_payload(slot), "active": slot.is_active}
 
 
 def _submitted_schedule_state(form, saved: list[dict]) -> list[dict] | None:
@@ -1115,7 +1123,9 @@ def _drawer_context(group: Group, group_teacher: GroupTeacher, *, form=None) -> 
     current = _submitted_schedule_state(form, saved)
     room_names = {room.pk: room.name for room in Room.objects.filter(is_active=True)}
     room_names.update({slot.room_id: slot.room.name for slot in slots if slot.room_id})
-    form = form or EditProgramForm(group_teacher=group_teacher, has_lessons=has_lessons)
+    if form is None:
+        form = EditProgramForm(group_teacher=group_teacher, has_lessons=has_lessons)
+        form.initial["schedule"] = json.dumps([_slot_payload(slot) for slot in slots])
     return {
         "program": group_teacher,
         "card": card,
