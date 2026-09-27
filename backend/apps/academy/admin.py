@@ -40,7 +40,6 @@ from .admin_views import (
     group_workspace_lessons_view,
     group_workspace_overview_view,
     group_workspace_program_edit_view,
-    group_workspace_program_schedule_add_view,
     group_workspace_programs_view,
     group_workspace_remove_schedule_view,
     group_workspace_remove_student_view,
@@ -1379,11 +1378,6 @@ class GroupAdmin(admin.ModelAdmin):
                 "<int:group_id>/workspace/programs/<int:group_teacher_id>/edit/",
                 self.admin_site.admin_view(group_workspace_program_edit_view),
                 name="academy_group_workspace_programs_edit",
-            ),
-            path(
-                "<int:group_id>/workspace/programs/<int:group_teacher_id>/schedule/add/",
-                self.admin_site.admin_view(group_workspace_program_schedule_add_view),
-                name="academy_group_workspace_programs_schedule_add",
             ),
             path(
                 "<int:group_id>/workspace/schedule/",

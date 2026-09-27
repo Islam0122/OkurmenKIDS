@@ -8,6 +8,7 @@ mutating endpoints (generate lessons) alongside it.
 from __future__ import annotations
 
 import datetime as dt
+import json
 from collections import defaultdict
 from typing import Iterable
 
@@ -57,7 +58,12 @@ from .services.lesson_generator import (
     planned_lessons_by_program,
     preview_generation,
 )
-from .services.program_editing import build_schedule_slots, future_lessons, update_teaching_program
+from .services.program_editing import (
+    build_schedule_slots,
+    future_lessons,
+    parse_schedule_specs,
+    save_teaching_program,
+)
 from .services.subject_assignments import STATUS_UNASSIGNED, subject_assignment_overview
 
 WEEKDAY_NAMES = [WEEKDAY_LABELS_FULL[code] for code in WEEKDAY_CODES]
@@ -949,6 +955,11 @@ class EditProgramForm(forms.Form):
     reassign_future_lessons = forms.BooleanField(
         required=False, initial=True, label="Передать новому преподавателю будущие запланированные занятия",
     )
+    # The drawer's whole list of weekly slots as JSON, kept in the browser
+    # while the admin adds ("Добавить слоты"), edits and removes slots and
+    # written only by "Сохранить" (services.program_editing.save_teaching_program).
+    # Absent/empty — e.g. without JS — leaves the slots untouched.
+    schedule = forms.CharField(required=False, widget=forms.HiddenInput(attrs={"form": "ok-program-form"}))
 
     def __init__(self, *args, group_teacher: GroupTeacher, has_lessons: bool, **kwargs):
         kwargs.setdefault(
@@ -983,10 +994,25 @@ class EditProgramForm(forms.Form):
             raise forms.ValidationError("Выберите предмет.")
         return subject
 
+    def clean_schedule(self):
+        raw = self.cleaned_data.get("schedule")
+        if not raw:
+            return None
+        try:
+            items = json.loads(raw)
+        except ValueError:
+            raise forms.ValidationError("Некорректные данные расписания.")
+        try:
+            return parse_schedule_specs(self.group_teacher, items)
+        except DjangoValidationError as exc:
+            raise forms.ValidationError(exc.messages)
+
 
 class ProgramScheduleForm(forms.Form):
-    """Add weekly slots to one program from its drawer — several weekdays
-    at the same time in one go."""
+    """The drawer's "Добавить слоты" controls — several weekdays at the
+    same time in one go. Never submitted: the drawer's script adds the
+    chosen slots to its local list, saved together with the program by
+    "Сохранить"."""
 
     day_of_week = forms.MultipleChoiceField(
         choices=GroupSchedule.DAY_CHOICES, label="Дни недели", widget=forms.CheckboxSelectMultiple,
@@ -1044,33 +1070,70 @@ def group_workspace_programs_view(request, group_id):
     return _render_programs(request, group)
 
 
-def _drawer_context(group: Group, group_teacher: GroupTeacher, *, form=None, schedule_form=None) -> dict:
+def _slot_state(slot: GroupSchedule) -> dict:
+    return {
+        "id": slot.pk, "day": slot.day_of_week, "start": f"{slot.start_time:%H:%M}",
+        "end": f"{slot.end_time:%H:%M}", "room": slot.room_id, "active": slot.is_active,
+    }
+
+
+def _submitted_schedule_state(form, saved: list[dict]) -> list[dict] | None:
+    """The slot list the admin was editing when "Сохранить" failed, so the
+    re-rendered drawer shows their unsaved changes instead of the database
+    state. Only well-formed entries are kept; None — nothing submitted."""
+    if form is None or not form.is_bound or not form.data.get("schedule"):
+        return None
+    try:
+        items = json.loads(form.data["schedule"])
+    except ValueError:
+        return None
+    if not isinstance(items, list):
+        return None
+    saved_by_id = {slot["id"]: slot for slot in saved}
+    state = []
+    for item in items:
+        if not isinstance(item, dict) or item.get("day") not in WEEKDAY_CODES:
+            continue
+        slot_id = item.get("id") if item.get("id") in saved_by_id else None
+        state.append({
+            "id": slot_id, "day": item["day"], "start": str(item.get("start") or "")[:5],
+            "end": str(item.get("end") or "")[:5],
+            "room": item.get("room") if isinstance(item.get("room"), int) else None,
+            "active": saved_by_id[slot_id]["active"] if slot_id else True,
+        })
+    return state
+
+
+def _drawer_context(group: Group, group_teacher: GroupTeacher, *, form=None) -> dict:
     has_lessons = Lesson.objects.filter(group_teacher=group_teacher).exists()
     card = next(c for c in _teaching_program_cards(group) if c["obj"].pk == group_teacher.pk)
+    slots = sorted(
+        group_teacher.schedules.select_related("room"),
+        key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
+    )
+    saved = [_slot_state(slot) for slot in slots]
+    current = _submitted_schedule_state(form, saved)
+    room_names = {room.pk: room.name for room in Room.objects.filter(is_active=True)}
+    room_names.update({slot.room_id: slot.room.name for slot in slots if slot.room_id})
+    form = form or EditProgramForm(group_teacher=group_teacher, has_lessons=has_lessons)
     return {
         "program": group_teacher,
         "card": card,
-        "form": form or EditProgramForm(group_teacher=group_teacher, has_lessons=has_lessons),
-        "schedule_form": schedule_form or ProgramScheduleForm(),
+        "form": form,
+        "schedule_form": ProgramScheduleForm(),
         "future_lessons_count": future_lessons(group_teacher).count(),
         "action_url": reverse("admin:academy_group_workspace_programs_edit", args=[group.pk, group_teacher.pk]),
-        "schedule_add_url": reverse(
-            "admin:academy_group_workspace_programs_schedule_add", args=[group.pk, group_teacher.pk]
-        ),
-        "slots": [
-            {
-                "obj": slot,
-                "label": f"{WEEKDAY_SHORT_LABELS.get(slot.day_of_week, slot.day_of_week)} "
-                         f"{slot.start_time:%H:%M}–{slot.end_time:%H:%M}",
-                "room": slot.room.name if slot.room_id else "без кабинета",
-                "remove_url": reverse("admin:academy_group_workspace_schedule_remove", args=[group.pk, slot.pk]),
-            }
-            for slot in sorted(
-                group_teacher.schedules.select_related("room"),
-                key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time),
-            )
-        ],
-        "open_schedule": schedule_form is not None and schedule_form.is_bound,
+        "has_slots": bool(current if current is not None else saved),
+        "schedule_errors": form.errors.get("schedule", []) if form.is_bound else [],
+        # Read by the drawer's script: the saved slots (what "Отмена"
+        # returns to), the list to show now, and labels for the UI.
+        "schedule_data": {
+            "saved": saved,
+            "current": current if current is not None else saved,
+            "rooms": {str(pk): name for pk, name in room_names.items()},
+            "days": WEEKDAY_SHORT_LABELS,
+            "dayNames": dict(GroupSchedule.DAY_CHOICES),
+        },
     }
 
 
@@ -1091,17 +1154,19 @@ def group_workspace_program_edit_view(request, group_id, group_teacher_id):
         form = EditProgramForm(request.POST, group_teacher=group_teacher, has_lessons=has_lessons)
         if form.is_valid():
             try:
-                change = update_teaching_program(
+                result = save_teaching_program(
                     group_teacher,
                     teacher=form.cleaned_data["teacher"],
                     subject=form.cleaned_data["subject"],
                     is_active=form.cleaned_data["status"] == "active",
                     reassign_future_lessons=form.cleaned_data["reassign_future_lessons"],
+                    slots=form.cleaned_data["schedule"],
                 )
             except DjangoValidationError as exc:
                 _add_validation_errors(form, exc)
             else:
-                if not change.changed:
+                change, schedule = result.program, result.schedule
+                if not change.changed and not schedule.changed:
                     messages.info(request, "Изменений нет — программа осталась прежней.")
                 else:
                     parts = []
@@ -1114,49 +1179,24 @@ def group_workspace_program_edit_view(request, group_id, group_teacher_id):
                         parts.append(f"предмет — {subject.name if subject else 'без предмета'}")
                     if change.status_changed:
                         parts.append("статус — " + dict(EditProgramForm.STATUS_CHOICES)[form.cleaned_data["status"]])
-                    messages.success(request, "Программа сохранена: " + "; ".join(parts) + ".")
+                    if schedule.changed:
+                        counts = [
+                            f"{label}: {count}"
+                            for label, count in (("добавлено", schedule.created), ("изменено", schedule.updated),
+                                                 ("удалено", schedule.deleted))
+                            if count
+                        ]
+                        parts.append("слоты расписания — " + ", ".join(counts))
+                    message = "Изменения сохранены: " + "; ".join(parts) + "."
+                    if schedule.created or schedule.updated:
+                        message += " Когда расписание будет готово, нажмите «Сгенерировать занятия»."
+                    messages.success(request, message)
                 return redirect(_safe_next(request, reverse("admin:academy_group_workspace_programs", args=[group.pk])))
         group_teacher.refresh_from_db()
         drawer = _drawer_context(group, group_teacher, form=form)
         return _render_programs(request, group, drawer=drawer)
 
     return _render_programs(request, group, drawer=_drawer_context(group, group_teacher))
-
-
-@require_POST
-def group_workspace_program_schedule_add_view(request, group_id, group_teacher_id):
-    """Add weekly slots (one per selected weekday) to a program from its
-    drawer; every day is validated (teacher/room/group conflicts) before
-    any is saved."""
-    _require_admin(request)
-    group = get_object_or_404(Group.objects.select_related("course"), pk=group_id)
-    group_teacher = get_object_or_404(
-        GroupTeacher.objects.select_related("teacher__user", "subject"), pk=group_teacher_id, group=group,
-    )
-    form = ProgramScheduleForm(request.POST)
-    if form.is_valid():
-        try:
-            slots = build_schedule_slots(
-                group=group, teacher=group_teacher.teacher, subject=group_teacher.subject,
-                days=form.cleaned_data["day_of_week"], start_time=form.cleaned_data["start_time"],
-                end_time=form.cleaned_data["end_time"], room=form.cleaned_data.get("room"),
-            )
-        except DjangoValidationError as exc:
-            _add_validation_errors(form, exc)
-        else:
-            with transaction.atomic():
-                for slot in slots:
-                    slot.save()
-            messages.success(
-                request,
-                f"Добавлено слотов расписания: {len(slots)}. Когда расписание будет готово, "
-                "нажмите «Сгенерировать занятия».",
-            )
-            return redirect(
-                reverse("admin:academy_group_workspace_programs_edit", args=[group.pk, group_teacher.pk]) + "#schedule"
-            )
-    drawer = _drawer_context(group, group_teacher, schedule_form=form)
-    return _render_programs(request, group, drawer=drawer)
 
 
 # -- Teachers ---------------------------------------------------------------

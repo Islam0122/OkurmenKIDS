@@ -72,58 +72,61 @@
       </section>
     </form>
 
-    <section class="ok-drawer-section" id="schedule">
-      <h3 class="ok-drawer-section-title"><i class="bi bi-calendar-week"></i> Расписание программы</h3>
-      {% if drawer.slots %}
-        <ul class="ok-slot-list">
-          {% for slot in drawer.slots %}
-            <li class="{% if not slot.obj.is_active %}is-muted{% endif %}">
-              <span><strong>{{ slot.label }}</strong> · {{ slot.room }}{% if not slot.obj.is_active %} · неактивен{% endif %}</span>
-              <form method="post" action="{{ slot.remove_url }}" data-ok-confirm="Удалить слот {{ slot.label }}? Уже созданные занятия не изменятся.">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{{ drawer.action_url }}#schedule">
-                <button type="submit" class="ok-icon-btn" aria-label="Удалить слот {{ slot.label }}"><i class="bi bi-trash3"></i></button>
-              </form>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="ok-help-text">У программы нет слотов — её занятия не будут созданы. Добавьте расписание ниже.</p>
+    <section class="ok-drawer-section" id="schedule" data-ok-schedule>
+      <h3 class="ok-drawer-section-title">
+        <i class="bi bi-calendar-week"></i> Расписание программы
+        <span class="ok-badge ok-badge-warning" data-ok-schedule-dirty hidden>Несохранённые изменения</span>
+      </h3>
+      {{ drawer.form.schedule }}
+
+      {% if drawer.schedule_errors %}
+        <div class="ok-callout ok-callout-danger">
+          <i class="bi bi-x-circle"></i>
+          <div>
+            <strong>Не удалось сохранить расписание</strong>
+            <ul class="ok-slot-errors">{% for error in drawer.schedule_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+          </div>
+        </div>
       {% endif %}
 
-      <details class="ok-drawer-add"{% if drawer.open_schedule or not drawer.slots %} open{% endif %}>
+      {# Filled from the JSON below by the script; the server-rendered rows are the no-JS fallback. #}
+      <ul class="ok-slot-list" data-ok-slot-list>
+        {% for slot in drawer.card.slots %}
+          <li><span><strong>{{ slot.day_label }} {{ slot.time_label }}</strong> · {{ slot.room }}</span></li>
+        {% endfor %}
+      </ul>
+      <p class="ok-help-text" data-ok-slot-empty{% if drawer.has_slots %} hidden{% endif %}>
+        У программы нет слотов — её занятия не будут созданы. Добавьте расписание ниже.
+      </p>
+      <p class="ok-help-text" data-ok-slot-removed hidden></p>
+
+      <details class="ok-drawer-add"{% if not drawer.has_slots %} open{% endif %}>
         <summary><i class="bi bi-plus-circle"></i> Добавить слоты</summary>
-        <form method="post" action="{{ drawer.schedule_add_url }}" data-ok-guard novalidate>
-          {% csrf_token %}
-          {% for error in drawer.schedule_form.non_field_errors %}
-            <div class="ok-callout ok-callout-danger"><i class="bi bi-x-circle"></i><div>{{ error }}</div></div>
-          {% endfor %}
+        <div class="ok-drawer-add-body" data-ok-slot-add>
+          <div class="ok-callout ok-callout-danger" data-ok-slot-add-error hidden><i class="bi bi-x-circle"></i><div></div></div>
           <div class="ok-field-group">
             <span class="ok-label">Дни недели *</span>
             <div class="ok-group-day-checkboxes">
               {% for checkbox in drawer.schedule_form.day_of_week %}<label>{{ checkbox.tag }} {{ checkbox.choice_label }}</label>{% endfor %}
             </div>
-            {% for error in drawer.schedule_form.day_of_week.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
           </div>
           <div class="ok-drawer-row">
             <div class="ok-field-group">
               <label class="ok-label" for="{{ drawer.schedule_form.start_time.id_for_label }}">Начало *</label>
               {{ drawer.schedule_form.start_time }}
-              {% for error in drawer.schedule_form.start_time.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
             </div>
             <div class="ok-field-group">
               <label class="ok-label" for="{{ drawer.schedule_form.end_time.id_for_label }}">Окончание *</label>
               {{ drawer.schedule_form.end_time }}
-              {% for error in drawer.schedule_form.end_time.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
             </div>
           </div>
           <div class="ok-field-group">
             <label class="ok-label" for="{{ drawer.schedule_form.room.id_for_label }}">Кабинет</label>
             {{ drawer.schedule_form.room }}
           </div>
-          <button type="submit" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-plus-lg"></i> Добавить в расписание</button>
-          <span class="ok-help-text">Конфликты преподавателя, кабинета и группы проверяются для каждого дня.</span>
-        </form>
+          <button type="button" class="ok-btn-secondary ok-btn-sm" data-ok-slot-add-btn><i class="bi bi-plus-lg"></i> Добавить слоты</button>
+          <span class="ok-help-text">Слоты появятся в списке выше и запишутся в расписание только после «Сохранить». Конфликты преподавателя, кабинета и группы проверяются при сохранении.</span>
+        </div>
       </details>
     </section>
   </div>
@@ -132,7 +135,197 @@
     <a class="ok-link-muted" href="{{ drawer.card.admin_edit_url }}">Расширенные настройки</a>
     <div class="ok-drawer-footer-actions">
       <button type="button" class="ok-btn-secondary" data-ok-close>Отмена</button>
-      <button type="submit" class="ok-btn-primary" form="ok-program-form"><i class="bi bi-check2"></i> Сохранить</button>
+      <button type="submit" class="ok-btn-primary" form="ok-program-form" data-ok-save-btn><i class="bi bi-check2"></i> Сохранить</button>
     </div>
   </div>
 </dialog>
+{{ drawer.schedule_data|json_script:"ok-schedule-data" }}
+<script>
+  /* "Расписание программы": the slot list lives in the browser until
+     "Сохранить". "Добавить слоты", the pencil and the trash icon only
+     change this local list; "Сохранить" posts it whole (hidden
+     `schedule` field of #ok-program-form) and the server brings the
+     database to exactly this list. "Отмена"/closing drops the changes. */
+  (function () {
+    var data = JSON.parse(document.getElementById('ok-schedule-data').textContent);
+    var section = document.querySelector('[data-ok-schedule]');
+    var form = document.getElementById('ok-program-form');
+    var dialog = section.closest('dialog');
+    var hidden = section.querySelector('input[name="schedule"]');
+    var list = section.querySelector('[data-ok-slot-list]');
+    var emptyNote = section.querySelector('[data-ok-slot-empty]');
+    var removedNote = section.querySelector('[data-ok-slot-removed]');
+    var dirtyBadge = section.querySelector('[data-ok-schedule-dirty]');
+    var addBox = section.querySelector('[data-ok-slot-add]');
+    var addError = addBox.querySelector('[data-ok-slot-add-error]');
+    var roomSelect = addBox.querySelector('select');
+    var dayOrder = Object.keys(data.dayNames);
+    var slots, editingIndex = null, nextKey = 1;
+
+    function copy(items) {
+      return items.map(function (s) { return Object.assign({ key: 'k' + (nextKey++) }, s); });
+    }
+    function toMinutes(t) { var p = (t || '').split(':'); return p.length < 2 ? NaN : (+p[0]) * 60 + (+p[1]); }
+    function sortSlots() {
+      slots.sort(function (a, b) {
+        return dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day) || toMinutes(a.start) - toMinutes(b.start);
+      });
+    }
+    function label(s) { return (data.days[s.day] || s.day) + ' ' + s.start + '–' + s.end; }
+    function roomName(id) { return id ? (data.rooms[String(id)] || 'кабинет #' + id) : 'без кабинета'; }
+    function savedById(id) { return data.saved.filter(function (s) { return s.id === id; })[0]; }
+    function isChanged(s) {
+      var o = savedById(s.id);
+      return o && (o.day !== s.day || o.start !== s.start || o.end !== s.end || o.room !== s.room);
+    }
+    function payload() {
+      return slots.map(function (s) { return { id: s.id, day: s.day, start: s.start, end: s.end, room: s.room }; });
+    }
+    function isDirty() {
+      var saved = data.saved.map(function (s) { return { id: s.id, day: s.day, start: s.start, end: s.end, room: s.room }; });
+      return JSON.stringify(payload()) !== JSON.stringify(saved);
+    }
+    function overlapsOther(candidate, ignoreKey) {
+      return slots.filter(function (s) {
+        return s.key !== ignoreKey && s.active !== false && s.day === candidate.day &&
+          toMinutes(candidate.start) < toMinutes(s.end) && toMinutes(s.start) < toMinutes(candidate.end);
+      })[0];
+    }
+
+    function el(tag, attrs, children) {
+      var node = document.createElement(tag);
+      Object.keys(attrs || {}).forEach(function (k) {
+        if (k === 'text') node.textContent = attrs[k]; else node.setAttribute(k, attrs[k]);
+      });
+      (children || []).forEach(function (c) { node.appendChild(c); });
+      return node;
+    }
+    function iconBtn(icon, text, onClick) {
+      var btn = el('button', { type: 'button', 'class': 'ok-icon-btn', 'aria-label': text, title: text },
+                   [el('i', { 'class': 'bi ' + icon })]);
+      btn.addEventListener('click', onClick);
+      return btn;
+    }
+
+    function renderRow(s, index) {
+      var info = el('span', {}, [el('strong', { text: label(s) }), document.createTextNode(' · ' + roomName(s.room))]);
+      if (s.active === false) info.appendChild(document.createTextNode(' · неактивен'));
+      if (!s.id) info.appendChild(el('span', { 'class': 'ok-slot-tag', text: 'новый' }));
+      else if (isChanged(s)) info.appendChild(el('span', { 'class': 'ok-slot-tag', text: 'изменён' }));
+      var actions = el('span', { 'class': 'ok-slot-actions' }, [
+        iconBtn('bi-pencil', 'Изменить слот ' + label(s), function () { editingIndex = index; render(); }),
+        iconBtn('bi-trash3', 'Удалить слот ' + label(s), function () {
+          slots.splice(index, 1); editingIndex = null; changed();
+        }),
+      ]);
+      var li = el('li', {}, [info, actions]);
+      if (s.active === false) li.className = 'is-muted';
+      if (!s.id || isChanged(s)) li.classList.add('is-pending');
+      return li;
+    }
+
+    function renderEditor(s, index) {
+      var day = el('select', { 'class': 'ok-input', 'aria-label': 'День недели' });
+      dayOrder.forEach(function (code) {
+        var opt = el('option', { value: code, text: data.dayNames[code] });
+        if (code === s.day) opt.selected = true;
+        day.appendChild(opt);
+      });
+      var start = el('input', { type: 'time', 'class': 'ok-input', value: s.start, 'aria-label': 'Начало' });
+      var end = el('input', { type: 'time', 'class': 'ok-input', value: s.end, 'aria-label': 'Окончание' });
+      var room = roomSelect.cloneNode(true);
+      room.removeAttribute('id'); room.removeAttribute('name');
+      if (s.room && !room.querySelector('option[value="' + s.room + '"]')) {
+        room.appendChild(el('option', { value: String(s.room), text: roomName(s.room) }));
+      }
+      room.value = s.room ? String(s.room) : '';
+      var error = el('div', { 'class': 'ok-error-text', hidden: '' });
+      var done = el('button', { type: 'button', 'class': 'ok-btn-secondary ok-btn-sm' },
+                    [el('i', { 'class': 'bi bi-check2' }), document.createTextNode(' Готово')]);
+      var cancel = el('button', { type: 'button', 'class': 'ok-link-muted ok-slot-cancel', text: 'Отмена' });
+      done.addEventListener('click', function () {
+        var candidate = { day: day.value, start: start.value, end: end.value, room: room.value ? +room.value : null };
+        var problem = null;
+        if (!candidate.start || !candidate.end) problem = 'Укажите время начала и окончания.';
+        else if (toMinutes(candidate.end) <= toMinutes(candidate.start)) problem = 'Время окончания должно быть позже времени начала.';
+        else if (s.active !== false && overlapsOther(candidate, s.key)) problem = 'Пересекается со слотом ' + label(overlapsOther(candidate, s.key)) + '.';
+        if (problem) { error.textContent = problem; error.hidden = false; return; }
+        Object.assign(s, candidate);
+        editingIndex = null;
+        changed();
+      });
+      cancel.addEventListener('click', function () { editingIndex = null; render(); });
+      return el('li', { 'class': 'ok-slot-editor' }, [
+        el('div', { 'class': 'ok-slot-editor-fields' }, [day, start, end, room]),
+        error,
+        el('div', { 'class': 'ok-slot-editor-actions' }, [done, cancel]),
+      ]);
+    }
+
+    function render() {
+      list.innerHTML = '';
+      slots.forEach(function (s, i) { list.appendChild(i === editingIndex ? renderEditor(s, i) : renderRow(s, i)); });
+      emptyNote.hidden = slots.length > 0;
+      var keptIds = slots.map(function (s) { return s.id; });
+      var removed = data.saved.filter(function (s) { return keptIds.indexOf(s.id) === -1; }).length;
+      removedNote.hidden = !removed;
+      removedNote.textContent = removed ? 'Будет удалено при сохранении: ' + removed + '.' : '';
+      hidden.value = JSON.stringify(payload());
+      dirtyBadge.hidden = !isDirty();
+    }
+    function changed() {
+      sortSlots();
+      render();
+      // Lets the Workspace's unsaved-changes guard know (see base.html).
+      form.dispatchEvent(new Event('change'));
+    }
+
+    section.querySelector('[data-ok-slot-add-btn]').addEventListener('click', function () {
+      var days = Array.prototype.filter.call(addBox.querySelectorAll('input[type="checkbox"]'), function (c) { return c.checked; })
+        .map(function (c) { return c.value; });
+      var start = addBox.querySelector('input[name="start_time"]').value;
+      var end = addBox.querySelector('input[name="end_time"]').value;
+      var room = roomSelect.value ? +roomSelect.value : null;
+      var problems = [];
+      if (!days.length) problems.push('Выберите хотя бы один день недели.');
+      if (!start || !end) problems.push('Укажите время начала и окончания.');
+      else if (toMinutes(end) <= toMinutes(start)) problems.push('Время окончания должно быть позже времени начала.');
+      if (!problems.length) {
+        days.forEach(function (day) {
+          var clash = overlapsOther({ day: day, start: start, end: end });
+          if (clash) problems.push((data.days[day] || day) + ': пересекается со слотом ' + label(clash) + '.');
+        });
+      }
+      addError.hidden = !problems.length;
+      addError.querySelector('div').textContent = problems.join(' ');
+      if (problems.length) return;
+      days.forEach(function (day) {
+        slots.push({ key: 'k' + (nextKey++), id: null, day: day, start: start, end: end, room: room, active: true });
+      });
+      addBox.querySelectorAll('input[type="checkbox"]').forEach(function (c) { c.checked = false; });
+      editingIndex = null;
+      changed();
+    });
+
+    function reset(items) { slots = copy(items); editingIndex = null; sortSlots(); render(); }
+    reset(data.current);
+    // "Отмена" / closing the drawer: back to what the database holds.
+    dialog.addEventListener('close', function () {
+      reset(data.saved);
+      addError.hidden = true;
+    });
+
+    form.addEventListener('submit', function () {
+      hidden.value = JSON.stringify(payload());
+      var btn = document.querySelector('[data-ok-save-btn]');
+      if (btn) btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Сохранение...';
+    });
+    // A failed save re-renders the drawer with the admin's unsaved list —
+    // keep it guarded once the Workspace script has wired its forms.
+    document.addEventListener('DOMContentLoaded', function () {
+      if (isDirty()) form.dispatchEvent(new Event('change'));
+      var saveError = section.querySelector(':scope > .ok-callout-danger');
+      if (saveError) saveError.scrollIntoView({ block: 'center' });
+    });
+  })();
+</script>
