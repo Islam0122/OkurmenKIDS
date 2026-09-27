@@ -27,18 +27,23 @@ one transaction:
 
 Also home to build_schedule_slots(), the shared "one slot per selected
 weekday, all validated before any is saved" step of the Workspace's
-add-program and add-schedule forms.
+add-program and add-schedule forms, and to save_teaching_program(), which
+applies the program drawer's "Сохранить": program fields plus the drawer's
+whole locally-edited list of weekly slots (created / changed / removed) in
+one transaction — "Добавить слоты" and the trash icon only change the list
+in the browser; nothing reaches the database before "Сохранить".
 """
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import GroupSchedule, GroupTeacher, Lesson
+from ..constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
+from ..models import GroupSchedule, GroupTeacher, Lesson, Room
 from .group_schedule_conflicts import find_schedule_teacher_conflict
 
 # How many clashing lessons one validation error lists before "…".
@@ -219,3 +224,184 @@ def build_schedule_slots(*, group, teacher, subject, days, start_time, end_time,
     # Two of the selected days can't clash with each other (different
     # weekdays), so validating each against the saved schedule is enough.
     return slots
+
+
+@dataclass(frozen=True)
+class SlotSpec:
+    """One weekly slot as the drawer wants it after "Сохранить": `id` is
+    an existing slot of the program, None a new one."""
+
+    id: int | None
+    day_of_week: str
+    start_time: dt.time
+    end_time: dt.time
+    room_id: int | None
+
+    @property
+    def label(self) -> str:
+        return (
+            f"{WEEKDAY_LABELS_SHORT.get(self.day_of_week, self.day_of_week)} "
+            f"{self.start_time:%H:%M}–{self.end_time:%H:%M}"
+        )
+
+
+@dataclass
+class ScheduleChange:
+    created: int = 0
+    updated: int = 0
+    deleted: int = 0
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.created or self.updated or self.deleted)
+
+
+@dataclass
+class ProgramSaveResult:
+    program: ProgramChange = field(default_factory=ProgramChange)
+    schedule: ScheduleChange = field(default_factory=ScheduleChange)
+
+
+def _parse_time(value) -> dt.time | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return dt.time.fromisoformat(value.strip()[:5])
+    except ValueError:
+        return None
+
+
+def parse_schedule_specs(group_teacher: GroupTeacher, items) -> list[SlotSpec]:
+    """Validate the shape of the drawer's slot list (a decoded JSON list of
+    {id, day, start, end, room}) and turn it into SlotSpecs. Checks what
+    can be checked without the database state of other programs: known
+    weekday, times, end after start, the room exists, ids are this
+    program's own slots, and no two of the program's slots overlap.
+    Teacher / room / group conflicts are left to save_teaching_program()."""
+    if not isinstance(items, list):
+        raise ValidationError("Некорректные данные расписания.")
+    own_slots = {slot.pk: slot for slot in group_teacher.schedules.all()} if group_teacher.pk else {}
+    room_ids = set(Room.objects.values_list("pk", flat=True))
+    specs, problems, seen_ids = [], [], set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValidationError("Некорректные данные расписания.")
+        slot_id, room_id = item.get("id"), item.get("room")
+        day = item.get("day")
+        start, end = _parse_time(item.get("start")), _parse_time(item.get("end"))
+        if slot_id is not None and (not isinstance(slot_id, int) or slot_id not in own_slots or slot_id in seen_ids):
+            raise ValidationError("Слот расписания не найден — обновите страницу и попробуйте снова.")
+        if room_id is not None and (not isinstance(room_id, int) or room_id not in room_ids):
+            problems.append("Выбранный кабинет не найден.")
+            continue
+        if day not in WEEKDAY_CODES or start is None or end is None:
+            problems.append("Укажите день недели, время начала и окончания для каждого слота.")
+            continue
+        spec = SlotSpec(id=slot_id, day_of_week=day, start_time=start, end_time=end, room_id=room_id)
+        if end <= start:
+            problems.append(f"{spec.label}: время окончания должно быть позже времени начала.")
+            continue
+        if slot_id is not None:
+            seen_ids.add(slot_id)
+        specs.append(spec)
+
+    # The program's own slots can't overlap each other — the database
+    # checks below only see the slots of *other* programs correctly while
+    # this list is being applied.
+    by_day: dict[str, list[SlotSpec]] = {}
+    for spec in specs:
+        if spec.id is not None and not own_slots[spec.id].is_active:
+            continue
+        by_day.setdefault(spec.day_of_week, []).append(spec)
+    for day in WEEKDAY_CODES:
+        day_specs = sorted(by_day.get(day, []), key=lambda s: s.start_time)
+        for prev, nxt in zip(day_specs, day_specs[1:]):
+            if nxt.start_time < prev.end_time:
+                problems.append(f"Слоты {prev.label} и {nxt.label} пересекаются.")
+    if problems:
+        raise ValidationError(list(dict.fromkeys(problems)))
+    return sorted(specs, key=lambda s: (WEEKDAY_CODES.index(s.day_of_week), s.start_time))
+
+
+def _apply_schedule(group_teacher: GroupTeacher, specs: list[SlotSpec], removed_ids: set[int],
+                    changed: list[SlotSpec], was_active: dict[int, bool]) -> ScheduleChange:
+    """Write the created/changed slots (the removed ones are already gone
+    and the changed ones parked inactive by the caller). Every slot is
+    fully validated — teacher, room and group conflicts — and every
+    problem is collected before raising, so the admin sees all of them."""
+    change = ScheduleChange(deleted=len(removed_ids))
+    slots_by_id = {slot.pk: slot for slot in group_teacher.schedules.filter(pk__in=[s.id for s in changed])}
+    problems = []
+    for spec in specs:
+        if spec.id is None:
+            slot = GroupSchedule(group=group_teacher.group, is_active=True)
+        elif spec in changed:
+            slot = slots_by_id[spec.id]
+            slot.is_active = was_active[spec.id]
+        else:
+            continue
+        slot.teacher = group_teacher.teacher
+        slot.subject = group_teacher.subject
+        slot.day_of_week = spec.day_of_week
+        slot.start_time = spec.start_time
+        slot.end_time = spec.end_time
+        slot.room_id = spec.room_id
+        try:
+            slot.full_clean()
+        except ValidationError as exc:
+            problems.extend(f"{spec.label}: {message}" for message in exc.messages)
+            continue
+        slot.save()
+        if spec.id is None:
+            change.created += 1
+        else:
+            change.updated += 1
+    if problems:
+        raise ValidationError({"schedule": list(dict.fromkeys(problems))})
+    return change
+
+
+@transaction.atomic
+def save_teaching_program(group_teacher: GroupTeacher, *, teacher, subject, is_active: bool,
+                          reassign_future_lessons: bool = True, slots: list[SlotSpec] | None = None,
+                          today: dt.date | None = None) -> ProgramSaveResult:
+    """The program drawer's "Сохранить": update_teaching_program() plus,
+    when `slots` is given, bring the program's weekly slots to exactly that
+    list — existing slots missing from it are deleted, changed ones
+    updated, new ones created. All or nothing: any error (program fields
+    or any slot's teacher / room / group conflict) rolls everything back;
+    slot errors are raised under the "schedule" key.
+
+    Order matters for conflict checks: removed slots are deleted and
+    changed ones parked inactive (conflict checks ignore inactive slots)
+    first, so neither blocks the program's own new layout; the teacher
+    change is then validated against the slots that stay as they are, and
+    the created/changed slots are validated last, already under the new
+    teacher."""
+    result = ProgramSaveResult()
+    if slots is not None:
+        current = {slot.pk: slot for slot in group_teacher.schedules.all()}
+        wanted_ids = {spec.id for spec in slots if spec.id is not None}
+        removed_ids = set(current) - wanted_ids
+        changed = [
+            spec for spec in slots
+            if spec.id is not None and (
+                current[spec.id].day_of_week, current[spec.id].start_time,
+                current[spec.id].end_time, current[spec.id].room_id,
+            ) != (spec.day_of_week, spec.start_time, spec.end_time, spec.room_id)
+        ]
+        was_active = {spec.id: current[spec.id].is_active for spec in changed}
+        if removed_ids:
+            GroupSchedule.objects.filter(pk__in=removed_ids).delete()
+        if changed:
+            GroupSchedule.objects.filter(pk__in=[spec.id for spec in changed]).update(is_active=False)
+
+    result.program = update_teaching_program(
+        group_teacher, teacher=teacher, subject=subject, is_active=is_active,
+        reassign_future_lessons=reassign_future_lessons, today=today,
+    )
+
+    if slots is not None:
+        group_teacher.refresh_from_db()
+        result.schedule = _apply_schedule(group_teacher, slots, removed_ids, changed, was_active)
+    return result
