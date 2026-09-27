@@ -398,24 +398,32 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
 
     def report_view(self, request):
         self._require_view(request)
-        today = timezone.localdate()
-        filters = scholarship_report.parse_filters(request.GET, today)
-        report = scholarship_report.build_report(filters)
+        options = scholarship_report.period_options()
+        selected = scholarship_report.pick_period(options, request.GET.get("period"))
+        filters = scholarship_report.parse_filters(request.GET)
+        report = scholarship_report.build_report(selected.period, filters) if selected else None
         return self._page(
             request, "admin/scholarships/scholarshipperiod/report.html", "Отчёты по стипендиям",
-            report=report, filters=filters, stats=report.stats,
-            presets=scholarship_report.PRESETS, status_choices=scholarship_report.STATUS_CHOICES,
-            pdf_query=urlencode(filters.querystring()),
-            has_periods=ScholarshipPeriod.objects.exists(),
+            options=options, selected=selected, report=report, filters=filters,
+            status_choices=scholarship_report.STATUS_CHOICES,
+            pdf_query=urlencode(filters.querystring(selected.period if selected else None)),
+            today=timezone.localdate(),
         )
 
     def report_pdf_view(self, request):
+        """Same period + filters as the page, so the PDF shows exactly what
+        the Admin sees."""
         self._require_view(request)
-        filters = scholarship_report.parse_filters(request.GET, timezone.localdate())
-        report = scholarship_report.build_report(filters)
+        options = scholarship_report.period_options()
+        selected = scholarship_report.pick_period(options, request.GET.get("period"))
+        if selected is None:
+            messages.warning(request, "Нет стипендиальных периодов — отчёт сформировать нельзя.")
+            return HttpResponseRedirect(reverse("admin:scholarships_report"))
+        period = selected.period
+        report = scholarship_report.build_report(period, scholarship_report.parse_filters(request.GET))
         response = HttpResponse(render_report_pdf(report), content_type="application/pdf")
         response["Content-Disposition"] = (
-            f'attachment; filename="scholarship-report-{filters.date_from}-{filters.date_to}.pdf"'
+            f'attachment; filename="scholarship-report-{period.period_start}-{period.period_end}.pdf"'
         )
         return response
 
