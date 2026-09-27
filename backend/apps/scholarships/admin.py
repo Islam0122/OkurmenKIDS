@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin, messages
-from django.db.models import F
+from django.db.models import F, Q
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
@@ -11,6 +11,8 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.http import urlencode
+
+from apps.academy.models import Group
 
 from .models import (
     AWARD_DAY_CHOICES,
@@ -123,10 +125,25 @@ class PeriodForm(forms.Form):
         widget=forms.NumberInput(attrs={"min": 1, "max": 1000, "inputmode": "numeric"}),
     )
 
+    groups = forms.ModelMultipleChoiceField(
+        label="Участвующие группы", required=False, queryset=Group.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        help_text="Стипендия рассчитывается только для учеников выбранных групп. Ничего не выбрано — все группы академии.",
+    )
+
     def __init__(self, *args, period: ScholarshipPeriod | None = None, awarded: int = 0, **kwargs):
         super().__init__(*args, **kwargs)
         self.period = period
         self.awarded = awarded
+        # Active groups, plus whatever the period already has (a group may
+        # have been archived since).
+        selected = Q(pk__in=period.groups.values("pk")) if period is not None else Q(pk__in=[])
+        self.fields["groups"].queryset = (
+            Group.objects.filter(Q(status=Group.Status.ACTIVE) | selected)
+            .select_related("course").order_by("course__name", "name")
+        )
+        self.groups_locked = period is not None and not period.is_draft
+        self.fields["groups"].disabled = self.groups_locked
         self.dates_locked = period is not None and (not period.is_manual or not period.is_draft or period.is_calculated)
         self.limit_locked = period is not None and not period.is_draft
         for name in ("period_start", "period_end"):
@@ -135,6 +152,17 @@ class PeriodForm(forms.Form):
             self.fields[name].disabled = self.limit_locked
         if awarded:
             self.fields["max_recipients"].widget.attrs["min"] = awarded
+
+    def grouped_groups(self) -> list[dict]:
+        """The group checkboxes, grouped by program, for the template."""
+        value = self["groups"].value() or []
+        chosen = {str(v) for v in value}
+        programs: dict[str, list] = {}
+        for group in self.fields["groups"].queryset:
+            programs.setdefault(group.course.name if group.course_id else "Без программы", []).append(
+                {"id": group.pk, "name": group.name, "checked": str(group.pk) in chosen}
+            )
+        return [{"program": name, "groups": groups} for name, groups in programs.items()]
 
     def clean(self):
         cleaned = super().clean()
@@ -339,7 +367,7 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
                 try:
                     period = create_period(
                         title=data["title"], period_start=data["period_start"], period_end=data["period_end"],
-                        max_recipients=data["limit"], user=request.user,
+                        max_recipients=data["limit"], groups=list(data["groups"]), user=request.user,
                     )
                 except ValidationError as exc:
                     form.add_error(None, exc.messages)
@@ -370,6 +398,8 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
                     changes.update(period_start=data["period_start"], period_end=data["period_end"])
                 if not form.limit_locked:
                     changes["max_recipients"] = data["limit"]
+                if not form.groups_locked:
+                    changes["groups"] = list(data["groups"])
                 try:
                     update_period(period, user=request.user, **changes)
                 except ValidationError as exc:
@@ -392,6 +422,7 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
             "period_end": period.period_end,
             "limit_enabled": not period.is_unlimited,
             "max_recipients": period.max_recipients,
+            "groups": period.group_ids,
         }
 
     # -- report --------------------------------------------------------------
@@ -407,7 +438,7 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
             options=options, selected=selected, report=report, filters=filters,
             status_choices=scholarship_report.STATUS_CHOICES,
             pdf_query=urlencode(filters.querystring(selected.period if selected else None)),
-            today=timezone.localdate(),
+            today=timezone.localdate(), can_generate=can_manage(request.user, "generate"),
         )
 
     def report_pdf_view(self, request):

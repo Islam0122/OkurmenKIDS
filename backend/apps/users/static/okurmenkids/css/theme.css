@@ -2982,6 +2982,30 @@ a.ok-sch-card-name:hover { color: var(--ok-primary); text-decoration: none; }
 .ok-sch-form .ok-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .ok-sch-kpis.is-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* -- Period form: participating groups ------------------------------------ */
+.ok-sch-groups-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
+.ok-sch-groups-tools .ok-rep-search { flex: 1; min-width: 200px; max-width: 360px; }
+.ok-form-container .ok-sch-groups-tools input.ok-input { padding-left: 2rem; min-height: 2.2rem; }
+.ok-sch-groups-program { border: 0; padding: 0; margin: 0 0 0.9rem; min-width: 0; }
+.ok-sch-groups-program[hidden] { display: none; }
+.ok-sch-groups-program legend {
+  display: flex; align-items: center; gap: 0.6rem; float: none; width: auto;
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--ok-text-muted); margin-bottom: 0.45rem; padding: 0;
+}
+.ok-sch-link { border: 0; background: none; padding: 0; font-size: 0.78rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ok-primary); cursor: pointer; }
+.ok-sch-link:hover { text-decoration: underline; }
+.ok-sch-groups-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.4rem; }
+.ok-sch-group-option {
+  display: flex; align-items: center; gap: 0.5rem; margin: 0; cursor: pointer;
+  padding: 0.45rem 0.65rem; border: 1px solid var(--ok-border); border-radius: var(--ok-radius-sm);
+  font-size: 0.86rem; font-weight: 600; color: var(--ok-text); background: var(--ok-surface);
+}
+.ok-sch-group-option[hidden] { display: none; }
+.ok-sch-group-option:has(input:checked) { border-color: var(--ok-primary); background: var(--ok-primary-soft); }
+.ok-form-container .ok-sch-group-option input { width: 1rem; height: 1rem; min-height: 0; padding: 0; margin: 0; accent-color: var(--ok-primary); flex-shrink: 0; }
+.ok-sch-group-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ok-sch-kpi.is-warning .ok-sch-kpi-label i { color: var(--ok-warning); }
 
 /* -- Report («Отчёты по стипендиям») -------------------------------------- */
@@ -3029,6 +3053,10 @@ a.ok-sch-card-name:hover { color: var(--ok-primary); text-decoration: none; }
 a.ok-rep-tag:hover { border-color: var(--ok-primary); color: var(--ok-primary); text-decoration: none; }
 .ok-rep-tag.is-active { background: var(--ok-primary); border-color: var(--ok-primary); color: var(--ok-on-primary); }
 a.ok-rep-tag.is-active:hover { color: var(--ok-on-primary); }
+.ok-rep-scope { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--ok-surface-hover); border: 1px solid var(--ok-border); font-size: 0.7rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ok-text-muted); }
+.ok-rep-scope.is-selected { background: var(--ok-primary-soft); border-color: transparent; color: var(--ok-primary); }
+.ok-rep-edit { margin-left: auto; font-size: 0.78rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ok-primary); text-decoration: none; }
+.ok-rep-edit:hover { text-decoration: underline; }
 .ok-rep-tag.is-program { background: var(--ok-primary-soft); border-color: transparent; color: var(--ok-primary); }
 
 .ok-rep-hero {

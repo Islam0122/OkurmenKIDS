@@ -358,6 +358,8 @@ def _draw_period_box(doc: _Doc) -> None:
     label_w = 150
     value_w = CONTENT_W - 28 - label_w
     groups = ", ".join(report.group_names) or "Период ещё не рассчитан"
+    if report.scope_all:
+        groups += " (вся академия — группы для периода не выбраны)"
     programs = ", ".join(report.programs) or "—"
     status = "Завершён (утверждён)" if not period.is_draft else "В процессе (не утверждён)"
     rows = [

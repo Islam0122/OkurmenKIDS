@@ -58,7 +58,7 @@
             <span class="ok-sch-dot {% if o.period.is_draft %}is-progress{% else %}is-done{% endif %}"></span>
             {{ o.period.title }} · {% if o.period.is_draft %}В процессе{% else %}Завершён{% endif %}
           </div>
-          <div class="ok-rep-pcard-label">Участвующие группы</div>
+          <div class="ok-rep-pcard-label">Участвующие группы{% if o.scope_all %} <span class="ok-rep-scope">вся академия</span>{% else %} <span class="ok-rep-scope is-selected">{{ o.groups|length }}</span>{% endif %}</div>
           <div class="ok-rep-tags">
             {% for g in o.groups|slice:":6" %}<span class="ok-rep-tag">{{ g }}</span>{% empty %}<span class="ok-sch-muted small">Период ещё не рассчитан</span>{% endfor %}
             {% if o.groups|length > 6 %}<span class="ok-rep-tag is-more">+{{ o.groups|length|add:"-6" }}</span>{% endif %}
@@ -86,7 +86,11 @@
     </div>
     <div class="ok-rep-hero-grid">
       <div>
-        <div class="ok-rep-hero-label">Участвующие группы <span class="ok-sch-count">{{ report.groups|length }}</span></div>
+        <div class="ok-rep-hero-label">
+          Участвующие группы <span class="ok-sch-count">{{ report.groups|length }}</span>
+          {% if report.scope_all %}<span class="ok-rep-scope">вся академия — группы для периода не выбраны</span>{% endif %}
+          {% if can_generate and period.is_draft %}<a href="{% url 'admin:scholarships_edit' period.pk %}" class="ok-rep-edit"><i class="bi bi-pencil"></i> изменить</a>{% endif %}
+        </div>
         <div class="ok-rep-tags is-lg">
           {% for g in report.groups %}
             <a href="?period={{ period.pk }}&amp;group={{ g.name|urlencode }}#students" class="ok-rep-tag{% if g.name == filters.group %} is-active{% endif %}" title="Показать учеников группы">{{ g.name }}</a>

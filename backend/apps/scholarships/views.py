@@ -88,7 +88,7 @@ class ScholarshipPeriodViewSet(
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        qs = ScholarshipPeriod.objects.all()
+        qs = ScholarshipPeriod.objects.prefetch_related("groups")
         if is_admin(self.request.user):
             qs = analytics.annotate_periods(qs)
         return qs

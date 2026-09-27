@@ -259,6 +259,19 @@ class ScholarshipPeriod(models.Model):
         max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Сумма стипендии",
     )
 
+    # Which groups the period is for. Empty = the whole academy (every
+    # active student), which is what automatic cycles and all periods
+    # created before this field existed do. Scoring reads it in
+    # services.scoring.candidate_students; nothing else about the
+    # calculation depends on it.
+    groups = models.ManyToManyField(
+        "academy.Group",
+        blank=True,
+        related_name="scholarship_periods",
+        verbose_name="Участвующие группы",
+        help_text="Пусто — все группы академии.",
+    )
+
     last_calculated_at = models.DateTimeField(null=True, blank=True, verbose_name="Последний расчёт")
     generated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -323,6 +336,13 @@ class ScholarshipPeriod(models.Model):
     @property
     def is_calculated(self) -> bool:
         return self.last_calculated_at is not None
+
+    @property
+    def group_ids(self) -> list[int]:
+        """Selected groups; [] means the whole academy."""
+        if self.pk is None:
+            return []
+        return [group.pk for group in self.groups.all()]
 
     def has_room_for(self, awarded: int) -> bool:
         """Whether one more recipient fits under the limit when `awarded`

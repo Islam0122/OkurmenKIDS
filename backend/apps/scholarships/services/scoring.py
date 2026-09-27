@@ -174,15 +174,19 @@ class _PeriodData:
 def candidate_students(period: ScholarshipPeriod):
     """Every currently active student, plus anyone (active or not) with an
     attendance record in the period — so inactive/withdrawn students show up
-    in the report as ineligible with a reason instead of vanishing."""
+    in the report as ineligible with a reason instead of vanishing.
+
+    When the period has participating groups (`period.groups`), only
+    students of those groups are candidates; an empty selection means the
+    whole academy. Scoring itself does not change."""
     in_period = Attendance.objects.filter(
         lesson__date__gte=period.period_start, lesson__date__lte=period.period_end
     ).values("student_id")
-    return (
-        Student.objects.filter(Q(status=Student.Status.ACTIVE) | Q(id__in=in_period))
-        .select_related("group__course")
-        .order_by("id")
-    )
+    students = Student.objects.filter(Q(status=Student.Status.ACTIVE) | Q(id__in=in_period))
+    group_ids = period.group_ids
+    if group_ids:
+        students = students.filter(group_id__in=group_ids)
+    return students.select_related("group__course").order_by("id")
 
 
 def _load_period_data(period: ScholarshipPeriod, students: list[Student]) -> _PeriodData:
