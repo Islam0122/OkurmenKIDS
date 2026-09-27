@@ -25,6 +25,8 @@ from .models import (
 )
 from .permissions import can_manage
 from .services import analytics
+from .services import report as scholarship_report
+from .services.report_pdf import render_report_pdf
 from .services.feedback import validate_feedback_target
 from .services.generation import (
     add_award,
@@ -291,6 +293,7 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
         custom = [
             path("create/", view(self.create_view), name="scholarships_create"),
             path("report/", view(self.report_view), name="scholarships_report"),
+            path("report/pdf/", view(self.report_pdf_view), name="scholarships_report_pdf"),
             path("generate/", view(self.generate_view), name="scholarships_generate"),
             path("<int:period_id>/edit/", view(self.edit_view), name="scholarships_edit"),
             path("<int:period_id>/recalculate/", view(self.recalculate_view), name="scholarships_recalculate"),
@@ -395,28 +398,26 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
 
     def report_view(self, request):
         self._require_view(request)
-        periods = list(analytics.annotate_periods(ScholarshipPeriod.objects.all()))
-        for period in periods:
-            period.not_awarded = (period.eligible_count or 0) - (period.recipients_count or 0)
-        selected = None
-        period_id = request.GET.get("period")
-        if period_id and period_id.isdigit():
-            selected = next((p for p in periods if p.pk == int(period_id)), None)
-        if selected is None and periods:
-            # The newest period that has numbers; a running one is still empty.
-            selected = next((p for p in periods if p.is_calculated), periods[0])
-        totals = {
-            "periods": len(periods),
-            "recipients": sum(p.recipients_count or 0 for p in periods),
-            "approved": sum(p.approved_count or 0 for p in periods),
-            "amount": sum((p.total_amount or 0) for p in periods) if any(p.total_amount for p in periods) else None,
-        }
+        today = timezone.localdate()
+        filters = scholarship_report.parse_filters(request.GET, today)
+        report = scholarship_report.build_report(filters)
         return self._page(
             request, "admin/scholarships/scholarshipperiod/report.html", "Отчёты по стипендиям",
-            periods=periods, selected=selected,
-            report=analytics.period_analytics(selected) if selected else None,
-            totals=totals, awards_by_month=analytics.awards_by_month(), today=timezone.localdate(),
+            report=report, filters=filters, stats=report.stats,
+            presets=scholarship_report.PRESETS, status_choices=scholarship_report.STATUS_CHOICES,
+            pdf_query=urlencode(filters.querystring()),
+            has_periods=ScholarshipPeriod.objects.exists(),
         )
+
+    def report_pdf_view(self, request):
+        self._require_view(request)
+        filters = scholarship_report.parse_filters(request.GET, timezone.localdate())
+        report = scholarship_report.build_report(filters)
+        response = HttpResponse(render_report_pdf(report), content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="scholarship-report-{filters.date_from}-{filters.date_to}.pdf"'
+        )
+        return response
 
     # -- cycle generation (automatic schedule, run by hand) -------------------
 
