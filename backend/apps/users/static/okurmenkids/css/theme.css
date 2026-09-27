@@ -2982,12 +2982,74 @@ a.ok-sch-card-name:hover { color: var(--ok-primary); text-decoration: none; }
 .ok-sch-form .ok-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .ok-sch-kpis.is-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ok-sch-kpis.is-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.ok-sch-kpi.is-warning .ok-sch-kpi-label i { color: var(--ok-warning); }
+
+/* -- Report («Отчёты по стипендиям») -------------------------------------- */
+
+.ok-rep-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 0.75rem; margin-bottom: 1.1rem;
+}
+.ok-rep-head .ok-page-subtitle { margin: 0; }
+
+.ok-rep-filters { padding: 1.1rem 1.25rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.ok-rep-filters-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.9rem; }
+.ok-rep-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; }
+.ok-rep-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.ok-rep-field-period { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.6rem 0.9rem; }
+.ok-rep-label { font-size: 0.76rem; font-weight: 600; color: var(--ok-text-muted); margin: 0; }
+.ok-rep-field-period > .ok-rep-label { width: 100%; }
+.ok-rep-presets { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ok-rep-presets input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.ok-rep-presets .ok-sch-chip:focus-within { box-shadow: 0 0 0 3px var(--ok-primary-soft); }
+.ok-rep-dates { display: flex; align-items: center; gap: 0.5rem; }
+.ok-rep-dates[hidden] { display: none; }
+.ok-rep-dates .ok-input { min-height: 2.2rem; padding: 0.4rem 0.6rem; }
+.ok-rep-search { position: relative; }
+.ok-rep-search i { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--ok-text-muted); font-size: 0.85rem; pointer-events: none; }
+.ok-rep-search .ok-input { padding-left: 2.1rem; width: 100%; }
+.ok-rep-field select.ok-input { width: 100%; }
+.ok-rep-actions { display: flex; gap: 0.5rem; }
+
+.ok-rep-period {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem;
+  padding: 1rem 1.25rem; margin-bottom: 1rem;
+  background: var(--ok-surface); border: 1px solid var(--ok-border); border-left: 4px solid var(--ok-primary);
+  border-radius: var(--ok-radius-lg);
+}
+.ok-rep-period-main { display: flex; align-items: center; gap: 0.8rem; }
+.ok-rep-period-label { font-size: 0.78rem; font-weight: 600; color: var(--ok-text-muted); }
+.ok-rep-period-dates { font-size: 1.3rem; font-weight: 800; color: var(--ok-text); font-variant-numeric: tabular-nums; }
+.ok-rep-period-list { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.ok-rep-period-caption { font-size: 0.8rem; color: var(--ok-text-muted); }
+.ok-rep-period-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.7rem; border-radius: 999px;
+  border: 1px solid var(--ok-border); font-size: 0.8rem; font-weight: 600; color: var(--ok-text-secondary);
+  text-decoration: none; font-variant-numeric: tabular-nums;
+}
+.ok-rep-period-chip:hover { border-color: var(--ok-primary); color: var(--ok-primary); text-decoration: none; }
+
+.ok-rep-table .ok-rep-dates-cell { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ok-rep-table .ok-badge i { font-size: 0.72rem; }
+.ok-rep-hint { max-width: 240px; margin-top: 0.25rem; font-size: 0.75rem; color: var(--ok-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ok-rep-table tfoot td { background: var(--ok-surface-hover); border-top: 2px solid var(--ok-border); }
+.ok-rep-empty { border: 0; box-shadow: none; }
+
+@media (max-width: 1199px) {
+  .ok-sch-kpis.is-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ok-rep-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ok-rep-actions { grid-column: 1 / -1; }
+}
 
 @media (max-width: 991px) {
   .ok-sch-kpis, .ok-sch-kpis.is-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 575px) {
-  .ok-sch-kpis, .ok-sch-kpis.is-3 { grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+  .ok-sch-kpis, .ok-sch-kpis.is-3, .ok-sch-kpis.is-5 { grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+  .ok-rep-grid { grid-template-columns: 1fr; }
+  .ok-rep-actions .ok-btn-primary, .ok-rep-actions .ok-btn-secondary { flex: 1; justify-content: center; }
+  .ok-rep-head .ok-btn-primary { width: 100%; justify-content: center; }
   .ok-sch-kpi { padding: 0.8rem 0.9rem; }
   .ok-sch-kpi-value { font-size: 1.45rem; }
   .ok-sch-grid { grid-template-columns: 1fr; }

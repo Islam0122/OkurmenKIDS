@@ -307,8 +307,10 @@ class PeriodAdminPanelTests(ManualPeriodFixture):
         self.assertNotContains(awarded_only, "Azamat Test")
 
         report = self.web.get(reverse("admin:scholarships_report"), {"period": period.pk})
-        self.assertContains(report, "Всего студентов")
-        self.assertContains(report, "Выбрано стипендиатов")
+        self.assertContains(report, "01.09.2026 — 30.09.2026")
+        self.assertContains(report, "Получили стипендию")
+        self.assertContains(report, "Ожидают выплату")
+        self.assertContains(report, "Скачать PDF-отчёт")
 
         self.assertEqual(self.web.get(reverse("admin:scholarships_edit", args=[period.pk])).status_code, 200)
 
