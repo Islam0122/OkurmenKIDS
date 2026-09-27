@@ -1,0 +1,66 @@
+{% extends "admin/change_list.html" %}
+{% load admin_list admin_urls scholarship_tags %}
+
+{% block bodyclass %}{{ block.super }} ok-sch-page{% endblock %}
+
+{% block content_title %}Настройки стипендии{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item active">Настройки стипендии</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="col-12 ok-sch-dashboard ok-set-list">
+  <div class="ok-sch-pagehead">
+    <p class="ok-page-subtitle">Правила стипендиальной программы. Расчёт всегда идёт по активной конфигурации — одновременно активна только одна.</p>
+    {% if has_add_permission %}
+      <a href="{% url cl.opts|admin_urlname:'add' %}" class="ok-btn-secondary"><i class="bi bi-plus-lg"></i> Новая конфигурация</a>
+    {% endif %}
+  </div>
+
+  {% if cl.result_list %}
+    <div class="ok-set-configs">
+      {% for config in cl.result_list %}
+        {% url cl.opts|admin_urlname:'change' config.pk as open_url %}
+        <article class="ok-card ok-set-config{% if config.is_active %} is-active{% endif %}">
+          <header class="ok-set-config-head">
+            <span class="ok-sch-card-icon"><i class="bi bi-sliders"></i></span>
+            <div class="ok-set-config-title">
+              <a href="{{ open_url }}" class="ok-sch-pcard-dates">{{ config.name }}</a>
+              <div class="ok-sch-muted small">Обновлено {{ config.updated_at|date:"d.m.Y H:i" }}</div>
+            </div>
+            {% if config.is_active %}<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активна</span>{% else %}<span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Неактивна</span>{% endif %}
+          </header>
+
+          <dl class="ok-set-summary">
+            <div><dt><i class="bi bi-calendar3"></i> Период</dt><dd>{{ config.get_award_mode_display }}</dd></div>
+            <div><dt><i class="bi bi-people"></i> Лимит стипендиатов</dt><dd>{{ config.max_recipients }} студентов</dd></div>
+            <div><dt><i class="bi bi-cash-coin"></i> Сумма стипендии</dt><dd>{{ config.award_amount|som }}</dd></div>
+            <div><dt><i class="bi bi-check2-circle"></i> Утверждение</dt><dd>{% if config.auto_approve %}Автоматически{% else %}Администратором{% endif %}</dd></div>
+            <div><dt><i class="bi bi-shield-check"></i> Минимальный балл</dt><dd>{% if config.min_overall_score %}{{ config.min_overall_score|score }}{% else %}Без порога{% endif %}</dd></div>
+            <div>
+              <dt><i class="bi bi-pie-chart"></i> Веса: посещаемость / ДЗ / тренер</dt>
+              <dd>{{ config.attendance_weight }} / {{ config.homework_weight }} / {{ config.feedback_weight }}</dd>
+            </div>
+          </dl>
+
+          <footer class="ok-set-config-foot">
+            <a href="{{ open_url }}" class="ok-sch-pcard-open">Открыть настройки <i class="bi bi-arrow-right"></i></a>
+          </footer>
+        </article>
+      {% endfor %}
+    </div>
+    <div class="row mt-2">{% pagination cl %}</div>
+  {% else %}
+    <div class="ok-sch-empty">
+      <span class="ok-sch-card-icon"><i class="bi bi-sliders"></i></span>
+      <h5>Настроек пока нет</h5>
+      <p>Без активной конфигурации создать или рассчитать стипендиальный период нельзя.</p>
+      {% if has_add_permission %}<a href="{% url cl.opts|admin_urlname:'add' %}" class="ok-btn-primary"><i class="bi bi-plus-lg"></i> Создать конфигурацию</a>{% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

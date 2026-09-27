@@ -1,0 +1,183 @@
+{% extends "admin/change_form.html" %}
+{% load admin_urls %}
+
+{% block bodyclass %}{{ block.super }} ok-sch-page{% endblock %}
+
+{% block content_title %}Настройки стипендии{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item"><a href="{% url opts|admin_urlname:'changelist' %}">Настройки стипендии</a></li>
+  <li class="breadcrumb-item active">{% if add %}Новая конфигурация{% else %}{{ original.name }}{% endif %}</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+{% if not add and not has_change_permission %}
+  {{ block.super }}
+{% else %}
+{% with form=adminform.form %}
+<div class="ok-form-container ok-set">
+  <form action="{{ form_url }}" method="post" id="{{ opts.model_name }}_form" novalidate data-ok-loading>
+    {% csrf_token %}
+    {% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+    {% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+
+    <header class="ok-set-head">
+      <span class="ok-sch-card-icon is-lg"><i class="bi bi-sliders"></i></span>
+      <div class="ok-set-head-text">
+        <div class="ok-sch-label">Стипендиальная программа</div>
+        <h2 class="ok-set-title">{% if add %}Новая конфигурация{% else %}{{ original.name }}{% endif %}</h2>
+        <p class="ok-set-subtitle">Правила, по которым рассчитываются и начисляются стипендии. Изменения применяются к новым расчётам — утверждённые периоды не меняются.</p>
+      </div>
+      {% if not add %}
+        {% if original.is_active %}<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активна</span>{% else %}<span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Неактивна</span>{% endif %}
+      {% endif %}
+    </header>
+
+    {% if errors %}
+      <div class="ok-alert ok-alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle"></i>
+        {% if errors|length == 1 %}Исправьте ошибку ниже.{% else %}Исправьте ошибки ниже.{% endif %}
+        {% for error in form.non_field_errors %}<div class="mt-1"><strong>{{ error }}</strong></div>{% endfor %}
+      </div>
+    {% endif %}
+
+    <nav class="ok-set-nav" aria-label="Разделы настроек">
+      <a href="#set-program">Программа</a>
+      <a href="#set-period">Период</a>
+      <a href="#set-awards">Начисления</a>
+      <a href="#set-formula">Формула рейтинга</a>
+      <a href="#set-limits">Ограничения</a>
+      <a href="#set-rules">Правила</a>
+    </nav>
+
+    {# ---- Program ---- #}
+    <section class="ok-card ok-set-card" id="set-program">
+      <div class="ok-set-card-head">
+        <h3><i class="bi bi-mortarboard"></i> Стипендиальная программа</h3>
+        <p>Название и статус этой конфигурации.</p>
+      </div>
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.name desc="Видно администраторам в списке настроек." %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.is_active toggle=True on="Активна" off="Неактивна" %}
+    </section>
+
+    {# ---- Period ---- #}
+    <section class="ok-card ok-set-card" id="set-period">
+      <div class="ok-set-card-head">
+        <h3><i class="bi bi-calendar3"></i> Настройки периода</h3>
+        <p>Как часто автоматически формируются стипендиальные циклы.</p>
+      </div>
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.award_mode %}
+    </section>
+
+    {# ---- Awards ---- #}
+    <section class="ok-card ok-set-card" id="set-awards">
+      <div class="ok-set-card-head">
+        <h3><i class="bi bi-cash-coin"></i> Настройки начислений</h3>
+        <p>Сколько студентов получают стипендию и какую сумму.</p>
+      </div>
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.max_recipients suffix="студентов" desc="Лимит стипендиатов за один цикл по умолчанию. В ручном периоде его можно изменить." %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.award_amount suffix="сом" %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.auto_approve toggle=True %}
+    </section>
+
+    {# ---- Formula ---- #}
+    <section class="ok-card ok-set-card" id="set-formula">
+      <div class="ok-set-card-head">
+        <h3><i class="bi bi-pie-chart"></i> Формула рейтинга</h3>
+        <p>Итоговый балл студента = посещаемость × вес + ДЗ × вес + оценка тренера × вес. Сумма весов должна быть равна 1.00 (100%).</p>
+      </div>
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.attendance_weight desc="Доля посещаемости в итоговом балле, от 0 до 1. Например, 0.40 = 40%." %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.homework_weight desc="Доля выполненных домашних заданий в итоговом балле." %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.feedback_weight desc="Доля оценки тренеров (прогресс, активность, дисциплина, понимание)." %}
+      <div class="ok-set-weights" id="set-weights" aria-live="polite">
+        <div class="ok-set-weights-bar" aria-hidden="true">
+          <span class="is-attendance" data-weight-bar="attendance_weight"></span>
+          <span class="is-homework" data-weight-bar="homework_weight"></span>
+          <span class="is-feedback" data-weight-bar="feedback_weight"></span>
+        </div>
+        <div class="ok-set-weights-legend">
+          <span><i class="is-attendance"></i> Посещаемость</span>
+          <span><i class="is-homework"></i> ДЗ</span>
+          <span><i class="is-feedback"></i> Оценка тренера</span>
+          <strong class="ok-set-weights-total" id="set-weights-total"></strong>
+        </div>
+        {% for error in form.non_field_errors %}<div class="ok-error-text mt-2"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+      </div>
+    </section>
+
+    {# ---- Limits ---- #}
+    <section class="ok-card ok-set-card" id="set-limits">
+      <div class="ok-set-card-head">
+        <h3><i class="bi bi-shield-check"></i> Ограничения</h3>
+        <p>Минимальные требования, без которых студент не допускается к стипендии.</p>
+      </div>
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.min_overall_score suffix="из 100" %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.min_marked_lessons suffix="занятий" %}
+    </section>
+
+    {# ---- Rules ---- #}
+    <section class="ok-card ok-set-card" id="set-rules">
+      <div class="ok-set-card-head">
+        <h3><i class="bi bi-journal-check"></i> Правила расчёта</h3>
+        <p>Как учитываются предметы, опоздания с ДЗ и оценки тренеров.</p>
+      </div>
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.subject_aggregation %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.late_homework_credit desc="Какую долю балла получает ДЗ, сданное с опозданием: 0 — не засчитывается, 0.50 — половина, 1 — полностью." %}
+      {% include "admin/scholarships/scholarshipconfiguration/_row.html" with field=form.require_complete_feedback toggle=True %}
+    </section>
+
+    <div class="ok-form-actions ok-set-actions">
+      <div class="ok-set-actions-meta">
+        {% if not add %}<i class="bi bi-clock-history"></i> Обновлено {{ original.updated_at|date:"d.m.Y H:i" }}{% endif %}
+        {% if not add and has_delete_permission %}
+          <a href="{% url opts|admin_urlname:'delete' original.pk|admin_urlquote %}" class="ok-set-delete"><i class="bi bi-trash"></i> Удалить</a>
+        {% endif %}
+      </div>
+      <div class="ok-set-actions-buttons">
+        <a href="{% url opts|admin_urlname:'changelist' %}" class="ok-btn-secondary">Отмена</a>
+        <button type="submit" name="_continue" class="ok-btn-primary"><i class="bi bi-check2"></i> Сохранить изменения</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endwith %}
+
+<script>
+(function () {
+  var form = document.getElementById("{{ opts.model_name }}_form");
+  if (!form) return;
+  var names = ["attendance_weight", "homework_weight", "feedback_weight"];
+  var total = document.getElementById("set-weights-total");
+  var box = document.getElementById("set-weights");
+
+  function value(name) {
+    var input = form.elements[name];
+    var n = input ? parseFloat(String(input.value).replace(",", ".")) : 0;
+    return isNaN(n) ? 0 : n;
+  }
+
+  function update() {
+    var sum = 0;
+    names.forEach(function (name) {
+      var v = value(name);
+      sum += v;
+      var bar = form.querySelector('[data-weight-bar="' + name + '"]');
+      if (bar) bar.style.width = Math.max(0, Math.min(100, v * 100)) + "%";
+    });
+    var ok = Math.abs(sum - 1) < 0.005;
+    total.textContent = "Сумма: " + sum.toFixed(2) + (ok ? "" : " — должна быть 1.00");
+    box.classList.toggle("is-invalid", !ok);
+  }
+
+  names.forEach(function (name) {
+    var input = form.elements[name];
+    if (input) input.addEventListener("input", update);
+  });
+  update();
+})();
+</script>
+{% endif %}
+{% endblock %}

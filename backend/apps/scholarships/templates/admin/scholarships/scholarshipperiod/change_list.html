@@ -1,6 +1,8 @@
 {% extends "admin/change_list.html" %}
 {% load admin_list scholarship_tags %}
 
+{% block bodyclass %}{{ block.super }} ok-sch-page{% endblock %}
+
 {% block content_title %}Стипендиальные периоды{% endblock %}
 
 {% block breadcrumbs %}
@@ -12,16 +14,27 @@
 
 {% block content %}
 {% with current=cl.params.status__exact|default:"" %}
-<div class="col-12">
-  <div class="ok-sch-toolbar">
-    <nav class="ok-sch-chips" aria-label="Фильтр периодов">
-      <a href="?" class="ok-sch-chip{% if not current %} is-active{% endif %}">Все</a>
-      <a href="?status__exact=draft" class="ok-sch-chip{% if current == 'draft' %} is-active{% endif %}"><span class="ok-sch-dot is-progress"></span>В процессе</a>
-      <a href="?status__exact=approved" class="ok-sch-chip{% if current == 'approved' %} is-active{% endif %}"><span class="ok-sch-dot is-done"></span>Завершённые</a>
-    </nav>
+<div class="col-12 ok-sch-dashboard">
+  <div class="ok-sch-pagehead">
+    <p class="ok-page-subtitle">Каждый период — свои даты, свои участвующие группы и свой список стипендиатов.</p>
     {% if can_generate %}
       <a href="{% url 'admin:scholarships_create' %}" class="ok-btn-primary"><i class="bi bi-plus-lg"></i> Создать период</a>
     {% endif %}
+  </div>
+
+  <div class="ok-sch-toolbar">
+    <nav class="ok-sch-segment" aria-label="Фильтр периодов">
+      <a href="?" class="ok-sch-segment-item{% if not current %} is-active{% endif %}"{% if not current %} aria-current="page"{% endif %}>
+        Все <span class="ok-sch-segment-count">{{ status_counts.all }}</span>
+      </a>
+      <a href="?status__exact=draft" class="ok-sch-segment-item{% if current == 'draft' %} is-active{% endif %}"{% if current == 'draft' %} aria-current="page"{% endif %}>
+        <span class="ok-sch-dot is-progress"></span>В процессе <span class="ok-sch-segment-count">{{ status_counts.draft }}</span>
+      </a>
+      <a href="?status__exact=approved" class="ok-sch-segment-item{% if current == 'approved' %} is-active{% endif %}"{% if current == 'approved' %} aria-current="page"{% endif %}>
+        <span class="ok-sch-dot is-done"></span>Завершённые <span class="ok-sch-segment-count">{{ status_counts.approved }}</span>
+      </a>
+    </nav>
+    <a href="{% url 'admin:scholarships_report' %}" class="ok-sch-textlink"><i class="bi bi-bar-chart-line"></i> Отчёты по периодам</a>
   </div>
 
   {% if not active_configuration %}
@@ -35,58 +48,80 @@
     <div class="ok-sch-grid">
       {% for period in cl.result_list %}
         {% url 'admin:scholarships_scholarshipperiod_change' period.pk as open_url %}
-        <article class="ok-sch-card">
-          <header class="ok-sch-card-head">
-            <span class="ok-sch-card-icon"><i class="bi bi-trophy"></i></span>
-            <div class="ok-sch-card-title">
-              <a href="{{ open_url }}" class="ok-sch-card-name">{{ period.title }}</a>
-              <div class="ok-sch-card-dates">{{ period.period_start|date:"d.m.Y" }} — {{ period.period_end|date:"d.m.Y" }}</div>
+        {% with groups=period.participating_groups %}
+        <article class="ok-sch-pcard{% if period.is_draft %} is-progress{% else %} is-done{% endif %}">
+          {# 1. Period #}
+          <header class="ok-sch-pcard-head">
+            <div class="ok-sch-pcard-title">
+              <div class="ok-sch-pcard-eyebrow"><i class="bi bi-calendar3"></i> {{ period.title }}</div>
+              <a href="{{ open_url }}" class="ok-sch-pcard-dates">{{ period.period_start|date:"d.m.Y" }} — {{ period.period_end|date:"d.m.Y" }}</a>
             </div>
             {% include "admin/scholarships/scholarshipperiod/_menu.html" with period=period %}
           </header>
 
+          {# 2. Status #}
           <div class="ok-sch-card-status">
             {% include "admin/scholarships/scholarshipperiod/_status.html" with period=period %}
+            {% if period.period_start <= today and today <= period.period_end %}<span class="ok-badge ok-badge-info"><i class="bi bi-broadcast"></i> Текущий</span>{% endif %}
           </div>
 
-          <dl class="ok-sch-card-stats">
-            <div class="ok-sch-card-stat is-main">
-              <dt><i class="bi bi-mortarboard"></i> Студенты</dt>
+          {# 3. Participating groups — this period's own, never the whole list #}
+          <section class="ok-sch-pcard-groups" aria-label="Участвующие группы">
+            <div class="ok-sch-label">Участвующие группы</div>
+            <div class="ok-rep-tags">
+              {% for g in groups|slice:":8" %}<span class="ok-rep-tag">{{ g }}</span>{% endfor %}
+              {% if groups|length > 8 %}<span class="ok-rep-tag is-more" title="{{ groups|join:', ' }}">+{{ groups|length|add:"-8" }}</span>{% endif %}
+              {% if not groups %}<span class="ok-sch-pcard-empty"><i class="bi bi-buildings"></i> Вся академия — группы появятся после расчёта</span>{% endif %}
+            </div>
+          </section>
+
+          {# 4. Statistics #}
+          <dl class="ok-sch-pcard-stats">
+            <div>
+              <dt>Группы</dt>
+              <dd>{% if groups %}{{ groups|length }}{% else %}—{% endif %}</dd>
+            </div>
+            <div>
+              <dt>Ученики</dt>
+              <dd>{% if period.is_calculated %}{{ period.evaluations_count|default:0 }}{% else %}—{% endif %}</dd>
+            </div>
+            <div>
+              <dt>Стипендии</dt>
               <dd>
-                {% if period.is_calculated %}{{ period.recipients_count|default:0 }}{% else %}—{% endif %}
-                <span class="ok-sch-of">/ {% if period.is_unlimited %}∞{% else %}{{ period.max_recipients }}{% endif %}</span>
+                {% if period.is_calculated %}{{ period.recipients_count|default:0 }}{% else %}—{% endif %}<span class="ok-sch-of"> / {% if period.is_unlimited %}∞{% else %}{{ period.max_recipients }}{% endif %}</span>
               </dd>
             </div>
-            <div class="ok-sch-card-stat">
-              <dt><i class="bi bi-bar-chart-line"></i> Средний балл</dt>
-              <dd>{{ period.average_score|score }}</dd>
-            </div>
-            <div class="ok-sch-card-stat">
-              <dt><i class="bi bi-cash-coin"></i> Сумма</dt>
-              <dd>{{ period.total_amount|som }}</dd>
-            </div>
           </dl>
-
-          {% if period.is_unlimited %}
-            <div class="ok-sch-limit-note">Без ограничения · оценено {{ period.evaluations_count|default:0 }}</div>
-          {% else %}
-            <div class="ok-sch-progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ period.max_recipients }}" aria-valuenow="{{ period.recipients_count|default:0 }}" aria-label="Заполнение лимита">
+          {% if not period.is_unlimited and period.is_calculated %}
+            <div class="ok-sch-progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ period.max_recipients }}" aria-valuenow="{{ period.recipients_count|default:0 }}" aria-label="Заполнение лимита стипендиатов">
               <span style="width: {{ period.recipients_count|percent_of:period.max_recipients }}%"></span>
             </div>
           {% endif %}
 
-          <footer class="ok-sch-card-foot">
-            <a href="{{ open_url }}" class="ok-btn-secondary ok-sch-open">Открыть <i class="bi bi-arrow-right"></i></a>
+          <footer class="ok-sch-pcard-foot">
+            <div class="ok-sch-pcard-sum">
+              <span>Сумма</span>
+              <strong>{{ period.total_amount|som }}</strong>
+            </div>
+            <a href="{{ open_url }}" class="ok-sch-pcard-open">Открыть период <i class="bi bi-arrow-right"></i></a>
           </footer>
         </article>
+        {% endwith %}
       {% endfor %}
     </div>
-    <div class="row mt-2">{% pagination cl %}</div>
+    <div class="row mt-3">{% pagination cl %}</div>
+  {% elif current %}
+    <div class="ok-sch-empty">
+      <span class="ok-sch-card-icon"><i class="bi bi-funnel"></i></span>
+      <h5>Нет периодов с таким статусом</h5>
+      <p>Попробуйте другой фильтр или посмотрите все периоды.</p>
+      <a href="?" class="ok-btn-secondary">Показать все</a>
+    </div>
   {% else %}
     <div class="ok-sch-empty">
       <span class="ok-sch-card-icon"><i class="bi bi-trophy"></i></span>
       <h5>Периодов пока нет</h5>
-      <p>Создайте первый стипендиальный период — укажите даты и лимит стипендиатов.</p>
+      <p>Создайте первый стипендиальный период — укажите даты, участвующие группы и лимит стипендиатов.</p>
       {% if can_generate %}<a href="{% url 'admin:scholarships_create' %}" class="ok-btn-primary"><i class="bi bi-plus-lg"></i> Создать период</a>{% endif %}
     </div>
   {% endif %}

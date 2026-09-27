@@ -1,0 +1,23 @@
+{% comment %}One settings row: label + description on the left, the control on the right.
+Needs `field` (a BoundField); optional `desc` (overrides help_text), `toggle` (checkbox as a switch), `suffix` (unit after the input), `on`/`off` (switch captions).{% endcomment %}
+<div class="ok-set-row{% if field.errors %} has-error{% endif %}">
+  <div class="ok-set-text">
+    <label class="ok-set-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {% if desc or field.help_text %}<p class="ok-set-desc">{% if desc %}{{ desc }}{% else %}{{ field.help_text }}{% endif %}</p>{% endif %}
+  </div>
+  <div class="ok-set-control">
+    {% if toggle %}
+      <label class="ok-sch-switch ok-set-switch">
+        {{ field }}
+        <span class="ok-sch-switch-track" aria-hidden="true"></span>
+        <span class="ok-set-switch-on">{{ on|default:"Включено" }}</span>
+        <span class="ok-set-switch-off">{{ off|default:"Выключено" }}</span>
+      </label>
+    {% elif suffix %}
+      <div class="ok-set-affix">{{ field }}<span class="ok-set-affix-unit">{{ suffix }}</span></div>
+    {% else %}
+      {{ field }}
+    {% endif %}
+    {% for error in field.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+  </div>
+</div>

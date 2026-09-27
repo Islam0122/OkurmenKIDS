@@ -99,7 +99,7 @@ class ReportAdminTests(ReportFixture):
         self.assertContains(response, "Стипендиальные периоды")
         self.assertContains(response, "Стипендиальный период")
         self.assertContains(response, "Участвующие группы")
-        self.assertContains(response, "Группы в этом стипендиальном периоде")
+        self.assertContains(response, "Статистика по группам")
         self.assertContains(response, "01.09.2026 — 30.09.2026")
         self.assertContains(response, "Prog SOFT 2")
         self.assertContains(response, "Aibek Test")

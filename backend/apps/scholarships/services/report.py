@@ -96,21 +96,31 @@ def period_options() -> list[PeriodOption]:
     """Every period, newest first, each with its participating groups — two
     queries whatever the number of periods."""
     periods = list(annotate_periods(ScholarshipPeriod.objects.prefetch_related("groups")))
-    evaluated: dict[int, set[str]] = defaultdict(set)
-    for period_id, name in (
-        ScholarshipEvaluation.objects.order_by().values_list("period_id", "group_name").distinct()
-    ):
-        evaluated[period_id].add(name or NO_GROUP)
+    groups = participating_groups(periods)
     return [
         PeriodOption(
             period=period,
-            groups=period_group_names(period, evaluated.get(period.pk, set())),
+            groups=groups[period.pk],
             students=period.evaluations_count or 0,
             recipients=period.recipients_count or 0,
             scope_all=not period.group_ids,
         )
         for period in periods
     ]
+
+
+def participating_groups(periods) -> dict[int, list[str]]:
+    """{period pk: its participating group names} for a batch of periods
+    (the period cards, the report picker) — one query for the evaluated
+    groups; prefetch `groups` on the periods to avoid one more per period."""
+    periods = list(periods)
+    evaluated: dict[int, set[str]] = defaultdict(set)
+    for period_id, name in (
+        ScholarshipEvaluation.objects.filter(period__in=[p.pk for p in periods])
+        .order_by().values_list("period_id", "group_name").distinct()
+    ):
+        evaluated[period_id].add(name or NO_GROUP)
+    return {period.pk: period_group_names(period, evaluated.get(period.pk, set())) for period in periods}
 
 
 def period_group_names(period: ScholarshipPeriod, evaluated: set[str]) -> list[str]:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin, messages
-from django.db.models import F, Q
+from django.db.models import Count, F, Q, Sum, prefetch_related_objects
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
@@ -75,6 +75,8 @@ class ReadOnlyAdminMixin:
 class ScholarshipConfigurationAdmin(admin.ModelAdmin):
     list_display = ("name", "is_active", "award_mode", "max_recipients", "weights", "subject_aggregation", "auto_approve", "updated_at")
     list_filter = ("is_active", "award_mode")
+    change_list_template = "admin/scholarships/scholarshipconfiguration/change_list.html"
+    change_form_template = "admin/scholarships/scholarshipconfiguration/change_form.html"
     fieldsets = (
         ("Основное", {"fields": ("name", "is_active", "award_mode", "max_recipients", "award_amount", "auto_approve")}),
         ("Веса (сумма = 1.00)", {"fields": ("attendance_weight", "homework_weight", "feedback_weight")}),
@@ -265,8 +267,24 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
             can_approve=can_manage(request.user, "approve"),
             active_configuration=ScholarshipConfiguration.objects.active(),
             today=timezone.localdate(),
+            status_counts=ScholarshipPeriod.objects.aggregate(
+                all=Count("id"),
+                draft=Count("id", filter=Q(status=ScholarshipPeriod.Status.DRAFT)),
+                approved=Count("id", filter=Q(status=ScholarshipPeriod.Status.APPROVED)),
+            ),
         )
-        return super().changelist_view(request, extra_context)
+        response = super().changelist_view(request, extra_context)
+        cl = getattr(response, "context_data", {}).get("cl")
+        if cl is not None:
+            # Each card names *its own* participating groups (the same list
+            # the report shows), never the academy's full group list.
+            periods = list(cl.result_list)
+            prefetch_related_objects(periods, "groups")
+            groups = scholarship_report.participating_groups(periods)
+            for period in periods:
+                period.participating_groups = groups[period.pk]
+            cl.result_list = periods
+        return response
 
     # -- dashboard -----------------------------------------------------------
 
@@ -672,9 +690,49 @@ class ScholarshipEvaluationAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
 @admin.register(ScholarshipAward)
 class ScholarshipAwardAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = ("rank", "student_link", "period", "award_date", "amount", "status", "approved_by", "approved_at")
-    list_filter = ("status", "period")
+    list_filter = ("status", "period", "evaluation__group_name")
     search_fields = ("evaluation__student_name",)
     list_select_related = ("period", "evaluation", "approved_by")
+    list_per_page = 50
+    change_list_template = "admin/scholarships/scholarshipaward/change_list.html"
+
+    def changelist_view(self, request, extra_context=None):
+        # The filter bar submits every field; an empty one means «all» —
+        # drop it so it doesn't become a `field=""` lookup.
+        if any(value == "" for value in request.GET.values()):
+            query = urlencode({key: value for key, value in request.GET.items() if value != ""})
+            return HttpResponseRedirect(f"{request.path}?{query}" if query else request.path)
+        response = super().changelist_view(request, extra_context)
+        cl = getattr(response, "context_data", {}).get("cl")
+        if cl is None:
+            return response
+        period_id = cl.params.get("period__id__exact") or ""
+        groups = ScholarshipAward.objects.order_by()
+        if period_id.isdigit():
+            groups = groups.filter(period_id=period_id)
+        # Summary of what the filters currently select (all pages).
+        summary = cl.queryset.order_by().aggregate(
+            total=Count("id"),
+            approved=Count("id", filter=Q(status=ScholarshipAward.Status.APPROVED)),
+            pending=Count("id", filter=Q(status=ScholarshipAward.Status.PENDING)),
+            amount=Sum("amount"),
+        )
+        response.context_data.update(
+            title="Стипендии",
+            summary=summary,
+            periods=ScholarshipPeriod.objects.order_by("-period_start", "-award_day"),
+            group_names=sorted(
+                {name for name in groups.values_list("evaluation__group_name", flat=True).distinct() if name}
+                | ({cl.params["evaluation__group_name"]} if cl.params.get("evaluation__group_name") else set())
+            ),
+            filters={
+                "period": period_id,
+                "group": cl.params.get("evaluation__group_name", ""),
+                "status": cl.params.get("status__exact", ""),
+                "q": cl.query,
+            },
+        )
+        return response
 
     @admin.display(description="Студент")
     def student_link(self, obj):
