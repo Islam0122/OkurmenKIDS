@@ -2486,7 +2486,8 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
 .ok-drawer-section-title i { color: var(--ok-primary); }
 .ok-drawer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 .ok-drawer-add > summary { cursor: pointer; color: var(--ok-primary); font-weight: 600; font-size: 0.85rem; }
-.ok-drawer-add form { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.75rem; }
+.ok-drawer-add form, .ok-drawer-add-body { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.75rem; }
+.ok-drawer-add-body > .ok-btn-sm { align-self: flex-start; }
 .ok-drawer-footer {
   display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
   padding: 0.9rem 1.35rem; border-top: 1px solid var(--ok-border); background: var(--ok-surface);
@@ -2500,6 +2501,19 @@ body.model-group.change-form .ok-admin-group-inline-block .select2-container {
 }
 .ok-slot-list li.is-muted { background: var(--ok-surface-hover); color: var(--ok-text-muted); }
 .ok-slot-list form { margin: 0; }
+.ok-slot-list li.is-pending { border-style: dashed; border-color: var(--ok-warning); background: var(--ok-warning-soft); }
+.ok-slot-tag {
+  margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600;
+  background: var(--ok-surface); color: var(--ok-warning); border: 1px solid var(--ok-warning);
+}
+.ok-slot-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
+.ok-slot-list li.ok-slot-editor { flex-direction: column; align-items: stretch; background: var(--ok-surface); }
+.ok-slot-editor-fields { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1.4fr; gap: 0.4rem; }
+.ok-slot-editor-actions { display: flex; align-items: center; gap: 0.75rem; }
+.ok-slot-cancel { background: none; border: none; cursor: pointer; padding: 0; font: inherit; }
+.ok-slot-errors { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+[data-ok-schedule] [hidden] { display: none !important; }
+@media (max-width: 640px) { .ok-slot-editor-fields { grid-template-columns: 1fr 1fr; } }
 .ok-icon-btn { background: none; border: none; color: var(--ok-text-muted); cursor: pointer; padding: 0.25rem; border-radius: var(--ok-radius-sm); }
 .ok-icon-btn:hover { color: var(--ok-danger); background: var(--ok-danger-soft); }
 .ok-check { display: flex; gap: 0.55rem; align-items: flex-start; font-size: 0.85rem; cursor: pointer; }

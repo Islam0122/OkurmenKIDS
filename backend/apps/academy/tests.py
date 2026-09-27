@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import threading
 from io import StringIO
 from unittest import mock, skipUnless
@@ -8197,7 +8198,7 @@ class ProgramDrawerViewTests(WorkspaceProgramFixture):
             follow=True,
         )
         self.assertRedirects(response, self.url("_programs"))
-        self.assertContains(response, "Программа сохранена")
+        self.assertContains(response, "Изменения сохранены")
         self.python_program.refresh_from_db()
         self.assertEqual(self.python_program.teacher, self.teacher3)
 
@@ -8217,24 +8218,127 @@ class ProgramDrawerViewTests(WorkspaceProgramFixture):
                                         args=[other.pk, self.python_program.pk]))
         self.assertEqual(response.status_code, 404)
 
-    def test_drawer_adds_several_slots_at_once(self):
-        response = self.web.post(
-            self.url("_programs_schedule_add", self.python_program.pk),
-            {"day_of_week": ["wed", "fri"], "start_time": "12:00", "end_time": "13:00"},
-        )
+    def save_drawer(self, program, slots, **fields):
+        data = {"teacher": program.teacher_id, "subject": program.subject_id, "status": "active",
+                "reassign_future_lessons": "on", "schedule": json.dumps(slots)}
+        data.update(fields)
+        return self.web.post(self.url("_programs_edit", program.pk), data)
+
+    def slot_state(self, program):
+        return [
+            {"id": s.pk, "day": s.day_of_week, "start": f"{s.start_time:%H:%M}", "end": f"{s.end_time:%H:%M}",
+             "room": s.room_id}
+            for s in program.schedules.order_by("pk")
+        ]
+
+    def test_add_slots_button_does_not_post_to_the_database(self):
+        response = self.web.get(self.url("_programs_edit", self.python_program.pk))
+        self.assertContains(response, "data-ok-slot-add-btn")
+        self.assertContains(response, 'id="ok-schedule-data"')
+        # The "Добавить слоты" controls are not a form of their own any more.
+        self.assertContains(response, 'type="button" class="ok-btn-secondary ok-btn-sm" data-ok-slot-add-btn')
+        self.assertNotContains(response, f"/programs/{self.python_program.pk}/schedule/add/")
+
+    def test_save_creates_several_new_slots_at_once(self):
+        slots = self.slot_state(self.python_program) + [
+            {"id": None, "day": "wed", "start": "19:30", "end": "20:30", "room": self.room.pk},
+            {"id": None, "day": "fri", "start": "18:00", "end": "19:00", "room": None},
+        ]
+        response = self.save_drawer(self.python_program, slots)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
-            set(self.python_program.schedules.values_list("day_of_week", flat=True)), {"mon", "wed", "fri"}
+            set(self.python_program.schedules.values_list("day_of_week", "start_time")),
+            {("mon", dt.time(10, 0)), ("wed", dt.time(19, 30)), ("fri", dt.time(18, 0))},
         )
+        self.assertEqual(self.python_program.schedules.get(day_of_week="wed").teacher, self.teacher1)
+        self.assertEqual(GroupTeacher.objects.filter(group=self.group).count(), 2)  # no second program
 
-    def test_drawer_schedule_conflict_rejects_all_days(self):
+    def test_save_updates_and_deletes_slots(self):
+        GroupSchedule(group=self.group, teacher=self.teacher1, subject=self.python, day_of_week="thu",
+                      start_time=dt.time(12, 0), end_time=dt.time(13, 0)).save()
+        state = self.slot_state(self.python_program)
+        mon = next(s for s in state if s["day"] == "mon")
+        mon_id = mon["id"]
+        mon.update(start="20:00", end="21:00")
+        slots = [mon]  # thu removed
+        response = self.save_drawer(self.python_program, slots)
+        self.assertEqual(response.status_code, 302)
+        remaining = list(self.python_program.schedules.all())
+        self.assertEqual([(s.pk, s.start_time) for s in remaining], [(mon_id, dt.time(20, 0))])
+
+    def test_save_without_schedule_field_leaves_slots_untouched(self):
+        before = self.slot_state(self.python_program)
         response = self.web.post(
-            self.url("_programs_schedule_add", self.python_program.pk),
-            {"day_of_week": ["tue", "thu"], "start_time": "10:00", "end_time": "11:00"},
+            self.url("_programs_edit", self.python_program.pk),
+            {"teacher": self.teacher1.pk, "subject": self.python.pk, "status": "active"},
         )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.slot_state(self.python_program), before)
+
+    def test_conflict_rolls_back_every_change(self):
+        state = self.slot_state(self.python_program)
+        # Remove Monday, add Wednesday — but Tuesday 10:00 clashes with the JS program (group conflict).
+        slots = [
+            {"id": None, "day": "wed", "start": "12:00", "end": "13:00", "room": None},
+            {"id": None, "day": "tue", "start": "10:30", "end": "11:30", "room": None},
+        ]
+        response = self.save_drawer(self.python_program, slots, status="inactive")
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.context["drawer"]["open_schedule"])
+        self.assertContains(response, "Не удалось сохранить расписание")
+        self.assertTrue(response.context["drawer"]["schedule_errors"])
+        self.assertEqual(self.slot_state(self.python_program), state)
+        self.python_program.refresh_from_db()
+        self.assertTrue(self.python_program.is_active)
+        # The re-rendered drawer keeps the admin's unsaved list.
+        current = response.context["drawer"]["schedule_data"]["current"]
+        self.assertEqual([s["day"] for s in current], ["wed", "tue"])
+
+    def test_room_conflict_with_other_program_is_rejected(self):
+        slots = self.slot_state(self.python_program) + [
+            {"id": None, "day": "tue", "start": "10:00", "end": "11:00", "room": self.room.pk},
+        ]
+        response = self.save_drawer(self.python_program, slots)
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(self.python_program.schedules.count(), 1)
+
+    def test_own_slots_may_overlap_old_positions_being_replaced(self):
+        # Moving Monday 10–11 to 10:30–11:30 and adding a new Monday 09:00–10:15 would
+        # clash with the *old* position — it's gone after save, so it must be accepted.
+        mon = self.slot_state(self.python_program)[0]
+        mon.update(start="10:30", end="11:30")
+        slots = [mon, {"id": None, "day": "mon", "start": "09:00", "end": "10:15", "room": None}]
+        response = self.save_drawer(self.python_program, slots)
+        self.assertEqual(response.status_code, 302, response.context and response.context["drawer"]["schedule_errors"])
+        self.assertEqual(self.python_program.schedules.count(), 2)
+
+    def test_overlapping_slots_in_the_list_are_rejected(self):
+        slots = self.slot_state(self.python_program) + [
+            {"id": None, "day": "mon", "start": "10:30", "end": "11:30", "room": None},
+        ]
+        response = self.save_drawer(self.python_program, slots)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.python_program.schedules.count(), 1)
+
+    def test_foreign_slot_id_is_rejected(self):
+        js_slot = self.js_program.schedules.get()
+        slots = [{"id": js_slot.pk, "day": "wed", "start": "12:00", "end": "13:00", "room": None}]
+        response = self.save_drawer(self.python_program, slots)
+        self.assertEqual(response.status_code, 200)
+        js_slot.refresh_from_db()
+        self.assertEqual(js_slot.day_of_week, "tue")
+        self.assertEqual(self.python_program.schedules.count(), 1)
+
+    def test_teacher_change_and_new_slots_saved_together(self):
+        slots = self.slot_state(self.python_program) + [
+            {"id": None, "day": "thu", "start": "15:00", "end": "16:00", "room": None},
+        ]
+        response = self.save_drawer(self.python_program, slots, teacher=self.teacher3.pk)
+        self.assertEqual(response.status_code, 302)
+        self.python_program.refresh_from_db()
+        self.assertEqual(self.python_program.teacher, self.teacher3)
+        self.assertEqual(set(self.python_program.schedules.values_list("teacher_id", flat=True)), {self.teacher3.pk})
+        self.assertEqual(self.python_program.schedules.count(), 2)
+        self.assertEqual(GroupTeacher.objects.filter(group=self.group).count(), 2)
 
     def test_drawer_requires_admin_role(self):
         self.teacher1.user.is_staff = True
