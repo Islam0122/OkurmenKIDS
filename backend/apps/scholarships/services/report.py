@@ -7,20 +7,21 @@ never disagree.
 
 Period → groups
 ---------------
-There is no separate period↔group table: services.scoring evaluates every
-candidate student of the academy for the period (all active students plus
-anyone with attendance in its dates), and services.generation stores one
-`ScholarshipEvaluation` per student with a *snapshot* of the student's
-group (`group` FK + `group_name`) and program (`course_name`) at
-calculation time. The chain the report follows is therefore exactly the
-one the calculation wrote:
+`ScholarshipPeriod.groups` (M2M to academy.Group) is the list of groups a
+period is for; services.scoring.candidate_students evaluates only students
+of those groups. An empty list means the whole academy — automatic cycles
+and every period created before the field existed.
 
-    ScholarshipPeriod → ScholarshipEvaluation (group, program) → student
-                      → ScholarshipAward (amount, status)
+What a period's calculation actually covered is stored per student in
+`ScholarshipEvaluation` (group FK + `group_name` / `course_name` snapshot),
+so the report follows exactly the chain the calculation wrote:
 
-«Участвующие группы» of a period are the groups of its evaluations — a
-student moved to another group later is still reported in the group he
-was evaluated in. A period that is not calculated yet has no groups.
+    ScholarshipPeriod.groups → ScholarshipEvaluation (group, program)
+                             → student → ScholarshipAward (amount, status)
+
+Every number (groups, students, recipients, amount) is computed from *that
+period's* rows only — nothing is global. A group selected for the period
+with no evaluated students is still listed, with zeros.
 
 Payment status of a student in the period:
 
@@ -80,6 +81,7 @@ class PeriodOption:
     groups: list[str]
     students: int
     recipients: int
+    scope_all: bool  # no groups selected → the whole academy
 
     @property
     def pk(self) -> int:
@@ -93,21 +95,30 @@ class PeriodOption:
 def period_options() -> list[PeriodOption]:
     """Every period, newest first, each with its participating groups — two
     queries whatever the number of periods."""
-    periods = list(annotate_periods(ScholarshipPeriod.objects.all()))
-    groups: dict[int, set[str]] = defaultdict(set)
+    periods = list(annotate_periods(ScholarshipPeriod.objects.prefetch_related("groups")))
+    evaluated: dict[int, set[str]] = defaultdict(set)
     for period_id, name in (
         ScholarshipEvaluation.objects.order_by().values_list("period_id", "group_name").distinct()
     ):
-        groups[period_id].add(name or NO_GROUP)
+        evaluated[period_id].add(name or NO_GROUP)
     return [
         PeriodOption(
             period=period,
-            groups=sorted(groups.get(period.pk, ())),
+            groups=period_group_names(period, evaluated.get(period.pk, set())),
             students=period.evaluations_count or 0,
             recipients=period.recipients_count or 0,
+            scope_all=not period.group_ids,
         )
         for period in periods
     ]
+
+
+def period_group_names(period: ScholarshipPeriod, evaluated: set[str]) -> list[str]:
+    """The period's participating groups: the selected ones plus any group
+    its stored evaluations were taken in (a student's group snapshot); for
+    a whole-academy period — just the evaluated groups."""
+    selected = {group.name for group in period.groups.all()}
+    return sorted(selected | set(evaluated), key=lambda name: (name == NO_GROUP, name))
 
 
 def default_option(options: list[PeriodOption]) -> PeriodOption | None:
@@ -225,6 +236,7 @@ class ScholarshipReport:
     rows_totals: Totals
     all_rows_count: int = 0
     group_names: list[str] = field(default_factory=list)
+    scope_all: bool = True
 
     @property
     def range_label(self) -> str:
@@ -306,13 +318,15 @@ def build_report(period: ScholarshipPeriod, filters: ReportFilters) -> Scholarsh
     by_group: dict[str, list[ReportRow]] = defaultdict(list)
     for row in all_rows:
         by_group[row.group_name or NO_GROUP].append(row)
+    selected = {group.name: group for group in period.groups.select_related("course")}
     groups = [
         GroupSummary(
             name=name,
-            programs=sorted({row.program for row in rows if row.program}),
-            totals=totals_of(rows),
+            programs=sorted({row.program for row in by_group.get(name, []) if row.program})
+            or ([selected[name].course.name] if name in selected and selected[name].course_id else []),
+            totals=totals_of(by_group.get(name, [])),
         )
-        for name, rows in sorted(by_group.items(), key=lambda item: (item[0] == NO_GROUP, item[0]))
+        for name in period_group_names(period, set(by_group))
     ]
 
     rows = [row for row in all_rows if _matches(row, filters)]
@@ -325,10 +339,11 @@ def build_report(period: ScholarshipPeriod, filters: ReportFilters) -> Scholarsh
         period=period,
         filters=filters,
         groups=groups,
-        programs=sorted({row.program for row in all_rows if row.program}),
+        programs=sorted({program for group in groups for program in group.programs}),
         totals=totals_of(all_rows),
         rows=rows,
         rows_totals=totals_of(rows),
         all_rows_count=len(all_rows),
         group_names=[group.name for group in groups],
+        scope_all=not selected,
     )

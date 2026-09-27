@@ -268,6 +268,7 @@ def create_period(
     period_end: dt.date,
     max_recipients: int | None,
     title: str = "Стипендия",
+    groups=None,
     user=None,
     trigger: str = ScholarshipRunLog.Trigger.ADMIN,
     today: dt.date | None = None,
@@ -275,6 +276,8 @@ def create_period(
     """Create a manual period with arbitrary dates and its own limit
     (`None` = без ограничения). The rest of the parameters are snapshotted
     from the active configuration, exactly as for a generated cycle.
+
+    `groups` — the participating groups; empty/None = the whole academy.
 
     A period that has already ended is calculated right away; one that is
     still running stays empty (trainers can already enter feedback) and is
@@ -298,6 +301,8 @@ def create_period(
                         "generated_by": user if getattr(user, "is_authenticated", False) else None,
                     }
                 )
+                if groups:
+                    period.groups.set(groups)
                 if period.evaluation_date <= today:
                     period = ScholarshipPeriod.objects.select_for_update().get(pk=period.pk)
                     _persist(period, evaluate_period(period))
@@ -333,10 +338,15 @@ def update_period(
     period_start=_UNSET,
     period_end=_UNSET,
     max_recipients=_UNSET,
+    groups=_UNSET,
     user=None,
     trigger: str = ScholarshipRunLog.Trigger.ADMIN,
 ) -> ScholarshipPeriod:
     """Edit a period. Only passed fields change.
+
+    * groups — only in a DRAFT; an already calculated period is
+      recalculated right away for the new groups (the old ranking belonged
+      to other students — manual changes to the recipients list are reset);
 
     * title — always;
     * limit — only in a DRAFT, and never below the number of students who
@@ -389,6 +399,18 @@ def update_period(
 
             if changes:
                 locked.save(update_fields=fields)
+
+            if groups is not _UNSET:
+                new_ids = sorted({getattr(g, "pk", g) for g in (groups or [])})
+                if new_ids != sorted(locked.group_ids):
+                    if not locked.is_draft:
+                        raise ScholarshipError("Группы утверждённого периода изменить нельзя.")
+                    locked.groups.set(new_ids)
+                    names = ", ".join(locked.groups.order_by("name").values_list("name", flat=True))
+                    changes.append(f"группы: {names or 'все группы академии'}")
+                    if locked.is_calculated:
+                        _persist(locked, evaluate_period(locked))
+                        changes.append("период пересчитан")
     except ScholarshipError as exc:
         _log(ScholarshipRunLog.Action.EDIT, trigger, ScholarshipRunLog.Result.FAILED, period=period,
              message="; ".join(exc.messages), user=user)

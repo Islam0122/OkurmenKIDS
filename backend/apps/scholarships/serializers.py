@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from apps.academy.models import Student
+from apps.academy.models import Group, Student
 from apps.users.models import Subject, Teacher
 
 from .models import (
@@ -15,7 +15,16 @@ from .models import (
 )
 
 
+class PeriodGroupSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Group
+        fields = ["id", "name"]
+        read_only_fields = fields
+
+
 class ScholarshipPeriodSerializer(serializers.ModelSerializer):
+    # Participating groups; [] = the whole academy.
+    groups = PeriodGroupSerializer(many=True, read_only=True)
     evaluations_count = serializers.IntegerField(read_only=True, default=None)
     eligible_count = serializers.IntegerField(read_only=True, default=None)
     recipients_count = serializers.IntegerField(read_only=True, default=None)
@@ -29,7 +38,7 @@ class ScholarshipPeriodSerializer(serializers.ModelSerializer):
         model = ScholarshipPeriod
         fields = [
             "id", "title", "award_day", "is_manual", "period_start", "period_end", "evaluation_date", "status",
-            "max_recipients", "is_unlimited", "attendance_weight", "homework_weight", "feedback_weight",
+            "groups", "max_recipients", "is_unlimited", "attendance_weight", "homework_weight", "feedback_weight",
             "subject_aggregation", "late_homework_credit", "min_overall_score", "min_marked_lessons",
             "require_complete_feedback", "award_amount", "last_calculated_at", "approved_at",
             "evaluations_count", "eligible_count", "recipients_count", "approved_count", "average_score",
@@ -45,6 +54,10 @@ class PeriodWriteSerializer(serializers.Serializer):
     period_start = serializers.DateField()
     period_end = serializers.DateField()
     max_recipients = serializers.IntegerField(min_value=1, max_value=1000, allow_null=True)
+    groups = serializers.PrimaryKeyRelatedField(
+        queryset=Group.objects.all(), many=True, required=False,
+        help_text="Участвующие группы; пустой список — все группы академии.",
+    )
 
     def validate(self, attrs):
         start = attrs.get("period_start", getattr(self.instance, "period_start", None))

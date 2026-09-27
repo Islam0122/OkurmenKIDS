@@ -51,6 +51,47 @@
     </div>
 
     <div class="ok-card">
+      <div class="ok-card-header"><i class="bi bi-collection"></i><span>Участвующие группы</span>
+        <span class="ok-sch-count" id="sch-groups-count"></span></div>
+      <div class="ok-card-body" id="sch-groups">
+        <p class="ok-help-text mt-0">{{ form.groups.help_text }}</p>
+        {% if not form.groups_locked %}
+          <div class="ok-sch-groups-tools">
+            <div class="ok-rep-search">
+              <i class="bi bi-search"></i>
+              <input type="text" class="ok-input" id="sch-groups-search" placeholder="Найти группу" aria-label="Найти группу">
+            </div>
+            <button type="button" class="ok-sch-chip" data-groups="none">Все группы академии</button>
+          </div>
+        {% endif %}
+        {% for program in form.grouped_groups %}
+          <fieldset class="ok-sch-groups-program">
+            <legend>
+              <span>{{ program.program }}</span>
+              {% if not form.groups_locked %}<button type="button" class="ok-sch-link" data-program-toggle>выбрать все</button>{% endif %}
+            </legend>
+            <div class="ok-sch-groups-list">
+              {% for g in program.groups %}
+                <label class="ok-sch-group-option" data-name="{{ g.name|lower }}">
+                  <input type="checkbox" name="groups" value="{{ g.id }}"{% if g.checked %} checked{% endif %}{% if form.groups_locked %} disabled{% endif %}>
+                  <span>{{ g.name }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+        {% empty %}
+          <div class="ok-help-text">Активных групп нет.</div>
+        {% endfor %}
+        {% for error in form.groups.errors %}<div class="ok-error-text">{{ error }}</div>{% endfor %}
+        {% if form.groups_locked %}
+          <div class="ok-help-text mt-2"><i class="bi bi-lock"></i> Период утверждён — группы изменить нельзя.</div>
+        {% elif period and period.is_calculated %}
+          <div class="ok-help-text mt-2"><i class="bi bi-arrow-repeat"></i> Период уже рассчитан: при изменении групп он будет пересчитан, ручные изменения списка стипендиатов сбросятся.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="ok-card">
       <div class="ok-card-header"><i class="bi bi-people"></i><span>Количество стипендиатов</span></div>
       <div class="ok-card-body">
         <label class="ok-sch-switch">
@@ -159,6 +200,50 @@
     el.addEventListener("input", sync);
     el.addEventListener("change", sync);
   });
+  // -- participating groups --------------------------------------------
+  var groupsBox = document.getElementById("sch-groups");
+  var groupsCount = document.getElementById("sch-groups-count");
+  var boxes = groupsBox ? groupsBox.querySelectorAll("input[name=groups]") : [];
+  function syncGroups() {
+    var n = 0;
+    boxes.forEach(function (b) { if (b.checked) n++; });
+    if (groupsCount) groupsCount.textContent = n ? n + " выбрано" : "все группы";
+    var all = groupsBox && groupsBox.querySelector("[data-groups=none]");
+    if (all) all.classList.toggle("is-active", n === 0);
+    groupsBox && groupsBox.querySelectorAll("[data-program-toggle]").forEach(function (btn) {
+      var inputs = btn.closest("fieldset").querySelectorAll("input[name=groups]");
+      var every = Array.prototype.every.call(inputs, function (b) { return b.checked; });
+      btn.textContent = every ? "снять все" : "выбрать все";
+    });
+  }
+  boxes.forEach(function (b) { b.addEventListener("change", syncGroups); });
+  if (groupsBox) {
+    groupsBox.querySelectorAll("[data-program-toggle]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var inputs = btn.closest("fieldset").querySelectorAll("input[name=groups]");
+        var every = Array.prototype.every.call(inputs, function (b) { return b.checked; });
+        inputs.forEach(function (b) { b.checked = !every; });
+        syncGroups();
+      });
+    });
+    var none = groupsBox.querySelector("[data-groups=none]");
+    if (none) none.addEventListener("click", function () {
+      boxes.forEach(function (b) { b.checked = false; });
+      syncGroups();
+    });
+    var search = document.getElementById("sch-groups-search");
+    if (search) search.addEventListener("input", function () {
+      var q = search.value.trim().toLowerCase();
+      groupsBox.querySelectorAll(".ok-sch-group-option").forEach(function (opt) {
+        opt.hidden = q && opt.dataset.name.indexOf(q) === -1;
+      });
+      groupsBox.querySelectorAll(".ok-sch-groups-program").forEach(function (fs) {
+        fs.hidden = !fs.querySelector(".ok-sch-group-option:not([hidden])");
+      });
+    });
+    syncGroups();
+  }
+
   form.addEventListener("submit", function (event) {
     sync();
     if (submit.disabled) event.preventDefault();

@@ -26,6 +26,8 @@ export interface ScholarshipPeriodBrief {
 
 /** Admin view (`ScholarshipPeriodSerializer`). */
 export interface ScholarshipPeriod extends ScholarshipPeriodBrief {
+  /** Участвующие группы; пустой список — все группы академии. */
+  groups?: { id: number; name: string }[]
   /** `null` — без ограничения. */
   max_recipients?: number | null
   is_unlimited?: boolean
