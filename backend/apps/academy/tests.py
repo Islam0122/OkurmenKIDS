@@ -8239,6 +8239,32 @@ class ProgramDrawerViewTests(WorkspaceProgramFixture):
         self.assertContains(response, 'type="button" class="ok-btn-secondary ok-btn-sm" data-ok-slot-add-btn')
         self.assertNotContains(response, f"/programs/{self.python_program.pk}/schedule/add/")
 
+    def test_schedule_field_is_inside_the_form_and_prefilled_with_saved_slots(self):
+        response = self.web.get(self.url("_programs_edit", self.python_program.pk))
+        html = response.content.decode()
+        form_html = html[html.index('id="ok-program-form"'):html.index("</form>", html.index('id="ok-program-form"'))]
+        self.assertIn('name="schedule"', form_html)
+        form = response.context["drawer"]["form"]
+        self.assertEqual(json.loads(form.initial["schedule"]), [
+            {k: v for k, v in slot.items() if k != "active"} for slot in self.slot_state(self.python_program)
+        ])
+
+    def test_unchanged_schedule_payload_reports_no_changes(self):
+        response = self.save_drawer(self.python_program, self.slot_state(self.python_program))
+        self.assertEqual(response.status_code, 302)
+        messages_text = [str(m) for m in response.wsgi_request._messages]
+        self.assertEqual(messages_text, ["Изменений нет — программа осталась прежней."])
+
+    def test_added_slot_is_a_change_not_no_changes(self):
+        slots = self.slot_state(self.python_program) + [
+            {"id": None, "day": "fri", "start": "18:00", "end": "19:00", "room": self.room.pk},
+        ]
+        response = self.save_drawer(self.python_program, slots)
+        messages_text = [str(m) for m in response.wsgi_request._messages]
+        self.assertEqual(len(messages_text), 1)
+        self.assertTrue(messages_text[0].startswith("Изменения сохранены: слоты расписания — добавлено: 1"))
+        self.assertTrue(self.python_program.schedules.filter(day_of_week="fri").exists())
+
     def test_save_creates_several_new_slots_at_once(self):
         slots = self.slot_state(self.python_program) + [
             {"id": None, "day": "wed", "start": "19:30", "end": "20:30", "room": self.room.pk},
