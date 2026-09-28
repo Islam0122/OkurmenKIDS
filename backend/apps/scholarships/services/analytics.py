@@ -8,7 +8,7 @@ from collections import Counter
 
 from django.db.models import Avg, Count, F, OuterRef, Q, Subquery, Sum
 
-from ..models import EligibilityStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod, ScholarshipSubjectScore
+from ..models import EligibilityStatus, PaymentStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod, ScholarshipSubjectScore
 
 
 def _avg(value):
@@ -35,6 +35,8 @@ def annotate_periods(queryset):
         approved_count=_subquery(awards.filter(status=ScholarshipAward.Status.APPROVED), Count("id")),
         average_score=_subquery(eligible, Avg("overall_score")),
         total_amount=_subquery(awards, Sum("amount")),
+        paid_count=_subquery(awards.filter(payment_status=PaymentStatus.PAID), Count("id")),
+        paid_amount=_subquery(awards.filter(payment_status=PaymentStatus.PAID), Sum("paid_amount")),
     )
 
 

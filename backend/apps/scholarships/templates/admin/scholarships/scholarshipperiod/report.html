@@ -14,259 +14,152 @@
 
 {% block content %}
 <div class="col-12 ok-sch-dashboard ok-rep">
-
-  <div class="ok-sch-pagehead">
-    <p class="ok-page-subtitle">Один период за раз: его участвующие группы, итоги по группам и список учеников.</p>
-    {% if report %}
-      <a href="{% url 'admin:scholarships_report_pdf' %}?{{ pdf_query }}" class="ok-btn-secondary">
-        <i class="bi bi-file-earmark-arrow-down"></i> Скачать PDF-отчёт
-      </a>
-    {% endif %}
-  </div>
-
   {% if not options %}
-    <div class="ok-sch-empty">
-      <span class="ok-sch-card-icon"><i class="bi bi-bar-chart-line"></i></span>
-      <h5>Отчётов пока нет</h5>
-      <p>Отчёт появится, когда будет создан первый стипендиальный период.</p>
-      <a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}" class="ok-btn-primary">Стипендиальные периоды</a>
+    <div class="ok-card ok-sch-panel">
+      <div class="ok-pay-empty">
+        <i class="bi bi-bar-chart-line"></i><span>Отчётов пока нет — отчёт появится, когда будет создан первый стипендиальный период.</span>
+        <a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}" class="ok-sch-textlink">Стипендиальные периоды</a>
+      </div>
     </div>
   {% else %}
+  {% with period=selected.period t=report.rows_totals %}
 
-  {# ---- Period picker ---- #}
-  <form method="get" class="ok-sch-filterbar ok-rep-picker" data-ok-loading="#rep-body">
-    <div class="ok-rep-field ok-rep-picker-field">
-      <label class="ok-rep-label" for="rep-period"><i class="bi bi-calendar3"></i> Стипендиальный период</label>
-      <select id="rep-period" name="period" class="ok-input" data-ok-autosubmit>
-        {% for o in options %}
-          <option value="{{ o.pk }}"{% if o.pk == selected.pk %} selected{% endif %}>{{ o.range_label }} · {% if o.period.is_draft %}В процессе{% else %}Завершён{% endif %} · {% if o.groups %}{{ o.groups|slice:":3"|join:", " }}{% if o.groups|length > 3 %} +{{ o.groups|length|add:"-3" }}{% endif %}{% else %}вся академия{% endif %}</option>
-        {% endfor %}
-      </select>
+  {# ---- Filters ---- #}
+  <form method="get" class="ok-pay-filters is-report" data-ok-loading="#rep-body" role="search">
+    <select name="period" class="ok-input" aria-label="Период" data-ok-autosubmit>
+      {% for o in options %}
+        <option value="{{ o.pk }}"{% if o.pk == selected.pk %} selected{% endif %}>{{ o.period.period_start|date:"d.m" }}–{{ o.period.period_end|date:"d.m.Y" }}{% if o.period.is_draft %} · в процессе{% endif %}</option>
+      {% endfor %}
+    </select>
+    <select name="status" class="ok-input" aria-label="Статус выплаты" data-ok-autosubmit>
+      {% for value, label in status_choices %}<option value="{{ value }}"{% if value == filters.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="group" class="ok-input" aria-label="Группа" data-ok-autosubmit>
+      <option value="">Все группы</option>
+      {% for name in report.group_names %}<option value="{{ name }}"{% if name == filters.group %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+    <select name="method" class="ok-input" aria-label="Способ выплаты" data-ok-autosubmit>
+      {% for value, label in method_choices %}<option value="{{ value }}"{% if value == filters.method %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <div class="ok-rep-search">
+      <i class="bi bi-search"></i>
+      <input type="search" name="student" class="ok-input" value="{{ filters.student }}" placeholder="Поиск ученика" aria-label="Поиск ученика">
     </div>
-    <noscript><button type="submit" class="ok-btn-primary ok-btn-sm">Показать</button></noscript>
-    <div class="ok-rep-picker-meta">Стипендиальные периоды: <strong>{{ options|length }}</strong>
-      · <a href="{% url 'admin:scholarships_scholarshipperiod_changelist' %}">все периоды</a></div>
+    {% if filters.program %}<input type="hidden" name="program" value="{{ filters.program }}">{% endif %}
+    <div class="ok-pay-filter-actions">
+      <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-funnel"></i> Применить</button>
+      <a href="?period={{ period.pk }}" class="ok-btn-secondary ok-btn-sm{% if not filters.is_active %} is-disabled{% endif %}"{% if not filters.is_active %} aria-disabled="true" tabindex="-1"{% endif %}>Сбросить</a>
+    </div>
   </form>
 
   <div id="rep-body" class="ok-sch-loadable">
-  {% with period=selected.period %}
+    {# ---- The period in one line + exports ---- #}
+    <div class="ok-rep-line">
+      <strong>{{ report.range_label }}</strong>
+      {% include "admin/scholarships/scholarshipperiod/_status.html" with period=period compact=True %}
+      <span class="ok-rep-line-sep">·</span>
+      <span title="{{ report.group_names|join:', ' }}">{% if report.scope_all %}вся академия{% else %}групп: {{ report.group_names|length }}{% endif %}</span>
+      <span class="ok-rep-line-sep">·</span>
+      <a href="{% url 'admin:scholarships_scholarshipperiod_change' period.pk %}" class="ok-sch-textlink">Открыть период</a>
+      {% if can_pay and t.unpaid %}<a href="{% url 'admin:scholarships_scholarshipaward_changelist' %}?period__id__exact={{ period.pk }}&amp;payment_status__exact=unpaid" class="ok-sch-textlink"><i class="bi bi-cash-coin"></i> Выдать оставшимся</a>{% endif %}
+      <div class="ok-rep-exports">
+        <a href="{% url 'admin:scholarships_report_xlsx' %}?{{ export_query }}" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-file-earmark-excel"></i> Экспорт Excel</a>
+        <a href="{% url 'admin:scholarships_report_csv' %}?{{ export_query }}" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-filetype-csv"></i> Экспорт CSV</a>
+        <a href="{% url 'admin:scholarships_report_pdf' %}?{{ export_query }}" class="ok-btn-secondary ok-btn-sm"><i class="bi bi-file-earmark-pdf"></i> Скачать PDF</a>
+      </div>
+    </div>
 
-  {# ---- 1. The selected period: dates, status, its own groups ---- #}
-  <section class="ok-rep-hero">
-    <div class="ok-rep-hero-top">
-      <div>
-        <div class="ok-rep-hero-label">Стипендиальный период</div>
-        <div class="ok-rep-hero-dates">{{ report.range_label }}</div>
-        <div class="ok-rep-hero-status">
-          {% include "admin/scholarships/scholarshipperiod/_status.html" with period=period %}
-          <span class="ok-sch-muted small">{{ period.title }} · начисление {{ period.evaluation_date|date:"d.m.Y" }}</span>
+    {# ---- KPIs (follow the filters, like the files) ---- #}
+    <div class="ok-pay-kpis" aria-label="Итоги">
+      <div class="ok-pay-kpi">
+        <span class="ok-pay-kpi-label">Всего учеников</span>
+        <strong class="ok-pay-kpi-value">{{ t.students }}</strong>
+      </div>
+      <div class="ok-pay-kpi is-success">
+        <span class="ok-pay-kpi-label"><span class="ok-sch-dot is-done"></span>Выдано</span>
+        <strong class="ok-pay-kpi-value">{{ t.paid }}</strong>
+      </div>
+      <div class="ok-pay-kpi{% if t.unpaid %} is-warning{% endif %}">
+        <span class="ok-pay-kpi-label"><span class="ok-sch-dot is-progress"></span>Не выдано</span>
+        <strong class="ok-pay-kpi-value">{{ t.unpaid }}</strong>
+        {% if t.awaiting_approval %}<span class="ok-pay-kpi-hint">период не утверждён</span>{% endif %}
+      </div>
+      <div class="ok-pay-kpi">
+        <span class="ok-pay-kpi-label">Общая сумма</span>
+        <strong class="ok-pay-kpi-value">{{ t.amount|som }}</strong>
+      </div>
+      <div class="ok-pay-kpi is-success">
+        <span class="ok-pay-kpi-label">Выплачено</span>
+        <strong class="ok-pay-kpi-value">{{ t.paid_amount|som }}</strong>
+      </div>
+      <div class="ok-pay-kpi{% if t.remaining %} is-warning{% endif %}">
+        <span class="ok-pay-kpi-label">Остаток</span>
+        <strong class="ok-pay-kpi-value">{{ t.remaining|som }}</strong>
+      </div>
+    </div>
+
+    {# ---- Table ---- #}
+    <div class="ok-card ok-sch-panel" id="students">
+      <div class="ok-pay-toolbar">
+        <div class="ok-pay-toolbar-title">{% if filters.status == "not_awarded" %}Без стипендии{% else %}Начисления{% endif %}{% if filters.group %} · {{ filters.group }}{% endif %}
+          <span class="ok-sch-count">{% if filters.is_active %}{{ report.rows|length }} из {{ report.all_rows_count }}{% else %}{{ report.rows|length }}{% endif %}</span>
         </div>
       </div>
-      <a href="{% url 'admin:scholarships_scholarshipperiod_change' period.pk %}" class="ok-btn-secondary ok-btn-sm">Открыть период <i class="bi bi-arrow-right"></i></a>
-    </div>
-    <div class="ok-rep-hero-grid">
-      <div>
-        <div class="ok-rep-hero-label">
-          Участвующие группы <span class="ok-sch-count">{{ report.groups|length }}</span>
-          {% if report.scope_all %}<span class="ok-rep-scope">вся академия — группы для периода не выбраны</span>{% endif %}
-          {% if can_generate and period.is_draft %}<a href="{% url 'admin:scholarships_edit' period.pk %}" class="ok-rep-edit"><i class="bi bi-pencil"></i> изменить</a>{% endif %}
-        </div>
-        <div class="ok-rep-tags is-lg">
-          {% for g in report.groups %}
-            <a href="?period={{ period.pk }}&amp;group={{ g.name|urlencode }}#students" class="ok-rep-tag{% if g.name == filters.group %} is-active{% endif %}" title="Показать учеников группы">{{ g.name }}</a>
-          {% empty %}
-            <span class="ok-sch-muted">Период ещё не рассчитан — группы и ученики появятся после расчёта.</span>
-          {% endfor %}
-        </div>
-      </div>
-      <div>
-        <div class="ok-rep-hero-label">Программа</div>
-        <div class="ok-rep-tags is-lg">
-          {% for p in report.programs %}<span class="ok-rep-tag is-program">{{ p }}</span>{% empty %}<span class="ok-sch-muted">—</span>{% endfor %}
-        </div>
-      </div>
-    </div>
-  </section>
-
-  {# ---- 2. Period statistics ---- #}
-  <div class="ok-sch-kpis is-5">
-    <div class="ok-sch-kpi">
-      <div class="ok-sch-kpi-label"><i class="bi bi-collection"></i> Группы</div>
-      <div class="ok-sch-kpi-value">{{ report.groups|length }}</div>
-    </div>
-    <div class="ok-sch-kpi">
-      <div class="ok-sch-kpi-label"><i class="bi bi-people"></i> Ученики</div>
-      <div class="ok-sch-kpi-value">{{ report.totals.students }}</div>
-    </div>
-    {% if report.has_pending %}
-      <div class="ok-sch-kpi is-warning">
-        <div class="ok-sch-kpi-label"><i class="bi bi-hourglass-split"></i> Ожидают выплату</div>
-        <div class="ok-sch-kpi-value">{{ report.totals.pending }}</div>
-        <div class="ok-sch-kpi-hint">период ещё не утверждён</div>
-      </div>
-    {% else %}
-      <div class="ok-sch-kpi">
-        <div class="ok-sch-kpi-label"><i class="bi bi-check2-circle"></i> Получили</div>
-        <div class="ok-sch-kpi-value">{{ report.totals.received }}</div>
-      </div>
-    {% endif %}
-    <div class="ok-sch-kpi">
-      <div class="ok-sch-kpi-label"><i class="bi bi-dash-circle"></i> Не получили</div>
-      <div class="ok-sch-kpi-value">{{ report.totals.not_received }}</div>
-    </div>
-    <div class="ok-sch-kpi is-accent">
-      <div class="ok-sch-kpi-label"><i class="bi bi-cash-stack"></i> Общая сумма</div>
-      <div class="ok-sch-kpi-value">{{ report.totals.amount|som }}</div>
-      <div class="ok-sch-kpi-hint">стипендий: {{ report.totals.awards }}{% if report.totals.awards %} · в среднем {{ report.totals.average|som }}{% endif %}</div>
-    </div>
-  </div>
-
-  {# ---- 3. Statistics by group ---- #}
-  {% if report.groups %}
-  <div class="ok-card ok-sch-panel">
-    <div class="ok-card-header"><i class="bi bi-collection"></i><span>Статистика по группам</span><span class="ok-sch-count">{{ report.groups|length }}</span></div>
-    <div class="table-responsive">
-      <table class="table ok-sch-table ok-rep-table mb-0">
-        <thead>
-          <tr>
-            <th>Группа</th><th>Программа</th><th class="ok-sch-num">Ученики</th><th class="ok-sch-num">Получили</th>
-            {% if report.has_pending %}<th class="ok-sch-num">Ожидают</th>{% endif %}
-            <th class="ok-sch-num">Не получили</th><th class="ok-sch-num">Сумма</th><th><span class="visually-hidden">Действия</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for g in report.groups %}
-            <tr{% if g.name == filters.group %} class="is-selected"{% endif %}>
-              <td><a href="?period={{ period.pk }}&amp;group={{ g.name|urlencode }}#students" class="ok-sch-student">{{ g.name }}</a></td>
-              <td class="ok-sch-muted">{{ g.program_label }}</td>
-              <td class="ok-sch-num">{{ g.totals.students }}</td>
-              <td class="ok-sch-num ok-rep-good">{{ g.totals.received }}</td>
-              {% if report.has_pending %}<td class="ok-sch-num ok-rep-wait">{{ g.totals.pending }}</td>{% endif %}
-              <td class="ok-sch-num">{{ g.totals.not_received }}</td>
-              <td class="ok-sch-num"><strong>{{ g.totals.amount|som }}</strong></td>
-              <td class="text-end"><a href="?period={{ period.pk }}&amp;group={{ g.name|urlencode }}#students" class="ok-rep-open">Ученики <i class="bi bi-chevron-right"></i></a></td>
-            </tr>
-          {% endfor %}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="2"><strong>Всего</strong></td>
-            <td class="ok-sch-num"><strong>{{ report.totals.students }}</strong></td>
-            <td class="ok-sch-num"><strong>{{ report.totals.received }}</strong></td>
-            {% if report.has_pending %}<td class="ok-sch-num"><strong>{{ report.totals.pending }}</strong></td>{% endif %}
-            <td class="ok-sch-num"><strong>{{ report.totals.not_received }}</strong></td>
-            <td class="ok-sch-num"><strong>{{ report.totals.amount|som }}</strong></td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-
-  {# ---- 4. Students ---- #}
-  <div class="ok-card ok-sch-panel" id="students">
-    <div class="ok-card-header">
-      <i class="bi bi-list-ul"></i>
-      <span>Список учеников{% if filters.group %} · {{ filters.group }}{% endif %}</span>
-      <span class="ok-sch-count">{% if filters.is_active %}{{ report.rows|length }} из {{ report.all_rows_count }}{% else %}{{ report.rows|length }}{% endif %}</span>
-    </div>
-    <form method="get" action="#students" class="ok-rep-filters" data-ok-loading="#students">
-      <input type="hidden" name="period" value="{{ period.pk }}">
-      <div class="ok-rep-field">
-        <label class="ok-rep-label" for="rep-group">Группа</label>
-        <select id="rep-group" name="group" class="ok-input">
-          <option value="">Все группы</option>
-          {% for name in report.group_names %}<option value="{{ name }}"{% if name == filters.group %} selected{% endif %}>{{ name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="ok-rep-field">
-        <label class="ok-rep-label" for="rep-student">Ученик</label>
-        <div class="ok-rep-search">
-          <i class="bi bi-search"></i>
-          <input type="text" id="rep-student" name="student" class="ok-input" value="{{ filters.student }}" placeholder="Имя или фамилия">
-        </div>
-      </div>
-      <div class="ok-rep-field">
-        <label class="ok-rep-label" for="rep-status">Статус</label>
-        <select id="rep-status" name="status" class="ok-input">
-          {% for value, label in status_choices %}<option value="{{ value }}"{% if value == filters.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="ok-rep-field">
-        <label class="ok-rep-label" for="rep-program">Программа</label>
-        <select id="rep-program" name="program" class="ok-input">
-          <option value="">Все программы</option>
-          {% for name in report.programs %}<option value="{{ name }}"{% if name == filters.program %} selected{% endif %}>{{ name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="ok-rep-actions">
-        <button type="submit" class="ok-btn-primary ok-btn-sm"><i class="bi bi-funnel"></i> Применить</button>
-        <a href="?period={{ period.pk }}#students" class="ok-btn-secondary ok-btn-sm">Сбросить</a>
-      </div>
-    </form>
-
-    {% if report.rows %}
-      <div class="table-responsive">
-        <table class="table ok-sch-table ok-rep-table mb-0">
-          <thead>
-            <tr><th class="ok-sch-num">№</th><th>Ученик</th><th>Группа</th><th class="ok-sch-num">Стипендия</th><th>Статус</th></tr>
-          </thead>
-          <tbody>
-            {% for row in report.rows %}
+      {% if report.rows %}
+        <div class="table-responsive">
+          <table class="table ok-sch-table ok-pay-table mb-0">
+            <thead>
               <tr>
-                <td class="ok-sch-num ok-sch-rank">{{ row.number }}</td>
-                <td>
-                  <a href="{% url 'admin:scholarships_scholarshipevaluation_change' row.evaluation_id %}" class="ok-sch-student">{{ row.student_name }}</a>
-                  {% if row.program %}<div class="ok-sch-muted small">{{ row.program }}</div>{% endif %}
-                </td>
-                <td>{{ row.group_name|default:"Без группы" }}</td>
-                <td class="ok-sch-num"><strong>{{ row.amount|som }}</strong></td>
-                <td>
-                  {% if row.status == "received" %}
-                    <span class="ok-badge ok-badge-success"><i class="bi bi-check-circle-fill"></i> {{ row.status_label }}</span>
-                  {% elif row.status == "pending" %}
-                    <span class="ok-badge ok-badge-warning" title="{{ row.hint }}"><i class="bi bi-clock-fill"></i> {{ row.status_label }}</span>
-                  {% else %}
-                    <span class="ok-badge ok-badge-muted" title="{{ row.hint }}"><i class="bi bi-dash-circle"></i> {{ row.status_label }}</span>
-                    {% if row.hint %}<div class="ok-rep-hint" title="{{ row.hint }}">{{ row.hint }}</div>{% endif %}
-                  {% endif %}
-                </td>
+                <th class="ok-sch-num">№</th><th>Ученик</th><th>Группа</th><th class="ok-rep-period-col">Период</th><th class="ok-sch-num">Сумма</th>
+                <th>Статус</th><th>Дата выплаты</th><th>Способ</th><th>Кто выдал</th>
               </tr>
-            {% endfor %}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td></td>
-              <td colspan="2"><strong>Итого</strong> <span class="ok-sch-muted">· учеников {{ report.rows_totals.students }}, стипендий {{ report.rows_totals.awards }}</span></td>
-              <td class="ok-sch-num"><strong>{{ report.rows_totals.amount|som }}</strong></td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    {% else %}
-      <div class="ok-sch-empty ok-rep-empty">
-        <span class="ok-sch-card-icon"><i class="bi bi-inbox"></i></span>
-        <h5>Нет учеников</h5>
-        <p>{% if filters.is_active %}С выбранными фильтрами учеников нет. Сбросьте фильтры.{% else %}Период ещё не рассчитан.{% endif %}</p>
-      </div>
-    {% endif %}
-  </div>
-
-  {# ---- 5. PDF ---- #}
-  <div class="ok-rep-pdf">
-    <div>
-      <div class="ok-rep-pdf-title">PDF-отчёт за период {{ report.range_label }}</div>
-      <div class="ok-sch-muted small">
-        Группы: {{ report.group_names|join:", "|default:"—" }}{% if filters.is_active %} · с применёнными фильтрами списка учеников{% endif %}
-      </div>
+            </thead>
+            <tbody>
+              {% for row in report.rows %}
+                <tr>
+                  <td class="ok-sch-num ok-sch-rank">{{ row.number }}</td>
+                  <td class="ok-pay-student"><a href="{% url 'admin:scholarships_scholarshipevaluation_change' row.evaluation_id %}" class="ok-sch-student" title="{{ row.student_name }}{% if row.program %} · {{ row.program }}{% endif %}">{{ row.student_name }}</a></td>
+                  <td>{% if row.group_name %}<span class="ok-pay-tag" title="{{ row.group_name }}{% if row.program %} · {{ row.program }}{% endif %}">{{ row.group_name }}</span>{% else %}<span class="ok-sch-muted">—</span>{% endif %}</td>
+                  <td class="ok-pay-period ok-rep-period-col" title="{{ report.range_label }}">{{ report.short_range }}</td>
+                  <td class="ok-sch-num"><strong>{{ row.amount|som }}</strong></td>
+                  <td>
+                    {% if row.status == "paid" %}
+                      <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>{{ row.status_label }}</span>
+                    {% elif row.status == "unpaid" %}
+                      <span class="ok-badge ok-badge-warning"{% if row.hint %} title="{{ row.hint }}"{% endif %}><span class="ok-badge-dot"></span>{{ row.status_label }}</span>
+                    {% else %}
+                      <span class="ok-badge ok-badge-muted" title="{{ row.hint }}">{{ row.status_label }}</span>
+                    {% endif %}
+                  </td>
+                  <td class="ok-pay-date">{% if row.paid_at %}{{ row.paid_at|date:"d.m.Y" }}{% else %}<span class="ok-sch-muted">—</span>{% endif %}</td>
+                  <td class="ok-pay-nowrap"{% if row.comment %} title="{{ row.comment }}"{% endif %}>{{ row.method_label|default:"—" }}{% if row.comment %} <i class="bi bi-chat-left-text ok-sch-muted"></i>{% endif %}</td>
+                  <td class="ok-sch-muted">{{ row.paid_by|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            {% if filters.status != "not_awarded" %}
+            <tfoot>
+              <tr>
+                <td></td>
+                <td colspan="2">Итого · учеников {{ t.students }}</td>
+                <td class="ok-rep-period-col"></td>
+                <td class="ok-sch-num">{{ t.amount|som }}</td>
+                <td colspan="4">выплачено {{ t.paid_amount|som }} · остаток {{ t.remaining|som }}</td>
+              </tr>
+            </tfoot>
+            {% endif %}
+          </table>
+        </div>
+      {% else %}
+        <div class="ok-pay-empty">
+          <i class="bi bi-inbox"></i>
+          <span>{% if filters.is_active %}С выбранными фильтрами записей нет.{% elif period.is_calculated %}В этом периоде нет начислений.{% else %}Период ещё не рассчитан.{% endif %}</span>
+          {% if filters.is_active %}<a href="?period={{ period.pk }}" class="ok-sch-textlink">Сбросить фильтры</a>{% endif %}
+        </div>
+      {% endif %}
     </div>
-    <a href="{% url 'admin:scholarships_report_pdf' %}?{{ pdf_query }}" class="ok-btn-primary"><i class="bi bi-file-earmark-arrow-down"></i> Скачать PDF-отчёт</a>
   </div>
-
   {% endwith %}
-  </div>
   {% endif %}
 </div>
 {% endblock %}

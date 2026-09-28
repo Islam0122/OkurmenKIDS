@@ -3341,3 +3341,179 @@ a.ok-sch-pcard-dates:hover { color: var(--ok-primary); text-decoration: none; }
   .ok-set-actions-buttons { margin-left: 0; }
   .ok-set-actions-buttons > * { flex: 1; justify-content: center; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Scholarships: payments workspace («Стипендии»), compact period list, */
+/* accounting report. The table is the main element; KPIs are one thin */
+/* strip. green = выдано, amber = ждёт выплаты, red = ошибка.            */
+/* ------------------------------------------------------------------ */
+
+/* Compact KPI strip */
+.ok-pay-kpis {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0;
+  margin-bottom: 0.9rem; background: var(--ok-surface); border: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg); box-shadow: var(--ok-shadow); overflow: hidden;
+}
+.ok-pay-kpi { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; padding: 0.65rem 0.95rem; border-left: 1px solid var(--ok-border); }
+.ok-pay-kpi:first-child { border-left: 0; }
+.ok-pay-kpi-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; font-weight: 600; color: var(--ok-text-muted); white-space: nowrap; }
+.ok-pay-kpi-value { font-size: 1.15rem; font-weight: 800; line-height: 1.25; color: var(--ok-text); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ok-pay-kpi-hint { font-size: 0.7rem; color: var(--ok-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ok-pay-kpi.is-success .ok-pay-kpi-value { color: var(--ok-primary); }
+.ok-pay-kpi.is-warning .ok-pay-kpi-value { color: var(--ok-warning); }
+.ok-pay-kpis.is-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+/* One-line filter bar */
+.ok-pay-filters {
+  display: grid; align-items: center; gap: 0.5rem; margin-bottom: 0.9rem; padding: 0.6rem 0.7rem;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.2fr) auto;
+  background: var(--ok-surface); border: 1px solid var(--ok-border); border-radius: var(--ok-radius-lg);
+}
+.ok-pay-filters .ok-input, .ok-pay-filters input.ok-input { height: 2.15rem; min-height: 2.15rem; padding: 0.3rem 0.6rem; width: 100%; font-size: 0.85rem; }
+.ok-pay-filters .ok-rep-search input.ok-input { padding-left: 1.9rem; }
+.ok-pay-filter-actions { display: flex; gap: 0.4rem; }
+.ok-pay-filter-actions .ok-btn-sm { height: 2.15rem; padding-top: 0; padding-bottom: 0; }
+.ok-btn-secondary.is-disabled { opacity: 0.5; pointer-events: none; }
+.ok-pay-filters.is-report { grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1fr) auto; }
+
+/* Table panel */
+.ok-pay-toolbar {
+  position: sticky; top: 3.5rem; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem;
+  padding: 0.55rem 0.9rem; background: var(--ok-surface); border-bottom: 1px solid var(--ok-border);
+  border-radius: var(--ok-radius-lg) var(--ok-radius-lg) 0 0;
+}
+.ok-pay-toolbar-title { font-weight: 700; font-size: 0.9rem; color: var(--ok-text); margin-right: auto; }
+.ok-pay-selection { display: flex; align-items: center; gap: 0.5rem; font-size: 0.84rem; color: var(--ok-text-muted); }
+.ok-pay-selection strong { color: var(--ok-text); font-variant-numeric: tabular-nums; }
+.ok-pay-selection.has-selection { color: var(--ok-text-secondary); }
+.ok-pay-selection.has-selection strong { color: var(--ok-primary); }
+.ok-pay-selection-sep { color: var(--ok-border-strong); }
+.ok-pay-selection .ok-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.ok-pay-table { font-size: 0.86rem; }
+.ok-pay-table td, .ok-pay-table th { padding: 0.45rem 0.7rem; }
+.ok-pay-table th { font-size: 0.7rem; }
+.ok-pay-table .ok-pay-check { width: 2.2rem; padding-right: 0; }
+.ok-pay-table .form-check-input { margin: 0; cursor: pointer; }
+.ok-pay-table tbody tr:hover td { background: var(--ok-surface-hover); }
+.ok-pay-table tr.is-selected td { background: var(--ok-primary-soft); }
+.ok-pay-table tr.is-just-paid td { animation: ok-pay-flash 2.4s ease-out; }
+@keyframes ok-pay-flash { 0%, 40% { background: var(--ok-primary-soft); } 100% { background: transparent; } }
+.ok-pay-student { max-width: 240px; }
+.ok-pay-student .ok-sch-student { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ok-pay-tag {
+  display: inline-block; max-width: 150px; padding: 0.08rem 0.45rem; border-radius: var(--ok-radius-sm);
+  background: var(--ok-surface-hover); border: 1px solid var(--ok-border); color: var(--ok-text-secondary);
+  font-size: 0.74rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
+}
+.ok-pay-period { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ok-text-secondary); text-decoration: none; }
+.ok-pay-period:hover { color: var(--ok-primary); }
+.ok-pay-date { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ok-pay-table .ok-badge { padding: 0.15rem 0.55rem; font-size: 0.72rem; }
+.ok-pay-btn { padding: 0.3rem 0.8rem; white-space: nowrap; }
+.ok-pay-link {
+  background: none; border: 0; padding: 0.3rem 0.4rem; font-size: 0.8rem; font-weight: 600; color: var(--ok-text-secondary); cursor: pointer;
+}
+.ok-pay-link:hover { color: var(--ok-primary); text-decoration: underline; }
+.ok-pay-table a.ok-pay-waiting { font-size: 0.78rem; color: var(--ok-text-muted); white-space: nowrap; text-decoration: none; }
+.ok-pay-table a.ok-pay-waiting:hover { color: var(--ok-warning); text-decoration: underline; }
+.ok-pay-table .ok-pay-nowrap { white-space: nowrap; }
+.ok-pay-table tfoot td { background: var(--ok-surface-hover); border-top: 2px solid var(--ok-border); font-weight: 700; }
+
+.ok-pay-empty { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem 0.75rem; padding: 1.6rem 1rem; color: var(--ok-text-muted); font-size: 0.88rem; }
+.ok-pay-empty > i { color: var(--ok-primary); font-size: 1.1rem; }
+
+/* Pay / details dialogs */
+.ok-pay-modal { width: min(460px, 92vw); }
+.ok-pay-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem 1rem; margin: 0 0 1rem; padding: 0.8rem 0.9rem; background: var(--ok-surface-hover); border-radius: var(--ok-radius); }
+.ok-pay-facts[hidden] { display: none; }
+.ok-pay-facts > div { min-width: 0; }
+.ok-pay-facts > div.is-wide { grid-column: 1 / -1; }
+.ok-pay-facts dt { font-size: 0.7rem; font-weight: 600; color: var(--ok-text-muted); }
+.ok-pay-facts dd { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--ok-text); overflow-wrap: anywhere; }
+.ok-pay-facts dd.is-amount { font-size: 1.05rem; font-weight: 800; color: var(--ok-primary); }
+.ok-pay-confirm { margin: 0 0 1rem; padding: 0.8rem 0.9rem; border-radius: var(--ok-radius); background: var(--ok-primary-soft); color: var(--ok-text); font-weight: 600; }
+.ok-pay-modal .ok-field-group { margin-bottom: 0.8rem; }
+.ok-pay-modal textarea.ok-input { width: 100%; resize: vertical; }
+.ok-pay-modal select.ok-input { width: 100%; }
+.ok-pay-cancel { background: none; border: 0; padding: 0; font-size: 0.82rem; font-weight: 600; color: var(--ok-danger); cursor: pointer; }
+.ok-pay-cancel:hover { text-decoration: underline; }
+.ok-modal-footer form { margin: 0; display: flex; align-items: center; }
+
+/* Periods — compact list */
+.ok-per-list { padding: 0; margin: 0; list-style: none; }
+.ok-per-row {
+  display: grid; align-items: center; gap: 0.75rem;
+  grid-template-columns: minmax(10rem, 1.5fr) minmax(6.5rem, 0.9fr) repeat(5, minmax(3.6rem, 0.6fr)) minmax(6.5rem, 0.85fr) 17rem;
+  padding: 0.6rem 0.9rem; border-top: 1px solid var(--ok-border);
+}
+.ok-per-row.is-head { border-top: 0; padding-top: 0.5rem; padding-bottom: 0.5rem; background: var(--ok-surface-hover); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ok-text-muted); }
+.ok-per-row.is-head > span { font-size: inherit; font-weight: inherit; color: inherit; line-height: 1.2; white-space: normal; hyphens: manual; }
+.ok-per-row:not(.is-head):hover { background: var(--ok-surface-hover); }
+.ok-per-dates { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ok-text); text-decoration: none; white-space: nowrap; }
+a.ok-per-dates:hover { color: var(--ok-primary); }
+.ok-per-title { display: block; font-size: 0.74rem; color: var(--ok-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ok-per-num { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; font-weight: 600; color: var(--ok-text); white-space: nowrap; }
+.ok-per-num.is-good { color: var(--ok-primary); }
+.ok-per-num.is-wait { color: var(--ok-warning); }
+.ok-per-num.is-zero, .ok-per-num .ok-sch-of { color: var(--ok-text-muted); font-weight: 500; }
+.ok-per-cell-label { display: none; }
+.ok-per-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.15rem; }
+.ok-per-action {
+  display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.5rem; border-radius: var(--ok-radius-sm);
+  font-size: 0.8rem; font-weight: 600; color: var(--ok-text-secondary); text-decoration: none; white-space: nowrap;
+}
+.ok-per-action:hover { background: var(--ok-primary-soft); color: var(--ok-primary); text-decoration: none; }
+.ok-per-action.is-main { color: var(--ok-primary); }
+.ok-per-row .ok-sch-status { padding: 0.12rem 0.55rem; font-size: 0.72rem; white-space: nowrap; }
+.ok-per-row > * { min-width: 0; }
+.ok-per-row .ok-sch-menu-btn { width: 30px; height: 30px; }
+
+/* Report — compact period line */
+.ok-rep-line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.9rem; margin-bottom: 0.9rem;
+  font-size: 0.85rem; color: var(--ok-text-secondary);
+}
+.ok-rep-line strong { color: var(--ok-text); font-variant-numeric: tabular-nums; }
+.ok-rep-line .ok-sch-status { padding: 0.12rem 0.55rem; font-size: 0.72rem; }
+.ok-rep-line-sep { color: var(--ok-border-strong); }
+.ok-rep-exports { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-left: auto; }
+.ok-rep-exports .ok-btn-sm { padding: 0.35rem 0.7rem; }
+.ok-pay-table .ok-pay-comment { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ok-text-muted); font-size: 0.8rem; }
+
+@media (max-width: 1399px) {
+  .ok-per-row { grid-template-columns: minmax(9.5rem, 1.4fr) minmax(6.5rem, 0.8fr) repeat(5, minmax(3.4rem, 0.5fr)) minmax(6.5rem, 0.8fr) 16.5rem; gap: 0.5rem; }
+  .ok-per-action { padding: 0.3rem 0.35rem; }
+  .ok-per-action i { display: none; }
+  .ok-rep-period-col { display: none; }
+  .ok-pay-filters, .ok-pay-filters.is-report { grid-template-columns: minmax(0, 1.15fr) repeat(3, minmax(0, 1fr)) minmax(0, 1fr) auto; gap: 0.4rem; }
+  .ok-pay-filters .ok-input, .ok-pay-filters input.ok-input { font-size: 0.82rem; padding-left: 0.5rem; padding-right: 1.6rem; }
+  .ok-pay-filters .ok-rep-search input.ok-input { padding-left: 1.8rem; padding-right: 0.5rem; }
+}
+@media (max-width: 1199px) {
+  .ok-pay-kpis, .ok-pay-kpis.is-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ok-pay-kpi:nth-child(3n + 1) { border-left: 0; }
+  .ok-pay-kpi:nth-child(n + 4) { border-top: 1px solid var(--ok-border); }
+  .ok-pay-filters, .ok-pay-filters.is-report { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ok-pay-filter-actions { grid-column: span 3; justify-content: flex-end; }
+}
+@media (max-width: 991px) {
+  .ok-per-row { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 0.4rem; }
+  .ok-per-row.is-head { display: none; }
+  .ok-per-row > .ok-per-main { grid-column: 1 / 3; }
+  .ok-per-row > .ok-per-state { grid-column: 3 / 5; justify-self: end; }
+  .ok-per-num { text-align: left; }
+  .ok-per-cell-label { display: block; font-size: 0.66rem; font-weight: 600; color: var(--ok-text-muted); }
+  .ok-per-row > .ok-per-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .ok-per-action span { display: inline; }
+}
+@media (max-width: 767px) {
+  .ok-pay-kpis, .ok-pay-kpis.is-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ok-pay-kpi { border-left: 0; border-top: 1px solid var(--ok-border); }
+  .ok-pay-kpi:nth-child(-n + 2) { border-top: 0; }
+  .ok-pay-kpi:nth-child(even) { border-left: 1px solid var(--ok-border); }
+  .ok-pay-filters, .ok-pay-filters.is-report { grid-template-columns: 1fr 1fr; }
+  .ok-pay-filter-actions { grid-column: 1 / -1; }
+  .ok-pay-toolbar { position: static; }
+  .ok-rep-exports { margin-left: 0; width: 100%; }
+}

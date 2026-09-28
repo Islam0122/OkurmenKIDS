@@ -40,8 +40,10 @@ class PeriodCardsTests(AdminPagesFixture):
         response = self.web.get(reverse("admin:scholarships_scholarshipperiod_changelist"))
         groups = {p.pk: p.participating_groups for p in response.context["cl"].result_list}
         self.assertEqual(groups, {self.first.pk: ["Prog SOFT 1"], self.second.pk: ["Prog SOFT 2"]})
-        self.assertContains(response, "ok-sch-label\">Участвующие группы", count=2)
-        self.assertContains(response, "Открыть период")
+        self.assertContains(response, 'class="ok-per-row"', count=2)
+        self.assertContains(response, 'title="Prog SOFT 1"')
+        for action in ("Открыть", "Отчёт", "Редактировать"):
+            self.assertContains(response, action)
 
     def test_status_filter_counts(self):
         approve_period(self.first, user=self.admin)
@@ -56,11 +58,13 @@ class AwardsPageTests(AdminPagesFixture):
     def test_summary_and_badges(self):
         approve_period(self.first, user=self.admin)
         response = self.web.get(self.url)
-        self.assertEqual(
-            response.context["summary"], {"total": 3, "approved": 1, "pending": 2, "amount": Decimal("4500")},
-        )
-        self.assertContains(response, "Получено")
-        self.assertContains(response, "Ожидает")
+        self.assertEqual(response.context["summary"], {
+            "total": 3, "paid": 0, "unpaid": 3, "awaiting_approval": 2,
+            "accrued": Decimal("4500"), "paid_sum": None, "remaining": Decimal("4500"),
+        })
+        self.assertContains(response, "Не выдано")
+        self.assertContains(response, "data-ok-pay-one", count=1)  # only the approved award can be paid
+        self.assertContains(response, "Ждёт утверждения", count=2)
         self.assertContains(response, "4\u00a0500\u00a0сом")
 
     def test_filters(self):
@@ -73,7 +77,7 @@ class AwardsPageTests(AdminPagesFixture):
         self.assertEqual(response.context["group_names"], ["Prog SOFT 1"])
 
         response = self.web.get(self.url, {"q": "zzz"})
-        self.assertContains(response, "Ничего не найдено")
+        self.assertContains(response, "С выбранными фильтрами начислений нет")
 
     def test_empty_filter_fields_are_dropped(self):
         response = self.web.get(self.url, {"period__id__exact": "", "status__exact": "pending", "q": ""})

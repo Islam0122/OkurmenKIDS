@@ -461,6 +461,21 @@ class ScholarshipSubjectScore(models.Model):
         return f"{self.evaluation.student_name} — {self.subject_name}"
 
 
+class PaymentStatus(models.TextChoices):
+    """Whether the money was actually handed over — independent of the
+    award's approval status (an approved award is *начислена*, a paid one
+    is *выдана*)."""
+
+    UNPAID = "unpaid", "Не выдано"
+    PAID = "paid", "Выдано"
+
+
+class PaymentMethod(models.TextChoices):
+    CASH = "cash", "Наличные"
+    BANK = "bank", "Банковский перевод"
+    OTHER = "other", "Другое"
+
+
 class ScholarshipAward(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Ожидает утверждения"
@@ -487,6 +502,25 @@ class ScholarshipAward(models.Model):
     )
     approved_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата утверждения")
 
+    # Payment — the fact that the money was handed over (services.payments).
+    # Only an approved award can be paid, and only once.
+    payment_status = models.CharField(
+        max_length=10, choices=PaymentStatus.choices, default=PaymentStatus.UNPAID, db_index=True,
+        verbose_name="Выплата",
+    )
+    paid_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата выплаты")
+    paid_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", verbose_name="Выдал",
+    )
+    paid_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Выплаченная сумма",
+    )
+    payment_method = models.CharField(
+        max_length=10, choices=PaymentMethod.choices, blank=True, verbose_name="Способ выплаты",
+    )
+    payment_comment = models.CharField(max_length=500, blank=True, verbose_name="Комментарий к выплате")
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
@@ -499,13 +533,32 @@ class ScholarshipAward(models.Model):
             # period (= per award cycle, since a period *is* one cycle).
             models.UniqueConstraint(fields=["student", "period"], name="unique_student_scholarship_period"),
             models.UniqueConstraint(fields=["period", "rank"], name="unique_scholarship_award_rank"),
+            # Money is handed over only for an approved award, and a paid
+            # award always says when.
+            models.CheckConstraint(
+                condition=models.Q(payment_status=PaymentStatus.UNPAID)
+                | models.Q(status="approved", paid_at__isnull=False),
+                name="scholarship_award_paid_is_approved",
+            ),
         ]
         indexes = [
             models.Index(fields=["student", "status"], name="ix_schaward_student_status"),
         ]
+        permissions = [
+            ("pay_scholarshipaward", "Может отмечать выдачу стипендий"),
+        ]
 
     def __str__(self):
         return f"{self.student} — {self.period} (#{self.rank})"
+
+    @property
+    def is_paid(self) -> bool:
+        return self.payment_status == PaymentStatus.PAID
+
+    @property
+    def is_payable(self) -> bool:
+        """Approved (the period is approved) and not paid yet."""
+        return self.status == self.Status.APPROVED and not self.is_paid
 
 
 _CRITERION_VALIDATORS = [MinValueValidator(1), MaxValueValidator(5)]
@@ -579,6 +632,7 @@ class ScholarshipRunLog(models.Model):
         APPROVE = "approve", "Утверждение"
         EDIT = "edit", "Изменение периода"
         AWARD = "award", "Изменение списка стипендиатов"
+        PAYMENT = "payment", "Выдача стипендий"
 
     class Trigger(models.TextChoices):
         SCHEDULE = "schedule", "По расписанию"
