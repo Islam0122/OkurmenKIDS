@@ -1,11 +1,17 @@
-{% comment %}The ⋮ menu of a period: every secondary action lives here. Needs `period`, `can_generate`, `can_approve`, `today`; optional `show` (dashboard filter to return to), `inline` (the list already shows «Изменить» / «Отчёт» as buttons).{% endcomment %}
+{% comment %}The ⋮ menu of a period: every secondary action lives here. Needs `period`, `can_generate`, `can_approve`, `today`; optional `show` (dashboard filter to return to), `full` (the periods list: «Открыть», «Отчёт», «Редактировать» live here too).{% endcomment %}
 <div class="dropdown ok-sch-menu">
   <button type="button" class="ok-sch-menu-btn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Действия с периодом">
     <i class="bi bi-three-dots-vertical"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
+    {% if full %}
+      <li><a class="dropdown-item" href="{% url 'admin:scholarships_scholarshipperiod_change' period.pk %}"><i class="bi bi-box-arrow-up-right"></i> Открыть период</a></li>
+      <li><a class="dropdown-item" href="{% url 'admin:scholarships_report' %}?period={{ period.pk }}"><i class="bi bi-bar-chart-line"></i> Отчёт</a></li>
+      {% if can_generate %}<li><a class="dropdown-item" href="{% url 'admin:scholarships_edit' period.pk %}"><i class="bi bi-pencil"></i> Редактировать</a></li>{% endif %}
+      <li><hr class="dropdown-divider"></li>
+    {% endif %}
     {% if can_generate %}
-      {% if not inline %}<li><a class="dropdown-item" href="{% url 'admin:scholarships_edit' period.pk %}"><i class="bi bi-pencil"></i> Изменить период</a></li>{% endif %}
+      {% if not full %}<li><a class="dropdown-item" href="{% url 'admin:scholarships_edit' period.pk %}"><i class="bi bi-pencil"></i> Изменить период</a></li>{% endif %}
       {% if period.is_draft and period.evaluation_date <= today %}
         <li>
           <form method="post" action="{% url 'admin:scholarships_recalculate' period.pk %}">{% csrf_token %}
@@ -27,7 +33,7 @@
         </form>
       </li>
     {% endif %}
-    {% if not inline %}
+    {% if not full %}
       <li><hr class="dropdown-divider"></li>
       <li><a class="dropdown-item" href="{% url 'admin:scholarships_report' %}?period={{ period.pk }}"><i class="bi bi-bar-chart-line"></i> Отчёт</a></li>
     {% endif %}

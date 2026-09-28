@@ -42,7 +42,12 @@ class PeriodCardsTests(AdminPagesFixture):
         self.assertEqual(groups, {self.first.pk: ["Prog SOFT 1"], self.second.pk: ["Prog SOFT 2"]})
         self.assertContains(response, 'class="ok-per-row"', count=2)
         self.assertContains(response, 'title="Prog SOFT 1"')
-        for action in ("Открыть", "Отчёт", "Редактировать"):
+        for column in ("Группы", "Стипендиаты", "Выплата", "Сумма"):
+            self.assertContains(response, f"<th class=\"is-num\">{column}</th>" if column != "Выплата" else "<th>Выплата</th>")
+        for removed in ("Оценено</th>", "Ожидают</th>"):
+            self.assertNotContains(response, removed)
+        # Every action lives in the one ⋮ menu of the row.
+        for action in ("Открыть период", "Отчёт", "Редактировать"):
             self.assertContains(response, action)
 
     def test_status_filter_counts(self):
