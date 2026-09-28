@@ -264,31 +264,58 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 /* ------------------------------------------------------------------ */
 /* Sidebar                                                             */
 /* ------------------------------------------------------------------ */
+/*
+ * Markup: templates/admin/base_site.html (sidebar block). The menu is a
+ * "Главная" link followed by .ok-nav-section blocks — a toggle button
+ * (uppercase section label + chevron) over a collapsible list of links.
+ *
+ * AdminLTE sizes the sidebar, the main column offset and the mini rail
+ * off --lte-sidebar-width; it is also re-declared on
+ * [data-bs-theme=light], hence the second selector.
+ */
+
+:root,
+[data-bs-theme] {
+  --lte-sidebar-width: 288px;
+  --ok-sidebar-label: #8A938D;
+  --ok-sidebar-item-height: 42px;
+}
 
 .app-sidebar {
+  display: flex;
+  flex-direction: column;
   background: var(--ok-surface) !important;
   border-right: 1px solid var(--ok-border);
   box-shadow: none !important;
 }
 
+/* AdminLTE sizes the scroll area as 100vh minus its own 3.5rem brand; our
+   brand is taller, which pushed the last items below the viewport. Let the
+   wrapper take whatever height is left under the brand instead. */
+.app-sidebar .sidebar-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto !important;
+}
+
 /* =========================================================
    OkurmenKIDS — Sidebar brand (single source of truth)
 
-   Real rendered markup (Jazzmin 3.0.5 / AdminLTE app-sidebar):
+   Real rendered markup (templates/admin/base_site.html):
      <div class="sidebar-brand">
        <a class="brand-link" id="jazzy-logo">
          <img class="brand-image opacity-75 shadow" src=".../logo.png">
-         <span class="brand-text fw-light">OkurmenKids</span>
+         <span class="brand-text">
+           <span class="ok-brand-name">OkurmenKids</span>
+           <span class="ok-brand-sub">Admin Panel</span>
+         </span>
        </a>
      </div>
 
    AdminLTE's own CSS caps `.brand-image` at max-height:33px and the
-   Jazzmin template hardcodes `opacity-75` + `shadow` on the <img>, which
+   Jazzmin markup hardcodes `opacity-75` + `shadow` on the <img>, which
    is why the real logo.png rendered tiny and washed out with a faint
-   box behind it. Fixed here by overriding those on the real selectors
-   instead of drawing a second, CSS-only "OK" emblem (a stray, inert
-   leftover of that — .main-sidebar rules that never matched this
-   template's markup, plus a contentless ::before — used to live here).
+   box behind it. Fixed here by overriding those on the real selectors.
    ========================================================= */
 
 .sidebar-brand {
@@ -300,15 +327,15 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .sidebar-brand .brand-link {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.75rem;
   padding: 0.6rem 1.1rem;
   text-decoration: none;
 }
 
 .sidebar-brand .brand-link .brand-image {
   float: none;
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 3.25rem;
+  height: 3.25rem;
   max-width: none;
   max-height: none;
   margin: 0;
@@ -317,16 +344,30 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   opacity: 1 !important;
   box-shadow: none !important;
   flex-shrink: 0;
+  transition: width 0.2s ease, height 0.2s ease;
 }
 
 .sidebar-brand .brand-link .brand-text {
+  display: flex;
+  flex-direction: column;
   margin-left: 0;
-  color: var(--ok-text) !important;
+  opacity: 1 !important;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ok-brand-name {
+  color: var(--ok-text);
   font-weight: 700;
   font-size: 1.05rem;
   line-height: 1.2;
-  opacity: 1 !important;
-  white-space: nowrap;
+}
+
+.ok-brand-sub {
+  color: var(--ok-sidebar-label);
+  font-weight: 500;
+  font-size: 0.75rem;
+  line-height: 1.3;
 }
 
 @media (max-width: 991px) {
@@ -338,61 +379,177 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .user-panel .user-profile { color: var(--ok-primary); }
 .user-panel .info a, .user-panel .info span { color: var(--ok-text) !important; font-weight: 600; font-size: 0.88rem; }
 
-.sidebar-menu .nav-header {
-  color: var(--ok-text-muted) !important;
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 1.1rem 1.1rem 0.4rem;
-}
+.ok-nav { padding-bottom: 1.5rem; }
+
+/* --- Items ---------------------------------------------------------- */
 
 .sidebar-menu .nav-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: auto;
+  min-height: var(--ok-sidebar-item-height);
+  /* .sidebar-wrapper already pads 8px, so items sit 12px from each edge. */
+  margin: 1px 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
   color: var(--ok-text) !important;
-  border-radius: var(--ok-radius-sm);
-  margin: 1px 0.6rem;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
   font-weight: 500;
+  /* AdminLTE forces nowrap on the whole menu; long labels
+     ("Результаты домашних заданий") wrap instead of being cut off. */
+  white-space: normal;
 }
 
+.sidebar-menu .nav-link p {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  line-height: 1.3;
+}
+
+/* One icon system (Bootstrap Icons), one size, one weight. */
 .sidebar-menu .nav-link .nav-icon {
+  flex: 0 0 1.25rem;
+  width: 1.25rem;
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1;
+  text-align: center;
   color: var(--ok-text-muted);
-  font-size: 1rem;
-  width: 1.4rem;
 }
 
 .sidebar-menu .nav-link:hover {
   background: var(--ok-surface-hover) !important;
-  color: var(--ok-primary) !important;
+  color: var(--ok-text) !important;
 }
 .sidebar-menu .nav-link:hover .nav-icon { color: var(--ok-primary); }
 
-/* Active item: subtle green background + green icon/text (spec requirement) */
-.sidebar-menu .nav-item > .nav-link.active,
-.sidebar-menu .nav-item.menu-open > .nav-link {
+.sidebar-menu .nav-link:focus-visible {
+  outline: 2px solid var(--ok-primary);
+  outline-offset: -2px;
+}
+
+/* Active item: soft green background, green bar on the left, green icon,
+   slightly bolder text. Set by Jazzmin's main.js (.active). */
+.sidebar-menu .nav-item > .nav-link.active {
   background: var(--ok-primary-soft) !important;
   color: var(--ok-primary) !important;
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--ok-primary);
 }
-.sidebar-menu .nav-item > .nav-link.active .nav-icon,
-.sidebar-menu .nav-item.menu-open > .nav-link .nav-icon { color: var(--ok-primary) !important; }
+.sidebar-menu .nav-item > .nav-link.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  bottom: 0.55rem;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ok-primary);
+}
+.sidebar-menu .nav-item > .nav-link.active .nav-icon { color: var(--ok-primary) !important; }
 
-/* "Coming soon" placeholder nav items (href="#") — present, but visibly inert */
-.sidebar-menu .nav-link[href="#"],
-.sidebar-menu .nav-link[href="##"] {
-  color: var(--ok-text-muted) !important;
-  cursor: default;
-  opacity: 0.72;
+.ok-nav-home { margin-bottom: 0.25rem; }
+
+/* --- Sections ------------------------------------------------------- */
+
+.ok-nav-section { margin-top: 1rem; }
+
+.ok-nav-section__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: calc(100% - 0.5rem);
+  margin: 0 0.25rem 0.15rem;
+  padding: 0.35rem 0.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ok-sidebar-label);
+  font-family: inherit;
+  font-size: 0.6875rem; /* 11px */
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
 }
-.sidebar-menu .nav-link[href="#"]:hover,
-.sidebar-menu .nav-link[href="##"]:hover {
-  background: transparent !important;
-  color: var(--ok-text-muted) !important;
+.ok-nav-section__toggle:hover { color: var(--ok-text-secondary); background: var(--ok-surface-hover); }
+.ok-nav-section__toggle:focus-visible { outline: 2px solid var(--ok-primary); outline-offset: -2px; }
+
+.ok-nav-section__chevron {
+  font-size: 0.7rem;
+  transition: transform 0.2s ease;
 }
-.sidebar-menu .nav-link[href="#"] .nav-icon,
-.sidebar-menu .nav-link[href="##"] .nav-icon { color: var(--ok-text-muted) !important; }
+.ok-nav-section.is-collapsed .ok-nav-section__chevron { transform: rotate(-90deg); }
+
+/* Collapse via grid rows (0fr <-> 1fr) so the height animates without
+   measuring it in JS; visibility keeps hidden links out of the tab order. */
+.ok-nav-section__body {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.ok-nav-section__items {
+  min-height: 0;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+.ok-nav-section.is-collapsed .ok-nav-section__body { grid-template-rows: 0fr; }
+.ok-nav-section.is-collapsed .ok-nav-section__items { visibility: hidden; }
+
+.ok-nav--ready .ok-nav-section__body { transition: grid-template-rows 0.2s ease; }
+.ok-nav--ready .ok-nav-section__items { transition: visibility 0s linear 0.2s; }
+.ok-nav--ready .ok-nav-section:not(.is-collapsed) .ok-nav-section__items { transition-delay: 0s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ok-nav--ready .ok-nav-section__body,
+  .ok-nav-section__chevron { transition: none; }
+}
+
+/* --- Collapsed sidebar (desktop icon rail) --------------------------
+   The navbar burger toggles .sidebar-collapse; at >= 992px the template
+   adds .sidebar-mini, so AdminLTE keeps a 4.6rem icon rail that expands
+   on hover. In the rail every section is shown open (icons only) and the
+   section headers become thin dividers. */
+
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .brand-text,
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .user-panel .info { display: none; }
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .sidebar-brand .brand-link { justify-content: center; padding: 0.6rem 0; }
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .sidebar-brand .brand-link .brand-image { width: 2.5rem; height: 2.5rem; }
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .user-panel { justify-content: center; padding-left: 0; padding-right: 0; }
+
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .sidebar-menu .nav-link {
+  justify-content: center;
+  width: auto;
+  margin: 1px 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .sidebar-menu .nav-link p { display: none; }
+
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .ok-nav-section { margin-top: 0.5rem; }
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .ok-nav-section__toggle {
+  height: 1px;
+  margin: 0.5rem 0.75rem;
+  padding: 0;
+  width: auto;
+  background: var(--ok-border);
+  pointer-events: none;
+}
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .ok-nav-section__toggle > * { display: none; }
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .ok-nav-section__body { grid-template-rows: 1fr; }
+.sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .ok-nav-section__items { visibility: visible; }
+
+/* Hovering the rail expands it over the page instead of reflowing it:
+   pin the grid column to the rail width and let the sidebar overflow it. */
+.sidebar-mini.sidebar-collapse .app-wrapper { grid-template-columns: 4.6rem 1fr; }
+.sidebar-mini.sidebar-collapse .app-sidebar:hover { box-shadow: var(--ok-shadow-hover) !important; }
+.sidebar-mini.sidebar-collapse .app-sidebar:hover .sidebar-brand .brand-link .brand-text { display: flex; margin-left: 0; }
+.sidebar-mini.sidebar-collapse .app-sidebar:hover .sidebar-menu .nav-link p { padding-left: 0; white-space: normal; }
 
 /* ------------------------------------------------------------------ */
 /* Buttons                                                             */

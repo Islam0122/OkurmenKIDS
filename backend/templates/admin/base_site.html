@@ -1,0 +1,188 @@
+{% extends "admin/base.html" %}
+{% load i18n static jazzmin %}
+{% comment %}
+  OkurmenKids sidebar.
+
+  Jazzmin's own base_site.html is an empty `extends "admin/base.html"`, so
+  this file only replaces the `sidebar` block: same <aside>/brand/user
+  panel markup, but the menu is rendered as collapsible sections.
+
+  Menu data still comes from Jazzmin's `get_side_menu` (driven by
+  JAZZMIN_SETTINGS["custom_links"]), so every link and permission check
+  is exactly Jazzmin's — nothing here decides who sees what.
+
+  Behaviour (sections toggle, mini rail) lives in the inline script at the
+  end of the block so the saved collapse state is applied before first
+  paint; styles are in okurmenkids/css/theme.css ("Sidebar").
+{% endcomment %}
+
+{% block sidebar %}
+{% if jazzmin_settings.show_sidebar %}
+    {% get_side_menu as side_menu_list %}
+
+    <aside class="app-sidebar bg-body-secondary shadow {{ jazzmin_ui.sidebar_classes }}" id="jazzy-sidebar" data-bs-theme="dark">
+        <div class="sidebar-brand">
+            <a href="{% url 'admin:index' %}" class="brand-link {{ jazzmin_ui.brand_classes }}" id="jazzy-logo">
+                <img src="{% static jazzmin_settings.site_logo %}" alt="{{ jazzmin_settings.site_header }} Logo" class="{{ jazzmin_settings.site_logo_classes }} brand-image opacity-75 shadow">
+                <span class="brand-text fw-light">
+                    <span class="ok-brand-name">{{ jazzmin_settings.site_brand }}</span>
+                    <span class="ok-brand-sub">Admin Panel</span>
+                </span>
+            </a>
+        </div>
+
+        <div class="sidebar-wrapper">
+            <div class="user-panel d-flex">
+                <div class="image">
+                    {% if jazzmin_settings|has_jazzmin_setting:"user_avatar" %}
+                        <img src="{% get_user_avatar request.user %}" width="160px" class="img-circle elevation-2" alt="User Image">
+                    {% else %}
+                        <i class="fas fa-inverse user-profile fa-user-circle"></i>
+                    {% endif %}
+                </div>
+                <div class="info">
+                    {% if perms|can_view_self %}
+                        <a href="{% jazzy_admin_url request.user request.current_app|default:"admin" %}" class="d-block">{{ request.user }}</a>
+                    {% else %}
+                        <span class="d-block opacity-75">{{ request.user }}</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <nav class="mt-2 ok-nav" aria-label="Main navigation">
+                <ul class="nav sidebar-menu flex-column {{ jazzmin_ui.sidebar_list_classes }}" role="navigation" id="jazzy-navigation">
+
+                    <li class="nav-item ok-nav-home">
+                        <a href="{% url 'admin:index' %}" class="nav-link" title="Главная">
+                            <i class="nav-icon bi bi-house"></i>
+                            <p>Главная</p>
+                        </a>
+                    </li>
+
+                    {% for app in side_menu_list %}
+                        <li class="ok-nav-section" data-ok-section="{{ app.app_label }}">
+                            <button type="button" class="ok-nav-section__toggle" aria-expanded="true" aria-controls="ok-nav-section-{{ forloop.counter }}">
+                                <span class="ok-nav-section__label">{{ app.name }}</span>
+                                <i class="bi bi-chevron-down ok-nav-section__chevron" aria-hidden="true"></i>
+                            </button>
+                            <div class="ok-nav-section__body" id="ok-nav-section-{{ forloop.counter }}">
+                                <ul class="nav flex-column ok-nav-section__items">
+                                    {% for model in app.models %}
+                                        {# Model links arrive Title Cased by Jazzmin (verbose_name_plural|title); lower|capfirst restores the model's own sentence-case label. #}
+                                        {% with label=model.name|lower|capfirst %}
+                                        <li class="nav-item">
+                                            {% if model.url %}
+                                                <a href="{{ model.url }}" class="nav-link" title="{{ label }}"{% if model.new_window %} target="_blank" rel="noopener"{% endif %}>
+                                                    <i class="nav-icon {{ model.icon }}"></i>
+                                                    <p>{{ label }}</p>
+                                                </a>
+                                            {% else %}
+                                                <span class="nav-link disabled">
+                                                    <i class="nav-icon {{ model.icon }}"></i>
+                                                    <p>{{ label }}</p>
+                                                </span>
+                                            {% endif %}
+                                        </li>
+                                        {% endwith %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </nav>
+        </div>
+    </aside>
+
+    <script>
+    (function () {
+      "use strict";
+
+      var STORAGE_KEY = "ok-sidebar-collapsed-sections";
+      var nav = document.getElementById("jazzy-navigation");
+      var body = document.body;
+      if (!nav) return;
+
+      /* Icon rail when the sidebar is collapsed on desktop. Below lg
+         AdminLTE uses its off-canvas drawer, so the mini rail is only
+         enabled at >= 992px (AdminLTE's mini rules aren't media-scoped). */
+      var desktop = window.matchMedia("(min-width: 992px)");
+      function syncMini() { body.classList.toggle("sidebar-mini", desktop.matches); }
+      syncMini();
+      if (desktop.addEventListener) desktop.addEventListener("change", syncMini);
+      else if (desktop.addListener) desktop.addListener(syncMini);
+
+      function readCollapsed() {
+        try {
+          var raw = window.localStorage.getItem(STORAGE_KEY);
+          var list = raw ? JSON.parse(raw) : [];
+          return Array.isArray(list) ? list : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function writeCollapsed(list) {
+        try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch (e) { /* storage unavailable */ }
+      }
+
+      function setOpen(section, open) {
+        section.classList.toggle("is-collapsed", !open);
+        var toggle = section.querySelector(".ok-nav-section__toggle");
+        if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+
+      /* The section holding the current page is always open, so the active
+         item is never hidden. Matches the same links Jazzmin's main.js will
+         mark .active (exact path), plus any link the path lives under
+         (e.g. /admin/academy/student/5/change/ -> Студенты). */
+      var path = window.location.pathname;
+      function holdsCurrentPage(section) {
+        var links = section.querySelectorAll("a.nav-link[href]");
+        for (var i = 0; i < links.length; i++) {
+          var href = links[i].getAttribute("href");
+          if (href && href.charAt(0) === "/" && path.indexOf(href) === 0) return true;
+        }
+        return false;
+      }
+
+      var collapsed = readCollapsed();
+      var sections = nav.querySelectorAll(".ok-nav-section");
+      Array.prototype.forEach.call(sections, function (section) {
+        var key = section.getAttribute("data-ok-section");
+        setOpen(section, collapsed.indexOf(key) === -1 || holdsCurrentPage(section));
+
+        section.querySelector(".ok-nav-section__toggle").addEventListener("click", function () {
+          var open = section.classList.contains("is-collapsed");
+          setOpen(section, open);
+          var list = readCollapsed().filter(function (k) { return k !== key; });
+          if (!open) list.push(key);
+          writeCollapsed(list);
+        });
+      });
+
+      /* Bring the current page's link into view if it sits below the fold
+         of the scrollable sidebar. Jazzmin's main.js sets .active from a
+         jQuery-ready callback, which can run after "load" — so wait a tick. */
+      window.addEventListener("load", function () {
+        window.setTimeout(function () {
+          var active = nav.querySelector("a.nav-link.active");
+          var scroller = nav.closest(".sidebar-wrapper");
+          if (!active || !scroller) return;
+          var a = active.getBoundingClientRect();
+          var s = scroller.getBoundingClientRect();
+          if (a.top < s.top || a.bottom > s.bottom) {
+            scroller.scrollTop += a.top - s.top - (s.height - a.height) / 2;
+          }
+        }, 0);
+      });
+
+      /* Enable the open/close animation only after the restored state has
+         been painted, so a reload doesn't animate every section. */
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () { nav.classList.add("ok-nav--ready"); });
+      });
+    })();
+    </script>
+{% endif %}
+{% endblock %}

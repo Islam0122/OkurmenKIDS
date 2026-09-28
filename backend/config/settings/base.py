@@ -279,82 +279,47 @@ JAZZMIN_SETTINGS = {
 
 
 
-    # Hide the raw "Users"/"Academy" app groups from the sidebar — every
-    # model in them is exposed instead through the custom groups below,
-    # grouped the way an academy admin actually thinks about them
-    # (teaching staff/students, organisation, day-to-day control, system)
-    # rather than by Django app label.
+    # Hide the raw Django app groups from the sidebar — every model in them
+    # is exposed instead through the sections below, grouped the way an
+    # academy admin actually thinks about them rather than by app label.
     "hide_apps": ["users", "academy", "data_io", "news", "feedback", "scholarships"],
 
+    # Sidebar sections, in display order. Each key is one collapsible
+    # section of the custom sidebar (templates/admin/base_site.html); the
+    # "Главная" link above them is rendered by that template itself.
+    #
+    # - "model" entries keep Jazzmin's own permission check (view/change
+    #   perm on that model); their label comes from verbose_name_plural.
+    # - "url" entries are for custom admin views; their "permissions" key
+    #   (all required) is the only sidebar-level gate, the views keep
+    #   their own backend checks.
     "custom_links": {
-        "центр помощи": [
-            {"name": "Центр помощи", "url": "admin:academy_help", "icon": "bi bi-question-circle"},
-        ],
-
-        "новости": [
-            {"name": "Новости", "model": "news.news", "icon": "bi bi-megaphone"},
-        ],
-
         "академия": [
-            {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
             {"name": "Студенты", "model": "academy.student", "icon": "bi bi-mortarboard"},
+            {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
             {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
             {
                 "name": "Неактивные студенты",
                 "url": "admin:academy_inactive_students",
-                "icon": "bi bi-door-open",
+                "icon": "bi bi-person-dash",
                 "permissions": ["academy.view_studentstatusevent"],
             },
         ],
 
-        "программа обучения": [
+        "обучение": [
             {"name": "Курсы", "model": "academy.course", "icon": "bi bi-collection-play"},
             {"name": "Планы занятий", "model": "academy.courselessonplan", "icon": "bi bi-list-check"},
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-book"},
-        ],
-
-        "учебный процесс": [
-            {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar3"},
             {"name": "Занятия", "model": "academy.lesson", "icon": "bi bi-easel"},
-            {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
-            {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-check"},
-            {"name": "Результаты ДЗ", "model": "academy.homeworkresult", "icon": "bi bi-check2-circle"},
-            {"name": "Отчёты преподавателей", "model": "academy.monthlyteacherreport", "icon": "bi bi-file-earmark-text"},
-        ],
-
-        "обратная связь": [
-            {"name": "Опросы", "model": "feedback.survey", "icon": "bi bi-ui-checks"},
-            {"name": "Аналитика отзывов", "url": "admin:feedback_analytics", "icon": "bi bi-bar-chart-line"},
-        ],
-
-        # The period is the one container: student evaluations, trainer
-        # feedback and the run log are reached from inside a period
-        # (its dashboard tabs), not as separate sidebar sections.
-        "стипендии": [
-            {"name": "Стипендиальные периоды", "model": "scholarships.scholarshipperiod", "icon": "bi bi-trophy"},
-            {
-                "name": "Отчёты",
-                "url": "admin:scholarships_report",
-                "icon": "bi bi-bar-chart-line",
-                "permissions": ["scholarships.view_scholarshipperiod"],
-            },
-            {"name": "Стипендии", "model": "scholarships.scholarshipaward", "icon": "bi bi-award"},
-            {
-                # A "url" link (not "model") so the short label is used —
-                # Jazzmin labels model links with their verbose_name.
-                "name": "Настройки",
-                "url": "admin:scholarships_scholarshipconfiguration_changelist",
-                "icon": "bi bi-sliders",
-                "permissions": ["scholarships.view_scholarshipconfiguration"],
-            },
-        ],
-
-        "ресурсы": [
-            {"name": "Аудитории", "model": "academy.room", "icon": "bi bi-door-open"},
+            {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar3"},
         ],
 
         "аналитика": [
-            {"name": "Аналитика", "url": "admin:academy_analytics", "icon": "bi bi-graph-up-arrow"},
+            {"name": "Обзор аналитики", "url": "admin:academy_analytics", "icon": "bi bi-graph-up-arrow"},
+            {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
+            {"name": "Домашние задания", "model": "academy.homework", "icon": "bi bi-journal-text"},
+            {"name": "Результаты домашних заданий", "model": "academy.homeworkresult", "icon": "bi bi-check2-square"},
+            {"name": "Отчёты преподавателей", "model": "academy.monthlyteacherreport", "icon": "bi bi-file-earmark-text"},
             {
                 "name": "Отчёт академии",
                 "url": "admin:academy_report_monitor",
@@ -366,23 +331,50 @@ JAZZMIN_SETTINGS = {
                 # non-admin staff account, never the backend check itself.
                 "permissions": ["academy.view_academymonthlyreport"],
             },
+            {
+                # Scholarship period report — analytics, not scholarship
+                # management, so it lives here rather than under "стипендии".
+                "name": "Отчёты по стипендиям",
+                "url": "admin:scholarships_report",
+                "icon": "bi bi-file-earmark-bar-graph",
+                "permissions": ["scholarships.view_scholarshipperiod"],
+            },
         ],
 
-        # "система": [
-        #     {"name": "Администраторы", "model": "users.user", "icon": "bi bi-shield-lock"},
-        # ],
+        # The period is the one container: student evaluations, trainer
+        # feedback and the run log are reached from inside a period
+        # (its dashboard tabs), not as separate sidebar sections.
+        "стипендии": [
+            {"name": "Стипендиальные периоды", "model": "scholarships.scholarshipperiod", "icon": "bi bi-trophy"},
+            {"name": "Стипендии", "model": "scholarships.scholarshipaward", "icon": "bi bi-award"},
+        ],
+
+        "коммуникация": [
+            {"name": "Опросы", "model": "feedback.survey", "icon": "bi bi-ui-checks"},
+            {"name": "Аналитика отзывов", "url": "admin:feedback_analytics", "icon": "bi bi-bar-chart-line"},
+            {"name": "Новости", "model": "news.news", "icon": "bi bi-megaphone"},
+        ],
+
+        "ресурсы": [
+            {"name": "Аудитории", "model": "academy.room", "icon": "bi bi-door-open"},
+        ],
+
+        "система": [
+            {
+                # A "url" link (not "model") so the short label is used —
+                # Jazzmin labels model links with their verbose_name.
+                "name": "Настройки",
+                "url": "admin:scholarships_scholarshipconfiguration_changelist",
+                "icon": "bi bi-sliders",
+                "permissions": ["scholarships.view_scholarshipconfiguration"],
+            },
+            {"name": "Центр помощи", "url": "admin:academy_help", "icon": "bi bi-question-circle"},
+        ],
     },
 
-    # NOTE: Jazzmin lower-cases every key in "icons" internally, so custom
-    # group keys above are kept lowercase too — otherwise the icon lookup
-    # silently misses. The sidebar visually re-uppercases these via CSS
-    # (.nav-header { text-transform: uppercase }), which is also just the
-    # more typical look for section labels in a premium dashboard.
+    # Section keys above are kept lowercase (Jazzmin lower-cases lookups);
+    # the sidebar re-uppercases them via CSS (.ok-nav-section__label).
     "icons": {
-        "центр помощи": "bi bi-question-circle",
-        "обучение": "bi bi-mortarboard-fill",
-        "аналитика": "bi bi-clipboard-data",
-        "система": "bi bi-gear",
         "auth": "bi bi-people",
         "auth.group": "bi bi-people",
         "users.user": "bi bi-shield-lock",
@@ -404,9 +396,7 @@ JAZZMIN_SETTINGS = {
         "academy.monthlyteacherreport": "bi bi-file-earmark-text",
         "data_io.exporttemplate": "bi bi-file-earmark-ruled",
         "news.news": "bi bi-megaphone",
-        "обратная связь": "bi bi-chat-heart",
         "feedback.survey": "bi bi-ui-checks",
-        "стипендии": "bi bi-award",
         "scholarships.scholarshipperiod": "bi bi-trophy",
         "scholarships.scholarshipevaluation": "bi bi-person-lines-fill",
         "scholarships.scholarshipaward": "bi bi-award",
