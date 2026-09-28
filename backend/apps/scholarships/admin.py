@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin, messages
-from django.db.models import Case, Count, F, Q, Sum, Value, When, prefetch_related_objects
+from django.db.models import Case, Count, F, Q, Value, When, prefetch_related_objects
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
@@ -796,18 +796,8 @@ class ScholarshipAwardAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
         groups = ScholarshipAward.objects.order_by()
         if period_id.isdigit():
             groups = groups.filter(period_id=period_id)
-        paid = Q(payment_status=PaymentStatus.PAID)
-        unpaid = Q(payment_status=PaymentStatus.UNPAID)
         # Summary of what the filters currently select (all pages).
-        summary = cl.queryset.order_by().aggregate(
-            total=Count("id"),
-            paid=Count("id", filter=paid),
-            unpaid=Count("id", filter=unpaid),
-            awaiting_approval=Count("id", filter=unpaid & Q(status=ScholarshipAward.Status.PENDING)),
-            accrued=Sum("amount"),
-            paid_sum=Sum("paid_amount", filter=paid),
-            remaining=Sum("amount", filter=unpaid),
-        )
+        summary = analytics.payment_summary(cl.queryset)
         response.context_data.update(
             title="Стипендии",
             summary=summary,

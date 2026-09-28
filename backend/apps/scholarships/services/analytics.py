@@ -40,6 +40,24 @@ def annotate_periods(queryset):
     )
 
 
+def payment_summary(awards) -> dict:
+    """Money of a set of awards — the «Стипендии» KPIs. `accrued` is every
+    award's amount, `paid_sum` what was handed over, `remaining` the amount
+    of the awards still unpaid (= accrued − paid_sum: paid_amount is the
+    award's amount at payment time)."""
+    paid = Q(payment_status=PaymentStatus.PAID)
+    unpaid = Q(payment_status=PaymentStatus.UNPAID)
+    return awards.order_by().aggregate(
+        total=Count("id"),
+        paid=Count("id", filter=paid),
+        unpaid=Count("id", filter=unpaid),
+        awaiting_approval=Count("id", filter=unpaid & Q(status=ScholarshipAward.Status.PENDING)),
+        accrued=Sum("amount"),
+        paid_sum=Sum("paid_amount", filter=paid),
+        remaining=Sum("amount", filter=unpaid),
+    )
+
+
 def period_analytics(period: ScholarshipPeriod) -> dict:
     evaluations = period.evaluations.all()
     eligible = evaluations.filter(eligibility_status=EligibilityStatus.ELIGIBLE)

@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.academy.models import Course, Group, Student
@@ -88,38 +88,77 @@ NAMES = [
 ]
 
 
+MAIN_AMOUNT = Decimal("1500")
+
+
 @dataclass(frozen=True)
 class PeriodPlan:
+    """One financial scenario. `amounts` lists (how many awards, amount each)
+    in ranking order; `paid` of them are paid, spread evenly over the list
+    (so a mixed-amount period has paid rows at every amount)."""
+
     start: dt.date
     end: dt.date
     label: str
+    scenario: str
     limit: int
-    awards: int
+    amounts: tuple[tuple[int, Decimal], ...]
     paid: int
     approved: bool = True
-    flat_amount: bool = False  # every award exactly 1 500 сом
+
+    @property
+    def awards(self) -> int:
+        return sum(count for count, _ in self.amounts)
+
+    def amount_at(self, index: int) -> Decimal:
+        for count, amount in self.amounts:
+            if index < count:
+                return amount
+            index -= count
+        raise IndexError(index)
+
+    def is_paid(self, index: int) -> bool:
+        """Exactly `paid` of the `awards` rows, spread evenly."""
+        if self.paid >= self.awards:
+            return True
+        return (index * self.paid) // self.awards != ((index + 1) * self.paid) // self.awards
+
+    @property
+    def expected(self) -> dict:
+        """What the backend must compute for this period — used to verify it."""
+        amounts = [self.amount_at(i) for i in range(self.awards)]
+        paid = [a for i, a in enumerate(amounts) if self.approved and self.is_paid(i)]
+        total = sum(amounts, Decimal("0"))
+        return {
+            "awards": self.awards, "total": total, "paid": len(paid), "paid_amount": sum(paid, Decimal("0")),
+            "pending": self.awards - len(paid), "pending_amount": total - sum(paid, Decimal("0")),
+        }
+
+
+def _flat(count: int, amount: str = "1500") -> tuple[tuple[int, Decimal], ...]:
+    return ((count, Decimal(amount)),)
 
 
 PLANS = [
-    PeriodPlan(dt.date(2026, 5, 1), dt.date(2026, 5, 31), "Май", 20, 20, 20),
-    PeriodPlan(dt.date(2026, 6, 1), dt.date(2026, 6, 30), "Июнь", 20, 20, 20),
-    PeriodPlan(dt.date(2026, 7, 1), dt.date(2026, 7, 31), "Июль", 20, 20, 0),
-    PeriodPlan(dt.date(2026, 8, 1), dt.date(2026, 8, 31), "Август", 20, 20, 7, flat_amount=True),
-    PeriodPlan(dt.date(2026, 8, 15), dt.date(2026, 9, 15), "15.08–15.09", 10, 0, 0),
-    PeriodPlan(dt.date(2026, 9, 1), dt.date(2026, 9, 30), "Сентябрь", 20, 20, 12),
-    PeriodPlan(dt.date(2026, 10, 1), dt.date(2026, 10, 31), "Октябрь", 15, 15, 9),
-    # Not approved yet: shows «В процессе» / «Ждёт утверждения». An award
-    # can only be paid once its period is approved (DB constraint), so this
-    # one has no payments.
-    PeriodPlan(dt.date(2026, 11, 1), dt.date(2026, 11, 30), "Ноябрь", 20, 20, 0, approved=False),
+    PeriodPlan(dt.date(2026, 5, 1), dt.date(2026, 5, 31), "Май", "FULLY PAID", 20, _flat(20), 20),
+    PeriodPlan(
+        dt.date(2026, 6, 1), dt.date(2026, 6, 30), "Июнь", "DIFFERENT AMOUNTS", 20,
+        ((5, Decimal("2500")), (5, Decimal("2000")), (5, Decimal("1500")), (5, Decimal("1000"))), 8,
+    ),
+    PeriodPlan(dt.date(2026, 7, 1), dt.date(2026, 7, 31), "Июль", "NOTHING PAID", 20, _flat(20), 0),
+    PeriodPlan(dt.date(2026, 8, 1), dt.date(2026, 8, 31), "Август", "PARTIALLY PAID", 20, _flat(20), 7),
+    PeriodPlan(dt.date(2026, 8, 15), dt.date(2026, 9, 15), "15.08–15.09", "NO SCHOLARSHIPS", 10, (), 0),
+    PeriodPlan(dt.date(2026, 9, 1), dt.date(2026, 9, 30), "Сентябрь", "LARGE AMOUNT", 50, _flat(50, "3000"), 30),
+    PeriodPlan(dt.date(2026, 10, 1), dt.date(2026, 10, 31), "Октябрь", "PARTIALLY PAID", 15, _flat(15), 9),
+    # Not approved yet: «В процессе» / «Ждёт утверждения». An award can
+    # only be paid once its period is approved (DB constraint), so every
+    # award here is pending, with its amount.
+    PeriodPlan(dt.date(2026, 11, 1), dt.date(2026, 11, 30), "Ноябрь", "NOT APPROVED", 20, _flat(20), 0, approved=False),
 ]
 
 PAYMENT_DATES = [
     dt.date(2026, 9, d) for d in (1, 2, 3, 5, 10, 15, 26, 28)
 ]
-MAIN_AMOUNT = Decimal("1500")
-TOP_AMOUNTS = [Decimal("3000"), Decimal("2500"), Decimal("2000")]
-LOW_AMOUNT = Decimal("1000")
 EVALUATED_PER_PERIOD = 44
 
 _INELIGIBLE = [
@@ -140,6 +179,7 @@ def mock_period_q() -> Q:
 @dataclass
 class SeedResult:
     periods: list[ScholarshipPeriod] = field(default_factory=list)
+    checks: list[PeriodCheck] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     groups: list[Group] = field(default_factory=list)
     students: int = 0
@@ -247,16 +287,6 @@ def _snapshot(config: ScholarshipConfiguration | None) -> dict:
     )
 
 
-def _amount(plan: PeriodPlan, rank: int) -> Decimal:
-    if plan.flat_amount:
-        return MAIN_AMOUNT
-    if rank <= len(TOP_AMOUNTS):
-        return TOP_AMOUNTS[rank - 1]
-    if rank > plan.awards - 2:
-        return LOW_AMOUNT
-    return MAIN_AMOUNT
-
-
 def _paid_at(plan: PeriodPlan, index: int) -> dt.datetime:
     """Different dates, after the period when the list allows it."""
     after = [d for d in PAYMENT_DATES if d > plan.end] or PAYMENT_DATES[-2:]
@@ -300,7 +330,7 @@ def _period(plan: PeriodPlan, number: int, groups, students, config, payer, rng,
     period.awards.all().delete()
     period.evaluations.all().delete()
 
-    evaluated = rng.sample(students, EVALUATED_PER_PERIOD)
+    evaluated = rng.sample(students, min(len(students), max(EVALUATED_PER_PERIOD, plan.awards + 14)))
     eligible_count = 0 if plan.awards == 0 else plan.awards + rng.randint(6, 12)
     scores = sorted((_score(rng, 72, 98) for _ in range(eligible_count)), reverse=True)
 
@@ -336,14 +366,14 @@ def _period(plan: PeriodPlan, number: int, groups, students, config, payer, rng,
         if evaluation.rank is None or evaluation.rank > plan.awards:
             continue
         index = evaluation.rank - 1
-        amount = _amount(plan, evaluation.rank)
+        amount = plan.amount_at(index)
         award = ScholarshipAward(
             period=period, student_id=evaluation.student_id, evaluation=evaluation, rank=evaluation.rank,
             award_date=period.evaluation_date, amount=amount, status=award_status,
             approved_by=payer if plan.approved else None, approved_at=now if plan.approved else None,
         )
         # Payments are spread over the ranking, not just the top ones.
-        if plan.approved and _is_paid(index, plan):
+        if plan.approved and plan.is_paid(index):
             method = _method(index + number)
             award.payment_status = PaymentStatus.PAID
             award.paid_at = _paid_at(plan, index)
@@ -354,13 +384,6 @@ def _period(plan: PeriodPlan, number: int, groups, students, config, payer, rng,
         awards.append(award)
     ScholarshipAward.objects.bulk_create(awards)
     return period
-
-
-def _is_paid(index: int, plan: PeriodPlan) -> bool:
-    """Exactly `plan.paid` of the `plan.awards` rows, spread evenly."""
-    if plan.paid >= plan.awards:
-        return True
-    return (index * plan.paid) // plan.awards != ((index + 1) * plan.paid) // plan.awards
 
 
 def seed_mock_data(*, stdout=None) -> SeedResult:
@@ -381,24 +404,88 @@ def seed_mock_data(*, stdout=None) -> SeedResult:
                     f"{plan.start:%d.%m.%Y} — {plan.end:%d.%m.%Y}: уже есть реальный период с этими датами — не трогаем."
                 )
                 continue
-            result.periods.append(_period(plan, number, result.groups, students, config, result.payer, rng, now))
+            period = _period(plan, number, result.groups, students, config, result.payer, rng, now)
+            result.periods.append(period)
+            result.checks.append(PeriodCheck(period=period, plan=plan, figures={}))
     return result
 
 
-def statistics(periods) -> dict:
-    awards = ScholarshipAward.objects.filter(period__in=periods)
-    paid = Q(payment_status=PaymentStatus.PAID)
-    totals = awards.aggregate(
-        total=Count("id"), paid=Count("id", filter=paid), pending=Count("id", filter=~paid),
-        accrued=Sum("amount"), paid_sum=Sum("paid_amount", filter=paid), remaining=Sum("amount", filter=~paid),
-        cash=Count("id", filter=paid & Q(payment_method=PaymentMethod.CASH)),
-        bank=Count("id", filter=paid & Q(payment_method=PaymentMethod.BANK)),
-    )
-    rows = []
-    for period in ScholarshipPeriod.objects.filter(pk__in=[p.pk for p in periods]).order_by("period_start", "period_end"):
-        agg = period.awards.aggregate(
-            total=Count("id"), paid=Count("id", filter=paid), accrued=Sum("amount"),
-            paid_sum=Sum("paid_amount", filter=paid),
-        )
-        rows.append((period, agg))
-    return {"totals": totals, "rows": rows}
+class FinanceMismatch(Exception):
+    """The backend computed a different number than the seeded data holds."""
+
+
+@dataclass
+class PeriodCheck:
+    period: ScholarshipPeriod
+    plan: PeriodPlan
+    figures: dict  # awards, total, paid, paid_amount, pending, pending_amount, balance
+
+
+def _figures_from_rows(awards) -> dict:
+    """Independent recount, row by row — no ORM aggregates, no services."""
+    total = paid_amount = pending_amount = Decimal("0")
+    paid = pending = 0
+    for award in awards:
+        if award.amount is None:
+            raise FinanceMismatch(f"Стипендия #{award.pk} без суммы.")
+        total += award.amount
+        if award.payment_status == PaymentStatus.PAID:
+            if award.paid_at is None or award.paid_amount != award.amount or not award.payment_method:
+                raise FinanceMismatch(f"Выплата #{award.pk}: нет даты, суммы или способа.")
+            paid += 1
+            paid_amount += award.paid_amount
+        else:
+            if award.paid_at or award.paid_by_id or award.paid_amount is not None or award.payment_method:
+                raise FinanceMismatch(f"Невыплаченная стипендия #{award.pk} содержит данные выплаты.")
+            pending += 1
+            pending_amount += award.amount
+    return {
+        "awards": paid + pending, "total": total, "paid": paid, "paid_amount": paid_amount,
+        "pending": pending, "pending_amount": pending_amount, "balance": total - paid_amount,
+    }
+
+
+def _compare(where: str, name: str, expected, actual) -> None:
+    if (actual or 0) != (expected or 0):
+        raise FinanceMismatch(f"{where}: {name} = {actual}, ожидалось {expected}.")
+
+
+def verify_finances(checks: list[PeriodCheck]) -> dict:
+    """Check that every place the backend computes money agrees with the
+    seeded rows and with the plan:
+
+    * the «Стипендии» KPIs (analytics.payment_summary) — per period and overall;
+    * the accounting report / Excel / PDF (report.build_report rows_totals);
+    * the plan's own arithmetic (e.g. 7 × 1 500 = 10 500).
+
+    Raises FinanceMismatch on the first difference; returns the overall figures."""
+    from ..services.analytics import payment_summary
+    from ..services.report import ReportFilters, build_report
+
+    for check in checks:
+        where = f"{check.period.period_start:%d.%m}–{check.period.period_end:%d.%m}"
+        rows = _figures_from_rows(check.period.awards.all())
+        for key, value in check.plan.expected.items():
+            _compare(where, key, value, rows[key])
+        _compare(where, "balance", rows["total"] - rows["paid_amount"], rows["pending_amount"])
+
+        summary = payment_summary(check.period.awards.all())
+        for key, backend in (("awards", "total"), ("paid", "paid"), ("pending", "unpaid"), ("total", "accrued"),
+                             ("paid_amount", "paid_sum"), ("pending_amount", "remaining")):
+            _compare(f"{where} [Стипендии]", backend, rows[key], summary[backend])
+
+        report = build_report(check.period, ReportFilters()).rows_totals
+        for key, backend in (("awards", "awards"), ("paid", "paid"), ("pending", "unpaid"), ("total", "amount"),
+                             ("paid_amount", "paid_amount"), ("pending_amount", "remaining")):
+            _compare(f"{where} [Отчёт]", backend, rows[key], getattr(report, backend))
+        check.figures = rows
+
+    awards = ScholarshipAward.objects.filter(period__in=[c.period for c in checks])
+    overall = _figures_from_rows(awards)
+    summary = payment_summary(awards)
+    for key, backend in (("awards", "total"), ("paid", "paid"), ("pending", "unpaid"), ("total", "accrued"),
+                         ("paid_amount", "paid_sum"), ("pending_amount", "remaining")):
+        _compare("Итого [Стипендии]", backend, overall[key], summary[backend])
+    overall["cash"] = awards.filter(payment_method=PaymentMethod.CASH).count()
+    overall["bank"] = awards.filter(payment_method=PaymentMethod.BANK).count()
+    return overall
