@@ -14,6 +14,7 @@ from apps.academy.models import Group
 from apps.scholarships.models import ScholarshipPeriod
 
 from apps.scholarships.services.generation import approve_period, create_period, update_period
+from apps.scholarships.services.payments import pay_awards
 from apps.scholarships.services.report import (
     PaymentStatus,
     ReportFilters,
@@ -46,27 +47,38 @@ class ReportTests(ReportFixture):
     def test_groups_and_totals_of_the_period(self):
         report = build_report(self.period, ReportFilters())
         self.assertEqual(report.range_label, "01.09.2026 — 30.09.2026")
+        self.assertEqual(report.short_range, "01.09–30.09")
         self.assertEqual(report.group_names, ["Prog SOFT 1", "Prog SOFT 2"])
         self.assertEqual(report.programs, ["Prog SOFT"])
 
         soft1, soft2 = report.groups
-        self.assertEqual((soft1.totals.students, soft1.totals.pending, soft1.totals.not_received), (2, 2, 0))
-        self.assertEqual(soft1.totals.amount, Decimal("4000"))
-        self.assertEqual((soft2.totals.students, soft2.totals.awarded, soft2.totals.not_received), (1, 0, 1))
-        self.assertEqual(soft2.totals.amount, Decimal("0"))
+        self.assertEqual((soft1.totals.awards, soft1.totals.unpaid, soft1.totals.awaiting_approval), (2, 2, 2))
+        self.assertEqual((soft1.totals.amount, soft1.totals.remaining), (Decimal("4000"), Decimal("4000")))
+        self.assertEqual((soft2.totals.awards, soft2.totals.amount), (0, Decimal("0")))
 
         totals = report.totals
-        self.assertEqual((totals.students, totals.received, totals.pending, totals.not_received), (3, 0, 2, 1))
+        self.assertEqual((totals.students, totals.paid, totals.unpaid, totals.not_awarded), (2, 0, 2, 1))
         self.assertEqual(totals.average, Decimal("2000"))
+        # The report is about money: students without a scholarship are
+        # listed only when asked for.
         self.assertEqual(
             {row.student_name: row.status for row in report.rows},
-            {"Aibek Test": PaymentStatus.PENDING, "Nurai Test": PaymentStatus.PENDING,
-             "Azamat Test": PaymentStatus.NOT_RECEIVED},
+            {"Aibek Test": PaymentStatus.UNPAID, "Nurai Test": PaymentStatus.UNPAID},
         )
+        self.assertTrue(all(row.awaiting_approval for row in report.rows))
 
         approve_period(self.period, user=self.admin)
         totals = build_report(self.period, ReportFilters()).totals
-        self.assertEqual((totals.received, totals.pending), (2, 0))
+        self.assertEqual((totals.unpaid, totals.awaiting_approval), (2, 0))
+
+        pay_awards([self.period.awards.get(student=self.students[0]).pk], method="cash", user=self.admin)
+        report = build_report(self.period, ReportFilters())
+        t = report.totals
+        self.assertEqual((t.paid, t.unpaid, t.amount, t.paid_amount, t.remaining),
+                         (1, 1, Decimal("4000"), Decimal("2000"), Decimal("2000")))
+        paid = report.rows[0]
+        self.assertEqual((paid.student_name, paid.status_label, paid.method_label, paid.paid_by),
+                         ("Aibek Test", "Выдано", "Наличные", str(self.admin)))
 
     def test_groups_come_from_the_period_snapshot(self):
         """A student moved to another group later stays in the group he was
@@ -79,10 +91,12 @@ class ReportTests(ReportFixture):
 
     def test_student_filters_do_not_change_period_blocks(self):
         report = build_report(self.period, parse_filters(QueryDict("group=Prog+SOFT+2")))
+        self.assertEqual(report.rows, [])
+        report = build_report(self.period, parse_filters(QueryDict("group=Prog+SOFT+2&status=not_awarded")))
         self.assertEqual([r.student_name for r in report.rows], ["Azamat Test"])
-        self.assertEqual(report.rows_totals.students, 1)
-        self.assertEqual(report.totals.students, 3)
-        self.assertEqual(len(report.groups), 2)
+        self.assertEqual(report.rows_totals.not_awarded, 1)
+        self.assertEqual(report.totals.students, 2)
+        self.assertEqual([g.name for g in report.groups], ["Prog SOFT 2"])
         report = build_report(self.period, parse_filters(QueryDict("student=nur&status=bogus")))
         self.assertEqual([r.student_name for r in report.rows], ["Nurai Test"])
         self.assertEqual(report.filters.status, "")
@@ -96,18 +110,19 @@ class ReportAdminTests(ReportFixture):
 
     def test_page(self):
         response = self.web.get(reverse("admin:scholarships_report"), {"period": self.period.pk})
-        self.assertContains(response, "Стипендиальные периоды")
-        self.assertContains(response, "Стипендиальный период")
-        self.assertContains(response, "Участвующие группы")
-        self.assertContains(response, "Статистика по группам")
-        self.assertContains(response, "01.09.2026 — 30.09.2026")
-        self.assertContains(response, "Prog SOFT 2")
-        self.assertContains(response, "Aibek Test")
-        self.assertContains(response, "Не получил")
+        for text in ("Экспорт Excel", "Экспорт CSV", "Скачать PDF", "Всего учеников", "Выплачено", "Остаток",
+                     "Кто выдал", "01.09.2026 — 30.09.2026", "Prog SOFT 2", "Aibek Test", "Не выдано"):
+            self.assertContains(response, text)
+        self.assertNotContains(response, "Azamat Test")
         self.assertContains(response, "4 000 сом")
 
     def test_group_link_shows_its_students(self):
-        response = self.web.get(reverse("admin:scholarships_report"), {"period": self.period.pk, "group": "Prog SOFT 2"})
+        response = self.web.get(reverse("admin:scholarships_report"), {"period": self.period.pk, "group": "Prog SOFT 1"})
+        self.assertContains(response, "Aibek Test")
+        self.assertNotContains(response, "Azamat Test")
+        response = self.web.get(
+            reverse("admin:scholarships_report"), {"period": self.period.pk, "status": "not_awarded"},
+        )
         self.assertContains(response, "Azamat Test")
         self.assertNotContains(response, "Aibek Test")
 
@@ -172,9 +187,9 @@ class PeriodGroupsTests(ScholarshipFixture):
         first = build_report(self.first, ReportFilters())
         second = build_report(self.second, ReportFilters())
         self.assertEqual(first.group_names, ["Prog SOFT 1"])
-        self.assertEqual((first.totals.students, first.totals.awarded, first.totals.amount), (2, 1, Decimal("1500")))
+        self.assertEqual((first.totals.awards, first.totals.not_awarded, first.totals.amount), (1, 1, Decimal("1500")))
         self.assertEqual(second.group_names, ["Prog SOFT 2"])
-        self.assertEqual((second.totals.students, second.totals.awarded, second.totals.amount), (3, 2, Decimal("3000")))
+        self.assertEqual((second.totals.awards, second.totals.not_awarded, second.totals.amount), (2, 1, Decimal("3000")))
         self.assertFalse({r.student_id for r in first.rows} & {r.student_id for r in second.rows})
 
     def test_empty_selection_is_the_whole_academy(self):
@@ -183,7 +198,7 @@ class PeriodGroupsTests(ScholarshipFixture):
         )
         report = build_report(whole, ReportFilters())
         self.assertTrue(report.scope_all)
-        self.assertEqual(report.totals.students, 5)
+        self.assertEqual(report.totals.awards + report.totals.not_awarded, 5)
 
     def test_selected_group_without_students_is_listed(self):
         empty = Group.objects.create(name="PY-09", course=self.course, start_date=dt.date(2026, 1, 10))

@@ -5,6 +5,8 @@
   backend, never by a hidden frontend button.
 * Generate / recalculate / approve: Admin with the matching model permission
   (a superuser or ADMIN role always has it — see `can_manage`).
+* Payments (who got the money): Admin, or a user with
+  `scholarships.pay_scholarshipaward` (see `can_pay`).
 * Trainer feedback: a Teacher reads/writes only their own feedback, for
   students they actually taught (see services.feedback).
 
@@ -31,6 +33,11 @@ def teacher_profile(user):
 def can_manage(user, action: str) -> bool:
     """`action` is "generate" or "approve"."""
     return is_admin(user) or bool(user and user.is_authenticated and user.has_perm(f"scholarships.{action}_scholarshipperiod"))
+
+
+def can_pay(user) -> bool:
+    """Recording that a scholarship was handed over (services.payments)."""
+    return is_admin(user) or bool(user and user.is_authenticated and user.has_perm("scholarships.pay_scholarshipaward"))
 
 
 class IsScholarshipAdmin(BasePermission):

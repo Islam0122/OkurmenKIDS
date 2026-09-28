@@ -38,6 +38,8 @@
             <button type="submit" class="ok-btn-primary"><i class="bi bi-calculator"></i> Рассчитать</button>
           </form>
         {% endif %}
+      {% elif analytics.total_recipients %}
+        <a href="{% url 'admin:scholarships_scholarshipaward_changelist' %}?period__id__exact={{ period.pk }}" class="ok-btn-primary"><i class="bi bi-cash-coin"></i> Выплаты</a>
       {% endif %}
       {% include "admin/scholarships/scholarshipperiod/_menu.html" with period=period show=row_filter %}
     </div>

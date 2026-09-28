@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin, messages
-from django.db.models import Count, F, Q, Sum, prefetch_related_objects
+from django.db.models import Case, Count, F, Q, Sum, Value, When, prefetch_related_objects
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
@@ -10,13 +10,15 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
-from django.utils.http import urlencode
+from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 
 from apps.academy.models import Group
 
 from .models import (
     AWARD_DAY_CHOICES,
     EligibilityStatus,
+    PaymentMethod,
+    PaymentStatus,
     ScholarshipAward,
     ScholarshipConfiguration,
     ScholarshipEvaluation,
@@ -25,8 +27,9 @@ from .models import (
     ScholarshipSubjectScore,
     TrainerFeedback,
 )
-from .permissions import can_manage
+from .permissions import can_manage, can_pay
 from .services import analytics
+from .services import export as scholarship_export
 from .services import report as scholarship_report
 from .services.report_pdf import render_report_pdf
 from .services.feedback import validate_feedback_target
@@ -40,7 +43,9 @@ from .services.generation import (
     remove_award,
     update_period,
 )
+from .services.payments import cancel_payment, pay_awards
 from .services.periods import latest_award_date
+from .templatetags.scholarship_tags import som
 
 _STATUS_COLORS = {
     EligibilityStatus.ELIGIBLE: "success",
@@ -200,8 +205,10 @@ def _row_state(evaluation) -> tuple[str, str, str]:
     """(label, badge colour, hint) of one student's outcome in a period."""
     award = getattr(evaluation, "award", None)
     if award is not None:
+        if award.is_paid:
+            return "Выдано", "success", f"Выдано {timezone.localtime(award.paid_at):%d.%m.%Y}"
         if award.status == ScholarshipAward.Status.APPROVED:
-            return "Получил", "success", ""
+            return "Не выдано", "warning", "Утверждена, деньги ещё не выданы"
         return "Назначена", "success", "Ожидает утверждения периода"
     if evaluation.is_eligible:
         return "Без стипендии", "muted", "Допущен, но не вошёл в список стипендиатов"
@@ -283,6 +290,7 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
             groups = scholarship_report.participating_groups(periods)
             for period in periods:
                 period.participating_groups = groups[period.pk]
+                period.unpaid_count = (period.recipients_count or 0) - (period.paid_count or 0)
             cl.result_list = periods
         return response
 
@@ -340,6 +348,8 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
             path("create/", view(self.create_view), name="scholarships_create"),
             path("report/", view(self.report_view), name="scholarships_report"),
             path("report/pdf/", view(self.report_pdf_view), name="scholarships_report_pdf"),
+            path("report/xlsx/", view(self.report_xlsx_view), name="scholarships_report_xlsx"),
+            path("report/csv/", view(self.report_csv_view), name="scholarships_report_csv"),
             path("generate/", view(self.generate_view), name="scholarships_generate"),
             path("<int:period_id>/edit/", view(self.edit_view), name="scholarships_edit"),
             path("<int:period_id>/recalculate/", view(self.recalculate_view), name="scholarships_recalculate"),
@@ -455,26 +465,60 @@ class ScholarshipPeriodAdmin(admin.ModelAdmin):
             request, "admin/scholarships/scholarshipperiod/report.html", "Отчёты по стипендиям",
             options=options, selected=selected, report=report, filters=filters,
             status_choices=scholarship_report.STATUS_CHOICES,
-            pdf_query=urlencode(filters.querystring(selected.period if selected else None)),
+            method_choices=scholarship_report.METHOD_CHOICES,
+            export_query=urlencode(filters.querystring(selected.period if selected else None)),
             today=timezone.localdate(), can_generate=can_manage(request.user, "generate"),
+            can_pay=can_pay(request.user),
         )
 
-    def report_pdf_view(self, request):
-        """Same period + filters as the page, so the PDF shows exactly what
-        the Admin sees."""
+    def _export_report(self, request):
+        """The report for the same period + filters as the page, so every
+        file shows exactly what the Admin sees."""
         self._require_view(request)
         options = scholarship_report.period_options()
         selected = scholarship_report.pick_period(options, request.GET.get("period"))
         if selected is None:
-            messages.warning(request, "Нет стипендиальных периодов — отчёт сформировать нельзя.")
-            return HttpResponseRedirect(reverse("admin:scholarships_report"))
-        period = selected.period
-        report = scholarship_report.build_report(period, scholarship_report.parse_filters(request.GET))
-        response = HttpResponse(render_report_pdf(report), content_type="application/pdf")
-        response["Content-Disposition"] = (
-            f'attachment; filename="scholarship-report-{period.period_start}-{period.period_end}.pdf"'
-        )
+            return None
+        return scholarship_report.build_report(selected.period, scholarship_report.parse_filters(request.GET))
+
+    def _no_report(self, request):
+        messages.warning(request, "Нет стипендиальных периодов — отчёт сформировать нельзя.")
+        return HttpResponseRedirect(reverse("admin:scholarships_report"))
+
+    @staticmethod
+    def _attachment(content, content_type, filename):
+        response = HttpResponse(content, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+    def report_pdf_view(self, request):
+        report = self._export_report(request)
+        if report is None:
+            return self._no_report(request)
+        period = report.period
+        return self._attachment(
+            render_report_pdf(report), "application/pdf",
+            f"scholarship-report-{period.period_start}-{period.period_end}.pdf",
+        )
+
+    def report_xlsx_view(self, request):
+        report = self._export_report(request)
+        if report is None:
+            return self._no_report(request)
+        return self._attachment(
+            scholarship_export.export_xlsx(report),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            scholarship_export.filename(report, "xlsx"),
+        )
+
+    def report_csv_view(self, request):
+        report = self._export_report(request)
+        if report is None:
+            return self._no_report(request)
+        return self._attachment(
+            scholarship_export.export_csv(report), "text/csv; charset=utf-8",
+            scholarship_export.filename(report, "csv"),
+        )
 
     # -- cycle generation (automatic schedule, run by hand) -------------------
 
@@ -687,14 +731,56 @@ class ScholarshipEvaluationAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
         return super().change_view(request, object_id, form_url, extra_context)
 
 
+class PaymentForm(forms.Form):
+    """«Выдать» / «Выдать выбранным»: one or many awards, one method."""
+
+    award = forms.TypedMultipleChoiceField(coerce=int, choices=(), error_messages={
+        "required": "Не выбрано ни одной стипендии.",
+    })
+    payment_method = forms.ChoiceField(choices=PaymentMethod.choices, error_messages={
+        "required": "Выберите способ выплаты.", "invalid_choice": "Выберите способ выплаты.",
+    })
+    comment = forms.CharField(required=False, max_length=500)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Any id is accepted here; services.payments decides what is payable.
+        self.fields["award"].valid_value = lambda value: str(value).isdigit()
+
+
 @admin.register(ScholarshipAward)
 class ScholarshipAwardAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("rank", "student_link", "period", "award_date", "amount", "status", "approved_by", "approved_at")
-    list_filter = ("status", "period", "evaluation__group_name")
+    list_display = (
+        "rank", "student_link", "period", "award_date", "amount", "status", "payment_status", "paid_at", "paid_by",
+    )
+    list_filter = ("payment_status", "payment_method", "status", "period", "evaluation__group_name")
     search_fields = ("evaluation__student_name",)
-    list_select_related = ("period", "evaluation", "approved_by")
+    list_select_related = ("period", "evaluation", "approved_by", "paid_by")
     list_per_page = 50
+    # The work queue first: who can be paid now, then awards of periods not
+    # approved yet, then the ones already paid.
     change_list_template = "admin/scholarships/scholarshipaward/change_list.html"
+
+    def get_ordering(self, request):
+        # `pay_order` is the annotation below — not a model field, so it
+        # can't go into the `ordering` attribute (admin.E033).
+        return ("pay_order", "-award_date", "evaluation__student_name", "pk")
+
+    def get_queryset(self, request):
+        # Same as ModelAdmin.get_queryset, with the annotation in place
+        # before the ordering that uses it.
+        return self.model._default_manager.annotate(pay_order=Case(
+            When(payment_status=PaymentStatus.PAID, then=Value(2)),
+            When(status=ScholarshipAward.Status.APPROVED, then=Value(0)),
+            default=Value(1),
+        )).order_by(*self.get_ordering(request))
+
+    def get_urls(self):
+        view = self.admin_site.admin_view
+        return [
+            path("pay/", view(self.pay_view), name="scholarships_pay"),
+            path("<int:award_id>/cancel-payment/", view(self.cancel_payment_view), name="scholarships_cancel_payment"),
+        ] + super().get_urls()
 
     def changelist_view(self, request, extra_context=None):
         # The filter bar submits every field; an empty one means «all» —
@@ -710,16 +796,25 @@ class ScholarshipAwardAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
         groups = ScholarshipAward.objects.order_by()
         if period_id.isdigit():
             groups = groups.filter(period_id=period_id)
+        paid = Q(payment_status=PaymentStatus.PAID)
+        unpaid = Q(payment_status=PaymentStatus.UNPAID)
         # Summary of what the filters currently select (all pages).
         summary = cl.queryset.order_by().aggregate(
             total=Count("id"),
-            approved=Count("id", filter=Q(status=ScholarshipAward.Status.APPROVED)),
-            pending=Count("id", filter=Q(status=ScholarshipAward.Status.PENDING)),
-            amount=Sum("amount"),
+            paid=Count("id", filter=paid),
+            unpaid=Count("id", filter=unpaid),
+            awaiting_approval=Count("id", filter=unpaid & Q(status=ScholarshipAward.Status.PENDING)),
+            accrued=Sum("amount"),
+            paid_sum=Sum("paid_amount", filter=paid),
+            remaining=Sum("amount", filter=unpaid),
         )
         response.context_data.update(
             title="Стипендии",
             summary=summary,
+            can_pay=can_pay(request.user),
+            can_cancel_payment=request.user.is_superuser,
+            method_choices=PaymentMethod.choices,
+            row_offset=(cl.page_num - 1) * cl.list_per_page,
             periods=ScholarshipPeriod.objects.order_by("-period_start", "-award_day"),
             group_names=sorted(
                 {name for name in groups.values_list("evaluation__group_name", flat=True).distinct() if name}
@@ -728,11 +823,69 @@ class ScholarshipAwardAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
             filters={
                 "period": period_id,
                 "group": cl.params.get("evaluation__group_name", ""),
+                "payment": cl.params.get("payment_status__exact", ""),
+                "method": cl.params.get("payment_method__exact", ""),
                 "status": cl.params.get("status__exact", ""),
                 "q": cl.query,
             },
         )
         return response
+
+    # -- payments -------------------------------------------------------------
+
+    def _next_url(self, request, anchor: str = "") -> str:
+        target = request.POST.get("next") or ""
+        if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+            target = reverse("admin:scholarships_scholarshipaward_changelist")
+        return f"{target.split('#')[0]}#{anchor}" if anchor else target
+
+    def pay_view(self, request):
+        if not can_pay(request.user):
+            raise PermissionDenied
+        if request.method != "POST":
+            return HttpResponseRedirect(reverse("admin:scholarships_scholarshipaward_changelist"))
+        form = PaymentForm(request.POST)
+        if not form.is_valid():
+            for errors in form.errors.values():
+                messages.error(request, "; ".join(errors))
+            return HttpResponseRedirect(self._next_url(request))
+        data = form.cleaned_data
+        try:
+            result = pay_awards(
+                data["award"], method=data["payment_method"], comment=data["comment"], user=request.user,
+            )
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+            return HttpResponseRedirect(self._next_url(request))
+
+        if len(result.paid) == 1:
+            award = result.paid[0]
+            messages.success(request, f"{award.evaluation.student_name}: стипендия выдана — {som(award.amount)}.")
+        elif result.paid:
+            total = sum((a.amount for a in result.paid if a.amount is not None), start=0)
+            messages.success(request, f"Выдано стипендий: {len(result.paid)} на сумму {som(total)}.")
+        if result.already_paid:
+            names = ", ".join(a.evaluation.student_name for a in result.already_paid)
+            messages.warning(request, f"Уже были выданы — повторно не выплачены: {names}.")
+        if result.not_approved:
+            names = ", ".join(a.evaluation.student_name for a in result.not_approved)
+            messages.warning(request, f"Период не утверждён — выдать нельзя: {names}.")
+        anchor = f"aw-{result.paid[0].pk}" if len(result.paid) == 1 else ""
+        return HttpResponseRedirect(self._next_url(request, anchor))
+
+    def cancel_payment_view(self, request, award_id):
+        if not request.user.is_superuser:
+            raise PermissionDenied
+        if request.method != "POST":
+            return HttpResponseRedirect(reverse("admin:scholarships_scholarshipaward_changelist"))
+        award = get_object_or_404(ScholarshipAward.objects.select_related("evaluation"), pk=award_id)
+        try:
+            cancel_payment(award, user=request.user)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, f"{award.evaluation.student_name}: выдача отменена.")
+        return HttpResponseRedirect(self._next_url(request, f"aw-{award.pk}"))
 
     @admin.display(description="Студент")
     def student_link(self, obj):

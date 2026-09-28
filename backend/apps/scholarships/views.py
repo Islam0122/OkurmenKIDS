@@ -276,7 +276,7 @@ class ScholarshipEvaluationViewSet(viewsets.ReadOnlyModelViewSet):
 class ScholarshipAwardViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AwardSerializer
     permission_classes = [IsAuthenticated, IsScholarshipAdmin]
-    filterset_fields = ["period", "student", "status"]
+    filterset_fields = ["period", "student", "status", "payment_status", "payment_method"]
     ordering = ["-award_date", "rank"]
 
     def get_queryset(self):

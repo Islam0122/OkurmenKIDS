@@ -8,7 +8,8 @@ Okurmen Kids PDFs look like one family.
 It renders the very `ScholarshipReport` object the admin page renders
 (services.report.build_report for the same period and filters), in the
 same order: period → participating groups → groups table → summary →
-students → totals. The page and the PDF cannot disagree.
+students → totals. The page and the PDF cannot disagree. Every number
+follows the filters (`rows_totals`), like the KPIs on the page.
 
 Only vector primitives are used for decoration (lines, rounded rects,
 dots) — no emoji, no images.
@@ -52,14 +53,12 @@ FOOTER_H = 34  # room kept free at the bottom of every page for the footer
 
 WARNING = colors.HexColor("#b4790f")
 WARNING_SOFT = colors.HexColor("#fbf1df")
-DANGER = colors.HexColor("#c7402e")
-DANGER_SOFT = colors.HexColor("#fbeae7")
 BRAND_LINE = colors.HexColor("#cfe3d6")
 
 _STATUS_STYLE = {
-    PaymentStatus.RECEIVED: (BRAND, BRAND_SOFT),
-    PaymentStatus.PENDING: (WARNING, WARNING_SOFT),
-    PaymentStatus.NOT_RECEIVED: (DANGER, DANGER_SOFT),
+    PaymentStatus.PAID: (BRAND, BRAND_SOFT),
+    PaymentStatus.UNPAID: (WARNING, WARNING_SOFT),
+    PaymentStatus.NOT_AWARDED: (INK_MUTED, SURFACE_MUTED),
 }
 
 _ROW_H = 20
@@ -376,10 +375,11 @@ def _draw_period_box(doc: _Doc) -> None:
             f"программа {filters.program}" if filters.program else "",
             f"ученик «{filters.student}»" if filters.student else "",
             f"статус «{filters.status_label}»" if filters.status else "",
+            f"способ «{filters.method_label}»" if filters.method else "",
         ) if text
     ]
     if applied:
-        rows.append(("Фильтр списка учеников", _lines(", ".join(applied), _REGULAR, 9, value_w, 3), _REGULAR, 9))
+        rows.append(("Фильтр", _lines(", ".join(applied), _REGULAR, 9, value_w, 3), _REGULAR, 9))
 
     heights = [max(16, 6 + len(lines) * (size + 3.5)) for _, lines, _, size in rows]
     box_h = sum(heights) + 20
@@ -402,44 +402,36 @@ def _draw_groups(doc: _Doc) -> None:
     report = doc.report
     if not report.groups:
         return
-    pending = report.has_pending
-    columns = [
-        _Col("Группа", 90, font=_BOLD, wrap=True),
-        _Col("Программа", 90, wrap=True),
-        _Col("Учеников", 56, "right"),
-        _Col("Получили", 56, "right"),
-        *([_Col("Ожидают", 56, "right")] if pending else []),
-        _Col("Не получили", 70, "right"),
-        _Col("Сумма", 72, "right", font=_BOLD),
-    ]
-    _fit(columns)
+    columns = _fit([
+        _Col("Группа", 84, font=_BOLD, wrap=True),
+        _Col("Программа", 76, wrap=True),
+        _Col("Начислений", 62, "right"),
+        _Col("Выдано", 46, "right"),
+        _Col("Не выдано", 60, "right"),
+        _Col("Начислено", 72, "right", font=_BOLD),
+        _Col("Выплачено", 72, "right"),
+    ])
     rows = []
     for g in report.groups:
         t = g.totals
         rows.append([
-            g.name, g.program_label, str(t.students), str(t.received),
-            *([str(t.pending)] if pending else []), str(t.not_received), som(t.amount),
+            g.name, g.program_label, str(t.awards), str(t.paid), str(t.unpaid), som(t.amount), som(t.paid_amount),
         ])
-    t = report.totals
-    footer = [
-        "Всего", "", str(t.students), str(t.received),
-        *([str(t.pending)] if pending else []), str(t.not_received), som(t.amount),
-    ]
-    _section_title(doc, "Группы в этом стипендиальном периоде", needed=_HEAD_H + _ROW_H)
+    t = report.rows_totals
+    footer = ["Всего", "", str(t.awards), str(t.paid), str(t.unpaid), som(t.amount), som(t.paid_amount)]
+    _section_title(doc, "Группы", needed=_HEAD_H + _ROW_H)
     _draw_table(doc, columns, rows, footer=footer)
 
 
 def _draw_summary(doc: _Doc) -> None:
-    report = doc.report
-    t = report.totals
-    third = ("Ожидают выплату", str(t.pending), WARNING) if report.has_pending else ("Получили стипендию", str(t.received), BRAND)
+    t = doc.report.rows_totals
     cards = (
-        ("Группы", str(len(report.groups)), BRAND_DARK),
-        ("Учеников", str(t.students), INK_MUTED),
-        third,
-        ("Не получили", str(t.not_received), DANGER),
-        ("Общая сумма", som(t.amount), BRAND_DARK),
-        ("Средняя стипендия", som(t.average), INK_SECONDARY),
+        ("Начислений", str(t.awards), BRAND_DARK),
+        ("Выдано", str(t.paid), BRAND),
+        ("Не выдано", str(t.unpaid), WARNING),
+        ("Всего начислено", som(t.amount), BRAND_DARK),
+        ("Выплачено", som(t.paid_amount), BRAND),
+        ("Остаток", som(t.remaining), WARNING if t.remaining else INK_SECONDARY),
     )
     _section_title(doc, "Краткое резюме", needed=56)
     gap = 7
@@ -464,38 +456,41 @@ def _draw_summary(doc: _Doc) -> None:
 def _draw_students(doc: _Doc) -> None:
     report = doc.report
     columns = _fit([
-        _Col("№", 26, "center", color=INK_SECONDARY),
-        _Col("Ученик", 110, font=_BOLD, wrap=True),
-        _Col("Группа", 76, wrap=True),
-        _Col("Программа", 86, wrap=True),
-        _Col("Стипендия", 64, "right", font=_BOLD),
-        _Col("Статус", 79),
+        _Col("№", 22, "center", color=INK_SECONDARY),
+        _Col("Ученик", 104, font=_BOLD, wrap=True),
+        _Col("Группа", 72, wrap=True),
+        _Col("Сумма", 68, "right", font=_BOLD),
+        _Col("Статус", 66),
+        _Col("Дата", 62, "center"),
+        _Col("Способ", 74, wrap=True),
     ])
     rows = [
         [
-            str(row.number), row.student_name, row.group_name or NO_GROUP, row.program or "—",
-            som(row.amount), ("status", row.status),
+            str(row.number), row.student_name, row.group_name or NO_GROUP, som(row.amount),
+            ("status", row.status),
+            timezone.localtime(row.paid_at).strftime("%d.%m.%Y") if row.paid_at else "—",
+            row.method_label or "—",
         ]
         for row in report.rows
     ]
     t = report.rows_totals
-    footer = ["", "Итого", f"учеников: {t.students}", f"стипендий: {t.awards}", som(t.amount), ""]
-    title = "Список учеников"
+    footer = ["", "Итого", f"учеников: {t.students}", som(t.amount), f"выдано: {t.paid}", "", ""]
+    title = "Начисления"
     if report.filters.group:
-        title += f" группы {report.filters.group}"
+        title += f" · группа {report.filters.group}"
     _section_title(doc, title, needed=_HEAD_H + _ROW_H)
-    _draw_table(doc, columns, rows, footer=footer if rows else None, empty="Нет учеников")
+    _draw_table(doc, columns, rows, footer=footer if rows else None, empty="Нет начислений")
 
 
 def _draw_totals(doc: _Doc) -> None:
-    t = doc.report.totals
+    t = doc.report.rows_totals
     lines = [
-        ("Групп в периоде", str(len(doc.report.groups))),
         ("Количество учеников", str(t.students)),
-        ("Получили выплаты", str(t.received)),
-        ("Ожидают выплаты", str(t.pending)),
-        ("Не получили", str(t.not_received)),
-        ("Общая сумма", som(t.amount)),
+        ("Выдано", str(t.paid)),
+        ("Не выдано", str(t.unpaid)),
+        ("Всего начислено", som(t.amount)),
+        ("Всего выплачено", som(t.paid_amount)),
+        ("Остаток к выплате", som(t.remaining)),
     ]
     box_h = 26 + len(lines) * 18 + 8
     doc.ensure_space(box_h + 110)

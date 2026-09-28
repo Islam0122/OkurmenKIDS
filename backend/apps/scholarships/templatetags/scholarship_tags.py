@@ -33,3 +33,18 @@ def percent_of(part, whole) -> int:
     if not whole:
         return 0
     return max(0, min(100, round((part or 0) * 100 / whole)))
+
+
+@register.filter
+def short_range(period) -> str:
+    """A period as «01.08–31.08» for tight table cells."""
+    from ..services.report import short_range as _short
+    return _short(period.period_start, period.period_end)
+
+
+@register.filter
+def plain_number(value) -> str:
+    """A Decimal for a data-* attribute / JS: «1500.00» → «1500»; empty → «0»."""
+    if value in (None, ""):
+        return "0"
+    return str(Decimal(value).quantize(Decimal("1"), rounding=ROUND_HALF_UP))

@@ -23,11 +23,14 @@ Every number (groups, students, recipients, amount) is computed from *that
 period's* rows only — nothing is global. A group selected for the period
 with no evaluated students is still listed, with zeros.
 
-Payment status of a student in the period:
+Payment status of a row (the money, not the approval):
 
-* «Получил»    — the award is approved (the period is approved);
-* «Ожидает»    — the award exists but the period is not approved yet;
-* «Не получил» — evaluated in the period, but no award.
+* «Выдано»        — the award is paid (services.payments);
+* «Не выдано»     — the award exists but nobody handed the money over yet
+                    (`awaiting_approval` when the period is still a draft —
+                    it cannot be paid before approval);
+* «Без стипендии» — evaluated in the period, but no award. These rows are
+                    shown only when asked for: the report is about money.
 """
 from __future__ import annotations
 
@@ -38,25 +41,27 @@ from decimal import Decimal
 
 from django.db.models import F
 
-from ..models import EligibilityStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod
+from ..models import EligibilityStatus, PaymentMethod, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod
 from .analytics import annotate_periods
 
 
 class PaymentStatus:
-    RECEIVED = "received"
-    PENDING = "pending"
-    NOT_RECEIVED = "not_received"
+    PAID = "paid"
+    UNPAID = "unpaid"
+    NOT_AWARDED = "not_awarded"
 
     LABELS = {
-        RECEIVED: "Получил",
-        PENDING: "Ожидает",
-        NOT_RECEIVED: "Не получил",
+        PAID: "Выдано",
+        UNPAID: "Не выдано",
+        NOT_AWARDED: "Без стипендии",
     }
     # Table order: paid first, then waiting, then the rest.
-    ORDER = {RECEIVED: 0, PENDING: 1, NOT_RECEIVED: 2}
+    ORDER = {PAID: 0, UNPAID: 1, NOT_AWARDED: 2}
+    AWARDED = (PAID, UNPAID)
 
 
 STATUS_CHOICES = [("", "Все статусы"), *PaymentStatus.LABELS.items()]
+METHOD_CHOICES = [("", "Все способы"), *PaymentMethod.choices]
 
 NO_GROUP = "Без группы"
 
@@ -67,6 +72,13 @@ def format_date(value: dt.date | None) -> str:
 
 def format_range(start: dt.date | None, end: dt.date | None) -> str:
     return f"{format_date(start)} — {format_date(end)}"
+
+
+def short_range(start: dt.date, end: dt.date) -> str:
+    """«01.08–31.08» — the year only when the period crosses into another."""
+    if start.year != end.year:
+        return f"{start:%d.%m.%y}–{end:%d.%m.%y}"
+    return f"{start:%d.%m}–{end:%d.%m}"
 
 
 # ---------------------------------------------------------------------------
@@ -147,14 +159,19 @@ class ReportFilters:
     group: str = ""
     program: str = ""
     status: str = ""
+    method: str = ""
 
     @property
     def is_active(self) -> bool:
-        return bool(self.student or self.group or self.program or self.status)
+        return bool(self.student or self.group or self.program or self.status or self.method)
 
     @property
     def status_label(self) -> str:
         return PaymentStatus.LABELS.get(self.status, "")
+
+    @property
+    def method_label(self) -> str:
+        return PaymentMethod(self.method).label if self.method else ""
 
     def querystring(self, period: ScholarshipPeriod | None) -> dict:
         params = {
@@ -163,17 +180,20 @@ class ReportFilters:
             "group": self.group,
             "program": self.program,
             "status": self.status,
+            "method": self.method,
         }
         return {key: value for key, value in params.items() if value}
 
 
 def parse_filters(params) -> ReportFilters:
     status = params.get("status") or ""
+    method = params.get("method") or ""
     return ReportFilters(
         student=(params.get("student") or "").strip()[:100],
         group=(params.get("group") or "").strip()[:150],
         program=(params.get("program") or "").strip()[:150],
         status=status if status in PaymentStatus.LABELS else "",
+        method=method if method in PaymentMethod.values else "",
     )
 
 
@@ -200,28 +220,53 @@ class ReportRow:
     amount: Decimal | None
     status: str
     hint: str = ""
+    award_id: int | None = None
+    awaiting_approval: bool = False
+    paid_at: dt.datetime | None = None
+    paid_amount: Decimal | None = None
+    payment_method: str = ""
+    paid_by: str = ""
+    comment: str = ""
 
     @property
     def status_label(self) -> str:
         return PaymentStatus.LABELS[self.status]
 
+    @property
+    def method_label(self) -> str:
+        return PaymentMethod(self.payment_method).label if self.payment_method else ""
+
+    @property
+    def is_awarded(self) -> bool:
+        return self.status in PaymentStatus.AWARDED
+
+
+def _sum(values) -> Decimal | None:
+    """0 when there is nothing to add up, None («—») when every value is
+    missing (the award has no money amount — award_amount left empty)."""
+    values = list(values)
+    present = [v for v in values if v is not None]
+    if not values:
+        return Decimal("0")
+    return sum(present, Decimal("0")) if present else None
+
 
 @dataclass
 class Totals:
     """Counts and money for a set of rows (a group, the whole period, the
-    filtered student table)."""
+    filtered table). `amount` is what was accrued (начислено), `paid_amount`
+    what was handed over, `remaining` what is still to hand over."""
 
     students: int = 0
-    received: int = 0
-    pending: int = 0
-    not_received: int = 0
-    amount: Decimal | None = Decimal("0")
-    average: Decimal | None = None
     awards: int = 0
-
-    @property
-    def awarded(self) -> int:
-        return self.received + self.pending
+    paid: int = 0
+    unpaid: int = 0
+    awaiting_approval: int = 0
+    not_awarded: int = 0
+    amount: Decimal | None = Decimal("0")
+    paid_amount: Decimal | None = Decimal("0")
+    remaining: Decimal | None = Decimal("0")
+    average: Decimal | None = None
 
 
 @dataclass
@@ -241,9 +286,9 @@ class ScholarshipReport:
     filters: ReportFilters
     groups: list[GroupSummary]
     programs: list[str]
-    totals: Totals  # whole period
-    rows: list[ReportRow]  # filtered student table
-    rows_totals: Totals
+    totals: Totals  # every award of the period, no filters
+    rows: list[ReportRow]  # filtered table
+    rows_totals: Totals  # what the filters select — the KPIs, exports, PDF
     all_rows_count: int = 0
     group_names: list[str] = field(default_factory=list)
     scope_all: bool = True
@@ -253,41 +298,44 @@ class ScholarshipReport:
         return format_range(self.period.period_start, self.period.period_end)
 
     @property
+    def short_range(self) -> str:
+        return short_range(self.period.period_start, self.period.period_end)
+
+    @property
     def has_pending(self) -> bool:
-        return self.totals.pending > 0
+        return self.totals.awaiting_approval > 0
 
 
 def _status_of(evaluation: ScholarshipEvaluation) -> tuple[str, str]:
     award = getattr(evaluation, "award", None)
     if award is not None:
-        if award.status == ScholarshipAward.Status.APPROVED:
-            return PaymentStatus.RECEIVED, ""
-        return PaymentStatus.PENDING, "Период ещё не утверждён"
+        if award.is_paid:
+            return PaymentStatus.PAID, ""
+        if award.status != ScholarshipAward.Status.APPROVED:
+            return PaymentStatus.UNPAID, "Период ещё не утверждён — выдать нельзя"
+        return PaymentStatus.UNPAID, ""
     if evaluation.eligibility_status == EligibilityStatus.ELIGIBLE:
-        return PaymentStatus.NOT_RECEIVED, "Допущен, но не вошёл в список стипендиатов"
-    return PaymentStatus.NOT_RECEIVED, evaluation.ineligibility_reason or evaluation.get_eligibility_status_display()
+        return PaymentStatus.NOT_AWARDED, "Допущен, но не вошёл в список стипендиатов"
+    return PaymentStatus.NOT_AWARDED, evaluation.ineligibility_reason or evaluation.get_eligibility_status_display()
 
 
 def totals_of(rows: list[ReportRow]) -> Totals:
-    """A sum is 0 when there are no awards, and None («—») only when the
-    awards carry no money amount (ScholarshipConfiguration.award_amount
-    left empty)."""
-    awarded = [row for row in rows if row.status != PaymentStatus.NOT_RECEIVED]
+    awarded = [row for row in rows if row.is_awarded]
+    paid = [row for row in awarded if row.status == PaymentStatus.PAID]
+    unpaid = [row for row in awarded if row.status == PaymentStatus.UNPAID]
+    amount = _sum(row.amount for row in awarded)
     amounts = [row.amount for row in awarded if row.amount is not None]
-    if not awarded:
-        amount = Decimal("0")
-    elif amounts:
-        amount = sum(amounts, Decimal("0"))
-    else:
-        amount = None
     return Totals(
-        students=len({row.student_id for row in rows}),
-        received=sum(1 for row in rows if row.status == PaymentStatus.RECEIVED),
-        pending=sum(1 for row in rows if row.status == PaymentStatus.PENDING),
-        not_received=sum(1 for row in rows if row.status == PaymentStatus.NOT_RECEIVED),
-        amount=amount,
-        average=(amount / len(amounts)) if amounts else None,
+        students=len({row.student_id for row in awarded}),
         awards=len(awarded),
+        paid=len(paid),
+        unpaid=len(unpaid),
+        awaiting_approval=sum(1 for row in unpaid if row.awaiting_approval),
+        not_awarded=sum(1 for row in rows if not row.is_awarded),
+        amount=amount,
+        paid_amount=_sum(row.paid_amount for row in paid),
+        remaining=_sum(row.amount for row in unpaid),
+        average=(sum(amounts, Decimal("0")) / len(amounts)) if amounts else None,
     )
 
 
@@ -298,7 +346,14 @@ def _matches(row: ReportRow, filters: ReportFilters) -> bool:
         return False
     if filters.program and row.program != filters.program:
         return False
-    if filters.status and row.status != filters.status:
+    if filters.status:
+        if row.status != filters.status:
+            return False
+    elif not row.is_awarded:
+        # «Все начисления» — the report is about money; students without a
+        # scholarship are one status choice away.
+        return False
+    if filters.method and row.payment_method != filters.method:
         return False
     return True
 
@@ -306,7 +361,7 @@ def _matches(row: ReportRow, filters: ReportFilters) -> bool:
 def build_report(period: ScholarshipPeriod, filters: ReportFilters) -> ScholarshipReport:
     evaluations = (
         ScholarshipEvaluation.objects.filter(period=period)
-        .select_related("award")
+        .select_related("award", "award__paid_by")
         .order_by(F("rank").asc(nulls_last=True), "student_name", "id")
     )
     all_rows: list[ReportRow] = []
@@ -323,11 +378,27 @@ def build_report(period: ScholarshipPeriod, filters: ReportFilters) -> Scholarsh
             amount=award.amount if award is not None else None,
             status=status,
             hint=hint,
+            award_id=award.pk if award is not None else None,
+            awaiting_approval=award is not None and award.status != ScholarshipAward.Status.APPROVED,
+            paid_at=award.paid_at if award is not None else None,
+            paid_amount=award.paid_amount if award is not None else None,
+            payment_method=award.payment_method if award is not None else "",
+            paid_by=str(award.paid_by) if award is not None and award.paid_by_id else "",
+            comment=award.payment_comment if award is not None else "",
         ))
 
+    rows = [row for row in all_rows if _matches(row, filters)]
+    # Stable sort keeps the ranking order inside each status.
+    rows.sort(key=lambda row: PaymentStatus.ORDER[row.status])
+    for number, row in enumerate(rows, start=1):
+        row.number = number
+
+    # Group subtotals follow the table: all of the period's groups without
+    # filters, only the groups that still have rows with them.
     by_group: dict[str, list[ReportRow]] = defaultdict(list)
-    for row in all_rows:
+    for row in rows:
         by_group[row.group_name or NO_GROUP].append(row)
+    evaluated_groups = {row.group_name or NO_GROUP for row in all_rows}
     selected = {group.name: group for group in period.groups.select_related("course")}
     groups = [
         GroupSummary(
@@ -336,24 +407,23 @@ def build_report(period: ScholarshipPeriod, filters: ReportFilters) -> Scholarsh
             or ([selected[name].course.name] if name in selected and selected[name].course_id else []),
             totals=totals_of(by_group.get(name, [])),
         )
-        for name in period_group_names(period, set(by_group))
+        for name in period_group_names(period, evaluated_groups)
+        if not filters.is_active or name in by_group
     ]
-
-    rows = [row for row in all_rows if _matches(row, filters)]
-    # Stable sort keeps the ranking order inside each status.
-    rows.sort(key=lambda row: PaymentStatus.ORDER[row.status])
-    for number, row in enumerate(rows, start=1):
-        row.number = number
+    all_groups = period_group_names(period, evaluated_groups)
+    programs = sorted({row.program for row in all_rows if row.program} | {
+        g.course.name for g in selected.values() if g.course_id
+    })
 
     return ScholarshipReport(
         period=period,
         filters=filters,
         groups=groups,
-        programs=sorted({program for group in groups for program in group.programs}),
+        programs=programs,
         totals=totals_of(all_rows),
         rows=rows,
         rows_totals=totals_of(rows),
-        all_rows_count=len(all_rows),
-        group_names=[group.name for group in groups],
+        all_rows_count=sum(1 for row in all_rows if row.is_awarded),
+        group_names=all_groups,
         scope_all=not selected,
     )

@@ -308,9 +308,9 @@ class PeriodAdminPanelTests(ManualPeriodFixture):
 
         report = self.web.get(reverse("admin:scholarships_report"), {"period": period.pk})
         self.assertContains(report, "01.09.2026 — 30.09.2026")
-        self.assertContains(report, "Участвующие группы")
-        self.assertContains(report, "Ожидают выплату")
-        self.assertContains(report, "Скачать PDF-отчёт")
+        self.assertContains(report, "вся академия")
+        self.assertContains(report, "период не утверждён")
+        self.assertContains(report, "Скачать PDF")
 
         self.assertEqual(self.web.get(reverse("admin:scholarships_edit", args=[period.pk])).status_code, 200)
 
