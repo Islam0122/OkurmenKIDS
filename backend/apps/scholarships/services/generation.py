@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from dataclasses import dataclass
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -56,8 +57,10 @@ def get_active_configuration() -> ScholarshipConfiguration:
     return config
 
 
-def _log(action, trigger, result, *, period=None, award_day=None, award_date=None, message="", user=None):
+def _log(action, trigger, result, *, period=None, award_day=None, award_date=None, message="", user=None,
+         details=None):
     ScholarshipRunLog.objects.create(
+        details=details or {},
         action=action,
         trigger=trigger,
         result=result,
@@ -69,6 +72,12 @@ def _log(action, trigger, result, *, period=None, award_day=None, award_date=Non
     )
     log = logger.error if result == ScholarshipRunLog.Result.FAILED else logger.info
     log("scholarship %s (%s): %s — %s", action, trigger, result, message)
+
+
+def award_amount_of(period: ScholarshipPeriod) -> Decimal:
+    """Every award has an amount; a period without «Сумма стипендии» gives
+    0 — a scholarship without money, which is never paid out."""
+    return period.award_amount if period.award_amount is not None else Decimal("0")
 
 
 def _persist(period: ScholarshipPeriod, results: list[StudentResult]) -> None:
@@ -142,7 +151,7 @@ def _persist(period: ScholarshipPeriod, results: list[StudentResult]) -> None:
                 evaluation=evaluation,
                 rank=evaluation.rank,
                 award_date=period.evaluation_date,
-                amount=period.award_amount,
+                amount=award_amount_of(period),
             )
             for result, evaluation in zip(ordered, evaluations)
             if evaluation.rank is not None and (period.is_unlimited or evaluation.rank <= period.max_recipients)
@@ -448,7 +457,7 @@ def add_award(period: ScholarshipPeriod, evaluation: ScholarshipEvaluation, *, u
                 )
             award = ScholarshipAward.objects.create(
                 period=locked, student_id=evaluation.student_id, evaluation=evaluation, rank=evaluation.rank,
-                award_date=locked.evaluation_date, amount=locked.award_amount,
+                award_date=locked.evaluation_date, amount=award_amount_of(locked),
             )
     except ScholarshipError as exc:
         _log(ScholarshipRunLog.Action.AWARD, trigger, ScholarshipRunLog.Result.FAILED, period=period,

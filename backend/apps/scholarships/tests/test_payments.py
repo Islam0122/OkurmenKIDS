@@ -93,11 +93,14 @@ class PayServiceTests(PaymentFixture):
     def test_cancel(self):
         award = self.awards["Aibek"]
         pay_awards([award.pk], method="other", user=self.admin)
-        cancel_payment(award, user=self.admin)
+        with self.assertRaisesMessage(ValidationError, "Укажите причину"):
+            cancel_payment(award, reason="  ", user=self.admin)
+        self.assertTrue(self.reload(award).is_paid)
+        cancel_payment(award, reason="Ошибка при выплате", user=self.admin)
         award = self.reload(award)
         self.assertEqual((award.payment_status, award.paid_at, award.payment_method), (PaymentStatus.UNPAID, None, ""))
         with self.assertRaisesMessage(ValidationError, "ещё не выдана"):
-            cancel_payment(award, user=self.admin)
+            cancel_payment(award, reason="Ошибка", user=self.admin)
 
 
 class PayAdminTests(PaymentFixture):
@@ -152,7 +155,9 @@ class PayAdminTests(PaymentFixture):
         award = self.awards["Aibek"]
         pay_awards([award.pk], method="cash", user=self.admin)
         url = reverse("admin:scholarships_cancel_payment", args=[award.pk])
-        self.web.post(url, {"next": self.list_url})
+        self.web.post(url, {"next": self.list_url})  # no reason → refused
+        self.assertTrue(self.reload(award).is_paid)
+        self.web.post(url, {"next": self.list_url, "reason": "Ошибка при выплате"})
         self.assertFalse(self.reload(award).is_paid)
 
     def test_filters(self):

@@ -107,7 +107,7 @@ class AwardSerializer(serializers.ModelSerializer):
         model = ScholarshipAward
         fields = [
             "id", "period", "student", "student_name", "evaluation", "rank", "award_date", "amount",
-            "status", "approved_by", "approved_at", "payment_status", "paid_at", "paid_by", "paid_amount",
+            "status", "approved_by", "approved_at", "payment_status", "paid_at", "paid_by", "paid_by_name", "paid_amount",
             "payment_method", "payment_comment", "created_at",
         ]
         read_only_fields = fields

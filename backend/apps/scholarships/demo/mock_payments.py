@@ -225,12 +225,13 @@ def clear_mock_data() -> dict[str, int]:
 
 def find_payer() -> User | None:
     """The existing admin, never a new one: a real superuser first, then an
-    ADMIN-role user, then the demo seed's admin."""
+    ADMIN-role user. Never the demo seed's admin: a payer can't be deleted
+    (ScholarshipAward.paid_by is PROTECT), which would block
+    `seed_scholarship_demo --clear`."""
     real = User.objects.exclude(demo_ns.demo_user_q())
     return (
         real.filter(is_superuser=True, is_active=True).order_by("pk").first()
         or real.filter(role=User.Role.ADMIN, is_active=True).order_by("pk").first()
-        or User.objects.filter(is_superuser=True).order_by("pk").first()
     )
 
 
@@ -378,6 +379,7 @@ def _period(plan: PeriodPlan, number: int, groups, students, config, payer, rng,
             award.payment_status = PaymentStatus.PAID
             award.paid_at = _paid_at(plan, index)
             award.paid_by = payer
+            award.paid_by_name = str(payer)[:150]
             award.paid_amount = amount
             award.payment_method = method
             award.payment_comment = _comment(method, index)
@@ -390,6 +392,11 @@ def seed_mock_data(*, stdout=None) -> SeedResult:
     rng = random.Random(SEED)
     now = timezone.now()
     result = SeedResult(payer=find_payer())
+    if result.payer is None:
+        raise NoPayer(
+            "Нет администратора: у каждой выплаты должно быть «кто выдал». "
+            "Создайте superuser (python manage.py createsuperuser) и запустите команду снова."
+        )
     config = ScholarshipConfiguration.objects.active()
     with transaction.atomic():
         result.groups = _groups()
@@ -408,6 +415,10 @@ def seed_mock_data(*, stdout=None) -> SeedResult:
             result.periods.append(period)
             result.checks.append(PeriodCheck(period=period, plan=plan, figures={}))
     return result
+
+
+class NoPayer(Exception):
+    """No admin in the database to record as the payer."""
 
 
 class FinanceMismatch(Exception):

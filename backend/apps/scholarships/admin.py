@@ -852,14 +852,16 @@ class ScholarshipAwardAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
             award = result.paid[0]
             messages.success(request, f"{award.evaluation.student_name}: стипендия выдана — {som(award.amount)}.")
         elif result.paid:
-            total = sum((a.amount for a in result.paid if a.amount is not None), start=0)
-            messages.success(request, f"Выдано стипендий: {len(result.paid)} на сумму {som(total)}.")
+            messages.success(request, f"Выдано стипендий: {len(result.paid)} на сумму {som(result.paid_total)}.")
         if result.already_paid:
             names = ", ".join(a.evaluation.student_name for a in result.already_paid)
             messages.warning(request, f"Уже были выданы — повторно не выплачены: {names}.")
         if result.not_approved:
             names = ", ".join(a.evaluation.student_name for a in result.not_approved)
             messages.warning(request, f"Период не утверждён — выдать нельзя: {names}.")
+        if result.no_amount:
+            names = ", ".join(a.evaluation.student_name for a in result.no_amount)
+            messages.warning(request, f"Сумма стипендии 0 сом — выдать нельзя: {names}.")
         anchor = f"aw-{result.paid[0].pk}" if len(result.paid) == 1 else ""
         return HttpResponseRedirect(self._next_url(request, anchor))
 
@@ -870,7 +872,7 @@ class ScholarshipAwardAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
             return HttpResponseRedirect(reverse("admin:scholarships_scholarshipaward_changelist"))
         award = get_object_or_404(ScholarshipAward.objects.select_related("evaluation"), pk=award_id)
         try:
-            cancel_payment(award, user=request.user)
+            cancel_payment(award, reason=request.POST.get("reason", ""), user=request.user)
         except ValidationError as exc:
             messages.error(request, "; ".join(exc.messages))
         else:
