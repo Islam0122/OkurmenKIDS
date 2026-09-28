@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, ProtectedError, Q, RestrictedError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -91,6 +92,7 @@ from .services.analytics import COMPARE_CHOICES, get_dashboard
 from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
 from .services import lesson_lifecycle
+from .services.lesson_status import held_q
 from .services.monthly_report_pdf import build_monthly_report_pdf
 from .services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
 from .services.import_export import (
@@ -1015,6 +1017,18 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         # Only Homework of Lessons this teacher actually gives — a
         # colleague's Homework in the same Group is off limits.
         return qs.filter(lesson__in=Lesson.objects.for_teacher(teacher))
+
+    def filter_queryset(self, queryset):
+        queryset = super().filter_queryset(queryset)
+        # The Homework list (Homework page, Group homework tab, student
+        # history) only shows Homework of lessons that have already taken
+        # place (see lesson_status.held_q). A request for one specific
+        # lesson (`?lesson=`, used by the Lesson Detail page and its
+        # completion checklist) and detail/results by id stay unfiltered, so
+        # homework added ahead of a lesson is still visible on that lesson.
+        if self.action == "list" and "lesson" not in self.request.query_params:
+            queryset = queryset.filter(held_q(timezone.localdate(), prefix="lesson__"))
+        return queryset
 
     def perform_create(self, serializer):
         lesson = serializer.validated_data.get("lesson")

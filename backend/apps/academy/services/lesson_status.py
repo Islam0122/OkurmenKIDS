@@ -31,6 +31,21 @@ def attention_q(today: dt.date, now_time: dt.time) -> Q:
     )
 
 
+def held_q(today: dt.date, prefix: str = "") -> Q:
+    """The lesson has already taken place: any earlier date, or today once
+    the teacher has actually started it (IN_PROGRESS/COMPLETED via
+    services.lesson_lifecycle). A future date never counts, even if started
+    early — `start_lesson` has no date guard. Today is decided by status, not
+    by comparing the clock to `start_time`, per the status-based rule above.
+    `prefix` lets a related model filter by its lesson (e.g. "lesson__")."""
+    return Q(**{f"{prefix}date__lt": today}) | Q(
+        **{
+            f"{prefix}date": today,
+            f"{prefix}status__in": [Lesson.Status.IN_PROGRESS, Lesson.Status.COMPLETED],
+        }
+    )
+
+
 def lesson_status_counts(
     lessons_qs: QuerySet,
     *,
