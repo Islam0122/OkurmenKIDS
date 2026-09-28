@@ -276,6 +276,7 @@ export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> =
     },
     lessons: {
       lessons_today: buildMetric(1),
+      lessons_total: buildMetric(19),
       lessons_scheduled: buildMetric(10),
       lessons_completed: buildMetric(8),
       lessons_cancelled: buildMetric(1),

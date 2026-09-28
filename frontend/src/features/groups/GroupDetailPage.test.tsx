@@ -4,14 +4,26 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GroupDetailPage } from '@/features/groups/GroupDetailPage'
-import { buildGroup, buildGroupScheduleLesson, buildGroupScheduleSlot, buildGroupTeacherSummary } from '@/test/fixtures'
+import {
+  buildAnalyticsDashboard,
+  buildGroup,
+  buildGroupScheduleLesson,
+  buildGroupScheduleSlot,
+  buildGroupTeacherSummary,
+  buildMetric,
+} from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
 
 vi.mock('@/api/groups', () => ({
   groupsApi: { get: vi.fn(), list: vi.fn(), schedule: vi.fn(), students: vi.fn() },
 }))
 
+vi.mock('@/api/kpi', () => ({
+  kpiApi: { dashboard: vi.fn() },
+}))
+
 import { groupsApi } from '@/api/groups'
+import { kpiApi } from '@/api/kpi'
 
 function renderGroupDetail(id = 1) {
   return renderWithProviders(
@@ -65,5 +77,48 @@ describe('GroupDetailPage', () => {
     expect(screen.getByText('Среда')).toBeInTheDocument()
     expect(screen.getByText('Занятие 5', { exact: false })).toBeInTheDocument()
     expect(screen.getByText('Занятие 6', { exact: false })).toBeInTheDocument()
+  })
+
+  it('shows KPI data for a period whose lessons are all completed', async () => {
+    vi.mocked(groupsApi.get).mockResolvedValue(buildGroup({ id: 5, name: 'Роботы-5' }))
+    const base = buildAnalyticsDashboard()
+    vi.mocked(kpiApi.dashboard).mockResolvedValue(
+      buildAnalyticsDashboard({
+        lessons: {
+          ...base.lessons,
+          lessons_total: buildMetric(4),
+          lessons_scheduled: buildMetric(0),
+          lessons_completed: buildMetric(4),
+        },
+        attendance: { ...base.attendance, attendance_rate: buildMetric(96.3) },
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderGroupDetail(5)
+
+    await waitFor(() => expect(screen.getByText('Роботы-5')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'KPI' }))
+
+    await waitFor(() => expect(screen.getByText('4 (4 проведено)')).toBeInTheDocument())
+    expect(screen.getByText('96.3%')).toBeInTheDocument()
+    expect(screen.queryByText('Нет данных за выбранный период')).not.toBeInTheDocument()
+    expect(kpiApi.dashboard).toHaveBeenCalledWith(expect.objectContaining({ group: 5, period: 'this_month' }))
+  })
+
+  it('shows the empty state only when the period has no lessons at all', async () => {
+    vi.mocked(groupsApi.get).mockResolvedValue(buildGroup({ id: 5, name: 'Роботы-5' }))
+    const base = buildAnalyticsDashboard()
+    vi.mocked(kpiApi.dashboard).mockResolvedValue(
+      buildAnalyticsDashboard({ lessons: { ...base.lessons, lessons_total: buildMetric(0), lessons_scheduled: buildMetric(0) } }),
+    )
+
+    const user = userEvent.setup()
+    renderGroupDetail(5)
+
+    await waitFor(() => expect(screen.getByText('Роботы-5')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'KPI' }))
+
+    expect(await screen.findByText('Нет данных за выбранный период')).toBeInTheDocument()
   })
 })

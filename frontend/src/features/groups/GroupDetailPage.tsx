@@ -298,7 +298,9 @@ function KpiTab({ groupId }: { groupId: number }) {
   if (isPending) return <LoadingState label="Считаем KPI…" />
   if (isError) return <ErrorState onRetry={() => void refetch()} />
 
-  const hasData = data.lessons.lessons_scheduled.value > 0
+  // Any lesson in the period, whatever its status — not `lessons_scheduled`,
+  // which is only still-open lessons and reads 0 once they're all completed.
+  const hasData = data.lessons.lessons_total.value > 0
 
   return (
     <div>
@@ -325,7 +327,7 @@ function KpiTab({ groupId }: { groupId: number }) {
           <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
             <Field
               label="Занятий"
-              value={`${data.lessons.lessons_scheduled.value} (${data.lessons.lessons_completed.value} проведено)`}
+              value={`${data.lessons.lessons_total.value} (${data.lessons.lessons_completed.value} проведено)`}
             />
             <Field label="Посещаемость" value={`${data.attendance.attendance_rate.value}%`} />
             <Field label="Выполнение ДЗ" value={`${data.homework.submission_rate.value}%`} />
