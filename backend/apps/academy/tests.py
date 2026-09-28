@@ -8684,3 +8684,47 @@ class GroupAnalyticsTests(WorkspaceProgramFixture):
         with CaptureQueriesContext(connection) as five_programs:
             get_group_analytics(self.group, today=WS_TODAY)
         self.assertLessEqual(len(five_programs), len(two_programs) + 6)
+
+
+class AdminDashboardTrainerColumnTests(AcademyTestBase):
+    """/admin/ "Расписание сегодня" and "Активные группы" show the real
+    trainer assignment (Lesson.effective_teacher / active GroupTeacher
+    rows), not the legacy, no-longer-populated `Group.teacher` FK."""
+
+    def setUp(self):
+        super().setUp()
+        # Groups created the current way never set the legacy FK.
+        Group.objects.update(teacher=None)
+        self.admin_web = DjangoClient()
+        self.admin_web.force_login(self.admin)
+
+    def _stats(self):
+        response = self.admin_web.get(reverse("admin:index"))
+        self.assertEqual(response.status_code, 200)
+        return response.context["ok_stats"], response.content.decode()
+
+    def test_active_groups_show_group_teachers(self):
+        # A second trainer running another subject in the same group (the
+        # "Prog SOFT" case) — both are listed, each once.
+        GroupTeacher.objects.create(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        stats, body = self._stats()
+        by_name = {group.name: group.trainer_names for group in stats["active_groups"]}
+        self.assertEqual(by_name[self.group1.name], f"{self.teacher1}, {self.teacher2}")
+        self.assertEqual(by_name[self.group2.name], str(self.teacher2))
+        self.assertNotIn("<td>None</td>", body)
+
+    def test_todays_schedule_shows_the_lessons_own_teacher(self):
+        lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        Lesson.objects.filter(pk=lesson.pk).update(date=timezone.localdate())
+        stats, body = self._stats()
+        [row] = [item for item in stats["lessons_today"] if item.pk == lesson.pk]
+        self.assertEqual(row.effective_teacher, self.teacher1)
+        self.assertIn(f"<td>{self.teacher1}</td>", body)
+        self.assertNotIn("<td>None</td>", body)
+
+    def test_group_without_trainer_is_not_rendered_as_none(self):
+        GroupTeacher.objects.filter(group=self.group2).update(is_active=False)
+        stats, body = self._stats()
+        by_name = {group.name: group.trainer_names for group in stats["active_groups"]}
+        self.assertEqual(by_name[self.group2.name], "")
+        self.assertNotIn("<td>None</td>", body)
