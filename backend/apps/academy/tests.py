@@ -764,10 +764,71 @@ class HomeworkTests(AcademyTestBase):
         for lesson in reversed(self.lessons):
             Homework.objects.create(lesson=lesson, title=f"ДЗ {lesson.lesson_number}")
 
-        response = self.teacher1_client.get("/api/v1/homework/")
+        # "Today" after every group1 lesson, so none is filtered out as future.
+        with mock.patch("apps.academy.views.timezone.localdate", return_value=dt.date(2026, 12, 31)):
+            response = self.teacher1_client.get("/api/v1/homework/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         dates = [item["lesson_date"] for item in response.data["results"]]
         self.assertEqual(dates, sorted((lesson.date.isoformat() for lesson in self.lessons), reverse=True))
+
+    def _held_filter_fixture(self):
+        """group1's lessons are 2026-09-07/09/14/16; "today" is pinned to
+        2026-09-14 — two past lessons, one today, one future."""
+        past, _, today_lesson, future = self.lessons
+        self.assertEqual(
+            [past.date, today_lesson.date, future.date],
+            [dt.date(2026, 9, 7), dt.date(2026, 9, 14), dt.date(2026, 9, 16)],
+        )
+        homework = {
+            lesson.id: Homework.objects.create(lesson=lesson, title=f"ДЗ {lesson.lesson_number}")
+            for lesson in self.lessons
+        }
+        return past, today_lesson, future, homework
+
+    def _list_ids(self, client, params=None):
+        with mock.patch("apps.academy.views.timezone.localdate", return_value=dt.date(2026, 9, 14)):
+            response = client.get("/api/v1/homework/", params or {})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return [item["id"] for item in response.data["results"]]
+
+    def test_homework_list_includes_past_lessons_whatever_their_status(self):
+        past, _, _, homework = self._held_filter_fixture()
+        # A past lesson the teacher never started/completed still happened —
+        # its homework must not disappear.
+        self.assertEqual(past.status, Lesson.Status.SCHEDULED)
+        self.assertIn(homework[past.id].id, self._list_ids(self.teacher1_client))
+
+    def test_homework_list_includes_todays_lesson_only_once_started(self):
+        _, today_lesson, _, homework = self._held_filter_fixture()
+        self.assertNotIn(homework[today_lesson.id].id, self._list_ids(self.teacher1_client))
+
+        for lesson_status in (Lesson.Status.IN_PROGRESS, Lesson.Status.COMPLETED):
+            Lesson.objects.filter(pk=today_lesson.pk).update(status=lesson_status)
+            self.assertIn(homework[today_lesson.id].id, self._list_ids(self.teacher1_client), lesson_status)
+
+    def test_homework_list_excludes_future_lessons_even_if_started_early(self):
+        _, _, future, homework = self._held_filter_fixture()
+        self.assertNotIn(homework[future.id].id, self._list_ids(self.teacher1_client))
+        Lesson.objects.filter(pk=future.pk).update(status=Lesson.Status.IN_PROGRESS)
+        self.assertNotIn(homework[future.id].id, self._list_ids(self.teacher1_client))
+        self.assertNotIn(homework[future.id].id, self._list_ids(self.admin_client))
+
+    def test_homework_group_filter_applies_the_same_rule(self):
+        past, today_lesson, future, homework = self._held_filter_fixture()
+        ids = self._list_ids(self.teacher1_client, {"group": self.group1.id})
+        self.assertIn(homework[past.id].id, ids)
+        self.assertNotIn(homework[today_lesson.id].id, ids)
+        self.assertNotIn(homework[future.id].id, ids)
+
+    def test_future_lesson_homework_still_reachable_by_lesson_and_id(self):
+        _, _, future, homework = self._held_filter_fixture()
+        # The Lesson Detail page / completion checklist query one lesson
+        # directly — homework added ahead of the lesson must stay visible there.
+        self.assertEqual(self._list_ids(self.teacher1_client, {"lesson": future.id}), [homework[future.id].id])
+        with mock.patch("apps.academy.views.timezone.localdate", return_value=dt.date(2026, 9, 14)):
+            detail = self.teacher1_client.get(f"/api/v1/homework/{homework[future.id].id}/")
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertTrue(Homework.objects.filter(pk=homework[future.id].id).exists())
 
     def test_teacher_cannot_create_homework_for_other_lesson(self):
         response = self.teacher1_client.post(
