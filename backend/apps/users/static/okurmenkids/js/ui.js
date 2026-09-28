@@ -935,6 +935,48 @@ card.dataset.label = label.toLowerCase();
   }
 
   /* ------------------------------------------------------------------ */
+  /* 12. Filter forms: auto-submit + loading state                       */
+  /* ------------------------------------------------------------------ */
+  /* <select data-ok-autosubmit> submits its form on change. A form with  */
+  /* data-ok-loading="<selector>" shows a spinner on its submit button    */
+  /* and dims the region it is about to refresh (empty value: nothing).   */
+
+  function initLoadingForms() {
+    document.querySelectorAll("form[data-ok-loading]").forEach(function (form) {
+      form.addEventListener("submit", function (evt) {
+        var button = evt.submitter || form.querySelector('[type="submit"]');
+        if (button) button.classList.add("is-loading");
+        var target = form.getAttribute("data-ok-loading");
+        var region = target ? document.querySelector(target) : null;
+        if (region) {
+          region.classList.add("is-loading");
+          region.setAttribute("aria-busy", "true");
+        }
+      });
+    });
+
+    document.querySelectorAll("select[data-ok-autosubmit]").forEach(function (select) {
+      select.addEventListener("change", function () {
+        var form = select.form;
+        if (!form) return;
+        if (form.requestSubmit) {
+          form.requestSubmit();
+        } else {
+          form.submit();
+        }
+      });
+    });
+
+    // Back/forward cache: never come back to a page stuck in "loading".
+    window.addEventListener("pageshow", function () {
+      document.querySelectorAll(".is-loading[aria-busy], form[data-ok-loading] .is-loading").forEach(function (el) {
+        el.classList.remove("is-loading");
+        el.removeAttribute("aria-busy");
+      });
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Initialize                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -951,6 +993,7 @@ card.dataset.label = label.toLowerCase();
       initEmptyState();
       initActionWarning();
       initNewsAudienceToggle();
+      initLoadingForms();
     }
   );
 })();
