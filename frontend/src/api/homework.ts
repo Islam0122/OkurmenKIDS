@@ -10,6 +10,11 @@ export interface HomeworkListParams {
   page?: number
 }
 
+/** Newest lesson first — mirrors `HomeworkViewSet.ordering`. A Homework is
+ * shown with its lesson's date, so never order by `created_at` (insert time;
+ * identical for bulk-seeded/imported rows, which surfaced months-old lessons). */
+export const HOMEWORK_ORDERING = '-lesson__date,-lesson__start_time,-id'
+
 export interface CreateHomeworkPayload {
   lesson: number
   title: string

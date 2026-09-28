@@ -996,8 +996,13 @@ class HomeworkViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = HomeworkFilter
     search_fields = ["title", "description"]
-    ordering_fields = ["created_at", "deadline"]
-    ordering = ["-created_at"]
+    ordering_fields = ["created_at", "deadline", "lesson__date", "lesson__start_time", "id"]
+    # Newest *lesson* first — the date a Homework is shown with is its
+    # lesson's date, so that's what the list is ordered by. `created_at` is
+    # only when the row was inserted: bulk-seeded/imported Homework all share
+    # one insert time, so ordering by it surfaced an arbitrary program's
+    # months-old lessons (e.g. March) above this week's.
+    ordering = ["-lesson__date", "-lesson__start_time", "-id"]
 
     def get_queryset(self):
         qs = Homework.objects.select_related("lesson__group__teacher__user")

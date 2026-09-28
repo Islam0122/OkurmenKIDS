@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { ClipboardList } from 'lucide-react'
 
-import { homeworkApi } from '@/api/homework'
+import { HOMEWORK_ORDERING, homeworkApi } from '@/api/homework'
 import { HomeworkCard } from '@/components/academy/HomeworkCard'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -24,7 +24,7 @@ export function HomeworkListPage() {
   const { data, isPending, isError, refetch } = useHomeworkList({
     search: search || undefined,
     group: groupId ? Number(groupId) : undefined,
-    ordering: '-created_at',
+    ordering: HOMEWORK_ORDERING,
     page,
   })
 

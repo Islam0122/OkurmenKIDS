@@ -757,6 +757,18 @@ class HomeworkTests(AcademyTestBase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
+    def test_homework_list_ordered_by_lesson_date_not_insert_time(self):
+        # Created newest-lesson-first, so insert order (`created_at`) is the
+        # reverse of lesson-date order — the list must follow the lesson date,
+        # which is the date each Homework is displayed with.
+        for lesson in reversed(self.lessons):
+            Homework.objects.create(lesson=lesson, title=f"ДЗ {lesson.lesson_number}")
+
+        response = self.teacher1_client.get("/api/v1/homework/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        dates = [item["lesson_date"] for item in response.data["results"]]
+        self.assertEqual(dates, sorted((lesson.date.isoformat() for lesson in self.lessons), reverse=True))
+
     def test_teacher_cannot_create_homework_for_other_lesson(self):
         response = self.teacher1_client.post(
             "/api/v1/homework/",
