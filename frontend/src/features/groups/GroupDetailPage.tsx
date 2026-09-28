@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { HOMEWORK_ORDERING } from '@/api/homework'
 import { LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
@@ -260,7 +261,7 @@ function AttendanceTab({ groupId }: { groupId: number }) {
 }
 
 function HomeworkTab({ groupId }: { groupId: number }) {
-  const { data, isPending, isError, refetch } = useHomeworkList({ group: groupId, ordering: '-created_at' })
+  const { data, isPending, isError, refetch } = useHomeworkList({ group: groupId, ordering: HOMEWORK_ORDERING })
 
   if (isPending) return <LoadingState label="Загружаем домашние задания…" />
   if (isError) return <ErrorState onRetry={() => void refetch()} />
