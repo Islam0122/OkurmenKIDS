@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count, Q
+from django.db.models import Count, ProtectedError, Q, RestrictedError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
@@ -340,6 +340,21 @@ class StudentViewSet(viewsets.ModelViewSet):
         if teacher is None:
             return qs.none()
         return qs.filter(group_id__in=_teacher_group_ids(teacher))
+
+    STUDENT_HAS_SCHOLARSHIPS = "Нельзя удалить ученика: существует история стипендий."
+
+    def destroy(self, request, *args, **kwargs):
+        """A student with scholarship history (awards, payments) is never
+        deleted — that would erase paid money from reports. The database
+        refuses it too (ScholarshipAward.student is RESTRICT); this turns it
+        into a clear 409 instead of a 500."""
+        student = self.get_object()
+        if student.scholarship_awards.exists():
+            return Response({"detail": self.STUDENT_HAS_SCHOLARSHIPS}, status=status.HTTP_409_CONFLICT)
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except (ProtectedError, RestrictedError):
+            return Response({"detail": self.STUDENT_HAS_SCHOLARSHIPS}, status=status.HTTP_409_CONFLICT)
 
     @extend_schema(
         tags=["Students"],

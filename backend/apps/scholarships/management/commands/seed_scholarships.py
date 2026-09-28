@@ -43,11 +43,10 @@ class Command(BaseCommand):
             if options["remove"]:
                 return
 
-        result = mock.seed_mock_data()
-        if result.payer is None:
-            self.stdout.write(self.style.WARNING(
-                "Нет администратора — «Выдал» у выплат пустой. Создайте superuser и запустите команду снова."
-            ))
+        try:
+            result = mock.seed_mock_data()
+        except mock.NoPayer as exc:
+            raise CommandError(str(exc)) from exc
         self._report(result)
 
     def _report(self, result):

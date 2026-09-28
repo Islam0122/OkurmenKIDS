@@ -122,7 +122,7 @@
                     data-paid-at="{{ award.paid_at|date:'d.m.Y H:i' }}"
                     data-paid-amount="{{ award.paid_amount|som }}"
                     data-method="{{ award.get_payment_method_display }}"
-                    data-paid-by="{{ award.paid_by|default:'—' }}"
+                    data-paid-by="{{ award.paid_by_label|default:'—' }}"
                     data-comment="{{ award.payment_comment }}"
                     {% endif %}>
                   <td class="ok-pay-check">
@@ -237,7 +237,8 @@
           <form method="post" action="" class="me-auto" data-ok-cancel-form>
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit" class="ok-pay-cancel" onclick="return confirm('Отменить выдачу? Запись вернётся в «Не выдано», отмена попадёт в журнал.');">Отменить выдачу</button>
+            <input type="hidden" name="reason" value="">
+            <button type="submit" class="ok-pay-cancel" onclick="var r = prompt('Причина отмены выдачи (обязательно). Запись вернётся в «Не выдано», исходная выплата и причина останутся в журнале.'); if (!r || !r.trim()) return false; this.form.reason.value = r.trim(); return true;">Отменить выдачу</button>
           </form>
         {% endif %}
         <button type="button" class="ok-btn-secondary" data-ok-close>Закрыть</button>

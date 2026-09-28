@@ -484,15 +484,23 @@ class ScholarshipAward(models.Model):
     period = models.ForeignKey(
         ScholarshipPeriod, on_delete=models.CASCADE, related_name="awards", verbose_name="Период",
     )
+    # RESTRICT, never CASCADE: an award is financial history. Deleting the
+    # student (directly, or through his evaluations) is refused while he has
+    # awards. Deleting a period still takes its awards with it — that is
+    # only allowed for a draft period, which can hold no payments.
     student = models.ForeignKey(
-        "academy.Student", on_delete=models.CASCADE, related_name="scholarship_awards", verbose_name="Студент",
+        "academy.Student", on_delete=models.RESTRICT, related_name="scholarship_awards", verbose_name="Студент",
     )
     evaluation = models.OneToOneField(
-        ScholarshipEvaluation, on_delete=models.CASCADE, related_name="award", verbose_name="Оценка",
+        ScholarshipEvaluation, on_delete=models.RESTRICT, related_name="award", verbose_name="Оценка",
     )
     rank = models.PositiveIntegerField(verbose_name="Место")
     award_date = models.DateField(verbose_name="Дата начисления")
-    amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Сумма")
+    # Always set; 0 = a scholarship without money (no «Сумма стипендии» in
+    # the settings) — such an award is never paid (services.payments).
+    amount = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0"))], verbose_name="Сумма",
+    )
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True, verbose_name="Статус",
     )
@@ -509,10 +517,14 @@ class ScholarshipAward(models.Model):
         verbose_name="Выплата",
     )
     paid_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата выплаты")
+    # PROTECT: a user who handed out money can be deactivated, not deleted.
     paid_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
         related_name="+", verbose_name="Выдал",
     )
+    # Name snapshot taken at payment time and never rewritten: the history
+    # still reads «Выдал: Islam» after a rename or deactivation.
+    paid_by_name = models.CharField(max_length=150, blank=True, verbose_name="Выдал (имя на момент выплаты)")
     paid_amount = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Выплаченная сумма",
     )
@@ -533,12 +545,31 @@ class ScholarshipAward(models.Model):
             # period (= per award cycle, since a period *is* one cycle).
             models.UniqueConstraint(fields=["student", "period"], name="unique_student_scholarship_period"),
             models.UniqueConstraint(fields=["period", "rank"], name="unique_scholarship_award_rank"),
-            # Money is handed over only for an approved award, and a paid
-            # award always says when.
             models.CheckConstraint(
-                condition=models.Q(payment_status=PaymentStatus.UNPAID)
-                | models.Q(status="approved", paid_at__isnull=False),
-                name="scholarship_award_paid_is_approved",
+                condition=models.Q(amount__gte=0),
+                name="scholarship_award_amount_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(payment_status__in=PaymentStatus.values),
+                name="scholarship_award_payment_status_valid",
+            ),
+            # A paid award: approved, has money, says when, by whom, how and
+            # how much — and never more than was accrued.
+            models.CheckConstraint(
+                condition=~models.Q(payment_status=PaymentStatus.PAID) | models.Q(
+                    status="approved", amount__gt=0,
+                    paid_at__isnull=False, paid_by__isnull=False, paid_amount__isnull=False,
+                    paid_amount__gte=0, paid_amount__lte=models.F("amount"),
+                ) & ~models.Q(payment_method="") & ~models.Q(paid_by_name=""),
+                name="scholarship_award_paid_is_complete",
+            ),
+            # An unpaid award carries no payment data at all.
+            models.CheckConstraint(
+                condition=~models.Q(payment_status=PaymentStatus.UNPAID) | models.Q(
+                    paid_at__isnull=True, paid_by__isnull=True, paid_amount__isnull=True,
+                    payment_method="", paid_by_name="",
+                ),
+                name="scholarship_award_unpaid_is_blank",
             ),
         ]
         indexes = [
@@ -554,6 +585,11 @@ class ScholarshipAward(models.Model):
     @property
     def is_paid(self) -> bool:
         return self.payment_status == PaymentStatus.PAID
+
+    @property
+    def paid_by_label(self) -> str:
+        """Who handed the money over, as it was at payment time."""
+        return self.paid_by_name or (str(self.paid_by) if self.paid_by_id else "")
 
     @property
     def is_payable(self) -> bool:
@@ -654,6 +690,9 @@ class ScholarshipRunLog(models.Model):
     award_day = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Цикл")
     award_date = models.DateField(null=True, blank=True, verbose_name="Дата начисления")
     message = models.TextField(blank=True, verbose_name="Сообщение")
+    # Structured facts of the entry (payments: every award with its amount,
+    # payer and time; cancellations: the original payment and the reason).
+    details = models.JSONField(default=dict, blank=True, verbose_name="Подробности")
     triggered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="+", verbose_name="Пользователь",

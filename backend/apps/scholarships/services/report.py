@@ -383,7 +383,7 @@ def build_report(period: ScholarshipPeriod, filters: ReportFilters) -> Scholarsh
             paid_at=award.paid_at if award is not None else None,
             paid_amount=award.paid_amount if award is not None else None,
             payment_method=award.payment_method if award is not None else "",
-            paid_by=str(award.paid_by) if award is not None and award.paid_by_id else "",
+            paid_by=award.paid_by_label if award is not None else "",
             comment=award.payment_comment if award is not None else "",
         ))
 
