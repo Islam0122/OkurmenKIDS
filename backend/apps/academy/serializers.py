@@ -1172,6 +1172,7 @@ class AnalyticsLessonsBySubjectRowSerializer(serializers.Serializer):
 
 class AnalyticsLessonsSectionSerializer(serializers.Serializer):
     lessons_today = ComparisonMetricSerializer()
+    lessons_total = ComparisonMetricSerializer()
     lessons_scheduled = ComparisonMetricSerializer()
     lessons_in_progress = ComparisonMetricSerializer()
     lessons_completed = ComparisonMetricSerializer()

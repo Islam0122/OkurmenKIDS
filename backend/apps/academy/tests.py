@@ -1122,6 +1122,19 @@ class AnalyticsDashboardTests(AcademyTestBase):
         self.assertEqual(lessons["lessons_cancelled"]["value"], 1)
         self.assertEqual(lessons["lessons_scheduled"]["value"], 3)
 
+    def test_lessons_total_counts_every_status(self):
+        # A period whose lessons are all completed has no "scheduled"
+        # lessons left — lessons_total is what says there is data at all.
+        Lesson.objects.filter(pk__in=[lesson.pk for lesson in self.lessons]).update(status=Lesson.Status.COMPLETED)
+        lessons = self._dashboard(group_id=self.group1.id)["lessons"]
+        self.assertEqual(lessons["lessons_scheduled"]["value"], 0)
+        self.assertEqual(lessons["lessons_completed"]["value"], 4)
+        self.assertEqual(lessons["lessons_total"]["value"], 4)
+
+        Lesson.objects.filter(pk=self.lessons[0].pk).update(status=Lesson.Status.CANCELLED)
+        lessons = self._dashboard(group_id=self.group1.id)["lessons"]
+        self.assertEqual(lessons["lessons_total"]["value"], 4)
+
     def test_group_filtering_scopes_students(self):
         dashboard1 = self._dashboard(group_id=self.group1.id)
         dashboard2 = self._dashboard(group_id=self.group2.id)
@@ -1165,6 +1178,7 @@ class AnalyticsDashboardTests(AcademyTestBase):
             period="custom", start_date=dt.date(2020, 1, 1), end_date=dt.date(2020, 1, 31), today=dt.date(2020, 1, 31)
         )
         self.assertEqual(empty_dashboard["lessons"]["lessons_scheduled"]["value"], 0)
+        self.assertEqual(empty_dashboard["lessons"]["lessons_total"]["value"], 0)
         self.assertEqual(empty_dashboard["attendance"]["attendance_rate"]["value"], 0.0)
         self.assertEqual(empty_dashboard["homework"]["submission_rate"]["value"], 0.0)
         self.assertEqual(empty_dashboard["attendance"]["attendance_trend"], [])

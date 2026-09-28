@@ -80,6 +80,10 @@ def build(scope: AnalyticsScope, compare_range: DateRange | None, *, today: dt.d
 
     return {
         "lessons_today": build_metric(lessons_today, None),
+        # Every lesson in the period, whatever its status — "is there any
+        # data at all", which `lessons_scheduled` (still-open lessons only)
+        # can't answer once a period's lessons have all been completed.
+        "lessons_total": metric("total"),
         "lessons_scheduled": metric("scheduled"),
         "lessons_in_progress": metric("in_progress"),
         "lessons_completed": metric("completed"),

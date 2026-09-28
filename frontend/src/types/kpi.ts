@@ -101,6 +101,8 @@ export interface LessonsBySubjectRow {
 
 export interface AnalyticsLessonsSection {
   lessons_today: ComparisonMetric
+  /** Every lesson in the period, any status. */
+  lessons_total: ComparisonMetric
   lessons_scheduled: ComparisonMetric
   lessons_completed: ComparisonMetric
   lessons_cancelled: ComparisonMetric
