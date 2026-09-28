@@ -169,6 +169,43 @@ describe('HomeworkDetailPage', () => {
   })
 
   describe('completed lesson', () => {
+    it('keeps grading enabled and saves score/comment/status changes', async () => {
+      vi.mocked(homeworkApi.get).mockResolvedValue(
+        buildHomework({ id: 55, lesson_status: 'completed', results_editable: true }),
+      )
+      vi.mocked(homeworkApi.getResultsRoster).mockResolvedValue([
+        buildHomeworkResult({ student: 1, student_name: 'Иванов Пётр', status: 'checked', score: 10 }),
+      ])
+      vi.mocked(homeworkApi.saveResults).mockResolvedValue([])
+      const user = userEvent.setup()
+
+      renderHomeworkDetail('/app/homework/55')
+
+      await waitFor(() => expect(screen.getByText('Иванов Пётр')).toBeInTheDocument())
+      expect(screen.queryByText('Только просмотр')).not.toBeInTheDocument()
+      const row = screen.getByText('Иванов Пётр').closest('li') as HTMLElement
+      for (const radio of within(row).getAllByRole('radio')) {
+        expect(radio).toBeEnabled()
+      }
+      const score = within(row).getByLabelText(/Балл/)
+      const comment = within(row).getByPlaceholderText(/Комментарий/)
+      expect(score).toBeEnabled()
+      expect(comment).toBeEnabled()
+
+      await user.clear(score)
+      await user.type(score, '8')
+      await user.type(comment, 'Хорошо')
+      await user.click(screen.getByRole('button', { name: 'Сохранить результаты' }))
+
+      await waitFor(() =>
+        expect(homeworkApi.saveResults).toHaveBeenCalledWith(55, [
+          { student: 1, status: 'checked', score: 8, comment: 'Хорошо' },
+        ]),
+      )
+    })
+  })
+
+  describe('no grading rights', () => {
     it('hides the Save button and disables every control when results are not editable', async () => {
       vi.mocked(homeworkApi.get).mockResolvedValue(
         buildHomework({ id: 55, lesson_status: 'completed', results_editable: false }),

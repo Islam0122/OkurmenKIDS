@@ -18,9 +18,10 @@ export interface Homework {
   description: string
   deadline: string | null
   results_count: number
-  /** False once the lesson is completed (for a Teacher — an Admin always
-   * gets true) — mirrors the backend's own enforcement, never re-derived
-   * client-side. See services.lesson_lifecycle.homework_results_locked. */
+  /** Whether the requesting user may grade this homework (an Admin, or the
+   * Teacher who gives the lesson) — mirrors the backend's own ownership
+   * check, never re-derived client-side. Lesson status plays no part: a
+   * completed lesson is still gradable. */
   results_editable: boolean
   created_at: string
   updated_at: string
