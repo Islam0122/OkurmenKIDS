@@ -5081,11 +5081,11 @@ class LessonLifecycleActionsTests(AcademyTestBase):
         self.assertFalse(self.lesson1.homework_not_required)
 
 
-class HomeworkResultsLockedAfterCompletionTests(AcademyTestBase):
-    """Once a lesson is COMPLETED, a Teacher can no longer grade its
-    Homework — enforced on the backend (views._assert_homework_results_
-    editable / services.lesson_lifecycle.homework_results_locked), not just
-    hidden in the frontend."""
+class HomeworkGradingAfterCompletionTests(AcademyTestBase):
+    """A COMPLETED lesson is locked (no new Attendance/Homework, status
+    frozen), but its Homework stays gradable by the owning Teacher — score,
+    comment and status — through the backend itself, not just an unlocked
+    input in the frontend. Ownership checks still apply."""
 
     def setUp(self):
         super().setUp()
@@ -5099,64 +5099,115 @@ class HomeworkResultsLockedAfterCompletionTests(AcademyTestBase):
         self.lesson1.refresh_from_db()
         self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
 
-    def test_teacher_cannot_bulk_grade_after_completion(self):
-        response = self.teacher1_client.post(
-            f"/api/v1/homework/{self.homework.id}/results/",
-            [{"student": self.student1.id, "status": "checked", "score": 9}],
-            format="json",
+        self.result = HomeworkResult.objects.create(
+            homework=self.homework, student=self.student1, status=HomeworkResult.Status.CHECKED, score=10
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertFalse(HomeworkResult.objects.filter(homework=self.homework, student=self.student1).exists())
 
-    def test_teacher_cannot_create_result_directly_after_completion(self):
+    def _bulk(self, client, items):
+        return client.post(f"/api/v1/homework/{self.homework.id}/results/", items, format="json")
+
+    def test_teacher_can_change_score_after_completion(self):
+        response = self._bulk(self.teacher1_client, [{"student": self.student1.id, "status": "checked", "score": 8}])
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.score, 8)
+
+    def test_teacher_can_change_comment_after_completion(self):
+        response = self._bulk(
+            self.teacher1_client,
+            [{"student": self.student1.id, "status": "checked", "score": 10, "comment": "Отлично"}],
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.comment, "Отлично")
+
+    def test_teacher_can_change_status_after_completion(self):
+        response = self._bulk(
+            self.teacher1_client,
+            [
+                {"student": self.student1.id, "status": "late"},
+                {"student": self.student2.id, "status": "submitted"},
+            ],
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.status, HomeworkResult.Status.LATE)
+        self.assertEqual(
+            HomeworkResult.objects.get(homework=self.homework, student=self.student2).status,
+            HomeworkResult.Status.SUBMITTED,
+        )
+
+    def test_teacher_can_patch_and_create_results_directly_after_completion(self):
+        response = self.teacher1_client.patch(
+            f"/api/v1/homework-results/{self.result.id}/", {"score": 7, "comment": "Исправлено"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.result.refresh_from_db()
+        self.assertEqual((self.result.score, self.result.comment), (7, "Исправлено"))
+
         response = self.teacher1_client.post(
             "/api/v1/homework-results/",
-            {"homework": self.homework.id, "student": self.student1.id, "status": "submitted"},
+            {"homework": self.homework.id, "student": self.student2.id, "status": "not_submitted"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
-    def test_teacher_cannot_update_existing_result_after_completion(self):
-        result = HomeworkResult.objects.create(
-            homework=self.homework, student=self.student1, status=HomeworkResult.Status.SUBMITTED
-        )
-        response = self.teacher1_client.patch(
-            f"/api/v1/homework-results/{result.id}/", {"status": "checked", "score": 8}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        result.refresh_from_db()
-        self.assertEqual(result.status, HomeworkResult.Status.SUBMITTED)
-        self.assertIsNone(result.score)
-
-    def test_admin_can_still_grade_after_completion(self):
-        response = self.admin_client.post(
-            f"/api/v1/homework/{self.homework.id}/results/",
-            [{"student": self.student1.id, "status": "checked", "score": 9}],
-            format="json",
-        )
+    def test_admin_can_grade_after_completion(self):
+        response = self._bulk(self.admin_client, [{"student": self.student1.id, "status": "checked", "score": 9}])
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertTrue(
-            HomeworkResult.objects.filter(homework=self.homework, student=self.student1, status="checked").exists()
-        )
 
-    def test_results_editable_is_false_for_teacher_true_for_admin(self):
+    def test_results_editable_reflects_ownership_not_lesson_status(self):
         teacher_response = self.teacher1_client.get(f"/api/v1/homework/{self.homework.id}/")
-        self.assertFalse(teacher_response.data["results_editable"])
         self.assertEqual(teacher_response.data["lesson_status"], "completed")
+        self.assertTrue(teacher_response.data["results_editable"])
+        self.assertTrue(self.admin_client.get(f"/api/v1/homework/{self.homework.id}/").data["results_editable"])
 
-        admin_response = self.admin_client.get(f"/api/v1/homework/{self.homework.id}/")
-        self.assertTrue(admin_response.data["results_editable"])
+    def test_unauthenticated_user_cannot_grade(self):
+        response = self._bulk(APIClient(), [{"student": self.student1.id, "status": "checked", "score": 1}])
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        response = APIClient().patch(f"/api/v1/homework-results/{self.result.id}/", {"score": 1}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.score, 10)
 
-    def test_grading_still_allowed_before_completion(self):
-        other_lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number")[1]
-        homework = Homework.objects.create(lesson=other_lesson, title="ДЗ 2")
-
-        response = self.teacher1_client.post(
-            f"/api/v1/homework/{homework.id}/results/",
-            [{"student": self.student1.id, "status": "checked", "score": 7}],
+    def test_other_teacher_cannot_grade(self):
+        # teacher2 doesn't give lesson1 — neither the bulk endpoint nor a
+        # direct PATCH/POST may touch its grades.
+        response = self._bulk(self.teacher2_client, [{"student": self.student1.id, "status": "checked", "score": 1}])
+        self.assertIn(response.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
+        response = self.teacher2_client.patch(
+            f"/api/v1/homework-results/{self.result.id}/", {"score": 1}, format="json"
+        )
+        self.assertIn(response.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
+        response = self.teacher2_client.post(
+            "/api/v1/homework-results/",
+            {"homework": self.homework.id, "student": self.student2.id, "status": "checked", "score": 1},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn(response.status_code, (status.HTTP_400_BAD_REQUEST, status.HTTP_403_FORBIDDEN))
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.score, 10)
+        self.assertFalse(HomeworkResult.objects.filter(homework=self.homework, student=self.student2).exists())
+
+    def test_completed_lesson_itself_stays_locked(self):
+        # Grading is open, but the lesson record isn't: no attendance
+        # changes, no new homework, status can't be moved back or cancelled.
+        response = self.teacher1_client.post(
+            f"/api/v1/lessons/{self.lesson1.id}/attendance/",
+            [{"student": self.student1.id, "status": "absent"}],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.teacher1_client.post(
+            "/api/v1/homework/", {"lesson": self.lesson1.id, "title": "Ещё ДЗ"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/cancel/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.teacher1_client.patch(f"/api/v1/lessons/{self.lesson1.id}/", {"status": "scheduled"}, format="json")
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
+        self.assertEqual(Attendance.objects.get(student=self.student1, lesson=self.lesson1).status, "present")
 
 
 class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
@@ -5164,7 +5215,7 @@ class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
     attach new Attendance or Homework to it — the broader "immutable
     historical record" rule (views._assert_lesson_editable /
     services.lesson_lifecycle.lesson_editing_locked), on top of the
-    narrower homework-results-only lock tested separately above."""
+    grading of its existing Homework, which stays open (tested above)."""
 
     def setUp(self):
         super().setUp()

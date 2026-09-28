@@ -7,6 +7,7 @@ from apps.users.models import Subject, Teacher, User
 from apps.users.serializers import SubjectSerializer, TeacherSerializer
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
+from .permissions import _teacher_owns_lesson
 from .services.analytics import PERIOD_CHOICES
 from .models import (
     AcademyMonthlyReport,
@@ -979,13 +980,18 @@ class HomeworkSerializer(_RequestAwareSerializer):
         return obj.results.count()
 
     def get_results_editable(self, obj: Homework) -> bool:
-        """Mirrors views._assert_homework_results_editable — never a second,
-        looser rule: an Admin can always grade; a Teacher can't once the
-        lesson is COMPLETED (see services.lesson_lifecycle.homework_results_locked)."""
+        """Whether the requesting user may grade this Homework — the same
+        ownership rule the API enforces (IsAdminOrOwningTeacher): an Admin, or
+        the Teacher who gives the lesson. Lesson status plays no part: a
+        completed lesson is locked for attendance/new homework, never for
+        grading (see services.lesson_lifecycle.lesson_editing_locked)."""
         user = self._request_user()
-        if user is not None and user.is_authenticated and (user.is_superuser or user.role == User.Role.ADMIN):
+        if user is None or not user.is_authenticated:
+            return False
+        if user.is_superuser or user.role == User.Role.ADMIN:
             return True
-        return not lesson_lifecycle.homework_results_locked(obj.lesson)
+        teacher = getattr(user, "teacher_profile", None)
+        return bool(teacher and _teacher_owns_lesson(teacher, obj.lesson))
 
 
 class HomeworkResultSerializer(_RequestAwareSerializer):

@@ -54,9 +54,9 @@ export function HomeworkDetailPage() {
   if (isPending) return <LoadingState label="Загружаем задание…" />
   if (isError || !homework) return <ErrorState onRetry={() => void refetch()} />
 
-  // Mirrors the backend's own enforcement (HomeworkSerializer.results_editable
-  // / views._assert_homework_results_editable) — never re-derived from the
-  // lesson status here, so the two can't drift apart.
+  // Mirrors the backend's own ownership check (HomeworkSerializer.results_editable
+  // / IsAdminOrOwningTeacher) — never re-derived here, so the two can't drift
+  // apart. A completed lesson stays gradable.
   const isReadOnly = !homework.results_editable
 
   function handleChange(studentId: number, patch: HomeworkResultPatch) {
@@ -97,12 +97,14 @@ export function HomeworkDetailPage() {
 
   const rows: HomeworkResultRow[] = (roster.data ?? []).map((row) => {
     const entry = localEntries[row.student]
+    // A local entry wins as a whole — including a cleared (null) score, which
+    // must not fall back to the saved one while the teacher is retyping it.
     return {
       student: row.student,
       studentName: row.student_name,
-      status: entry?.status ?? row.status,
-      score: entry?.score ?? row.score,
-      comment: entry?.comment ?? row.comment,
+      status: entry ? entry.status : row.status,
+      score: entry ? entry.score : row.score,
+      comment: entry ? entry.comment : row.comment,
     }
   })
 
@@ -118,7 +120,7 @@ export function HomeworkDetailPage() {
 
       {isReadOnly ? (
         <div className="mb-6 rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-secondary">
-          Занятие завершено — результаты домашнего задания больше нельзя редактировать.
+          У вас нет прав на изменение результатов этого домашнего задания.
         </div>
       ) : null}
 

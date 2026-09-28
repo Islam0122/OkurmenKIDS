@@ -22,10 +22,10 @@ export type HomeworkResultPatch = Partial<Pick<HomeworkResultRow, 'status' | 'sc
 export interface HomeworkResultTableProps {
   rows: HomeworkResultRow[]
   onChange: (studentId: number, patch: HomeworkResultPatch) => void
-  /** True once the parent lesson is completed — grades/statuses/comments
-   * are frozen (see HomeworkSerializer.results_editable, enforced on the
-   * backend too), so every control here becomes inert rather than merely
-   * styled differently. */
+  /** True when the viewer may not grade this homework (see
+   * HomeworkSerializer.results_editable, enforced on the backend too), so
+   * every control here becomes inert rather than merely styled differently.
+   * A completed lesson never makes grading read-only. */
   readOnly?: boolean
 }
 

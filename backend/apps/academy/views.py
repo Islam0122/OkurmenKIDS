@@ -149,27 +149,13 @@ def _assert_teacher_owns_lesson(request, lesson) -> None:
         raise PermissionDenied("Вы можете работать только со своими занятиями.")
 
 
-def _assert_homework_results_editable(request, lesson) -> None:
-    """Once a lesson is COMPLETED, its homework results are frozen for a
-    Teacher — grades/statuses/comments already fed into the completion
-    record and must not keep changing under it. Admin keeps write access
-    (the same "Admin can manage all lessons" override every other lesson
-    lifecycle rule in this app grants — see services.lesson_lifecycle)."""
-    if _is_admin(request.user):
-        return
-    if lesson is not None and lesson_lifecycle.homework_results_locked(lesson):
-        raise PermissionDenied(
-            "Занятие завершено — результаты домашнего задания больше нельзя редактировать."
-        )
-
-
 def _assert_lesson_editable(request, lesson) -> None:
     """A completed or cancelled lesson is an immutable historical record for
     a Teacher — no new Attendance or Homework may be attached to it, on top
     of the lesson's own status/cancellation_reason already being read-only
-    (see LessonSerializer) and its homework results being separately locked
-    by `_assert_homework_results_editable`. Admin keeps write access, same
-    override as everywhere else in the lesson lifecycle."""
+    (see LessonSerializer). Grading the lesson's existing Homework stays
+    open (see services.lesson_lifecycle.lesson_editing_locked). Admin keeps
+    write access, same override as everywhere else in the lesson lifecycle."""
     if _is_admin(request.user):
         return
     if lesson is not None and lesson_lifecycle.lesson_editing_locked(lesson):
@@ -1086,8 +1072,6 @@ class HomeworkViewSet(viewsets.ModelViewSet):
                     )
             return Response(payload)
 
-        _assert_homework_results_editable(request, homework.lesson)
-
         item_serializer = BulkHomeworkResultItemSerializer(data=request.data, many=True)
         item_serializer.is_valid(raise_exception=True)
         try:
@@ -1132,11 +1116,6 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
         homework = serializer.validated_data.get("homework")
         lesson = homework.lesson if homework is not None else None
         _assert_teacher_owns_lesson(self.request, lesson)
-        _assert_homework_results_editable(self.request, lesson)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        _assert_homework_results_editable(self.request, serializer.instance.homework.lesson)
         serializer.save()
 
 
