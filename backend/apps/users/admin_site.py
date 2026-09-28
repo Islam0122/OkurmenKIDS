@@ -9,10 +9,24 @@ unchanged; we only touch ``index()``.
 from __future__ import annotations
 
 from django.contrib.admin import AdminSite
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Prefetch, Q
 from django.utils import timezone
 
 from apps.users.models import Subject, Teacher, User
+
+
+def _with_trainer_names(groups) -> list:
+    """Attach `trainer_names` — the group's active GroupTeacher trainers,
+    one entry per teacher even when they run several subjects there."""
+    groups = list(groups)
+    for group in groups:
+        names = []
+        for program in group.active_teacher_programs:
+            name = str(program.teacher)
+            if name not in names:
+                names.append(name)
+        group.trainer_names = ", ".join(names)
+    return groups
 
 
 class OkurmenKidsAdminSite(AdminSite):
@@ -35,7 +49,7 @@ class OkurmenKidsAdminSite(AdminSite):
         """Real numbers for every module — Teacher/Subject plus academy."""
         # Imported lazily to avoid a hard app-loading-order dependency
         # between users and academy at import time.
-        from apps.academy.models import Attendance, Group, HomeworkResult, Lesson, Student
+        from apps.academy.models import Attendance, Group, GroupTeacher, HomeworkResult, Lesson, Student
 
         teachers = Teacher.objects.all()
         subjects_breakdown = list(
@@ -83,14 +97,24 @@ class OkurmenKidsAdminSite(AdminSite):
             "lessons_today_count": Lesson.objects.filter(date=today).count(),
             "attendance_recent_rate": attendance_recent_rate,
             "homework_recent_rate": homework_recent_rate,
+            # Trainer columns read the real assignment — Lesson.effective_teacher
+            # and the group's active GroupTeacher rows — never the legacy
+            # `Group.teacher` FK, which is no longer populated.
             "lessons_today": list(
                 Lesson.objects.filter(date=today)
-                .select_related("group", "group__teacher__user", "room", "subject")
+                .select_related("group", "teacher__user", "group_teacher__teacher__user", "room", "subject")
                 .order_by("start_time")[:8]
             ),
-            "active_groups": list(
+            "active_groups": _with_trainer_names(
                 Group.objects.filter(status=Group.Status.ACTIVE)
-                .select_related("teacher__user", "course")
+                .select_related("course")
+                .prefetch_related(
+                    Prefetch(
+                        "teachers",
+                        queryset=GroupTeacher.objects.filter(is_active=True).select_related("teacher__user"),
+                        to_attr="active_teacher_programs",
+                    )
+                )
                 .annotate(students_count_annotated=Count("students", filter=Q(students__is_active=True), distinct=True))
                 .order_by("-start_date")[:8]
             ),

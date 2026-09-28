@@ -114,7 +114,7 @@
                                                     <td><a href="{% url 'admin:academy_lesson_change' lesson.id %}">{{ lesson.start_time|time:"H:i" }}–{{ lesson.end_time|time:"H:i" }}</a></td>
                                                     <td>{{ lesson.subject|default:"—" }}</td>
                                                     <td>{{ lesson.group.name }}</td>
-                                                    <td>{{ lesson.group.teacher }}</td>
+                                                    <td>{{ lesson.effective_teacher|default:"—" }}</td>
                                                 </tr>
                                             {% endfor %}
                                         </tbody>
@@ -139,7 +139,7 @@
                                                 <tr>
                                                     <td>{{ group.name }}</td>
                                                     <td>{{ group.course.name }}</td>
-                                                    <td>{{ group.teacher }}</td>
+                                                    <td>{{ group.trainer_names|default:"—" }}</td>
                                                     <td>{{ group.students_count_annotated }}{% if group.max_students %} / {{ group.max_students }}{% endif %}</td>
                                                 </tr>
                                             {% endfor %}
