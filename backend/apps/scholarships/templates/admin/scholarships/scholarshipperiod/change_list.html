@@ -44,40 +44,48 @@
 
   <div class="ok-card ok-sch-panel">
   {% if cl.result_list %}
-    <ul class="ok-per-list" aria-label="Стипендиальные периоды">
-      <li class="ok-per-row is-head" aria-hidden="true">
-        <span>Период</span><span>Статус</span>
-        <span class="ok-per-num">Группы</span><span class="ok-per-num">Оценено</span><span class="ok-per-num">Стипен&shy;диаты</span>
-        <span class="ok-per-num">Выдано</span><span class="ok-per-num">Ожидают</span>
-        <span class="ok-per-num">Сумма</span><span></span>
-      </li>
+    <div class="ok-per-wrap">
+    <table class="table ok-per-table mb-0" aria-label="Стипендиальные периоды">
+      <colgroup>
+        <col class="ok-per-c-period"><col class="ok-per-c-status"><col class="ok-per-c-groups"><col class="ok-per-c-recipients">
+        <col class="ok-per-c-payout"><col class="ok-per-c-sum"><col class="ok-per-c-actions">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Период</th><th>Статус</th><th class="is-num">Группы</th><th class="is-num">Стипендиаты</th>
+          <th>Выплата</th><th class="is-num">Сумма</th><th class="is-actions"><span class="visually-hidden">Действия</span></th>
+        </tr>
+      </thead>
+      <tbody>
       {% for period in cl.result_list %}
         {% url 'admin:scholarships_scholarshipperiod_change' period.pk as open_url %}
-        {% with groups=period.participating_groups %}
-        <li class="ok-per-row">
-          <div class="ok-per-main">
-            <a href="{{ open_url }}" class="ok-per-dates">{{ period.period_start|date:"d.m.Y" }} — {{ period.period_end|date:"d.m.Y" }}</a>
-            <span class="ok-per-title" title="{{ period.title }}">{{ period.title }}{% if period.period_start <= today and today <= period.period_end %} · идёт сейчас{% endif %}</span>
-          </div>
-          <div class="ok-per-state">{% include "admin/scholarships/scholarshipperiod/_status.html" with period=period compact=True %}</div>
-          <div class="ok-per-num" {% if groups %}title="{{ groups|join:', ' }}"{% else %}title="Вся академия"{% endif %}>
-            <span class="ok-per-cell-label">Группы</span>{% if groups %}{{ groups|length }}{% else %}<span class="ok-sch-of">все</span>{% endif %}
-          </div>
-          <div class="ok-per-num"><span class="ok-per-cell-label">Оценено</span>{% if period.is_calculated %}{{ period.evaluations_count|default:0 }}{% else %}<span class="ok-sch-of">—</span>{% endif %}</div>
-          <div class="ok-per-num"><span class="ok-per-cell-label">Стипендиаты</span>{% if period.is_calculated %}{{ period.recipients_count|default:0 }}{% else %}—{% endif %}<span class="ok-sch-of"> / {% if period.is_unlimited %}∞{% else %}{{ period.max_recipients }}{% endif %}</span></div>
-          <div class="ok-per-num{% if period.paid_count %} is-good{% else %} is-zero{% endif %}"><span class="ok-per-cell-label">Выдано</span>{{ period.paid_count|default:0 }}</div>
-          <div class="ok-per-num{% if period.unpaid_count %} is-wait{% else %} is-zero{% endif %}"{% if period.unpaid_count and period.is_draft %} title="Выдать можно после утверждения периода"{% endif %}><span class="ok-per-cell-label">Ожидают</span>{{ period.unpaid_count }}</div>
-          <div class="ok-per-num"><span class="ok-per-cell-label">Сумма</span>{{ period.total_amount|default:0|som }}</div>
-          <div class="ok-per-actions">
-            <a href="{{ open_url }}" class="ok-per-action is-main" title="Открыть период"><i class="bi bi-box-arrow-up-right"></i><span>Открыть</span></a>
-            <a href="{% url 'admin:scholarships_report' %}?period={{ period.pk }}" class="ok-per-action" title="Отчёт"><i class="bi bi-file-earmark-text"></i><span>Отчёт</span></a>
-            {% if can_generate %}<a href="{% url 'admin:scholarships_edit' period.pk %}" class="ok-per-action" title="Редактировать"><i class="bi bi-pencil"></i><span>Редактировать</span></a>{% endif %}
-            {% include "admin/scholarships/scholarshipperiod/_menu.html" with period=period inline=True %}
-          </div>
-        </li>
+        {% with groups=period.participating_groups recipients=period.recipients_count|default:0 paid=period.paid_count|default:0 %}
+        <tr class="ok-per-row">
+          <td>
+            <a href="{{ open_url }}" class="ok-per-dates" title="{{ period.title }} · {{ period.period_start|date:'d.m.Y' }} — {{ period.period_end|date:'d.m.Y' }}{% if period.period_start <= today and today <= period.period_end %} · идёт сейчас{% endif %}">{{ period.period_start|date:"d.m" }}–{{ period.period_end|date:"d.m.Y" }}</a>{% if period.period_start <= today and today <= period.period_end %}<span class="ok-per-now" title="Идёт сейчас"></span>{% endif %}
+          </td>
+          <td>{% include "admin/scholarships/scholarshipperiod/_status.html" with period=period compact=True %}</td>
+          <td class="is-num" title="{% if groups %}{{ groups|join:', ' }}{% else %}Вся академия{% endif %}">{% if groups %}{{ groups|length }}{% else %}<span class="ok-per-muted">все</span>{% endif %}</td>
+          <td class="is-num" title="{% if period.is_calculated %}Оценено учеников: {{ period.evaluations_count|default:0 }} · {% endif %}лимит: {% if period.is_unlimited %}без ограничения{% else %}{{ period.max_recipients }}{% endif %}">
+            {% if period.is_calculated %}{{ recipients }}{% else %}—{% endif %}<span class="ok-per-muted"> / {% if period.is_unlimited %}∞{% else %}{{ period.max_recipients }}{% endif %}</span>
+          </td>
+          <td>
+            {% if period.is_calculated and recipients %}
+              <div class="ok-per-payout{% if paid == recipients %} is-done{% elif period.is_draft %} is-idle{% else %} is-wait{% endif %}"
+                   title="Выдано: {{ paid }} · ожидают: {{ period.unpaid_count }}{% if period.is_draft %} · выдать можно после утверждения{% endif %}">
+                <span class="ok-per-payout-text">{{ paid }}<span class="ok-per-muted"> / {{ recipients }}</span></span>
+                <span class="ok-per-bar"><span style="width: {{ paid|percent_of:recipients }}%"></span></span>
+              </div>
+            {% else %}<span class="ok-per-muted">—</span>{% endif %}
+          </td>
+          <td class="is-num ok-per-sum">{{ period.total_amount|default:0|som }}</td>
+          <td class="is-actions">{% include "admin/scholarships/scholarshipperiod/_menu.html" with period=period full=True %}</td>
+        </tr>
         {% endwith %}
       {% endfor %}
-    </ul>
+      </tbody>
+    </table>
+    </div>
   {% elif current %}
     <div class="ok-pay-empty">
       <i class="bi bi-funnel"></i><span>Нет периодов с таким статусом.</span>

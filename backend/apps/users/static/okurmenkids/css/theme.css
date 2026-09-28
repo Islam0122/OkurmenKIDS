@@ -3440,34 +3440,57 @@ a.ok-sch-pcard-dates:hover { color: var(--ok-primary); text-decoration: none; }
 .ok-pay-cancel:hover { text-decoration: underline; }
 .ok-modal-footer form { margin: 0; display: flex; align-items: center; }
 
-/* Periods — compact list */
-.ok-per-list { padding: 0; margin: 0; list-style: none; }
-.ok-per-row {
-  display: grid; align-items: center; gap: 0.75rem;
-  grid-template-columns: minmax(10rem, 1.5fr) minmax(6.5rem, 0.9fr) repeat(5, minmax(3.6rem, 0.6fr)) minmax(6.5rem, 0.85fr) 17rem;
-  padding: 0.6rem 0.9rem; border-top: 1px solid var(--ok-border);
+/* Periods — one table, fixed columns: nothing wraps, nothing overlaps.
+   Период → Статус → Группы → Стипендиаты → Выплата → Сумма → ⋮ */
+.ok-per-table { table-layout: fixed; width: 100%; min-width: 640px; font-size: 0.86rem; }
+.ok-per-table th, .ok-per-table td {
+  padding: 0.55rem 0.75rem; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-color: var(--ok-border);
 }
-.ok-per-row.is-head { border-top: 0; padding-top: 0.5rem; padding-bottom: 0.5rem; background: var(--ok-surface-hover); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ok-text-muted); }
-.ok-per-row.is-head > span { font-size: inherit; font-weight: inherit; color: inherit; line-height: 1.2; white-space: normal; hyphens: manual; }
-.ok-per-row:not(.is-head):hover { background: var(--ok-surface-hover); }
-.ok-per-dates { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ok-text); text-decoration: none; white-space: nowrap; }
-a.ok-per-dates:hover { color: var(--ok-primary); }
-.ok-per-title { display: block; font-size: 0.74rem; color: var(--ok-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ok-per-num { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; font-weight: 600; color: var(--ok-text); white-space: nowrap; }
-.ok-per-num.is-good { color: var(--ok-primary); }
-.ok-per-num.is-wait { color: var(--ok-warning); }
-.ok-per-num.is-zero, .ok-per-num .ok-sch-of { color: var(--ok-text-muted); font-weight: 500; }
-.ok-per-cell-label { display: none; }
-.ok-per-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.15rem; }
-.ok-per-action {
-  display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.5rem; border-radius: var(--ok-radius-sm);
-  font-size: 0.8rem; font-weight: 600; color: var(--ok-text-secondary); text-decoration: none; white-space: nowrap;
+.ok-per-table th { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ok-text-muted); background: var(--ok-surface-hover); }
+.ok-per-table .is-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ok-text); }
+.ok-per-table th.is-num { color: var(--ok-text-muted); }
+.ok-per-table .is-actions { text-align: right; overflow: visible; padding-left: 0; }
+.ok-per-table tbody tr:hover td { background: var(--ok-surface-hover); }
+.ok-per-c-period { width: 21%; }
+.ok-per-c-status { width: 15%; }
+.ok-per-c-groups { width: 10%; }
+.ok-per-c-recipients { width: 14%; }
+.ok-per-c-payout { width: 19%; }
+.ok-per-c-sum { width: 15%; }
+.ok-per-c-actions { width: 56px; }
+.ok-per-dates { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ok-text); text-decoration: none; }
+a.ok-per-dates:hover { color: var(--ok-primary); text-decoration: none; }
+.ok-per-now { display: inline-block; width: 7px; height: 7px; margin-left: 0.4rem; border-radius: 50%; background: var(--ok-info); vertical-align: middle; }
+.ok-per-muted { color: var(--ok-text-muted); font-weight: 500; }
+.ok-per-table .ok-sch-status { padding: 0.12rem 0.55rem; font-size: 0.72rem; }
+.ok-per-sum { font-weight: 700; }
+.ok-per-payout { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
+.ok-per-payout-text { flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ok-per-bar { flex: 1 1 auto; min-width: 24px; max-width: 90px; height: 5px; border-radius: 999px; background: var(--ok-border); overflow: hidden; }
+.ok-per-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--ok-warning); }
+.ok-per-payout.is-done .ok-per-payout-text { color: var(--ok-primary); }
+.ok-per-payout.is-done .ok-per-bar > span { background: var(--ok-primary); }
+.ok-per-payout.is-wait .ok-per-payout-text { color: var(--ok-warning); }
+.ok-per-payout.is-idle .ok-per-payout-text { color: var(--ok-text-muted); }
+.ok-per-table .ok-sch-menu-btn { width: 30px; height: 30px; border-color: var(--ok-border); }
+/* The row menu must not be clipped, so the wrapper scrolls only on phones. */
+@media (max-width: 1199px) {
+  .ok-per-table th, .ok-per-table td { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .ok-per-table th { font-size: 0.64rem; letter-spacing: 0.01em; }
+  .ok-per-c-period { width: 19%; }
+  .ok-per-c-status { width: 16%; }
+  .ok-per-c-groups { width: 11%; }
+  .ok-per-c-recipients { width: 17%; }
+  .ok-per-c-payout { width: 17%; }
+  .ok-per-c-sum { width: 14%; }
+  .ok-per-bar { max-width: 60px; }
 }
-.ok-per-action:hover { background: var(--ok-primary-soft); color: var(--ok-primary); text-decoration: none; }
-.ok-per-action.is-main { color: var(--ok-primary); }
-.ok-per-row .ok-sch-status { padding: 0.12rem 0.55rem; font-size: 0.72rem; white-space: nowrap; }
-.ok-per-row > * { min-width: 0; }
-.ok-per-row .ok-sch-menu-btn { width: 30px; height: 30px; }
+@media (max-width: 767px) {
+  .ok-per-wrap { overflow-x: auto; }
+}
+/* A plain «⋮» glyph: the menu stays visible even if the icon font fails to load. */
+.ok-per-table .ok-sch-menu-btn i::before { content: "\22EE"; font-family: var(--ok-font); font-size: 1.05rem; font-weight: 800; font-style: normal; line-height: 1; }
 
 /* Report — compact period line */
 .ok-rep-line {
@@ -3482,9 +3505,6 @@ a.ok-per-dates:hover { color: var(--ok-primary); }
 .ok-pay-table .ok-pay-comment { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ok-text-muted); font-size: 0.8rem; }
 
 @media (max-width: 1399px) {
-  .ok-per-row { grid-template-columns: minmax(9.5rem, 1.4fr) minmax(6.5rem, 0.8fr) repeat(5, minmax(3.4rem, 0.5fr)) minmax(6.5rem, 0.8fr) 16.5rem; gap: 0.5rem; }
-  .ok-per-action { padding: 0.3rem 0.35rem; }
-  .ok-per-action i { display: none; }
   .ok-rep-period-col { display: none; }
   .ok-pay-filters, .ok-pay-filters.is-report { grid-template-columns: minmax(0, 1.15fr) repeat(3, minmax(0, 1fr)) minmax(0, 1fr) auto; gap: 0.4rem; }
   .ok-pay-filters .ok-input, .ok-pay-filters input.ok-input { font-size: 0.82rem; padding-left: 0.5rem; padding-right: 1.6rem; }
@@ -3496,16 +3516,6 @@ a.ok-per-dates:hover { color: var(--ok-primary); }
   .ok-pay-kpi:nth-child(n + 4) { border-top: 1px solid var(--ok-border); }
   .ok-pay-filters, .ok-pay-filters.is-report { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ok-pay-filter-actions { grid-column: span 3; justify-content: flex-end; }
-}
-@media (max-width: 991px) {
-  .ok-per-row { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 0.4rem; }
-  .ok-per-row.is-head { display: none; }
-  .ok-per-row > .ok-per-main { grid-column: 1 / 3; }
-  .ok-per-row > .ok-per-state { grid-column: 3 / 5; justify-self: end; }
-  .ok-per-num { text-align: left; }
-  .ok-per-cell-label { display: block; font-size: 0.66rem; font-weight: 600; color: var(--ok-text-muted); }
-  .ok-per-row > .ok-per-actions { grid-column: 1 / -1; justify-content: flex-start; }
-  .ok-per-action span { display: inline; }
 }
 @media (max-width: 767px) {
   .ok-pay-kpis, .ok-pay-kpis.is-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
