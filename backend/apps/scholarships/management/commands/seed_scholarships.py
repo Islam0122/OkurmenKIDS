@@ -51,42 +51,55 @@ class Command(BaseCommand):
         self._report(result)
 
     def _report(self, result):
-        stats = mock.statistics(result.periods)
-        t = stats["totals"]
+        try:
+            overall = mock.verify_finances(result.checks)
+        except mock.FinanceMismatch as exc:
+            raise CommandError(f"Проверка сумм не прошла: {exc}") from exc
         out = self.stdout.write
         out("")
         out(LINE)
-        out("SCHOLARSHIP MOCK DATA")
+        out("SCHOLARSHIP MOCK FINANCIAL DATA")
         out(LINE)
-        out("")
         for label, value in (
-            ("Periods created:", len(result.periods)),
+            ("Periods:", len(result.periods)),
             ("Groups used:", len(result.groups)),
             ("Students used:", result.students),
-            ("Scholarships:", t["total"]),
-            ("", ""),
-            ("Paid:", t["paid"]),
-            ("Pending:", t["pending"]),
-            ("Cash / bank:", f"{t['cash']} / {t['bank']}"),
-            ("", ""),
-            ("Total amount:", som(t["accrued"] or 0)),
-            ("Paid amount:", som(t["paid_sum"] or 0)),
-            ("Remaining:", som(t["remaining"] or 0)),
-            ("", ""),
+            (None, None),
+            ("Total awards:", overall["awards"]),
+            ("Total amount:", kgs(overall["total"])),
+            (None, None),
+            ("Paid awards:", overall["paid"]),
+            ("Paid amount:", kgs(overall["paid_amount"])),
+            (None, None),
+            ("Pending awards:", overall["pending"]),
+            ("Pending amount:", kgs(overall["pending_amount"])),
+            (None, None),
+            ("Balance:", kgs(overall["balance"])),
+            ("Cash / bank:", f"{overall['cash']} / {overall['bank']}"),
             ("Paid by:", str(result.payer) if result.payer else "—"),
         ):
-            out(f"{label:<18}{value!s:>18}" if label else "")
+            out(f"{label:<18}{value!s:>22}" if label else "")
         out("")
         out(LINE)
         out("PERIODS")
         out(LINE)
-        out("")
-        for period, agg in stats["rows"]:
-            dates = f"{period.period_start:%d.%m} — {period.period_end:%d.%m}"
-            of = agg["total"] if agg["total"] else period.max_recipients
-            state = "" if period.status == period.Status.APPROVED else "  (не утверждён)"
-            out(f"{dates}   {agg['paid']:>2} / {of:<2} paid   {som(agg['paid_sum'] or 0):>12} из {som(agg['accrued'] or 0)}{state}")
+        for check in result.checks:
+            f, period = check.figures, check.period
+            state = "" if period.status == period.Status.APPROVED else " · не утверждён"
+            out("")
+            out(f"{period.period_start:%d.%m} — {period.period_end:%d.%m}   {check.plan.scenario}{state}")
+            out(f"  Awards:  {f['awards']:<4} Total:           {kgs(f['total']):>16}")
+            out(f"  Paid:    {f['paid']:<4} Paid amount:     {kgs(f['paid_amount']):>16}")
+            out(f"  Pending: {f['pending']:<4} Pending amount:  {kgs(f['pending_amount']):>16}")
+            out(f"                Remaining:       {kgs(f['balance']):>16}")
         out("")
         out(LINE)
+        out(self.style.SUCCESS(
+            "✓ Суммы сверены: построчный пересчёт = план = итоги «Стипендии» = отчёт бухгалтерии (Excel/PDF)."
+        ))
         for reason in result.skipped:
             self.stdout.write(self.style.WARNING(reason))
+
+
+def kgs(value) -> str:
+    return som(value or 0).replace("сом", "KGS")
