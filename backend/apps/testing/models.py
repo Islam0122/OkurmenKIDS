@@ -26,7 +26,7 @@ import uuid
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 
@@ -59,7 +59,9 @@ class SessionType(models.TextChoices):
 class SessionStatus(models.TextChoices):
     CREATED = "created", "Создана"
     RUNNING = "running", "Идёт"
+    PAUSED = "paused", "На паузе"
     FINISHED = "finished", "Завершена"
+    EXPIRED = "expired", "Время истекло"
 
 
 class AttemptStatus(models.TextChoices):
@@ -78,6 +80,11 @@ class GradingStatus(models.TextChoices):
     MANUAL = "manual", "Вручную"
 
 
+# Answers still waiting for AI or a teacher — shown as «🟡 Review» (computed,
+# never stored as a session/attempt status).
+REVIEW_GRADING_STATUSES = (GradingStatus.PENDING, GradingStatus.PROCESSING, GradingStatus.FAILED)
+
+
 # ---------------------------------------------------------------------------
 # Test / Question / QuestionOption
 # ---------------------------------------------------------------------------
@@ -86,12 +93,22 @@ class Test(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, unique=True, verbose_name="Название")
     description = models.TextField(blank=True, verbose_name="Описание")
+    subject = models.ForeignKey(
+        "users.Subject",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tests",
+        verbose_name="Предмет",
+        help_text="Пусто у тестов из старой системы.",
+    )
     level = models.CharField(
         max_length=10,
         choices=DifficultyLevel.choices,
         default=DifficultyLevel.MEDIUM,
         verbose_name="Уровень",
     )
+    # UI: True → «🟢 Active», False → «⚪ Draft» (no separate draft model).
     is_active = models.BooleanField(default=True, verbose_name="Активен")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлён")
@@ -189,11 +206,12 @@ class QuestionOption(models.Model):
     def __str__(self):
         return f'{"✓" if self.is_correct else "✗"} {self.text[:60]}'
 
-
 # ---------------------------------------------------------------------------
 # TestSession
 # ---------------------------------------------------------------------------
 
+# Legacy default TTL. Only referenced by migrations/0001_initial.py, which
+# imports _default_expires/_generate_key — both must keep existing.
 SESSION_TTL_HOURS = 2
 
 
@@ -205,7 +223,81 @@ def _generate_key():
     return secrets.token_urlsafe(16)
 
 
+# Short, child-friendly session keys: "PY-82X91". No 0/O/1/I/L so a key read
+# off a projector can't be mistyped. 31**5 ≈ 28.6M combinations per prefix —
+# a key is a *locator*, not a secret: brute force is stopped by API throttling,
+# a key only works while its session is running, and every attempt is then
+# bound to its own attempt token.
+SESSION_KEY_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+SESSION_KEY_LENGTH = 5
+SESSION_KEY_DEFAULT_PREFIX = "OK"
+_KEY_GENERATION_ATTEMPTS = 10
+
+MAX_SESSION_DURATION = timedelta(hours=12)
+MAX_SESSION_EXTENSION = timedelta(hours=12)
+
+
+def session_key_prefix(*sources: str) -> str:
+    """First two Latin letters of the first source that has them ("Python" → "PY")."""
+    for source in sources:
+        letters = [ch for ch in (source or "").upper() if "A" <= ch <= "Z"]
+        if len(letters) >= 2:
+            return "".join(letters[:2])
+    return SESSION_KEY_DEFAULT_PREFIX
+
+
+def generate_session_key(prefix: str = SESSION_KEY_DEFAULT_PREFIX) -> str:
+    body = "".join(secrets.choice(SESSION_KEY_ALPHABET) for _ in range(SESSION_KEY_LENGTH))
+    return f"{prefix}-{body}"
+
+
+def normalize_session_key(raw: str) -> str:
+    """What a student typed → the stored form (keys are case-insensitive)."""
+    return (raw or "").strip().upper()
+
+
+class SessionTransitionError(ValidationError):
+    """A session state change that the state machine does not allow."""
+
+
 class TestSession(models.Model):
+    """One run of a Test for a Group.
+
+    State machine (``status``)::
+
+        created ──start──▶ running ──pause──▶ paused
+                            │  ▲               │
+                            │  └────resume─────┘
+                            ├──finish──▶ finished ◀──finish── paused
+                            └──(deadline passed)──▶ expired
+
+    Timer. ``expires_at`` is always the deadline *as if the session kept
+    running*: it is set on start (``started_at + duration``), and on resume
+    it is pushed forward by exactly the time spent paused. So while paused
+    the remaining time is frozen at ``expires_at - paused_at``, and nothing
+    has to tick in the background. Training sessions have no duration and
+    therefore no deadline.
+
+    Expiry is lazy: a running session whose deadline has passed *is*
+    expired (see ``effective_status``); the stored status catches up on the
+    next transition attempt or via ``expire()`` (the periodic task in the
+    Celery step). Every transition locks the row, so e.g. a teacher's pause
+    and the expiry sweep can't interleave.
+
+    ``is_active`` is a legacy column kept in sync as "not ended yet"
+    (created/running/paused) because existing Testing analytics filter on it.
+    It is never used to express pause.
+    """
+
+    TRANSITIONS = {
+        "start": ({SessionStatus.CREATED}, SessionStatus.RUNNING),
+        "pause": ({SessionStatus.RUNNING}, SessionStatus.PAUSED),
+        "resume": ({SessionStatus.PAUSED}, SessionStatus.RUNNING),
+        "finish": ({SessionStatus.RUNNING, SessionStatus.PAUSED}, SessionStatus.FINISHED),
+        "expire": ({SessionStatus.RUNNING}, SessionStatus.EXPIRED),
+    }
+    ENDED_STATUSES = frozenset({SessionStatus.FINISHED, SessionStatus.EXPIRED})
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test = models.ForeignKey(
         Test,
@@ -263,8 +355,9 @@ class TestSession(models.Model):
     key = models.CharField(
         max_length=64,
         unique=True,
-        default=_generate_key,
+        blank=True,
         verbose_name="Ключ сессии",
+        help_text="Генерируется автоматически, напр. PY-82X91.",
         db_index=True,
     )
     status = models.CharField(
@@ -274,8 +367,28 @@ class TestSession(models.Model):
         verbose_name="Статус",
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создана")
-    expires_at = models.DateTimeField(default=_default_expires, verbose_name="Истекает")
-    is_active = models.BooleanField(default=True, verbose_name="Активна")
+
+    # -- Timer ---------------------------------------------------------------
+    duration = models.DurationField(
+        null=True,
+        blank=True,
+        verbose_name="Длительность",
+        help_text="Время на прохождение экзамена. Пусто у тренажёра и у старых сессий.",
+    )
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name="Запущена")
+    paused_at = models.DateTimeField(null=True, blank=True, verbose_name="На паузе с")
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name="Завершена")
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Истекает",
+        help_text="Дедлайн с учётом пауз. Выставляется при запуске.",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Активна",
+        help_text="Служебное поле: сессия ещё не завершена и не истекла.",
+    )
 
     # None = без ограничений (training); exam defaults to 1 at creation time.
     max_attempts_per_student = models.PositiveSmallIntegerField(
@@ -292,10 +405,67 @@ class TestSession(models.Model):
         indexes = [
             models.Index(fields=["status", "is_active"], name="session_status_active_idx"),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(status="paused") | models.Q(paused_at__isnull=False),
+                name="testsession_paused_has_paused_at",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(duration__isnull=True) | models.Q(duration__gt=timedelta(0)),
+                name="testsession_duration_positive",
+            ),
+        ]
 
     def __str__(self):
         label = self.title or self.key
         return f"{self.test.title} [{self.get_session_type_display()}] / {label}"
+
+    def save(self, *args, **kwargs):
+        if self.key:
+            # Normalize only on creation: legacy keys are mixed-case
+            # token_urlsafe strings and must never change under a saved row.
+            if self._state.adding:
+                self.key = normalize_session_key(self.key)
+            return super().save(*args, **kwargs)
+        # Auto-generate a short key; retry on the (rare) collision, including
+        # one that races in between our check and the INSERT.
+        prefix = self._key_prefix()
+        for _ in range(_KEY_GENERATION_ATTEMPTS):
+            self.key = generate_session_key(prefix)
+            if TestSession.objects.filter(key=self.key).exists():
+                continue
+            try:
+                with transaction.atomic():
+                    return super().save(*args, **kwargs)
+            except IntegrityError:
+                if not TestSession.objects.filter(key=self.key).exists():
+                    raise
+        raise IntegrityError("Не удалось сгенерировать уникальный ключ сессии.")
+
+    def _key_prefix(self) -> str:
+        test = self.test
+        subject = test.subject.name if test.subject_id else ""
+        return session_key_prefix(subject, test.title)
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.lesson_id is not None:
+            if self.group_id is None:
+                errors["group"] = "Укажите группу: урок выбирается внутри группы."
+            elif self.lesson.group_id != self.group_id:
+                errors["lesson"] = "Урок не принадлежит выбранной группе."
+        if self.duration is not None:
+            if self.is_training:
+                errors["duration"] = "У тренажёра нет ограничения по времени."
+            elif not timedelta(0) < self.duration <= MAX_SESSION_DURATION:
+                errors["duration"] = "Длительность должна быть больше 0 и не больше 12 часов."
+        elif self.is_exam and self._state.adding:
+            errors["duration"] = "Укажите длительность экзамена."
+        if errors:
+            raise ValidationError(errors)
+
+    # -- Read-only state -----------------------------------------------------
 
     @property
     def is_exam(self) -> bool:
@@ -305,38 +475,66 @@ class TestSession(models.Model):
     def is_training(self) -> bool:
         return self.session_type == SessionType.TRAINING
 
-    @property
-    def is_time_expired(self) -> bool:
-        """Только для exam: время вышло."""
-        return self.is_exam and timezone.now() >= self.expires_at
-
-    @property
-    def is_valid(self) -> bool:
-        """Exam: активна и не истёк expires_at. Training: просто активна."""
-        if not self.is_active:
+    def _deadline_passed(self, now) -> bool:
+        # Training never expires — legacy training rows still carry the old
+        # 2-hour expires_at, which the standalone app ignored for them too.
+        if self.is_training:
             return False
-        if self.is_exam:
-            return timezone.now() < self.expires_at
-        return True
+        return self.expires_at is not None and now >= self.expires_at
+
+    def effective_status_at(self, now) -> str:
+        """Stored status, plus lazy expiry of a running session past its deadline.
+
+        Legacy ``created`` sessions also count: the standalone app let
+        students in without an explicit start and gave every session a
+        2-hour ``expires_at`` at creation (new ``created`` sessions have no
+        deadline until started).
+        """
+        if self.status in (SessionStatus.RUNNING, SessionStatus.CREATED) and self._deadline_passed(now):
+            return SessionStatus.EXPIRED
+        return self.status
 
     @property
     def effective_status(self) -> str:
-        if self.is_exam and timezone.now() >= self.expires_at:
-            return SessionStatus.FINISHED
-        return self.status
+        return self.effective_status_at(timezone.now())
+
+    @property
+    def is_time_expired(self) -> bool:
+        return self.effective_status == SessionStatus.EXPIRED
+
+    @property
+    def accepts_answers(self) -> bool:
+        """Only a running session inside its deadline takes answers — never a paused one."""
+        return self.effective_status == SessionStatus.RUNNING
+
+    @property
+    def is_valid(self) -> bool:
+        """Legacy name used by the ported services/serializers."""
+        return self.accepts_answers
+
+    @property
+    def remaining_time(self) -> timedelta | None:
+        """Time left on the clock; None when the session has no time limit."""
+        if self.is_training:
+            return None
+        if self.status == SessionStatus.CREATED and self.expires_at is None:
+            return self.duration
+        if self.expires_at is None:
+            return None
+        now = timezone.now()
+        if self.effective_status_at(now) in self.ENDED_STATUSES:
+            return timedelta(0)
+        reference = self.paused_at if self.status == SessionStatus.PAUSED else now
+        return max(self.expires_at - reference, timedelta(0))
 
     @property
     def active_attempt_count(self) -> int:
         return self.attempts.filter(status=AttemptStatus.ACTIVE).count()
 
-    def clean(self):
-        super().clean()
-        if self.lesson_id is None:
-            return
-        if self.group_id is None:
-            raise ValidationError({"group": "Укажите группу: урок выбирается внутри группы."})
-        if self.lesson.group_id != self.group_id:
-            raise ValidationError({"lesson": "Урок не принадлежит выбранной группе."})
+    @property
+    def needs_review(self) -> bool:
+        """«🟡 Review»: some answer is still waiting for AI or a teacher."""
+        return Answer.objects.filter(attempt__session=self, grading_status__in=REVIEW_GRADING_STATUSES).exists()
 
     def can_student_attempt(self, student_name: str = "", student=None) -> bool:
         """Лимит попыток: None = без ограничений; истёкшие попытки не считаются.
@@ -353,12 +551,103 @@ class TestSession(models.Model):
             attempts = attempts.filter(student_name=student_name)
         return attempts.count() < self.max_attempts_per_student
 
-    def deactivate(self) -> None:
-        """Exam деактивируется полностью; training только получает status=finished."""
-        self.status = SessionStatus.FINISHED
-        if self.is_exam:
+    # -- Transitions ---------------------------------------------------------
+
+    def start(self) -> None:
+        self._transition("start")
+
+    def pause(self) -> None:
+        self._transition("pause")
+
+    def resume(self) -> None:
+        self._transition("resume")
+
+    def finish(self) -> None:
+        self._transition("finish")
+
+    def expire(self) -> None:
+        self._transition("expire")
+
+    def extend(self, delta: timedelta) -> None:
+        """Add time to a not-yet-ended exam.
+
+        created        → duration grows (the clock hasn't started yet)
+        running/paused → deadline and duration grow; a paused session keeps
+                         its frozen remaining time + delta
+        finished       → rejected
+        expired        → rejected, including a running session whose deadline
+                         already passed (it is expired first) — time can't be
+                         added to a session students were already cut off from
+        """
+        if not isinstance(delta, timedelta) or not timedelta(0) < delta <= MAX_SESSION_EXTENSION:
+            raise SessionTransitionError("Продление должно быть больше 0 и не больше 12 часов.")
+        self._transition("extend", delta=delta)
+
+    def _transition(self, action: str, delta: timedelta | None = None) -> None:
+        now = timezone.now()
+        error = None
+        with transaction.atomic():
+            locked = TestSession.objects.select_for_update().get(pk=self.pk)
+            stored = locked.status
+            if locked.effective_status_at(now) == SessionStatus.EXPIRED and stored != SessionStatus.EXPIRED:
+                # Persist lazy expiry first; it must survive even if the
+                # requested action is then rejected.
+                locked._apply(SessionStatus.EXPIRED, now)
+                locked.save()
+                stored = locked.status
+            if action == "expire" and stored == SessionStatus.EXPIRED:
+                pass  # already expired (just now or earlier) — idempotent
+            elif action == "extend":
+                error = locked._apply_extend(delta, stored)
+                if error is None:
+                    locked.save()
+            else:
+                allowed_from, target = self.TRANSITIONS[action]
+                if stored not in allowed_from:
+                    error = self._rejection(action, stored)
+                else:
+                    locked._apply(target, now)
+                    locked.save()
+        self.refresh_from_db()
+        if error:
+            raise SessionTransitionError(error)
+
+    def _apply(self, target: str, now) -> None:
+        if target == SessionStatus.RUNNING and self.status == SessionStatus.CREATED:
+            self.started_at = now
+            if self.duration is not None:
+                self.expires_at = now + self.duration
+        elif target == SessionStatus.RUNNING and self.status == SessionStatus.PAUSED:
+            if self.expires_at is not None:
+                self.expires_at += now - self.paused_at
+            self.paused_at = None
+        elif target == SessionStatus.PAUSED:
+            self.paused_at = now
+        elif target in self.ENDED_STATUSES:
+            self.paused_at = None
+            self.ended_at = now
             self.is_active = False
-        self.save(update_fields=["status", "is_active"])
+        self.status = target
+
+    def _apply_extend(self, delta: timedelta, stored: str) -> str | None:
+        if stored in self.ENDED_STATUSES:
+            return "Нельзя продлить завершённую или истёкшую сессию."
+        if self.is_training:
+            return "У тренажёра нет ограничения по времени."
+        if stored == SessionStatus.CREATED and self.expires_at is None:
+            self.duration = (self.duration or timedelta(0)) + delta
+            return None
+        if self.expires_at is None:
+            return "У этой сессии нет ограничения по времени."
+        self.expires_at += delta
+        if self.duration is not None:
+            self.duration += delta
+        return None
+
+    @staticmethod
+    def _rejection(action: str, stored: str) -> str:
+        labels = dict(SessionStatus.choices)
+        return f"Действие «{action}» недоступно для сессии в статусе «{labels.get(stored, stored)}»."
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +710,15 @@ class StudentAttempt(models.Model):
     @property
     def is_finished(self) -> bool:
         return self.status == AttemptStatus.FINISHED
+
+    @property
+    def can_answer(self) -> bool:
+        """Answers are accepted only while the attempt is active and its session is running."""
+        return self.status == AttemptStatus.ACTIVE and self.session.accepts_answers
+
+    @property
+    def needs_review(self) -> bool:
+        return self.answers.filter(grading_status__in=REVIEW_GRADING_STATUSES).exists()
 
     @property
     def duration_seconds(self) -> float | None:
