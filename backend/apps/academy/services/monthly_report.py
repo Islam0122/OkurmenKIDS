@@ -19,6 +19,10 @@ from django.db.models import Avg, Count, Q
 
 from apps.users.models import Teacher
 
+from django.utils import timezone
+
+from apps.academy.services.kpi_engine import KPIEngine
+
 from ..models import Attendance, Group, Homework, HomeworkResult, Lesson
 
 _ATTENDED_STATUSES = (Attendance.Status.PRESENT, Attendance.Status.LATE)
@@ -136,30 +140,12 @@ def compute_monthly_stats(teacher: Teacher, year: int, month: int) -> dict:
             }
         )
 
-    lessons_rate = round(lessons_completed / lessons_total * 100, 1) if lessons_total else 0.0
-    # `None` — not a fabricated 0.0 — when nobody has a graded homework score
-    # yet this month (mirrors `average_score` itself, already nullable):
-    # a teacher with no reviewed homework has *no* progress figure to show,
-    # which is different from a real 0% progress. Excluded from kpi_components
-    # below rather than dragging kpi_total down for missing data (matches
-    # services.academy_monthly_report's own handling of this exact metric —
-    # both must agree, since academy_monthly_report reuses this function's
-    # `kpi.total` for each teacher's row).
-    #
-    # Derived from the raw `results_agg["avg_score"]` — never from the
-    # already-rounded `average_score` display value (regression: chaining
-    # two roundings can shift the result by a full point, e.g. a raw
-    # average of 8.26 scales to 82.6%, but rounding it to "8.3" first and
-    # *then* scaling gives round(8.3/10*100,1) = 83.0%). Round only once,
-    # at the very end, straight from the raw aggregate.
-    raw_avg_score = results_agg["avg_score"]
-    student_progress_rate = round(raw_avg_score / 10 * 100, 1) if raw_avg_score is not None else None
-
     has_data = lessons_total > 0 or groups_count > 0
-    kpi_components = [attendance_rate, homework_submission_rate, lessons_rate]
-    if student_progress_rate is not None:
-        kpi_components.append(student_progress_rate)
-    kpi_total = round(sum(kpi_components) / len(kpi_components), 1) if has_data else 0.0
+    # The KPI comes from the one engine every report uses (services.kpi_engine)
+    # — never a local formula — so this teacher's KPI equals the Reports and
+    # Analytics KPI for the same teacher and month.
+    engine = KPIEngine.calculate(start=start, end=end, teacher_id=teacher.id, today=timezone.localdate())
+    metrics = engine.metrics
 
     return {
         "period": {"year": year, "month": month, "start_date": start, "end_date": end},
@@ -184,11 +170,13 @@ def compute_monthly_stats(teacher: Teacher, year: int, month: int) -> dict:
         },
         "groups": groups,
         "weekly_dynamics": weekly_dynamics,
+        "metrics": metrics,
         "kpi": {
-            "attendance": attendance_rate,
-            "homework": homework_submission_rate,
-            "lessons": lessons_rate,
-            "student_progress": student_progress_rate,
-            "total": kpi_total,
+            "attendance": metrics["attendance"],
+            "homework": metrics["homework"],
+            "lessons": metrics["lesson_completion"],
+            "student_progress": metrics["progress"],
+            "total": engine.total,
+            "status": engine.status,
         },
     }

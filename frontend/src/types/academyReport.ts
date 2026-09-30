@@ -1,3 +1,4 @@
+import type { KPIMetrics, KPIStatus } from '@/types/kpi'
 import type { GroupStatus } from '@/types/academy'
 
 /** `apps.academy.serializers.AcademyMonthlyReportStatsSerializer` — computed
@@ -80,12 +81,16 @@ export interface AcademyReportWeekPoint {
   percent: number
 }
 
+/** Legacy field names; values come from the shared KPI engine
+ * (`services.kpi_engine`). `null` = no data for that component. */
 export interface AcademyReportKPI {
-  attendance: number
-  homework: number
-  lessons: number
+  attendance: number | null
+  homework: number | null
+  lessons: number | null
   student_progress: number | null
-  total: number
+  total: number | null
+  /** Backend-computed status — never derive it from `total` on the frontend. */
+  status: KPIStatus
 }
 
 export interface AcademyReportReasonBreakdownRow {
@@ -137,6 +142,7 @@ export interface AcademyReportStats {
   lessons: AcademyReportLessons
   homework: AcademyReportHomework
   weekly_dynamics: AcademyReportWeekPoint[]
+  metrics: KPIMetrics
   kpi: AcademyReportKPI
   movement: AcademyReportMovement
   attention: AcademyReportAttentionItem[]

@@ -10,6 +10,8 @@ register = template.Library()
 def ru_percent(value) -> str:
     """`94.4` -> `94,4%`, `100` -> `100%` — Russian decimal comma, since
     Django's own `floatformat` always uses a period."""
+    if value is None:
+        return "—"
     try:
         number = float(value)
     except (TypeError, ValueError):

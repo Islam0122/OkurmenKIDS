@@ -34,7 +34,8 @@ export function formatPercent(value: number): string {
  * throughout the Monthly Teacher Report (frontend, admin, and PDF all
  * format numbers this way) instead of a period, which reads as a typo in
  * Russian. */
-export function formatRuPercent(value: number): string {
+export function formatRuPercent(value: number | null): string {
+  if (value === null) return '—'
   const rounded = Math.round(value * 10) / 10
   const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace('.', ',')
   return `${text}%`

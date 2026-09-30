@@ -55,9 +55,9 @@ BAD_SOFT = colors.HexColor("#fbeae7")
 
 LEVEL_COLORS = {
     "good": (GOOD, GOOD_SOFT),
-    "warning": (WARN, WARN_SOFT),
-    "bad": (BAD, BAD_SOFT),
-    "none": (INK_MUTED, SURFACE_MUTED),
+    "attention": (WARN, WARN_SOFT),
+    "low": (BAD, BAD_SOFT),
+    "no_data": (INK_MUTED, SURFACE_MUTED),
 }
 
 
@@ -156,7 +156,7 @@ def _badge(c, x_center, y, value) -> None:
     readable without color; color only reinforces it."""
     level = _level(value)
     fg, bg = LEVEL_COLORS[level]
-    text = LEVEL_LABELS["none"] if level == "none" else f"{_pct(value)} · {LEVEL_LABELS[level]}"
+    text = LEVEL_LABELS["no_data"] if level == "no_data" else f"{_pct(value)} · {LEVEL_LABELS[level]}"
     width = pdfmetrics.stringWidth(text, _BOLD, 6.9) + 12
     _rounded_rect(c, x_center - width / 2, y - 4, width, 14, 7, fill=bg)
     c.setFont(_BOLD, 6.9)
@@ -214,6 +214,7 @@ def _stat_cards(doc: _Doc, cards: list[tuple[str, str, str | None]]) -> None:
 
 def _kpi_block(doc: _Doc, overview: dict) -> None:
     kpi = overview["kpi"]
+    metrics = overview["metrics"]
     weights = {w["key"]: w["weight"] for w in overview["kpi_weights"]}
     height = 150
     doc.ensure_space(height + 10)
@@ -222,21 +223,21 @@ def _kpi_block(doc: _Doc, overview: dict) -> None:
     _rounded_rect(c, MARGIN, top - height, CONTENT_W, height, 10, fill=WHITE, stroke=BORDER, line_width=0.8)
 
     # Overall KPI (left)
-    fg, bg = LEVEL_COLORS[kpi["level"]]
+    fg, bg = LEVEL_COLORS[kpi["status"]]
     box_w = 150
     _rounded_rect(c, MARGIN + 12, top - height + 12, box_w, height - 24, 8, fill=bg)
     doc.text(MARGIN + 12 + box_w / 2, top - 38, "ОБЩИЙ KPI", font=_BOLD, size=8, color=fg, align="center")
-    doc.text(MARGIN + 12 + box_w / 2, top - 82, _pct(kpi["overall"]), font=_BOLD, size=30, color=fg, align="center")
-    level_text = {"good": "Хороший (≥ 90%)", "warning": "Требует внимания (75–89%)", "bad": "Низкий (< 75%)",
-                  "none": "Нет данных"}[kpi["level"]]
+    doc.text(MARGIN + 12 + box_w / 2, top - 82, _pct(kpi["total"]), font=_BOLD, size=30, color=fg, align="center")
+    level_text = {"good": "Хороший (≥ 90%)", "attention": "Требует внимания (75–89%)", "low": "Низкий (< 75%)",
+                  "no_data": "Нет данных"}[kpi["status"]]
     doc.text(MARGIN + 12 + box_w / 2, top - 102, level_text, size=8, color=fg, align="center")
 
     # Components (right)
     x = MARGIN + box_w + 34
     bar_w = CONTENT_W - box_w - 34 - 70
     y = top - 30
-    for key in ("attendance", "homework", "activity", "progress"):
-        value = kpi[key]
+    for key in ("attendance", "homework", "lesson_completion", "progress"):
+        value = metrics[key]
         doc.text(x, y, f"{COMPONENT_LABELS[key]}  ·  вес {weights.get(key, 0):g}%", size=8.3, color=INK_SECONDARY)
         doc.text(PAGE_W - MARGIN - 14, y, _pct(value), font=_BOLD, size=10, color=INK, align="right")
         color, _soft = LEVEL_COLORS[_level(value)]
@@ -264,7 +265,7 @@ def _draw_summary_page(doc: _Doc, report: dict) -> None:
     _stat_cards(doc, [
         (_pct(ov["attendance"]["rate"]), "Посещаемость", f"{ov['attendance']['total']} отметок"),
         (_pct(ov["homework"]["completion_rate"]), "Домашние задания", f"сдано {ov['homework']['submitted']} из {ov['homework']['results']}"),
-        (_pct(ov["kpi"]["overall"]), "Общий KPI", LEVEL_LABELS[ov["kpi"]["level"]]),
+        (_pct(ov["kpi"]["total"]), "Общий KPI", LEVEL_LABELS[ov["kpi"]["status"]]),
     ])
     _section_label(doc, "Показатели эффективности")
     _kpi_block(doc, ov)
@@ -347,8 +348,8 @@ def _draw_groups(doc: _Doc, report: dict) -> None:
     levels = ov["levels"]["groups"]
     _page_title(
         doc, "РАЗДЕЛ 2", "ОТЧЁТ ПО ГРУППАМ",
-        f"Групп: {len(groups)} · хороший KPI: {levels['good']} · требует внимания: {levels['warning']} · "
-        f"низкий: {levels['bad']} · нет данных: {levels['none']}",
+        f"Групп: {len(groups)} · хороший KPI: {levels['good']} · требует внимания: {levels['attention']} · "
+        f"низкий: {levels['low']} · нет данных: {levels['no_data']}",
     )
     columns = [
         {"title": "Группа", "width": 0.215},
@@ -415,7 +416,7 @@ def _draw_key_statistics(doc: _Doc, report: dict) -> None:
     ov = report["overview"]
     _page_title(doc, "РАЗДЕЛ 4", "КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ")
     att, hw, lessons, st = ov["attendance"], ov["homework"], ov["lessons"], ov["students"]
-    kpi = ov["kpi"]
+    metrics = ov["metrics"]
     g_levels, t_levels = ov["levels"]["groups"], ov["levels"]["teachers"]
     teachers = report["teachers"]
     rated_teachers = [t["kpi"] for t in teachers if t["kpi"] is not None]
@@ -431,27 +432,27 @@ def _draw_key_statistics(doc: _Doc, report: dict) -> None:
             ("Сдано", hw["submitted"]), ("Не сдано", hw["not_submitted"]), ("Проверено", hw["checked"]),
         ]),
         ("Активность студентов", WARN, [
-            ("Активность (проведённые занятия)", _pct(kpi["activity"])),
+            ("Активность (проведённые занятия)", _pct(metrics["lesson_completion"])),
             ("Проведено / наступивших занятий", f"{lessons['held']} / {lessons['due']}"),
             ("Отменено занятий", lessons["cancelled"]),
             ("Средний балл ДЗ", "—" if hw["average_score"] is None else f"{hw['average_score']:g}".replace(".", ",")),
-            ("Прогресс", _pct(kpi["progress"])),
+            ("Прогресс", _pct(metrics["progress"])),
         ]),
         ("Удержание", BAD, [
-            ("Удержание", _pct(st["retention_rate"])), ("Активные студенты", st["active"]),
+            ("Удержание", _pct(metrics["retention"])), ("Активные студенты", st["active"]),
             ("Ушли за период", st["left"]), ("Новые за период", st["new"]), ("Вернулись", st["returned"]),
         ]),
         ("Эффективность тренеров", BRAND, [
             ("Тренеров в отчёте", len(teachers)),
             ("Средний KPI тренеров", _pct(round(sum(rated_teachers) / len(rated_teachers), 1)) if rated_teachers else "—"),
-            ("Хороший KPI (≥ 90%)", t_levels["good"]), ("Требует внимания (75–89%)", t_levels["warning"]),
-            ("Низкий KPI (< 75%)", t_levels["bad"]),
+            ("Хороший KPI (≥ 90%)", t_levels["good"]), ("Требует внимания (75–89%)", t_levels["attention"]),
+            ("Низкий KPI (< 75%)", t_levels["low"]),
         ]),
         ("Эффективность групп", BRAND_DARK, [
             ("Групп в отчёте", len(report["groups"])),
             ("Средний KPI групп", _pct(round(sum(rated_groups) / len(rated_groups), 1)) if rated_groups else "—"),
-            ("Хороший KPI (≥ 90%)", g_levels["good"]), ("Требует внимания (75–89%)", g_levels["warning"]),
-            ("Низкий KPI (< 75%)", g_levels["bad"]),
+            ("Хороший KPI (≥ 90%)", g_levels["good"]), ("Требует внимания (75–89%)", g_levels["attention"]),
+            ("Низкий KPI (< 75%)", g_levels["low"]),
         ]),
     ]
     gap = 12

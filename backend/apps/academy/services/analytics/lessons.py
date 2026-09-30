@@ -12,6 +12,7 @@ import datetime as dt
 from django.db.models import Count
 from django.db.models.functions import Coalesce
 
+from apps.academy.services.kpi_engine import ratio, round1
 from apps.academy.services.lesson_status import lesson_status_counts
 from .metrics import build_metric
 from .period import DateRange
@@ -48,13 +49,17 @@ def _by_subject(scope: AnalyticsScope, date_range: DateRange) -> list[dict]:
     ]
 
 
-def _snapshot(scope: AnalyticsScope, date_range: DateRange) -> dict:
+def _snapshot(scope: AnalyticsScope, date_range: DateRange, today: dt.date) -> dict:
     # Same shared per-status counting the Admin dashboard uses (see
     # services.lesson_status) — never a second, independent implementation
     # of "how many lessons are scheduled/completed/cancelled".
-    counts = lesson_status_counts(scope.lessons_qs(date_range=date_range))
+    lessons = scope.lessons_qs(date_range=date_range)
+    counts = lesson_status_counts(lessons)
     total = counts["total"]
     completed = counts["completed"]
+    # Completion = held / already-due lessons — the kpi_engine definition,
+    # so this section always shows the same figure as the KPI block.
+    completion = ratio(completed, lessons.filter(date__lte=today).count())
     return {
         "total": total,
         "completed": completed,
@@ -62,7 +67,7 @@ def _snapshot(scope: AnalyticsScope, date_range: DateRange) -> dict:
         "scheduled": counts["scheduled"],
         "in_progress": counts["in_progress"],
         "attention": counts["attention"],
-        "completion_rate": round(completed / total * 100, 1) if total else 0.0,
+        "completion_rate": round1(completion) if completion is not None else 0.0,
         "by_teacher": _by_teacher(scope, date_range),
         "by_subject": _by_subject(scope, date_range),
     }
@@ -70,8 +75,8 @@ def _snapshot(scope: AnalyticsScope, date_range: DateRange) -> dict:
 
 def build(scope: AnalyticsScope, compare_range: DateRange | None, *, today: dt.date | None = None) -> dict:
     today = today or dt.date.today()
-    current = _snapshot(scope, scope.date_range)
-    previous = _snapshot(scope, compare_range) if compare_range else None
+    current = _snapshot(scope, scope.date_range, today)
+    previous = _snapshot(scope, compare_range, today) if compare_range else None
 
     def metric(key: str):
         return build_metric(current[key], previous[key] if previous else None)

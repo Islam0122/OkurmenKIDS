@@ -11,7 +11,7 @@ from .lucide_icons import ICONS
 
 register = template.Library()
 
-_LEVEL_CLASSES = {"good": "good", "warning": "warn", "bad": "bad", "none": "none"}
+_LEVEL_CLASSES = {"good": "good", "attention": "warn", "low": "bad", "no_data": "none"}
 
 
 def _fmt(value) -> str:
@@ -43,9 +43,9 @@ def kpi_badge(value):
     """`94,4%` plus a text level ("Хороший" / "Требует внимания" / "Низкий")
     — color is only a secondary cue."""
     level = kpi_level(value)
-    if level == "none":
+    if level == "no_data":
         return format_html('<span class="okr-kpi"><span class="okr-status-badge is-none">{}</span></span>',
-                           LEVEL_LABELS["none"])
+                           LEVEL_LABELS["no_data"])
     return format_html(
         '<span class="okr-kpi"><span class="okr-kpi-value">{}</span>'
         '<span class="okr-status-badge is-{}"><span class="okr-dot" aria-hidden="true"></span>{}</span></span>',

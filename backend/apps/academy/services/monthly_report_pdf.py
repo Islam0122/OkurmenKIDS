@@ -59,9 +59,11 @@ MARGIN = 42
 CONTENT_W = PAGE_W - 2 * MARGIN
 
 
-def _fmt_percent(value: float) -> str:
+def _fmt_percent(value: float | None) -> str:
     """`94.4` -> `"94,4%"`, `100` -> `"100%"` — Russian decimal comma,
     matching the frontend (see utils/format.ts's formatRuPercent)."""
+    if value is None:
+        return "Нет данных"
     return f"{value:g}".replace(".", ",") + "%"
 
 

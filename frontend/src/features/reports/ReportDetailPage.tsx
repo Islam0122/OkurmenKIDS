@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { KPI_STATUS_CARD_TONE } from '@/features/kpi/kpiStatus'
 import type { ComponentType } from 'react'
 import {
   Award,
@@ -104,7 +105,7 @@ export function ReportDetailPage() {
                   icon={Award}
                   label="Итоговый KPI"
                   value={formatRuPercent(stats.kpi.total)}
-                  tone={stats.kpi.total >= 85 ? 'default' : stats.kpi.total >= 60 ? 'warning' : 'danger'}
+                  tone={KPI_STATUS_CARD_TONE[stats.kpi.status]}
                 />
               </div>
             </section>

@@ -48,6 +48,7 @@ from .analytics.period import DateRange
 from .analytics.scope import AnalyticsScope
 from .analytics.students import build as build_students_section
 from .analytics.teachers import build as build_teachers_section
+from .kpi_engine import KPIEngine
 from .monthly_report import _week_buckets, compute_monthly_stats, month_bounds
 
 _ATTENDED_STATUSES = (Attendance.Status.PRESENT, Attendance.Status.LATE)
@@ -386,18 +387,15 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
     lessons_completed = lessons_section["lessons_completed"]["value"]
     lessons_total = scope.lessons_qs(date_range=date_range).count()
 
-    pending_review, checked_rate, student_progress_rate = _homework_checked_rate(scope, date_range)
+    pending_review, checked_rate, _progress = _homework_checked_rate(scope, date_range)
 
     has_data = lessons_total > 0 or active_groups_count > 0
 
     attendance_rate = attendance_section["attendance_rate"]["value"]
-    homework_submission_rate = homework_section["submission_rate"]["value"]
-    lessons_rate = round(lessons_completed / lessons_total * 100, 1) if lessons_total else 0.0
-
-    kpi_components = [attendance_rate, homework_submission_rate, lessons_rate]
-    if student_progress_rate is not None:
-        kpi_components.append(student_progress_rate)
-    kpi_total = round(sum(kpi_components) / len(kpi_components), 1) if has_data else 0.0
+    # The KPI comes from the one engine every report uses (services.kpi_engine),
+    # for exactly this month and scope — never a local formula.
+    engine = KPIEngine.calculate(scope=scope, today=today)
+    metrics = engine.metrics
 
     attention = _attention_items(scope, date_range, lessons_section, pending_review)
     left_count, reason_breakdown = _departures(date_range)
@@ -454,12 +452,14 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
             "checked_rate": checked_rate,
         },
         "weekly_dynamics": _weekly_dynamics(start, end),
+        "metrics": metrics,
         "kpi": {
-            "attendance": attendance_rate,
-            "homework": homework_submission_rate,
-            "lessons": lessons_rate,
-            "student_progress": student_progress_rate,
-            "total": kpi_total,
+            "attendance": metrics["attendance"],
+            "homework": metrics["homework"],
+            "lessons": metrics["lesson_completion"],
+            "student_progress": metrics["progress"],
+            "total": engine.total,
+            "status": engine.status,
         },
         "movement": {
             "left": left_count,

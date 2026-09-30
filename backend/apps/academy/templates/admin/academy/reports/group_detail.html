@@ -28,13 +28,13 @@
   </div>
 
   <div class="okr-panel">
-    <div class="okr-panel-head"><span class="okr-panel-title">{% icon "trending-up" %}KPI за период</span>{{ d.kpi.overall|kpi_badge }}</div>
+    <div class="okr-panel-head"><span class="okr-panel-title">{% icon "trending-up" %}KPI за период</span>{{ d.kpi.total|kpi_badge }}</div>
     <div class="okr-panel-body">
       {% if not d.has_data %}
         <div class="okr-empty is-compact"><span class="okr-empty-icon">{% icon "calendar" 20 %}</span><p>Нет данных за период: в группе не было занятий и отметок — KPI не рассчитывается.</p></div>
       {% else %}
         {% include "admin/academy/reports/_kpi_bars.html" with components=kpi_components %}
-        <div class="okr-row okr-row-total"><span>Общий KPI</span><span>{{ d.kpi.overall|kpi_badge }}</span></div>
+        <div class="okr-row okr-row-total"><span>Общий KPI</span><span>{{ d.kpi.total|kpi_badge }}</span></div>
       {% endif %}
     </div>
   </div>

@@ -1163,15 +1163,26 @@ class AnalyticsDashboardTests(AcademyTestBase):
         dashboard = self._dashboard()
         self.assertEqual(dashboard["groups"]["total_groups"]["value"], 2)
 
-    def test_academy_health_formula(self):
-        health = self._dashboard(group_id=self.group1.id)["health"]
-        self.assertEqual(health["components"]["attendance"], 75.0)
-        self.assertEqual(health["components"]["homework"], 100.0)
-        self.assertEqual(health["components"]["lesson_completion"], 0.0)
-        self.assertEqual(health["components"]["retention"], 100.0)
-        self.assertEqual(health["components"]["teacher_workload"], 100.0)
-        self.assertEqual(health["score"], 75)
-        self.assertEqual(health["level"], "good")
+    def test_dashboard_kpi_comes_from_kpi_engine(self):
+        """The dashboard's KPI is exactly the shared engine's result for the
+        same scope; retention and teacher workload are shown but are not
+        part of the total."""
+        from apps.academy.services.analytics.period import DateRange
+        from apps.academy.services.analytics.scope import AnalyticsScope
+        from apps.academy.services.kpi_engine import KPIEngine, total_kpi
+
+        dashboard = self._dashboard(group_id=self.group1.id)
+        scope = AnalyticsScope(
+            date_range=DateRange(dashboard["period"]["start_date"], dashboard["period"]["end_date"]),
+            group_id=self.group1.id,
+        )
+        engine = KPIEngine.calculate(scope=scope, today=self.today)
+        self.assertEqual(dashboard["metrics"], engine.metrics)
+        self.assertEqual(dashboard["kpi"]["total"], engine.total)
+        self.assertEqual(dashboard["metrics"]["attendance"], 75.0)
+        self.assertEqual(dashboard["metrics"]["homework"], 100.0)
+        without_extras = {k: v for k, v in engine.metrics_exact.items() if k not in ("retention", "teacher_workload")}
+        self.assertEqual(round(total_kpi(without_extras), 1), dashboard["kpi"]["total"])
 
     def test_empty_period_returns_zeros_not_errors(self):
         empty_dashboard = get_dashboard(
@@ -1182,13 +1193,9 @@ class AnalyticsDashboardTests(AcademyTestBase):
         self.assertEqual(empty_dashboard["attendance"]["attendance_rate"]["value"], 0.0)
         self.assertEqual(empty_dashboard["homework"]["submission_rate"]["value"], 0.0)
         self.assertEqual(empty_dashboard["attendance"]["attendance_trend"], [])
-        # attendance/homework/lesson_completion all default to 0.0 with no
-        # data at all (same "0 denominator -> 0.0" convention used
-        # everywhere else in this package); only retention defaults to 100
-        # (0 students -> nothing to retain). Global teacher_workload is 0.0
-        # here since the fixture's teachers exist but taught nothing in
-        # this empty 2020 period — see health.py's docstring for the formula.
-        self.assertEqual(empty_dashboard["health"]["score"], 20)
+        # No data in the period -> no KPI at all, never a fabricated score.
+        self.assertIsNone(empty_dashboard["kpi"]["total"])
+        self.assertEqual(empty_dashboard["kpi"]["status"], "no_data")
 
     def test_repeated_calls_reflect_new_data_immediately(self):
         """The whole point of dropping stored KPI rows: no recalculation step."""
@@ -5636,7 +5643,8 @@ class MonthlyReportServiceTests(AcademyTestBase):
         self.assertEqual(stats["groups"], [])
         self.assertEqual(stats["lessons_completed"], 0)
         self.assertEqual(stats["students_count"], 0)
-        self.assertEqual(stats["kpi"]["total"], 0.0)
+        self.assertIsNone(stats["kpi"]["total"])
+        self.assertEqual(stats["kpi"]["status"], "no_data")
 
     # -- student_progress_rate must never be double-rounded ----------------
 
@@ -5759,7 +5767,9 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         self.assertEqual(stats["groups"], [])
         self.assertEqual(stats["teachers"], [])
         self.assertEqual(stats["weekly_dynamics"], [])
-        self.assertEqual(stats["kpi"]["total"], 0.0)
+        # No data -> no KPI (None, "no_data"), never a fabricated 0%.
+        self.assertIsNone(stats["kpi"]["total"])
+        self.assertEqual(stats["kpi"]["status"], "no_data")
 
     def test_checked_rate_excludes_never_submitted_from_denominator(self):
         """Regression test: a student who never submitted anything must not
@@ -5811,9 +5821,15 @@ class AcademyMonthlyReportTests(AcademyTestBase):
         self.assertIsNone(stats["homework"]["average_score"])
         self.assertIsNone(stats["kpi"]["student_progress"])
 
-        real_components = [stats["kpi"]["attendance"], stats["kpi"]["homework"], stats["kpi"]["lessons"]]
-        expected_total = round(sum(real_components) / len(real_components), 1)
-        self.assertEqual(stats["kpi"]["total"], expected_total)
+        # Components without data (None) are excluded, never counted as 0%.
+        # The engine combines exact values and rounds once, so compare with
+        # the average of the displayed (rounded) components to within 0.1.
+        real_components = [
+            value for value in (stats["kpi"]["attendance"], stats["kpi"]["homework"], stats["kpi"]["lessons"])
+            if value is not None
+        ]
+        expected_total = sum(real_components) / len(real_components)
+        self.assertAlmostEqual(stats["kpi"]["total"], expected_total, delta=0.1)
 
     def test_academy_report_teacher_kpi_not_deflated_by_missing_student_progress(self):
         """The Academy Report's per-teacher `kpi_total` (spec §6/§10: one

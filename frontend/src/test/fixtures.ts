@@ -242,10 +242,24 @@ export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> =
     period: { key: 'this_month', start_date: '2026-09-01', end_date: '2026-09-10' },
     comparison: null,
     filters: { teacher_id: null, group_id: null, course_id: null, subject_id: null },
-    health: {
-      score: 87,
-      level: 'good',
-      components: { attendance: 91, homework: 87, lesson_completion: 94, retention: 92, teacher_workload: 81 },
+    metrics: {
+      attendance: 91,
+      homework: 87,
+      lesson_completion: 94,
+      progress: 85,
+      retention: 92,
+      teacher_workload: 81,
+    },
+    kpi: {
+      total: 89.3,
+      status: 'attention',
+      status_label: 'Требует внимания',
+      weights: [
+        { key: 'attendance', label: 'Посещаемость', weight: 25 },
+        { key: 'homework', label: 'Домашние задания', weight: 25 },
+        { key: 'lesson_completion', label: 'Проведённые занятия', weight: 25 },
+        { key: 'progress', label: 'Прогресс (средний балл ДЗ)', weight: 25 },
+      ],
     },
     students: {
       total_students: buildMetric(20),

@@ -79,9 +79,9 @@ def _context(request, filters: ReportFilters, *, tab: str, title: str, error: st
     }
 
 
-def _kpi_components(kpi: dict) -> list[dict]:
+def _kpi_components(metrics: dict) -> list[dict]:
     """KPI components in display order with their configured weight."""
-    return [{**w, "value": kpi[w["key"]]} for w in weights_description()]
+    return [{**w, "value": metrics[w["key"]]} for w in weights_description()]
 
 
 def reports_overview_view(request):
@@ -112,7 +112,7 @@ def reports_group_detail_view(request, group_id: int):
     context["group_obj"] = group
     if not error:
         context["detail"] = build_group_detail(group, filters)
-        context["kpi_components"] = _kpi_components(context["detail"]["kpi"])
+        context["kpi_components"] = _kpi_components(context["detail"]["metrics"])
         context["page"] = paginate_students(group_student_rows(group, filters), request.GET)
     return render(request, "admin/academy/reports/group_detail.html", context)
 
@@ -134,5 +134,5 @@ def reports_teacher_detail_view(request, teacher_id: int):
     context["teacher_obj"] = teacher
     if not error:
         context["detail"] = build_teacher_detail(teacher, filters)
-        context["kpi_components"] = _kpi_components(context["detail"]["kpi"])
+        context["kpi_components"] = _kpi_components(context["detail"]["metrics"])
     return render(request, "admin/academy/reports/teacher_detail.html", context)

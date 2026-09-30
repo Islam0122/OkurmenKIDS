@@ -1,3 +1,4 @@
+import type { KPIMetrics, KPIStatus } from '@/types/kpi'
 import type { Teacher } from '@/types/academy'
 
 /** `apps.academy.serializers.MonthlyReportStatsSerializer` — computed fresh
@@ -38,14 +39,16 @@ export interface MonthlyReportWeekPoint {
   percent: number
 }
 
+/** Legacy field names; values come from the shared KPI engine
+ * (`services.kpi_engine`). `null` = no data for that component. */
 export interface MonthlyReportKPI {
-  attendance: number
-  homework: number
-  lessons: number
-  /** `null` when no homework has been graded yet this month — never a
-   * fabricated 0% (mirrors `homework.average_score`, already nullable). */
+  attendance: number | null
+  homework: number | null
+  lessons: number | null
   student_progress: number | null
-  total: number
+  total: number | null
+  /** Backend-computed status — never derive it from `total` on the frontend. */
+  status: KPIStatus
 }
 
 export interface MonthlyReportStats {
@@ -61,6 +64,7 @@ export interface MonthlyReportStats {
   homework: MonthlyReportHomework
   groups: MonthlyReportGroupRow[]
   weekly_dynamics: MonthlyReportWeekPoint[]
+  metrics: KPIMetrics
   kpi: MonthlyReportKPI
 }
 

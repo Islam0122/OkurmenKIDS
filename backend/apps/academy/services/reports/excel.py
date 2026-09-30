@@ -22,8 +22,8 @@ BRAND = "2F8F5B"
 BRAND_DARK = "1F5F3C"
 LEVEL_FILLS = {
     "good": PatternFill("solid", fgColor="E7F3EC"),
-    "warning": PatternFill("solid", fgColor="FBF1DF"),
-    "bad": PatternFill("solid", fgColor="FBEAE7"),
+    "attention": PatternFill("solid", fgColor="FBF1DF"),
+    "low": PatternFill("solid", fgColor="FBEAE7"),
 }
 
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -94,7 +94,7 @@ def _overview_sheet(wb, report: dict, filter_labels: str) -> None:
         ["Новые за период", st["new"], None],
         ["Вернулись за период", st["returned"], None],
         ["На паузе", st["paused"], None],
-        ["Удержание", _pct(st["retention_rate"]), PCT],
+        ["Удержание (не входит в KPI)", _pct(ov["metrics"]["retention"]), PCT],
         ["Тренеры", ov["teachers"]["total"], None],
         ["Группы", ov["groups"]["total"], None],
         ["Групп без тренера", ov["groups"]["without_teacher"], None],
@@ -102,11 +102,12 @@ def _overview_sheet(wb, report: dict, filter_labels: str) -> None:
         ["Проведено занятий", ov["lessons"]["held"], None],
         ["Посещаемость", _pct(ov["attendance"]["rate"]), PCT],
         ["Выполнение ДЗ", _pct(ov["homework"]["completion_rate"]), PCT],
-        ["KPI: посещаемость", _pct(ov["kpi"]["attendance"]), PCT],
-        ["KPI: домашние задания", _pct(ov["kpi"]["homework"]), PCT],
-        ["KPI: активность", _pct(ov["kpi"]["activity"]), PCT],
-        ["KPI: прогресс", _pct(ov["kpi"]["progress"]), PCT],
-        ["Общий KPI", _pct(ov["kpi"]["overall"]), PCT],
+        ["KPI: посещаемость", _pct(ov["metrics"]["attendance"]), PCT],
+        ["KPI: домашние задания", _pct(ov["metrics"]["homework"]), PCT],
+        ["KPI: проведённые занятия", _pct(ov["metrics"]["lesson_completion"]), PCT],
+        ["KPI: прогресс", _pct(ov["metrics"]["progress"]), PCT],
+        ["Нагрузка тренеров (не входит в KPI)", _pct(ov["metrics"]["teacher_workload"]), PCT],
+        ["Общий KPI", _pct(ov["kpi"]["total"]), PCT],
     ]
     headers = [("Показатель", 34, None), ("Значение", 16, None)]
     _write_table(ws, 6, headers, [r[:2] for r in rows])
@@ -232,13 +233,13 @@ def _kpi_sheet(wb, report: dict) -> None:
     ws["A4"].font = Font(italic=True, color="68736C")
     next_row = _write_table(
         ws, 6, [("Компонент", 36, None), ("Вес", 10, "0.0%"), ("KPI академии", 14, PCT)],
-        [[w["label"], w["weight"] / 100, _pct(ov["kpi"][w["key"]])] for w in ov["kpi_weights"]]
-        + [["Общий KPI", 1, _pct(ov["kpi"]["overall"])]],
+        [[w["label"], w["weight"] / 100, _pct(ov["metrics"][w["key"]])] for w in ov["kpi_weights"]]
+        + [["Общий KPI", 1, _pct(ov["kpi"]["total"])]],
     )
     ws.auto_filter.ref = None
     headers = [
         ("Группа / тренер", 36, None), ("Тип", 10, None), (COMPONENT_LABELS["attendance"], 14, PCT),
-        (COMPONENT_LABELS["homework"], 14, PCT), (COMPONENT_LABELS["activity"], 16, PCT),
+        (COMPONENT_LABELS["homework"], 14, PCT), (COMPONENT_LABELS["lesson_completion"], 16, PCT),
         (COMPONENT_LABELS["progress"], 16, PCT), ("Общий KPI", 12, PCT), ("Уровень KPI", 18, None),
     ]
     rows, levels = [], []

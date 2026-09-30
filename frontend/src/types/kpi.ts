@@ -137,21 +137,33 @@ export interface AnalyticsHomeworkSection {
   homework_completion_trend: AnalyticsTrendPoint[]
 }
 
-export interface AnalyticsHealthComponents {
-  attendance: number
-  homework: number
-  lesson_completion: number
-  retention: number
-  teacher_workload: number
+/** Unified KPI contract — `apps.academy.services.kpi_engine`, the single
+ * source of truth for every KPI in the LMS. `null` means "no data". The
+ * frontend only displays these values; it never combines or re-rounds them. */
+export interface KPIMetrics {
+  attendance: number | null
+  homework: number | null
+  lesson_completion: number | null
+  progress: number | null
+  /** Shown alongside; not part of the total KPI. */
+  retention: number | null
+  /** Shown alongside; not part of the total KPI. */
+  teacher_workload: number | null
 }
 
-export type AnalyticsHealthLevel = 'excellent' | 'good' | 'fair' | 'poor'
+export type KPIStatus = 'good' | 'attention' | 'low' | 'no_data'
 
-/** Computed fresh on every call — never persisted (see services.analytics.health). */
-export interface AnalyticsHealth {
-  score: number
-  level: AnalyticsHealthLevel
-  components: AnalyticsHealthComponents
+export interface KPIWeight {
+  key: keyof KPIMetrics
+  label: string
+  weight: number
+}
+
+export interface KPISummary {
+  total: number | null
+  status: KPIStatus
+  status_label: string
+  weights: KPIWeight[]
 }
 
 export type InsightType = 'warning' | 'critical' | 'info'
@@ -170,7 +182,8 @@ export interface AnalyticsDashboard {
   period: AnalyticsPeriod
   comparison: AnalyticsComparison | null
   filters: AnalyticsFilters
-  health: AnalyticsHealth
+  metrics: KPIMetrics
+  kpi: KPISummary
   students: AnalyticsStudentsSection
   teachers: AnalyticsTeachersSection
   groups: AnalyticsGroupsSection
