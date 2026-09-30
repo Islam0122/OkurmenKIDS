@@ -1,4 +1,4 @@
-"""📊 Reports — Overview / Groups / Teachers, plus PDF and Excel exports.
+"""Reports — Overview / Groups / Teachers, plus PDF and Excel exports.
 
 See `service.py` for how every figure is computed, `kpi.py` for the KPI
 formula and its configurable weights, `filters.py` for the period/filter

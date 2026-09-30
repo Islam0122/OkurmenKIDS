@@ -22,7 +22,7 @@ router.register("academy-reports", views.AcademyMonthlyReportViewSet, basename="
 urlpatterns = [
     path("analytics/dashboard/", views.AnalyticsDashboardView.as_view(), name="analytics-dashboard"),
     path("availability/", views.TeacherAvailabilityView.as_view(), name="teacher-availability"),
-    # 📊 Reports (admin-only) — see report_views.
+    # Reports (admin-only) — see report_views.
     path("reports/overview/", report_views.ReportsOverviewView.as_view(), name="reports-overview"),
     path("reports/filters/", report_views.ReportsFilterOptionsView.as_view(), name="reports-filters"),
     path("reports/groups/", report_views.ReportsGroupsView.as_view(), name="reports-groups"),

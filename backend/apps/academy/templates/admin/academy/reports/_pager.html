@@ -3,11 +3,11 @@
 <div class="okr-pager">
   <span>{{ page.start_index }}–{{ page.end_index }} из {{ page.total }}</span>
   {% if page.pages > 1 %}
-  <span class="okr-pager-links">
-    {% if page.has_previous %}<a class="okr-btn" href="{% query_with page=page.page|add:'-1' %}" data-okr-loading>← Назад</a>{% endif %}
-    <span class="okr-btn" style="pointer-events:none;">{{ page.page }} / {{ page.pages }}</span>
-    {% if page.has_next %}<a class="okr-btn" href="{% query_with page=page.page|add:'1' %}" data-okr-loading>Вперёд →</a>{% endif %}
-  </span>
+  <nav class="okr-pager-links" aria-label="Страницы">
+    {% if page.has_previous %}<a class="okr-btn okr-btn-icon" href="{% query_with page=page.page|add:'-1' %}" data-okr-loading title="Предыдущая страница" aria-label="Предыдущая страница">{% icon "chevron-left" 16 %}</a>{% endif %}
+    <span class="okr-small">Страница {{ page.page }} из {{ page.pages }}</span>
+    {% if page.has_next %}<a class="okr-btn okr-btn-icon" href="{% query_with page=page.page|add:'1' %}" data-okr-loading title="Следующая страница" aria-label="Следующая страница">{% icon "chevron-right" 16 %}</a>{% endif %}
+  </nav>
   {% endif %}
 </div>
 {% endif %}

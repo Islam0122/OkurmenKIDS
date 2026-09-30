@@ -1,4 +1,4 @@
-"""📊 ОТЧЁТЫ — the Admin Panel's Reports section: Overview, Groups, Teachers
+"""Reports — the Admin Panel's Reports section: Overview, Groups, Teachers
 and their detail pages.
 
 Thin views: every number comes from services.reports (the same functions
@@ -33,10 +33,11 @@ from .services.reports import (
 from .services.reports.kpi import weights_description
 from .services.reports.table import paginate_groups, paginate_students, paginate_teachers
 
+# (key, label, Lucide icon, url name)
 TABS = [
-    ("overview", "📈 Overview", "admin:academy_reports_overview"),
-    ("groups", "👥 Groups", "admin:academy_reports_groups"),
-    ("teachers", "👨‍🏫 Teachers", "admin:academy_reports_teachers"),
+    ("overview", "Overview", "chart-column", "admin:academy_reports_overview"),
+    ("groups", "Groups", "layers", "admin:academy_reports_groups"),
+    ("teachers", "Teachers", "graduation-cap", "admin:academy_reports_teachers"),
 ]
 
 
@@ -60,11 +61,14 @@ def _context(request, filters: ReportFilters, *, tab: str, title: str, error: st
         "title": title,
         "tab": tab,
         "tabs": [
-            {"key": key, "label": label, "url": f"{reverse(name)}?{qs}", "active": key == tab}
-            for key, label, name in TABS
+            {"key": key, "label": label, "icon": icon, "url": f"{reverse(name)}?{qs}", "active": key == tab}
+            for key, label, icon, name in TABS
         ],
         "filters": filters,
         "filter_query": qs,
+        "active_filters": sum(
+            1 for value in (filters.course_id, filters.group_id, filters.teacher_id, filters.subject_id) if value
+        ),
         "selected": {key: str(value) for key, value in query.items()},
         "period_choices": PERIOD_CHOICES,
         "options": filter_options(),

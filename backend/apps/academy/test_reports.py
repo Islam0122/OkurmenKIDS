@@ -1,4 +1,4 @@
-"""Tests for 📊 Reports (services.reports, /api/v1/reports/, admin pages).
+"""Tests for Reports (services.reports, /api/v1/reports/, admin pages).
 
 Absolute imports only — see the note at the top of apps/academy/tests.py.
 """

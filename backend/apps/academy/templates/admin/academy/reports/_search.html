@@ -1,7 +1,6 @@
 {% load report_tags %}
-<form method="get" class="okr-toolbar">
+<form method="get" class="okr-search" role="search">
   {% for key, value in request.GET.items %}{% if key != "q" and key != "page" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
-  <input type="search" name="q" class="okr-search" value="{{ page.query }}" placeholder="{{ placeholder }}" aria-label="Поиск">
-  <button type="submit" class="okr-btn"><i class="bi bi-search"></i> Найти</button>
-  {% if page.query %}<a class="okr-btn" href="{% query_with q=None page=None %}">Очистить</a>{% endif %}
+  <span class="okr-search-field">{% icon "search" 15 %}<input type="search" name="q" value="{{ page.query }}" placeholder="{{ placeholder }}" aria-label="{{ placeholder }}"></span>
+  {% if page.query %}<a class="okr-btn okr-btn-icon" href="{% query_with q=None page=None %}" title="Очистить поиск" aria-label="Очистить поиск">{% icon "x" 15 %}</a>{% endif %}
 </form>

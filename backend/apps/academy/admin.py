@@ -1625,7 +1625,7 @@ def _get_urls_with_schedule():
             admin.site.admin_view(academy_report_detail_view),
             name="academy_report_detail",
         ),
-        # 📊 ОТЧЁТЫ — see report_admin_views.
+        # ОТЧЁТЫ — see report_admin_views.
         path("academy/reports-center/", admin.site.admin_view(reports_overview_view), name="academy_reports_overview"),
         path("academy/reports-center/groups/", admin.site.admin_view(reports_groups_view), name="academy_reports_groups"),
         path(

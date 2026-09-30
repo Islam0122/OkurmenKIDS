@@ -1,4 +1,4 @@
-"""📄 Academy Performance Report — the Reports section as a print-ready A4 PDF.
+"""Academy Performance Report — the Reports section as a print-ready A4 PDF.
 
 Drawn directly with reportlab's canvas, in the same visual family as the
 existing monthly reports (fonts, palette, rounded-rect/progress-bar
@@ -17,6 +17,7 @@ import io
 from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 from apps.academy.services.monthly_report_pdf import (
@@ -37,7 +38,7 @@ from apps.academy.services.monthly_report_pdf import (
     _truncate_text,
     _wrap_text,
 )
-from .kpi import COMPONENT_LABELS, kpi_level
+from .kpi import COMPONENT_LABELS, LEVEL_LABELS, kpi_level
 from .service import describe_filters
 
 PAGE_W, PAGE_H = A4
@@ -151,11 +152,14 @@ def _section_label(doc: _Doc, label: str) -> None:
 
 
 def _badge(c, x_center, y, value) -> None:
-    fg, bg = LEVEL_COLORS[_level(value)]
-    text = _pct(value)
-    width = max(38, len(text) * 5.2 + 12)
+    """KPI value plus its text status ("92,4% · Excellent") — the status is
+    readable without color; color only reinforces it."""
+    level = _level(value)
+    fg, bg = LEVEL_COLORS[level]
+    text = LEVEL_LABELS["none"] if level == "none" else f"{_pct(value)} · {LEVEL_LABELS[level]}"
+    width = pdfmetrics.stringWidth(text, _BOLD, 7.2) + 14
     _rounded_rect(c, x_center - width / 2, y - 4, width, 14, 7, fill=bg)
-    c.setFont(_BOLD, 7.8)
+    c.setFont(_BOLD, 7.2)
     c.setFillColor(fg)
     c.drawCentredString(x_center, y, text)
 
@@ -223,8 +227,8 @@ def _kpi_block(doc: _Doc, overview: dict) -> None:
     _rounded_rect(c, MARGIN + 12, top - height + 12, box_w, height - 24, 8, fill=bg)
     doc.text(MARGIN + 12 + box_w / 2, top - 38, "OVERALL KPI", font=_BOLD, size=8, color=fg, align="center")
     doc.text(MARGIN + 12 + box_w / 2, top - 82, _pct(kpi["overall"]), font=_BOLD, size=30, color=fg, align="center")
-    level_text = {"good": "Отлично (≥ 90%)", "warning": "Нормально (75–89%)", "bad": "Ниже нормы (< 75%)",
-                  "none": "Нет данных"}[kpi["level"]]
+    level_text = {"good": "Excellent (≥ 90%)", "warning": "Good (75–89%)", "bad": "Needs attention (< 75%)",
+                  "none": "No data"}[kpi["level"]]
     doc.text(MARGIN + 12 + box_w / 2, top - 102, level_text, size=8, color=fg, align="center")
 
     # Components (right)
@@ -326,7 +330,7 @@ def _table(doc: _Doc, columns: list[dict], rows: list[list], *, empty: str) -> N
 
 
 def _cell(doc, x, width, y, text, col, font=_REGULAR, size=7.8, color=INK):
-    pad = 6
+    pad = 4
     text = _truncate_text(str(text), font, size, width - 2 * pad)
     align = col.get("align", "left")
     if align == "right":
@@ -348,19 +352,18 @@ def _draw_groups(doc: _Doc, report: dict) -> None:
         f"< 75%: {levels['bad']} · без данных: {levels['none']}",
     )
     columns = [
-        {"title": "Группа", "width": 0.26},
-        {"title": "Тренер", "width": 0.18},
+        {"title": "Группа", "width": 0.23},
+        {"title": "Тренер", "width": 0.17},
         {"title": "Студ.", "width": 0.065, "align": "center"},
         {"title": "Актив.", "width": 0.07, "align": "center"},
         {"title": "Ушли", "width": 0.065, "align": "center"},
-        {"title": "Посещ.", "width": 0.09, "align": "center"},
-        {"title": "ДЗ", "width": 0.08, "align": "center"},
-        {"title": "Активн.", "width": 0.09, "align": "center"},
-        {"title": "KPI", "width": 0.09, "align": "center", "badge": True},
+        {"title": "Посещ.", "width": 0.085, "align": "center"},
+        {"title": "ДЗ", "width": 0.085, "align": "center"},
+        {"title": "KPI / статус", "width": 0.23, "align": "center", "badge": True},
     ]
     rows = [
         [g["name"], g["teacher_names"], g["students"]["total"], g["students"]["active"], g["students"]["left"],
-         _pct(g["attendance_rate"]), _pct(g["homework_rate"]), _pct(g["activity_rate"]), g["kpi"]]
+         _pct(g["attendance_rate"]), _pct(g["homework_rate"]), g["kpi"]]
         for g in sorted(groups, key=lambda g: (g["kpi"] is None, -(g["kpi"] or 0), g["name"]))
     ]
     _table(doc, columns, rows, empty="Нет групп для выбранных фильтров.")
@@ -372,13 +375,13 @@ def _draw_teachers(doc: _Doc, report: dict) -> None:
     _page_title(doc, "TEACHER PERFORMANCE", "Результаты тренеров",
                 f"{len(teachers)} тренеров · показатели по занятиям, которые ведёт сам тренер")
     columns = [
-        {"title": "Тренер", "width": 0.2},
-        {"title": "Группы", "width": 0.21},
-        {"title": "Студ.", "width": 0.07, "align": "center"},
-        {"title": "Предметы", "width": 0.19},
-        {"title": "Посещ.", "width": 0.1, "align": "center"},
-        {"title": "ДЗ", "width": 0.1, "align": "center"},
-        {"title": "KPI", "width": 0.13, "align": "center", "badge": True},
+        {"title": "Тренер", "width": 0.17},
+        {"title": "Группы", "width": 0.19},
+        {"title": "Студ.", "width": 0.065, "align": "center"},
+        {"title": "Предметы", "width": 0.15},
+        {"title": "Посещ.", "width": 0.085, "align": "center"},
+        {"title": "ДЗ", "width": 0.085, "align": "center"},
+        {"title": "KPI / статус", "width": 0.255, "align": "center", "badge": True},
     ]
     rows = [
         [t["name"], (f"{t['groups_count']}: " + ", ".join(g["name"] for g in t["groups"])) if t["groups"] else "Нет групп", t["students"]["total"],
@@ -465,8 +468,8 @@ def _draw_key_statistics(doc: _Doc, report: dict) -> None:
         for g in ov["attention_groups"]:
             doc.ensure_space(16)
             doc.text(MARGIN + 4, doc.y, _truncate_text(f"• {g['name']} — {g['teacher_names']}", _REGULAR, 8.5,
-                                                       CONTENT_W - 80), size=8.5, color=INK)
-            _badge(doc.c, PAGE_W - MARGIN - 30, doc.y, g["kpi"])
+                                                       CONTENT_W - 130), size=8.5, color=INK)
+            _badge(doc.c, PAGE_W - MARGIN - 55, doc.y, g["kpi"])
             doc.y -= 16
 
     doc.y -= 8
