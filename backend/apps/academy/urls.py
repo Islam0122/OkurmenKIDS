@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import report_views, views
+from . import control_views, report_views, views
 
 router = DefaultRouter()
 router.register("courses", views.CourseViewSet, basename="course")
@@ -31,5 +31,9 @@ urlpatterns = [
     path("reports/teachers/<int:pk>/", report_views.ReportsTeacherDetailView.as_view(), name="reports-teacher-detail"),
     path("reports/export/pdf/", report_views.ReportsExportPdfView.as_view(), name="reports-export-pdf"),
     path("reports/export/excel/", report_views.ReportsExportExcelView.as_view(), name="reports-export-excel"),
+    # Control — is every lesson's attendance/homework/scores filled in? See control_views.
+    path("control/", control_views.ControlOverviewView.as_view(), name="control-overview"),
+    path("control/detail/", control_views.ControlDetailView.as_view(), name="control-detail"),
+    path("control/lessons/<int:pk>/", control_views.ControlLessonView.as_view(), name="control-lesson"),
     path("", include(router.urls)),
 ]
