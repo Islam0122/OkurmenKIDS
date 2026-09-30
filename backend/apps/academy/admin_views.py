@@ -46,6 +46,9 @@ from .models import (
 )
 from .services.academy_monthly_report import compute_academy_monthly_stats
 from .services.analytics import get_dashboard
+from .services.kpi_engine import COMPONENTS as KPI_COMPONENTS
+from .services.kpi_engine import METRIC_LABELS
+from .services.kpi_engine import METRICS as KPI_METRICS
 from .services.chart_geometry import nice_domain, nice_ticks, ratio_in_domain
 from .services.group_schedule_conflicts import overlapping_groups
 from .services.lesson_status import attention_q, lesson_status_counts
@@ -418,6 +421,10 @@ def analytics_view(request):
         **admin.site.each_context(request),
         "title": "Аналитика",
         "dashboard": dashboard,
+        "kpi_metrics": [
+            {"label": METRIC_LABELS[key], "value": dashboard["metrics"][key], "in_kpi": key in KPI_COMPONENTS}
+            for key in KPI_METRICS
+        ],
         "date_from": date_from,
         "date_to": date_to,
         "teachers": Teacher.objects.filter(is_active=True).select_related("user").order_by("user__first_name"),

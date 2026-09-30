@@ -27,7 +27,7 @@ Definitions:
   lessons in the period (a group finished two years ago with no lessons in
   the period is not part of this period's picture); an explicitly selected
   group is always included;
-* KPI — see services.reports.kpi.
+* KPI — services.kpi_engine, the single source of truth for every KPI.
 """
 from __future__ import annotations
 
@@ -41,7 +41,9 @@ from apps.users.models import Subject, Teacher
 
 from apps.academy.models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
 from .filters import ReportFilters
-from .kpi import kpi_level, kpi_weights, overall_kpi, rate, weights_description
+from apps.academy.services.kpi_engine import KPICounts, KPIEngine, KPIResult, from_counts
+
+from .kpi import kpi_weights, rate, weights_description
 
 _ATTENDED = (Attendance.Status.PRESENT, Attendance.Status.LATE)
 _SUBMITTED = (HomeworkResult.Status.SUBMITTED, HomeworkResult.Status.CHECKED, HomeworkResult.Status.LATE)
@@ -101,15 +103,25 @@ class PeriodStats:
     def has_data(self) -> bool:
         return bool(self.lessons_total or self.attendance_total or self.homework_results)
 
+    def kpi_result(self, weights: dict | None = None) -> KPIResult:
+        """This row's KPI through the one engine formula (exact values in,
+        rounded once at the end)."""
+        return from_counts(
+            KPICounts(
+                attendance_total=self.attendance_total,
+                attendance_attended=self.attendance_present + self.attendance_late,
+                homework_results=self.homework_results,
+                homework_submitted=self.homework_submitted,
+                lessons_due=self.lessons_due,
+                lessons_held=self.lessons_held,
+                avg_score=self.avg_score,
+            ),
+            weights,
+        )
+
     def kpi(self, weights: dict | None = None) -> dict:
-        components = {
-            "attendance": self.attendance_rate,
-            "homework": self.homework_rate,
-            "activity": self.activity_rate,
-            "progress": self.progress_rate,
-        }
-        total = overall_kpi(components, weights)
-        return {**components, "overall": total, "level": kpi_level(total)}
+        result = self.kpi_result(weights)
+        return {"total": result.total, "status": result.status}
 
     def as_dict(self, weights: dict | None = None) -> dict:
         return {
@@ -138,9 +150,14 @@ class PeriodStats:
                 "completion_rate": self.homework_rate,
                 "average_score": round(self.avg_score, 1) if self.avg_score is not None else None,
             },
-            "kpi": self.kpi(weights),
+            **_contract(self.kpi_result(weights)),
             "has_data": self.has_data,
         }
+
+
+def _contract(result: KPIResult) -> dict:
+    contract = result.as_contract()
+    return {"metrics": contract["metrics"], "kpi": contract["kpi"]}
 
 
 def _eff_teacher(prefix: str = ""):
@@ -373,8 +390,8 @@ def _group_row(group: Group, programs, counts: dict, left: set, returned: set, s
         "homework_rate": stats.homework_rate,
         "activity_rate": stats.activity_rate,
         "progress_rate": stats.progress_rate,
-        "kpi": kpi["overall"],
-        "kpi_level": kpi["level"],
+        "kpi": kpi["total"],
+        "kpi_level": kpi["status"],
         "has_data": stats.has_data,
     }
 
@@ -470,8 +487,8 @@ def build_teacher_rows(filters: ReportFilters, group_ids: list[int] | None = Non
                 "homework_rate": s.homework_rate,
                 "activity_rate": s.activity_rate,
                 "progress_rate": s.progress_rate,
-                "kpi": kpi["overall"],
-                "kpi_level": kpi["level"],
+                "kpi": kpi["total"],
+                "kpi_level": kpi["status"],
                 "has_data": s.has_data,
             }
         )
@@ -510,9 +527,7 @@ def build_student_rows(filters: ReportFilters, students, *, lessons=None) -> lis
                 "homework_rate": s.homework_rate,
                 "average_score": round(s.avg_score, 1) if s.avg_score is not None else None,
                 "progress_rate": s.progress_rate,
-                "level": kpi_level(overall_kpi(
-                    {"attendance": s.attendance_rate, "homework": s.homework_rate, "progress": s.progress_rate}
-                )),
+                "level": s.kpi_result().status,
             }
         )
     return rows
@@ -547,11 +562,11 @@ def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None
     completed = {sid for _g, sid in _event_pairs(filters, [StudentStatusEvent.EventType.COMPLETED], event_groups)}
 
     total_stats = _period_stats(filters, None).get(None, PeriodStats())
+    # The KPI, retention and teacher workload come from the one engine, for
+    # exactly the same scope every other KPI page uses.
+    engine = KPIEngine.calculate(scope=filters.scope(), today=filters.today)
     total = counts["total"] or 0
     active = counts["active"] or 0
-    # Retention: of the students active at some point in the period (active
-    # now, or left during it), the share still active now.
-    retention_base = active + len(left)
     rated = [row for row in group_rows if row["kpi"] is not None]
     ranked = sorted(rated, key=lambda row: row["kpi"], reverse=True)
 
@@ -565,7 +580,7 @@ def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None
             "new": counts["new"] or 0,
             "returned": len(returned),
             "completed": len(completed),
-            "retention_rate": rate(active, retention_base),
+            "retention_rate": engine.metrics["retention"],
         },
         "teachers": {
             "total": len(teacher_rows),
@@ -578,7 +593,8 @@ def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None
             "without_teacher": sum(1 for row in group_rows if not row["has_teacher"]),
             "with_data": len(rated),
         },
-        **{key: value for key, value in total_stats.as_dict(weights).items() if key != "has_data"},
+        **{key: value for key, value in total_stats.as_dict(weights).items() if key not in ("has_data", "metrics", "kpi")},
+        **_contract(engine),
         "has_data": total_stats.has_data,
         "kpi_weights": weights_description(weights),
         "levels": {
@@ -586,7 +602,7 @@ def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None
             "teachers": _level_counts(teacher_rows),
         },
         "top_groups": [row for row in ranked if row["kpi_level"] == "good"][:5],
-        "attention_groups": [row for row in reversed(ranked) if row["kpi_level"] in ("bad", "warning")][:5],
+        "attention_groups": [row for row in reversed(ranked) if row["kpi_level"] in ("low", "attention")][:5],
         "teacher_summary": [
             {
                 "id": row["id"],
@@ -602,7 +618,7 @@ def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None
 
 
 def _level_counts(rows) -> dict:
-    counts = {"good": 0, "warning": 0, "bad": 0, "none": 0}
+    counts = {"good": 0, "attention": 0, "low": 0, "no_data": 0}
     for row in rows:
         counts[row["kpi_level"]] += 1
     return counts
@@ -651,7 +667,8 @@ def build_group_detail(group: Group, filters: ReportFilters) -> dict:
         },
         "filters": filters.as_dict(),
         "students": row["students"],
-        **{key: value for key, value in stats.as_dict(weights).items() if key != "has_data"},
+        **{key: value for key, value in stats.as_dict(weights).items() if key not in ("has_data", "metrics", "kpi")},
+        **_contract(KPIEngine.calculate(scope=group_filters.scope(), today=filters.today)),
         "has_data": stats.has_data,
         "plan_progress": plan_progress,
         "teacher_breakdown": teacher_breakdown,
@@ -666,8 +683,8 @@ def _rates(s: PeriodStats, weights) -> dict:
         "homework_rate": s.homework_rate,
         "activity_rate": s.activity_rate,
         "progress_rate": s.progress_rate,
-        "kpi": kpi["overall"],
-        "kpi_level": kpi["level"],
+        "kpi": kpi["total"],
+        "kpi_level": kpi["status"],
         "has_data": s.has_data,
     }
 
@@ -711,7 +728,8 @@ def build_teacher_detail(teacher: Teacher, filters: ReportFilters) -> dict:
         "groups": row["groups"],
         "subjects": row["subjects"],
         "students": row["students"],
-        **{key: value for key, value in stats.as_dict(weights).items() if key != "has_data"},
+        **{key: value for key, value in stats.as_dict(weights).items() if key not in ("has_data", "metrics", "kpi")},
+        **_contract(KPIEngine.calculate(scope=teacher_filters.scope(), today=filters.today)),
         "has_data": stats.has_data,
         # This teacher's own figures in each of their groups — scoped to
         # the lessons they give (never a co-teacher's lessons in a shared group).

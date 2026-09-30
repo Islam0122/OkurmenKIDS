@@ -27,8 +27,9 @@ import { StatCard } from '@/components/ui/StatCard'
 import type { StatCardTrend } from '@/components/ui/StatCard'
 import { useGroups } from '@/hooks/useGroups'
 import { useAnalyticsDashboard } from '@/hooks/useKPI'
-import { formatDateShort } from '@/utils/format'
-import type { AnalyticsHealthLevel, ComparisonMetric, InsightSeverity } from '@/types/kpi'
+import { formatDateShort, formatRuPercent } from '@/utils/format'
+import { KPI_STATUS_BADGE_TONE } from './kpiStatus'
+import type { ComparisonMetric, InsightSeverity, KPIMetrics } from '@/types/kpi'
 
 import { getKPIPeriods, KPI_COMPARE_OPTIONS } from './periods'
 import type { KPICompareOption, KPIPeriod } from './periods'
@@ -36,20 +37,6 @@ import type { KPIPeriodKey } from '@/types/kpi'
 
 function trendOf(metric: ComparisonMetric, goodDirection: 'up' | 'down' = 'up'): StatCardTrend {
   return { direction: metric.trend, changePercent: metric.change_percent, goodDirection }
-}
-
-const HEALTH_TONE: Record<AnalyticsHealthLevel, BadgeTone> = {
-  excellent: 'success',
-  good: 'success',
-  fair: 'warning',
-  poor: 'danger',
-}
-
-const HEALTH_LABEL: Record<AnalyticsHealthLevel, string> = {
-  excellent: 'Отлично',
-  good: 'Хорошо',
-  fair: 'Средне',
-  poor: 'Требует внимания',
 }
 
 const SEVERITY_TONE: Record<InsightSeverity, BadgeTone> = {
@@ -64,13 +51,23 @@ const SEVERITY_ICON: Record<InsightSeverity, typeof AlertTriangle> = {
   low: Info,
 }
 
-const HEALTH_COMPONENT_LABELS: Record<string, string> = {
+const METRIC_LABELS: Record<keyof KPIMetrics, string> = {
   attendance: 'Посещаемость',
   homework: 'Домашние задания',
-  lesson_completion: 'Проведение занятий',
+  lesson_completion: 'Проведённые занятия',
+  progress: 'Прогресс',
   retention: 'Удержание студентов',
-  teacher_workload: 'Загрузка тренеров',
+  teacher_workload: 'Нагрузка тренеров',
 }
+
+const METRIC_ORDER: (keyof KPIMetrics)[] = [
+  'attendance',
+  'homework',
+  'lesson_completion',
+  'progress',
+  'retention',
+  'teacher_workload',
+]
 
 export function KPIPage() {
   const [periodKey, setPeriodKey] = useState<KPIPeriodKey>('this_month')
@@ -151,25 +148,29 @@ export function KPIPage() {
 
       {data ? (
         <>
-          {/* 1. Academy Health + main KPIs */}
+          {/* 1. Total KPI — computed by the backend KPI engine; display only. */}
           <section className="mb-6 rounded-xl border border-border bg-surface p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-4">
                 <div>
-                  <p className="text-sm text-ink-secondary">Academy Health</p>
-                  <p className="text-4xl font-bold text-ink">{data.health.score}</p>
+                  <p className="text-sm text-ink-secondary">Общий KPI</p>
+                  <p className="text-4xl font-bold text-ink">{formatRuPercent(data.kpi.total)}</p>
                 </div>
-                <Badge tone={HEALTH_TONE[data.health.level]}>{HEALTH_LABEL[data.health.level]}</Badge>
+                <Badge tone={KPI_STATUS_BADGE_TONE[data.kpi.status]}>{data.kpi.status_label}</Badge>
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-2">
-                {Object.entries(data.health.components).map(([key, value]) => (
-                  <div key={key} className="text-right">
-                    <p className="text-xs uppercase tracking-wide text-ink-muted">
-                      {HEALTH_COMPONENT_LABELS[key] ?? key}
-                    </p>
-                    <p className="text-sm font-semibold text-ink">{value}</p>
-                  </div>
-                ))}
+                {METRIC_ORDER.map((key) => {
+                  const inKpi = data.kpi.weights.some((weight) => weight.key === key)
+                  return (
+                    <div key={key} className="text-right">
+                      <p className="text-xs uppercase tracking-wide text-ink-muted">
+                        {METRIC_LABELS[key]}
+                        {inKpi ? null : <span className="normal-case"> (не входит в KPI)</span>}
+                      </p>
+                      <p className="text-sm font-semibold text-ink">{formatRuPercent(data.metrics[key])}</p>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </section>

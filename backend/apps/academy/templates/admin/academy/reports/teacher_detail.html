@@ -38,11 +38,11 @@
 </div>
 
 <div class="okr-panel">
-  <div class="okr-panel-head"><span class="okr-panel-title">{% icon "trending-up" %}Эффективность</span>{{ d.kpi.overall|kpi_badge }}</div>
+  <div class="okr-panel-head"><span class="okr-panel-title">{% icon "trending-up" %}Эффективность</span>{{ d.kpi.total|kpi_badge }}</div>
   <div class="okr-panel-body">
     {% if d.has_data %}
       {% include "admin/academy/reports/_kpi_bars.html" with components=kpi_components %}
-      <div class="okr-row okr-row-total"><span>Общий KPI</span><span>{{ d.kpi.overall|kpi_badge }}</span></div>
+      <div class="okr-row okr-row-total"><span>Общий KPI</span><span>{{ d.kpi.total|kpi_badge }}</span></div>
     {% else %}
       <div class="okr-empty is-compact"><span class="okr-empty-icon">{% icon "calendar" 20 %}</span><p>Нет данных за период: у тренера не было занятий — KPI не рассчитывается.</p></div>
     {% endif %}

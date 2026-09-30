@@ -58,15 +58,49 @@ describe('KPIPage', () => {
     expect(screen.getByText('8.4/10')).toBeInTheDocument()
   })
 
-  it('renders the Academy Health score', async () => {
+  it('renders the total KPI exactly as the backend computed it', async () => {
     vi.mocked(kpiApi.dashboard).mockResolvedValue(
-      buildAnalyticsDashboard({ health: { score: 73, level: 'fair', components: { attendance: 70, homework: 75, lesson_completion: 80, retention: 65, teacher_workload: 75 } } }),
+      buildAnalyticsDashboard({
+        metrics: {
+          attendance: 82,
+          homework: 66,
+          lesson_completion: 51.3,
+          progress: 91.1,
+          retention: 95.3,
+          teacher_workload: 60,
+        },
+        kpi: {
+          total: 72.6,
+          status: 'low',
+          status_label: 'Низкий',
+          weights: [
+            { key: 'attendance', label: 'Посещаемость', weight: 25 },
+            { key: 'homework', label: 'Домашние задания', weight: 25 },
+            { key: 'lesson_completion', label: 'Проведённые занятия', weight: 25 },
+            { key: 'progress', label: 'Прогресс', weight: 25 },
+          ],
+        },
+      }),
     )
 
     renderWithProviders(<KPIPage />, { route: '/app/kpi' })
 
-    await waitFor(() => expect(screen.getByText('73')).toBeInTheDocument())
-    expect(screen.getByText('Средне')).toBeInTheDocument()
+    // No frontend math: the value and status are the API's, verbatim.
+    await waitFor(() => expect(screen.getByText('72,6%')).toBeInTheDocument())
+    expect(screen.getByText('Низкий')).toBeInTheDocument()
+    expect(screen.getAllByText('(не входит в KPI)')).toHaveLength(2)
+  })
+
+  it('shows "—" when the backend reports no KPI data', async () => {
+    vi.mocked(kpiApi.dashboard).mockResolvedValue(
+      buildAnalyticsDashboard({
+        kpi: { total: null, status: 'no_data', status_label: 'Нет данных', weights: [] },
+      }),
+    )
+
+    renderWithProviders(<KPIPage />, { route: '/app/kpi' })
+
+    await waitFor(() => expect(screen.getByText('Нет данных')).toBeInTheDocument())
   })
 
   it('shows an explicit empty message instead of a fabricated insight', async () => {

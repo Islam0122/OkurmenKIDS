@@ -19,7 +19,9 @@ import datetime as dt
 
 from django.utils import timezone
 
-from . import attendance, groups, health, homework, insights, lessons, students, teachers
+from apps.academy.services.kpi_engine import KPIEngine
+
+from . import attendance, groups, homework, insights, lessons, students, teachers
 from .period import resolve_comparison, resolve_period
 from .scope import AnalyticsScope
 
@@ -70,7 +72,8 @@ def get_dashboard(
             "course_id": course_id,
             "subject_id": subject_id,
         },
-        "health": health.build(sections),
+        # The KPI and its metrics come from the one engine every report uses.
+        **KPIEngine.calculate(scope=scope, today=today).as_contract(),
         **sections,
         "insights": insights.build(scope, compare_range, sections, today=today),
     }

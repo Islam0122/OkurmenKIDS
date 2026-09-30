@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load i18n %}
+{% load i18n academy_extras %}
 
 {% block bodyclass %}{{ block.super }} okan-page{% endblock %}
 
@@ -39,9 +39,12 @@
         .okan-health { display:flex; align-items:center; gap:1.5rem; background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,0.65rem); padding:1.25rem; margin-bottom:1.25rem; }
         .okan-health-score { font-size:2.5rem; font-weight:800; }
         .okan-health-level { font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; padding:0.15rem 0.6rem; border-radius:999px; }
-        .okan-health-level.excellent, .okan-health-level.good { background:rgba(47,143,91,0.12); color:var(--ok-primary,#2F8F5B); }
-        .okan-health-level.fair { background:rgba(201,138,27,0.12); color:var(--ok-warning,#C98A1B); }
-        .okan-health-level.poor { background:rgba(199,64,46,0.12); color:var(--ok-danger,#C7402E); }
+        .okan-health-level.good { background:rgba(47,143,91,0.12); color:var(--ok-primary,#2F8F5B); }
+        .okan-health-level.attention { background:rgba(201,138,27,0.12); color:var(--ok-warning,#C98A1B); }
+        .okan-health-level.low { background:rgba(199,64,46,0.12); color:var(--ok-danger,#C7402E); }
+        .okan-health-level.no_data { background:rgba(137,147,141,0.12); color:var(--ok-text-muted,#89938D); }
+        .okan-health-label { font-size:0.72rem; color:var(--ok-text-muted,#89938D); text-transform:uppercase; }
+        .okan-health-note { text-transform:none; }
         .okan-health-components { display:flex; flex-wrap:wrap; gap:1rem; flex:1; }
         .okan-health-component { min-width:110px; }
         .okan-health-component .label { font-size:0.72rem; color:var(--ok-text-muted,#89938D); text-transform:uppercase; }
@@ -112,14 +115,15 @@
 
 <div class="okan-health">
     <div>
-        <div class="okan-health-score">{{ dashboard.health.score }}</div>
-        <span class="okan-health-level {{ dashboard.health.level }}">{{ dashboard.health.level }}</span>
+        <div class="okan-health-label">Общий KPI</div>
+        <div class="okan-health-score">{{ dashboard.kpi.total|ru_percent }}</div>
+        <span class="okan-health-level {{ dashboard.kpi.status }}">{{ dashboard.kpi.status_label }}</span>
     </div>
     <div class="okan-health-components">
-        {% for key, value in dashboard.health.components.items %}
+        {% for metric in kpi_metrics %}
             <div class="okan-health-component">
-                <div class="label">{{ key }}</div>
-                <div class="value">{{ value }}</div>
+                <div class="label">{{ metric.label }}{% if not metric.in_kpi %} <span class="okan-health-note">(не входит в KPI)</span>{% endif %}</div>
+                <div class="value">{{ metric.value|ru_percent }}</div>
             </div>
         {% endfor %}
     </div>

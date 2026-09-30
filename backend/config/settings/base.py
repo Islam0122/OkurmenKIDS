@@ -157,11 +157,10 @@ SERVE_MEDIA = False
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Reports KPI weights (services.reports.kpi). Equal weights reproduce
-# the project's existing KPI formula (services.monthly_report /
-# academy_monthly_report) exactly; override per deployment, e.g.
-# {"attendance": 0.40, "homework": 0.30, "activity": 0.20, "progress": 0.10}.
-REPORTS_KPI_WEIGHTS = {"attendance": 0.25, "homework": 0.25, "activity": 0.25, "progress": 0.25}
+# KPI weights — the one place they are defined (services.kpi_engine).
+# Equal weights = the project's existing KPI formula. Retention and teacher
+# workload are reported alongside but are not part of the total.
+KPI_WEIGHTS = {"attendance": 0.25, "homework": 0.25, "lesson_completion": 0.25, "progress": 0.25}
 
 AUTH_USER_MODEL = "users.User"
 

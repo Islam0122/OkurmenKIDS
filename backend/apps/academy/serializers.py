@@ -1209,20 +1209,30 @@ class AnalyticsHomeworkSectionSerializer(serializers.Serializer):
     homework_completion_trend = AnalyticsTrendPointSerializer(many=True)
 
 
-class AnalyticsHealthComponentsSerializer(serializers.Serializer):
-    attendance = serializers.FloatField()
-    homework = serializers.FloatField()
-    lesson_completion = serializers.FloatField()
-    retention = serializers.FloatField()
-    teacher_workload = serializers.FloatField()
+class KPIMetricsSerializer(serializers.Serializer):
+    """The unified KPI metrics (services.kpi_engine) — null means "no data"."""
+
+    attendance = serializers.FloatField(allow_null=True)
+    homework = serializers.FloatField(allow_null=True)
+    lesson_completion = serializers.FloatField(allow_null=True)
+    progress = serializers.FloatField(allow_null=True)
+    retention = serializers.FloatField(allow_null=True)
+    teacher_workload = serializers.FloatField(allow_null=True)
 
 
-class AnalyticsHealthSerializer(serializers.Serializer):
-    """See services.analytics.health for the scoring formula — never stored."""
+class KPIWeightSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    label = serializers.CharField()
+    weight = serializers.FloatField()
 
-    score = serializers.IntegerField()
-    level = serializers.ChoiceField(choices=["excellent", "good", "fair", "poor"])
-    components = AnalyticsHealthComponentsSerializer()
+
+class KPISummarySerializer(serializers.Serializer):
+    """Total KPI from services.kpi_engine — the single source of truth."""
+
+    total = serializers.FloatField(allow_null=True)
+    status = serializers.ChoiceField(choices=["good", "attention", "low", "no_data"])
+    status_label = serializers.CharField()
+    weights = KPIWeightSerializer(many=True)
 
 
 class AnalyticsInsightSerializer(serializers.Serializer):
@@ -1241,7 +1251,8 @@ class AnalyticsDashboardSerializer(serializers.Serializer):
     period = AnalyticsPeriodSerializer()
     comparison = AnalyticsComparisonSerializer(allow_null=True)
     filters = AnalyticsFiltersSerializer()
-    health = AnalyticsHealthSerializer()
+    metrics = KPIMetricsSerializer()
+    kpi = KPISummarySerializer()
     students = AnalyticsStudentsSectionSerializer()
     teachers = AnalyticsTeachersSectionSerializer()
     groups = AnalyticsGroupsSectionSerializer()
@@ -1291,13 +1302,14 @@ class MonthlyReportWeekPointSerializer(serializers.Serializer):
 
 
 class MonthlyReportKPISerializer(serializers.Serializer):
-    attendance = serializers.FloatField()
-    homework = serializers.FloatField()
-    lessons = serializers.FloatField()
-    # `None` when no homework has been graded yet this month — never a
-    # fabricated 0% (see services.monthly_report.compute_monthly_stats).
+    """Legacy KPI field names, values from services.kpi_engine (null = no data)."""
+
+    attendance = serializers.FloatField(allow_null=True)
+    homework = serializers.FloatField(allow_null=True)
+    lessons = serializers.FloatField(allow_null=True)
     student_progress = serializers.FloatField(allow_null=True)
-    total = serializers.FloatField()
+    total = serializers.FloatField(allow_null=True)
+    status = serializers.ChoiceField(choices=["good", "attention", "low", "no_data"])
 
 
 class MonthlyReportStatsSerializer(serializers.Serializer):
@@ -1315,6 +1327,7 @@ class MonthlyReportStatsSerializer(serializers.Serializer):
     homework = MonthlyReportHomeworkSerializer()
     groups = MonthlyReportGroupRowSerializer(many=True)
     weekly_dynamics = MonthlyReportWeekPointSerializer(many=True)
+    metrics = KPIMetricsSerializer()
     kpi = MonthlyReportKPISerializer()
 
 
@@ -1444,11 +1457,14 @@ class AcademyReportWeekPointSerializer(serializers.Serializer):
 
 
 class AcademyReportKPISerializer(serializers.Serializer):
-    attendance = serializers.FloatField()
-    homework = serializers.FloatField()
-    lessons = serializers.FloatField()
+    """Legacy KPI field names, values from services.kpi_engine (null = no data)."""
+
+    attendance = serializers.FloatField(allow_null=True)
+    homework = serializers.FloatField(allow_null=True)
+    lessons = serializers.FloatField(allow_null=True)
     student_progress = serializers.FloatField(allow_null=True)
-    total = serializers.FloatField()
+    total = serializers.FloatField(allow_null=True)
+    status = serializers.ChoiceField(choices=["good", "attention", "low", "no_data"])
 
 
 class AcademyReportReasonBreakdownRowSerializer(serializers.Serializer):
@@ -1507,6 +1523,7 @@ class AcademyMonthlyReportStatsSerializer(serializers.Serializer):
     lessons = AcademyReportLessonsSerializer()
     homework = AcademyReportHomeworkSerializer()
     weekly_dynamics = AcademyReportWeekPointSerializer(many=True)
+    metrics = KPIMetricsSerializer()
     kpi = AcademyReportKPISerializer()
     movement = AcademyReportMovementSerializer()
     attention = AcademyReportAttentionItemSerializer(many=True)

@@ -173,22 +173,22 @@ class ReportFiltersTests(TestCase):
 
 class KpiFormulaTests(TestCase):
     def test_equal_default_weights_average_available_components(self):
-        self.assertEqual(overall_kpi({"attendance": 80, "homework": 90, "activity": 100, "progress": None}), 90.0)
+        self.assertEqual(overall_kpi({"attendance": 80, "homework": 90, "lesson_completion": 100, "progress": None}), 90.0)
 
     def test_no_components_means_no_kpi(self):
-        self.assertIsNone(overall_kpi({"attendance": None, "homework": None, "activity": None, "progress": None}))
+        self.assertIsNone(overall_kpi({"attendance": None, "homework": None, "lesson_completion": None, "progress": None}))
 
-    @override_settings(REPORTS_KPI_WEIGHTS={"attendance": 0.4, "homework": 0.3, "activity": 0.2, "progress": 0.1})
+    @override_settings(KPI_WEIGHTS={"attendance": 0.4, "homework": 0.3, "lesson_completion": 0.2, "progress": 0.1})
     def test_configured_weights(self):
-        value = overall_kpi({"attendance": 90, "homework": 80, "activity": 100, "progress": 70})
+        value = overall_kpi({"attendance": 90, "homework": 80, "lesson_completion": 100, "progress": 70})
         self.assertEqual(value, round(90 * 0.4 + 80 * 0.3 + 100 * 0.2 + 70 * 0.1, 1))
         # A missing component's weight is redistributed, not counted as 0%.
-        value = overall_kpi({"attendance": 90, "homework": 80, "activity": 100, "progress": None})
+        value = overall_kpi({"attendance": 90, "homework": 80, "lesson_completion": 100, "progress": None})
         self.assertEqual(value, round((90 * 0.4 + 80 * 0.3 + 100 * 0.2) / 0.9, 1))
 
     def test_levels(self):
         self.assertEqual([kpi_level(v) for v in (95, 90, 89.9, 75, 74.9, None)],
-                         ["good", "good", "warning", "warning", "bad", "none"])
+                         ["good", "good", "attention", "attention", "low", "no_data"])
 
 
 class ReportCalculationTests(ReportsTestBase):
@@ -214,7 +214,7 @@ class ReportCalculationTests(ReportsTestBase):
         self.assertEqual(empty["teacher_names"], "Не назначен")
         self.assertEqual(empty["students"]["total"], 0)
         self.assertIsNone(empty["kpi"])
-        self.assertEqual(empty["kpi_level"], "none")
+        self.assertEqual(empty["kpi_level"], "no_data")
         self.assertIsNone(empty["attendance_rate"])  # "no data", never a fabricated 0%
 
     def test_teacher_rows_are_isolated_to_own_lessons(self):
@@ -235,7 +235,7 @@ class ReportCalculationTests(ReportsTestBase):
         self.assertIsNone(rows["Nurlan"]["kpi"])
         detail = build_teacher_detail(Teacher.objects.get(user__username="nogroups"), self.filters())
         self.assertEqual(detail["groups"], [])
-        self.assertIsNone(detail["kpi"]["overall"])
+        self.assertIsNone(detail["kpi"]["total"])
 
     def test_overview_totals(self):
         ov = build_overview(self.filters())
@@ -247,25 +247,25 @@ class ReportCalculationTests(ReportsTestBase):
         self.assertEqual(ov["groups"]["total"], 3)
         self.assertEqual(ov["groups"]["without_teacher"], 1)
         self.assertEqual(ov["attendance"]["total"], 7)
-        self.assertEqual(ov["kpi"]["attendance"], round(5 / 7 * 100, 1))
+        self.assertEqual(ov["metrics"]["attendance"], round(5 / 7 * 100, 1))
 
     def test_overall_kpi_matches_existing_academy_kpi(self):
         """Same components, equal default weights -> the existing Academy
         Monthly Report's KPI for the same (fully past) month."""
         ov = build_overview(self.filters())
         existing = compute_academy_monthly_stats(2026, 9)["kpi"]
-        self.assertEqual(ov["kpi"]["attendance"], existing["attendance"])
-        self.assertEqual(ov["kpi"]["homework"], existing["homework"])
-        self.assertEqual(ov["kpi"]["activity"], existing["lessons"])
-        self.assertEqual(ov["kpi"]["progress"], existing["student_progress"])
-        self.assertEqual(ov["kpi"]["overall"], existing["total"])
+        self.assertEqual(ov["metrics"]["attendance"], existing["attendance"])
+        self.assertEqual(ov["metrics"]["homework"], existing["homework"])
+        self.assertEqual(ov["metrics"]["lesson_completion"], existing["lessons"])
+        self.assertEqual(ov["metrics"]["progress"], existing["student_progress"])
+        self.assertEqual(ov["kpi"]["total"], existing["total"])
 
     def test_period_without_data(self):
         f = ReportFilters.from_query({"period": "custom", "start_date": "2026-01-01", "end_date": "2026-01-31"},
                                      today=TODAY)
         ov = build_overview(f)
         self.assertFalse(ov["has_data"])
-        self.assertIsNone(ov["kpi"]["overall"])
+        self.assertIsNone(ov["kpi"]["total"])
         self.assertEqual(ov["students"]["left"], 0)
         # Build exports for an empty period without errors.
         report = build_full_report(f)

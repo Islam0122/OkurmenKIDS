@@ -69,9 +69,10 @@
                   </td>
                   <td>
                     {% if row.stats.has_data %}
-                      {% if row.stats.kpi.total >= 85 %}<span class="ok-badge ok-badge-success">{{ row.stats.kpi.total|ru_percent }}</span>
-                      {% elif row.stats.kpi.total >= 60 %}<span class="ok-badge ok-badge-warning">{{ row.stats.kpi.total|ru_percent }}</span>
-                      {% else %}<span class="ok-badge ok-badge-danger">{{ row.stats.kpi.total|ru_percent }}</span>{% endif %}
+                      {% if row.stats.kpi.status == "good" %}<span class="ok-badge ok-badge-success">{{ row.stats.kpi.total|ru_percent }}</span>
+                      {% elif row.stats.kpi.status == "attention" %}<span class="ok-badge ok-badge-warning">{{ row.stats.kpi.total|ru_percent }}</span>
+                      {% elif row.stats.kpi.status == "low" %}<span class="ok-badge ok-badge-danger">{{ row.stats.kpi.total|ru_percent }}</span>
+                      {% else %}<span class="ok-badge ok-badge-muted">Нет данных</span>{% endif %}
                     {% else %}<span class="ok-badge ok-badge-muted">Нет данных</span>{% endif %}
                   </td>
                   <td>{{ row.report.created_at|date:"d.m.Y" }}</td>
