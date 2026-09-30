@@ -11,7 +11,7 @@ import { cn } from '@/utils/cn'
 export const CONTROL_STATUS_TONE: Record<ControlStatus, BadgeTone> = {
   ok: 'success',
   attention: 'warning',
-  not_filled: 'danger',
+  problem: 'danger',
   no_data: 'muted',
   upcoming: 'info',
   cancelled: 'muted',

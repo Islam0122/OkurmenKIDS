@@ -5,7 +5,8 @@ see services.control. Every endpoint reads the Reports filter vocabulary
 (`period`, `start_date`, `end_date`, `program`, `group`, `teacher`,
 `subject`; see services.reports.filters) plus `status`.
 
-Access: Admin (role or superuser) sees the whole academy. A Trainer is
+Access (services.control.access): Admin, superuser or a manager with the
+Reports permission sees the whole academy. A Trainer is
 always scoped to the lessons they are responsible for — a `teacher` param
 from a Trainer is ignored, the same rule the Analytics dashboard applies —
 and a lesson that isn't theirs is a 404. Any other account gets 403.
@@ -23,8 +24,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Lesson
-from .permissions import _is_admin
 from .services.control import FILTERABLE_STATUSES, ControlQuery, ControlService, lesson_check
+from .services.control.access import ControlAccessDenied, control_scope
 from .services.reports import ReportFilterError, ReportFilters
 from .services.reports.filters import PERIOD_CHOICES
 
@@ -44,13 +45,11 @@ class _ControlView(APIView):
     permission_classes = [IsAuthenticated]
 
     def viewer_teacher(self, request):
-        """None for Admin; the Trainer's own profile otherwise."""
-        if _is_admin(request.user):
-            return None
-        teacher = getattr(request.user, "teacher_profile", None)
-        if teacher is None:
-            raise PermissionDenied("Раздел «Контроль» доступен администратору и тренерам.")
-        return teacher
+        """None for Admin/manager; the Trainer's own profile otherwise."""
+        try:
+            return control_scope(request.user)
+        except ControlAccessDenied:
+            raise PermissionDenied("Раздел «Контроль» доступен администратору, руководителю и тренерам.")
 
     def service(self, request) -> ControlService:
         teacher = self.viewer_teacher(request)

@@ -1,0 +1,100 @@
+{% extends "admin/academy/control/base.html" %}
+{% load report_tags control_tags %}
+
+{% block control_body %}
+{% with s=data.summary %}
+<div class="okr-cards">
+  <div class="okr-stat"><span class="okr-stat-icon is-info">{% icon "users" %}</span><span class="okr-stat-label">Тренеры</span><span class="okr-stat-value">{{ s.teachers }}</span>
+    {% if s.no_data %}<span class="okr-stat-foot">без занятий за период: {{ s.no_data }}</span>{% endif %}</div>
+  <div class="okr-stat"><span class="okr-stat-icon is-good">{% icon "circle-check" %}</span><span class="okr-stat-label">Работают нормально</span><span class="okr-stat-value">{{ s.ok }}</span></div>
+  <div class="okr-stat"><span class="okr-stat-icon is-warn">{% icon "triangle-alert" %}</span><span class="okr-stat-label">Требуют внимания</span><span class="okr-stat-value">{{ s.attention }}</span></div>
+  <div class="okr-stat"><span class="okr-stat-icon is-bad">{% icon "circle-x" %}</span><span class="okr-stat-label">Есть проблемы</span><span class="okr-stat-value">{{ s.problem }}</span></div>
+</div>
+<div class="okr-cards">
+  <div class="okr-stat"><span class="okr-stat-icon">{% icon "calendar" %}</span><span class="okr-stat-label">Занятий сегодня</span><span class="okr-stat-value">{{ s.today.total }}</span>
+    {% if s.today.upcoming %}<span class="okr-stat-foot">ещё не начались: {{ s.today.upcoming }}</span>{% endif %}</div>
+  <div class="okr-stat"><span class="okr-stat-icon is-good">{% icon "calendar-check" %}</span><span class="okr-stat-label">Закрыто сегодня</span><span class="okr-stat-value">{{ s.today.closed }}</span></div>
+  <div class="okr-stat"><span class="okr-stat-icon {% if s.today.not_filled %}is-bad{% else %}is-none{% endif %}">{% icon "clipboard-check" %}</span><span class="okr-stat-label">Не заполнено сегодня</span><span class="okr-stat-value">{{ s.today.not_filled }}</span></div>
+  <div class="okr-stat"><span class="okr-stat-icon {% if s.problem_lessons %}is-warn{% else %}is-none{% endif %}">{% icon "book-open" %}</span><span class="okr-stat-label">Уроков с пропусками за период</span><span class="okr-stat-value">{{ s.problem_lessons }}</span>
+    <span class="okr-stat-foot">из {{ s.lessons }} проведённых</span></div>
+</div>
+{% endwith %}
+
+<div class="okr-panel">
+  <div class="okr-panel-head okc-toolbar">
+    <div class="okr-search" role="search">
+      <span class="okr-search-field">{% icon "search" 15 %}<input type="search" id="okc-search" placeholder="Поиск тренера или группы..." aria-label="Поиск тренера или группы"></span>
+    </div>
+    <form method="get" class="okc-toolbar-right">
+      {% for key, value in request.GET.items %}{% if key != "sort" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+      <label for="okc-sort" class="okr-visually-hidden">Сортировка</label>
+      <select id="okc-sort" name="sort" class="okr-select" onchange="this.form.submit()">
+        {% for key, label in sort_options %}<option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <noscript><button class="okr-btn" type="submit">Сортировать</button></noscript>
+    </form>
+  </div>
+
+  {% if data.items %}
+  <div class="okr-table-wrap okc-desktop">
+    <table class="okr-table">
+      <thead>
+        <tr>
+          <th scope="col" class="okr-col-wide">Тренер</th>
+          <th scope="col" class="num">Группы</th>
+          <th scope="col" class="num">Уроки</th>
+          <th scope="col" class="num">Посещаемость</th>
+          <th scope="col" class="num">ДЗ</th>
+          <th scope="col" class="num">Баллы</th>
+          <th scope="col">Статус</th>
+          <th scope="col"><span class="okr-visually-hidden">Действия</span></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for t in data.items %}
+        <tr data-okc-search="{{ t.search }}" data-okc-count>
+          <td>
+            <a class="okr-row-link" href="{% url 'admin:academy_control_teacher_detail' t.teacher.id %}?{{ filter_query }}" data-okr-loading>{{ t.teacher.name }}</a>
+            {% if not t.teacher.is_active %}<div class="okr-sub-line">Неактивен</div>{% endif %}
+            {% if t.issues %}<div class="okr-sub-line">{{ t.issues|first }}{% if t.issues|length > 1 %} · ещё {{ t.issues|length|add:"-1" }}{% endif %}</div>{% endif %}
+          </td>
+          <td class="num"{% if t.groups %} title="{% for g in t.groups %}{{ g.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"{% endif %}>{{ t.groups_count }}</td>
+          <td class="num">{{ t.lessons|control_cell }}{% if t.lessons.upcoming %}<div class="okr-sub-line">+{{ t.lessons.upcoming }} предстоящих</div>{% endif %}</td>
+          <td class="num">{{ t.attendance|control_cell }}</td>
+          <td class="num">{{ t.homework|control_cell }}</td>
+          <td class="num">{{ t.grades|control_cell }}</td>
+          <td>{% control_badge t.status t.status_label %}{% if t.problem_lessons %}<div class="okr-sub-line">уроков с пропусками: {{ t.problem_lessons }}</div>{% endif %}</td>
+          <td class="num"><a class="okr-btn okr-btn-icon okr-btn-ghost" href="{% url 'admin:academy_control_teacher_detail' t.teacher.id %}?{{ filter_query }}" data-okr-loading title="Подробный контроль" aria-label="Подробный контроль тренера {{ t.teacher.name }}">{% icon "eye" 16 %}</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="okc-cards">
+    {% for t in data.items %}
+      <a class="okc-card" href="{% url 'admin:academy_control_teacher_detail' t.teacher.id %}?{{ filter_query }}" data-okc-search="{{ t.search }}" data-okr-loading>
+        <div class="okc-card-name">{{ t.teacher.name }}</div>
+        <div class="okc-card-sub">{{ t.groups_count }} {% if t.groups_count == 1 %}группа{% elif t.groups_count >= 2 and t.groups_count <= 4 %}группы{% else %}групп{% endif %}</div>
+        <div class="okr-row"><span>Уроки</span><span>{{ t.lessons|control_cell }}</span></div>
+        <div class="okr-row"><span>Посещаемость</span><span>{{ t.attendance|control_cell }}</span></div>
+        <div class="okr-row"><span>ДЗ</span><span>{{ t.homework|control_cell }}</span></div>
+        <div class="okr-row"><span>Баллы</span><span>{{ t.grades|control_cell }}</span></div>
+        <div class="okc-card-foot">
+          <span>{% control_badge t.status t.status_label %}{% if t.problem_lessons %} <span class="okr-muted">· проблем: {{ t.problem_lessons }}</span>{% endif %}</span>
+          <span class="okc-card-more">Подробнее {% icon "arrow-right" 14 %}</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+  <div class="okr-empty okc-hidden" id="okc-search-empty"><span class="okr-empty-icon">{% icon "search" 22 %}</span><h4>Ничего не найдено</h4><p>Нет тренеров или групп с таким названием.</p></div>
+  {% else %}
+    <div class="okr-empty"><span class="okr-empty-icon">{% icon "user-x" 22 %}</span><h4>Нет тренеров</h4><p>По выбранным фильтрам тренеры не найдены.</p></div>
+  {% endif %}
+</div>
+<p class="okr-note">{% icon "info" 14 %}<span>
+  Ответственный за урок — тренер, который его ведёт (замена считается отдельно). Считаются только уже прошедшие уроки:
+  предстоящие и отменённые не бывают «незаполненными». Посещаемость и баллы требуются только для активных студентов;
+  проверка ДЗ и баллы — после срока сдачи. Это контроль заполнения, а не KPI.
+</span></p>
+{% endblock %}

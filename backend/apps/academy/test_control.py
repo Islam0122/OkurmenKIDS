@@ -139,12 +139,12 @@ class ControlRulesTests(ControlTestBase):
         self.assertEqual(row["homework"]["completed"], 0)
         self.assertEqual(row["grades"]["completed"], 1)
 
-    def test_missing_grades_is_attention_and_lists_students(self):
+    def test_missing_grades_is_problem_and_lists_students(self):
         lesson = self.lesson(self.gt1, dt.date(2026, 9, 28))
         hw = self.fill(lesson, grades=False)
         HomeworkResult.objects.create(homework=hw, student=self.s2, status=HomeworkResult.Status.CHECKED, score=9)
         row = self.row(self.build(), self.aizhan, self.g1)
-        self.assertEqual(row["status"], "attention")
+        self.assertEqual(row["status"], "problem")
         self.assertEqual((row["grades"]["completed"], row["grades"]["total"]), (0, 1))
         self.assertEqual(row["grades"]["students_missing"], 1)
 
@@ -162,10 +162,10 @@ class ControlRulesTests(ControlTestBase):
         HomeworkResult.objects.create(homework=hw, student=self.s2, status=HomeworkResult.Status.CHECKED, score=9)
         self.assertEqual(self.row(self.build(), self.aizhan, self.g1)["status"], "ok")
 
-    def test_several_missing_components_is_not_filled(self):
+    def test_several_missing_components_is_problem(self):
         self.lesson(self.gt1, dt.date(2026, 9, 28), Lesson.Status.SCHEDULED)
         row = self.row(self.build(), self.aizhan, self.g1)
-        self.assertEqual(row["status"], "not_filled")
+        self.assertEqual(row["status"], "problem")
         self.assertEqual(row["lessons"]["not_closed"], 1)
 
     def test_small_gap_is_warning_level(self):
@@ -192,7 +192,7 @@ class ControlRulesTests(ControlTestBase):
         self.lesson(self.gt1, TODAY, Lesson.Status.SCHEDULED)  # 10:00–11:00, now is 12:00
         row = self.row(self.build(), self.aizhan, self.g1)
         self.assertEqual(row["lessons"]["total"], 1)
-        self.assertEqual(row["status"], "not_filled")
+        self.assertEqual(row["status"], "problem")
 
     def test_homework_before_deadline_is_waiting(self):
         lesson = self.lesson(self.gt1, dt.date(2026, 9, 28))
@@ -259,9 +259,9 @@ class ControlRulesTests(ControlTestBase):
         self.assertEqual(len(data["items"]), 3)
         self.assertEqual(self.row(data, self.aizhan, self.g1)["status"], "ok")
         self.assertEqual(self.row(data, self.aizhan, g3)["status"], "attention")
-        self.assertEqual(self.row(data, self.almaz, self.g2)["status"], "not_filled")
+        self.assertEqual(self.row(data, self.almaz, self.g2)["status"], "problem")
         # Problems first.
-        self.assertEqual([i["status"] for i in data["items"]], ["not_filled", "attention", "ok"])
+        self.assertEqual([i["status"] for i in data["items"]], ["problem", "attention", "ok"])
         summary = data["summary"]
         self.assertEqual((summary["total_lessons"], summary["completed_lessons"], summary["not_closed_lessons"]), (3, 2, 1))
         self.assertEqual(summary["attention_count"], 2)
@@ -281,7 +281,7 @@ class ControlRulesTests(ControlTestBase):
         soft = self.build(subject=str(self.soft.id))
         self.assertEqual(soft["items"][0]["lessons"]["total"], 1)
         self.assertEqual(soft["items"][0]["status"], "attention")
-        by_status = self.build(status="not_filled")
+        by_status = self.build(status="problem")
         self.assertEqual([i["teacher"]["id"] for i in by_status["items"]], [self.almaz.id])
         # The summary still describes the whole scope, not just the filtered rows.
         self.assertEqual(by_status["summary"]["total_lessons"], 3)
@@ -347,3 +347,198 @@ class ControlApiTests(ControlTestBase):
         self.assertEqual(self.get("control-overview", self.admin, {"status": "bogus"}).status_code, 400)
         self.assertEqual(self.get("control-overview", self.admin, {"period": "custom"}).status_code, 400)
         self.assertEqual(self.get("control-detail", self.admin, PAST).status_code, 400)
+
+
+class ControlTeachersTests(ControlTestBase):
+    """The trainer level — the Admin Panel's «Контроль тренеров»."""
+
+    def teachers(self, *, sort="status", status=None, restrict=None, **params):
+        filters = ReportFilters.from_query({**SEPT, **params}, today=TODAY)
+        service = ControlService(ControlQuery(filters=filters, status=status, now_time=NOON), restrict_teacher=restrict)
+        return service.build_teachers(sort=sort)
+
+    def trow(self, data, teacher):
+        return next(r for r in data["items"] if r["teacher"]["id"] == teacher.id)
+
+    def test_trainer_statuses(self):
+        cases = [
+            ({}, "ok"),
+            ({"attendance": False}, "attention"),
+            ({"grades": False, "unchecked": True}, "attention"),
+            ({"grades": False}, "problem"),
+            ({"attendance": False, "homework": False}, "problem"),
+        ]
+        for options, expected in cases:
+            with self.subTest(options=options):
+                Lesson.objects.all().delete()
+                lesson = self.lesson(self.gt1, dt.date(2026, 9, 28))
+                unchecked = options.pop("unchecked", False)
+                hw = self.fill(lesson, **options)
+                if unchecked:
+                    for s in (self.s1, self.s2):
+                        HomeworkResult.objects.create(homework=hw, student=s, status=HomeworkResult.Status.SUBMITTED, score=7)
+                self.assertEqual(self.trow(self.teachers(), self.aizhan)["status"], expected)
+
+    def test_future_and_cancelled_lessons_are_not_unfilled(self):
+        self.lesson(self.gt1, dt.date(2026, 10, 2), Lesson.Status.SCHEDULED)
+        self.lesson(self.gt2, dt.date(2026, 9, 21), Lesson.Status.CANCELLED)
+        data = self.teachers()
+        self.assertEqual(self.trow(data, self.aizhan)["status"], "upcoming")
+        self.assertEqual(self.trow(data, self.almaz)["status"], "no_data")
+        self.assertEqual((data["summary"]["attention"], data["summary"]["problem"]), (0, 0))
+
+    def test_all_trainers_listed_with_groups_and_summary(self):
+        idle = make_teacher("idle")
+        self.fill(self.lesson(self.gt1, dt.date(2026, 9, 28)))
+        self.fill(self.lesson(self.gt1_soft, dt.date(2026, 9, 29)))
+        self.lesson(self.gt2, dt.date(2026, 9, 28), Lesson.Status.SCHEDULED)
+        data = self.teachers()
+        self.assertEqual({r["teacher"]["id"] for r in data["items"]}, {self.aizhan.id, self.almaz.id, idle.id})
+        aizhan = self.trow(data, self.aizhan)
+        self.assertEqual((aizhan["groups_count"], aizhan["lessons"]["total"]), (1, 2))
+        self.assertEqual(self.trow(data, idle)["status"], "no_data")
+        self.assertEqual([r["status"] for r in data["items"]], ["problem", "ok", "no_data"])
+        summary = data["summary"]
+        self.assertEqual((summary["teachers"], summary["ok"], summary["problem"], summary["no_data"]), (3, 1, 1, 1))
+
+    def test_today_summary(self):
+        self.fill(self.lesson(self.gt1, TODAY))  # 10:00–11:00, closed and filled
+        self.lesson(self.gt2, TODAY, Lesson.Status.SCHEDULED)  # over, nothing filled
+        self.lesson(self.gt2, TODAY, Lesson.Status.SCHEDULED, start_time=dt.time(15), end_time=dt.time(16))
+        self.lesson(self.gt2, TODAY, Lesson.Status.CANCELLED)
+        today = self.teachers(period="last_month")["summary"]["today"]
+        self.assertEqual(today, {"total": 3, "closed": 1, "not_filled": 1, "upcoming": 1})
+
+    def test_filters(self):
+        self.fill(self.lesson(self.gt1, dt.date(2026, 9, 28)))
+        self.fill(self.lesson(self.gt1_soft, dt.date(2026, 9, 29)), attendance=False)
+        self.lesson(self.gt2, dt.date(2026, 8, 20), Lesson.Status.SCHEDULED)
+
+        self.assertEqual(self.trow(self.teachers(), self.almaz)["status"], "no_data")  # period
+        august = self.teachers(period="custom", start_date="2026-08-01", end_date="2026-08-31")
+        self.assertEqual(self.trow(august, self.almaz)["status"], "problem")
+        self.assertEqual([r["teacher"]["id"] for r in self.teachers(teacher=str(self.almaz.id))["items"]], [self.almaz.id])
+        by_group = self.teachers(group=str(self.g1.id))
+        self.assertEqual([r["teacher"]["id"] for r in by_group["items"]], [self.aizhan.id])
+        self.assertEqual(self.teachers(subject=str(self.python.id))["items"][0]["status"], "ok")
+        self.assertEqual(self.teachers(subject=str(self.soft.id))["items"][0]["status"], "attention")
+        self.assertEqual([r["teacher"]["id"] for r in self.teachers(status="attention")["items"]], [self.aizhan.id])
+
+    def test_sorting(self):
+        zara = make_teacher("zara")
+        g3 = Group.objects.create(name="Z-1", course=self.course, start_date=dt.date(2025, 1, 1))
+        gt3 = GroupTeacher.objects.create(group=g3, teacher=zara, subject=self.python)
+        Student.objects.create(first_name="Z", group=g3)
+        self.fill(self.lesson(self.gt1, dt.date(2026, 9, 28)))
+        self.fill(self.lesson(self.gt1_soft, dt.date(2026, 9, 28)), attendance=False)
+        self.fill(self.lesson(gt3, dt.date(2026, 9, 28)))
+        self.lesson(self.gt2, dt.date(2026, 9, 28), Lesson.Status.SCHEDULED)
+
+        def ids(sort):
+            return [r["teacher"]["id"] for r in self.teachers(sort=sort)["items"]]
+
+        self.assertEqual(ids("status"), [self.almaz.id, self.aizhan.id, zara.id])
+        self.assertEqual(ids("name"), [self.aizhan.id, self.almaz.id, zara.id])
+        self.assertEqual(ids("-grades"), [self.aizhan.id, zara.id, self.almaz.id])  # no scores due -> last
+        self.assertEqual(ids("-unfilled"), [self.aizhan.id, self.almaz.id, zara.id])
+        self.assertEqual(ids("attendance"), [self.almaz.id, self.aizhan.id, zara.id])
+        self.assertEqual(ids("bogus"), ids("status"))
+
+    def test_detail_lists_groups_and_unfilled_lessons(self):
+        filled = self.lesson(self.gt1, dt.date(2026, 9, 27))
+        self.fill(filled)
+        gap = self.lesson(self.gt1_soft, dt.date(2026, 9, 29))
+        hw = self.fill(gap, grades=False)
+        HomeworkResult.objects.create(homework=hw, student=self.s1, status=HomeworkResult.Status.CHECKED, score=9)
+        self.lesson(self.gt1, dt.date(2026, 10, 3), Lesson.Status.SCHEDULED)
+        service = ControlService(ControlQuery(filters=ReportFilters.from_query(SEPT, today=TODAY), now_time=NOON))
+        detail = service.build_teacher_detail(self.aizhan)
+        self.assertEqual(detail["row"]["lessons"]["total"], 2)
+        self.assertEqual([g["group"]["id"] for g in detail["groups"]], [self.g1.id])
+        self.assertEqual([p["id"] for p in detail["problems"]], [gap.id])
+        problem = detail["problems"][0]
+        self.assertEqual(problem["teacher"]["id"], self.aizhan.id)
+        self.assertEqual(problem["attendance"]["label"], "Заполнено")
+        self.assertEqual(problem["grades"]["label"], "Выставлено 1 из 2")
+        self.assertEqual([s["name"] for s in problem["grades"]["missing_students"]], ["Азамат уулу Али"])
+        self.assertEqual(len(detail["upcoming"]), 1)
+
+
+class ControlAdminPanelTests(ControlTestBase):
+    """/admin/academy/control/... — pages, permissions, exports."""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Permission
+        from django.test import Client
+
+        self.web = Client()
+        self.l1 = self.lesson(self.gt1, dt.date(2025, 3, 10))
+        self.fill(self.l1, grades=False)
+        self.l2 = self.lesson(self.gt2, dt.date(2025, 3, 11))
+        self.fill(self.l2)
+        self.manager = User.objects.create_user(
+            username="manager", email="m@okurmen.kg", password="x", first_name="Manager", is_staff=True,
+        )
+        self.manager.user_permissions.add(Permission.objects.get(codename="view_academymonthlyreport"))
+        self.aizhan.user.is_staff = True
+        self.aizhan.user.save()
+
+    def get(self, user, name, params=None, **kwargs):
+        self.web.force_login(user)
+        return self.web.get(reverse(name, kwargs=kwargs or None), params or PAST)
+
+    def test_admin_sees_every_trainer(self):
+        response = self.get(self.admin, "admin:academy_control_teachers")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("Контроль тренеров", body)
+        self.assertIn("Aizhan", body)
+        self.assertIn("Almaz", body)
+        self.assertEqual(response.context["data"]["summary"]["problem"], 1)
+        self.assertIn(reverse("admin:academy_control_teachers"), self.web.get(reverse("admin:index")).content.decode())
+
+    def test_manager_sees_permitted_trainers(self):
+        response = self.get(self.manager, "admin:academy_control_teachers")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({r["teacher"]["id"] for r in response.context["data"]["items"]}, {self.aizhan.id, self.almaz.id})
+
+    def test_trainer_sees_only_themselves(self):
+        response = self.get(self.aizhan.user, "admin:academy_control_teachers", {**PAST, "teacher": self.almaz.id})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([r["teacher"]["id"] for r in response.context["data"]["items"]], [self.aizhan.id])
+        self.assertNotIn("Almaz", response.content.decode())
+        other = self.get(self.aizhan.user, "admin:academy_control_teacher_detail", teacher_id=self.almaz.id)
+        self.assertEqual(other.status_code, 404)
+
+    def test_staff_without_access_is_forbidden(self):
+        nobody = User.objects.create_user(username="staff", email="s@okurmen.kg", password="x", first_name="S", is_staff=True)
+        self.assertEqual(self.get(nobody, "admin:academy_control_teachers").status_code, 403)
+
+    def test_detail_page_links_to_the_lesson(self):
+        response = self.get(self.admin, "admin:academy_control_teacher_detail", teacher_id=self.aizhan.id)
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("Открыть урок", body)
+        self.assertIn(reverse("admin:academy_lesson_change", args=[self.l1.id]), body)
+        self.assertIn("Баллы не выставлены", body)
+
+    def test_exports(self):
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        excel = self.get(self.admin, "admin:academy_control_export_excel")
+        self.assertEqual(excel.status_code, 200)
+        wb = load_workbook(BytesIO(excel.content))
+        self.assertEqual(wb.sheetnames, ["Тренеры", "По группам", "Незаполненные занятия"])
+        header = [c.value for c in wb["По группам"][4]]
+        self.assertEqual(header, ["Тренер", "Группа", "Период", "Уроков", "Посещаемость", "ДЗ", "Баллы", "Статус",
+                                  "Незаполненные данные"])
+        cells = [c.value for c in wb["По группам"][5]]
+        self.assertEqual(cells[:2], ["Aizhan", "Prog Soft 2"])
+        self.assertEqual(cells[7], "Проблема")
+        pdf = self.get(self.admin, "admin:academy_control_export_pdf")
+        self.assertEqual(pdf.status_code, 200)
+        self.assertTrue(pdf.content.startswith(b"%PDF"))
+        self.assertEqual(self.get(self.admin, "admin:academy_control_export_pdf", {"status": "x"}).status_code, 400)
