@@ -1,0 +1,13 @@
+{% load report_tags %}
+{% if page.total %}
+<div class="okr-pager">
+  <span>{{ page.start_index }}–{{ page.end_index }} из {{ page.total }}</span>
+  {% if page.pages > 1 %}
+  <span class="okr-pager-links">
+    {% if page.has_previous %}<a class="okr-btn" href="{% query_with page=page.page|add:'-1' %}" data-okr-loading>← Назад</a>{% endif %}
+    <span class="okr-btn" style="pointer-events:none;">{{ page.page }} / {{ page.pages }}</span>
+    {% if page.has_next %}<a class="okr-btn" href="{% query_with page=page.page|add:'1' %}" data-okr-loading>Вперёд →</a>{% endif %}
+  </span>
+  {% endif %}
+</div>
+{% endif %}

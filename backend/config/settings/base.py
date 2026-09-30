@@ -157,6 +157,12 @@ SERVE_MEDIA = False
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# 📊 Reports KPI weights (services.reports.kpi). Equal weights reproduce
+# the project's existing KPI formula (services.monthly_report /
+# academy_monthly_report) exactly; override per deployment, e.g.
+# {"attendance": 0.40, "homework": 0.30, "activity": 0.20, "progress": 0.10}.
+REPORTS_KPI_WEIGHTS = {"attendance": 0.25, "homework": 0.25, "activity": 0.25, "progress": 0.25}
+
 AUTH_USER_MODEL = "users.User"
 
 
@@ -304,6 +310,30 @@ JAZZMIN_SETTINGS = {
                 "url": "admin:academy_inactive_students",
                 "icon": "bi bi-person-dash",
                 "permissions": ["academy.view_studentstatusevent"],
+            },
+        ],
+
+        # 📊 Reports for the academy's management — Admin/superuser only
+        # (backend-enforced in report_admin_views; this permission only
+        # hides the entry from non-admin staff, same as "Отчёт академии").
+        "📊 отчёты": [
+            {
+                "name": "Overview",
+                "url": "admin:academy_reports_overview",
+                "icon": "bi bi-graph-up",
+                "permissions": ["academy.view_academymonthlyreport"],
+            },
+            {
+                "name": "Groups",
+                "url": "admin:academy_reports_groups",
+                "icon": "bi bi-people",
+                "permissions": ["academy.view_academymonthlyreport"],
+            },
+            {
+                "name": "Teachers",
+                "url": "admin:academy_reports_teachers",
+                "icon": "bi bi-person-video3",
+                "permissions": ["academy.view_academymonthlyreport"],
             },
         ],
 
