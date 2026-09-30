@@ -17,6 +17,13 @@ from django.utils.safestring import mark_safe
 from apps.data_io.admin_mixin import TemplatedIOAdminMixin
 from apps.users.import_export.formats import UnsupportedFileFormat, is_valid_phone
 
+from .report_admin_views import (
+    reports_group_detail_view,
+    reports_groups_view,
+    reports_overview_view,
+    reports_teacher_detail_view,
+    reports_teachers_view,
+)
 from .admin_views import (
     academy_report_detail_view,
     academy_report_monitor_view,
@@ -1617,6 +1624,24 @@ def _get_urls_with_schedule():
             "academy/reports/<int:object_id>/",
             admin.site.admin_view(academy_report_detail_view),
             name="academy_report_detail",
+        ),
+        # 📊 ОТЧЁТЫ — see report_admin_views.
+        path("academy/reports-center/", admin.site.admin_view(reports_overview_view), name="academy_reports_overview"),
+        path("academy/reports-center/groups/", admin.site.admin_view(reports_groups_view), name="academy_reports_groups"),
+        path(
+            "academy/reports-center/groups/<int:group_id>/",
+            admin.site.admin_view(reports_group_detail_view),
+            name="academy_reports_group_detail",
+        ),
+        path(
+            "academy/reports-center/teachers/",
+            admin.site.admin_view(reports_teachers_view),
+            name="academy_reports_teachers",
+        ),
+        path(
+            "academy/reports-center/teachers/<int:teacher_id>/",
+            admin.site.admin_view(reports_teacher_detail_view),
+            name="academy_reports_teacher_detail",
         ),
         path(
             "academy/students/inactive/",

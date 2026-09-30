@@ -1,0 +1,64 @@
+{% extends "admin/academy/reports/base.html" %}
+{% load report_tags %}
+
+{% block report_breadcrumbs %}<li class="breadcrumb-item">Groups</li>{% endblock %}
+{% block page_title %}👥 Group Report{% endblock %}
+
+{% block report_body %}
+<div class="okr-panel">
+  <div class="okr-panel-head">
+    {% include "admin/academy/reports/_search.html" with placeholder="Группа, программа или тренер" %}
+    <span class="okr-legend"><span>🟢 90–100%</span><span>🟡 75–89%</span><span>🔴 &lt; 75%</span><span>— нет данных</span></span>
+  </div>
+  {% if page.rows %}
+  <div class="okr-table-wrap">
+    <table class="okr-table">
+      <thead>
+        <tr>
+          <th>{% sort_link "name" "Группа" %}</th>
+          <th>{% sort_link "program" "Программа" %}</th>
+          <th>{% sort_link "teacher" "Тренер" %}</th>
+          <th class="num">{% sort_link "total" "Всего" True %}</th>
+          <th class="num">{% sort_link "active" "Активные" True %}</th>
+          <th class="num">{% sort_link "left" "Ушли" True %}</th>
+          <th class="num">{% sort_link "attendance" "Посещ." True %}</th>
+          <th class="num">{% sort_link "homework" "ДЗ" True %}</th>
+          <th class="num">{% sort_link "activity" "Активн." True %}</th>
+          <th class="num">{% sort_link "progress" "Прогресс" True %}</th>
+          <th class="num">{% sort_link "kpi" "KPI" True %}</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for g in page.rows %}
+        <tr>
+          <td>
+            <a class="okr-row-link" href="{% url 'admin:academy_reports_group_detail' g.id %}?{{ filter_query }}" data-okr-loading>{{ g.name }}</a>
+            {% if g.status != "active" %}<div class="okr-status okr-muted">{{ g.status_display }}</div>{% endif %}
+          </td>
+          <td class="okr-small">{{ g.program }}</td>
+          <td class="okr-small">{% if g.has_teacher %}{{ g.teacher_names }}{% else %}<span class="okr-badge okr-badge-warn">Не назначен</span>{% endif %}</td>
+          <td class="num">{{ g.students.total }}</td>
+          <td class="num">{{ g.students.active }}</td>
+          <td class="num">{% if g.students.left %}<strong style="color:var(--okr-bad)">{{ g.students.left }}</strong>{% else %}0{% endif %}</td>
+          <td class="num">{{ g.attendance_rate|pct }}</td>
+          <td class="num">{{ g.homework_rate|pct }}</td>
+          <td class="num">{{ g.activity_rate|pct }}</td>
+          <td class="num">{{ g.progress_rate|pct }}</td>
+          <td class="num">{{ g.kpi|kpi_badge }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "admin/academy/reports/_pager.html" %}
+  {% elif page.query %}
+    <div class="okr-empty"><i class="bi bi-search"></i><h4>Ничего не найдено</h4><p>По запросу «{{ page.query }}» групп нет.</p></div>
+  {% else %}
+    <div class="okr-empty"><i class="bi bi-people"></i><h4>Нет групп</h4><p>По выбранным фильтрам и периоду групп не найдено.</p></div>
+  {% endif %}
+</div>
+<p class="okr-small okr-muted">
+  В отчёт входят активные и приостановленные группы, а также любые группы, у которых были занятия в периоде.
+  «Всего/Активные» — текущий состав группы, «Ушли» — деактивации за период.
+</p>
+{% endblock %}

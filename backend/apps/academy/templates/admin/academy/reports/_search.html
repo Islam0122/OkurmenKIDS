@@ -1,0 +1,7 @@
+{% load report_tags %}
+<form method="get" class="okr-toolbar">
+  {% for key, value in request.GET.items %}{% if key != "q" and key != "page" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+  <input type="search" name="q" class="okr-search" value="{{ page.query }}" placeholder="{{ placeholder }}" aria-label="Поиск">
+  <button type="submit" class="okr-btn"><i class="bi bi-search"></i> Найти</button>
+  {% if page.query %}<a class="okr-btn" href="{% query_with q=None page=None %}">Очистить</a>{% endif %}
+</form>

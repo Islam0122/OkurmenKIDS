@@ -1,0 +1,8 @@
+{% load report_tags %}
+{% for c in components %}
+  <div class="okr-bar">
+    <span class="okr-bar-label">{{ c.short }} <span class="okr-muted okr-small">· вес {{ c.weight|floatformat:"-1" }}%</span></span>
+    <span class="okr-bar-track"><span class="okr-bar-fill {{ c.value|level_class }}" style="width:{{ c.value|default:0|stringformat:'s' }}%"></span></span>
+    <span class="okr-bar-value">{{ c.value|pct }}</span>
+  </div>
+{% endfor %}

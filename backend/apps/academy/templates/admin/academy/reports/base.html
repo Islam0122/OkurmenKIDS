@@ -1,0 +1,251 @@
+{% extends "admin/base_site.html" %}
+{% load report_tags %}
+
+{% block bodyclass %}{{ block.super }} okr-page{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'admin:academy_reports_overview' %}?{{ filter_query }}">Отчёты</a></li>
+    {% block report_breadcrumbs %}{% endblock %}
+</ol>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .okr { --okr-good:var(--ok-primary,#2F8F5B); --okr-good-soft:var(--ok-primary-soft,#E7F3EC);
+         --okr-warn:var(--ok-warning,#B4790F); --okr-warn-soft:var(--ok-warning-soft,#FBF1DF);
+         --okr-bad:var(--ok-danger,#C7402E); --okr-bad-soft:var(--ok-danger-soft,#FBEAE7); }
+  .okr-head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:.75rem; margin-bottom:.9rem; }
+  .okr-title { font-size:1.45rem; font-weight:800; color:var(--ok-text,#202622); line-height:1.2; }
+  .okr-sub { color:var(--ok-text-secondary,#68736C); font-size:.86rem; margin-top:.2rem; }
+  .okr-actions { display:flex; flex-wrap:wrap; gap:.45rem; }
+  .okr-btn { display:inline-flex; align-items:center; gap:.35rem; padding:.42rem .8rem; border-radius:var(--ok-radius-sm,.45rem);
+             border:1px solid var(--ok-border,#E1E7E2); background:var(--ok-surface,#fff); color:var(--ok-text,#202622);
+             font-size:.84rem; font-weight:600; text-decoration:none; cursor:pointer; white-space:nowrap; }
+  .okr-btn:hover { background:var(--ok-surface-hover,#F1F6F2); text-decoration:none; color:var(--ok-text,#202622); }
+  .okr-btn-primary { background:var(--ok-primary,#2F8F5B); border-color:var(--ok-primary,#2F8F5B); color:var(--ok-on-primary,#fff); }
+  .okr-btn-primary:hover { background:var(--ok-primary-hover,#287A4D); color:var(--ok-on-primary,#fff); }
+
+  .okr-filters { position:sticky; top:3.6rem; z-index:20; background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2);
+                 border-radius:var(--ok-radius,.65rem); padding:.75rem 1rem; margin-bottom:.9rem; box-shadow:var(--ok-shadow); }
+  .okr-filters form { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:.6rem .7rem; align-items:end; }
+  .okr-field { display:flex; flex-direction:column; gap:.2rem; min-width:0; }
+  .okr-field label { font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:var(--ok-text-muted,#89938D); margin:0; font-weight:700; }
+  .okr-field select, .okr-field input { width:100%; padding:.38rem .5rem; border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius-sm,.45rem);
+                 background:var(--ok-surface,#fff); color:var(--ok-text,#202622); font-size:.85rem; min-width:0; }
+  .okr-field-actions { flex-direction:row; flex-wrap:wrap; gap:.4rem; }
+  .okr-period-note { grid-column:1 / -1; font-size:.78rem; color:var(--ok-text-secondary,#68736C); }
+
+  .okr-tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--ok-border,#E1E7E2); margin-bottom:1rem; overflow-x:auto; }
+  .okr-tab { padding:.55rem .9rem; font-weight:600; font-size:.9rem; color:var(--ok-text-secondary,#68736C); border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; }
+  .okr-tab:hover { color:var(--ok-text,#202622); text-decoration:none; }
+  .okr-tab.is-active { color:var(--ok-primary,#2F8F5B); border-bottom-color:var(--ok-primary,#2F8F5B); }
+
+  .okr-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(165px, 1fr)); gap:.75rem; margin-bottom:1rem; }
+  .okr-card { background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,.65rem); padding:.9rem 1rem; box-shadow:var(--ok-shadow); min-width:0; }
+  .okr-card-label { font-size:.78rem; color:var(--ok-text-secondary,#68736C); display:flex; align-items:center; gap:.35rem; }
+  .okr-card-value { font-size:1.75rem; font-weight:800; color:var(--ok-text,#202622); line-height:1.15; margin-top:.2rem; font-variant-numeric:tabular-nums; }
+  .okr-card-hint { font-size:.74rem; color:var(--ok-text-muted,#89938D); margin-top:.15rem; }
+  .okr-card.is-good { border-top:3px solid var(--okr-good); } .okr-card.is-warn { border-top:3px solid var(--okr-warn); }
+  .okr-card.is-bad { border-top:3px solid var(--okr-bad); } .okr-card.is-none { border-top:3px solid var(--ok-border,#E1E7E2); }
+  .okr-card.is-overall { background:var(--ok-surface-hover,#F1F6F2); }
+  .okr-card.is-overall.is-good .okr-card-value { color:var(--okr-good); }
+  .okr-card.is-overall.is-warn .okr-card-value { color:var(--okr-warn); }
+  .okr-card.is-overall.is-bad .okr-card-value { color:var(--okr-bad); }
+
+  .okr-section { font-size:.8rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--ok-text-secondary,#68736C); margin:1.2rem 0 .6rem; }
+  .okr-panel { background:var(--ok-surface,#fff); border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius,.65rem); box-shadow:var(--ok-shadow); margin-bottom:1rem; }
+  .okr-panel-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:.5rem; padding:.75rem 1rem; border-bottom:1px solid var(--ok-border,#E1E7E2); }
+  .okr-panel-title { font-weight:700; color:var(--ok-text,#202622); }
+  .okr-panel-body { padding:.9rem 1rem; }
+  .okr-grid-2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:1rem; }
+
+  .okr-table-wrap { overflow-x:auto; }
+  .okr-table { width:100%; border-collapse:collapse; font-size:.86rem; }
+  .okr-table th { position:sticky; top:0; background:var(--ok-surface-hover,#F1F6F2); color:var(--ok-text-secondary,#68736C); font-size:.72rem;
+                  text-transform:uppercase; letter-spacing:.03em; font-weight:700; padding:.55rem .6rem; text-align:left; white-space:nowrap; border-bottom:1px solid var(--ok-border,#E1E7E2); }
+  .okr-table td { padding:.55rem .6rem; border-bottom:1px solid var(--ok-border,#E1E7E2); color:var(--ok-text,#202622); vertical-align:middle; }
+  .okr-table tr:hover td { background:var(--ok-surface-hover,#F1F6F2); }
+  .okr-table .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .okr-table .c { text-align:center; }
+  .okr-row-link { color:var(--ok-text,#202622); font-weight:600; }
+  .okr-row-link:hover { color:var(--ok-primary,#2F8F5B); }
+  .okr-muted { color:var(--ok-text-muted,#89938D); }
+  .okr-small { font-size:.78rem; }
+  .okr-sort { color:inherit; text-decoration:none; } .okr-sort:hover { color:var(--ok-text,#202622); text-decoration:none; }
+  .okr-sort.is-active { color:var(--ok-primary,#2F8F5B); }
+
+  .okr-badge { display:inline-flex; align-items:center; gap:.2rem; padding:.12rem .5rem; border-radius:999px; font-size:.78rem; font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .okr-badge-good { background:var(--okr-good-soft); color:var(--okr-good); }
+  .okr-badge-warn { background:var(--okr-warn-soft); color:var(--okr-warn); }
+  .okr-badge-bad { background:var(--okr-bad-soft); color:var(--okr-bad); }
+  .okr-badge-none { background:var(--ok-surface-hover,#F1F6F2); color:var(--ok-text-muted,#89938D); }
+  .okr-chip { display:inline-block; padding:.1rem .45rem; margin:.1rem .15rem .1rem 0; border-radius:999px; font-size:.75rem; background:var(--ok-surface-hover,#F1F6F2); color:var(--ok-text-secondary,#68736C); border:1px solid var(--ok-border,#E1E7E2); }
+  .okr-status { font-size:.75rem; font-weight:600; }
+
+  .okr-bar { display:flex; align-items:center; gap:.6rem; margin:.45rem 0; }
+  .okr-bar-label { width:44%; font-size:.84rem; color:var(--ok-text-secondary,#68736C); }
+  .okr-bar-track { display:block; flex:1; height:8px; background:var(--ok-surface-hover,#F1F6F2); border-radius:999px; overflow:hidden; }
+  .okr-bar-fill { display:block; height:100%; border-radius:999px; }
+  .okr-bar-fill.good { background:var(--okr-good); } .okr-bar-fill.warn { background:var(--okr-warn); } .okr-bar-fill.bad { background:var(--okr-bad); }
+  .okr-bar-value { width:4.2rem; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+  .okr-row { display:flex; justify-content:space-between; gap:1rem; padding:.38rem 0; border-bottom:1px dashed var(--ok-border,#E1E7E2); font-size:.88rem; }
+  .okr-row:last-child { border-bottom:0; }
+  .okr-row span:first-child { color:var(--ok-text-secondary,#68736C); }
+  .okr-row span:last-child { font-weight:700; font-variant-numeric:tabular-nums; text-align:right; }
+
+  .okr-toolbar { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
+  .okr-search { padding:.38rem .6rem; border:1px solid var(--ok-border,#E1E7E2); border-radius:var(--ok-radius-sm,.45rem); min-width:220px;
+                background:var(--ok-surface,#fff); color:var(--ok-text,#202622); }
+  .okr-pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:.5rem; padding:.7rem 1rem; font-size:.84rem; color:var(--ok-text-secondary,#68736C); }
+  .okr-pager-links { display:flex; gap:.35rem; }
+
+  .okr-empty { text-align:center; padding:2.2rem 1rem; color:var(--ok-text-muted,#89938D); }
+  .okr-empty i { font-size:2rem; display:block; margin-bottom:.4rem; }
+  .okr-empty h4 { font-size:1rem; font-weight:700; color:var(--ok-text,#202622); margin:.2rem 0; }
+  .okr-alert { padding:.8rem 1rem; border-radius:var(--ok-radius,.65rem); border:1px solid var(--okr-bad); background:var(--okr-bad-soft); color:var(--okr-bad); margin-bottom:1rem; }
+  .okr-legend { display:flex; flex-wrap:wrap; gap:.8rem; font-size:.78rem; color:var(--ok-text-secondary,#68736C); }
+
+  .okr-loading { position:fixed; inset:0; background:rgba(0,0,0,.18); display:none; align-items:center; justify-content:center; z-index:2000; }
+  .okr-loading.is-visible { display:flex; }
+  .okr-loading-box { background:var(--ok-surface,#fff); color:var(--ok-text,#202622); padding:1rem 1.3rem; border-radius:var(--ok-radius,.65rem); box-shadow:var(--ok-shadow-hover); display:flex; gap:.7rem; align-items:center; font-weight:600; }
+  .okr-spinner { width:1.2rem; height:1.2rem; border:3px solid var(--ok-border,#E1E7E2); border-top-color:var(--ok-primary,#2F8F5B); border-radius:50%; animation:okr-spin .8s linear infinite; }
+  @keyframes okr-spin { to { transform:rotate(360deg); } }
+
+  @media (max-width: 767px) {
+    .okr-filters { position:static; }
+    .okr-title { font-size:1.2rem; }
+    .okr-card-value { font-size:1.4rem; }
+    .okr-bar-label { width:50%; }
+    .okr-search { min-width:0; width:100%; }
+    .okr-field-actions { grid-column:1 / -1; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="okr">
+  <div class="okr-head">
+    <div>
+      <div class="okr-title">{% block page_title %}📊 Academy Reports{% endblock %}</div>
+      <div class="okr-sub">
+        Период: <strong>{{ filters.start|date:"d.m.Y" }} — {{ filters.end|date:"d.m.Y" }}</strong> · {{ filters.period_label }}
+        {% block page_subtitle %}{% endblock %}
+      </div>
+    </div>
+    <div class="okr-actions">
+      <a class="okr-btn" href="{{ request.get_full_path }}" data-okr-loading title="Пересчитать по текущим данным"><i class="bi bi-arrow-clockwise"></i> Refresh</a>
+      <a class="okr-btn" href="{{ pdf_url }}" data-okr-download title="PDF с учётом выбранных фильтров"><i class="bi bi-file-earmark-pdf"></i> Download PDF</a>
+      <a class="okr-btn okr-btn-primary" href="{{ excel_url }}" data-okr-download title="Excel с учётом выбранных фильтров"><i class="bi bi-file-earmark-spreadsheet"></i> Export Excel</a>
+    </div>
+  </div>
+
+  <div class="okr-filters">
+    <form method="get" id="okr-filter-form">
+      <div class="okr-field">
+        <label for="okr-period">Период</label>
+        <select name="period" id="okr-period">
+          {% for key, label in period_choices %}
+            <option value="{{ key }}" {% if filters.period == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="okr-field">
+        <label for="okr-start">Начало</label>
+        <input type="date" name="start_date" id="okr-start" value="{{ filters.start|date:'Y-m-d' }}">
+      </div>
+      <div class="okr-field">
+        <label for="okr-end">Конец</label>
+        <input type="date" name="end_date" id="okr-end" value="{{ filters.end|date:'Y-m-d' }}">
+      </div>
+      <div class="okr-field">
+        <label for="okr-program">Программа</label>
+        <select name="program" id="okr-program">
+          <option value="">Все</option>
+          {% for item in options.programs %}<option value="{{ item.id }}" {% if selected.program == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="okr-field">
+        <label for="okr-group">Группа</label>
+        <select name="group" id="okr-group">
+          <option value="">Все</option>
+          {% for item in options.groups %}<option value="{{ item.id }}" {% if selected.group == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="okr-field">
+        <label for="okr-teacher">Тренер</label>
+        <select name="teacher" id="okr-teacher">
+          <option value="">Все</option>
+          {% for item in options.teachers %}<option value="{{ item.id }}" {% if selected.teacher == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="okr-field">
+        <label for="okr-subject">Предмет</label>
+        <select name="subject" id="okr-subject">
+          <option value="">Все</option>
+          {% for item in options.subjects %}<option value="{{ item.id }}" {% if selected.subject == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="okr-field okr-field-actions">
+        <button type="submit" class="okr-btn okr-btn-primary">Применить</button>
+        <a class="okr-btn" href="{{ request.path }}" data-okr-loading>Сбросить</a>
+      </div>
+    </form>
+  </div>
+
+  <nav class="okr-tabs">
+    {% for t in tabs %}<a class="okr-tab {% if t.active %}is-active{% endif %}" href="{{ t.url }}" data-okr-loading>{{ t.label }}</a>{% endfor %}
+  </nav>
+
+  {% if error %}
+    <div class="okr-alert"><strong>Не удалось построить отчёт.</strong> {{ error }}</div>
+    <div class="okr-empty"><i class="bi bi-exclamation-triangle"></i><h4>Проверьте фильтры</h4><p>Исправьте период и нажмите «Применить».</p></div>
+  {% else %}
+    {% block report_body %}{% endblock %}
+  {% endif %}
+</div>
+
+<div class="okr-loading" id="okr-loading" role="status" aria-live="polite">
+  <div class="okr-loading-box"><span class="okr-spinner"></span><span id="okr-loading-text">Считаем отчёт…</span></div>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById("okr-filter-form");
+  var period = document.getElementById("okr-period");
+  var start = document.getElementById("okr-start");
+  var end = document.getElementById("okr-end");
+  var overlay = document.getElementById("okr-loading");
+  var overlayText = document.getElementById("okr-loading-text");
+
+  function showLoading(text) {
+    overlayText.textContent = text || "Считаем отчёт…";
+    overlay.classList.add("is-visible");
+  }
+  // Editing a date means "custom period"; a preset period ignores the dates.
+  [start, end].forEach(function (input) {
+    input.addEventListener("change", function () { period.value = "custom"; });
+  });
+  form.addEventListener("submit", function () {
+    if (period.value !== "custom") { start.disabled = true; end.disabled = true; }
+    Array.prototype.forEach.call(form.querySelectorAll("select"), function (el) { if (!el.value) el.disabled = true; });
+    showLoading();
+  });
+  period.addEventListener("change", function () { if (period.value !== "custom") form.requestSubmit(); });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-okr-loading]"), function (el) {
+    el.addEventListener("click", function () { showLoading(); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-okr-download]"), function (el) {
+    el.addEventListener("click", function () {
+      showLoading("Готовим файл…");
+      setTimeout(function () { overlay.classList.remove("is-visible"); }, 2500);
+    });
+  });
+  window.addEventListener("pageshow", function () { overlay.classList.remove("is-visible"); });
+})();
+</script>
+{% endblock %}
