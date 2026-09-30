@@ -17,6 +17,12 @@ from django.utils.safestring import mark_safe
 from apps.data_io.admin_mixin import TemplatedIOAdminMixin
 from apps.users.import_export.formats import UnsupportedFileFormat, is_valid_phone
 
+from .control_admin_views import (
+    control_export_excel_view,
+    control_export_pdf_view,
+    control_teacher_detail_view,
+    control_teachers_view,
+)
 from .report_admin_views import (
     reports_group_detail_view,
     reports_groups_view,
@@ -1624,6 +1630,23 @@ def _get_urls_with_schedule():
             "academy/reports/<int:object_id>/",
             admin.site.admin_view(academy_report_detail_view),
             name="academy_report_detail",
+        ),
+        # КОНТРОЛЬ ТРЕНЕРОВ — see control_admin_views.
+        path("academy/control/teachers/", admin.site.admin_view(control_teachers_view), name="academy_control_teachers"),
+        path(
+            "academy/control/teachers/<int:teacher_id>/",
+            admin.site.admin_view(control_teacher_detail_view),
+            name="academy_control_teacher_detail",
+        ),
+        path(
+            "academy/control/export/excel/",
+            admin.site.admin_view(control_export_excel_view),
+            name="academy_control_export_excel",
+        ),
+        path(
+            "academy/control/export/pdf/",
+            admin.site.admin_view(control_export_pdf_view),
+            name="academy_control_export_pdf",
         ),
         # ОТЧЁТЫ — see report_admin_views.
         path("academy/reports-center/", admin.site.admin_view(reports_overview_view), name="academy_reports_overview"),

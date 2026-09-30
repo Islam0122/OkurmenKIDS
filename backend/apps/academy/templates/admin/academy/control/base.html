@@ -1,0 +1,201 @@
+{% extends "admin/base_site.html" %}
+{% load report_tags %}
+
+{% block bodyclass %}{{ block.super }} okr-page{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'admin:academy_control_teachers' %}?{{ filter_query }}">Контроль тренеров</a></li>
+    {% block control_breadcrumbs %}{% endblock %}
+</ol>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+{% include "admin/academy/reports/_styles.html" %}
+<style>
+  .okc-cell { display:inline-flex; align-items:center; gap:.35rem; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .okc-cell.is-good { color:var(--okr-good); } .okc-cell.is-warn { color:var(--okr-warn); }
+  .okc-cell.is-bad { color:var(--okr-bad); } .okc-cell.is-none { color:var(--okr-muted); font-weight:500; }
+  .okr-status-badge.is-info { background:var(--okr-info-soft); color:var(--okr-info); border-color:color-mix(in srgb, var(--okr-info) 25%, transparent); }
+  .okr-stat-icon.is-none { background:var(--okr-subtle); color:var(--okr-muted); }
+  .okc-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.6rem; }
+  .okc-toolbar-right { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+  .okc-cards { display:none; }
+  .okc-card { display:block; background:var(--okr-surface); border:1px solid var(--okr-border); border-radius:var(--ok-radius-lg,.9rem);
+              padding:.9rem 1rem; margin:.7rem; color:var(--okr-text); text-decoration:none; box-shadow:var(--ok-shadow); }
+  .okc-card:hover { text-decoration:none; color:var(--okr-text); border-color:var(--okr-good); }
+  .okc-card-name { font-weight:700; font-size:.98rem; }
+  .okc-card-sub { color:var(--okr-text-2); font-size:.8rem; margin-bottom:.55rem; }
+  .okc-card-foot { display:flex; justify-content:space-between; align-items:center; gap:.5rem; margin-top:.7rem; font-size:.82rem; }
+  .okc-card-more { display:inline-flex; align-items:center; gap:.25rem; color:var(--okr-good); font-weight:600; }
+  .okc-problem { border:1px solid var(--okr-border); border-left:3px solid var(--okr-bad); border-radius:var(--ok-radius,.65rem);
+                 padding:.8rem .9rem; margin-bottom:.7rem; background:var(--okr-surface); }
+  .okc-problem.is-warn { border-left-color:var(--okr-warn); }
+  .okc-problem-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; gap:.5rem; }
+  .okc-problem-title { font-weight:700; color:var(--okr-text); }
+  .okc-problem-list { list-style:none; margin:.45rem 0 0; padding:0; font-size:.86rem; }
+  .okc-problem-list li { display:flex; align-items:center; gap:.4rem; color:var(--okr-bad); padding:.1rem 0; }
+  .okc-facts { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:.35rem .9rem; margin-top:.6rem; font-size:.8rem; }
+  .okc-facts dt { color:var(--okr-muted); font-weight:500; margin:0; }
+  .okc-facts dd { margin:0; font-weight:600; }
+  .okc-facts .is-good { color:var(--okr-good); } .okc-facts .is-warn { color:var(--okr-warn); } .okc-facts .is-bad { color:var(--okr-bad); }
+  .okc-students { font-size:.8rem; color:var(--okr-text-2); margin-top:.45rem; }
+  .okc-note { font-size:.76rem; color:var(--okr-muted); margin-top:.4rem; }
+  .okc-hidden { display:none !important; }
+  @media (max-width: 767px) {
+    .okc-desktop { display:none; }
+    .okc-cards { display:block; }
+    .okc-toolbar, .okc-toolbar-right { width:100%; }
+    .okc-toolbar-right .okr-select { flex:1; }
+    .okr-cards { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:.55rem; }
+    .okr-stat { padding:.75rem .8rem; }
+    .okr-stat-icon { margin-bottom:.45rem; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="okr">
+  <div class="okr-head">
+    <div>
+      <h1 class="okr-title">{% block page_title %}Контроль тренеров{% endblock %}</h1>
+      <p class="okr-lead">{% block page_lead %}Кто из тренеров что заполнил и что осталось заполнить{% endblock %}</p>
+      <div class="okr-sub">
+        <span class="okr-period-chip" title="Период">{% icon "calendar" 14 %}{{ filters.start|date:"d.m.Y" }} — {{ filters.end|date:"d.m.Y" }}</span>
+        <span>{{ filters.period_label }}</span>
+      </div>
+    </div>
+    <div class="okr-actions">
+      <a class="okr-btn" href="{{ request.get_full_path }}" data-okr-loading title="Пересчитать по текущим данным">{% icon "refresh-cw" %}Обновить</a>
+      <a class="okr-btn" href="{{ pdf_url }}" data-okr-download title="PDF с учётом выбранного периода и фильтров">{% icon "file-text" %}Экспорт PDF</a>
+      <a class="okr-btn okr-btn-primary" href="{{ excel_url }}" data-okr-download title="Excel с учётом выбранного периода и фильтров">{% icon "table-2" %}Экспорт Excel</a>
+    </div>
+  </div>
+
+  <section class="okr-filters" aria-label="Фильтры">
+    <div class="okr-filters-head">
+      <span class="okr-filters-title">{% icon "filter" 15 %}Фильтры{% if active_filters %}<span class="okr-count" title="Активных фильтров">{{ active_filters }}</span>{% endif %}</span>
+      {% if active_filters or filters.period != "this_month" %}
+        <a class="okr-btn okr-btn-ghost" href="{{ request.path }}" data-okr-loading>{% icon "rotate-ccw" 14 %}Сбросить</a>
+      {% endif %}
+    </div>
+    <form method="get" id="okr-filter-form">
+      <div class="okr-field">
+        <label for="okr-period">Период</label>
+        <select name="period" id="okr-period">
+          {% for key, label in period_choices %}
+            <option value="{{ key }}" {% if filters.period == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="okr-field okr-date-field"{% if filters.period != "custom" %} hidden{% endif %}>
+        <label for="okr-start">Дата начала</label>
+        <input type="date" name="start_date" id="okr-start" value="{{ filters.start|date:'Y-m-d' }}">
+      </div>
+      <div class="okr-field okr-date-field"{% if filters.period != "custom" %} hidden{% endif %}>
+        <label for="okr-end">Дата окончания</label>
+        <input type="date" name="end_date" id="okr-end" value="{{ filters.end|date:'Y-m-d' }}">
+      </div>
+      {% if not is_own_scope %}
+      <div class="okr-field">
+        <label for="okr-teacher">Тренер</label>
+        <select name="teacher" id="okr-teacher">
+          <option value="">Все тренеры</option>
+          {% for item in options.teachers %}<option value="{{ item.id }}" {% if selected.teacher == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="okr-field">
+        <label for="okr-group">Группа</label>
+        <select name="group" id="okr-group">
+          <option value="">Все группы</option>
+          {% for item in options.groups %}<option value="{{ item.id }}" {% if selected.group == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="okr-field">
+        <label for="okr-subject">Предмет</label>
+        <select name="subject" id="okr-subject">
+          <option value="">Все предметы</option>
+          {% for item in options.subjects %}<option value="{{ item.id }}" {% if selected.subject == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="okr-field">
+        <label for="okr-status">Статус</label>
+        <select name="status" id="okr-status">
+          <option value="">Все</option>
+          {% for key, label in status_choices %}<option value="{{ key }}" {% if selected.status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      {% if sort != "status" %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <div class="okr-field okr-field-actions">
+        <button type="submit" class="okr-btn okr-btn-primary">Применить</button>
+      </div>
+    </form>
+  </section>
+
+  {% if error %}
+    <div class="okr-alert" role="alert">{% icon "triangle-alert" 18 %}<div><strong>Не удалось построить контроль.</strong> {{ error }}</div></div>
+  {% else %}
+    {% block control_body %}{% endblock %}
+  {% endif %}
+</div>
+
+<div class="okr-loading" id="okr-loading" role="status" aria-live="polite">
+  <div class="okr-loading-box"><span class="okr-spinner" aria-hidden="true"></span><span id="okr-loading-text">Загрузка…</span></div>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById("okr-filter-form");
+  var period = document.getElementById("okr-period");
+  var start = document.getElementById("okr-start");
+  var end = document.getElementById("okr-end");
+  var overlay = document.getElementById("okr-loading");
+  var overlayText = document.getElementById("okr-loading-text");
+  function showLoading(text) { overlayText.textContent = text || "Загрузка…"; overlay.classList.add("is-visible"); }
+  [start, end].forEach(function (input) { input.addEventListener("change", function () { period.value = "custom"; }); });
+  form.addEventListener("submit", function () {
+    if (period.value !== "custom") { start.disabled = true; end.disabled = true; }
+    Array.prototype.forEach.call(form.querySelectorAll("select"), function (el) { if (!el.value) el.disabled = true; });
+    showLoading();
+  });
+  var dateFields = document.querySelectorAll(".okr-date-field");
+  period.addEventListener("change", function () {
+    var custom = period.value === "custom";
+    Array.prototype.forEach.call(dateFields, function (el) { el.hidden = !custom; });
+    if (!custom) { form.requestSubmit(); } else { start.focus(); }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-okr-loading]"), function (el) {
+    el.addEventListener("click", function () { showLoading(); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-okr-download]"), function (el) {
+    el.addEventListener("click", function () {
+      showLoading("Формируем файл…");
+      setTimeout(function () { overlay.classList.remove("is-visible"); }, 2500);
+    });
+  });
+  window.addEventListener("pageshow", function () { overlay.classList.remove("is-visible"); });
+
+  // Instant search (no reload): hides rows/cards whose trainer/group names don't match.
+  var search = document.getElementById("okc-search");
+  if (search) {
+    var items = document.querySelectorAll("[data-okc-search]");
+    var empty = document.getElementById("okc-search-empty");
+    search.addEventListener("input", function () {
+      var q = search.value.trim().toLowerCase();
+      var visible = 0;
+      Array.prototype.forEach.call(items, function (el) {
+        var match = !q || el.getAttribute("data-okc-search").indexOf(q) !== -1;
+        el.classList.toggle("okc-hidden", !match);
+        if (match && el.hasAttribute("data-okc-count")) visible += 1;
+      });
+      if (empty) empty.classList.toggle("okc-hidden", visible > 0);
+    });
+  }
+})();
+</script>
+{% endblock %}

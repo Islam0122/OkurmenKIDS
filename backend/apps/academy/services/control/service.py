@@ -106,8 +106,11 @@ class ControlService:
         )
 
     def lessons_qs(self) -> QuerySet[Lesson]:
+        return self.lessons_qs_for_range(self.filters.start, self.filters.end)
+
+    def lessons_qs_for_range(self, start: dt.date, end: dt.date) -> QuerySet[Lesson]:
         f = self.filters
-        qs = Lesson.objects.filter(date__gte=f.start, date__lte=f.end)
+        qs = Lesson.objects.filter(date__gte=start, date__lte=end)
         if self.restrict_teacher is not None:
             qs = qs.filter(self.responsible_q(self.restrict_teacher.id))
         if f.teacher_id is not None:
@@ -189,9 +192,10 @@ class ControlService:
         teacher = check.lesson.effective_teacher
         return (teacher.id if teacher else None, check.lesson.group_id)
 
-    def build_row(self, checks: list[LessonCheck]) -> dict:
-        first = checks[0].lesson
-        teacher = first.effective_teacher
+    @staticmethod
+    def aggregate(checks: list[LessonCheck]) -> dict:
+        """Counts, levels, status and "what is left" for any set of lessons —
+        one teacher×group row, or all of one teacher's lessons."""
         due = [c for c in checks if c.is_due]
         closed = sum(1 for c in due if c.closed)
         attendance = _component(sum(1 for c in due if c.attendance_counts and c.attendance_ok),
@@ -229,20 +233,10 @@ class ControlService:
                 f"на {_lessons_word(grades['total'] - grades['completed'])}"
             )
 
-        subjects = {}
-        for c in checks:
-            if c.lesson.subject_id and c.lesson.subject_id not in subjects:
-                subjects[c.lesson.subject_id] = {"id": c.lesson.subject_id, "name": c.lesson.subject.name}
-
         stamps = [c.last_activity_at for c in checks if c.last_activity_at]
         attention_lessons = [c for c in due if c.status != rules.STATUS_OK]
         next_lesson = min(attention_lessons, key=lambda c: (c.lesson.date, c.lesson.start_time), default=None)
-
         return {
-            "key": f"{teacher.id if teacher else UNASSIGNED}-{first.group_id}",
-            "teacher": _teacher_ref(teacher),
-            "group": {"id": first.group_id, "name": first.group.name},
-            "subjects": list(subjects.values()),
             "lessons": {
                 **_component(closed, len(due)),
                 "not_closed": not_closed,
@@ -258,6 +252,21 @@ class ControlService:
             "issues": issues,
             "first_problem_lesson_id": next_lesson.lesson.id if next_lesson else None,
             "last_activity_at": max(stamps) if stamps else None,
+        }
+
+    def build_row(self, checks: list[LessonCheck]) -> dict:
+        first = checks[0].lesson
+        teacher = first.effective_teacher
+        subjects = {}
+        for c in checks:
+            if c.lesson.subject_id and c.lesson.subject_id not in subjects:
+                subjects[c.lesson.subject_id] = {"id": c.lesson.subject_id, "name": c.lesson.subject.name}
+        return {
+            "key": f"{teacher.id if teacher else UNASSIGNED}-{first.group_id}",
+            "teacher": _teacher_ref(teacher),
+            "group": {"id": first.group_id, "name": first.group.name},
+            "subjects": list(subjects.values()),
+            **self.aggregate(checks),
         }
 
     def rows(self, checks: list[LessonCheck]) -> list[dict]:
@@ -294,7 +303,7 @@ class ControlService:
             "homework_completion": percent(total("homework", "completed"), total("homework", "total")),
             "grade_completion": percent(total("grades", "completed"), total("grades", "total")),
             "students_without_grade": total("grades", "students_missing"),
-            "attention_count": status_counts[rules.STATUS_ATTENTION] + status_counts[rules.STATUS_NOT_FILLED],
+            "attention_count": status_counts[rules.STATUS_ATTENTION] + status_counts[rules.STATUS_PROBLEM],
             "problem_lessons": sum(r["problem_lessons"] for r in rows),
             "rows_total": len(rows),
             "status_counts": status_counts,
@@ -324,6 +333,166 @@ class ControlService:
             "filters": self.filters_dict(),
             "row": row,
             "lessons": [lesson_payload(c) for c in lessons],
+        }
+
+    # ------------------------------------------------------------------
+    # Trainers — the Admin Panel's «Контроль тренеров»
+    # ------------------------------------------------------------------
+    def _has_scope_filters(self) -> bool:
+        f = self.filters
+        return any(v is not None for v in (f.group_id, f.course_id, f.subject_id))
+
+    def _idle_teachers(self) -> list[Teacher]:
+        """Trainers listed even without a lesson in the period (status «Нет
+        данных») — every active trainer, unless the page is narrowed to a
+        group/program/subject, where only trainers with lessons there count."""
+        if self.restrict_teacher is not None:
+            return [self.restrict_teacher]
+        if self.filters.teacher_id is not None:
+            return list(Teacher.objects.select_related("user").filter(id=self.filters.teacher_id))
+        if self._has_scope_filters():
+            return []
+        return list(Teacher.objects.select_related("user").filter(is_active=True))
+
+    def teacher_row(self, teacher: Teacher, checks: list[LessonCheck]) -> dict:
+        by_group: dict[int, list[LessonCheck]] = defaultdict(list)
+        for check in checks:
+            by_group[check.lesson.group_id].append(check)
+        groups = sorted(
+            ({"id": items[0].lesson.group_id, "name": items[0].lesson.group.name} for items in by_group.values()),
+            key=lambda g: g["name"].lower(),
+        )
+        aggregate = self.aggregate(checks) if checks else {
+            **self.aggregate([]), "status": rules.STATUS_NO_DATA, "status_label": rules.STATUS_LABELS[rules.STATUS_NO_DATA],
+        }
+        return {
+            "key": str(teacher.id),
+            "teacher": _teacher_ref(teacher),
+            "groups": groups,
+            "groups_count": len(groups),
+            **aggregate,
+            "search": " ".join([str(teacher), *(g["name"] for g in groups)]).lower(),
+        }
+
+    SORT_KEYS = ("status", "name", "groups", "unfilled", "attendance", "homework", "grades")
+
+    @classmethod
+    def sort_teacher_rows(cls, rows: list[dict], sort: str) -> list[dict]:
+        """`status` (default, problems first), `name`, `groups`, `unfilled`
+        (lessons with gaps) or a component's completion percent; a leading
+        «-» reverses. Rows with no data for a percent always sort last."""
+        desc = sort.startswith("-")
+        key = sort.lstrip("-")
+        if key not in cls.SORT_KEYS:
+            key, desc = "status", False
+
+        def name(r):
+            return r["teacher"]["name"].lower()
+
+        if key == "status":
+            ordered = sorted(rows, key=lambda r: (rules.STATUS_PRIORITY[r["status"]], -r["problem_lessons"], name(r)))
+            return list(reversed(ordered)) if desc else ordered
+        if key == "name":
+            return sorted(rows, key=name, reverse=desc)
+        if key in ("groups", "unfilled"):
+            field = "groups_count" if key == "groups" else "problem_lessons"
+            return sorted(rows, key=lambda r: (-r[field] if desc else r[field], name(r)))
+        with_value = [r for r in rows if r[key]["percent"] is not None]
+        without = [r for r in rows if r[key]["percent"] is None]
+        with_value.sort(key=lambda r: (-r[key]["percent"] if desc else r[key]["percent"], name(r)))
+        return with_value + sorted(without, key=name)
+
+    def teacher_rows(self, checks: list[LessonCheck]) -> list[dict]:
+        by_teacher: dict[int, list[LessonCheck]] = defaultdict(list)
+        teachers: dict[int, Teacher] = {}
+        for check in checks:
+            teacher = check.lesson.effective_teacher
+            if teacher is None:
+                continue  # no responsible trainer — shown on the lesson-level Control page
+            by_teacher[teacher.id].append(check)
+            teachers[teacher.id] = teacher
+        for teacher in self._idle_teachers():
+            teachers.setdefault(teacher.id, teacher)
+        return [self.teacher_row(teacher, by_teacher.get(tid, [])) for tid, teacher in teachers.items()]
+
+    def today_summary(self) -> dict:
+        """Today's lessons in the same trainer/group/subject scope, whatever
+        the selected period — "Занятий сегодня / Закрыто / Не заполнено"."""
+        qs = self.lessons_qs_for_range(self.today, self.today).exclude(status=Lesson.Status.CANCELLED)
+        checks = self.evaluate(qs)
+        return {
+            "total": len(checks),
+            "closed": sum(1 for c in checks if c.closed),
+            "not_filled": sum(1 for c in checks if c.is_due and c.status in (rules.STATUS_ATTENTION, rules.STATUS_PROBLEM)),
+            "upcoming": sum(1 for c in checks if c.state == rules.STATE_UPCOMING),
+        }
+
+    def build_teachers(self, *, sort: str = "status") -> dict:
+        return self._teachers_from(self.evaluate(), sort)
+
+    def _teachers_from(self, checks: list[LessonCheck], sort: str) -> dict:
+        rows = self.teacher_rows(checks)
+        counts = {key: 0 for key in rules.FILTERABLE_STATUSES}
+        for row in rows:
+            counts[row["status"]] += 1
+        summary = {
+            "teachers": len(rows),
+            "ok": counts[rules.STATUS_OK],
+            "attention": counts[rules.STATUS_ATTENTION],
+            "problem": counts[rules.STATUS_PROBLEM],
+            "no_data": counts[rules.STATUS_NO_DATA] + counts[rules.STATUS_UPCOMING],
+            "status_counts": counts,
+            "lessons": sum(r["lessons"]["total"] for r in rows),
+            "problem_lessons": sum(r["problem_lessons"] for r in rows),
+            "today": self.today_summary(),
+        }
+        if self.query.status:
+            rows = [r for r in rows if r["status"] == self.query.status]
+        return {"filters": self.filters_dict(), "summary": summary, "items": self.sort_teacher_rows(rows, sort)}
+
+    def export_data(self, *, sort: str = "status") -> dict:
+        """Everything the Excel/PDF export needs, for the listed trainers."""
+        checks = self.evaluate()
+        overview = self._teachers_from(checks, sort)
+        teacher_ids = {row["teacher"]["id"] for row in overview["items"]}
+        scoped = [c for c in checks if c.lesson.effective_teacher and c.lesson.effective_teacher.id in teacher_ids]
+        problems = sorted(
+            (c for c in scoped if c.is_due and c.status != rules.STATUS_OK),
+            key=lambda c: (c.lesson.date, c.lesson.start_time),
+            reverse=True,
+        )
+        return {
+            "filters": self.filters,
+            "summary": overview["summary"],
+            "teachers": overview["items"],
+            "groups": self.rows(scoped),
+            "problems": [lesson_payload(c) for c in problems],
+        }
+
+    def build_teacher_detail(self, teacher: Teacher) -> dict:
+        """One trainer: totals, one row per group, and every lesson that
+        still needs something — newest first, each with its link target."""
+        checks = self.evaluate(self.lessons_qs().filter(self.responsible_q(teacher.id)))
+        row = self.teacher_row(teacher, checks)
+        group_rows = sorted(
+            self.rows(checks),
+            key=lambda r: (rules.STATUS_PRIORITY[r["status"]], r["group"]["name"].lower()),
+        )
+        problems = sorted(
+            (c for c in checks if c.is_due and c.status != rules.STATUS_OK),
+            key=lambda c: (c.lesson.date, c.lesson.start_time),
+            reverse=True,
+        )
+        upcoming = sorted(
+            (c for c in checks if c.state == rules.STATE_UPCOMING),
+            key=lambda c: (c.lesson.date, c.lesson.start_time),
+        )
+        return {
+            "filters": self.filters_dict(),
+            "row": row,
+            "groups": group_rows,
+            "problems": [lesson_payload(c) for c in problems],
+            "upcoming": [lesson_payload(c) for c in upcoming],
         }
 
     def filters_dict(self) -> dict:
@@ -380,12 +549,14 @@ def lesson_payload(check: LessonCheck) -> dict:
         "students_total": check.students_total,
         "attendance": {
             "state": check.attendance_state,
+            "label": check.attendance_label,
             "marked": check.attendance_marked,
             "total": check.students_total,
             "missing_students": [{"id": s.id, "name": s.name} for s in check.attendance_missing],
         },
         "homework": {
             "state": check.homework_state,
+            "label": check.homework_label,
             "id": check.homework_id,
             "given": check.homework_id is not None,
             "not_required": lesson.homework_not_required,
@@ -394,6 +565,7 @@ def lesson_payload(check: LessonCheck) -> dict:
         },
         "grades": {
             "state": check.grades_state,
+            "label": check.grades_label,
             "given": check.grades_given,
             "total": check.grades_required,
             "missing": len(check.grades_missing),

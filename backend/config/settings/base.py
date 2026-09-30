@@ -305,6 +305,14 @@ JAZZMIN_SETTINGS = {
             {"name": "Группы", "model": "academy.group", "icon": "bi bi-people"},
             {"name": "Тренеры", "model": "users.teacher", "icon": "bi bi-person-badge"},
             {
+                # Operational control of trainers (not KPI) — see
+                # control_admin_views; access is decided there
+                # (services.control.access), so no sidebar-level gate.
+                "name": "Контроль тренеров",
+                "url": "admin:academy_control_teachers",
+                "icon": "bi bi-clipboard2-check",
+            },
+            {
                 "name": "Неактивные студенты",
                 "url": "admin:academy_inactive_students",
                 "icon": "bi bi-person-dash",

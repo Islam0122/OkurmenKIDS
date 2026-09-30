@@ -49,15 +49,15 @@ STATE_CANCELLED = "cancelled"
 # -- statuses (lesson rows and teacher×group rows) -------------------------
 STATUS_OK = "ok"
 STATUS_ATTENTION = "attention"
-STATUS_NOT_FILLED = "not_filled"
+STATUS_PROBLEM = "problem"
 STATUS_NO_DATA = "no_data"
 STATUS_UPCOMING = "upcoming"
 STATUS_CANCELLED = "cancelled"
 
 STATUS_LABELS = {
     STATUS_OK: "OK",
-    STATUS_ATTENTION: "Требует внимания",
-    STATUS_NOT_FILLED: "Не заполнено",
+    STATUS_ATTENTION: "Внимание",
+    STATUS_PROBLEM: "Проблема",
     STATUS_NO_DATA: "Нет данных",
     STATUS_UPCOMING: "Предстоящий",
     STATUS_CANCELLED: "Отменён",
@@ -65,14 +65,14 @@ STATUS_LABELS = {
 
 # "Problems first": the order rows are sorted in and the status filter offers.
 STATUS_PRIORITY = {
-    STATUS_NOT_FILLED: 0,
+    STATUS_PROBLEM: 0,
     STATUS_ATTENTION: 1,
     STATUS_OK: 2,
     STATUS_UPCOMING: 3,
     STATUS_NO_DATA: 4,
     STATUS_CANCELLED: 5,
 }
-FILTERABLE_STATUSES = (STATUS_NOT_FILLED, STATUS_ATTENTION, STATUS_OK, STATUS_UPCOMING, STATUS_NO_DATA)
+FILTERABLE_STATUSES = (STATUS_PROBLEM, STATUS_ATTENTION, STATUS_OK, STATUS_NO_DATA, STATUS_UPCOMING)
 
 # -- component levels (one cell of the table) ------------------------------
 LEVEL_OK = "ok"
@@ -84,8 +84,9 @@ LEVEL_NONE = "none"  # nothing required in the period
 # (🟡); below it, a substantial one (🔴). 6/8 and 5/7 read as gaps, 4/6 and
 # 4/8 as unfilled.
 WARNING_THRESHOLD = 70.0
-# A teacher×group row with this many 🔴 components is "Не заполнено".
-NOT_FILLED_DANGER_COMPONENTS = 2
+# This many 🔴 components (or 🔴 scores alone — see `row_status`) make a row
+# a "Проблема".
+PROBLEM_DANGER_COMPONENTS = 2
 
 # -- per-component states of one lesson ------------------------------------
 COMPONENT_OK = "ok"
@@ -200,6 +201,39 @@ class LessonCheck:
     @property
     def grades_given(self) -> int:
         return self.grades_required - len(self.grades_missing)
+
+    # -- one-line, human-readable state of each component ---------------------
+    @property
+    def attendance_label(self) -> str:
+        if self.attendance_state == COMPONENT_NO_STUDENTS:
+            return "Нет активных студентов"
+        if self.attendance_state == COMPONENT_OK:
+            return "Заполнено"
+        if self.attendance_state == COMPONENT_MISSING:
+            return "Не заполнено"
+        return f"Отмечено {self.attendance_marked} из {self.students_total}"
+
+    @property
+    def homework_label(self) -> str:
+        return {
+            COMPONENT_OK: "Проверено",
+            COMPONENT_MISSING: "Не выдано",
+            COMPONENT_UNCHECKED: f"Не проверено ({self.pending_check} ждут проверки)",
+            COMPONENT_WAITING: "Выдано, срок сдачи не наступил",
+            COMPONENT_NOT_REQUIRED: "Не требуется",
+        }[self.homework_state]
+
+    @property
+    def grades_label(self) -> str:
+        return {
+            COMPONENT_OK: "Выставлены",
+            COMPONENT_MISSING: "Не выставлены",
+            COMPONENT_PARTIAL: f"Выставлено {self.grades_given} из {self.grades_required}",
+            COMPONENT_WAITING: "Срок сдачи ДЗ не наступил",
+            COMPONENT_NOT_REQUIRED: "Не требуются",
+            COMPONENT_NO_STUDENTS: "Нет активных студентов",
+            COMPONENT_NO_HOMEWORK: "Нет ДЗ — выставлять не за что",
+        }[self.grades_state]
 
 
 def _fmt(day: dt.date) -> str:
@@ -323,8 +357,10 @@ def evaluate_lesson(
         if not closed:
             problems.append("Занятие не закрыто")
 
-        if failed >= NOT_FILLED_DANGER_COMPONENTS:
-            status = STATUS_NOT_FILLED
+        # Scores are the one record nothing else in the LMS can stand in
+        # for, so a lesson with none of them is a problem on its own.
+        if failed >= PROBLEM_DANGER_COMPONENTS or grades_state == COMPONENT_MISSING:
+            status = STATUS_PROBLEM
         elif problems:
             status = STATUS_ATTENTION
         else:
@@ -373,13 +409,14 @@ def evaluate_lesson(
 def row_status(*, due: int, closed: int, levels: list[str]) -> str:
     """Status of one teacher×group row from its component levels
     (attendance, homework, scores): nothing due -> no data; every required
-    record present and every lesson closed -> OK; two or more components
-    mostly unfilled (🔴) -> Не заполнено; any other gap -> Требует внимания."""
+    record present and every lesson closed -> OK; scores mostly missing (🔴),
+    or two or more components mostly unfilled -> Проблема; any other gap ->
+    Внимание. `levels` is (attendance, homework, scores), in that order."""
     if not due:
         return STATUS_NO_DATA
     danger = sum(1 for level in levels if level == LEVEL_DANGER)
-    if danger >= NOT_FILLED_DANGER_COMPONENTS:
-        return STATUS_NOT_FILLED
+    if danger >= PROBLEM_DANGER_COMPONENTS or levels[2] == LEVEL_DANGER:
+        return STATUS_PROBLEM
     if closed < due or any(level in (LEVEL_WARNING, LEVEL_DANGER) for level in levels):
         return STATUS_ATTENTION
     return STATUS_OK

@@ -4,7 +4,7 @@
  * by the backend (apps.academy.services.control); the page only displays it.
  */
 
-export type ControlStatus = 'ok' | 'attention' | 'not_filled' | 'no_data' | 'upcoming' | 'cancelled'
+export type ControlStatus = 'ok' | 'attention' | 'problem' | 'no_data' | 'upcoming' | 'cancelled'
 
 /** One cell's colour: every required record present / small gap / mostly unfilled / nothing required. */
 export type ControlLevel = 'ok' | 'warning' | 'danger' | 'none'
@@ -121,16 +121,17 @@ export interface ControlLesson {
   status: ControlStatus
   status_label: string
   students_total: number
-  attendance: { state: ControlComponentState; marked: number; total: number; missing_students: ControlRef[] }
+  attendance: { state: ControlComponentState; label: string; marked: number; total: number; missing_students: ControlRef[] }
   homework: {
     state: ControlComponentState
+    label: string
     id: number | null
     given: boolean
     not_required: boolean
     deadline: string | null
     pending_check: number
   }
-  grades: { state: ControlComponentState; given: number; total: number; missing: number; missing_students: ControlRef[] }
+  grades: { state: ControlComponentState; label: string; given: number; total: number; missing: number; missing_students: ControlRef[] }
   problems: string[]
   notes: string[]
   last_activity_at: string | null

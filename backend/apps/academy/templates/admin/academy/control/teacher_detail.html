@@ -1,0 +1,105 @@
+{% extends "admin/academy/control/base.html" %}
+{% load report_tags control_tags %}
+
+{% block control_breadcrumbs %}<li class="breadcrumb-item">{{ teacher_obj }}</li>{% endblock %}
+{% block page_title %}{{ teacher_obj }}{% endblock %}
+{% block page_lead %}Контроль заполнения уроков тренера по группам{% endblock %}
+
+{% block control_body %}
+{% with r=detail.row %}
+<div class="okr-grid-2">
+  <section class="okr-panel">
+    <div class="okr-panel-head"><span class="okr-panel-title">{% icon "user-check" %}Общая информация</span>{% control_badge r.status r.status_label %}</div>
+    <div class="okr-panel-body">
+      <div class="okr-row"><span>Тренер</span><span>{{ r.teacher.name }}{% if not r.teacher.is_active %} (неактивен){% endif %}</span></div>
+      <div class="okr-row"><span>Активных групп за период</span><span>{{ r.groups_count }}</span></div>
+      <div class="okr-row"><span>Группы</span><span>{% for g in r.groups %}<span class="okr-chip">{{ g.name }}</span>{% empty %}—{% endfor %}</span></div>
+      <div class="okr-row"><span>Занятий (прошедших)</span><span>{{ r.lessons.total }}</span></div>
+      <div class="okr-row"><span>Закрыто</span><span>{{ r.lessons.completed }}</span></div>
+      <div class="okr-row"><span>Не закрыто</span><span{% if r.lessons.not_closed %} class="okr-danger-num"{% endif %}>{{ r.lessons.not_closed }}</span></div>
+      <div class="okr-row"><span>Предстоящих / отменено</span><span>{{ r.lessons.upcoming }} / {{ r.lessons.cancelled }}</span></div>
+      <div class="okr-row"><span>Последнее изменение данных</span><span>{{ r.last_activity_at|date:"d.m.Y H:i"|default:"—" }}</span></div>
+    </div>
+  </section>
+  <section class="okr-panel">
+    <div class="okr-panel-head"><span class="okr-panel-title">{% icon "clipboard-check" %}Что заполнено</span></div>
+    <div class="okr-panel-body">
+      <div class="okr-row"><span>Уроки закрыты</span><span>{{ r.lessons|control_cell }}</span></div>
+      <div class="okr-row"><span>Посещаемость</span><span>{{ r.attendance|control_cell }}</span></div>
+      <div class="okr-row"><span>Домашние задания (проверены)</span><span>{{ r.homework|control_cell }}</span></div>
+      <div class="okr-row"><span>Баллы</span><span>{{ r.grades|control_cell }}{% if r.grades.students_missing %}<div class="okr-sub-line">без балла: {{ r.grades.students_missing }}</div>{% endif %}</span></div>
+      {% if r.issues %}
+        <p class="okr-section">Осталось заполнить</p>
+        <ul class="okc-problem-list">{% for issue in r.issues %}<li>{% icon "circle-x" 14 %}{{ issue }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endwith %}
+
+<p class="okr-section">По группам</p>
+<div class="okr-panel">
+  {% if detail.groups %}
+  <div class="okr-table-wrap">
+    <table class="okr-table">
+      <thead><tr>
+        <th scope="col" class="okr-col-wide">Группа</th><th scope="col" class="num">Уроки</th><th scope="col" class="num">Посещаемость</th>
+        <th scope="col" class="num">ДЗ</th><th scope="col" class="num">Баллы</th><th scope="col">Статус</th>
+      </tr></thead>
+      <tbody>
+      {% for g in detail.groups %}
+        <tr>
+          <td><strong>{{ g.group.name }}</strong>{% if g.subjects %}<div class="okr-sub-line">{% for s in g.subjects %}{{ s.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}</td>
+          <td class="num">{{ g.lessons|control_cell }}</td>
+          <td class="num">{{ g.attendance|control_cell }}</td>
+          <td class="num">{{ g.homework|control_cell }}</td>
+          <td class="num">{{ g.grades|control_cell }}</td>
+          <td>{% control_badge g.status g.status_label %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="okr-empty is-compact"><span class="okr-empty-icon">{% icon "inbox" 22 %}</span><h4>Нет занятий</h4><p>За выбранный период у тренера нет занятий.</p></div>
+  {% endif %}
+</div>
+
+<p class="okr-section">Требует внимания{% if detail.problems %} · {{ detail.problems|length }}{% endif %}</p>
+{% for p in detail.problems %}
+  <article class="okc-problem{% if p.status == 'attention' %} is-warn{% endif %}">
+    <div class="okc-problem-head">
+      <div>
+        <div class="okc-problem-title">{{ p.date|date:"d.m.Y" }} — {{ p.group.name }}{% if p.subject %} · {{ p.subject.name }}{% endif %}</div>
+        <div class="okr-sub-line">Урок №{{ p.lesson_number }}{% if p.topic %} · {{ p.topic }}{% endif %} · {{ p.start_time|time:"H:i" }}–{{ p.end_time|time:"H:i" }}</div>
+      </div>
+      <div class="okr-actions" style="width:auto">
+        {% control_badge p.status p.status_label %}
+        <a class="okr-btn" href="{% url 'admin:academy_lesson_change' p.id %}" title="Открыть страницу урока">{% icon "external-link" 14 %}Открыть урок</a>
+      </div>
+    </div>
+    <ul class="okc-problem-list">{% for problem in p.problems %}<li>{% icon "circle-x" 14 %}{{ problem }}</li>{% endfor %}</ul>
+    <dl class="okc-facts">
+      <div><dt>Ответственный</dt><dd>{{ p.teacher.name|default:"Не назначен" }}{% if p.planned_teacher %}<span class="okr-sub-line">замена, по программе — {{ p.planned_teacher.name }}</span>{% endif %}</dd></div>
+      <div><dt>Посещаемость</dt><dd class="is-{{ p.attendance.state|state_css }}">{{ p.attendance.label }}</dd></div>
+      <div><dt>ДЗ</dt><dd class="is-{{ p.homework.state|state_css }}">{{ p.homework.label }}</dd></div>
+      <div><dt>Баллы</dt><dd class="is-{{ p.grades.state|state_css }}">{{ p.grades.label }}</dd></div>
+      <div><dt>Закрыл урок</dt><dd>{% if p.closed and p.closed_by %}{{ p.closed_by.name }}, {{ p.closed_at|date:"d.m.Y H:i" }}{% else %}{{ p.lesson_status_label }}{% endif %}</dd></div>
+    </dl>
+    {% if p.grades.missing_students %}<div class="okc-students"><strong>Без балла:</strong> {% for s in p.grades.missing_students %}{{ s.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    {% if p.attendance.missing_students and p.attendance.state != "missing" %}<div class="okc-students"><strong>Не отмечены:</strong> {% for s in p.attendance.missing_students %}{{ s.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    {% for note in p.notes %}<div class="okc-note">{{ note }}</div>{% endfor %}
+  </article>
+{% empty %}
+  <div class="okr-panel"><div class="okr-empty is-compact"><span class="okr-empty-icon">{% icon "circle-check" 22 %}</span><h4>Всё заполнено</h4><p>За выбранный период у тренера нет незаполненных уроков.</p></div></div>
+{% endfor %}
+
+{% if detail.upcoming %}
+<p class="okr-section">Предстоящие · {{ detail.upcoming|length }}</p>
+<div class="okr-panel"><div class="okr-panel-body">
+  {% for p in detail.upcoming %}
+    <div class="okr-row"><span>{% icon "clock" 14 %} {{ p.date|date:"d.m.Y" }} {{ p.start_time|time:"H:i" }} — {{ p.group.name }}{% if p.subject %} · {{ p.subject.name }}{% endif %}</span><span>{% control_badge p.status p.status_label %}</span></div>
+  {% endfor %}
+</div></div>
+{% endif %}
+{% endblock %}

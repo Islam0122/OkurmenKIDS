@@ -35,7 +35,7 @@ function buildRow(overrides: Partial<ControlRow> = {}): ControlRow {
     homework: component(5, 7, 'warning'),
     grades: { ...component(4, 8, 'danger'), students_missing: 3 },
     status: 'attention',
-    status_label: 'Требует внимания',
+    status_label: 'Внимание',
     problem_lessons: 4,
     issues: ['Без балла: 3 оценки на 4 занятия'],
     first_problem_lesson_id: 28,
@@ -70,7 +70,7 @@ function buildOverview(items: ControlRow[]): ControlOverview {
       attention_count: 8,
       problem_lessons: 10,
       rows_total: items.length,
-      status_counts: { ok: 1, attention: 1, not_filled: 0, no_data: 0, upcoming: 0 },
+      status_counts: { ok: 1, attention: 1, problem: 0, no_data: 0, upcoming: 0 },
     },
     items,
     options: {
@@ -82,8 +82,8 @@ function buildOverview(items: ControlRow[]): ControlOverview {
       groups: [{ id: 2, name: 'Prog Soft 2' }],
       subjects: [{ id: 1, name: 'Python' }],
       statuses: [
-        { key: 'not_filled', label: 'Не заполнено' },
-        { key: 'attention', label: 'Требует внимания' },
+        { key: 'problem', label: 'Проблема' },
+        { key: 'attention', label: 'Внимание' },
         { key: 'ok', label: 'OK' },
       ],
     },
@@ -109,12 +109,13 @@ function buildLesson(overrides: Partial<ControlLesson> = {}): ControlLesson {
     closed_at: '2026-09-30T13:42:00+06:00',
     closed_by: { id: 5, name: 'Айжан' },
     status: 'attention',
-    status_label: 'Требует внимания',
+    status_label: 'Внимание',
     students_total: 20,
-    attendance: { state: 'ok', marked: 20, total: 20, missing_students: [] },
-    homework: { state: 'ok', id: 3, given: true, not_required: false, deadline: null, pending_check: 0 },
+    attendance: { state: 'ok', label: 'Заполнено', marked: 20, total: 20, missing_students: [] },
+    homework: { state: 'ok', label: 'Проверено', id: 3, given: true, not_required: false, deadline: null, pending_check: 0 },
     grades: {
       state: 'partial',
+      label: 'Выставлено 17 из 20',
       given: 17,
       total: 20,
       missing: 3,
@@ -142,7 +143,7 @@ describe('ControlPage', () => {
 
     renderWithProviders(<ControlPage />, { route: '/app/control' })
 
-    await waitFor(() => expect(screen.getAllByText('Требует внимания').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText('Внимание').length).toBeGreaterThan(0))
     expect(screen.getByText('48')).toBeInTheDocument()
     expect(screen.getByText('87,5%')).toBeInTheDocument()
     expect(screen.getAllByText('5/7').length).toBeGreaterThan(0)
