@@ -10,6 +10,7 @@ import {
   Megaphone,
   NotebookPen,
   School,
+  ShieldCheck,
   User,
   Users,
 } from 'lucide-react'
@@ -44,6 +45,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/attendance', label: 'Посещаемость', icon: ClipboardCheck, roles: ['admin'] },
   { to: '/app/homework', label: 'Домашние задания', icon: NotebookPen, roles: ['admin'] },
   { to: '/app/kpi', label: 'KPI', icon: BarChart3 },
+  { to: '/app/control', label: 'Контроль', icon: ShieldCheck },
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },
   { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin'] },
   { to: '/app/scholarships', label: 'Стипендии', icon: Award },

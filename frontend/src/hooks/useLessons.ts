@@ -28,6 +28,7 @@ function useLessonLifecycleMutation(mutationFn: (id: number) => Promise<unknown>
       void queryClient.invalidateQueries({ queryKey: ['lessons'] })
       void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail', id] })
       void queryClient.invalidateQueries({ queryKey: ['kpi'] })
+      void queryClient.invalidateQueries({ queryKey: ['control'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
@@ -49,6 +50,7 @@ export function useCancelLesson() {
       void queryClient.invalidateQueries({ queryKey: ['lessons'] })
       void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail', id] })
       void queryClient.invalidateQueries({ queryKey: ['kpi'] })
+      void queryClient.invalidateQueries({ queryKey: ['control'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })

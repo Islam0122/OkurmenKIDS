@@ -31,6 +31,7 @@ export function useSaveAttendance(lessonId: number) {
       void queryClient.invalidateQueries({ queryKey: ['lessons', 'list'] })
       void queryClient.invalidateQueries({ queryKey: ['attendance'] })
       void queryClient.invalidateQueries({ queryKey: ['kpi'] })
+      void queryClient.invalidateQueries({ queryKey: ['control'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })

@@ -12,9 +12,11 @@ export interface DrawerProps {
   children: ReactNode
   /** `bottom` reads naturally as a mobile sheet; `right` as a desktop side panel. */
   side?: 'bottom' | 'right'
+  /** `lg` widens a `right` panel for detail views with tables/lists. */
+  size?: 'md' | 'lg'
 }
 
-export function Drawer({ isOpen, onClose, title, children, side = 'bottom' }: DrawerProps) {
+export function Drawer({ isOpen, onClose, title, children, side = 'bottom', size = 'md' }: DrawerProps) {
   useEffect(() => {
     if (!isOpen) return
     function handleKeyDown(event: KeyboardEvent) {
@@ -34,9 +36,10 @@ export function Drawer({ isOpen, onClose, title, children, side = 'bottom' }: Dr
         aria-modal="true"
         aria-labelledby="drawer-title"
         className={cn(
-          'relative z-10 flex max-h-[85vh] flex-col overflow-hidden bg-surface shadow-xl',
-          side === 'bottom' && 'mt-auto w-full rounded-t-2xl',
-          side === 'right' && 'ml-auto h-full w-full max-w-sm',
+          'relative z-10 flex flex-col overflow-hidden bg-surface shadow-xl',
+          side === 'bottom' && 'mt-auto max-h-[85vh] w-full rounded-t-2xl',
+          side === 'right' && 'ml-auto h-full w-full',
+          side === 'right' && (size === 'lg' ? 'max-w-xl' : 'max-w-sm'),
         )}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">

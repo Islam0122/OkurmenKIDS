@@ -48,6 +48,7 @@ export function useCreateHomework() {
       void queryClient.invalidateQueries({ queryKey: ['homework', 'list'] })
       void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail', payload.lesson] })
       void queryClient.invalidateQueries({ queryKey: ['lessons', 'list'] })
+      void queryClient.invalidateQueries({ queryKey: ['control'] })
     },
   })
 }
@@ -65,6 +66,7 @@ export function useSaveHomeworkResults(homeworkId: number, lessonId?: number) {
       void queryClient.invalidateQueries({ queryKey: ['homework', 'list'] })
       void queryClient.invalidateQueries({ queryKey: ['homework-results'] })
       void queryClient.invalidateQueries({ queryKey: ['kpi'] })
+      void queryClient.invalidateQueries({ queryKey: ['control'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       // Grading doesn't change the lesson's own completion requirements
       // (only *having* Homework does — see useCreateHomework), but the
