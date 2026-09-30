@@ -1,4 +1,4 @@
-"""📊 Export Excel — the Reports section as a multi-sheet .xlsx workbook.
+"""Export Excel — the Reports section as a multi-sheet .xlsx workbook.
 
 Sheets: Overview, Groups, Teachers, Students, Attendance, Homework, KPI.
 Every figure comes from services.reports.service for the same filters the
@@ -15,7 +15,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from .kpi import COMPONENT_LABELS
+from .kpi import COMPONENT_LABELS, LEVEL_LABELS
 from .service import build_all_student_rows
 
 BRAND = "2F8F5B"
@@ -25,7 +25,6 @@ LEVEL_FILLS = {
     "warning": PatternFill("solid", fgColor="FBF1DF"),
     "bad": PatternFill("solid", fgColor="FBEAE7"),
 }
-LEVEL_LABELS = {"good": "🟢 90–100%", "warning": "🟡 75–89%", "bad": "🔴 < 75%", "none": "Нет данных"}
 
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _HEADER_FILL = PatternFill("solid", fgColor=BRAND)
@@ -127,7 +126,7 @@ def _groups_sheet(wb, report: dict) -> None:
         ("Статус", 13, None), ("Дата начала", 13, DATE), ("Всего", 9, None), ("Активные", 10, None),
         ("Ушли", 8, None), ("Новые", 8, None), ("Вернулись", 10, None), ("Занятий", 9, None),
         ("Проведено", 10, None), ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT), ("Активность", 12, PCT),
-        ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Уровень", 13, None),
+        ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Статус", 16, None),
     ]
     rows = [
         [g["name"], g["program"], g["teacher_names"], ", ".join(g["subjects"]), g["status_display"], g["start_date"],
@@ -147,7 +146,7 @@ def _teachers_sheet(wb, report: dict) -> None:
         ("Тренер", 26, None), ("Должность", 22, None), ("Групп", 8, None), ("Группы", 40, None),
         ("Предметы", 26, None), ("Студентов", 10, None), ("Активные", 10, None), ("Ушли", 8, None),
         ("Занятий", 9, None), ("Проведено", 10, None), ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT),
-        ("Активность", 12, PCT), ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Уровень", 13, None),
+        ("Активность", 12, PCT), ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Статус", 16, None),
     ]
     rows = [
         [t["name"], t["position"], t["groups_count"], ", ".join(g["name"] for g in t["groups"]) or "Нет групп",
@@ -240,7 +239,7 @@ def _kpi_sheet(wb, report: dict) -> None:
     headers = [
         ("Группа / тренер", 36, None), ("Тип", 10, None), (COMPONENT_LABELS["attendance"], 14, PCT),
         (COMPONENT_LABELS["homework"], 14, PCT), (COMPONENT_LABELS["activity"], 16, PCT),
-        (COMPONENT_LABELS["progress"], 16, PCT), ("Overall KPI", 12, PCT), ("Уровень", 13, None),
+        (COMPONENT_LABELS["progress"], 16, PCT), ("Overall KPI", 12, PCT), ("Статус", 16, None),
     ]
     rows, levels = [], []
     for kind, items in (("Группа", report["groups"]), ("Тренер", report["teachers"])):

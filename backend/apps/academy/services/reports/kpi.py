@@ -45,9 +45,18 @@ COMPONENT_SHORT_LABELS = {
     "progress": "Progress",
 }
 
-# KPI badge thresholds (spec: 🟢 90–100%, 🟡 75–89%, 🔴 <75%).
+# KPI status thresholds: >= 90% excellent, 75–89% good, < 75% needs attention.
 LEVEL_GOOD = 90
 LEVEL_WARNING = 75
+
+# Status text shown next to every KPI value — the status must be readable
+# without relying on color alone.
+LEVEL_LABELS = {
+    "good": "Excellent",
+    "warning": "Good",
+    "bad": "Needs attention",
+    "none": "No data",
+}
 
 
 def kpi_weights() -> dict[str, float]:
@@ -73,7 +82,7 @@ def overall_kpi(components: dict[str, float | None], weights: dict[str, float] |
 
 
 def kpi_level(value: float | None) -> str:
-    """"good" / "warning" / "bad" / "none" — drives the 🟢/🟡/🔴 badges."""
+    """"good" / "warning" / "bad" / "none" — drives the KPI status badges."""
     if value is None:
         return "none"
     if value >= LEVEL_GOOD:

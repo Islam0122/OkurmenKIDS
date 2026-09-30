@@ -157,7 +157,7 @@ SERVE_MEDIA = False
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# 📊 Reports KPI weights (services.reports.kpi). Equal weights reproduce
+# Reports KPI weights (services.reports.kpi). Equal weights reproduce
 # the project's existing KPI formula (services.monthly_report /
 # academy_monthly_report) exactly; override per deployment, e.g.
 # {"attendance": 0.40, "homework": 0.30, "activity": 0.20, "progress": 0.10}.
@@ -313,26 +313,26 @@ JAZZMIN_SETTINGS = {
             },
         ],
 
-        # 📊 Reports for the academy's management — Admin/superuser only
+        # Reports for the academy's management — Admin/superuser only
         # (backend-enforced in report_admin_views; this permission only
         # hides the entry from non-admin staff, same as "Отчёт академии").
-        "📊 отчёты": [
+        "отчёты": [
             {
                 "name": "Overview",
                 "url": "admin:academy_reports_overview",
-                "icon": "bi bi-graph-up",
+                "icon": "bi bi-bar-chart-line",
                 "permissions": ["academy.view_academymonthlyreport"],
             },
             {
                 "name": "Groups",
                 "url": "admin:academy_reports_groups",
-                "icon": "bi bi-people",
+                "icon": "bi bi-layers",
                 "permissions": ["academy.view_academymonthlyreport"],
             },
             {
                 "name": "Teachers",
                 "url": "admin:academy_reports_teachers",
-                "icon": "bi bi-person-video3",
+                "icon": "bi bi-mortarboard",
                 "permissions": ["academy.view_academymonthlyreport"],
             },
         ],

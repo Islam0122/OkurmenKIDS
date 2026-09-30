@@ -1,4 +1,4 @@
-"""Reports (📊 Отчёты) — Overview, Groups, Teachers, and their detail pages.
+"""Reports (Отчёты) — Overview, Groups, Teachers, and their detail pages.
 
 Nothing here is stored: every figure is computed on demand from Student/
 StudentStatusEvent/Group/GroupTeacher/Lesson/Attendance/Homework/
