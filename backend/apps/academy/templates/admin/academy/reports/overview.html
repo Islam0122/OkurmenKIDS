@@ -1,46 +1,46 @@
 {% extends "admin/academy/reports/base.html" %}
 {% load report_tags %}
 
-{% block report_breadcrumbs %}<li class="breadcrumb-item">Overview</li>{% endblock %}
+{% block report_breadcrumbs %}<li class="breadcrumb-item">Обзор</li>{% endblock %}
 
 {% block report_body %}
 {% with ov=overview %}
 
-<div class="okr-section">Студенты, тренеры, группы</div>
+<h2 class="okr-section">Общая статистика</h2>
 <div class="okr-cards">
   <div class="okr-stat">
     <span class="okr-stat-icon">{% icon "users" 18 %}</span>
-    <span class="okr-stat-label">Total Students</span>
+    <span class="okr-stat-label">Всего студентов</span>
     <span class="okr-stat-value">{{ ov.students.total }}</span>
     <span class="okr-stat-foot">{% if ov.students.new %}<span class="okr-delta-up">+{{ ov.students.new }}</span> новых за период{% else %}нет новых за период{% endif %}</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon is-good">{% icon "user-check" 18 %}</span>
-    <span class="okr-stat-label">Active Students</span>
+    <span class="okr-stat-label">Активные студенты</span>
     <span class="okr-stat-value">{{ ov.students.active }}</span>
     <span class="okr-stat-foot">{% if ov.students.paused %}на паузе: {{ ov.students.paused }}{% else %}текущий состав{% endif %}</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon is-bad">{% icon "user-minus" 18 %}</span>
-    <span class="okr-stat-label">Students Left</span>
+    <span class="okr-stat-label">Ушедшие студенты</span>
     <span class="okr-stat-value">{{ ov.students.left }}</span>
     <span class="okr-stat-foot">удержание {{ ov.students.retention_rate|pct }}{% if ov.students.returned %} · вернулись {{ ov.students.returned }}{% endif %}</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon is-info">{% icon "graduation-cap" 18 %}</span>
-    <span class="okr-stat-label">Teachers</span>
+    <span class="okr-stat-label">Тренеры</span>
     <span class="okr-stat-value">{{ ov.teachers.total }}</span>
     <span class="okr-stat-foot">{% if ov.teachers.without_groups %}без групп: {{ ov.teachers.without_groups }}{% else %}все ведут группы{% endif %}</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon">{% icon "layers" 18 %}</span>
-    <span class="okr-stat-label">Groups</span>
+    <span class="okr-stat-label">Группы</span>
     <span class="okr-stat-value">{{ ov.groups.total }}</span>
     <span class="okr-stat-foot">активных {{ ov.groups.active }}{% if ov.groups.without_teacher %} · без тренера {{ ov.groups.without_teacher }}{% endif %}</span>
   </div>
 </div>
 
-<div class="okr-section">KPI за период</div>
+<h2 class="okr-section">Показатели эффективности</h2>
 {% if not ov.has_data %}
   <div class="okr-panel"><div class="okr-empty">
     <span class="okr-empty-icon">{% icon "calendar" 22 %}</span>
@@ -51,31 +51,31 @@
 <div class="okr-cards">
   <div class="okr-stat">
     <span class="okr-stat-icon is-{{ ov.kpi.attendance|level_class }}">{% icon "calendar-check" 18 %}</span>
-    <span class="okr-stat-label">Attendance</span>
+    <span class="okr-stat-label">Посещаемость</span>
     <span class="okr-stat-value">{{ ov.kpi.attendance|pct }}</span>
     <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.kpi.attendance|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.kpi.attendance|level_label }}</span>{{ ov.attendance.present|add:ov.attendance.late }} из {{ ov.attendance.total }} отметок</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon is-{{ ov.kpi.homework|level_class }}">{% icon "clipboard-check" 18 %}</span>
-    <span class="okr-stat-label">Homework</span>
+    <span class="okr-stat-label">Домашние задания</span>
     <span class="okr-stat-value">{{ ov.kpi.homework|pct }}</span>
-    <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.kpi.homework|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.kpi.homework|level_label }}</span>сдано {{ ov.homework.submitted }} из {{ ov.homework.results }}</span>
+    <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.kpi.homework|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.kpi.homework|level_label }}</span>сдано {{ ov.homework.submitted }} из {{ ov.homework.results }} заданий</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon is-{{ ov.kpi.activity|level_class }}">{% icon "activity" 18 %}</span>
-    <span class="okr-stat-label">Activity</span>
+    <span class="okr-stat-label">Активность студентов</span>
     <span class="okr-stat-value">{{ ov.kpi.activity|pct }}</span>
     <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.kpi.activity|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.kpi.activity|level_label }}</span>{{ ov.lessons.held }} из {{ ov.lessons.due }} занятий</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon is-{{ ov.kpi.progress|level_class }}">{% icon "target" 18 %}</span>
-    <span class="okr-stat-label">Progress</span>
+    <span class="okr-stat-label">Прогресс</span>
     <span class="okr-stat-value">{{ ov.kpi.progress|pct }}</span>
     <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.kpi.progress|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.kpi.progress|level_label }}</span>ср. балл {% if ov.homework.average_score is not None %}{{ ov.homework.average_score }}/10{% else %}—{% endif %}</span>
   </div>
   <div class="okr-stat">
     <span class="okr-stat-icon is-{{ ov.kpi.overall|level_class }}">{% icon "trending-up" 18 %}</span>
-    <span class="okr-stat-label">Overall KPI</span>
+    <span class="okr-stat-label">Общий KPI</span>
     <span class="okr-stat-value">{{ ov.kpi.overall|pct }}</span>
     <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.kpi.overall|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.kpi.overall|level_label }}</span>веса {% for w in kpi_weights %}{{ w.weight|floatformat:"-1" }}{% if not forloop.last %}/{% endif %}{% endfor %}%</span>
   </div>
@@ -86,7 +86,7 @@
   <div class="okr-panel">
     <div class="okr-panel-head">
       <span class="okr-panel-title">{% icon "trophy" %}Группы с высоким KPI</span>
-      <span class="okr-legend okr-small okr-muted">{{ ov.levels.groups.good }} excellent · {{ ov.levels.groups.warning }} good · {{ ov.levels.groups.bad }} needs attention</span>
+      <span class="okr-small okr-muted">хороший: {{ ov.levels.groups.good }} · требует внимания: {{ ov.levels.groups.warning }} · низкий: {{ ov.levels.groups.bad }}</span>
     </div>
     {% if ov.top_groups %}
       <div class="okr-table-wrap"><table class="okr-table">
@@ -142,10 +142,11 @@
   <div class="okr-panel">
     <div class="okr-panel-head"><span class="okr-panel-title">{% icon "clipboard-check" %}Домашние задания</span>{{ ov.homework.completion_rate|kpi_badge }}</div>
     <div class="okr-panel-body">
-      <div class="okr-row"><span>Выдано заданий</span><span>{{ ov.homework.assigned }}</span></div>
+      <div class="okr-row"><span>Выдано студентам</span><span>{{ ov.homework.results }}</span></div>
       <div class="okr-row"><span>Сдано</span><span>{{ ov.homework.submitted }}</span></div>
       <div class="okr-row"><span>Не сдано</span><span>{{ ov.homework.not_submitted }}</span></div>
       <div class="okr-row"><span>Проверено</span><span>{{ ov.homework.checked }}</span></div>
+      <div class="okr-row"><span>Заданий в периоде</span><span>{{ ov.homework.assigned }}</span></div>
       <div class="okr-row"><span>Средний балл</span><span>{% if ov.homework.average_score is not None %}{{ ov.homework.average_score }}/10{% else %}—{% endif %}</span></div>
     </div>
   </div>
@@ -170,7 +171,7 @@
     {% endfor %}
     </tbody>
   </table></div>
-  {% if ov.teacher_summary|length > 10 %}<div class="okr-pager">Показаны 10 из {{ ov.teacher_summary|length }} — полный список во вкладке Teachers.</div>{% endif %}
+  {% if ov.teacher_summary|length > 10 %}<div class="okr-pager">Показаны 10 из {{ ov.teacher_summary|length }} — полный список во вкладке «Тренеры».</div>{% endif %}
   {% else %}
     <div class="okr-empty"><span class="okr-empty-icon">{% icon "user-x" 22 %}</span><h4>Нет тренеров</h4><p>По выбранным фильтрам тренеры не найдены.</p></div>
   {% endif %}
@@ -179,7 +180,7 @@
 <p class="okr-note">{% icon "info" 14 %}<span>
   Посещаемость = (присутствовал + опоздал) / все отметки; ДЗ = (сдано + проверено + с опозданием) / все результаты;
   активность = проведённые / наступившие занятия периода; прогресс = средний балл ДЗ / 10.
-  Overall KPI — взвешенное среднее компонентов, по которым есть данные. Статусы: Excellent ≥ 90%, Good 75–89%, Needs attention &lt; 75%.
+  Общий KPI — взвешенное среднее показателей, по которым есть данные. Уровни: хороший ≥ 90%, требует внимания 75–89%, низкий &lt; 75%.
   «Всего/активные» — текущий состав, «ушли/новые/вернулись» — события за период.
 </span></p>
 {% endwith %}

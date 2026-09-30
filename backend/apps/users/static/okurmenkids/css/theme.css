@@ -532,6 +532,13 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .sidebar-menu .nav-link p { display: none; }
 
 .sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .ok-nav-section { margin-top: 0.5rem; }
+/* Optional section icon — only for sections given one in JAZZMIN_SETTINGS["icons"]. */
+.ok-nav-section__icon {
+  margin-right: 0.4rem;
+  font-size: 0.8rem;
+  vertical-align: -0.05em;
+}
+
 .sidebar-mini.sidebar-collapse .app-sidebar:not(:hover) .ok-nav-section__toggle {
   height: 1px;
   margin: 0.5rem 0.75rem;

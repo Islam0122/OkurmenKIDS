@@ -30,9 +30,27 @@ PERIOD_CHOICES = [
     (PERIOD_THIS_MONTH, "Этот месяц"),
     (PERIOD_LAST_MONTH, "Прошлый месяц"),
     (PERIOD_THIS_QUARTER, "Этот квартал"),
-    (PERIOD_CUSTOM, "Свой период"),
+    (PERIOD_CUSTOM, "Произвольный период"),
 ]
 DEFAULT_PERIOD = PERIOD_THIS_MONTH
+
+MONTH_NAMES = [
+    "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+
+
+def period_options(today: dt.date) -> list[tuple[str, str]]:
+    """Period select options with concrete names where they help —
+    "Сентябрь 2026" rather than "Этот месяц"."""
+    last_month_end = today.replace(day=1) - dt.timedelta(days=1)
+    quarter = (today.month - 1) // 3 + 1
+    labels = {
+        PERIOD_THIS_MONTH: f"{MONTH_NAMES[today.month]} {today.year}",
+        PERIOD_LAST_MONTH: f"{MONTH_NAMES[last_month_end.month]} {last_month_end.year}",
+        PERIOD_THIS_QUARTER: f"{quarter} квартал {today.year}",
+    }
+    return [(key, labels.get(key, label)) for key, label in PERIOD_CHOICES]
 
 
 class ReportFilterError(ValueError):
@@ -113,7 +131,7 @@ class ReportFilters:
 
     @property
     def period_label(self) -> str:
-        return dict(PERIOD_CHOICES)[self.period]
+        return dict(period_options(self.today))[self.period]
 
     def scope(self, **overrides) -> AnalyticsScope:
         """The Analytics Dashboard's own scope — the single place group/

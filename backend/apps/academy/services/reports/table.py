@@ -117,6 +117,9 @@ def paginate_rows(rows: list, params, *, sorts: dict, default_sort: str, search)
 
 
 def paginate_groups(rows, params) -> TablePage:
+    status = (params.get("status") or "").strip()
+    if status:
+        rows = [row for row in rows if row["status"] == status]
     return paginate_rows(rows, params, sorts=GROUP_SORTS, default_sort="name",
                          search=lambda r: " ".join(r[f] for f in GROUP_SEARCH))
 

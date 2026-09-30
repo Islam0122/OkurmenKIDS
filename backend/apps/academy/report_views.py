@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -44,6 +45,7 @@ from .services.reports import (
     describe_filters,
     filter_options,
     group_student_rows,
+    period_options,
 )
 from .services.reports.excel import build_reports_excel, excel_filename
 from .services.reports.kpi import weights_description
@@ -87,13 +89,18 @@ class ReportsOverviewView(_ReportsView):
 class ReportsFilterOptionsView(_ReportsView):
     def get(self, request):
         return Response({
-            "periods": [{"key": key, "label": label} for key, label in PERIOD_CHOICES],
+            "periods": [{"key": key, "label": label} for key, label in period_options(timezone.localdate())],
             **filter_options(),
             "kpi_weights": weights_description(),
         })
 
 
-@extend_schema(tags=["Reports"], parameters=_FILTER_PARAMS + _TABLE_PARAMS)
+@extend_schema(
+    tags=["Reports"],
+    parameters=_FILTER_PARAMS + _TABLE_PARAMS + [
+        OpenApiParameter("status", str, enum=["active", "paused", "completed", "cancelled"], description="Статус группы."),
+    ],
+)
 class ReportsGroupsView(_ReportsView):
     def get(self, request):
         filters = self.filters(request)

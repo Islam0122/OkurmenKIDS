@@ -8,7 +8,7 @@
 {% block breadcrumbs %}
 <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'admin:academy_reports_overview' %}?{{ filter_query }}">Reports</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'admin:academy_reports_overview' %}?{{ filter_query }}">Отчёты</a></li>
     {% block report_breadcrumbs %}{% endblock %}
 </ol>
 {% endblock %}
@@ -28,7 +28,9 @@
   /* Header */
   .okr-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.9rem; margin:.25rem 0 1rem; }
   .okr-title { font-size:1.4rem; font-weight:700; color:var(--okr-text); line-height:1.25; margin:0; letter-spacing:-.01em; }
-  .okr-sub { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; color:var(--okr-text-2); font-size:.85rem; margin-top:.3rem; }
+  .okr-lead { margin:.25rem 0 0; color:var(--okr-text-2); font-size:.9rem; }
+  .okr-field[hidden] { display:none; }
+  .okr-sub { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; color:var(--okr-text-2); font-size:.85rem; margin-top:.55rem; }
   .okr-period-chip { display:inline-flex; align-items:center; gap:.35rem; padding:.18rem .55rem; border-radius:999px; background:var(--okr-subtle);
                      border:1px solid var(--okr-border); color:var(--okr-text); font-weight:600; font-size:.8rem; }
   .okr-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
@@ -105,6 +107,16 @@
   .okr-panel-body { padding:.9rem 1rem; }
   .okr-grid-2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:1rem; }
   .okr-grid-2 > .okr-panel { margin-bottom:0; }
+  .okr-grid-3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:1rem; margin-bottom:1rem; }
+  .okr-grid-3 > .okr-panel { margin-bottom:0; }
+  .okr-row-total { margin-top:.5rem; padding-top:.7rem; border-top:1px solid var(--okr-border); border-bottom:0; }
+  .okr-row.okr-row-total > span:first-child { color:var(--okr-text); font-weight:700; }
+  .okr-count-plain { font-size:.8rem; font-weight:600; color:var(--okr-muted); }
+  .okr-list-link { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.45rem 0; border-bottom:1px solid var(--okr-border);
+                   color:var(--okr-text); font-weight:600; font-size:.87rem; text-decoration:none; }
+  .okr-list-link:last-child { border-bottom:0; }
+  .okr-list-link .okr-icon { color:var(--okr-muted); }
+  .okr-list-link:hover { color:var(--okr-good); text-decoration:none; }
   .okr-grid-2 + * { margin-top:1rem; }
 
   /* Tables */
@@ -156,6 +168,9 @@
   .okr-search-field .okr-icon { position:absolute; left:.6rem; top:50%; transform:translateY(-50%); color:var(--okr-muted); pointer-events:none; }
   .okr-search input { height:2.25rem; padding:0 .6rem 0 2rem; border:1px solid var(--okr-border); border-radius:var(--ok-radius-sm,.45rem); width:260px;
                       background:var(--okr-surface); color:var(--okr-text); font-size:.84rem; }
+  .okr-select { height:2.25rem; padding:0 .55rem; border:1px solid var(--okr-border); border-radius:var(--ok-radius-sm,.45rem);
+                background:var(--okr-surface); color:var(--okr-text); font-size:.84rem; }
+  .okr-visually-hidden { position:absolute !important; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .okr-pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:.5rem; padding:.7rem 1rem; font-size:.82rem;
                color:var(--okr-text-2); border-top:1px solid var(--okr-border); }
   .okr-pager-links { display:flex; align-items:center; gap:.35rem; }
@@ -200,17 +215,18 @@
 <div class="okr">
   <div class="okr-head">
     <div>
-      <h1 class="okr-title">{% block page_title %}Academy Reports{% endblock %}</h1>
+      <h1 class="okr-title">{% block page_title %}Отчёты академии{% endblock %}</h1>
+      <p class="okr-lead">{% block page_lead %}Общая статистика по студентам, группам и тренерам{% endblock %}</p>
       <div class="okr-sub">
-        <span class="okr-period-chip">{% icon "calendar" 14 %}{{ filters.start|date:"d.m.Y" }} — {{ filters.end|date:"d.m.Y" }}</span>
+        <span class="okr-period-chip" title="Период отчёта">{% icon "calendar" 14 %}{{ filters.start|date:"d.m.Y" }} — {{ filters.end|date:"d.m.Y" }}</span>
         <span>{{ filters.period_label }}</span>
         {% block page_subtitle %}{% endblock %}
       </div>
     </div>
     <div class="okr-actions">
-      <a class="okr-btn" href="{{ request.get_full_path }}" data-okr-loading title="Пересчитать отчёт по текущим данным">{% icon "refresh-cw" %}Refresh</a>
-      <a class="okr-btn" href="{{ pdf_url }}" data-okr-download title="PDF с учётом выбранного периода и фильтров">{% icon "file-text" %}Download PDF</a>
-      <a class="okr-btn okr-btn-primary" href="{{ excel_url }}" data-okr-download title="Excel с учётом выбранного периода и фильтров">{% icon "table-2" %}Export Excel</a>
+      <a class="okr-btn" href="{{ request.get_full_path }}" data-okr-loading title="Пересчитать отчёт по текущим данным">{% icon "refresh-cw" %}Обновить</a>
+      <a class="okr-btn" href="{{ pdf_url }}" data-okr-download title="PDF с учётом выбранного периода и фильтров">{% icon "file-text" %}Скачать PDF</a>
+      <a class="okr-btn okr-btn-primary" href="{{ excel_url }}" data-okr-download title="Excel с учётом выбранного периода и фильтров">{% icon "table-2" %}Экспорт в Excel</a>
     </div>
   </div>
 
@@ -230,12 +246,12 @@
           {% endfor %}
         </select>
       </div>
-      <div class="okr-field">
-        <label for="okr-start">Начало</label>
+      <div class="okr-field okr-date-field"{% if filters.period != "custom" %} hidden{% endif %}>
+        <label for="okr-start">Дата начала</label>
         <input type="date" name="start_date" id="okr-start" value="{{ filters.start|date:'Y-m-d' }}">
       </div>
-      <div class="okr-field">
-        <label for="okr-end">Конец</label>
+      <div class="okr-field okr-date-field"{% if filters.period != "custom" %} hidden{% endif %}>
+        <label for="okr-end">Дата окончания</label>
         <input type="date" name="end_date" id="okr-end" value="{{ filters.end|date:'Y-m-d' }}">
       </div>
       <div class="okr-field">
@@ -288,7 +304,7 @@
 </div>
 
 <div class="okr-loading" id="okr-loading" role="status" aria-live="polite">
-  <div class="okr-loading-box"><span class="okr-spinner" aria-hidden="true"></span><span id="okr-loading-text">Считаем отчёт…</span></div>
+  <div class="okr-loading-box"><span class="okr-spinner" aria-hidden="true"></span><span id="okr-loading-text">Загрузка…</span></div>
 </div>
 
 <script>
@@ -301,7 +317,7 @@
   var overlayText = document.getElementById("okr-loading-text");
 
   function showLoading(text) {
-    overlayText.textContent = text || "Считаем отчёт…";
+    overlayText.textContent = text || "Загрузка…";
     overlay.classList.add("is-visible");
   }
   // Editing a date means "custom period"; a preset period ignores the dates.
@@ -313,13 +329,18 @@
     Array.prototype.forEach.call(form.querySelectorAll("select"), function (el) { if (!el.value) el.disabled = true; });
     showLoading();
   });
-  period.addEventListener("change", function () { if (period.value !== "custom") form.requestSubmit(); });
+  var dateFields = document.querySelectorAll(".okr-date-field");
+  period.addEventListener("change", function () {
+    var custom = period.value === "custom";
+    Array.prototype.forEach.call(dateFields, function (el) { el.hidden = !custom; });
+    if (!custom) { form.requestSubmit(); } else { start.focus(); }
+  });
   Array.prototype.forEach.call(document.querySelectorAll("[data-okr-loading]"), function (el) {
     el.addEventListener("click", function () { showLoading(); });
   });
   Array.prototype.forEach.call(document.querySelectorAll("[data-okr-download]"), function (el) {
     el.addEventListener("click", function () {
-      showLoading("Готовим файл…");
+      showLoading("Формируем файл…");
       setTimeout(function () { overlay.classList.remove("is-visible"); }, 2500);
     });
   });

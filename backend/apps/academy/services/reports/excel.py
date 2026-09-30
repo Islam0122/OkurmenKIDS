@@ -1,6 +1,6 @@
 """Export Excel — the Reports section as a multi-sheet .xlsx workbook.
 
-Sheets: Overview, Groups, Teachers, Students, Attendance, Homework, KPI.
+Sheets: Обзор, Группы, Тренеры, Студенты, Посещаемость, Домашние задания, KPI.
 Every figure comes from services.reports.service for the same filters the
 screens and the PDF use. Percentages are written as real numbers with a
 percent number format (so they sort/filter/sum in Excel); a figure with no
@@ -81,7 +81,7 @@ def _sheet(wb, title: str, heading: str, report: dict, *, first=False):
 
 def _overview_sheet(wb, report: dict, filter_labels: str) -> None:
     ov = report["overview"]
-    ws = _sheet(wb, "Overview", "OKURMENKIDS — Academy Performance Report", report, first=True)
+    ws = _sheet(wb, "Обзор", "ОТЧЁТ ПО АКАДЕМИИ OKURMENKIDS", report, first=True)
     ws["A3"] = f"Фильтры: {filter_labels}"
     ws["A4"] = f"Сформирован: {timezone.localtime():%d.%m.%Y %H:%M}"
     for cell in ("A3", "A4"):
@@ -90,7 +90,7 @@ def _overview_sheet(wb, report: dict, filter_labels: str) -> None:
     rows = [
         ["Всего студентов", st["total"], None],
         ["Активные студенты", st["active"], None],
-        ["Ушли за период", st["left"], None],
+        ["Ушедшие студенты (за период)", st["left"], None],
         ["Новые за период", st["new"], None],
         ["Вернулись за период", st["returned"], None],
         ["На паузе", st["paused"], None],
@@ -102,11 +102,11 @@ def _overview_sheet(wb, report: dict, filter_labels: str) -> None:
         ["Проведено занятий", ov["lessons"]["held"], None],
         ["Посещаемость", _pct(ov["attendance"]["rate"]), PCT],
         ["Выполнение ДЗ", _pct(ov["homework"]["completion_rate"]), PCT],
-        ["Attendance KPI", _pct(ov["kpi"]["attendance"]), PCT],
-        ["Homework KPI", _pct(ov["kpi"]["homework"]), PCT],
-        ["Activity KPI", _pct(ov["kpi"]["activity"]), PCT],
-        ["Progress KPI", _pct(ov["kpi"]["progress"]), PCT],
-        ["Overall KPI", _pct(ov["kpi"]["overall"]), PCT],
+        ["KPI: посещаемость", _pct(ov["kpi"]["attendance"]), PCT],
+        ["KPI: домашние задания", _pct(ov["kpi"]["homework"]), PCT],
+        ["KPI: активность", _pct(ov["kpi"]["activity"]), PCT],
+        ["KPI: прогресс", _pct(ov["kpi"]["progress"]), PCT],
+        ["Общий KPI", _pct(ov["kpi"]["overall"]), PCT],
     ]
     headers = [("Показатель", 34, None), ("Значение", 16, None)]
     _write_table(ws, 6, headers, [r[:2] for r in rows])
@@ -120,13 +120,13 @@ def _overview_sheet(wb, report: dict, filter_labels: str) -> None:
 
 
 def _groups_sheet(wb, report: dict) -> None:
-    ws = _sheet(wb, "Groups", "Результаты групп", report)
+    ws = _sheet(wb, "Группы", "Отчёт по группам", report)
     headers = [
         ("Группа", 30, None), ("Программа", 24, None), ("Тренер(ы)", 28, None), ("Предметы", 22, None),
         ("Статус", 13, None), ("Дата начала", 13, DATE), ("Всего", 9, None), ("Активные", 10, None),
         ("Ушли", 8, None), ("Новые", 8, None), ("Вернулись", 10, None), ("Занятий", 9, None),
         ("Проведено", 10, None), ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT), ("Активность", 12, PCT),
-        ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Статус", 16, None),
+        ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Уровень KPI", 18, None),
     ]
     rows = [
         [g["name"], g["program"], g["teacher_names"], ", ".join(g["subjects"]), g["status_display"], g["start_date"],
@@ -141,12 +141,12 @@ def _groups_sheet(wb, report: dict) -> None:
 
 
 def _teachers_sheet(wb, report: dict) -> None:
-    ws = _sheet(wb, "Teachers", "Результаты тренеров", report)
+    ws = _sheet(wb, "Тренеры", "Отчёт по тренерам", report)
     headers = [
         ("Тренер", 26, None), ("Должность", 22, None), ("Групп", 8, None), ("Группы", 40, None),
         ("Предметы", 26, None), ("Студентов", 10, None), ("Активные", 10, None), ("Ушли", 8, None),
         ("Занятий", 9, None), ("Проведено", 10, None), ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT),
-        ("Активность", 12, PCT), ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Статус", 16, None),
+        ("Активность", 12, PCT), ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Уровень KPI", 18, None),
     ]
     rows = [
         [t["name"], t["position"], t["groups_count"], ", ".join(g["name"] for g in t["groups"]) or "Нет групп",
@@ -160,7 +160,7 @@ def _teachers_sheet(wb, report: dict) -> None:
 
 
 def _students_sheet(wb, report: dict) -> None:
-    ws = _sheet(wb, "Students", "Студенты", report)
+    ws = _sheet(wb, "Студенты", "Студенты", report)
     students = build_all_student_rows(report["filters"], report["group_ids"])
     headers = [
         ("Студент", 28, None), ("Группа", 30, None), ("Статус", 18, None), ("Отметок", 9, None),
@@ -178,7 +178,7 @@ def _students_sheet(wb, report: dict) -> None:
 
 
 def _attendance_sheet(wb, report: dict) -> None:
-    ws = _sheet(wb, "Attendance", "Посещаемость по группам", report)
+    ws = _sheet(wb, "Посещаемость", "Посещаемость по группам", report)
     headers = [
         ("Группа", 30, None), ("Тренер(ы)", 28, None), ("Отметок", 10, None), ("Присутствовали", 14, None),
         ("Опоздали", 10, None), ("Отсутствовали", 13, None), ("Уваж. причина", 13, None),
@@ -202,7 +202,7 @@ def _attendance_sheet(wb, report: dict) -> None:
 
 
 def _homework_sheet(wb, report: dict) -> None:
-    ws = _sheet(wb, "Homework", "Домашние задания по группам", report)
+    ws = _sheet(wb, "Домашние задания", "Домашние задания по группам", report)
     headers = [
         ("Группа", 30, None), ("Тренер(ы)", 28, None), ("Выдано ДЗ", 11, None), ("Результатов", 12, None),
         ("Сдано", 8, None), ("Не сдано", 10, None), ("Проверено", 11, None), ("С опозданием", 13, None),
@@ -227,19 +227,19 @@ def _homework_sheet(wb, report: dict) -> None:
 
 def _kpi_sheet(wb, report: dict) -> None:
     ov = report["overview"]
-    ws = _sheet(wb, "KPI", "KPI", report)
-    ws["A4"] = "Формула: Overall KPI = Σ (компонент × вес) / Σ весов компонентов, по которым есть данные."
+    ws = _sheet(wb, "KPI", "Показатели эффективности (KPI)", report)
+    ws["A4"] = "Формула: общий KPI = Σ (показатель × вес) / Σ весов показателей, по которым есть данные."
     ws["A4"].font = Font(italic=True, color="68736C")
     next_row = _write_table(
         ws, 6, [("Компонент", 36, None), ("Вес", 10, "0.0%"), ("KPI академии", 14, PCT)],
         [[w["label"], w["weight"] / 100, _pct(ov["kpi"][w["key"]])] for w in ov["kpi_weights"]]
-        + [["Overall KPI", 1, _pct(ov["kpi"]["overall"])]],
+        + [["Общий KPI", 1, _pct(ov["kpi"]["overall"])]],
     )
     ws.auto_filter.ref = None
     headers = [
         ("Группа / тренер", 36, None), ("Тип", 10, None), (COMPONENT_LABELS["attendance"], 14, PCT),
         (COMPONENT_LABELS["homework"], 14, PCT), (COMPONENT_LABELS["activity"], 16, PCT),
-        (COMPONENT_LABELS["progress"], 16, PCT), ("Overall KPI", 12, PCT), ("Статус", 16, None),
+        (COMPONENT_LABELS["progress"], 16, PCT), ("Общий KPI", 12, PCT), ("Уровень KPI", 18, None),
     ]
     rows, levels = [], []
     for kind, items in (("Группа", report["groups"]), ("Тренер", report["teachers"])):

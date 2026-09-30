@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import re
 
 from django.db import connection
 from django.test import Client as DjangoClient
@@ -347,13 +348,15 @@ class ReportExportTests(ReportsTestBase):
     def test_excel_sheets_and_filters(self):
         f = self.filters(group=str(self.pro1.id))
         wb = load_workbook(io.BytesIO(build_reports_excel(build_full_report(f), "Группа: PRO-01")))
-        self.assertEqual(wb.sheetnames, ["Overview", "Groups", "Teachers", "Students", "Attendance", "Homework", "KPI"])
-        groups = [row[0] for row in wb["Groups"].iter_rows(min_row=5, values_only=True)]
+        self.assertEqual(
+            wb.sheetnames, ["Обзор", "Группы", "Тренеры", "Студенты", "Посещаемость", "Домашние задания", "KPI"]
+        )
+        groups = [row[0] for row in wb["Группы"].iter_rows(min_row=5, values_only=True)]
         self.assertEqual(groups, ["PRO-01"])
-        students = sorted(row[0] for row in wb["Students"].iter_rows(min_row=5, values_only=True))
+        students = sorted(row[0] for row in wb["Студенты"].iter_rows(min_row=5, values_only=True))
         self.assertEqual(students, ["Ali", "Bota", "Dana"])
         # Percentages are numbers (0..1) with a percent format.
-        cell = wb["Groups"].cell(row=5, column=14)
+        cell = wb["Группы"].cell(row=5, column=14)
         self.assertAlmostEqual(cell.value, 0.667)
         self.assertEqual(cell.number_format, "0.0%")
 
@@ -467,4 +470,71 @@ class ReportsAdminPageTests(ReportsTestBase):
         response = DjangoClient().get(reverse("admin:academy_reports_overview"))
         self.assertEqual(response.status_code, 302)
 
+
+# Reports UI must be fully Russian and emoji-free (visible text, tooltips,
+# aria-labels, placeholders — not just headings).
+EMOJI = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF\u2B50\uFE0F]")
+ENGLISH_UI = re.compile(
+    r"\b(Reports?|Overview|Groups?|Teachers?|Students?|Attendance|Homework|Activity|Progress|Performance|"
+    r"Download|Export|Refresh|Loading|Search|Filters?|No data|Excellent|Good|Needs attention|Overall|Total)\b"
+)
+
+
+def _report_ui_text(html: str) -> str:
+    """Visible text plus title/aria-label/placeholder attributes of the
+    Reports content area (the admin chrome around it is out of scope)."""
+    start = html.index('<div class="okr">')
+    end = html.index("<script>", start)
+    body = re.sub(r"<(style|svg)\b.*?</\1>", " ", html[start:end], flags=re.S)
+    attrs = re.findall(r'(?:title|aria-label|placeholder)="([^"]*)"', body)
+    text = re.sub(r"<[^>]+>", " ", body)
+    return " ".join([text, *attrs])
+
+
+class ReportsLocalizationTests(ReportsTestBase):
+    def setUp(self):
+        super().setUp()
+        self.web = DjangoClient()
+        self.web.force_login(self.admin)
+
+    def test_pages_are_russian_and_emoji_free(self):
+        pages = [
+            (reverse("admin:academy_reports_overview"), SEPT),
+            (reverse("admin:academy_reports_groups"), SEPT),
+            (reverse("admin:academy_reports_groups"), {**SEPT, "q": "нет-такой"}),
+            (reverse("admin:academy_reports_group_detail", args=[self.pro1.id]), SEPT),
+            (reverse("admin:academy_reports_group_detail", args=[self.empty.id]), SEPT),
+            (reverse("admin:academy_reports_teachers"), SEPT),
+            (reverse("admin:academy_reports_teacher_detail", args=[self.bek.id]), SEPT),
+            (reverse("admin:academy_reports_overview"), {"period": "custom", "start_date": "2026-01-01",
+                                                          "end_date": "2026-01-31"}),
+            (reverse("admin:academy_reports_overview"), {"start_date": "x", "end_date": "y"}),
+        ]
+        for url, params in pages:
+            html = self.web.get(url, params).content.decode()
+            text = _report_ui_text(html)
+            self.assertIsNone(EMOJI.search(html), url)
+            self.assertIsNone(ENGLISH_UI.search(text), (url, params, ENGLISH_UI.findall(text)))
+
+    def test_key_russian_labels(self):
+        body = self.web.get(reverse("admin:academy_reports_overview"), SEPT).content.decode()
+        for label in ("Отчёты академии", "Всего студентов", "Активные студенты", "Ушедшие студенты",
+                      "Показатели эффективности", "Обновить", "Скачать PDF", "Экспорт в Excel", "Общий KPI"):
+            self.assertIn(label, body)
+
+    def test_sidebar_is_russian(self):
+        body = self.web.get(reverse("admin:index")).content.decode()
+        self.assertIn("bi bi-bar-chart-line ok-nav-section__icon", body)
+        for label in ("отчёты", "Обзор"):
+            self.assertIn(label, body)
+        self.assertNotIn(">Overview<", body)
+
+    def test_excel_is_russian_and_emoji_free(self):
+        wb = load_workbook(io.BytesIO(build_reports_excel(build_full_report(self.filters()), "—")))
+        for ws in wb:
+            for row in ws.iter_rows(values_only=True):
+                for value in row:
+                    if isinstance(value, str):
+                        self.assertIsNone(EMOJI.search(value), value)
+                        self.assertIsNone(ENGLISH_UI.search(value), (ws.title, value))
 

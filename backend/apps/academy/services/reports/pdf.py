@@ -1,4 +1,4 @@
-"""Academy Performance Report — the Reports section as a print-ready A4 PDF.
+"""«Отчёт по академии» — the Reports section as a print-ready A4 PDF.
 
 Drawn directly with reportlab's canvas, in the same visual family as the
 existing monthly reports (fonts, palette, rounded-rect/progress-bar
@@ -6,9 +6,9 @@ primitives are imported from services.monthly_report_pdf). Every number
 comes from services.reports.service.build_full_report — the very same
 figures the Reports screens show for the same filters.
 
-Layout: page 1 — cover + summary + KPI; then GROUP PERFORMANCE; then
-TEACHER PERFORMANCE (tables continue across pages with a repeated header);
-last — KEY STATISTICS.
+Layout (all text in Russian): page 1 — cover, summary, KPI; then «Отчёт по
+группам»; then «Отчёт по тренерам» (tables continue across pages with a
+repeated header); last — «Ключевые показатели».
 """
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ class _NumberedCanvas(canvas.Canvas):
         self.line(MARGIN, FOOTER_H, PAGE_W - MARGIN, FOOTER_H)
         self.setFont(_REGULAR, 7.5)
         self.setFillColor(INK_MUTED)
-        self.drawString(MARGIN, FOOTER_H - 12, "OkurmenKIDS · Academy Performance Report")
+        self.drawString(MARGIN, FOOTER_H - 12, "OkurmenKIDS · Отчёт по академии")
         self.drawRightString(PAGE_W - MARGIN, FOOTER_H - 12, f"Страница {self._pageNumber} из {total}")
         self.restoreState()
 
@@ -152,14 +152,14 @@ def _section_label(doc: _Doc, label: str) -> None:
 
 
 def _badge(c, x_center, y, value) -> None:
-    """KPI value plus its text status ("92,4% · Excellent") — the status is
+    """KPI value plus its text level ("92,4% · Хороший") — the level is
     readable without color; color only reinforces it."""
     level = _level(value)
     fg, bg = LEVEL_COLORS[level]
     text = LEVEL_LABELS["none"] if level == "none" else f"{_pct(value)} · {LEVEL_LABELS[level]}"
-    width = pdfmetrics.stringWidth(text, _BOLD, 7.2) + 14
+    width = pdfmetrics.stringWidth(text, _BOLD, 6.9) + 12
     _rounded_rect(c, x_center - width / 2, y - 4, width, 14, 7, fill=bg)
-    c.setFont(_BOLD, 7.2)
+    c.setFont(_BOLD, 6.9)
     c.setFillColor(fg)
     c.drawCentredString(x_center, y, text)
 
@@ -181,8 +181,8 @@ def _draw_cover(doc: _Doc, report: dict) -> None:
 
     top = PAGE_H - 48
     doc.text(MARGIN, top, "OKURMENKIDS", font=_BOLD, size=12, color=colors.HexColor("#bfe3cd"))
-    doc.text(MARGIN, top - 30, "ACADEMY PERFORMANCE REPORT", font=_BOLD, size=21, color=WHITE)
-    doc.text(MARGIN, top - 52, "Отчёт о результатах академии", size=10, color=colors.HexColor("#d7ecdf"))
+    doc.text(MARGIN, top - 30, "ОТЧЁТ ПО АКАДЕМИИ OKURMENKIDS", font=_BOLD, size=20, color=WHITE)
+    doc.text(MARGIN, top - 52, "Общая статистика по студентам, группам и тренерам", size=10, color=colors.HexColor("#d7ecdf"))
     doc.text(MARGIN, top - 80, f"Период:  {_date(filters.start)} — {_date(filters.end)}   ({filters.period_label})",
              font=_BOLD, size=10, color=WHITE)
 
@@ -191,7 +191,7 @@ def _draw_cover(doc: _Doc, report: dict) -> None:
              size=8.5, color=INK_SECONDARY)
     doc.y -= 13
     generated = timezone.localtime().strftime("%d.%m.%Y %H:%M")
-    doc.text(MARGIN, doc.y, f"Сформирован: {generated}. Все показатели рассчитаны по данным LMS.",
+    doc.text(MARGIN, doc.y, f"Сформирован: {generated}. Все показатели рассчитаны по данным учебной системы.",
              size=8.5, color=INK_MUTED)
     doc.y -= 26
 
@@ -206,7 +206,7 @@ def _stat_cards(doc: _Doc, cards: list[tuple[str, str, str | None]]) -> None:
         x = MARGIN + index * (width + gap)
         _rounded_rect(doc.c, x, top - height, width, height, 8, fill=SURFACE_MUTED, stroke=BORDER, line_width=0.6)
         doc.text(x + 12, top - 28, value, font=_BOLD, size=18, color=INK)
-        doc.text(x + 12, top - 44, label, size=8.2, color=INK_SECONDARY)
+        doc.text(x + 12, top - 44, _truncate_text(label, _REGULAR, 7.8, width - 20), size=7.8, color=INK_SECONDARY)
         if hint:
             doc.text(x + 12, top - 55, hint, size=6.8, color=INK_MUTED)
     doc.y = top - height - 18
@@ -225,10 +225,10 @@ def _kpi_block(doc: _Doc, overview: dict) -> None:
     fg, bg = LEVEL_COLORS[kpi["level"]]
     box_w = 150
     _rounded_rect(c, MARGIN + 12, top - height + 12, box_w, height - 24, 8, fill=bg)
-    doc.text(MARGIN + 12 + box_w / 2, top - 38, "OVERALL KPI", font=_BOLD, size=8, color=fg, align="center")
+    doc.text(MARGIN + 12 + box_w / 2, top - 38, "ОБЩИЙ KPI", font=_BOLD, size=8, color=fg, align="center")
     doc.text(MARGIN + 12 + box_w / 2, top - 82, _pct(kpi["overall"]), font=_BOLD, size=30, color=fg, align="center")
-    level_text = {"good": "Excellent (≥ 90%)", "warning": "Good (75–89%)", "bad": "Needs attention (< 75%)",
-                  "none": "No data"}[kpi["level"]]
+    level_text = {"good": "Хороший (≥ 90%)", "warning": "Требует внимания (75–89%)", "bad": "Низкий (< 75%)",
+                  "none": "Нет данных"}[kpi["level"]]
     doc.text(MARGIN + 12 + box_w / 2, top - 102, level_text, size=8, color=fg, align="center")
 
     # Components (right)
@@ -244,7 +244,7 @@ def _kpi_block(doc: _Doc, overview: dict) -> None:
         y -= 30
     doc.y = top - height - 12
     doc.text(MARGIN, doc.y,
-             "Overall KPI = взвешенное среднее компонентов с данными; компонент без данных («—») не учитывается.",
+             "Общий KPI — взвешенное среднее показателей, по которым есть данные; показатель без данных («—») не учитывается.",
              size=7.3, color=INK_MUTED)
     doc.y -= 18
 
@@ -252,22 +252,21 @@ def _kpi_block(doc: _Doc, overview: dict) -> None:
 def _draw_summary_page(doc: _Doc, report: dict) -> None:
     ov = report["overview"]
     _draw_cover(doc, report)
-    _section_label(doc, "Сводка")
+    _section_label(doc, "Общая статистика")
     students = ov["students"]
     _stat_cards(doc, [
         (str(students["total"]), "Всего студентов", None),
-        (str(students["active"]), "Активные", None),
-        (str(students["left"]), "Ушли за период", None),
+        (str(students["active"]), "Активные студенты", None),
+        (str(students["left"]), "Ушедшие студенты", "за период"),
         (str(ov["teachers"]["total"]), "Тренеры", None),
         (str(ov["groups"]["total"]), "Группы", None),
     ])
     _stat_cards(doc, [
         (_pct(ov["attendance"]["rate"]), "Посещаемость", f"{ov['attendance']['total']} отметок"),
-        (_pct(ov["homework"]["completion_rate"]), "Домашние задания", f"{ov['homework']['results']} результатов"),
-        (f"{ov['lessons']['held']}/{ov['lessons']['total']}", "Проведено занятий", None),
-        (_pct(students["retention_rate"]), "Удержание", None),
+        (_pct(ov["homework"]["completion_rate"]), "Домашние задания", f"сдано {ov['homework']['submitted']} из {ov['homework']['results']}"),
+        (_pct(ov["kpi"]["overall"]), "Общий KPI", LEVEL_LABELS[ov["kpi"]["level"]]),
     ])
-    _section_label(doc, "KPI академии")
+    _section_label(doc, "Показатели эффективности")
     _kpi_block(doc, ov)
     if not ov["has_data"]:
         doc.text(MARGIN, doc.y, "За выбранный период нет занятий, отметок посещаемости и результатов ДЗ.",
@@ -347,19 +346,19 @@ def _draw_groups(doc: _Doc, report: dict) -> None:
     ov = report["overview"]
     levels = ov["levels"]["groups"]
     _page_title(
-        doc, "GROUP PERFORMANCE", "Результаты групп",
-        f"{len(groups)} групп · KPI ≥ 90%: {levels['good']} · 75–89%: {levels['warning']} · "
-        f"< 75%: {levels['bad']} · без данных: {levels['none']}",
+        doc, "РАЗДЕЛ 2", "ОТЧЁТ ПО ГРУППАМ",
+        f"Групп: {len(groups)} · хороший KPI: {levels['good']} · требует внимания: {levels['warning']} · "
+        f"низкий: {levels['bad']} · нет данных: {levels['none']}",
     )
     columns = [
-        {"title": "Группа", "width": 0.23},
-        {"title": "Тренер", "width": 0.17},
+        {"title": "Группа", "width": 0.215},
+        {"title": "Тренер", "width": 0.155},
         {"title": "Студ.", "width": 0.065, "align": "center"},
         {"title": "Актив.", "width": 0.07, "align": "center"},
         {"title": "Ушли", "width": 0.065, "align": "center"},
         {"title": "Посещ.", "width": 0.085, "align": "center"},
         {"title": "ДЗ", "width": 0.085, "align": "center"},
-        {"title": "KPI / статус", "width": 0.23, "align": "center", "badge": True},
+        {"title": "KPI / уровень", "width": 0.26, "align": "center", "badge": True},
     ]
     rows = [
         [g["name"], g["teacher_names"], g["students"]["total"], g["students"]["active"], g["students"]["left"],
@@ -372,8 +371,8 @@ def _draw_groups(doc: _Doc, report: dict) -> None:
 def _draw_teachers(doc: _Doc, report: dict) -> None:
     doc.new_page()
     teachers = report["teachers"]
-    _page_title(doc, "TEACHER PERFORMANCE", "Результаты тренеров",
-                f"{len(teachers)} тренеров · показатели по занятиям, которые ведёт сам тренер")
+    _page_title(doc, "РАЗДЕЛ 3", "ОТЧЁТ ПО ТРЕНЕРАМ",
+                f"Тренеров: {len(teachers)} · показатели по занятиям, которые ведёт сам тренер")
     columns = [
         {"title": "Тренер", "width": 0.17},
         {"title": "Группы", "width": 0.19},
@@ -381,7 +380,7 @@ def _draw_teachers(doc: _Doc, report: dict) -> None:
         {"title": "Предметы", "width": 0.15},
         {"title": "Посещ.", "width": 0.085, "align": "center"},
         {"title": "ДЗ", "width": 0.085, "align": "center"},
-        {"title": "KPI / статус", "width": 0.255, "align": "center", "badge": True},
+        {"title": "KPI / уровень", "width": 0.255, "align": "center", "badge": True},
     ]
     rows = [
         [t["name"], (f"{t['groups_count']}: " + ", ".join(g["name"] for g in t["groups"])) if t["groups"] else "Нет групп", t["students"]["total"],
@@ -414,7 +413,7 @@ def _stat_panel(doc: _Doc, x, top, width, title, lines, accent) -> float:
 def _draw_key_statistics(doc: _Doc, report: dict) -> None:
     doc.new_page()
     ov = report["overview"]
-    _page_title(doc, "KEY STATISTICS", "Ключевые показатели")
+    _page_title(doc, "РАЗДЕЛ 4", "КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ")
     att, hw, lessons, st = ov["attendance"], ov["homework"], ov["lessons"], ov["students"]
     kpi = ov["kpi"]
     g_levels, t_levels = ov["levels"]["groups"], ov["levels"]["teachers"]
@@ -428,7 +427,7 @@ def _draw_key_statistics(doc: _Doc, report: dict) -> None:
             ("Отсутствовали", att["absent"]), ("Уважительная причина", att["excused"]),
         ]),
         ("Домашние задания", colors.HexColor("#2563a8"), [
-            ("Выполнение ДЗ", _pct(hw["completion_rate"])), ("Выдано заданий", hw["assigned"]),
+            ("Выполнение", _pct(hw["completion_rate"])), ("Выдано студентам", hw["results"]),
             ("Сдано", hw["submitted"]), ("Не сдано", hw["not_submitted"]), ("Проверено", hw["checked"]),
         ]),
         ("Активность студентов", WARN, [
@@ -442,15 +441,17 @@ def _draw_key_statistics(doc: _Doc, report: dict) -> None:
             ("Удержание", _pct(st["retention_rate"])), ("Активные студенты", st["active"]),
             ("Ушли за период", st["left"]), ("Новые за период", st["new"]), ("Вернулись", st["returned"]),
         ]),
-        ("Результаты тренеров", BRAND, [
+        ("Эффективность тренеров", BRAND, [
             ("Тренеров в отчёте", len(teachers)),
             ("Средний KPI тренеров", _pct(round(sum(rated_teachers) / len(rated_teachers), 1)) if rated_teachers else "—"),
-            ("KPI ≥ 90%", t_levels["good"]), ("KPI 75–89%", t_levels["warning"]), ("KPI < 75%", t_levels["bad"]),
+            ("Хороший KPI (≥ 90%)", t_levels["good"]), ("Требует внимания (75–89%)", t_levels["warning"]),
+            ("Низкий KPI (< 75%)", t_levels["bad"]),
         ]),
-        ("Результаты групп", BRAND_DARK, [
+        ("Эффективность групп", BRAND_DARK, [
             ("Групп в отчёте", len(report["groups"])),
             ("Средний KPI групп", _pct(round(sum(rated_groups) / len(rated_groups), 1)) if rated_groups else "—"),
-            ("KPI ≥ 90%", g_levels["good"]), ("KPI 75–89%", g_levels["warning"]), ("KPI < 75%", g_levels["bad"]),
+            ("Хороший KPI (≥ 90%)", g_levels["good"]), ("Требует внимания (75–89%)", g_levels["warning"]),
+            ("Низкий KPI (< 75%)", g_levels["bad"]),
         ]),
     ]
     gap = 12
@@ -469,7 +470,7 @@ def _draw_key_statistics(doc: _Doc, report: dict) -> None:
             doc.ensure_space(16)
             doc.text(MARGIN + 4, doc.y, _truncate_text(f"• {g['name']} — {g['teacher_names']}", _REGULAR, 8.5,
                                                        CONTENT_W - 130), size=8.5, color=INK)
-            _badge(doc.c, PAGE_W - MARGIN - 55, doc.y, g["kpi"])
+            _badge(doc.c, PAGE_W - MARGIN - 64, doc.y, g["kpi"])
             doc.y -= 16
 
     doc.y -= 8
