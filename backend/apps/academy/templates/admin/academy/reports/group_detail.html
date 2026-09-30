@@ -2,26 +2,27 @@
 {% load report_tags %}
 
 {% block report_breadcrumbs %}
-<li class="breadcrumb-item"><a href="{% url 'admin:academy_reports_groups' %}?{{ filter_query }}">Groups</a></li>
+<li class="breadcrumb-item"><a href="{% url 'admin:academy_reports_groups' %}?{{ filter_query }}">Группы</a></li>
 <li class="breadcrumb-item">{{ group_obj.name }}</li>
 {% endblock %}
-{% block page_title %}Group: {{ group_obj.name }}{% endblock %}
+{% block page_title %}Группа: {{ group_obj.name }}{% endblock %}
+{% block page_lead %}Подробный отчёт группы{% endblock %}
 
 {% block report_body %}
 {% with d=detail %}
 <div class="okr-grid-2">
   <div class="okr-panel">
     <div class="okr-panel-head"><span class="okr-panel-title">{% icon "book-open" %}Информация о группе</span>
-      <a class="okr-btn" href="{% url 'admin:academy_group_workspace' group_obj.id %}">Открыть группу{% icon "external-link" 14 %}</a></div>
+      <a class="okr-btn" href="{% url 'admin:academy_group_workspace' group_obj.id %}" title="Открыть рабочее пространство группы">Открыть группу{% icon "external-link" 14 %}</a></div>
     <div class="okr-panel-body">
-      <div class="okr-row"><span>Группа</span><span>{{ d.group.name }}</span></div>
       <div class="okr-row"><span>Программа</span><span>{{ d.group.program }}</span></div>
-      <div class="okr-row"><span>Тренер(ы)</span><span>
+      <div class="okr-row"><span>Тренер</span><span>
         {% for t in d.group.teachers %}<a href="{% url 'admin:academy_reports_teacher_detail' t.id %}?{{ filter_query }}">{{ t.name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}<span class="okr-status-badge is-warn">Не назначен</span>{% endfor %}
       </span></div>
+      <div class="okr-row"><span>Период</span><span>{{ filters.start|date:"d.m.Y" }} — {{ filters.end|date:"d.m.Y" }}</span></div>
       <div class="okr-row"><span>Предметы</span><span>{% for s in d.group.subjects %}<span class="okr-chip">{{ s }}</span>{% empty %}—{% endfor %}</span></div>
       <div class="okr-row"><span>Дата начала</span><span>{{ d.group.start_date|date:"d.m.Y" }}</span></div>
-      <div class="okr-row"><span>Статус</span><span>{{ d.group.status_display }}</span></div>
+      <div class="okr-row"><span>Статус группы</span><span>{{ d.group.status_display }}</span></div>
       <div class="okr-row"><span>Прохождение программы</span><span>{{ d.plan_progress|pct }}</span></div>
     </div>
   </div>
@@ -30,58 +31,55 @@
     <div class="okr-panel-head"><span class="okr-panel-title">{% icon "trending-up" %}KPI за период</span>{{ d.kpi.overall|kpi_badge }}</div>
     <div class="okr-panel-body">
       {% if not d.has_data %}
-        <div class="okr-empty is-compact"><span class="okr-empty-icon">{% icon "calendar" 20 %}</span><p>В периоде нет занятий и отметок — KPI не рассчитывается.</p></div>
+        <div class="okr-empty is-compact"><span class="okr-empty-icon">{% icon "calendar" 20 %}</span><p>Нет данных за период: в группе не было занятий и отметок — KPI не рассчитывается.</p></div>
       {% else %}
         {% include "admin/academy/reports/_kpi_bars.html" with components=kpi_components %}
-        <div class="okr-row" style="margin-top:.5rem;"><span><strong>Overall KPI</strong></span><span>{{ d.kpi.overall|kpi_badge }}</span></div>
+        <div class="okr-row okr-row-total"><span>Общий KPI</span><span>{{ d.kpi.overall|kpi_badge }}</span></div>
       {% endif %}
     </div>
   </div>
 </div>
 
+<h2 class="okr-section">Студенты</h2>
 <div class="okr-cards">
-  <div class="okr-stat"><span class="okr-stat-icon">{% icon "users" 18 %}</span><span class="okr-stat-label">Студенты</span>
-    <span class="okr-stat-value">{{ d.students.total }}</span><span class="okr-stat-foot">активных {{ d.students.active }}</span></div>
+  <div class="okr-stat"><span class="okr-stat-icon">{% icon "users" 18 %}</span><span class="okr-stat-label">Всего студентов</span>
+    <span class="okr-stat-value">{{ d.students.total }}</span><span class="okr-stat-foot">новых за период: {{ d.students.new }}</span></div>
+  <div class="okr-stat"><span class="okr-stat-icon is-good">{% icon "user-check" 18 %}</span><span class="okr-stat-label">Активные</span>
+    <span class="okr-stat-value">{{ d.students.active }}</span><span class="okr-stat-foot">текущий состав</span></div>
   <div class="okr-stat"><span class="okr-stat-icon is-bad">{% icon "user-minus" 18 %}</span><span class="okr-stat-label">Ушли</span>
-    <span class="okr-stat-value">{{ d.students.left }}</span><span class="okr-stat-foot">за период</span></div>
-  <div class="okr-stat"><span class="okr-stat-icon is-good">{% icon "user-check" 18 %}</span><span class="okr-stat-label">Новые</span>
-    <span class="okr-stat-value">{{ d.students.new }}</span><span class="okr-stat-foot">за период</span></div>
-  <div class="okr-stat"><span class="okr-stat-icon is-info">{% icon "rotate-ccw" 18 %}</span><span class="okr-stat-label">Вернулись</span>
-    <span class="okr-stat-value">{{ d.students.returned }}</span><span class="okr-stat-foot">за период</span></div>
+    <span class="okr-stat-value">{{ d.students.left }}</span><span class="okr-stat-foot">за период{% if d.students.returned %} · вернулись: {{ d.students.returned }}{% endif %}</span></div>
 </div>
 
 <div class="okr-grid-2">
   <div class="okr-panel">
     <div class="okr-panel-head"><span class="okr-panel-title">{% icon "calendar-check" %}Посещаемость</span>{{ d.attendance.rate|kpi_badge }}</div>
     <div class="okr-panel-body">
-      <div class="okr-row"><span>Занятий в периоде</span><span>{{ d.lessons.total }}</span></div>
-      <div class="okr-row"><span>Проведено</span><span>{{ d.lessons.held }}</span></div>
-      <div class="okr-row"><span>Отменено</span><span>{{ d.lessons.cancelled }}</span></div>
-      <div class="okr-row"><span>Посещаемость</span><span>{{ d.attendance.rate|pct }}</span></div>
+      <div class="okr-row"><span>Проведено занятий</span><span>{{ d.lessons.held }} из {{ d.lessons.total }}</span></div>
+      <div class="okr-row"><span>Средняя посещаемость</span><span>{{ d.attendance.rate|pct }}</span></div>
       <div class="okr-row"><span>Пропуски</span><span>{{ d.attendance.absence_rate|pct }}</span></div>
+      {% if d.lessons.cancelled %}<div class="okr-row"><span>Отменено занятий</span><span>{{ d.lessons.cancelled }}</span></div>{% endif %}
     </div>
   </div>
   <div class="okr-panel">
     <div class="okr-panel-head"><span class="okr-panel-title">{% icon "clipboard-check" %}Домашние задания</span>{{ d.homework.completion_rate|kpi_badge }}</div>
     <div class="okr-panel-body">
-      <div class="okr-row"><span>Выдано</span><span>{{ d.homework.assigned }}</span></div>
+      <div class="okr-row"><span>Выдано</span><span>{{ d.homework.results }}</span></div>
       <div class="okr-row"><span>Сдано</span><span>{{ d.homework.submitted }}</span></div>
       <div class="okr-row"><span>Не сдано</span><span>{{ d.homework.not_submitted }}</span></div>
-      <div class="okr-row"><span>Проверено</span><span>{{ d.homework.checked }}</span></div>
-      <div class="okr-row"><span>Выполнение ДЗ</span><span>{{ d.homework.completion_rate|pct }}</span></div>
+      <div class="okr-row"><span>Выполнение</span><span>{{ d.homework.completion_rate|pct }}</span></div>
     </div>
   </div>
 </div>
 
 {% if d.teacher_breakdown|length > 1 %}
 <div class="okr-panel">
-  <div class="okr-panel-head"><span class="okr-panel-title">{% icon "graduation-cap" %}По тренерам группы</span></div>
+  <div class="okr-panel-head"><span class="okr-panel-title">{% icon "graduation-cap" %}Эффективность по тренерам группы</span></div>
   <div class="okr-table-wrap"><table class="okr-table">
-    <thead><tr><th scope="col">Тренер</th><th scope="col" class="num">Занятий</th><th scope="col" class="num">Посещ.</th><th scope="col" class="num">ДЗ</th>
-      <th scope="col" class="num">Активн.</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">KPI</th></tr></thead>
+    <thead><tr><th scope="col">Тренер</th><th scope="col" class="num">Занятия</th><th scope="col" class="num">Посещаемость</th><th scope="col" class="num">ДЗ</th>
+      <th scope="col" class="num">Активность</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">KPI</th></tr></thead>
     <tbody>
     {% for t in d.teacher_breakdown %}
-      <tr><td>{{ t.name }}</td><td class="num">{{ t.lessons.held }}/{{ t.lessons.total }}</td><td class="num">{{ t.attendance_rate|pct }}</td>
+      <tr><td>{{ t.name }}</td><td class="num">{{ t.lessons.held }} из {{ t.lessons.total }}</td><td class="num">{{ t.attendance_rate|pct }}</td>
         <td class="num">{{ t.homework_rate|pct }}</td><td class="num">{{ t.activity_rate|pct }}</td><td class="num">{{ t.progress_rate|pct }}</td><td class="num">{{ t.kpi|kpi_badge }}</td></tr>
     {% endfor %}
     </tbody>
@@ -92,27 +90,27 @@
 <div class="okr-panel">
   <div class="okr-panel-head">
     <span class="okr-panel-title">{% icon "users" %}Студенты группы</span>
-    {% include "admin/academy/reports/_search.html" with placeholder="Имя студента" %}
+    {% include "admin/academy/reports/_search.html" with placeholder="Поиск по имени студента" %}
   </div>
   {% if page.rows %}
   <div class="okr-table-wrap"><table class="okr-table">
     <thead><tr>
       <th scope="col">{% sort_link "name" "Студент" %}</th>
       <th scope="col">{% sort_link "status" "Статус" %}</th>
-      <th scope="col" class="num">Посетил</th>
-      <th scope="col" class="num">{% sort_link "attendance" "Посещ." True %}</th>
+      <th scope="col" class="num">Посетил занятий</th>
+      <th scope="col" class="num">{% sort_link "attendance" "Посещаемость" True %}</th>
       <th scope="col" class="num">Сдано ДЗ</th>
       <th scope="col" class="num">{% sort_link "homework" "ДЗ" True %}</th>
-      <th scope="col" class="num">{% sort_link "progress" "Ср. балл" True %}</th>
+      <th scope="col" class="num">{% sort_link "progress" "Средний балл" True %}</th>
     </tr></thead>
     <tbody>
     {% for s in page.rows %}
       <tr>
-        <td><a class="okr-row-link" href="{% url 'admin:academy_student_detail' s.id %}">{{ s.name }}</a></td>
-        <td><span class="okr-status-badge {% if s.is_active %}is-good{% else %}is-none{% endif %}">{{ s.status_display }}</span></td>
-        <td class="num">{{ s.attended }}/{{ s.attendance_total }}</td>
+        <td><a class="okr-row-link" href="{% url 'admin:academy_student_detail' s.id %}" title="Карточка студента">{{ s.name }}</a></td>
+        <td>{{ s.status|student_status_badge }}</td>
+        <td class="num">{{ s.attended }} из {{ s.attendance_total }}</td>
         <td class="num">{{ s.attendance_rate|pct }}</td>
-        <td class="num">{{ s.homework_submitted }}/{{ s.homework_results }}</td>
+        <td class="num">{{ s.homework_submitted }} из {{ s.homework_results }}</td>
         <td class="num">{{ s.homework_rate|pct }}</td>
         <td class="num">{% if s.average_score is not None %}{{ s.average_score }}{% else %}—{% endif %}</td>
       </tr>
@@ -121,7 +119,7 @@
   </table></div>
   {% include "admin/academy/reports/_pager.html" %}
   {% elif page.query %}
-    <div class="okr-empty"><span class="okr-empty-icon">{% icon "search" 22 %}</span><h4>Ничего не найдено</h4></div>
+    <div class="okr-empty"><span class="okr-empty-icon">{% icon "search" 22 %}</span><h4>Ничего не найдено</h4><p>По запросу «{{ page.query }}» студентов нет.</p></div>
   {% else %}
     <div class="okr-empty"><span class="okr-empty-icon">{% icon "user-x" 22 %}</span><h4>В группе нет студентов</h4><p>Добавьте студентов в рабочем пространстве группы.</p></div>
   {% endif %}

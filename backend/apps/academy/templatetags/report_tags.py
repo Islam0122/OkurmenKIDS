@@ -40,7 +40,7 @@ def pct(value) -> str:
 
 @register.filter
 def kpi_badge(value):
-    """`94,4%` plus a text status ("Excellent" / "Good" / "Needs attention")
+    """`94,4%` plus a text level ("Хороший" / "Требует внимания" / "Низкий")
     — color is only a secondary cue."""
     level = kpi_level(value)
     if level == "none":
@@ -91,3 +91,17 @@ def sort_link(context, key: str, label: str, default_desc: bool = False):
         '<a class="okr-sort{}" href="{}" title="{}">{}{}</a>',
         " is-active" if active else "", url, title, label, icon(icon_name, 12, "okr-sort-icon"),
     )
+
+
+_STUDENT_STATUS = {
+    "active": ("Активный", "good"),
+    "withdrawn": ("Ушёл", "bad"),
+    "paused": ("Приостановлен", "warn"),
+    "completed": ("Завершил обучение", "none"),
+}
+
+
+@register.filter
+def student_status_badge(status: str):
+    label, css = _STUDENT_STATUS.get(status, (status, "none"))
+    return format_html('<span class="okr-status-badge is-{}">{}</span>', css, label)

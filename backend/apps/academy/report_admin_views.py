@@ -19,7 +19,6 @@ from apps.users.models import Teacher
 from .admin_views import _is_admin_user
 from .models import Group
 from .services.reports import (
-    PERIOD_CHOICES,
     ReportFilterError,
     ReportFilters,
     build_group_detail,
@@ -29,15 +28,16 @@ from .services.reports import (
     build_teacher_rows,
     filter_options,
     group_student_rows,
+    period_options,
 )
 from .services.reports.kpi import weights_description
 from .services.reports.table import paginate_groups, paginate_students, paginate_teachers
 
 # (key, label, Lucide icon, url name)
 TABS = [
-    ("overview", "Overview", "chart-column", "admin:academy_reports_overview"),
-    ("groups", "Groups", "layers", "admin:academy_reports_groups"),
-    ("teachers", "Teachers", "graduation-cap", "admin:academy_reports_teachers"),
+    ("overview", "Обзор", "chart-column", "admin:academy_reports_overview"),
+    ("groups", "Группы", "layers", "admin:academy_reports_groups"),
+    ("teachers", "Тренеры", "graduation-cap", "admin:academy_reports_teachers"),
 ]
 
 
@@ -70,7 +70,7 @@ def _context(request, filters: ReportFilters, *, tab: str, title: str, error: st
             1 for value in (filters.course_id, filters.group_id, filters.teacher_id, filters.subject_id) if value
         ),
         "selected": {key: str(value) for key, value in query.items()},
-        "period_choices": PERIOD_CHOICES,
+        "period_choices": period_options(filters.today),
         "options": filter_options(),
         "kpi_weights": weights_description(),
         "pdf_url": f"{reverse('reports-export-pdf')}?{qs}",
@@ -87,7 +87,7 @@ def _kpi_components(kpi: dict) -> list[dict]:
 def reports_overview_view(request):
     _require_admin(request)
     filters, error = _parse_filters(request)
-    context = _context(request, filters, tab="overview", title="Academy Reports", error=error)
+    context = _context(request, filters, tab="overview", title="Отчёты академии", error=error)
     if not error:
         context["overview"] = build_overview(filters)
     return render(request, "admin/academy/reports/overview.html", context)
@@ -97,6 +97,8 @@ def reports_groups_view(request):
     _require_admin(request)
     filters, error = _parse_filters(request)
     context = _context(request, filters, tab="groups", title="Отчёт по группам", error=error)
+    context["group_statuses"] = Group.Status.choices
+    context["selected_status"] = request.GET.get("status", "")
     if not error:
         context["page"] = paginate_groups(build_group_rows(filters), request.GET)
     return render(request, "admin/academy/reports/groups.html", context)
@@ -118,7 +120,7 @@ def reports_group_detail_view(request, group_id: int):
 def reports_teachers_view(request):
     _require_admin(request)
     filters, error = _parse_filters(request)
-    context = _context(request, filters, tab="teachers", title="Teacher Performance", error=error)
+    context = _context(request, filters, tab="teachers", title="Отчёт по тренерам", error=error)
     if not error:
         context["page"] = paginate_teachers(build_teacher_rows(filters), request.GET)
     return render(request, "admin/academy/reports/teachers.html", context)

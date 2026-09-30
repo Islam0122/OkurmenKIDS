@@ -318,19 +318,19 @@ JAZZMIN_SETTINGS = {
         # hides the entry from non-admin staff, same as "Отчёт академии").
         "отчёты": [
             {
-                "name": "Overview",
+                "name": "Обзор",
                 "url": "admin:academy_reports_overview",
-                "icon": "bi bi-bar-chart-line",
+                "icon": "bi bi-graph-up",
                 "permissions": ["academy.view_academymonthlyreport"],
             },
             {
-                "name": "Groups",
+                "name": "Группы",
                 "url": "admin:academy_reports_groups",
                 "icon": "bi bi-layers",
                 "permissions": ["academy.view_academymonthlyreport"],
             },
             {
-                "name": "Teachers",
+                "name": "Тренеры",
                 "url": "admin:academy_reports_teachers",
                 "icon": "bi bi-mortarboard",
                 "permissions": ["academy.view_academymonthlyreport"],
@@ -406,6 +406,9 @@ JAZZMIN_SETTINGS = {
     # Section keys above are kept lowercase (Jazzmin lower-cases lookups);
     # the sidebar re-uppercases them via CSS (.ok-nav-section__label).
     "icons": {
+        # A section key listed here gets an icon next to its sidebar
+        # heading (templates/admin/base_site.html); others stay text-only.
+        "отчёты": "bi bi-bar-chart-line",
         "auth": "bi bi-people",
         "auth.group": "bi bi-people",
         "users.user": "bi bi-shield-lock",

@@ -62,7 +62,7 @@
                     {% for app in side_menu_list %}
                         <li class="ok-nav-section" data-ok-section="{{ app.app_label }}">
                             <button type="button" class="ok-nav-section__toggle" aria-expanded="true" aria-controls="ok-nav-section-{{ forloop.counter }}">
-                                <span class="ok-nav-section__label">{{ app.name }}</span>
+                                <span class="ok-nav-section__label">{% if app.icon and app.icon != jazzmin_settings.default_icon_parents %}<i class="{{ app.icon }} ok-nav-section__icon" aria-hidden="true"></i>{% endif %}{{ app.name }}</span>
                                 <i class="bi bi-chevron-down ok-nav-section__chevron" aria-hidden="true"></i>
                             </button>
                             <div class="ok-nav-section__body" id="ok-nav-section-{{ forloop.counter }}">

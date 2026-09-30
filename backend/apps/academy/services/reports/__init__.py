@@ -4,7 +4,7 @@ See `service.py` for how every figure is computed, `kpi.py` for the KPI
 formula and its configurable weights, `filters.py` for the period/filter
 vocabulary shared by every screen, endpoint and export.
 """
-from .filters import PERIOD_CHOICES, ReportFilterError, ReportFilters
+from .filters import PERIOD_CHOICES, ReportFilterError, ReportFilters, period_options
 from .kpi import kpi_level, kpi_weights, overall_kpi
 from .service import (
     build_all_student_rows,
@@ -22,6 +22,7 @@ from .service import (
 
 __all__ = [
     "PERIOD_CHOICES",
+    "period_options",
     "ReportFilterError",
     "ReportFilters",
     "build_all_student_rows",

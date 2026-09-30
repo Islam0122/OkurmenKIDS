@@ -1,13 +1,14 @@
 {% extends "admin/academy/reports/base.html" %}
 {% load report_tags %}
 
-{% block report_breadcrumbs %}<li class="breadcrumb-item">Teachers</li>{% endblock %}
-{% block page_title %}Teacher Performance{% endblock %}
+{% block report_breadcrumbs %}<li class="breadcrumb-item">Тренеры</li>{% endblock %}
+{% block page_title %}Отчёт по тренерам{% endblock %}
+{% block page_lead %}Группы, предметы и эффективность каждого тренера{% endblock %}
 
 {% block report_body %}
 <div class="okr-panel">
   <div class="okr-panel-head">
-    {% include "admin/academy/reports/_search.html" with placeholder="Тренер, группа или предмет" %}
+    {% include "admin/academy/reports/_search.html" with placeholder="Поиск по тренерам" %}
     {% include "admin/academy/reports/_legend.html" %}
   </div>
   {% if page.rows %}
@@ -16,34 +17,31 @@
       <thead>
         <tr>
           <th scope="col" class="okr-col-wide">{% sort_link "name" "Тренер" %}</th>
-          <th scope="col" class="okr-col-main">{% sort_link "groups" "Группы" True %}</th>
+          <th scope="col" class="num">{% sort_link "groups" "Группы" True %}</th>
           <th scope="col" class="num">{% sort_link "students" "Студенты" True %}</th>
           <th scope="col">Предметы</th>
-          <th scope="col" class="num">{% sort_link "attendance" "Посещ." True %}</th>
+          <th scope="col" class="num">{% sort_link "attendance" "Посещаемость" True %}</th>
           <th scope="col" class="num">{% sort_link "homework" "ДЗ" True %}</th>
-          <th scope="col" class="num">{% sort_link "activity" "Активн." True %}</th>
-          <th scope="col" class="num">{% sort_link "progress" "Прогресс" True %}</th>
+          <th scope="col" class="num">{% sort_link "activity" "Активность" True %}</th>
           <th scope="col" class="num okr-col-kpi">{% sort_link "kpi" "KPI" True %}</th>
+          <th scope="col"><span class="okr-visually-hidden">Действия</span></th>
         </tr>
       </thead>
       <tbody>
       {% for t in page.rows %}
         <tr>
           <td>
-            <a class="okr-row-link" href="{% url 'admin:academy_reports_teacher_detail' t.id %}?{{ filter_query }}" data-okr-loading>{{ t.name }}{% icon "chevron-right" 14 %}</a>
+            <a class="okr-row-link" href="{% url 'admin:academy_reports_teacher_detail' t.id %}?{{ filter_query }}" data-okr-loading>{{ t.name }}</a>
             {% if not t.is_active %}<div class="okr-sub-line">Неактивен</div>{% endif %}
           </td>
-          <td>
-            {% for g in t.groups|slice:":3" %}<span class="okr-chip">{{ g.name }}</span>{% empty %}<span class="okr-muted">Нет групп</span>{% endfor %}
-            {% if t.groups_count > 3 %}<span class="okr-chip" title="Ещё групп">+{{ t.groups_count|add:"-3" }}</span>{% endif %}
-          </td>
-          <td class="num">{{ t.students.active }}<span class="okr-muted">/{{ t.students.total }}</span>{% if t.students.left %}<div class="okr-sub-line"><span class="okr-danger-num">{{ t.students.left }}</span> ушли</div>{% endif %}</td>
+          <td class="num"{% if t.groups %} title="{% for g in t.groups %}{{ g.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"{% endif %}>{{ t.groups_count }}</td>
+          <td class="num">{{ t.students.total }}{% if t.students.left %}<div class="okr-sub-line">ушли: <span class="okr-danger-num">{{ t.students.left }}</span></div>{% endif %}</td>
           <td>{% for s in t.subjects %}<span class="okr-chip">{{ s }}</span>{% empty %}<span class="okr-muted">—</span>{% endfor %}</td>
           <td class="num">{{ t.attendance_rate|pct }}</td>
           <td class="num">{{ t.homework_rate|pct }}</td>
           <td class="num">{{ t.activity_rate|pct }}</td>
-          <td class="num">{{ t.progress_rate|pct }}</td>
           <td class="num okr-col-kpi">{{ t.kpi|kpi_badge }}</td>
+          <td class="num"><a class="okr-btn okr-btn-icon okr-btn-ghost" href="{% url 'admin:academy_reports_teacher_detail' t.id %}?{{ filter_query }}" data-okr-loading title="Подробный отчёт тренера" aria-label="Подробный отчёт тренера {{ t.name }}">{% icon "eye" 16 %}</a></td>
         </tr>
       {% endfor %}
       </tbody>
@@ -57,7 +55,7 @@
   {% endif %}
 </div>
 <p class="okr-note">{% icon "info" 14 %}<span>
-  Показатели тренера считаются только по занятиям, которые он ведёт сам (даже в группе с несколькими тренерами).
-  «Студенты» — активные / всего в его группах.
+  Показатели тренера считаются только по занятиям, которые он ведёт сам, даже если у группы несколько тренеров.
+  «Студенты» — текущий состав его групп.
 </span></p>
 {% endblock %}

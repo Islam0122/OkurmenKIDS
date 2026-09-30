@@ -39,23 +39,23 @@ COMPONENT_LABELS = {
 }
 
 COMPONENT_SHORT_LABELS = {
-    "attendance": "Attendance",
-    "homework": "Homework",
-    "activity": "Activity",
-    "progress": "Progress",
+    "attendance": "Посещаемость",
+    "homework": "Домашние задания",
+    "activity": "Активность",
+    "progress": "Прогресс",
 }
 
-# KPI status thresholds: >= 90% excellent, 75–89% good, < 75% needs attention.
+# KPI status thresholds: >= 90% good, 75–89% needs attention, < 75% low.
 LEVEL_GOOD = 90
 LEVEL_WARNING = 75
 
 # Status text shown next to every KPI value — the status must be readable
 # without relying on color alone.
 LEVEL_LABELS = {
-    "good": "Excellent",
-    "warning": "Good",
-    "bad": "Needs attention",
-    "none": "No data",
+    "good": "Хороший",
+    "warning": "Требует внимания",
+    "bad": "Низкий",
+    "none": "Нет данных",
 }
 
 
