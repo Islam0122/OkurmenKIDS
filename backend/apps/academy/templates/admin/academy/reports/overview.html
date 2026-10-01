@@ -82,6 +82,40 @@
 </div>
 {% endif %}
 
+<h2 class="okr-section">Предметы</h2>
+{% include "admin/academy/reports/_subjects_summary.html" with summary=ov.subjects %}
+<div class="okr-panel">
+  <div class="okr-panel-head">
+    <span class="okr-panel-title">{% icon "book-open" %}Отчёт по предметам</span>
+    <a class="okr-btn" href="{% url 'admin:academy_reports_subjects' %}?{{ filter_query }}" data-okr-loading>Все предметы{% icon "chevron-right" 14 %}</a>
+  </div>
+  {% if ov.subjects.rows %}
+  <div class="okr-table-wrap"><table class="okr-table">
+    <thead><tr><th scope="col">Предмет</th><th scope="col" class="num">Тренеры</th><th scope="col" class="num">Группы</th>
+      <th scope="col" class="num">Студенты</th><th scope="col" class="num">Посещ.</th><th scope="col" class="num">ДЗ</th>
+      <th scope="col" class="num">Проведено</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">KPI</th></tr></thead>
+    <tbody>
+    {% for s in ov.subjects.rows|slice:":10" %}
+      <tr>
+        <td><a class="okr-row-link" href="{% url 'admin:academy_reports_subject_detail' s.id %}?{{ filter_query }}" data-okr-loading>{{ s.name }}</a></td>
+        <td class="num">{{ s.teachers_count }}</td>
+        <td class="num">{{ s.groups_count }}</td>
+        <td class="num">{{ s.students.total }}</td>
+        <td class="num">{{ s.attendance_rate|pct }}</td>
+        <td class="num">{{ s.homework_rate|pct }}</td>
+        <td class="num">{{ s.activity_rate|pct }}</td>
+        <td class="num">{{ s.progress_rate|pct }}</td>
+        <td class="num">{{ s.kpi|kpi_badge }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if ov.subjects.rows|length > 10 %}<div class="okr-pager">Показаны 10 из {{ ov.subjects.rows|length }} — полный список во вкладке «Предметы».</div>{% endif %}
+  {% else %}
+    <div class="okr-empty"><span class="okr-empty-icon">{% icon "book-open" 22 %}</span><h4>Нет предметов</h4><p>По выбранным фильтрам предметы не найдены.</p></div>
+  {% endif %}
+</div>
+
 <div class="okr-grid-2">
   <div class="okr-panel">
     <div class="okr-panel-head">

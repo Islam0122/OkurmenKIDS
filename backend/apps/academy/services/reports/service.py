@@ -1,4 +1,5 @@
-"""Reports (Отчёты) — Overview, Groups, Teachers, and their detail pages.
+"""Reports (Отчёты) — Overview, Groups, Subjects, Teachers, and their detail
+pages.
 
 Nothing here is stored: every figure is computed on demand from Student/
 StudentStatusEvent/Group/GroupTeacher/Lesson/Attendance/Homework/
@@ -27,6 +28,12 @@ Definitions:
   lessons in the period (a group finished two years ago with no lessons in
   the period is not part of this period's picture); an explicitly selected
   group is always included;
+* subjects in a report — every active Subject, plus any subject that had
+  lessons in the period; with a program/group/teacher/subject filter, only
+  the subjects actually taught (lessons) or assigned (GroupTeacher) inside
+  that scope. A subject's figures are its own lessons (Lesson.subject) —
+  summed across every group that runs it; a teacher who runs two subjects
+  counts towards each of them separately;
 * KPI — services.kpi_engine, the single source of truth for every KPI.
 """
 from __future__ import annotations
@@ -172,6 +179,8 @@ _KEYS = {
     "teacher": {"lesson": _eff_teacher(), "attendance": _eff_teacher("lesson__"), "homework": _eff_teacher("lesson__"),
                 "result": _eff_teacher("homework__lesson__")},
     "student": {"attendance": "student_id", "result": "student_id"},
+    "subject": {"lesson": "subject_id", "attendance": "lesson__subject_id", "homework": "lesson__subject_id",
+                "result": "homework__lesson__subject_id"},
 }
 
 
@@ -188,7 +197,7 @@ def _grouped(qs, key_expr, **aggregates) -> dict:
 
 
 def _period_stats(filters: ReportFilters, key: str | None, *, lessons=None, only_keys=None) -> dict:
-    """PeriodStats per `key` ("group"/"teacher"/"student", or None for one
+    """PeriodStats per `key` ("group"/"teacher"/"student"/"subject", or None for one
     scope-wide total) over the lessons in scope — 4 queries (3 for
     students), whatever the number of keys."""
     lessons = lessons if lessons is not None else filters.scope().lessons_qs()
@@ -340,10 +349,23 @@ def _students_per_group(pairs) -> dict[int | None, set]:
 # Groups
 # ---------------------------------------------------------------------------
 
-def _group_programs(group_ids) -> dict[int, list[GroupTeacher]]:
+def _subject_assignment_q(subject_id: int) -> Q:
+    """Teaching Programs (GroupTeacher) that cover `subject_id`: its own, plus
+    legacy subject-less ones — those run the group's whole shared course plan
+    (see models.GroupTeacher), so they cover every subject in it."""
+    return Q(subject_id=subject_id) | Q(subject__isnull=True)
+
+
+def _group_programs(group_ids, subject_id: int | None = None) -> dict[int, list[GroupTeacher]]:
+    """Active Teaching Programs per group — only the ones covering
+    `subject_id` when the report is filtered by a subject (a group's English
+    trainer is not part of its Python figures)."""
     programs = defaultdict(list)
+    qs = GroupTeacher.objects.filter(group_id__in=group_ids, is_active=True)
+    if subject_id is not None:
+        qs = qs.filter(_subject_assignment_q(subject_id))
     for gt in (
-        GroupTeacher.objects.filter(group_id__in=group_ids, is_active=True)
+        qs
         .select_related("teacher__user", "subject")
         .order_by("group_id", "subject__name", "id")
     ):
@@ -402,7 +424,7 @@ def build_group_rows(filters: ReportFilters, group_ids: list[int] | None = None)
         return []
     weights = kpi_weights()
     groups = Group.objects.filter(id__in=group_ids).select_related("course").order_by("name")
-    programs = _group_programs(group_ids)
+    programs = _group_programs(group_ids, filters.subject_id)
     counts = _student_counts_by_group(filters, group_ids)
     left = _students_per_group(_event_pairs(filters, [StudentStatusEvent.EventType.DEACTIVATED], group_ids))
     returned = _students_per_group(_event_pairs(filters, _RETURN_EVENTS, group_ids))
@@ -433,9 +455,11 @@ def build_teacher_rows(filters: ReportFilters, group_ids: list[int] | None = Non
     # plus any group they actually taught in during the period.
     teacher_groups: dict[int, set] = defaultdict(set)
     teacher_subjects: dict[int, set] = defaultdict(set)
-    for gt in GroupTeacher.objects.filter(teacher_id__in=teacher_ids, group_id__in=group_ids, is_active=True).values(
-        "teacher_id", "group_id", "subject__name"
-    ):
+    assignments = GroupTeacher.objects.filter(teacher_id__in=teacher_ids, group_id__in=group_ids, is_active=True)
+    if filters.subject_id is not None:
+        # Filtered by a subject: only the groups where the teacher runs it.
+        assignments = assignments.filter(_subject_assignment_q(filters.subject_id))
+    for gt in assignments.values("teacher_id", "group_id", "subject__name"):
         teacher_groups[gt["teacher_id"]].add(gt["group_id"])
         if gt["subject__name"]:
             teacher_subjects[gt["teacher_id"]].add(gt["subject__name"])
@@ -496,6 +520,129 @@ def build_teacher_rows(filters: ReportFilters, group_ids: list[int] | None = Non
 
 
 # ---------------------------------------------------------------------------
+# Subjects
+# ---------------------------------------------------------------------------
+
+def report_subject_ids(filters: ReportFilters, group_ids: list[int]) -> list[int]:
+    """Which subjects a report covers (see the module docstring). Never a
+    hard-coded list — always the real Subject rows."""
+    if filters.subject_id is not None:
+        # An explicitly selected subject is always shown, data or not.
+        return list(Subject.objects.filter(id=filters.subject_id).values_list("id", flat=True))
+    lesson_subject_ids = set(
+        filters.scope().lessons_qs().order_by().exclude(subject_id=None)
+        .values_list("subject_id", flat=True).distinct()
+    )
+    qs = Subject.objects.all()
+    if _has_scope_filters(filters):
+        assignments = GroupTeacher.objects.filter(group_id__in=group_ids, is_active=True, subject__isnull=False)
+        if filters.teacher_id is not None:
+            assignments = assignments.filter(teacher_id=filters.teacher_id)
+        assigned_ids = set(assignments.values_list("subject_id", flat=True))
+        qs = qs.filter(id__in=lesson_subject_ids | assigned_ids)
+    else:
+        # Unfiltered: every active subject (including one nobody runs yet),
+        # plus any subject actually taught in the period.
+        qs = qs.filter(Q(is_active=True) | Q(id__in=lesson_subject_ids))
+    return list(qs.order_by().values_list("id", flat=True).distinct())
+
+
+def build_subject_rows(filters: ReportFilters, group_ids: list[int] | None = None) -> list[dict]:
+    """One row per subject. Figures are the subject's own lessons in scope
+    (Lesson.subject), summed across every group that runs it, through the
+    same `_period_stats` aggregation and KPI engine as groups and teachers.
+
+    groups/teachers of a subject: its active Teaching Programs (GroupTeacher
+    with that subject) within the report's groups, plus any group/teacher
+    that actually gave a lesson of it in the period. Students — the current
+    roster of those groups (a student belongs to exactly one group, so the
+    sum counts each student once)."""
+    group_ids = report_group_ids(filters) if group_ids is None else group_ids
+    subject_ids = report_subject_ids(filters, group_ids)
+    if not subject_ids:
+        return []
+    weights = kpi_weights()
+    lessons = filters.scope().lessons_qs()
+
+    subject_groups: dict[int, set] = defaultdict(set)
+    subject_teachers: dict[int, set] = defaultdict(set)
+    assignments = GroupTeacher.objects.filter(group_id__in=group_ids, subject_id__in=subject_ids, is_active=True)
+    if filters.teacher_id is not None:
+        assignments = assignments.filter(teacher_id=filters.teacher_id)
+    for gt in assignments.values("subject_id", "group_id", "teacher_id"):
+        subject_groups[gt["subject_id"]].add(gt["group_id"])
+        subject_teachers[gt["subject_id"]].add(gt["teacher_id"])
+    for row in (
+        lessons.order_by().filter(subject_id__in=subject_ids).annotate(_t=_eff_teacher())
+        .values("subject_id", "group_id", "_t").distinct()
+    ):
+        subject_groups[row["subject_id"]].add(row["group_id"])
+        if row["_t"] is not None:
+            subject_teachers[row["subject_id"]].add(row["_t"])
+
+    all_group_ids = set().union(*subject_groups.values()) if subject_groups else set()
+    all_teacher_ids = set().union(*subject_teachers.values()) if subject_teachers else set()
+    group_names = dict(Group.objects.filter(id__in=all_group_ids).values_list("id", "name"))
+    teacher_names = {
+        t.id: str(t) for t in Teacher.objects.filter(id__in=all_teacher_ids).select_related("user")
+    }
+    counts = _student_counts_by_group(filters, all_group_ids)
+    stats = _period_stats(filters, "subject", lessons=lessons, only_keys=set(subject_ids))
+
+    rows = []
+    for subject in Subject.objects.filter(id__in=subject_ids).order_by("name"):
+        gids = sorted(subject_groups.get(subject.id, ()), key=lambda gid: group_names.get(gid, ""))
+        tids = sorted(subject_teachers.get(subject.id, ()), key=lambda tid: teacher_names.get(tid, ""))
+        s = stats.get(subject.id, PeriodStats())
+        rows.append(
+            {
+                "id": subject.id,
+                "name": subject.name,
+                "is_active": subject.is_active,
+                "groups": [{"id": gid, "name": group_names.get(gid, "—")} for gid in gids],
+                "groups_count": len(gids),
+                "teachers": [{"id": tid, "name": teacher_names.get(tid, NO_TEACHER_LABEL)} for tid in tids],
+                "teachers_count": len(tids),
+                "teacher_names": ", ".join(teacher_names.get(tid, "") for tid in tids) or NO_TEACHER_LABEL,
+                "students": {
+                    "total": sum(counts.get(gid, {}).get("total", 0) for gid in gids),
+                    "active": sum(counts.get(gid, {}).get("active", 0) for gid in gids),
+                },
+                "average_score": round(s.avg_score, 1) if s.avg_score is not None else None,
+                **_rates(s, weights),
+                # Overrides `_rates`' short {total, held}: the subject table
+                # also shows "held of due" and cancellations.
+                "lessons": {
+                    "total": s.lessons_total,
+                    "held": s.lessons_held,
+                    "due": s.lessons_due,
+                    "cancelled": s.lessons_cancelled,
+                },
+            }
+        )
+    return rows
+
+
+def unassigned_subject_lessons(filters: ReportFilters) -> int:
+    """Lessons in scope with no subject set — they count towards groups,
+    teachers and the overall KPI, but belong to no row of the subjects table
+    (shown as a footnote, so the tables still reconcile)."""
+    if filters.subject_id is not None:
+        return 0
+    return filters.scope().lessons_qs().filter(subject__isnull=True).count()
+
+
+def subject_summary(subject_rows: list[dict]) -> dict:
+    rated = [row["kpi"] for row in subject_rows if row["kpi"] is not None]
+    return {
+        "total": len(subject_rows),
+        "with_data": len(rated),
+        "average_kpi": round(sum(rated) / len(rated), 1) if rated else None,
+        "levels": _level_counts(subject_rows),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Students
 # ---------------------------------------------------------------------------
 
@@ -537,12 +684,14 @@ def build_student_rows(filters: ReportFilters, students, *, lessons=None) -> lis
 # Overview
 # ---------------------------------------------------------------------------
 
-def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None) -> dict:
+def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None, subject_rows=None) -> dict:
     group_ids = report_group_ids(filters)
     if group_rows is None:
         group_rows = build_group_rows(filters, group_ids)
     if teacher_rows is None:
         teacher_rows = build_teacher_rows(filters, group_ids, group_rows=group_rows)
+    if subject_rows is None:
+        subject_rows = build_subject_rows(filters, group_ids)
     weights = kpi_weights()
 
     if _has_scope_filters(filters):
@@ -600,6 +749,12 @@ def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None
         "levels": {
             "groups": _level_counts(group_rows),
             "teachers": _level_counts(teacher_rows),
+            "subjects": _level_counts(subject_rows),
+        },
+        "subjects": {
+            **subject_summary(subject_rows),
+            "unassigned_lessons": unassigned_subject_lessons(filters),
+            "rows": subject_rows,
         },
         "top_groups": [row for row in ranked if row["kpi_level"] == "good"][:5],
         "attention_groups": [row for row in reversed(ranked) if row["kpi_level"] in ("low", "attention")][:5],
@@ -689,6 +844,37 @@ def _rates(s: PeriodStats, weights) -> dict:
     }
 
 
+def build_subject_detail(subject: Subject, filters: ReportFilters) -> dict:
+    """One subject: its summary row, KPI (the engine, scoped to this subject),
+    and its groups and teachers — each figure counted over this subject's
+    lessons only (a group's or teacher's other subjects are left out)."""
+    subject_filters = dataclasses.replace(filters, subject_id=subject.id)
+    group_ids = report_group_ids(subject_filters)
+    row = build_subject_rows(subject_filters, group_ids)[0]
+    subject_group_ids = [g["id"] for g in row["groups"]]
+    group_rows = build_group_rows(subject_filters, subject_group_ids)
+    teacher_rows = build_teacher_rows(subject_filters, subject_group_ids, group_rows=group_rows)
+    weights = kpi_weights()
+    stats = _period_stats(subject_filters, None).get(None, PeriodStats())
+    return {
+        "subject": {
+            "id": subject.id,
+            "name": subject.name,
+            "description": subject.description,
+            "is_active": subject.is_active,
+        },
+        "filters": filters.as_dict(),
+        "groups_count": row["groups_count"],
+        "teachers_count": row["teachers_count"],
+        "students": row["students"],
+        **{key: value for key, value in stats.as_dict(weights).items() if key not in ("has_data", "metrics", "kpi")},
+        **_contract(KPIEngine.calculate(scope=subject_filters.scope(), today=filters.today)),
+        "has_data": stats.has_data,
+        "group_rows": group_rows,
+        "teacher_rows": teacher_rows,
+    }
+
+
 def group_student_rows(group: Group, filters: ReportFilters) -> list[dict]:
     """Every student on the group's roster with their period figures for
     this group's lessons (two grouped queries for the whole roster)."""
@@ -774,9 +960,10 @@ def build_full_report(filters: ReportFilters) -> dict:
     group_ids = report_group_ids(filters)
     group_rows = build_group_rows(filters, group_ids)
     teacher_rows = build_teacher_rows(filters, group_ids, group_rows=group_rows)
-    overview = build_overview(filters, group_rows=group_rows, teacher_rows=teacher_rows)
+    subject_rows = build_subject_rows(filters, group_ids)
+    overview = build_overview(filters, group_rows=group_rows, teacher_rows=teacher_rows, subject_rows=subject_rows)
     return {"filters": filters, "overview": overview, "groups": group_rows, "teachers": teacher_rows,
-            "group_ids": group_ids}
+            "subjects": subject_rows, "group_ids": group_ids}
 
 
 def build_all_student_rows(filters: ReportFilters, group_ids) -> list[dict]:
@@ -794,11 +981,15 @@ __all__ = [
     "build_group_rows",
     "build_overview",
     "build_student_rows",
+    "build_subject_detail",
+    "build_subject_rows",
     "build_teacher_detail",
     "build_teacher_rows",
     "describe_filters",
     "filter_options",
     "group_student_rows",
     "report_group_ids",
+    "report_subject_ids",
     "report_teacher_ids",
+    "subject_summary",
 ]

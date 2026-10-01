@@ -41,6 +41,23 @@ TEACHER_SORTS = {
 }
 
 
+SUBJECT_SORTS = {
+    "name": lambda r: r["name"].lower(),
+    "teachers": lambda r: r["teachers_count"],
+    "groups": lambda r: r["groups_count"],
+    "students": lambda r: r["students"]["total"],
+    "attendance": lambda r: r["attendance_rate"],
+    "homework": lambda r: r["homework_rate"],
+    "activity": lambda r: r["activity_rate"],
+    "progress": lambda r: r["progress_rate"],
+    "kpi": lambda r: r["kpi"],
+}
+
+
+def _subject_search_text(row) -> str:
+    return " ".join([row["name"], *(t["name"] for t in row["teachers"]), *(g["name"] for g in row["groups"])])
+
+
 def _teacher_search_text(row) -> str:
     return " ".join([row["name"], *row["subjects"], *(g["name"] for g in row["groups"])])
 
@@ -126,6 +143,10 @@ def paginate_groups(rows, params) -> TablePage:
 
 def paginate_teachers(rows, params) -> TablePage:
     return paginate_rows(rows, params, sorts=TEACHER_SORTS, default_sort="name", search=_teacher_search_text)
+
+
+def paginate_subjects(rows, params) -> TablePage:
+    return paginate_rows(rows, params, sorts=SUBJECT_SORTS, default_sort="name", search=_subject_search_text)
 
 
 STUDENT_SORTS = {

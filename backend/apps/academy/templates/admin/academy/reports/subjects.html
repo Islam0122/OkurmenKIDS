@@ -1,0 +1,68 @@
+{% extends "admin/academy/reports/base.html" %}
+{% load report_tags %}
+
+{% block report_breadcrumbs %}<li class="breadcrumb-item">Предметы</li>{% endblock %}
+{% block page_title %}Отчёт по предметам{% endblock %}
+{% block page_lead %}Тренеры, группы, студенты и эффективность каждого предмета{% endblock %}
+
+{% block report_body %}
+<h2 class="okr-section">Предметы</h2>
+{% include "admin/academy/reports/_subjects_summary.html" %}
+
+<div class="okr-panel">
+  <div class="okr-panel-head">
+    {% include "admin/academy/reports/_search.html" with placeholder="Поиск по предметам, тренерам, группам" %}
+    {% include "admin/academy/reports/_legend.html" %}
+  </div>
+  {% if page.rows %}
+  <div class="okr-table-wrap">
+    <table class="okr-table">
+      <thead>
+        <tr>
+          <th scope="col" class="okr-col-wide">{% sort_link "name" "Предмет" %}</th>
+          <th scope="col" class="num">{% sort_link "teachers" "Тренеры" True %}</th>
+          <th scope="col" class="num">{% sort_link "groups" "Группы" True %}</th>
+          <th scope="col" class="num">{% sort_link "students" "Студенты" True %}</th>
+          <th scope="col" class="num">{% sort_link "attendance" "Посещаемость" True %}</th>
+          <th scope="col" class="num">{% sort_link "homework" "ДЗ" True %}</th>
+          <th scope="col" class="num">{% sort_link "activity" "Проведено занятий" True %}</th>
+          <th scope="col" class="num">{% sort_link "progress" "Прогресс" True %}</th>
+          <th scope="col" class="num okr-col-kpi">{% sort_link "kpi" "KPI / уровень" True %}</th>
+          <th scope="col"><span class="okr-visually-hidden">Действия</span></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in page.rows %}
+        <tr>
+          <td>
+            <a class="okr-row-link" href="{% url 'admin:academy_reports_subject_detail' s.id %}?{{ filter_query }}" data-okr-loading>{{ s.name }}</a>
+            {% if not s.is_active %}<div class="okr-sub-line">Неактивен</div>{% endif %}
+          </td>
+          <td class="num"{% if s.teachers %} title="{% for t in s.teachers %}{{ t.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"{% endif %}>{{ s.teachers_count }}</td>
+          <td class="num"{% if s.groups %} title="{% for g in s.groups %}{{ g.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"{% endif %}>{{ s.groups_count }}</td>
+          <td class="num">{{ s.students.total }}</td>
+          <td class="num">{{ s.attendance_rate|pct }}</td>
+          <td class="num">{{ s.homework_rate|pct }}</td>
+          <td class="num">{{ s.activity_rate|pct }}{% if s.lessons.due %}<div class="okr-sub-line">{{ s.lessons.held }} из {{ s.lessons.due }}</div>{% endif %}</td>
+          <td class="num">{{ s.progress_rate|pct }}</td>
+          <td class="num okr-col-kpi">{{ s.kpi|kpi_badge }}</td>
+          <td class="num"><a class="okr-btn okr-btn-icon okr-btn-ghost" href="{% url 'admin:academy_reports_subject_detail' s.id %}?{{ filter_query }}" data-okr-loading title="Подробный отчёт по предмету" aria-label="Подробный отчёт по предмету {{ s.name }}">{% icon "eye" 16 %}</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "admin/academy/reports/_pager.html" %}
+  {% elif page.query %}
+    <div class="okr-empty"><span class="okr-empty-icon">{% icon "search" 22 %}</span><h4>Ничего не найдено</h4><p>По запросу «{{ page.query }}» предметов нет.</p></div>
+  {% else %}
+    <div class="okr-empty"><span class="okr-empty-icon">{% icon "book-open" 22 %}</span><h4>Нет предметов</h4><p>По выбранным фильтрам предметы не найдены.</p></div>
+  {% endif %}
+</div>
+<p class="okr-note">{% icon "info" 14 %}<span>
+  Показатели предмета считаются только по его занятиям и объединяют все группы, где он ведётся; тренер, который ведёт
+  несколько предметов, учитывается в каждом из них отдельно. «Студенты» — текущий состав групп предмета.
+  KPI — та же методика, что и в общем отчёте; показатель без данных («—») в KPI не учитывается.
+  {% if unassigned_lessons %}Занятий без указанного предмета за период: {{ unassigned_lessons }} — они учтены в общем отчёте, группах и тренерах, но не в этой таблице.{% endif %}
+</span></p>
+{% endblock %}

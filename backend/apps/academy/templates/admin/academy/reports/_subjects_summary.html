@@ -1,0 +1,33 @@
+{% load report_tags %}
+<div class="okr-cards">
+  <div class="okr-stat">
+    <span class="okr-stat-icon is-info">{% icon "book-open" 18 %}</span>
+    <span class="okr-stat-label">Предметов</span>
+    <span class="okr-stat-value">{{ summary.total }}</span>
+    <span class="okr-stat-foot">{% if summary.levels.no_data %}без данных за период: {{ summary.levels.no_data }}{% else %}у всех есть данные за период{% endif %}</span>
+  </div>
+  <div class="okr-stat">
+    <span class="okr-stat-icon is-{{ summary.average_kpi|level_class }}">{% icon "trending-up" 18 %}</span>
+    <span class="okr-stat-label">Средний KPI предметов</span>
+    <span class="okr-stat-value">{{ summary.average_kpi|pct }}</span>
+    <span class="okr-stat-foot"><span class="okr-status-badge is-{{ summary.average_kpi|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ summary.average_kpi|level_label }}</span>по {{ summary.with_data }} с данными</span>
+  </div>
+  <div class="okr-stat">
+    <span class="okr-stat-icon is-good">{% icon "circle-check" 18 %}</span>
+    <span class="okr-stat-label">KPI ≥ 90%</span>
+    <span class="okr-stat-value">{{ summary.levels.good }}</span>
+    <span class="okr-stat-foot">Хороший</span>
+  </div>
+  <div class="okr-stat">
+    <span class="okr-stat-icon is-warn">{% icon "triangle-alert" 18 %}</span>
+    <span class="okr-stat-label">KPI 75–89%</span>
+    <span class="okr-stat-value">{{ summary.levels.attention }}</span>
+    <span class="okr-stat-foot">Требует внимания</span>
+  </div>
+  <div class="okr-stat">
+    <span class="okr-stat-icon is-bad">{% icon "circle-x" 18 %}</span>
+    <span class="okr-stat-label">KPI &lt; 75%</span>
+    <span class="okr-stat-value">{{ summary.levels.low }}</span>
+    <span class="okr-stat-foot">Низкий</span>
+  </div>
+</div>

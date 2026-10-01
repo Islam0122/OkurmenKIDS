@@ -1,5 +1,5 @@
-"""Reports — the Admin Panel's Reports section: Overview, Groups, Teachers
-and their detail pages.
+"""Reports — the Admin Panel's Reports section: Overview, Groups, Subjects,
+Teachers and their detail pages.
 
 Thin views: every number comes from services.reports (the same functions
 the /api/v1/reports/ endpoints and the PDF/Excel exports use), these only
@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.http import urlencode
 
-from apps.users.models import Teacher
+from apps.users.models import Subject, Teacher
 
 from .admin_views import _is_admin_user
 from .models import Group
@@ -24,19 +24,23 @@ from .services.reports import (
     build_group_detail,
     build_group_rows,
     build_overview,
+    build_subject_detail,
+    build_subject_rows,
     build_teacher_detail,
     build_teacher_rows,
     filter_options,
     group_student_rows,
     period_options,
 )
-from .services.reports.kpi import weights_description
-from .services.reports.table import paginate_groups, paginate_students, paginate_teachers
+from .services.reports.kpi import COMPONENT_LABELS, weights_description
+from .services.reports.service import report_group_ids, subject_summary, unassigned_subject_lessons
+from .services.reports.table import paginate_groups, paginate_students, paginate_subjects, paginate_teachers
 
 # (key, label, Lucide icon, url name)
 TABS = [
     ("overview", "Обзор", "chart-column", "admin:academy_reports_overview"),
     ("groups", "Группы", "layers", "admin:academy_reports_groups"),
+    ("subjects", "Предметы", "book-open", "admin:academy_reports_subjects"),
     ("teachers", "Тренеры", "graduation-cap", "admin:academy_reports_teachers"),
 ]
 
@@ -115,6 +119,35 @@ def reports_group_detail_view(request, group_id: int):
         context["kpi_components"] = _kpi_components(context["detail"]["metrics"])
         context["page"] = paginate_students(group_student_rows(group, filters), request.GET)
     return render(request, "admin/academy/reports/group_detail.html", context)
+
+
+def reports_subjects_view(request):
+    _require_admin(request)
+    filters, error = _parse_filters(request)
+    context = _context(request, filters, tab="subjects", title="Отчёт по предметам", error=error)
+    if not error:
+        rows = build_subject_rows(filters, report_group_ids(filters))
+        context["summary"] = subject_summary(rows)
+        context["unassigned_lessons"] = unassigned_subject_lessons(filters)
+        context["page"] = paginate_subjects(rows, request.GET)
+    return render(request, "admin/academy/reports/subjects.html", context)
+
+
+def reports_subject_detail_view(request, subject_id: int):
+    _require_admin(request)
+    subject = get_object_or_404(Subject, pk=subject_id)
+    filters, error = _parse_filters(request)
+    context = _context(request, filters, tab="subjects", title=f"Предмет: {subject.name}", error=error)
+    context["subject_obj"] = subject
+    if not error:
+        context["detail"] = build_subject_detail(subject, filters)
+        # Same components and weights; "lesson_completion" under its full
+        # name ("Проведённые занятия") as the subject report calls it.
+        context["kpi_components"] = [
+            {**c, "short": COMPONENT_LABELS[c["key"]]} if c["key"] == "lesson_completion" else c
+            for c in _kpi_components(context["detail"]["metrics"])
+        ]
+    return render(request, "admin/academy/reports/subject_detail.html", context)
 
 
 def reports_teachers_view(request):

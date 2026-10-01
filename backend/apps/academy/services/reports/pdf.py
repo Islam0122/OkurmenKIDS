@@ -7,8 +7,8 @@ comes from services.reports.service.build_full_report — the very same
 figures the Reports screens show for the same filters.
 
 Layout (all text in Russian): page 1 — cover, summary, KPI; then «Отчёт по
-группам»; then «Отчёт по тренерам» (tables continue across pages with a
-repeated header); last — «Ключевые показатели».
+группам»; then «Отчёт по предметам»; then «Отчёт по тренерам» (tables
+continue across pages with a repeated header); last — «Ключевые показатели».
 """
 from __future__ import annotations
 
@@ -182,7 +182,7 @@ def _draw_cover(doc: _Doc, report: dict) -> None:
     top = PAGE_H - 48
     doc.text(MARGIN, top, "OKURMENKIDS", font=_BOLD, size=12, color=colors.HexColor("#bfe3cd"))
     doc.text(MARGIN, top - 30, "ОТЧЁТ ПО АКАДЕМИИ OKURMENKIDS", font=_BOLD, size=20, color=WHITE)
-    doc.text(MARGIN, top - 52, "Общая статистика по студентам, группам и тренерам", size=10, color=colors.HexColor("#d7ecdf"))
+    doc.text(MARGIN, top - 52, "Общая статистика по студентам, группам, предметам и тренерам", size=10, color=colors.HexColor("#d7ecdf"))
     doc.text(MARGIN, top - 80, f"Период:  {_date(filters.start)} — {_date(filters.end)}   ({filters.period_label})",
              font=_BOLD, size=10, color=WHITE)
 
@@ -369,10 +369,57 @@ def _draw_groups(doc: _Doc, report: dict) -> None:
     _table(doc, columns, rows, empty="Нет групп для выбранных фильтров.")
 
 
+def _draw_subjects(doc: _Doc, report: dict) -> None:
+    doc.new_page()
+    subjects = report["subjects"]
+    summary = report["overview"]["subjects"]
+    levels = summary["levels"]
+    _page_title(
+        doc, "РАЗДЕЛ 3", "ОТЧЁТ ПО ПРЕДМЕТАМ",
+        f"Предметов: {summary['total']} · средний KPI: {_pct(summary['average_kpi'])} · хороший: {levels['good']} · "
+        f"требует внимания: {levels['attention']} · низкий: {levels['low']} · нет данных: {levels['no_data']}",
+    )
+    columns = [
+        # Widths fit each header (7.2pt bold), a "100,0%" cell and the widest
+        # badge ("89,9% · Требует внимания") — none of them gets truncated.
+        {"title": "Предмет", "width": 0.152},
+        {"title": "Тренеры", "width": 0.087, "align": "center"},
+        {"title": "Группы", "width": 0.076, "align": "center"},
+        {"title": "Студенты", "width": 0.095, "align": "center"},
+        {"title": "Посещ.", "width": 0.076, "align": "center"},
+        {"title": "ДЗ", "width": 0.08, "align": "center"},
+        {"title": "Проведено", "width": 0.11, "align": "center"},
+        {"title": "Прогресс", "width": 0.095, "align": "center"},
+        {"title": "KPI / уровень", "width": 0.229, "align": "center", "badge": True},
+    ]
+    rows = [
+        [s["name"], s["teachers_count"], s["groups_count"], s["students"]["total"], _pct(s["attendance_rate"]),
+         _pct(s["homework_rate"]), _pct(s["activity_rate"]), _pct(s["progress_rate"]), s["kpi"]]
+        for s in sorted(subjects, key=lambda s: (s["kpi"] is None, -(s["kpi"] or 0), s["name"]))
+    ]
+    _table(doc, columns, rows, empty="Нет предметов для выбранных фильтров.")
+    notes = [
+        "Показатели предмета — по его занятиям во всех группах, где он ведётся; тренер, ведущий несколько предметов, "
+        "учитывается в каждом отдельно. «Проведено» — проведённые / наступившие занятия; прогресс — средний балл ДЗ / 10. "
+        "«—» — нет данных, такой показатель не входит в KPI.",
+    ]
+    if summary["unassigned_lessons"]:
+        notes.append(
+            f"Занятий без указанного предмета за период: {summary['unassigned_lessons']} — они учтены в общей "
+            "статистике, группах и тренерах, но не в этой таблице."
+        )
+    doc.y -= 4
+    for note in notes:
+        for line in _wrap_text(note, _REGULAR, 7.3, CONTENT_W):
+            doc.ensure_space(12)
+            doc.text(MARGIN, doc.y, line, size=7.3, color=INK_MUTED)
+            doc.y -= 10
+
+
 def _draw_teachers(doc: _Doc, report: dict) -> None:
     doc.new_page()
     teachers = report["teachers"]
-    _page_title(doc, "РАЗДЕЛ 3", "ОТЧЁТ ПО ТРЕНЕРАМ",
+    _page_title(doc, "РАЗДЕЛ 4", "ОТЧЁТ ПО ТРЕНЕРАМ",
                 f"Тренеров: {len(teachers)} · показатели по занятиям, которые ведёт сам тренер")
     columns = [
         {"title": "Тренер", "width": 0.17},
@@ -414,7 +461,7 @@ def _stat_panel(doc: _Doc, x, top, width, title, lines, accent) -> float:
 def _draw_key_statistics(doc: _Doc, report: dict) -> None:
     doc.new_page()
     ov = report["overview"]
-    _page_title(doc, "РАЗДЕЛ 4", "КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ")
+    _page_title(doc, "РАЗДЕЛ 5", "КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ")
     att, hw, lessons, st = ov["attendance"], ov["homework"], ov["lessons"], ov["students"]
     metrics = ov["metrics"]
     g_levels, t_levels = ov["levels"]["groups"], ov["levels"]["teachers"]
@@ -454,10 +501,18 @@ def _draw_key_statistics(doc: _Doc, report: dict) -> None:
             ("Хороший KPI (≥ 90%)", g_levels["good"]), ("Требует внимания (75–89%)", g_levels["attention"]),
             ("Низкий KPI (< 75%)", g_levels["low"]),
         ]),
+        ("Эффективность предметов", colors.HexColor("#6b4fa8"), [
+            ("Предметов в отчёте", ov["subjects"]["total"]),
+            ("Средний KPI предметов", _pct(ov["subjects"]["average_kpi"])),
+            ("Хороший KPI (≥ 90%)", ov["levels"]["subjects"]["good"]),
+            ("Требует внимания (75–89%)", ov["levels"]["subjects"]["attention"]),
+            ("Низкий KPI (< 75%)", ov["levels"]["subjects"]["low"]),
+        ]),
     ]
     gap = 12
     width = (CONTENT_W - gap) / 2
     for index in range(0, len(panels), 2):
+        doc.ensure_space(26 + max(len(lines) for _t, _a, lines in panels[index:index + 2]) * 15 + 8)
         top = doc.y
         heights = []
         for offset, (title, accent, lines) in enumerate(panels[index:index + 2]):
@@ -493,6 +548,7 @@ def build_reports_pdf(report: dict) -> bytes:
     doc = _Doc(buffer, f"OkurmenKIDS — отчёт {_date(filters.start)}–{_date(filters.end)}")
     _draw_summary_page(doc, report)
     _draw_groups(doc, report)
+    _draw_subjects(doc, report)
     _draw_teachers(doc, report)
     _draw_key_statistics(doc, report)
     doc.c.save()
