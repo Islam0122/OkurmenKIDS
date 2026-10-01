@@ -88,7 +88,7 @@ describe('KPIPage', () => {
     // No frontend math: the value and status are the API's, verbatim.
     await waitFor(() => expect(screen.getByText('72,6%')).toBeInTheDocument())
     expect(screen.getByText('Низкий')).toBeInTheDocument()
-    expect(screen.getAllByText('(не входит в KPI)')).toHaveLength(2)
+    expect(screen.getAllByText('не входит в KPI')).toHaveLength(2)
   })
 
   it('shows "—" when the backend reports no KPI data', async () => {

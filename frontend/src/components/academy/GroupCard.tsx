@@ -20,7 +20,7 @@ export function GroupCard({ group }: { group: Group }) {
   return (
     <Link
       to={`/app/groups/${group.id}`}
-      className="block rounded-xl border border-border bg-surface p-5 transition-colors hover:border-brand-200 hover:bg-brand-50/30"
+      className="block card card-body card-interactive"
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-semibold text-ink">{group.name}</h3>

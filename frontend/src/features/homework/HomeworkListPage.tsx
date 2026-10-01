@@ -11,6 +11,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
+import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { useGroups } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
 
@@ -66,11 +67,11 @@ export function HomeworkListPage() {
     <div>
       <PageHeader title="Домашние задания" description="Все заданные вами домашние работы." />
 
-      <div className="mb-5 flex flex-wrap gap-3">
-        <div className="w-full max-w-xs">
+      <FilterBar>
+        <FilterField size="lg">
           <SearchInput value={search} onChange={updateAndResetPage(setSearch)} placeholder="Поиск по названию…" />
-        </div>
-        <div className="w-56">
+        </FilterField>
+        <FilterField>
           <Select
             aria-label="Группа"
             placeholder="Все группы"
@@ -78,8 +79,8 @@ export function HomeworkListPage() {
             onChange={(event) => updateAndResetPage(setGroupId)(event.target.value)}
             options={(groupsData?.results ?? []).map((group) => ({ value: String(group.id), label: group.name }))}
           />
-        </div>
-      </div>
+        </FilterField>
+      </FilterBar>
 
       {isPending ? <LoadingState label="Загружаем домашние задания…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
@@ -105,7 +106,7 @@ export function HomeworkListPage() {
               )
             })}
           </div>
-          <div className="mt-5">
+          <div className="mt-6">
             <Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} />
           </div>
         </>

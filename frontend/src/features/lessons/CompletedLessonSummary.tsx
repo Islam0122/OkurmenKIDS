@@ -1,6 +1,7 @@
 import { AlarmClock, BookOpen, CheckCircle2, CheckCircle, Percent, Users, XCircle } from 'lucide-react'
 
 import { StatCard } from '@/components/ui/StatCard'
+import { StatGrid } from '@/components/ui/StatGrid'
 import type { Lesson } from '@/types/academy'
 import { ATTENDANCE_SUMMARY_LABELS } from '@/types/attendance'
 import { formatDate } from '@/utils/format'
@@ -56,8 +57,8 @@ export function CompletedLessonKpis({ lesson }: { lesson: Lesson }) {
 
   return (
     <div>
-      <p className="mb-3 text-sm font-medium text-ink-secondary">Результаты занятия</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <h2 className="section-title mb-4">Результаты занятия</h2>
+      <StatGrid columns={3}>
         <StatCard label="Студентов" value={attendance.total_students} icon={Users} />
         <StatCard label={ATTENDANCE_SUMMARY_LABELS.present} value={attendance.present} icon={CheckCircle2} />
         <StatCard label={ATTENDANCE_SUMMARY_LABELS.absent} value={attendance.absent} icon={XCircle} tone="danger" />
@@ -68,7 +69,7 @@ export function CompletedLessonKpis({ lesson }: { lesson: Lesson }) {
           icon={Percent}
         />
         <StatCard label="Домашнее задание" value={homeworkValue} hint={homeworkHint} icon={BookOpen} />
-      </div>
+      </StatGrid>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 export function AcademyReportCardSkeleton() {
   return (
-    <div className="animate-pulse rounded-xl border border-border bg-surface p-5">
+    <div className="animate-pulse card card-body">
       <div className="flex items-center gap-2.5">
         <span className="size-9 rounded-lg bg-surface-hover" />
         <span className="h-4 w-32 rounded bg-surface-hover" />

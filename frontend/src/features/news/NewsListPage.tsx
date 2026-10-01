@@ -21,10 +21,10 @@ export function NewsListPage() {
 
   return (
     <div>
-      <PageHeader title="📢 Новости" description="Важные объявления от администрации." />
+      <PageHeader title="Новости" description="Важные объявления от администрации." />
 
       {!isPending && !isError && items.length > 0 ? (
-        <div className="mb-5 flex gap-2">
+        <div className="mb-6 flex gap-2">
           <button
             type="button"
             onClick={() => setFilter('all')}

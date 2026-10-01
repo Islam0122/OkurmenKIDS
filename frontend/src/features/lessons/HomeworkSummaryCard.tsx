@@ -22,8 +22,8 @@ export interface HomeworkSummaryCardProps {
 export function HomeworkSummaryCard({ homework, summary, onView }: HomeworkSummaryCardProps) {
   const resultsTotal = summary ? summary.results_total : homework.results_count
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-border bg-surface p-5">
-      <p className="mb-2 text-sm font-medium text-ink-secondary">Домашнее задание</p>
+    <div className="flex h-full flex-col card card-body">
+      <h2 className="section-title mb-3">Домашнее задание</h2>
       <p className="font-medium text-ink">{homework.title}</p>
       {homework.description ? <p className="mt-1 text-sm text-ink-secondary">{homework.description}</p> : null}
       {homework.deadline ? <p className="mt-1 text-sm text-ink-secondary">Срок: {formatDate(homework.deadline)}</p> : null}

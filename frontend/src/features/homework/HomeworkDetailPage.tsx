@@ -125,8 +125,8 @@ export function HomeworkDetailPage() {
       ) : null}
 
       {homework.description ? (
-        <div className="mb-6 rounded-xl border border-border bg-surface p-5">
-          <p className="mb-2 text-sm font-medium text-ink-secondary">Описание</p>
+        <div className="mb-6 card card-body">
+          <h2 className="section-title mb-3">Описание</h2>
           <p className="text-sm text-ink">{homework.description}</p>
         </div>
       ) : null}

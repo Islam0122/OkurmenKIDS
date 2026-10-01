@@ -14,7 +14,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       ref={ref}
       rows={rows}
       className={cn(
-        'w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus-visible:border-brand-500',
+        'form-control h-auto resize-y py-2',
         className,
       )}
       {...rest}

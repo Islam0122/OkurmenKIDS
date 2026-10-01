@@ -38,9 +38,9 @@ export function AcademyReportsListPage() {
 
   return (
     <div>
-      <PageHeader title="🏫 Отчёты академии" description="Ежемесячная статистика и результаты академии" />
+      <PageHeader title="Отчёты академии" description="Ежемесячная статистика и результаты академии" />
 
-      <div className="mb-5 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-surface p-4">
+      <div className="mb-6 flex flex-wrap items-end gap-2 card card-body">
         <div>
           <label className="mb-1.5 block text-xs font-medium text-ink-secondary">Год</label>
           <Select value={year} onChange={(event) => setYear(event.target.value)} options={YEAR_OPTIONS} className="w-28" />

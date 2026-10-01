@@ -22,7 +22,7 @@ export interface FullScreenStatusProps {
 /** The shared full-page layout behind 404, access-denied, offline and crash screens — keeps them visually identical. */
 export function FullScreenStatus({ icon: Icon, tone = 'muted', title, description, actions, className }: FullScreenStatusProps) {
   return (
-    <div className={cn('flex min-h-screen flex-col items-center justify-center gap-4 bg-surface-muted px-4 text-center', className)}>
+    <div className={cn('flex min-h-dvh flex-col items-center justify-center gap-4 bg-surface-muted px-4 text-center', className)}>
       <span className={cn('flex size-14 items-center justify-center rounded-full', TONE_CLASSES[tone])}>
         <Icon className="size-6" aria-hidden />
       </span>

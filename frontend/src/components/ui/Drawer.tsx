@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useId } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
+import { useOverlay } from '@/hooks/useOverlay'
 import { cn } from '@/utils/cn'
 
 export interface DrawerProps {
@@ -17,14 +18,8 @@ export interface DrawerProps {
 }
 
 export function Drawer({ isOpen, onClose, title, children, side = 'bottom', size = 'md' }: DrawerProps) {
-  useEffect(() => {
-    if (!isOpen) return
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  const titleId = useId()
+  useOverlay(isOpen, onClose)
 
   if (!isOpen) return null
 
@@ -34,28 +29,28 @@ export function Drawer({ isOpen, onClose, title, children, side = 'bottom', size
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="drawer-title"
+        aria-labelledby={titleId}
         className={cn(
-          'relative z-10 flex flex-col overflow-hidden bg-surface shadow-xl',
-          side === 'bottom' && 'mt-auto max-h-[85vh] w-full rounded-t-2xl',
-          side === 'right' && 'ml-auto h-full w-full',
+          'relative z-10 flex min-w-0 flex-col overflow-hidden bg-surface shadow-xl',
+          side === 'bottom' && 'mt-auto max-h-[85dvh] w-full rounded-t-2xl pb-[env(safe-area-inset-bottom)]',
+          side === 'right' && 'ml-auto h-dvh w-full',
           side === 'right' && (size === 'lg' ? 'max-w-xl' : 'max-w-sm'),
         )}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 id="drawer-title" className="text-base font-semibold text-ink">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
+          <h2 id={titleId} className="min-w-0 truncate text-base font-semibold text-ink">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Закрыть панель"
-            className="flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-hover"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-surface-hover"
           >
             <X className="size-4" aria-hidden />
           </button>
         </div>
-        <div className="overflow-y-auto p-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
       </div>
     </div>,
     document.body,

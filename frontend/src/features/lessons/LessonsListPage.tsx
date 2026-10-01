@@ -19,10 +19,11 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
+import { FilterBar, FilterField } from '@/components/ui/FilterBar'
+import { Tabs } from '@/components/ui/Tabs'
 import { useLessons } from '@/hooks/useLessons'
 import { fetchAllPages } from '@/lib/fetchAllPages'
 import type { Group, Lesson, LessonStatus } from '@/types/academy'
-import { cn } from '@/utils/cn'
 import { formatDate, formatTimeRange } from '@/utils/format'
 
 import { LessonDayCard } from './LessonDayCard'
@@ -75,23 +76,7 @@ export function LessonsListPage() {
     <div>
       <PageHeader title="Мои занятия" description="Все ваши запланированные и проведённые уроки." />
 
-      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label="Период">
-        {LESSON_VIEW_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            aria-selected={view === tab.key}
-            onClick={() => selectView(tab.key)}
-            className={cn(
-              'shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium',
-              view === tab.key ? 'border-brand-500 text-brand-700' : 'border-transparent text-ink-secondary hover:text-ink',
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs aria-label="Период" items={LESSON_VIEW_TABS} value={view} onChange={selectView} />
 
       {view === 'today' ? <DayLessonsView mode="today" groupStudentsCount={groupStudentsCount} /> : null}
       {view === 'tomorrow' ? <DayLessonsView mode="tomorrow" groupStudentsCount={groupStudentsCount} /> : null}
@@ -138,13 +123,13 @@ function DayLessonsView({ mode, groupStudentsCount }: { mode: 'today' | 'tomorro
         </div>
         {isTodayMode ? (
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => goToDate(addDaysISO(date, -1))} aria-label="Предыдущий день">
+            <Button variant="secondary" onClick={() => goToDate(addDaysISO(date, -1))} aria-label="Предыдущий день" className="w-10 px-0">
               <ChevronLeft className="size-4" aria-hidden />
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => goToDate(todayISO())}>
+            <Button variant="secondary" onClick={() => goToDate(todayISO())}>
               Сегодня
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => goToDate(addDaysISO(date, 1))} aria-label="Следующий день">
+            <Button variant="secondary" onClick={() => goToDate(addDaysISO(date, 1))} aria-label="Следующий день" className="w-10 px-0">
               <ChevronRight className="size-4" aria-hidden />
             </Button>
           </div>
@@ -324,14 +309,14 @@ function AllLessonsView({ groupsData }: { groupsData: Group[] | undefined }) {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap gap-2">
-        <div className="w-full max-w-xs">
+      <FilterBar>
+        <FilterField size="lg">
           <SearchInput value={search} onChange={resetPage(setSearch)} placeholder="Поиск по теме…" />
-        </div>
+        </FilterField>
         <div className="w-40">
           <DatePicker aria-label="Дата" value={date} onChange={(event) => resetPage(setDate)(event.target.value)} />
         </div>
-        <div className="w-44">
+        <FilterField>
           <Select
             aria-label="Группа"
             placeholder="Все группы"
@@ -339,8 +324,8 @@ function AllLessonsView({ groupsData }: { groupsData: Group[] | undefined }) {
             onChange={(event) => resetPage(setGroupId)(event.target.value)}
             options={(groupsData ?? []).map((group) => ({ value: String(group.id), label: group.name }))}
           />
-        </div>
-        <div className="w-44">
+        </FilterField>
+        <FilterField>
           <Select
             aria-label="Предмет"
             placeholder="Все предметы"
@@ -348,8 +333,8 @@ function AllLessonsView({ groupsData }: { groupsData: Group[] | undefined }) {
             onChange={(event) => resetPage(setSubjectId)(event.target.value)}
             options={(subjectsData?.results ?? []).map((subject) => ({ value: String(subject.id), label: subject.name }))}
           />
-        </div>
-        <div className="w-44">
+        </FilterField>
+        <FilterField>
           <Select
             aria-label="Статус"
             placeholder="Все статусы"
@@ -357,8 +342,8 @@ function AllLessonsView({ groupsData }: { groupsData: Group[] | undefined }) {
             onChange={(event) => resetPage(setStatus)(event.target.value)}
             options={LESSON_STATUS_OPTIONS}
           />
-        </div>
-      </div>
+        </FilterField>
+      </FilterBar>
 
       {isPending ? <LoadingState label="Загружаем занятия…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
@@ -374,7 +359,7 @@ function AllLessonsView({ groupsData }: { groupsData: Group[] | undefined }) {
               <LessonCard key={lesson.id} lesson={lesson} />
             ))}
           </div>
-          <div className="mt-5">
+          <div className="mt-6">
             <Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} />
           </div>
         </>
@@ -421,8 +406,8 @@ function CompletedLessonsView({ groupsData }: { groupsData: Group[] | undefined 
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap gap-2">
-        <div className="w-44">
+      <FilterBar>
+        <FilterField>
           <Select
             aria-label="Группа"
             placeholder="Все группы"
@@ -433,8 +418,8 @@ function CompletedLessonsView({ groupsData }: { groupsData: Group[] | undefined 
             }}
             options={(groupsData ?? []).map((group) => ({ value: String(group.id), label: group.name }))}
           />
-        </div>
-        <div className="w-56">
+        </FilterField>
+        <FilterField>
           <Select
             aria-label="Статус выполнения"
             placeholder="Все статусы выполнения"
@@ -442,8 +427,8 @@ function CompletedLessonsView({ groupsData }: { groupsData: Group[] | undefined 
             onChange={(event) => setOperationalFilter(event.target.value as LessonOperationalStatus | '')}
             options={OPERATIONAL_FILTER_OPTIONS}
           />
-        </div>
-      </div>
+        </FilterField>
+      </FilterBar>
 
       {isPending ? <LoadingState label="Загружаем занятия…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
@@ -463,7 +448,7 @@ function CompletedLessonsView({ groupsData }: { groupsData: Group[] | undefined 
       ) : null}
 
       {data && data.results.length > 0 ? (
-        <div className="mt-5">
+        <div className="mt-6">
           <Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} />
         </div>
       ) : null}
@@ -475,7 +460,7 @@ function CompletedLessonRow({ lesson, status }: { lesson: Lesson; status?: Lesso
   return (
     <Link
       to={`/app/lessons/${lesson.id}`}
-      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 hover:border-brand-200 hover:bg-brand-50/30"
+      className="flex flex-wrap items-center justify-between gap-3 card card-interactive px-4 py-3"
     >
       <div className="min-w-0">
         <p className="text-sm font-medium text-ink">
@@ -506,7 +491,7 @@ function CancelledLessonsView({ groupsData }: { groupsData: Group[] | undefined 
 
   return (
     <div>
-      <div className="mb-5 w-44">
+      <div className="mb-6 w-44">
         <Select
           aria-label="Группа"
           placeholder="Все группы"
@@ -531,7 +516,7 @@ function CancelledLessonsView({ groupsData }: { groupsData: Group[] | undefined 
               <LessonCard key={lesson.id} lesson={lesson} />
             ))}
           </div>
-          <div className="mt-5">
+          <div className="mt-6">
             <Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} />
           </div>
         </>

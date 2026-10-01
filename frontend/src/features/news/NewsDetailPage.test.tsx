@@ -55,7 +55,7 @@ describe('NewsDetailPage', () => {
 
     renderNewsDetail('/app/news/43')
 
-    expect(screen.getByText('✓ Прочитано')).toBeInTheDocument()
+    expect(screen.getByText('Прочитано')).toBeInTheDocument()
     expect(mockMutate).not.toHaveBeenCalled()
   })
 

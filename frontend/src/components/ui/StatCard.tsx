@@ -37,7 +37,7 @@ function TrendBadge({ trend }: { trend: StatCardTrend }) {
   if (direction === 'stable' || changePercent === null) {
     return (
       <span className="inline-flex items-center gap-0.5 text-xs font-medium text-ink-muted">
-        <Minus className="size-3" /> 0%
+        <Minus className="size-3" aria-hidden /> 0%
       </span>
     )
   }
@@ -50,7 +50,7 @@ function TrendBadge({ trend }: { trend: StatCardTrend }) {
         isGood ? 'text-brand-600' : 'text-danger',
       )}
     >
-      <Icon className="size-3" />
+      <Icon className="size-3" aria-hidden />
       {changePercent > 0 ? '+' : ''}
       {changePercent}%
     </span>
@@ -59,22 +59,22 @@ function TrendBadge({ trend }: { trend: StatCardTrend }) {
 
 export function StatCard({ label, value, icon: Icon, hint, tone = 'default', trend, className }: StatCardProps) {
   return (
-    <div className={cn('rounded-xl border border-border bg-surface p-4', className)}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-ink-secondary">{label}</p>
-          <p className="mt-1 text-2xl font-semibold text-ink">{value}</p>
-          <div className="mt-1 flex items-center gap-2">
-            {hint ? <p className="text-xs text-ink-muted">{hint}</p> : null}
+    <div className={cn('card card-body flex min-w-0 items-start justify-between gap-3', className)}>
+      <div className="min-w-0">
+        <p className="text-sm text-ink-secondary">{label}</p>
+        <p className="mt-1 truncate text-2xl font-semibold text-ink tabular-nums">{value}</p>
+        {hint || trend ? (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             {trend ? <TrendBadge trend={trend} /> : null}
+            {hint ? <p className="text-xs text-ink-muted">{hint}</p> : null}
           </div>
-        </div>
-        {Icon ? (
-          <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', TONE_ICON_CLASSES[tone])}>
-            <Icon className="size-5" />
-          </span>
         ) : null}
       </div>
+      {Icon ? (
+        <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', TONE_ICON_CLASSES[tone])}>
+          <Icon className="size-5" aria-hidden />
+        </span>
+      ) : null}
     </div>
   )
 }

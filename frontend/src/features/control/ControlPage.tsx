@@ -20,6 +20,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
 import { StatCard } from '@/components/ui/StatCard'
+import { StatGrid } from '@/components/ui/StatGrid'
 import { useAuth } from '@/hooks/useAuth'
 import { useControlOverview } from '@/hooks/useControl'
 import type { ControlPeriodKey, ControlRow, ControlStatus } from '@/types/control'
@@ -133,7 +134,7 @@ export function ControlPage() {
       />
 
       <form
-        className="mb-5 rounded-xl border border-border bg-surface p-4"
+        className="mb-6 card card-body"
         onSubmit={(event) => {
           event.preventDefault()
           apply()
@@ -221,7 +222,7 @@ export function ControlPage() {
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
 
       {summary ? (
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
+        <StatGrid className="mb-6">
           <StatCard
             icon={BookOpen}
             label="Занятий"
@@ -244,7 +245,7 @@ export function ControlPage() {
             value={summary.attention_count}
             tone={summary.attention_count > 0 ? 'danger' : 'default'}
           />
-        </div>
+        </StatGrid>
       ) : null}
 
       {data ? (
@@ -275,20 +276,20 @@ export function ControlPage() {
             </div>
 
             {/* Desktop: one table. */}
-            <div className="hidden overflow-x-auto rounded-xl border border-border bg-surface md:block">
-              <table className="w-full divide-y divide-border text-sm">
-                <thead className="bg-surface-muted">
-                  <tr className="text-left text-ink-secondary">
-                    <th scope="col" className="px-4 py-3 font-medium">Тренер</th>
-                    <th scope="col" className="px-4 py-3 font-medium">Группа</th>
-                    <th scope="col" className="px-4 py-3 text-right font-medium">Уроков</th>
-                    <th scope="col" className="px-4 py-3 font-medium">Посещаемость</th>
-                    <th scope="col" className="px-4 py-3 font-medium">ДЗ</th>
-                    <th scope="col" className="px-4 py-3 font-medium">Баллы</th>
-                    <th scope="col" className="px-4 py-3 font-medium">Статус</th>
+            <div className="hidden overflow-x-auto card md:block">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Тренер</th>
+                    <th scope="col">Группа</th>
+                    <th scope="col" className="text-right">Уроков</th>
+                    <th scope="col">Посещаемость</th>
+                    <th scope="col">ДЗ</th>
+                    <th scope="col">Баллы</th>
+                    <th scope="col">Статус</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody>
                   {rows.map((row) => (
                     <tr
                       key={row.key}
@@ -299,23 +300,23 @@ export function ControlPage() {
                       }}
                       className="cursor-pointer hover:bg-surface-hover focus-visible:bg-surface-hover"
                     >
-                      <td className="px-4 py-3 font-medium text-ink">{teacherName(row)}</td>
-                      <td className="px-4 py-3 text-ink">
+                      <td className="text-ink">{teacherName(row)}</td>
+                      <td className="text-ink">
                         {row.group.name}
                         {row.subjects.length > 0 ? (
                           <span className="block text-xs text-ink-muted">{row.subjects.map((s) => s.name).join(', ')}</span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-ink">
+                      <td className="text-right tabular-nums text-ink">
                         {row.lessons.total}
                         {row.lessons.upcoming > 0 ? (
                           <span className="block text-xs text-ink-muted">+{row.lessons.upcoming} предст.</span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3"><ComponentCell component={row.attendance} /></td>
-                      <td className="px-4 py-3"><ComponentCell component={row.homework} /></td>
-                      <td className="px-4 py-3"><ComponentCell component={row.grades} /></td>
-                      <td className="px-4 py-3">
+                      <td><ComponentCell component={row.attendance} /></td>
+                      <td><ComponentCell component={row.homework} /></td>
+                      <td><ComponentCell component={row.grades} /></td>
+                      <td>
                         <Badge tone={CONTROL_STATUS_TONE[row.status]}>{row.status_label}</Badge>
                         {row.lessons.not_closed > 0 ? (
                           <span className="mt-1 block text-xs text-ink-muted">не закрыто: {row.lessons.not_closed}</span>
@@ -334,7 +335,7 @@ export function ControlPage() {
                   <button
                     type="button"
                     onClick={() => setSelected(row)}
-                    className="w-full rounded-xl border border-border bg-surface p-4 text-left"
+                    className="w-full card card-body text-left"
                   >
                     <p className="font-semibold text-ink">{teacherName(row)}</p>
                     <p className="text-sm text-ink-secondary">{row.group.name}</p>

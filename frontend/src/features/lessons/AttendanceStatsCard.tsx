@@ -20,7 +20,7 @@ export interface AttendanceStatsCardProps {
  */
 export function AttendanceStatsCard({ summary, onView }: AttendanceStatsCardProps) {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
+    <div className="card card-body">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <p className="text-sm font-medium text-ink-secondary">Посещаемость</p>

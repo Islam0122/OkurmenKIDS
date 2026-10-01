@@ -28,7 +28,7 @@ export interface AttendanceTableProps {
 
 export function AttendanceTable({ rows, onStatusChange, readOnly = false }: AttendanceTableProps) {
   return (
-    <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+    <ul className="divide-y divide-border card">
       {rows.map((row) => (
         <li key={row.studentId} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
           <span className="font-medium text-ink">{row.studentName}</span>

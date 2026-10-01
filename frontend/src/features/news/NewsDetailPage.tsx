@@ -1,3 +1,4 @@
+import { CheckCheck } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 
@@ -39,7 +40,7 @@ export function NewsDetailPage() {
     <div>
       <BackLink to="/app/news">К новостям</BackLink>
 
-      <div className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+      <div className="card card-body">
         <div className="flex items-center gap-2.5">
           <span className={cn('flex size-9 items-center justify-center rounded-xl', typeMeta.bgClass, typeMeta.iconClass)}>
             <TypeIcon className="size-5" aria-hidden />
@@ -60,7 +61,10 @@ export function NewsDetailPage() {
           </span>
 
           {news.is_read ? (
-            <span className="text-sm font-medium text-brand-700">✓ Прочитано</span>
+            <span className="flex items-center gap-1 text-sm font-medium text-brand-700">
+              <CheckCheck className="size-4" aria-hidden />
+              Прочитано
+            </span>
           ) : (
             <span className="flex items-center gap-1.5 text-sm font-medium text-danger">
               <span className="size-1.5 rounded-full bg-danger" aria-hidden />

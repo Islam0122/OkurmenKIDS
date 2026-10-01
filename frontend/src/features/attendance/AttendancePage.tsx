@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { useToast } from '@/components/ui/Toast'
+import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { useAttendanceRoster, useSaveAttendance } from '@/hooks/useAttendance'
 import { useLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
@@ -57,9 +58,11 @@ function LessonPicker({ onSelect }: { onSelect: (lessonId: number) => void }) {
     <div>
       <PageHeader title="Посещаемость" description="Выберите занятие, чтобы отметить студентов." />
 
-      <div className="mb-5 max-w-xs">
+      <FilterBar>
+        <FilterField>
         <DatePicker aria-label="Дата" value={date} onChange={(event) => setDate(event.target.value)} />
-      </div>
+      </FilterField>
+      </FilterBar>
 
       {isPending ? <LoadingState label="Ищем занятия…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}

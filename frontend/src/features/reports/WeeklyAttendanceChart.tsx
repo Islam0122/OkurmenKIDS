@@ -41,7 +41,7 @@ export interface WeeklyAttendanceChartProps {
  * overlay (no chart library needed: circular point markers stay round
  * regardless of the container's aspect ratio, which a pure non-uniformly
  * scaled SVG viewBox can't guarantee). */
-export function WeeklyAttendanceChart({ weeks, heightClassName = 'h-[230px] sm:h-[300px]' }: WeeklyAttendanceChartProps) {
+export function WeeklyAttendanceChart({ weeks, heightClassName = 'h-56 sm:h-72' }: WeeklyAttendanceChartProps) {
   if (weeks.length < 2) {
     return <p className="text-sm text-ink-muted">Недостаточно данных для динамики.</p>
   }
@@ -85,7 +85,7 @@ export function WeeklyAttendanceChart({ weeks, heightClassName = 'h-[230px] sm:h
         </svg>
 
         {/* Y-axis labels — plain HTML so they never get stretched by the SVG's non-uniform scaling. */}
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex flex-col justify-between py-0 text-[10px] text-ink-muted" style={{ paddingTop: `${TOP_MARGIN}%`, paddingBottom: `${100 - plotBottom}%` }}>
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex flex-col justify-between py-0 text-xs text-ink-muted" style={{ paddingTop: `${TOP_MARGIN}%`, paddingBottom: `${100 - plotBottom}%` }}>
           {[...ticks].reverse().map((tick) => (
             <span key={tick} className="-translate-y-1/2">
               {tick}%
@@ -94,13 +94,22 @@ export function WeeklyAttendanceChart({ weeks, heightClassName = 'h-[230px] sm:h
         </div>
 
         {/* Point markers, value labels, and hover tooltips — HTML overlay so circles never distort. */}
-        {points.map(({ x, y, week }) => (
+        {points.map(({ x, y, week }, index) => (
           <div key={week.label} className="group absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${x}%`, top: `${y}%` }}>
-            <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap text-xs font-semibold text-ink">
+            <span
+              className={`absolute bottom-full mb-1 whitespace-nowrap text-xs font-semibold text-ink ${
+                index === 0 ? 'left-0' : index === points.length - 1 ? 'right-0' : 'left-1/2 -translate-x-1/2'
+              }`}
+            >
               {formatRuPercent(week.percent)}
             </span>
             <span className="block size-2.5 rounded-full border-2 border-surface bg-brand-500 shadow-sm" />
-            <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-5 -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+            {/* Edge points anchor their tooltip inward, so it never sticks out past the card/screen. */}
+            <div
+              className={`pointer-events-none invisible absolute bottom-full z-10 mb-5 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 ${
+                index === 0 ? 'left-0' : index === points.length - 1 ? 'right-0' : 'left-1/2 -translate-x-1/2'
+              }`}
+            >
               <p className="font-semibold">{week.label}</p>
               <p className="text-white/80">Посещаемость: {formatRuPercent(week.percent)}</p>
             </div>

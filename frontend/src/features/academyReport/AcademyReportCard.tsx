@@ -26,7 +26,7 @@ export function AcademyReportCard({ report }: { report: AcademyMonthlyReport }) 
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-5 transition-colors hover:border-brand-200 hover:bg-brand-50/30">
+    <div className="card card-body card-interactive">
       <Link to={`/app/academy-report/${report.id}`} className="block">
         <div className="flex items-center gap-2.5">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">

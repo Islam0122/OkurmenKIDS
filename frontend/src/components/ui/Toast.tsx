@@ -20,7 +20,7 @@ const ToastContext = createContext<ToastContextValue | null>(null)
 
 const TONE_STYLES: Record<ToastTone, { icon: typeof CheckCircle2; classes: string }> = {
   success: { icon: CheckCircle2, classes: 'border-brand-200 bg-brand-50 text-brand-700' },
-  error: { icon: AlertCircle, classes: 'border-red-200 bg-danger-soft text-danger' },
+  error: { icon: AlertCircle, classes: 'border-danger/20 bg-danger-soft text-danger' },
   info: { icon: Info, classes: 'border-border bg-surface text-ink' },
 }
 
@@ -44,7 +44,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-live="polite"
-        className="fixed inset-x-0 bottom-20 z-[100] flex flex-col items-center gap-2 px-4 sm:bottom-6 sm:right-6 sm:left-auto sm:items-end"
+        className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--spacing-mobile-nav)+env(safe-area-inset-bottom)+1rem)] z-[100] flex flex-col items-center gap-2 px-4 lg:bottom-6 lg:right-6 lg:left-auto lg:items-end"
       >
         {toasts.map((toast) => {
           const { icon: Icon, classes } = TONE_STYLES[toast.tone]
@@ -53,12 +53,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               key={toast.id}
               role="status"
               className={cn(
-                'flex w-full max-w-sm items-start gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg sm:w-auto',
+                'pointer-events-auto flex w-full max-w-sm items-start gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg lg:w-auto',
                 classes,
               )}
             >
               <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>{toast.message}</span>
+              <span className="min-w-0">{toast.message}</span>
             </div>
           )
         })}

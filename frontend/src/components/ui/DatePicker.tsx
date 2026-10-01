@@ -20,7 +20,7 @@ export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function
       ref={ref}
       type="date"
       className={cn(
-        'h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500',
+        'form-control',
         className,
       )}
       {...rest}

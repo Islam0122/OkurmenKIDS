@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
+import { PageHeader } from '@/components/layout/PageHeader'
 import { BackLink } from '@/components/ui/BackLink'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -28,6 +29,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { StatCard } from '@/components/ui/StatCard'
 import { useToast } from '@/components/ui/Toast'
+import { StatGrid } from '@/components/ui/StatGrid'
 import { useAuth } from '@/hooks/useAuth'
 import { useAcademyReportDetail } from '@/hooks/useAcademyReports'
 import { academyReportsApi } from '@/api/academyReports'
@@ -73,31 +75,34 @@ export function AcademyReportDetailPage() {
     <div>
       <BackLink to="/app/academy-report">Назад к отчётам</BackLink>
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-ink sm:text-2xl">🏫 Отчёт академии</h1>
-          <p className="mt-1 text-sm font-medium text-brand-600">{monthLabel}</p>
-          <p className="mt-0.5 text-sm text-ink-secondary">Ежемесячный отчёт OKURMENKIDS</p>
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          leftIcon={<Download className="size-4" aria-hidden />}
-          onClick={() => void handleDownloadPdf()}
-          isLoading={isDownloading}
-        >
-          Скачать PDF
-        </Button>
-      </div>
+      <PageHeader
+        title="Отчёт академии"
+        description={
+          <>
+            <span className="font-medium text-brand-600">{monthLabel}</span> · Ежемесячный отчёт OKURMENKIDS
+          </>
+        }
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Download className="size-4" aria-hidden />}
+            onClick={() => void handleDownloadPdf()}
+            isLoading={isDownloading}
+          >
+            Скачать PDF
+          </Button>
+        }
+      />
 
-      <div className="space-y-5">
+      <div className="space-y-6">
         {!stats.has_data ? (
           <EmptyState icon={CalendarX2} title="Нет данных за этот месяц" description={`За ${monthLabel.toLowerCase()} пока нет данных для отчёта.`} />
         ) : (
           <>
             <section>
               <SectionHeader icon={BarChart3} title="Основная статистика" />
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <StatGrid columns={3}>
                 <StatCard icon={Users2} label="Студенты" value={stats.students_count} />
                 <StatCard icon={FolderOpen} label="Группы" value={stats.groups_count} />
                 <StatCard icon={GraduationCap} label="Преподаватели" value={stats.teachers_count} />
@@ -109,10 +114,10 @@ export function AcademyReportDetailPage() {
                   value={formatRuPercent(stats.kpi.total)}
                   tone={KPI_STATUS_CARD_TONE[stats.kpi.status]}
                 />
-              </div>
+              </StatGrid>
             </section>
 
-            <section className="rounded-xl border border-border bg-surface p-5">
+            <section className="card card-body">
               <SectionHeader icon={Users2} title="Студенты" />
               <div className="divide-y divide-border">
                 <WorkRow label="Всего активных студентов" value={stats.students.active} />
@@ -122,7 +127,7 @@ export function AcademyReportDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-border bg-surface p-5">
+            <section className="card card-body">
               <SectionHeader icon={FolderOpen} title="Статистика групп" />
               <div className="divide-y divide-border">
                 <WorkRow label="Всего групп" value={stats.group_stats.total} />
@@ -135,18 +140,18 @@ export function AcademyReportDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-border bg-surface p-5">
+            <section className="card card-body">
               <SectionHeader icon={FolderOpen} title="Группы" />
               <AcademyReportGroupsTable groups={stats.groups} />
             </section>
 
-            <section className="rounded-xl border border-border bg-surface p-5">
+            <section className="card card-body">
               <SectionHeader icon={GraduationCap} title="Преподаватели" />
               <AcademyReportTeachersTable teachers={stats.teachers} />
             </section>
 
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <section className="rounded-xl border border-border bg-surface p-5">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className="card card-body">
                 <SectionHeader icon={BookOpen} title="Учебный процесс" />
                 <div className="divide-y divide-border">
                   <WorkRow label="Запланировано занятий" value={stats.lessons.scheduled} />
@@ -157,7 +162,7 @@ export function AcademyReportDetailPage() {
                 </div>
               </section>
 
-              <section className="rounded-xl border border-border bg-surface p-5">
+              <section className="card card-body">
                 <SectionHeader icon={ClipboardCheck} title="Домашние задания" />
                 <div className="divide-y divide-border">
                   <WorkRow label="Выдано домашних заданий" value={stats.homework.assigned} />
@@ -171,19 +176,19 @@ export function AcademyReportDetailPage() {
               </section>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <section className="rounded-xl border border-border bg-surface p-5">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className="card card-body">
                 <SectionHeader icon={TrendingUp} title="Динамика академии" subtitle="Посещаемость по неделям" />
                 <WeeklyAttendanceChart weeks={stats.weekly_dynamics} />
               </section>
 
-              <section className="rounded-xl border border-border bg-surface p-5">
+              <section className="card card-body">
                 <SectionHeader icon={Gauge} title="Показатели академии" />
                 <AcademyReportKPIBreakdown kpi={stats.kpi} />
               </section>
             </div>
 
-            <section className="rounded-xl border border-border bg-surface p-5">
+            <section className="card card-body">
               <SectionHeader icon={DoorOpen} title="Движение студентов" />
               <div className="divide-y divide-border">
                 <WorkRow label="Вышли из курса за месяц" value={stats.movement.left} />
@@ -193,7 +198,7 @@ export function AcademyReportDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-border bg-surface p-5">
+            <section className="card card-body">
               <SectionHeader icon={PieChart} title="Разбивка по причинам ухода" />
               {stats.movement.reasons.length === 0 ? (
                 <p className="text-sm text-ink-muted">За выбранный период уходов студентов не зарегистрировано.</p>
@@ -212,7 +217,7 @@ export function AcademyReportDetailPage() {
             </section>
 
             {stats.attention.length > 0 ? (
-              <section className="rounded-xl border border-border bg-surface p-5">
+              <section className="card card-body">
                 <SectionHeader icon={AlertTriangle} title="Требует внимания" />
                 <ul className="space-y-2">
                   {stats.attention.map((item, index) => (
@@ -227,7 +232,7 @@ export function AcademyReportDetailPage() {
           </>
         )}
 
-        <section className="rounded-xl border border-border bg-surface p-5">
+        <section className="card card-body">
           <SectionHeader icon={MessageSquareText} title="Итог месяца" />
           <AcademyReportComment report={report} canEdit={canEditComment} />
         </section>
@@ -253,7 +258,7 @@ function SectionHeader({
     <div className="mb-3 flex items-center gap-2">
       <Icon className="size-4 shrink-0 text-brand-600" aria-hidden />
       <div>
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <h2 className="section-title">{title}</h2>
         {subtitle ? <p className="text-xs text-ink-secondary">{subtitle}</p> : null}
       </div>
     </div>

@@ -12,6 +12,7 @@ import { Pagination } from '@/components/ui/Pagination'
 import { Select } from '@/components/ui/Select'
 import { StatCard } from '@/components/ui/StatCard'
 import { useToast } from '@/components/ui/Toast'
+import { StatGrid } from '@/components/ui/StatGrid'
 import { useAuth } from '@/hooks/useAuth'
 import {
   useApproveScholarship,
@@ -28,6 +29,7 @@ import {
   type RequiredFeedbackItem,
   type ScholarshipPeriod,
 } from '@/types/scholarship'
+import { cn } from '@/utils/cn'
 import { formatDate } from '@/utils/format'
 
 import { FeedbackModal } from './FeedbackModal'
@@ -39,6 +41,10 @@ const ELIGIBILITY_TONES: Record<EligibilityStatus, BadgeTone> = {
   no_data: 'muted',
   incomplete_data: 'warning',
   below_threshold: 'muted',
+}
+
+function awardLabel(status: string | null | undefined): string {
+  return status === 'approved' ? 'Утверждена' : status === 'pending' ? 'Ожидает' : '—'
 }
 
 function periodLabel(period: ScholarshipPeriod): string {
@@ -55,7 +61,7 @@ function PeriodPicker({
   onChange: (id: number) => void
 }) {
   return (
-    <div className="mb-5 max-w-md">
+    <div className="mb-6 max-w-md">
       <label htmlFor="scholarship-period" className="mb-1.5 block text-sm font-medium text-ink">
         Период оценки
       </label>
@@ -95,7 +101,7 @@ function TrainerFeedbackList({ period }: { period: ScholarshipPeriod }) {
 
   return (
     <>
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
+      <StatGrid columns={3} className="mb-6">
         <StatCard label="Студентов и предметов" value={data.total} icon={Users} />
         <StatCard
           label="Ожидают оценки"
@@ -103,11 +109,11 @@ function TrainerFeedbackList({ period }: { period: ScholarshipPeriod }) {
           icon={ClipboardList}
           tone={data.missing > 0 ? 'warning' : 'default'}
         />
-      </div>
+      </StatGrid>
       {readOnly ? (
         <p className="mb-3 text-sm text-ink-muted">Период утверждён — оценки доступны только для просмотра.</p>
       ) : null}
-      <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+      <ul className="divide-y divide-border card">
         {data.items.map((item) => (
           <li key={`${item.student}-${item.subject}`} className="flex items-center justify-between gap-3 p-4">
             <div className="min-w-0">
@@ -161,7 +167,7 @@ function AdminRanking({ period }: { period: ScholarshipPeriod }) {
   return (
     <>
       {analytics.data ? (
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatGrid className="mb-6">
           <StatCard label="Оценено студентов" value={analytics.data.total_evaluated} icon={Users} />
           <StatCard label="Допущено" value={analytics.data.total_eligible} icon={CheckCircle2} />
           <StatCard
@@ -177,7 +183,7 @@ function AdminRanking({ period }: { period: ScholarshipPeriod }) {
             tone={analytics.data.incomplete_data > 0 ? 'warning' : 'default'}
             hint="Не хватает оценок тренеров"
           />
-        </div>
+        </StatGrid>
       ) : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -203,45 +209,81 @@ function AdminRanking({ period }: { period: ScholarshipPeriod }) {
       {ranking.isPending ? <LoadingState label="Загружаем рейтинг…" /> : null}
       {ranking.isError ? <ErrorState onRetry={() => void ranking.refetch()} /> : null}
       {ranking.data ? (
-        <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead className="bg-surface-hover text-left text-xs uppercase text-ink-muted">
-              <tr>
-                <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Студент</th>
-                <th className="px-3 py-2">Итог</th>
-                <th className="px-3 py-2">Посещ.</th>
-                <th className="px-3 py-2">ДЗ</th>
-                <th className="px-3 py-2">Тренер</th>
-                <th className="px-3 py-2">Допуск</th>
-                <th className="px-3 py-2">Стипендия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {ranking.data.results.map((row) => (
-                <tr key={row.id} className={row.award_status ? 'bg-brand-50/40' : undefined}>
-                  <td className="px-3 py-2 font-semibold">{row.rank ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    <p className="font-medium text-ink">{row.student_name}</p>
-                    <p className="text-xs text-ink-muted">{row.group_name || '—'}</p>
-                  </td>
-                  <td className="px-3 py-2 font-semibold">{row.overall_score ?? '—'}</td>
-                  <td className="px-3 py-2">{row.attendance_score ?? '—'}</td>
-                  <td className="px-3 py-2">{row.homework_score ?? '—'}</td>
-                  <td className="px-3 py-2">{row.feedback_score ?? '—'}</td>
-                  <td className="px-3 py-2" title={row.ineligibility_reason}>
-                    <Badge tone={ELIGIBILITY_TONES[row.eligibility_status]}>
-                      {ELIGIBILITY_LABELS[row.eligibility_status]}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2">
-                    {row.award_status === 'approved' ? 'Утверждена' : row.award_status === 'pending' ? 'Ожидает' : '—'}
-                  </td>
+        <>
+          {/* Desktop/tablet: the full 8-column table, scrolling inside its card if narrower than it. */}
+          <div className="card hidden overflow-x-auto md:block">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Студент</th>
+                  <th>Итог</th>
+                  <th>Посещ.</th>
+                  <th>ДЗ</th>
+                  <th>Тренер</th>
+                  <th>Допуск</th>
+                  <th>Стипендия</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {ranking.data.results.map((row) => (
+                  <tr key={row.id} className={row.award_status ? 'bg-brand-50/40' : undefined}>
+                    <td className="font-semibold tabular-nums">{row.rank ?? '—'}</td>
+                    <td>
+                      <p className="font-medium text-ink">{row.student_name}</p>
+                      <p className="text-xs text-ink-muted">{row.group_name || '—'}</p>
+                    </td>
+                    <td className="font-semibold tabular-nums">{row.overall_score ?? '—'}</td>
+                    <td className="tabular-nums">{row.attendance_score ?? '—'}</td>
+                    <td className="tabular-nums">{row.homework_score ?? '—'}</td>
+                    <td className="tabular-nums">{row.feedback_score ?? '—'}</td>
+                    <td title={row.ineligibility_reason}>
+                      <Badge tone={ELIGIBILITY_TONES[row.eligibility_status]}>{ELIGIBILITY_LABELS[row.eligibility_status]}</Badge>
+                    </td>
+                    <td>{awardLabel(row.award_status)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Phone: one card per student instead of a sideways-scrolling table. */}
+          <ul className="space-y-3 md:hidden">
+            {ranking.data.results.map((row) => (
+              <li key={row.id} className={cn('card card-body', row.award_status && 'border-brand-200 bg-brand-50/40')}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">
+                      <span className="text-ink-muted tabular-nums">#{row.rank ?? '—'}</span> {row.student_name}
+                    </p>
+                    <p className="text-xs text-ink-muted">{row.group_name || '—'}</p>
+                  </div>
+                  <p className="shrink-0 text-lg font-semibold text-ink tabular-nums">{row.overall_score ?? '—'}</p>
+                </div>
+                <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <dt className="field-label">Посещ.</dt>
+                    <dd className="tabular-nums">{row.attendance_score ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="field-label">ДЗ</dt>
+                    <dd className="tabular-nums">{row.homework_score ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="field-label">Тренер</dt>
+                    <dd className="tabular-nums">{row.feedback_score ?? '—'}</dd>
+                  </div>
+                </dl>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <span title={row.ineligibility_reason}>
+                    <Badge tone={ELIGIBILITY_TONES[row.eligibility_status]}>{ELIGIBILITY_LABELS[row.eligibility_status]}</Badge>
+                  </span>
+                  <span className="text-xs text-ink-secondary">Стипендия: {awardLabel(row.award_status)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : null}
       {ranking.data && ranking.data.count > ranking.data.results.length ? (
         <Pagination page={page} pageSize={20} totalCount={ranking.data.count} onPageChange={setPage} />

@@ -1,4 +1,7 @@
+import { ArrowRight, Megaphone } from 'lucide-react'
 import { Link } from 'react-router-dom'
+
+import { Card } from '@/components/ui/Card'
 
 import { useNewsList } from '@/hooks/useNews'
 
@@ -14,13 +17,20 @@ export function NewsWidget() {
   const items = (data?.results ?? []).slice(0, DASHBOARD_PREVIEW_COUNT)
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-medium text-ink-secondary">📢 Новости</p>
-        <Link to="/app/news" className="text-sm text-brand-700 hover:underline">
-          Все →
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <Megaphone className="size-5 text-brand-600" aria-hidden />
+          Новости
+        </span>
+      }
+      actions={
+        <Link to="/app/news" className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">
+          Все
+          <ArrowRight className="size-4" aria-hidden />
         </Link>
-      </div>
+      }
+    >
 
       <div className="space-y-2.5">
         {isPending ? (
@@ -37,6 +47,6 @@ export function NewsWidget() {
           <NewsCard key={item.id} news={item} to={`/app/news/${item.id}`} />
         ))}
       </div>
-    </div>
+    </Card>
   )
 }

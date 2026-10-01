@@ -1,3 +1,4 @@
+import { CheckCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { cn } from '@/utils/cn'
@@ -59,7 +60,10 @@ export function NewsCard({ news, to }: NewsCardProps) {
             </span>
 
             {news.is_read ? (
-              <span className="text-xs font-medium text-brand-700">✓ Прочитано</span>
+              <span className="flex items-center gap-1 text-xs font-medium text-brand-700">
+              <CheckCheck className="size-3.5" aria-hidden />
+              Прочитано
+            </span>
             ) : (
               <span className="flex items-center gap-1 text-xs font-medium text-danger">
                 <span className="size-1.5 rounded-full bg-danger" aria-hidden />

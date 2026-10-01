@@ -9,7 +9,7 @@ export interface SearchInputProps {
 
 export function SearchInput({ value, onChange, placeholder = 'Поиск…', ...rest }: SearchInputProps) {
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-muted" aria-hidden />
       <input
         type="search"
@@ -17,7 +17,7 @@ export function SearchInput({ value, onChange, placeholder = 'Поиск…', ..
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         aria-label={rest['aria-label'] ?? placeholder}
-        className="h-10 w-full rounded-lg border border-border bg-surface pl-9 pr-9 text-sm text-ink placeholder:text-ink-muted focus-visible:border-brand-500"
+        className="form-control pl-9 pr-9"
       />
       {value ? (
         <button

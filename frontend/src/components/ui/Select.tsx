@@ -19,11 +19,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   ref,
 ) {
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <select
         ref={ref}
         className={cn(
-          'h-10 w-full appearance-none rounded-lg border border-border bg-surface px-3 pr-8 text-sm text-ink focus-visible:border-brand-500',
+          'form-control appearance-none truncate pr-9',
           className,
         )}
         {...rest}

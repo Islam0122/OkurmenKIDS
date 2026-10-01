@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { StatCard } from '@/components/ui/StatCard'
+import { StatGrid } from '@/components/ui/StatGrid'
 import { useStudent } from '@/hooks/useStudents'
 import { ATTENDANCE_STATUS_LABELS } from '@/types/attendance'
 import { formatDateShort } from '@/utils/format'
@@ -30,7 +31,7 @@ export function StudentDetailPage() {
         actions={<Badge tone={student.is_active ? 'success' : 'muted'}>{student.is_active ? 'Активен' : 'Неактивен'}</Badge>}
       />
 
-      <dl className="mb-6 grid grid-cols-1 gap-4 rounded-xl border border-border bg-surface p-5 sm:grid-cols-3">
+      <dl className="mb-6 grid grid-cols-1 gap-4 card card-body sm:grid-cols-3">
         <div>
           <dt className="text-sm text-ink-secondary">Телефон</dt>
           <dd className="mt-0.5 font-medium text-ink">{student.phone || '—'}</dd>
@@ -50,7 +51,7 @@ export function StudentDetailPage() {
 
       {history.data ? (
         <>
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatGrid columns={3} className="mb-6">
             <StatCard
               label="Посещаемость"
               value={history.data.attendancePercent !== null ? `${history.data.attendancePercent}%` : '—'}
@@ -62,9 +63,9 @@ export function StudentDetailPage() {
               hint={`${history.data.homeworkCompleted} из ${history.data.homeworkAssigned} сдано`}
             />
             <StatCard label="Средний балл" value={history.data.averageScore !== null ? `${history.data.averageScore}/10` : '—'} />
-          </div>
+          </StatGrid>
 
-          <div className="rounded-xl border border-border bg-surface">
+          <div className="card">
             <p className="border-b border-border px-5 py-3 text-sm font-medium text-ink-secondary">История занятий</p>
             {history.data.rows.length === 0 ? (
               <div className="p-5">
@@ -72,24 +73,24 @@ export function StudentDetailPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-full divide-y divide-border text-sm">
-                  <thead className="bg-surface-muted">
+                <table className="data-table">
+                  <thead>
                     <tr>
-                      <th className="px-4 py-2.5 text-left font-medium text-ink-secondary">Дата</th>
-                      <th className="px-4 py-2.5 text-left font-medium text-ink-secondary">Предмет / тема</th>
-                      <th className="px-4 py-2.5 text-left font-medium text-ink-secondary">Посещаемость</th>
-                      <th className="px-4 py-2.5 text-left font-medium text-ink-secondary">ДЗ</th>
+                      <th>Дата</th>
+                      <th>Предмет / тема</th>
+                      <th>Посещаемость</th>
+                      <th>ДЗ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border">
+                  <tbody>
                     {history.data.rows.map((row) => (
                       <tr key={row.lesson.id}>
-                        <td className="px-4 py-2.5 text-ink">{formatDateShort(row.lesson.date)}</td>
-                        <td className="px-4 py-2.5 text-ink">
+                        <td>{formatDateShort(row.lesson.date)}</td>
+                        <td>
                           {row.lesson.subject_name ?? '—'}
                           {row.lesson.topic ? <span className="text-ink-secondary"> — {row.lesson.topic}</span> : null}
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td>
                           {row.attendance?.status ? (
                             <Badge
                               tone={
@@ -106,7 +107,7 @@ export function StudentDetailPage() {
                             <span className="text-ink-muted">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-ink">
+                        <td>
                           {row.result ? (row.result.score !== null ? `${row.result.score}/10` : row.result.status_display) : '—'}
                         </td>
                       </tr>
