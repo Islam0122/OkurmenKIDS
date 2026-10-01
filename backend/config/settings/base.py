@@ -337,6 +337,12 @@ JAZZMIN_SETTINGS = {
                 "permissions": ["academy.view_academymonthlyreport"],
             },
             {
+                "name": "Предметы",
+                "url": "admin:academy_reports_subjects",
+                "icon": "bi bi-book",
+                "permissions": ["academy.view_academymonthlyreport"],
+            },
+            {
                 "name": "Тренеры",
                 "url": "admin:academy_reports_teachers",
                 "icon": "bi bi-mortarboard",

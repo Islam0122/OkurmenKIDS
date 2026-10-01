@@ -1,0 +1,89 @@
+{% extends "admin/academy/reports/base.html" %}
+{% load report_tags %}
+
+{% block report_breadcrumbs %}
+<li class="breadcrumb-item"><a href="{% url 'admin:academy_reports_subjects' %}?{{ filter_query }}">Предметы</a></li>
+<li class="breadcrumb-item">{{ subject_obj.name }}</li>
+{% endblock %}
+{% block page_title %}Предмет: {{ subject_obj.name }}{% endblock %}
+{% block page_lead %}{{ detail.subject.description|default:"Подробный отчёт по предмету"|truncatechars:160 }}{% endblock %}
+{% block page_subtitle %}{% if not detail.subject.is_active %}<span class="okr-status-badge is-none">Неактивен</span>{% endif %}{% endblock %}
+
+{% block report_body %}
+{% with d=detail %}
+<div class="okr-grid-2">
+  <div class="okr-panel">
+    <div class="okr-panel-head"><span class="okr-panel-title">{% icon "book-open" %}Общая информация</span></div>
+    <div class="okr-panel-body">
+      <div class="okr-row"><span>Предмет</span><span>{{ d.subject.name }}</span></div>
+      <div class="okr-row"><span>Количество групп</span><span>{{ d.groups_count }}</span></div>
+      <div class="okr-row"><span>Количество тренеров</span><span>{{ d.teachers_count }}</span></div>
+      <div class="okr-row"><span>Количество студентов</span><span>{{ d.students.total }}</span></div>
+      <div class="okr-row"><span>Проведено занятий</span><span>{{ d.lessons.held }} из {{ d.lessons.due }} наступивших</span></div>
+      <div class="okr-row"><span>Период</span><span>{{ filters.start|date:"d.m.Y" }} — {{ filters.end|date:"d.m.Y" }}</span></div>
+    </div>
+  </div>
+
+  <div class="okr-panel">
+    <div class="okr-panel-head"><span class="okr-panel-title">{% icon "trending-up" %}KPI за период</span>{{ d.kpi.total|kpi_badge }}</div>
+    <div class="okr-panel-body">
+      {% if not d.has_data %}
+        <div class="okr-empty is-compact"><span class="okr-empty-icon">{% icon "calendar" 20 %}</span><p>Нет данных за период: по предмету не было занятий и отметок — KPI не рассчитывается.</p></div>
+      {% else %}
+        {% include "admin/academy/reports/_kpi_bars.html" with components=kpi_components %}
+        <div class="okr-row okr-row-total"><span>Общий KPI</span><span>{{ d.kpi.total|kpi_badge }}</span></div>
+        <div class="okr-row"><span>Уровень</span><span>{{ d.kpi.total|level_label }}</span></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="okr-panel">
+  <div class="okr-panel-head"><span class="okr-panel-title">{% icon "layers" %}Группы этого предмета</span><span class="okr-small okr-muted">по занятиям предмета</span></div>
+  {% if d.group_rows %}
+  <div class="okr-table-wrap"><table class="okr-table">
+    <thead><tr><th scope="col">Группа</th><th scope="col">Тренер</th><th scope="col" class="num">Студенты</th>
+      <th scope="col" class="num">Посещ.</th><th scope="col" class="num">ДЗ</th><th scope="col" class="num">KPI</th></tr></thead>
+    <tbody>
+    {% for g in d.group_rows %}
+      <tr>
+        <td><a class="okr-row-link" href="{% url 'admin:academy_reports_group_detail' g.id %}?{{ filter_query }}">{{ g.name }}</a><div class="okr-sub-line">{{ g.program }}</div></td>
+        <td class="okr-small">{% if g.has_teacher %}{{ g.teacher_names }}{% else %}<span class="okr-status-badge is-warn">Не назначен</span>{% endif %}</td>
+        <td class="num">{{ g.students.total }}</td>
+        <td class="num">{{ g.attendance_rate|pct }}</td>
+        <td class="num">{{ g.homework_rate|pct }}</td>
+        <td class="num">{{ g.kpi|kpi_badge }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <div class="okr-empty"><span class="okr-empty-icon">{% icon "inbox" 22 %}</span><h4>Нет групп</h4><p>Предмет не ведётся ни в одной группе по выбранным фильтрам.</p></div>
+  {% endif %}
+</div>
+
+<div class="okr-panel">
+  <div class="okr-panel-head"><span class="okr-panel-title">{% icon "graduation-cap" %}Тренеры этого предмета</span><span class="okr-small okr-muted">по занятиям предмета</span></div>
+  {% if d.teacher_rows %}
+  <div class="okr-table-wrap"><table class="okr-table">
+    <thead><tr><th scope="col">Тренер</th><th scope="col" class="num">Группы</th><th scope="col" class="num">Студенты</th>
+      <th scope="col" class="num">Посещ.</th><th scope="col" class="num">ДЗ</th><th scope="col" class="num">KPI</th></tr></thead>
+    <tbody>
+    {% for t in d.teacher_rows %}
+      <tr>
+        <td><a class="okr-row-link" href="{% url 'admin:academy_reports_teacher_detail' t.id %}?{{ filter_query }}">{{ t.name }}</a></td>
+        <td class="num"{% if t.groups %} title="{% for g in t.groups %}{{ g.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"{% endif %}>{{ t.groups_count }}</td>
+        <td class="num">{{ t.students.total }}</td>
+        <td class="num">{{ t.attendance_rate|pct }}</td>
+        <td class="num">{{ t.homework_rate|pct }}</td>
+        <td class="num">{{ t.kpi|kpi_badge }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <div class="okr-empty"><span class="okr-empty-icon">{% icon "user-x" 22 %}</span><h4>Нет тренеров</h4><p>За предметом не закреплён ни один тренер — показатели всё равно рассчитаны по занятиям.</p></div>
+  {% endif %}
+</div>
+{% endwith %}
+{% endblock %}

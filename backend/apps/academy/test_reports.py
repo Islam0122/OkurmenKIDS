@@ -36,6 +36,8 @@ from apps.academy.services.reports import (
     build_group_detail,
     build_group_rows,
     build_overview,
+    build_subject_detail,
+    build_subject_rows,
     build_teacher_detail,
     build_teacher_rows,
     group_student_rows,
@@ -44,7 +46,8 @@ from apps.academy.services.reports import (
 )
 from apps.academy.services.reports.excel import build_reports_excel
 from apps.academy.services.reports.pdf import build_reports_pdf
-from apps.academy.services.reports.table import paginate_groups
+from apps.academy.services.kpi_engine import KPIEngine
+from apps.academy.services.reports.table import paginate_groups, paginate_subjects
 from apps.users.models import Subject, Teacher, User
 
 TODAY = dt.date(2026, 9, 30)
@@ -349,8 +352,12 @@ class ReportExportTests(ReportsTestBase):
         f = self.filters(group=str(self.pro1.id))
         wb = load_workbook(io.BytesIO(build_reports_excel(build_full_report(f), "Группа: PRO-01")))
         self.assertEqual(
-            wb.sheetnames, ["Обзор", "Группы", "Тренеры", "Студенты", "Посещаемость", "Домашние задания", "KPI"]
+            wb.sheetnames,
+            ["Обзор", "Группы", "Предметы", "Тренеры", "Студенты", "Посещаемость", "Домашние задания", "KPI"],
         )
+        # Group filter: only the subjects taught in PRO-01, figures of PRO-01's lessons.
+        subjects = [row[0] for row in wb["Предметы"].iter_rows(min_row=5, values_only=True)]
+        self.assertEqual(subjects, ["English", "Python"])
         groups = [row[0] for row in wb["Группы"].iter_rows(min_row=5, values_only=True)]
         self.assertEqual(groups, ["PRO-01"])
         students = sorted(row[0] for row in wb["Студенты"].iter_rows(min_row=5, values_only=True))
@@ -359,6 +366,166 @@ class ReportExportTests(ReportsTestBase):
         cell = wb["Группы"].cell(row=5, column=14)
         self.assertAlmostEqual(cell.value, 0.667)
         self.assertEqual(cell.number_format, "0.0%")
+
+
+class SubjectReportTests(ReportsTestBase):
+    """«Отчёт по предметам» — Python: PRO-01/Aziza (l1, l2 held, l3 cancelled);
+    English: PRO-01/Bek (l4) + ENG-01/Bek (l5)."""
+
+    def rows(self, **params):
+        return {r["name"]: r for r in build_subject_rows(self.filters(**params))}
+
+    def test_subject_rows_from_real_data(self):
+        rows = self.rows()
+        py, en = rows["Python"], rows["English"]
+        # Python: attendance 3/4, homework 1/2, held 2 of 3 due, progress 8/10.
+        self.assertEqual((py["attendance_rate"], py["homework_rate"], py["activity_rate"], py["progress_rate"]),
+                         (75.0, 50.0, 66.7, 80.0))
+        self.assertEqual((py["kpi"], py["kpi_level"]), (67.9, "low"))
+        self.assertEqual((py["teachers_count"], py["groups_count"], py["students"]["total"]), (1, 1, 3))
+        self.assertEqual(py["lessons"], {"total": 3, "held": 2, "due": 3, "cancelled": 1})
+        # English runs in two groups — merged into one row.
+        self.assertEqual((en["attendance_rate"], en["homework_rate"], en["activity_rate"], en["progress_rate"]),
+                         (66.7, 100.0, 100.0, 100.0))
+        self.assertEqual((en["kpi"], en["kpi_level"]), (91.7, "good"))
+        self.assertEqual([g["name"] for g in en["groups"]], ["ENG-01", "PRO-01"])
+        self.assertEqual((en["teachers_count"], en["students"]["total"]), (1, 4))
+
+    def test_subject_kpi_is_the_engine_kpi(self):
+        for subject in (self.python, self.english):
+            row = self.rows()[subject.name]
+            engine = KPIEngine.calculate(scope=self.filters(subject=str(subject.id)).scope(), today=TODAY)
+            self.assertEqual(row["kpi"], engine.total, subject.name)
+            self.assertEqual(row["attendance_rate"], engine.metrics["attendance"])
+            self.assertEqual(row["activity_rate"], engine.metrics["lesson_completion"])
+
+    def test_subjects_reconcile_with_overview(self):
+        f = self.filters()
+        overview = build_overview(f)
+        rows = build_subject_rows(f)
+        self.assertEqual(sum(r["lessons"]["total"] for r in rows), overview["lessons"]["total"])
+        self.assertEqual(overview["subjects"]["unassigned_lessons"], 0)
+        self.assertEqual(overview["levels"]["subjects"]["good"], 1)
+        self.assertEqual(overview["levels"]["subjects"]["low"], 1)
+        self.assertEqual(overview["subjects"]["average_kpi"], round((67.9 + 91.7) / 2, 1))
+
+    def test_list_comes_from_database_and_no_data_is_dash(self):
+        cyber = Subject.objects.create(name="CyberSecurity")
+        Subject.objects.create(name="Archived", is_active=False)
+        rows = self.rows()
+        self.assertIn("CyberSecurity", rows)
+        self.assertNotIn("Archived", rows)  # inactive and not taught in the period
+        row = rows["CyberSecurity"]
+        self.assertEqual((row["groups_count"], row["teachers_count"], row["students"]["total"]), (0, 0, 0))
+        self.assertEqual((row["attendance_rate"], row["homework_rate"], row["activity_rate"], row["progress_rate"]),
+                         (None, None, None, None))
+        self.assertEqual((row["kpi"], row["kpi_level"]), (None, "no_data"))
+        detail = build_subject_detail(cyber, self.filters())
+        self.assertFalse(detail["has_data"])
+        self.assertEqual((detail["group_rows"], detail["teacher_rows"]), ([], []))
+
+    def test_group_filter(self):
+        rows = self.rows(group=str(self.eng1.id))
+        self.assertEqual(list(rows), ["English"])
+        en = rows["English"]
+        self.assertEqual((en["attendance_rate"], en["groups_count"], en["students"]["total"]), (100.0, 1, 1))
+
+    def test_teacher_filter_and_teacher_with_two_subjects(self):
+        self.assertEqual(list(self.rows(teacher=str(self.bek.id))), ["English"])
+        # Aziza also takes English in EMPTY-01 — counted separately per subject.
+        gt = GroupTeacher.objects.create(group=self.empty, teacher=self.aziza, subject=self.english)
+        student = Student.objects.create(first_name="Erkin", group=self.empty)
+        self._attend(self._lesson(gt, dt.date(2026, 9, 5), Lesson.Status.COMPLETED), student, Attendance.Status.ABSENT)
+        rows = self.rows(teacher=str(self.aziza.id))
+        self.assertEqual(sorted(rows), ["English", "Python"])
+        self.assertEqual(rows["Python"]["kpi"], 67.9)
+        self.assertEqual((rows["English"]["attendance_rate"], rows["English"]["groups_count"]), (0.0, 1))
+        # Unfiltered, English now also covers EMPTY-01 and two teachers.
+        en = self.rows()["English"]
+        self.assertEqual((en["groups_count"], en["teachers_count"], en["students"]["total"]), (3, 2, 5))
+
+    def test_period_filter(self):
+        rows = self.rows(start_date="2026-09-01", end_date="2026-09-03")
+        # Only l1 (Python) and l4 (English) fall in 1–3 September.
+        self.assertEqual(rows["Python"]["lessons"]["total"], 1)
+        self.assertEqual(rows["Python"]["attendance_rate"], 100.0)
+        self.assertEqual(rows["English"]["attendance_rate"], 50.0)
+
+    def test_subject_filter_scopes_the_whole_report(self):
+        f = self.filters(subject=str(self.python.id))
+        report = build_full_report(f)
+        self.assertEqual([s["name"] for s in report["subjects"]], ["Python"])
+        self.assertEqual(report["overview"]["kpi"]["total"], report["subjects"][0]["kpi"])
+        pro = next(g for g in report["groups"] if g["name"] == "PRO-01")
+        self.assertEqual(pro["teacher_names"], "Aziza")  # not Bek, who runs English there
+        self.assertEqual(pro["kpi"], 67.9)
+        self.assertEqual([t["name"] for t in report["teachers"] if t["groups_count"]], ["Aziza"])
+        aziza = next(t for t in report["teachers"] if t["name"] == "Aziza")
+        self.assertEqual(aziza["subjects"], ["Python"])
+        # Subject + group + teacher together.
+        rows = {r["name"]: r for r in build_subject_rows(self.filters(subject=str(self.english.id),
+                                                                      group=str(self.pro1.id),
+                                                                      teacher=str(self.bek.id)))}
+        self.assertEqual(list(rows), ["English"])
+        self.assertEqual((rows["English"]["attendance_rate"], rows["English"]["groups_count"]), (50.0, 1))
+
+    def test_subject_filter_leaves_unfiltered_figures_alone(self):
+        # Without a subject filter, group/teacher rows still list every trainer.
+        pro = next(g for g in build_group_rows(self.filters()) if g["name"] == "PRO-01")
+        self.assertEqual(pro["teacher_names"], "Bek, Aziza")  # ordered by subject, as before
+
+    def test_lesson_without_teacher_or_subject(self):
+        soft, _ = Subject.objects.get_or_create(name="Soft Skills")
+        Lesson.objects.create(group=self.empty, subject=soft, lesson_number=90, date=dt.date(2026, 9, 7),
+                              start_time=dt.time(10), end_time=dt.time(11), status=Lesson.Status.COMPLETED)
+        Lesson.objects.create(group=self.empty, lesson_number=91, date=dt.date(2026, 9, 8),
+                              start_time=dt.time(10), end_time=dt.time(11), status=Lesson.Status.COMPLETED)
+        row = self.rows()["Soft Skills"]
+        self.assertEqual((row["teachers_count"], row["teacher_names"], row["groups_count"]), (0, "Не назначен", 1))
+        self.assertEqual(row["activity_rate"], 100.0)
+        detail = build_subject_detail(soft, self.filters())
+        self.assertEqual(detail["teacher_rows"], [])
+        self.assertEqual([g["name"] for g in detail["group_rows"]], ["EMPTY-01"])
+        self.assertEqual(build_overview(self.filters())["subjects"]["unassigned_lessons"], 1)
+        self.assertTrue(build_reports_pdf(build_full_report(self.filters())).startswith(b"%PDF"))
+
+    def test_subject_detail(self):
+        detail = build_subject_detail(self.english, self.filters())
+        self.assertEqual((detail["groups_count"], detail["teachers_count"], detail["students"]["total"]), (2, 1, 4))
+        self.assertEqual((detail["kpi"]["total"], detail["kpi"]["status"]), (91.7, "good"))
+        groups = {g["name"]: g for g in detail["group_rows"]}
+        self.assertEqual(groups["PRO-01"]["teacher_names"], "Bek")
+        self.assertEqual(groups["PRO-01"]["attendance_rate"], 50.0)  # English lesson only
+        bek = detail["teacher_rows"][0]
+        self.assertEqual((bek["name"], bek["groups_count"], bek["students"]["total"]), ("Bek", 2, 4))
+
+    def test_paginate_subjects(self):
+        page = paginate_subjects(build_subject_rows(self.filters()), {"sort": "-kpi"})
+        names = [r["name"] for r in page.rows]
+        self.assertEqual(names[:2], ["English", "Python"])
+        page = paginate_subjects(build_subject_rows(self.filters()), {"q": "aziza"})
+        self.assertEqual([r["name"] for r in page.rows], ["Python"])
+
+    def test_pdf_section_order(self):
+        import subprocess
+        import tempfile
+
+        pdf = build_reports_pdf(build_full_report(self.filters()))
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as fh:
+            fh.write(pdf)
+            fh.flush()
+            try:
+                text = subprocess.run(["pdftotext", "-layout", fh.name, "-"], capture_output=True, text=True,
+                                      check=True).stdout
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                self.skipTest("pdftotext is not available")
+        pages = text.split("\f")
+        titles = ["ОБЩАЯ СТАТИСТИКА", "ОТЧЁТ ПО ГРУППАМ", "ОТЧЁТ ПО ПРЕДМЕТАМ", "ОТЧЁТ ПО ТРЕНЕРАМ",
+                  "КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ"]
+        for index, title in enumerate(titles):
+            self.assertIn(title, pages[index], title)
+        self.assertIn("Python", pages[2])
+        self.assertIn("English", pages[2])
 
 
 class ReportsApiTests(ReportsTestBase):
@@ -374,7 +541,8 @@ class ReportsApiTests(ReportsTestBase):
         for name, args in (
             ("reports-overview", ()), ("reports-filters", ()), ("reports-groups", ()),
             ("reports-group-detail", (self.pro1.id,)), ("reports-teachers", ()),
-            ("reports-teacher-detail", (self.aziza.id,)),
+            ("reports-teacher-detail", (self.aziza.id,)), ("reports-subjects", ()),
+            ("reports-subject-detail", (self.python.id,)),
         ):
             response = self._get(name, *args, user=self.admin)
             self.assertEqual(response.status_code, status.HTTP_200_OK, name)
@@ -407,10 +575,11 @@ class ReportsApiTests(ReportsTestBase):
     def test_missing_objects_are_404(self):
         self.assertEqual(self._get("reports-group-detail", 9999, user=self.admin).status_code, 404)
         self.assertEqual(self._get("reports-teacher-detail", 9999, user=self.admin).status_code, 404)
+        self.assertEqual(self._get("reports-subject-detail", 9999, user=self.admin).status_code, 404)
 
     def test_teacher_and_anonymous_are_denied(self):
-        for name in ("reports-overview", "reports-groups", "reports-teachers", "reports-export-pdf",
-                     "reports-export-excel"):
+        for name in ("reports-overview", "reports-groups", "reports-teachers", "reports-subjects",
+                     "reports-export-pdf", "reports-export-excel"):
             self.assertEqual(self._get(name, user=self.aziza.user).status_code, status.HTTP_403_FORBIDDEN, name)
             self.api.force_authenticate(None)
             self.assertIn(self.api.get(reverse(name)).status_code, (401, 403), name)
@@ -429,6 +598,8 @@ class ReportsAdminPageTests(ReportsTestBase):
             "group": reverse("admin:academy_reports_group_detail", args=[self.pro1.id]),
             "teachers": reverse("admin:academy_reports_teachers"),
             "teacher": reverse("admin:academy_reports_teacher_detail", args=[self.bek.id]),
+            "subjects": reverse("admin:academy_reports_subjects"),
+            "subject": reverse("admin:academy_reports_subject_detail", args=[self.english.id]),
         }
         for key, url in pages.items():
             response = self.web.get(url, SEPT)
@@ -440,6 +611,16 @@ class ReportsAdminPageTests(ReportsTestBase):
         body = self.web.get(pages["teacher"], SEPT).content.decode()
         self.assertIn("ENG-01", body)
         self.assertIn("English", body)
+        body = self.web.get(pages["subjects"], SEPT).content.decode()
+        self.assertIn("Python", body)
+        self.assertIn("67,9%", body)  # Python KPI
+        self.assertIn("91,7%", body)  # English KPI
+        body = self.web.get(pages["subject"], SEPT).content.decode()
+        for text in ("Группы этого предмета", "Тренеры этого предмета", "ENG-01", "PRO-01", "Bek"):
+            self.assertIn(text, body)
+        body = self.web.get(pages["overview"], SEPT).content.decode()
+        self.assertIn("Отчёт по предметам", body)
+        self.assertIn(pages["subjects"], body)
 
     def test_invalid_filters_show_error_state(self):
         response = self.web.get(reverse("admin:academy_reports_overview"), {"start_date": "x", "end_date": "y"})
@@ -455,6 +636,7 @@ class ReportsAdminPageTests(ReportsTestBase):
         body = self.web.get(reverse("admin:index")).content.decode()
         self.assertIn(reverse("admin:academy_reports_overview"), body)
         self.assertIn(reverse("admin:academy_reports_teachers"), body)
+        self.assertIn(reverse("admin:academy_reports_subjects"), body)
 
     def test_teacher_staff_account_is_forbidden(self):
         user = self.aziza.user
@@ -462,8 +644,12 @@ class ReportsAdminPageTests(ReportsTestBase):
         user.save()
         web = DjangoClient()
         web.force_login(user)
-        for name in ("admin:academy_reports_overview", "admin:academy_reports_groups", "admin:academy_reports_teachers"):
+        for name in ("admin:academy_reports_overview", "admin:academy_reports_groups", "admin:academy_reports_teachers",
+                     "admin:academy_reports_subjects"):
             self.assertEqual(web.get(reverse(name)).status_code, 403, name)
+        self.assertEqual(
+            web.get(reverse("admin:academy_reports_subject_detail", args=[self.python.id])).status_code, 403
+        )
         self.assertNotIn(reverse("admin:academy_reports_overview"), web.get(reverse("admin:index")).content.decode())
 
     def test_anonymous_redirected_to_login(self):
@@ -506,6 +692,11 @@ class ReportsLocalizationTests(ReportsTestBase):
             (reverse("admin:academy_reports_group_detail", args=[self.empty.id]), SEPT),
             (reverse("admin:academy_reports_teachers"), SEPT),
             (reverse("admin:academy_reports_teacher_detail", args=[self.bek.id]), SEPT),
+            (reverse("admin:academy_reports_subjects"), SEPT),
+            (reverse("admin:academy_reports_subjects"), {**SEPT, "q": "нет-такой"}),
+            (reverse("admin:academy_reports_subject_detail", args=[self.python.id]), SEPT),
+            (reverse("admin:academy_reports_subject_detail", args=[self.english.id]),
+             {"period": "custom", "start_date": "2026-01-01", "end_date": "2026-01-31"}),
             (reverse("admin:academy_reports_overview"), {"period": "custom", "start_date": "2026-01-01",
                                                           "end_date": "2026-01-31"}),
             (reverse("admin:academy_reports_overview"), {"start_date": "x", "end_date": "y"}),

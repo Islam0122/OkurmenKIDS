@@ -27,6 +27,8 @@ from .report_admin_views import (
     reports_group_detail_view,
     reports_groups_view,
     reports_overview_view,
+    reports_subject_detail_view,
+    reports_subjects_view,
     reports_teacher_detail_view,
     reports_teachers_view,
 )
@@ -1655,6 +1657,16 @@ def _get_urls_with_schedule():
             "academy/reports-center/groups/<int:group_id>/",
             admin.site.admin_view(reports_group_detail_view),
             name="academy_reports_group_detail",
+        ),
+        path(
+            "academy/reports-center/subjects/",
+            admin.site.admin_view(reports_subjects_view),
+            name="academy_reports_subjects",
+        ),
+        path(
+            "academy/reports-center/subjects/<int:subject_id>/",
+            admin.site.admin_view(reports_subject_detail_view),
+            name="academy_reports_subject_detail",
         ),
         path(
             "academy/reports-center/teachers/",

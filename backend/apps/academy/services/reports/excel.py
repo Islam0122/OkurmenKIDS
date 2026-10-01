@@ -1,6 +1,6 @@
 """Export Excel — the Reports section as a multi-sheet .xlsx workbook.
 
-Sheets: Обзор, Группы, Тренеры, Студенты, Посещаемость, Домашние задания, KPI.
+Sheets: Обзор, Группы, Предметы, Тренеры, Студенты, Посещаемость, Домашние задания, KPI.
 Every figure comes from services.reports.service for the same filters the
 screens and the PDF use. Percentages are written as real numbers with a
 percent number format (so they sort/filter/sum in Excel); a figure with no
@@ -141,6 +141,25 @@ def _groups_sheet(wb, report: dict) -> None:
     ws.freeze_panes = "B5"
 
 
+def _subjects_sheet(wb, report: dict) -> None:
+    ws = _sheet(wb, "Предметы", "Отчёт по предметам", report)
+    headers = [
+        ("Предмет", 26, None), ("Тренеров", 10, None), ("Тренеры", 36, None), ("Групп", 8, None),
+        ("Группы", 40, None), ("Студентов", 10, None), ("Занятий", 9, None), ("Проведено", 10, None),
+        ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT), ("Проведено занятий", 14, PCT), ("Прогресс", 11, PCT),
+        ("KPI", 10, PCT), ("Уровень KPI", 18, None),
+    ]
+    rows = [
+        [s["name"], s["teachers_count"], ", ".join(t["name"] for t in s["teachers"]), s["groups_count"],
+         ", ".join(g["name"] for g in s["groups"]), s["students"]["total"], s["lessons"]["total"],
+         s["lessons"]["held"], _pct(s["attendance_rate"]), _pct(s["homework_rate"]), _pct(s["activity_rate"]),
+         _pct(s["progress_rate"]), _pct(s["kpi"]), LEVEL_LABELS[s["kpi_level"]]]
+        for s in report["subjects"]
+    ]
+    _write_table(ws, 4, headers, rows, level_col=13, levels=[s["kpi_level"] for s in report["subjects"]])
+    ws.freeze_panes = "B5"
+
+
 def _teachers_sheet(wb, report: dict) -> None:
     ws = _sheet(wb, "Тренеры", "Отчёт по тренерам", report)
     headers = [
@@ -256,6 +275,7 @@ def build_reports_excel(report: dict, filter_labels: str) -> bytes:
     wb = Workbook()
     _overview_sheet(wb, report, filter_labels)
     _groups_sheet(wb, report)
+    _subjects_sheet(wb, report)
     _teachers_sheet(wb, report)
     _students_sheet(wb, report)
     _attendance_sheet(wb, report)

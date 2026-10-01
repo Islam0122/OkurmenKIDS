@@ -1,4 +1,4 @@
-"""Reports — Overview / Groups / Teachers, plus PDF and Excel exports.
+"""Reports — Overview / Groups / Subjects / Teachers, plus PDF and Excel exports.
 
 See `service.py` for how every figure is computed, `kpi.py` for the KPI
 formula and its configurable weights, `filters.py` for the period/filter
@@ -13,6 +13,8 @@ from .service import (
     build_group_rows,
     build_overview,
     build_student_rows,
+    build_subject_detail,
+    build_subject_rows,
     build_teacher_detail,
     build_teacher_rows,
     describe_filters,
@@ -31,6 +33,8 @@ __all__ = [
     "build_group_rows",
     "build_overview",
     "build_student_rows",
+    "build_subject_detail",
+    "build_subject_rows",
     "build_teacher_detail",
     "build_teacher_rows",
     "describe_filters",

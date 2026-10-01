@@ -28,7 +28,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.users.models import Teacher
+from apps.users.models import Subject, Teacher
 from apps.users.permissions import IsAdmin
 
 from .models import Group
@@ -40,6 +40,8 @@ from .services.reports import (
     build_group_detail,
     build_group_rows,
     build_overview,
+    build_subject_detail,
+    build_subject_rows,
     build_teacher_detail,
     build_teacher_rows,
     describe_filters,
@@ -50,7 +52,7 @@ from .services.reports import (
 from .services.reports.excel import build_reports_excel, excel_filename
 from .services.reports.kpi import weights_description
 from .services.reports.pdf import build_reports_pdf, pdf_filename
-from .services.reports.table import paginate_groups, paginate_students, paginate_teachers
+from .services.reports.table import paginate_groups, paginate_students, paginate_subjects, paginate_teachers
 
 _FILTER_PARAMS = [
     OpenApiParameter("period", str, enum=[key for key, _ in PERIOD_CHOICES], description="По умолчанию this_month."),
@@ -116,6 +118,21 @@ class ReportsGroupDetailView(_ReportsView):
         detail = build_group_detail(group, filters)
         page = paginate_students(group_student_rows(group, filters), request.query_params)
         return Response({**detail, "students_list": page.as_dict()})
+
+
+@extend_schema(tags=["Reports"], parameters=_FILTER_PARAMS + _TABLE_PARAMS)
+class ReportsSubjectsView(_ReportsView):
+    def get(self, request):
+        filters = self.filters(request)
+        page = paginate_subjects(build_subject_rows(filters), request.query_params)
+        return Response({"filters": filters.as_dict(), **page.as_dict()})
+
+
+@extend_schema(tags=["Reports"], parameters=_FILTER_PARAMS)
+class ReportsSubjectDetailView(_ReportsView):
+    def get(self, request, pk: int):
+        subject = get_object_or_404(Subject, pk=pk)
+        return Response(build_subject_detail(subject, self.filters(request)))
 
 
 @extend_schema(tags=["Reports"], parameters=_FILTER_PARAMS + _TABLE_PARAMS)
