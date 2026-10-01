@@ -17,7 +17,7 @@ export function Pagination({ page, pageSize, totalCount, onPageChange }: Paginat
   const rangeEnd = Math.min(page * pageSize, totalCount)
 
   return (
-    <nav className="flex items-center justify-between gap-4 pt-2" aria-label="Постраничная навигация">
+    <nav className="flex flex-wrap items-center justify-between gap-3 pt-2" aria-label="Постраничная навигация">
       <p className="text-sm text-ink-secondary">
         {rangeStart}–{rangeEnd} из {totalCount}
       </p>

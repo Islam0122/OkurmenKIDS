@@ -45,7 +45,7 @@ describe('SchedulePage', () => {
     renderWithProviders(<SchedulePage />, { route: '/app/schedule' })
     await waitFor(() => expect(lessonsApi.list).toHaveBeenCalled())
 
-    await user.click(screen.getByRole('button', { name: 'День' }))
+    await user.click(screen.getByRole('radio', { name: 'День' }))
 
     await waitFor(() => {
       const lastCall = vi.mocked(lessonsApi.list).mock.calls.at(-1)?.[0]

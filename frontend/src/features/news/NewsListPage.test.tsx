@@ -40,7 +40,7 @@ describe('NewsListPage', () => {
 
     renderWithProviders(<NewsListPage />, { route: '/app/news' })
 
-    expect(screen.getByText('✓ Прочитано')).toBeInTheDocument()
+    expect(screen.getByText('Прочитано')).toBeInTheDocument()
   })
 
   it('filters down to unread items only', async () => {

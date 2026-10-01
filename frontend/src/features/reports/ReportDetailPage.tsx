@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
+import { PageHeader } from '@/components/layout/PageHeader'
 import { BackLink } from '@/components/ui/BackLink'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -25,6 +26,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { StatCard } from '@/components/ui/StatCard'
 import { useToast } from '@/components/ui/Toast'
+import { StatGrid } from '@/components/ui/StatGrid'
 import { useAuth } from '@/hooks/useAuth'
 import { useMonthlyReportDetail } from '@/hooks/useMonthlyReports'
 import { monthlyReportsApi } from '@/api/monthlyReports'
@@ -70,23 +72,23 @@ export function ReportDetailPage() {
     <div>
       <BackLink to="/app/reports">Назад к отчётам</BackLink>
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-ink sm:text-2xl">Отчёт преподавателя</h1>
-          <p className="mt-1 text-sm text-ink-secondary">{monthLabel}</p>
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          leftIcon={<Download className="size-4" aria-hidden />}
-          onClick={() => void handleDownloadPdf()}
-          isLoading={isDownloading}
-        >
-          Скачать PDF
-        </Button>
-      </div>
+      <PageHeader
+        title="Отчёт преподавателя"
+        description={monthLabel}
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Download className="size-4" aria-hidden />}
+            onClick={() => void handleDownloadPdf()}
+            isLoading={isDownloading}
+          >
+            Скачать PDF
+          </Button>
+        }
+      />
 
-      <div className="space-y-5">
+      <div className="space-y-6">
         <ReportHeader report={report} />
 
         {!stats.has_data ? (
@@ -95,7 +97,7 @@ export function ReportDetailPage() {
           <>
             <section>
               <SectionHeader icon={BarChart3} title="Основная статистика" />
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <StatGrid columns={3}>
                 <StatCard icon={BookOpen} label="Занятия" value={stats.lessons_completed} />
                 <StatCard icon={Users2} label="Студенты" value={stats.students_count} />
                 <StatCard icon={FolderOpen} label="Группы" value={stats.groups_count} />
@@ -107,11 +109,11 @@ export function ReportDetailPage() {
                   value={formatRuPercent(stats.kpi.total)}
                   tone={KPI_STATUS_CARD_TONE[stats.kpi.status]}
                 />
-              </div>
+              </StatGrid>
             </section>
 
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <section className="rounded-xl border border-border bg-surface p-5">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className="card card-body">
                 <SectionHeader icon={Users} title="Работа преподавателя" />
                 <div className="mt-1 divide-y divide-border">
                   <WorkRow label="Проведено занятий" value={stats.lessons_completed} />
@@ -121,19 +123,19 @@ export function ReportDetailPage() {
                 </div>
               </section>
 
-              <section className="rounded-xl border border-border bg-surface p-5">
+              <section className="card card-body">
                 <SectionHeader icon={Gauge} title="Показатели KPI" />
                 <ReportKPIBreakdown kpi={stats.kpi} />
               </section>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <section className="rounded-xl border border-border bg-surface p-5">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className="card card-body">
                 <SectionHeader icon={FolderOpen} title="Группы" />
                 <ReportGroupsTable groups={stats.groups} />
               </section>
 
-              <section className="rounded-xl border border-border bg-surface p-5">
+              <section className="card card-body">
                 <SectionHeader icon={TrendingUp} title="Динамика посещаемости" subtitle="Посещаемость по неделям" />
                 <WeeklyAttendanceChart weeks={stats.weekly_dynamics} />
               </section>
@@ -141,12 +143,12 @@ export function ReportDetailPage() {
           </>
         )}
 
-        <section className="rounded-xl border border-border bg-surface p-5">
+        <section className="card card-body">
           <SectionHeader icon={MessageSquareText} title="Итог месяца" />
           <ReportComment report={report} canEdit={canEditComment} />
         </section>
 
-        <section className="rounded-xl border border-border bg-surface p-5">
+        <section className="card card-body">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Signature label="Преподаватель" value={`${report.teacher.user.last_name} ${report.teacher.user.first_name}`.trim()} />
             <Signature label="Администратор" value="______________________" />
@@ -171,7 +173,7 @@ function SectionHeader({
     <div className="mb-3 flex items-center gap-2">
       <Icon className="size-4 shrink-0 text-brand-600" aria-hidden />
       <div>
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <h2 className="section-title">{title}</h2>
         {subtitle ? <p className="text-xs text-ink-secondary">{subtitle}</p> : null}
       </div>
     </div>

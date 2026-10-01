@@ -38,7 +38,7 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
   const PrimaryIcon = primaryAction.icon
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
+    <div className="card card-body">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-mono text-sm font-semibold text-ink">{formatTimeRange(lesson.start_time, lesson.end_time)}</p>

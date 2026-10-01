@@ -5,12 +5,13 @@ import { HOMEWORK_ORDERING } from '@/api/homework'
 import { LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Tabs } from '@/components/ui/Tabs'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useAttendanceList } from '@/hooks/useAttendance'
 import { useGroup, useGroupSchedule } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
@@ -57,24 +58,10 @@ export function GroupDetailPage() {
       <PageHeader
         title={group.name}
         description={group.course_name}
-        actions={<Badge tone={STATUS_TONE[group.status]}>{group.status_display}</Badge>}
+        badge={<Badge tone={STATUS_TONE[group.status]}>{group.status_display}</Badge>}
       />
 
-      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border">
-        {TABS.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setTab(item.key)}
-            className={cn(
-              'shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium',
-              tab === item.key ? 'border-brand-500 text-brand-700' : 'border-transparent text-ink-secondary hover:text-ink',
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <Tabs aria-label="Разделы группы" items={TABS} value={tab} onChange={setTab} />
 
       {tab === 'overview' ? <OverviewTab group={group} /> : null}
       {tab === 'students' ? <StudentsTab groupId={groupId} /> : null}
@@ -89,7 +76,7 @@ export function GroupDetailPage() {
 function OverviewTab({ group }: { group: Group }) {
   return (
     <div className="space-y-6">
-      <dl className="grid grid-cols-1 gap-4 rounded-xl border border-border bg-surface p-5 sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-4 card card-body sm:grid-cols-2">
         <Field label="Дата начала" value={formatDateShort(group.start_date)} />
         <Field label="Дата окончания" value={group.end_date ? formatDateShort(group.end_date) : '—'} />
         <Field label="Студентов" value={`${group.students_count}${group.max_students ? ` / ${group.max_students}` : ''}`} />
@@ -98,7 +85,7 @@ function OverviewTab({ group }: { group: Group }) {
       </dl>
 
       <div>
-        <h3 className="mb-3 text-sm font-semibold text-ink">Учебные программы</h3>
+        <h3 className="section-title mb-4">Учебные программы</h3>
         {group.teachers.length === 0 ? (
           <EmptyState title="У группы пока нет учебных программ" />
         ) : (
@@ -106,7 +93,7 @@ function OverviewTab({ group }: { group: Group }) {
             {group.teachers.map((program) => {
               const activeSlots = program.schedules.filter((slot) => slot.is_active)
               return (
-                <div key={program.id} className="rounded-xl border border-border bg-surface p-4">
+                <div key={program.id} className="card card-body">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-medium text-ink">
                       {program.teacher_detail.user.first_name} {program.teacher_detail.user.last_name}
@@ -193,7 +180,7 @@ function ScheduleTab({ groupId }: { groupId: number }) {
   const weekdays = WEEKDAY_ORDER.filter((day) => byWeekday.has(day))
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {weekdays.map((day) => {
         const lessons = byWeekday.get(day) ?? []
         return (
@@ -207,7 +194,7 @@ function ScheduleTab({ groupId }: { groupId: number }) {
                   <Link
                     to={`/app/lessons/${lesson.id}`}
                     className={cn(
-                      'flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface px-4 py-3 hover:bg-surface-hover',
+                      'flex flex-wrap items-center justify-between gap-2 card card-interactive px-4 py-3',
                       lesson.status === 'cancelled' && 'opacity-70',
                     )}
                   >
@@ -271,7 +258,7 @@ function HomeworkTab({ groupId }: { groupId: number }) {
     <ul className="space-y-2">
       {data.results.map((homework) => (
         <li key={homework.id}>
-          <Link to={`/app/homework/${homework.id}`} className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3 hover:bg-surface-hover">
+          <Link to={`/app/homework/${homework.id}`} className="flex items-center justify-between card card-interactive px-4 py-3">
             <span className="text-sm font-medium text-ink">{homework.title}</span>
             <span className="text-sm text-ink-secondary">{homework.results_count} результатов</span>
           </Link>
@@ -304,27 +291,22 @@ function KpiTab({ groupId }: { groupId: number }) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {periods.map((item) => (
-          <Button
-            key={item.key}
-            variant={item.key === periodKey ? 'primary' : 'secondary'}
-            size="sm"
-            onClick={() => setPeriodKey(item.key)}
-          >
-            {item.label}
-          </Button>
-        ))}
-      </div>
+      <SegmentedControl<KPIPeriodKey>
+        aria-label="Период"
+        className="mb-4"
+        value={periodKey}
+        onChange={setPeriodKey}
+        options={periods.map((item) => ({ value: item.key, label: item.label }))}
+      />
 
       {!hasData ? (
         <EmptyState title="Нет данных за выбранный период" />
       ) : (
-        <div className="rounded-xl border border-border bg-surface p-4">
+        <div className="card card-body">
           <p className="text-sm font-medium text-ink">
             {formatDateShort(period.dateFrom)} — {formatDateShort(period.dateTo)}
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 text-sm min-[400px]:grid-cols-2 sm:grid-cols-3">
             <Field
               label="Занятий"
               value={`${data.lessons.lessons_total.value} (${data.lessons.lessons_completed.value} проведено)`}

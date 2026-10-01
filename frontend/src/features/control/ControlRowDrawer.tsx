@@ -68,7 +68,7 @@ export function ControlRowDrawer({ row, params, periodLabel, onClose }: ControlR
       size="lg"
     >
       {current ? (
-        <div className="space-y-5">
+        <div className="space-y-6">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-xs text-ink-muted">Период</p>
@@ -119,7 +119,7 @@ export function ControlRowDrawer({ row, params, periodLabel, onClose }: ControlR
 
           {current.issues.length > 0 ? (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-ink">Что осталось заполнить</h3>
+              <h3 className="section-title mb-3">Что осталось заполнить</h3>
               <ul className="space-y-1 text-sm text-ink">
                 {current.issues.map((issue) => (
                   <li key={issue} className="flex items-center gap-1.5">
@@ -131,7 +131,7 @@ export function ControlRowDrawer({ row, params, periodLabel, onClose }: ControlR
           ) : null}
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-ink">Занятия</h3>
+            <h3 className="section-title mb-3">Занятия</h3>
             {isPending ? <LoadingState label="Загружаем занятия…" /> : null}
             {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
             <ul className="space-y-2">

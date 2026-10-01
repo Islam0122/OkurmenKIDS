@@ -44,8 +44,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-muted px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8 shadow-sm">
+    <div className="flex min-h-dvh items-center justify-center bg-surface-muted px-4">
+      <div className="card w-full max-w-sm p-6 shadow-sm sm:p-8">
         <div className="mb-6 flex flex-col items-center text-center">
           <img src={logo} alt="OkurmenKIDS" className="size-20 shrink-0 object-contain" />
           <h1 className="mt-4 text-lg font-semibold text-ink">OkurmenKIDS</h1>
@@ -63,7 +63,7 @@ export function LoginPage() {
                 id="username"
                 type="text"
                 autoComplete="username"
-                className="h-10 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm text-ink focus-visible:border-brand-500"
+                className="form-control pl-9"
                 aria-invalid={Boolean(errors.username)}
                 aria-describedby={errors.username ? 'username-error' : undefined}
                 {...register('username')}
@@ -86,7 +86,7 @@ export function LoginPage() {
                 id="password"
                 type="password"
                 autoComplete="current-password"
-                className="h-10 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm text-ink focus-visible:border-brand-500"
+                className="form-control pl-9"
                 aria-invalid={Boolean(errors.password)}
                 aria-describedby={errors.password ? 'password-error' : undefined}
                 {...register('password')}

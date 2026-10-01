@@ -43,7 +43,7 @@ export function LevelIcon({ level, className }: { level: ControlLevel; className
   return <Icon className={cn('size-4 shrink-0', LEVEL_TEXT[level], className)} aria-hidden />
 }
 
-/** `✅ 8/8` / `⚠️ 6/8` / `❌ 2/5` / `—` — one table cell of the Control page. */
+/** Status icon + `8/8` (or `—` when nothing was due) — one table cell of the Control page. */
 export function ComponentCell({ component }: { component: ControlComponent }) {
   if (component.total === 0) {
     return (

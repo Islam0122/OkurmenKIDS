@@ -9,6 +9,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
+import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { useGroups } from '@/hooks/useGroups'
 import type { GroupStatus } from '@/types/academy'
 
@@ -34,11 +35,11 @@ export function GroupsListPage() {
     <div>
       <PageHeader title="Мои группы" description="Группы, с которыми вы работаете." />
 
-      <div className="mb-5 flex flex-wrap gap-3">
-        <div className="w-full max-w-xs">
+      <FilterBar>
+        <FilterField size="lg">
           <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Поиск по названию…" />
-        </div>
-        <div className="w-44">
+        </FilterField>
+        <FilterField>
           <Select
             aria-label="Статус"
             placeholder="Все статусы"
@@ -46,8 +47,8 @@ export function GroupsListPage() {
             onChange={(event) => { setStatus(event.target.value); setPage(1) }}
             options={STATUS_OPTIONS}
           />
-        </div>
-      </div>
+        </FilterField>
+      </FilterBar>
 
       {isPending ? <LoadingState label="Загружаем группы…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
@@ -63,7 +64,7 @@ export function GroupsListPage() {
               <GroupCard key={group.id} group={group} />
             ))}
           </div>
-          <div className="mt-5">
+          <div className="mt-6">
             <Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} />
           </div>
         </>

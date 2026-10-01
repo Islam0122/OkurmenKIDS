@@ -8,7 +8,7 @@ export function StudentCard({ student }: { student: Student }) {
   return (
     <Link
       to={`/app/students/${student.id}`}
-      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-brand-200 hover:bg-brand-50/30"
+      className="flex items-center justify-between gap-3 card card-body card-interactive"
     >
       <div className="min-w-0">
         <p className="truncate font-medium text-ink">{student.full_name}</p>

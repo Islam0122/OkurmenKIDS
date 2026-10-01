@@ -13,8 +13,8 @@ export function LoadingState({ label = 'Загрузка…', fullScreen = false
     <div
       role="status"
       className={cn(
-        'flex flex-col items-center justify-center gap-3 py-16 text-ink-secondary',
-        fullScreen && 'min-h-screen',
+        'flex flex-col items-center justify-center gap-3 px-4 py-12 text-ink-secondary',
+        fullScreen && 'min-h-dvh',
         className,
       )}
     >

@@ -31,7 +31,7 @@ export interface HomeworkResultTableProps {
 
 export function HomeworkResultTable({ rows, onChange, readOnly = false }: HomeworkResultTableProps) {
   return (
-    <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+    <ul className="divide-y divide-border card">
       {rows.map((row) => (
         <li key={row.student} className="flex flex-col gap-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -80,7 +80,7 @@ export function HomeworkResultTable({ rows, onChange, readOnly = false }: Homewo
                   const parsed = Math.min(10, Math.max(0, Number(raw)))
                   onChange(row.student, { score: parsed })
                 }}
-                className="h-9 w-16 rounded-lg border border-border bg-surface px-2 text-sm text-ink focus-visible:border-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="form-control w-20 px-2"
               />
               / 10
             </label>
@@ -90,7 +90,7 @@ export function HomeworkResultTable({ rows, onChange, readOnly = false }: Homewo
               value={row.comment}
               onChange={(event) => onChange(row.student, { comment: event.target.value })}
               placeholder="Комментарий (необязательно)"
-              className="h-9 rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="form-control"
             />
           </div>
         </li>

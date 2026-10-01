@@ -67,7 +67,7 @@ export function Menu({ items, align = 'end', label = 'Дополнительны
         <div
           role="menu"
           className={cn(
-            'absolute z-20 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg',
+            'absolute z-20 mt-1 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg',
             align === 'end' ? 'right-0' : 'left-0',
           )}
         >
@@ -82,7 +82,7 @@ export function Menu({ items, align = 'end', label = 'Дополнительны
                 item.onClick()
               }}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50',
+                'flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50',
                 item.tone === 'danger' ? 'text-danger' : 'text-ink',
               )}
             >

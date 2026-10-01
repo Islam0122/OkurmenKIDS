@@ -21,7 +21,7 @@ export function ReportHeader({ report }: { report: MonthlyTeacherReport }) {
   const imageUrl = resolveMediaUrl(teacher.image)
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
+    <div className="card card-body">
       <div className="flex items-center gap-4">
         {imageUrl ? (
           <span className={AVATAR_CLASSES}>

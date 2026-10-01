@@ -18,19 +18,19 @@ export function Header() {
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-4 lg:px-6">
-      <div className="flex items-center gap-2 lg:hidden">
+    <header className="sticky top-0 z-30 flex h-header shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 sm:px-6 lg:px-8">
+      <div className="flex min-w-0 items-center gap-2 lg:hidden">
         <img src={logo} alt="OkurmenKIDS" className="size-8 shrink-0 object-contain" />
-        <span className="font-semibold text-ink">OkurmenKIDS</span>
+        <span className="hidden truncate font-semibold text-ink min-[360px]:inline">OkurmenKIDS</span>
       </div>
 
       <div className="hidden lg:block" />
 
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
           onClick={() => setIsMoreOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-ink-secondary hover:bg-surface-hover lg:hidden"
+          className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-hover lg:hidden"
         >
           <Menu className="size-5" aria-hidden />
           Ещё
@@ -39,11 +39,11 @@ export function Header() {
         <NewsBell />
 
         <div className="hidden items-center gap-2 sm:flex">
-          <span className="flex size-9 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
             {initials}
           </span>
-          <div className="leading-tight">
-            <p className="text-sm font-medium text-ink">
+          <div className="max-w-48 leading-tight">
+            <p className="truncate text-sm font-medium text-ink">
               {user?.first_name} {user?.last_name}
             </p>
             <p className="text-xs text-ink-secondary">{user?.role === 'admin' ? 'Администратор' : 'Тренер'}</p>
@@ -69,7 +69,7 @@ export function Header() {
               onClick={() => setIsMoreOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  'flex flex-col items-center gap-2 rounded-xl border border-border px-4 py-4 text-sm font-medium',
+                  'flex min-w-0 flex-col items-center gap-2 rounded-xl border border-border p-4 text-center text-sm font-medium',
                   isActive ? 'border-brand-200 bg-brand-50 text-brand-700' : 'text-ink-secondary hover:bg-surface-hover',
                 )
               }
@@ -82,7 +82,7 @@ export function Header() {
         <button
           type="button"
           onClick={logout}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm font-medium text-danger hover:bg-danger-soft"
+          className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-danger hover:bg-danger-soft"
         >
           <LogOut className="size-4" aria-hidden />
           Выйти

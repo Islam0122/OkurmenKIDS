@@ -14,10 +14,12 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Select } from '@/components/ui/Select'
 import { useGroups } from '@/hooks/useGroups'
 import { fetchAllPages } from '@/lib/fetchAllPages'
 import type { Lesson, LessonStatus } from '@/types/academy'
+import { formatDate, formatDateShort } from '@/utils/format'
 
 type ViewMode = 'week' | 'day'
 
@@ -77,42 +79,34 @@ export function SchedulePage() {
     <div>
       <PageHeader title="Расписание" description="Ваши занятия по дням и неделям." />
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => goToStep(-1)} aria-label="Предыдущий период">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => goToStep(-1)} aria-label="Предыдущий период" className="w-10 px-0">
             <ChevronLeft className="size-4" aria-hidden />
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setAnchor(new Date())}>
+          <Button variant="secondary" onClick={() => setAnchor(new Date())}>
             Сегодня
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => goToStep(1)} aria-label="Следующий период">
+          <Button variant="secondary" onClick={() => goToStep(1)} aria-label="Следующий период" className="w-10 px-0">
             <ChevronRight className="size-4" aria-hidden />
           </Button>
-          <span className="ml-2 text-sm font-medium text-ink-secondary">
-            {dateFrom === dateTo ? dateFrom : `${dateFrom} — ${dateTo}`}
+          <span className="w-full text-sm font-medium text-ink-secondary min-[400px]:ml-1 min-[400px]:w-auto">
+            {dateFrom === dateTo ? formatDate(dateFrom) : `${formatDateShort(dateFrom)} — ${formatDateShort(dateTo)}`}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-border p-1">
-            <button
-              type="button"
-              onClick={() => setView('week')}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === 'week' ? 'bg-brand-500 text-white' : 'text-ink-secondary'}`}
-            >
-              Неделя
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('day')}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === 'day' ? 'bg-brand-500 text-white' : 'text-ink-secondary'}`}
-            >
-              День
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl<ViewMode>
+            aria-label="Вид расписания"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'week', label: 'Неделя' },
+              { value: 'day', label: 'День' },
+            ]}
+          />
           <Button
             variant={showRoomAvailability ? 'primary' : 'secondary'}
-            size="sm"
             leftIcon={<Search className="size-4" aria-hidden />}
             onClick={() => setShowRoomAvailability((value) => !value)}
           >
@@ -127,7 +121,7 @@ export function SchedulePage() {
         </div>
       ) : null}
 
-      <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4">
         <Select
           aria-label="Группа"
           placeholder="Все группы"

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
+import { CircleCheck, CircleX } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -30,8 +31,8 @@ export function RoomAvailabilityPanel({ defaultDate }: RoomAvailabilityPanelProp
   const timeError = startTime && endTime && endTime <= startTime
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <h3 className="text-sm font-semibold text-ink">Свободные аудитории</h3>
+    <div className="card card-body">
+      <h3 className="section-title">Свободные аудитории</h3>
       <p className="mt-0.5 text-xs text-ink-secondary">Выберите дату и время, чтобы увидеть занятые и свободные аудитории.</p>
 
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -41,14 +42,14 @@ export function RoomAvailabilityPanel({ defaultDate }: RoomAvailabilityPanelProp
           aria-label="Время начала"
           value={startTime}
           onChange={(event) => setStartTime(event.target.value)}
-          className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500"
+          className="form-control"
         />
         <input
           type="time"
           aria-label="Время окончания"
           value={endTime}
           onChange={(event) => setEndTime(event.target.value)}
-          className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500"
+          className="form-control"
         />
       </div>
 
@@ -61,7 +62,8 @@ export function RoomAvailabilityPanel({ defaultDate }: RoomAvailabilityPanelProp
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-secondary">
-              🟢 Свободные
+              <CircleCheck className="size-4 text-brand-600" aria-hidden />
+              Свободные
             </h4>
             {data.available.length === 0 ? (
               <p className="text-sm text-ink-muted">Нет свободных аудиторий.</p>
@@ -78,7 +80,8 @@ export function RoomAvailabilityPanel({ defaultDate }: RoomAvailabilityPanelProp
 
           <div>
             <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-secondary">
-              🔴 Занятые
+              <CircleX className="size-4 text-danger" aria-hidden />
+              Занятые
             </h4>
             {data.occupied.length === 0 ? (
               <p className="text-sm text-ink-muted">Все аудитории свободны.</p>

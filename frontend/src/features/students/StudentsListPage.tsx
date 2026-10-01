@@ -9,6 +9,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
+import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { useGroups } from '@/hooks/useGroups'
 import { useStudents } from '@/hooks/useStudents'
 
@@ -28,8 +29,8 @@ export function StudentsListPage() {
     <div>
       <PageHeader title="Студенты" description="Студенты ваших групп." />
 
-      <div className="mb-5 flex flex-wrap gap-3">
-        <div className="w-full max-w-xs">
+      <FilterBar>
+        <FilterField size="lg">
           <SearchInput
             value={search}
             onChange={(value) => {
@@ -38,8 +39,8 @@ export function StudentsListPage() {
             }}
             placeholder="Имя, фамилия или телефон…"
           />
-        </div>
-        <div className="w-52">
+        </FilterField>
+        <FilterField>
           <Select
             aria-label="Группа"
             placeholder="Все группы"
@@ -50,8 +51,8 @@ export function StudentsListPage() {
             }}
             options={(groupsData?.results ?? []).map((group) => ({ value: String(group.id), label: group.name }))}
           />
-        </div>
-      </div>
+        </FilterField>
+      </FilterBar>
 
       {isPending ? <LoadingState label="Загружаем студентов…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
@@ -67,7 +68,7 @@ export function StudentsListPage() {
               <StudentCard key={student.id} student={student} />
             ))}
           </div>
-          <div className="mt-5">
+          <div className="mt-6">
             <Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} />
           </div>
         </>

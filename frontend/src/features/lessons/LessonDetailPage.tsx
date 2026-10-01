@@ -128,7 +128,7 @@ export function LessonDetailPage() {
         // Never a generic action-bar container — "Посмотреть посещаемость"/
         // "Посмотреть домашнее задание" live inside their own section,
         // never as a standalone button in an otherwise-empty card.
-        <div className="space-y-5">
+        <div className="space-y-6">
           <CompletedLessonNotice lesson={lesson} />
           <CompletedLessonKpis lesson={lesson} />
 
@@ -141,7 +141,7 @@ export function LessonDetailPage() {
             {homework ? (
               <HomeworkSummaryCard homework={homework} summary={lesson.homework_summary} onView={goToHomework} />
             ) : (
-              <div className="rounded-2xl border border-border bg-surface p-5">
+              <div className="card card-body">
                 <p className="mb-1 text-sm font-medium text-ink-secondary">Домашнее задание</p>
                 <p className="text-sm text-ink-secondary">
                   {lesson.homework_not_required ? 'ДЗ не требуется.' : 'ДЗ не было добавлено.'}
@@ -161,8 +161,8 @@ export function LessonDetailPage() {
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-xl border border-border bg-surface p-5">
-              <p className="mb-3 text-sm font-medium text-ink-secondary">Действия</p>
+            <div className="card card-body">
+              <h2 className="section-title mb-4">Действия</h2>
 
               <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
 
@@ -183,8 +183,8 @@ export function LessonDetailPage() {
             </div>
 
             {homework ? (
-              <div className="rounded-xl border border-border bg-surface p-5">
-                <p className="mb-2 text-sm font-medium text-ink-secondary">Домашнее задание</p>
+              <div className="card card-body">
+                <h2 className="section-title mb-3">Домашнее задание</h2>
                 <p className="font-medium text-ink">{homework.title}</p>
                 {homework.deadline ? <p className="mt-1 text-sm text-ink-secondary">Срок: {formatDate(homework.deadline)}</p> : null}
                 <p className="mt-2 text-sm text-ink-secondary">{homework.results_count} результатов</p>
@@ -202,8 +202,8 @@ export function LessonDetailPage() {
 
 function AboutLessonCard({ lesson }: { lesson: Lesson }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <p className="mb-3 text-sm font-medium text-ink-secondary">О занятии</p>
+    <div className="card card-body">
+      <h2 className="section-title mb-4">О занятии</h2>
       <dl className="grid grid-cols-2 gap-4 text-sm">
         <div>
           <dt className="text-ink-secondary">Группа</dt>
@@ -239,8 +239,8 @@ function AboutLessonCard({ lesson }: { lesson: Lesson }) {
 function MaterialsCard({ lesson }: { lesson: Lesson }) {
   if (!lesson.youtube_url && lesson.presentation_urls.length === 0) return null
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <p className="mb-3 text-sm font-medium text-ink-secondary">Материалы</p>
+    <div className="card card-body">
+      <h2 className="section-title mb-4">Материалы</h2>
       <ul className="space-y-2">
         {lesson.youtube_url ? (
           <li>
@@ -304,7 +304,7 @@ function CancelLessonModal({
         rows={3}
         maxLength={255}
         placeholder="Например: тренер заболел"
-        className="mt-3 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus-visible:border-brand-500"
+        className="mt-3 form-control h-auto py-2"
       />
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>
@@ -350,7 +350,7 @@ function AddHomeworkModal({ lessonId, isOpen, onClose }: { lessonId: number; isO
             id="homework-title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500"
+            className="form-control"
             placeholder="Например: Собрать простого робота"
           />
         </div>
@@ -363,7 +363,7 @@ function AddHomeworkModal({ lessonId, isOpen, onClose }: { lessonId: number; isO
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             rows={3}
-            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus-visible:border-brand-500"
+            className="form-control h-auto py-2"
           />
         </div>
         <div>
@@ -375,7 +375,7 @@ function AddHomeworkModal({ lessonId, isOpen, onClose }: { lessonId: number; isO
             type="date"
             value={deadline}
             onChange={(event) => setDeadline(event.target.value)}
-            className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink focus-visible:border-brand-500"
+            className="form-control"
           />
         </div>
       </div>

@@ -21,6 +21,8 @@ import type { UserRole } from '@/types/auth'
 export interface NavItem {
   to: string
   label: string
+  /** One-word label for the phone bottom bar, where five tabs share 320px. */
+  shortLabel?: string
   icon: LucideIcon
   /** Omitted = visible to every role. */
   roles?: UserRole[]
@@ -39,7 +41,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { to: '/app/dashboard', label: 'Сегодня', icon: LayoutDashboard },
   { to: '/app/schedule', label: 'Расписание', icon: CalendarDays },
-  { to: '/app/groups', label: 'Мои группы', icon: Users },
+  { to: '/app/groups', label: 'Мои группы', shortLabel: 'Группы', icon: Users },
   { to: '/app/students', label: 'Студенты', icon: GraduationCap, roles: ['admin'] },
   { to: '/app/lessons', label: 'Занятия', icon: BookOpen, roles: ['admin'] },
   { to: '/app/attendance', label: 'Посещаемость', icon: ClipboardCheck, roles: ['admin'] },
@@ -68,7 +70,7 @@ function itemFor(to: string): NavItem {
   return item
 }
 
-/** The mobile bottom bar's primary tabs. Admin gets Главная/Расписание/Группы/Занятия/Профиль;
+/** The mobile bottom bar's primary tabs. Admin gets Сегодня/Расписание/Группы/Занятия/Профиль;
  * a Teacher gets KPI instead of the admin-only Занятия list, keeping 5 tabs. */
 export function getMobilePrimaryNav(role: UserRole | undefined): NavItem[] {
   const dashboard = itemFor('/app/dashboard')

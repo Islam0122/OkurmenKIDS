@@ -22,7 +22,7 @@ export function ProfilePage() {
     <div>
       <PageHeader title="Профиль" description="Данные вашего профиля — доступны только для просмотра." />
 
-      <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="card card-body">
         <div className="flex flex-col items-center gap-4 border-b border-border pb-5 sm:flex-row sm:items-start">
           {imageUrl ? (
             <img src={imageUrl} alt={fullName} className="size-20 shrink-0 rounded-full object-cover" />

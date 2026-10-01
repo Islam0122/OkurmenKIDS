@@ -18,18 +18,18 @@ export interface DataTableProps<T> {
 
 export function DataTable<T>({ columns, rows, getRowKey, onRowClick }: DataTableProps<T>) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-      <table className="w-full min-w-full divide-y divide-border text-sm">
-        <thead className="bg-surface-muted">
+    <div className="card overflow-x-auto">
+      <table className="data-table">
+        <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} scope="col" className={cn('px-4 py-3 text-left font-medium text-ink-secondary', column.className)}>
+              <th key={column.key} scope="col" className={column.className}>
                 {column.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border">
+        <tbody>
           {rows.map((row) => (
             <tr
               key={getRowKey(row)}
@@ -45,7 +45,7 @@ export function DataTable<T>({ columns, rows, getRowKey, onRowClick }: DataTable
               className={cn(onRowClick && 'cursor-pointer hover:bg-surface-hover focus-visible:bg-surface-hover')}
             >
               {columns.map((column) => (
-                <td key={column.key} className={cn('px-4 py-3 text-ink', column.className)}>
+                <td key={column.key} className={column.className}>
                   {column.render(row)}
                 </td>
               ))}

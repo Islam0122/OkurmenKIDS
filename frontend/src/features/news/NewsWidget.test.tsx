@@ -11,7 +11,7 @@ vi.mock('@/hooks/useNews', () => ({
 }))
 
 describe('NewsWidget', () => {
-  it('renders the latest news items linking to their own detail page, and "Все →" to the full feed', () => {
+  it('renders the latest news items linking to their own detail page, and "Все" to the full feed', () => {
     mockUseNewsList.mockReturnValue({
       isPending: false,
       data: paginated([buildNews({ id: 1, title: 'Завтра занятий нет' })]),
@@ -20,7 +20,7 @@ describe('NewsWidget', () => {
     renderWithProviders(<NewsWidget />, { route: '/app/dashboard' })
 
     expect(screen.getByRole('link', { name: /Завтра занятий нет/ })).toHaveAttribute('href', '/app/news/1')
-    expect(screen.getByRole('link', { name: 'Все →' })).toHaveAttribute('href', '/app/news')
+    expect(screen.getByRole('link', { name: 'Все' })).toHaveAttribute('href', '/app/news')
   })
 
   it('shows at most 3 items even when more are available', () => {

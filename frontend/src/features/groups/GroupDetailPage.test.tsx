@@ -71,7 +71,7 @@ describe('GroupDetailPage', () => {
     renderGroupDetail(1)
 
     await waitFor(() => expect(screen.getByText('Роботы-1')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'Расписание' }))
+    await user.click(screen.getByRole('tab', { name: 'Расписание' }))
 
     await waitFor(() => expect(screen.getByText('Понедельник')).toBeInTheDocument())
     expect(screen.getByText('Среда')).toBeInTheDocument()
@@ -98,7 +98,7 @@ describe('GroupDetailPage', () => {
     renderGroupDetail(5)
 
     await waitFor(() => expect(screen.getByText('Роботы-5')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'KPI' }))
+    await user.click(screen.getByRole('tab', { name: 'KPI' }))
 
     await waitFor(() => expect(screen.getByText('4 (4 проведено)')).toBeInTheDocument())
     expect(screen.getByText('96.3%')).toBeInTheDocument()
@@ -117,7 +117,7 @@ describe('GroupDetailPage', () => {
     renderGroupDetail(5)
 
     await waitFor(() => expect(screen.getByText('Роботы-5')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'KPI' }))
+    await user.click(screen.getByRole('tab', { name: 'KPI' }))
 
     expect(await screen.findByText('Нет данных за выбранный период')).toBeInTheDocument()
   })

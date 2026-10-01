@@ -11,7 +11,7 @@ export function ReportCard({ report }: { report: MonthlyTeacherReport }) {
   return (
     <Link
       to={`/app/reports/${report.id}`}
-      className="block rounded-xl border border-border bg-surface p-5 transition-colors hover:border-brand-200 hover:bg-brand-50/30"
+      className="block card card-body card-interactive"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5">

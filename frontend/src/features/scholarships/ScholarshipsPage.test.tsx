@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -119,9 +119,11 @@ describe('ScholarshipsPage — admin', () => {
   it('shows the ranking with eligibility and award status', async () => {
     renderWithProviders(<ScholarshipsPage />, { route: '/app/scholarships' })
 
-    await waitFor(() => expect(screen.getByText('93.33')).toBeInTheDocument())
-    expect(screen.getByText('Неполные данные', { selector: 'span' })).toBeInTheDocument()
-    expect(screen.getByText('Ожидает')).toBeInTheDocument()
+    // The ranking renders as a table (md+) and as phone cards; assert on the table.
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText('93.33')).toBeInTheDocument()
+    expect(within(table).getByText('Неполные данные', { selector: 'span' })).toBeInTheDocument()
+    expect(within(table).getByText('Ожидает')).toBeInTheDocument()
     expect(screen.getByText('2 / 20')).toBeInTheDocument()
     expect(scholarshipsApi.requiredFeedback).not.toHaveBeenCalled()
   })
