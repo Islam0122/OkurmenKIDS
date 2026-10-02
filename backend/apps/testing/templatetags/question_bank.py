@@ -120,17 +120,36 @@ def pass_badge(passed) -> str:
 @register.filter
 def percent(value, digits=0) -> str:
     """`83.333` → «83%», `None` → «—»."""
-    if value is None or value == "":
+    number = _to_number(value)
+    if number is None:
         return "—"
-    return f"{float(value):.{int(digits)}f}%".replace(".", ",")
+    return f"{number:.{int(digits)}f}%".replace(".", ",")
 
 
 @register.filter
 def score_class(value, passing) -> str:
-    """CSS modifier for a score vs the test's passing score."""
-    if value is None or passing is None:
-        return ""
-    return "okt-pass" if float(value) >= float(passing) else "oks-fail"
+    """CSS modifier for a score vs the test's passing score.
+
+    `0` is a real result (→ fail); a missing score or passing score
+    (None, '', '—', garbage) → «oks-empty», never an exception.
+    """
+    score, passing_score = _to_number(value), _to_number(passing)
+    if score is None or passing_score is None:
+        return "oks-empty"
+    return "okt-pass" if score >= passing_score else "oks-fail"
+
+
+def _to_number(value) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        value = value.strip().replace(",", ".")
+        if not value:
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 @register.filter

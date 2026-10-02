@@ -4,6 +4,7 @@ the pass threshold taken from the test, filters, exports, the admin pages
 from __future__ import annotations
 
 from django.db import connection
+from django.test import SimpleTestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
@@ -12,6 +13,7 @@ from apps.testing.models import QuestionType, Test, TestSession
 from apps.testing.services import analytics, attempts
 from apps.testing.services import questions as svc
 from apps.testing.services.question_rules import QuestionData
+from apps.testing.templatetags.question_bank import percent, score_class
 from apps.testing.tests.test_sessions import SessionFixture
 from apps.users.models import User
 
@@ -212,6 +214,56 @@ class AnalyticsAdminTests(AnalyticsFixture):
         self.client.force_login(user)
         for url in (reverse("admin:testing_analytics"), reverse("admin:testing_session_analytics", args=[self.session.pk])):
             self.assertIn(self.client.get(url).status_code, (302, 403))
+
+
+class NoResultTests(AnalyticsFixture):
+    """A session without finished attempts has no result — not 0%."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.create_superuser(username="root", email="root@okurmen.kg", password="x")
+        self.client.force_login(self.admin)
+
+    def group_page(self):
+        response = self.client.get(reverse("admin:testing_analytics_group", args=[self.group.pk]))
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def test_group_page_without_finished_attempts(self):
+        attempts.join(self.session, student=self.student)  # started, not finished
+        response = self.group_page()
+        [row] = response.context["test_rows"]
+        self.assertIsNone(row["summary"])
+        self.assertContains(response, "Python Basics")
+        self.assertContains(response, '<strong class="oks-empty">—</strong>', html=True)
+        self.assertNotContains(response, "0,0%")
+
+    def test_zero_score_is_a_real_result(self):
+        self.take(self.student, right=0)
+        response = self.group_page()
+        [row] = response.context["test_rows"]
+        self.assertEqual(row["summary"].average, 0)
+        self.assertContains(response, '<strong class="oks-fail">0,0%</strong>', html=True)
+
+
+class ScoreFilterTests(SimpleTestCase):
+    def test_score_class(self):
+        self.assertEqual(score_class(95, 60), "okt-pass")
+        self.assertEqual(score_class(80, 60), "okt-pass")
+        self.assertEqual(score_class(60, 60), "okt-pass")
+        self.assertEqual(score_class(40, 60), "oks-fail")
+        self.assertEqual(score_class(0, 60), "oks-fail")
+        self.assertEqual(score_class("0", 60), "oks-fail")
+        self.assertEqual(score_class("75.5", "60"), "okt-pass")
+        for empty in ("", " ", "—", "abc", None):
+            self.assertEqual(score_class(empty, 60), "oks-empty", repr(empty))
+            self.assertEqual(score_class(80, empty), "oks-empty", repr(empty))
+
+    def test_percent(self):
+        self.assertEqual(percent(0), "0%")
+        self.assertEqual(percent(83.333, 1), "83,3%")
+        for empty in ("", " ", "—", None):
+            self.assertEqual(percent(empty), "—")
 
 
 class VisibilityTests(AnalyticsFixture):
