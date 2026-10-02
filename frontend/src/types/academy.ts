@@ -285,7 +285,7 @@ export interface ParentLessonReport {
   messages: Record<ParentReportStyle, string>
 }
 
-/** «🤖 Системный» and «👨‍🏫 От тренера» come from the backend; «✏️ Свой вариант» is the
- * trainer's own edit of the system text, kept only in the dialog. */
+/** «Автор отчёта»: «🤖 Система» and «👨‍🏫 Тренер» texts come from the backend;
+ * «✏️ Свой вариант» is the trainer's own edit, kept only in the dialog. */
 export type ParentReportStyle = 'system' | 'trainer'
 export type ParentReportType = ParentReportStyle | 'custom'

@@ -1,5 +1,5 @@
-"""«Мини-отчёт родителям» — a short Kyrgyz message for the parents' Telegram
-chat after a lesson: topic → who attended → who didn't do the homework →
+"""«Мини-отчёт родителям» — a short Kyrgyz message the trainer copies into the
+parents' chat after a lesson (the LMS sends nothing itself): topic → who attended → who didn't do the homework →
 the next homework. Nothing else (no KPI, scores or analytics).
 
 Everything comes from existing rows; nothing is invented:
@@ -13,11 +13,11 @@ Everything comes from existing rows; nothing is invented:
   no «partial» status, so ``homework_partial`` is always empty;
 - next homework — the Homework given at this lesson.
 
-Two wordings of the same data (``messages``): ``system`` — the standard
-LMS report, and ``trainer`` — a shorter, first-person text from the
-trainer. ``message`` stays the system one. A third, «Свой вариант», is
-the trainer's own edit of the system text in the browser — never stored,
-and nothing in the LMS changes when it is edited.
+Two wordings of the same data (``messages``), one per «Автор отчёта»:
+``system`` — «🤖 Система», the standard LMS report, and ``trainer`` —
+«👨‍🏫 Тренер», a shorter first-person text. ``message`` stays the system
+one. «✏️ Свой вариант» is the trainer's own edit in the browser — never
+stored, and nothing in the LMS changes when it is edited.
 
 When something is missing the message says so with a ⚠️ line (for the
 trainer to fix before sending) instead of guessing; ``warnings`` repeats
