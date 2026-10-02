@@ -900,6 +900,11 @@ class ParentReportHomeworkSerializer(serializers.Serializer):
     lesson_date = serializers.DateField()
 
 
+class ParentReportMessagesSerializer(serializers.Serializer):
+    system = serializers.CharField(help_text="🤖 Системный отчёт LMS.")
+    trainer = serializers.CharField(help_text="👨‍🏫 Короткий текст от имени тренера.")
+
+
 class ParentLessonReportSerializer(serializers.Serializer):
     """Read-only shape of services.parent_report.ParentLessonReportService
     (documentation only — the view returns the service's dict as is)."""
@@ -915,7 +920,8 @@ class ParentLessonReportSerializer(serializers.Serializer):
     homework_partial = serializers.ListField(child=serializers.CharField())
     next_homework = serializers.CharField(allow_null=True)
     warnings = serializers.ListField(child=serializers.CharField())
-    message = serializers.CharField()
+    message = serializers.CharField(help_text="Системный вариант (то же, что messages.system).")
+    messages = ParentReportMessagesSerializer()
 
 
 # ---------------------------------------------------------------------------

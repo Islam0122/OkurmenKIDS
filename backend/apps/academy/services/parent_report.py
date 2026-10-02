@@ -13,6 +13,12 @@ Everything comes from existing rows; nothing is invented:
   no «partial» status, so ``homework_partial`` is always empty;
 - next homework — the Homework given at this lesson.
 
+Two wordings of the same data (``messages``): ``system`` — the standard
+LMS report, and ``trainer`` — a shorter, first-person text from the
+trainer. ``message`` stays the system one. A third, «Свой вариант», is
+the trainer's own edit of the system text in the browser — never stored,
+and nothing in the LMS changes when it is edited.
+
 When something is missing the message says so with a ⚠️ line (for the
 trainer to fix before sending) instead of guessing; ``warnings`` repeats
 it in Russian for the LMS screen only.
@@ -26,18 +32,34 @@ from django.db.models import Q
 from ..models import Attendance, Homework, HomeworkResult, Lesson, Student
 
 GREETING = "Саламатсыздарбы, урматтуу ата-энелер! 🌟"
-TOPIC_LINE = "Бүгүнкү сабакта окуучулар «{topic}» темасын үйрөнүштү. 📚"
 NO_TOPIC = "⚠️ Тема занятия не указана."
-PRESENT_TITLE = "👥 Сабакка катышкан окуучулар:"
-ABSENT_TITLE = "🚫 Сабакка катышпаган окуучулар:"
-NOT_DONE_TITLE = "❌ Үй тапшырмасын аткарбаган окуучулар:"
-PARTIAL_TITLE = "🟡 Үй тапшырмасын жарым-жартылай аткарган окуучулар:"
-ALL_DONE = "Баары аткарды ✅"
-NEXT_TITLE = "📝 Кийинки үй тапшырмасы:"
 NO_NEXT = "Үй тапшырмасы азырынча берилген жок."
-CLOSING = "📚 Кийинки сабакта жаңы теманы улантабыз. Рахмат! 🌟"
 NO_ATTENDANCE = "⚠️ Посещаемость не отмечена."
 RESULTS_INCOMPLETE = "⚠️ Результаты ДЗ отмечены не у всех."
+PARTIAL_TITLE = "🟡 Үй тапшырмасын жарым-жартылай аткарган окуучулар:"
+NEXT_TITLE = "📚 Кийинки үй тапшырмасы:"
+
+# One wording per report type; the blocks, their order and the data are shared.
+STYLES = {
+    "system": {
+        "topic": "📚 Бүгүнкү сабакта окуучулар «{topic}» темасын үйрөнүштү.",
+        "present": "👥 Сабакка катышкан окуучулар:",
+        "absent": "🚫 Сабакка катышпаган окуучулар:",
+        "not_done": "❌ Үй тапшырмасын аткарбаган окуучулар:",
+        "all_done": "✅ Үй тапшырмасын баары аткарды.",
+        "next_separator": "\n\n",
+        "closing": "📚 Кийинки сабакта жаңы теманы улантабыз. Рахмат! 🌟",
+    },
+    "trainer": {
+        "topic": "Бүгүнкү сабакта «{topic}» темасын өттүк. 📚",
+        "present": "👥 Сабакка катышкандар:",
+        "absent": "🚫 Сабакка катышпагандар:",
+        "not_done": "❌ Өткөн сабактын үй тапшырмасын аткарбагандар:",
+        "all_done": "✅ Өткөн сабактын үй тапшырмасын баары аткарды.",
+        "next_separator": "\n",
+        "closing": "Рахмат! Кийинки сабакта жолугушабыз 🌟",
+    },
+}
 
 PRESENT_STATUSES = (Attendance.Status.PRESENT, Attendance.Status.LATE)
 
@@ -145,29 +167,37 @@ class ParentLessonReportService:
             "next_homework": next_homework,
             "warnings": warnings,
         }
-        data["message"] = cls.build_message(data, attendance_marked=bool(records), results_complete=results_complete)
+        data["messages"] = {
+            style: cls.build_message(
+                data, style=style, attendance_marked=bool(records), results_complete=results_complete,
+            )
+            for style in STYLES
+        }
+        data["message"] = data["messages"]["system"]
         return data
 
     @staticmethod
-    def build_message(data: dict, *, attendance_marked: bool = True, results_complete: bool = True) -> str:
+    def build_message(data: dict, *, style: str = "system", attendance_marked: bool = True,
+                      results_complete: bool = True) -> str:
+        words = STYLES[style]
         blocks = [
             [GREETING],
-            [TOPIC_LINE.format(topic=data["topic"]) if data["topic"] else NO_TOPIC],
-            [PRESENT_TITLE, *(
+            [words["topic"].format(topic=data["topic"]) if data["topic"] else NO_TOPIC],
+            [words["present"], *(
                 (_bullets(data["present_students"]) or ["—"]) if attendance_marked else [NO_ATTENDANCE]
             )],
         ]
         if data["absent_students"]:
-            blocks.append([ABSENT_TITLE, *_bullets(data["absent_students"])])
+            blocks.append([words["absent"], *_bullets(data["absent_students"])])
         if data["homework_checked"] is not None:
             if data["homework_not_completed"]:
-                body = _bullets(data["homework_not_completed"])
+                blocks.append([words["not_done"], *_bullets(data["homework_not_completed"])])
+            elif results_complete:
+                blocks.append([words["all_done"]])
             else:
-                body = [ALL_DONE if results_complete else RESULTS_INCOMPLETE]
-            blocks.append([NOT_DONE_TITLE, *body])
+                blocks.append([words["not_done"], RESULTS_INCOMPLETE])
         if data["homework_partial"]:
             blocks.append([PARTIAL_TITLE, *_bullets(data["homework_partial"])])
-        blocks.append([NEXT_TITLE])
-        blocks.append([data["next_homework"] or NO_NEXT])
-        blocks.append([CLOSING])
+        blocks.append([NEXT_TITLE + words["next_separator"] + (data["next_homework"] or NO_NEXT)])
+        blocks.append([words["closing"]])
         return "\n\n".join("\n".join(lines) for lines in blocks)

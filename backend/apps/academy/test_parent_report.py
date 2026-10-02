@@ -15,7 +15,7 @@ from apps.users.models import Subject, Teacher, User
 
 EXAMPLE = """Саламатсыздарбы, урматтуу ата-энелер! 🌟
 
-Бүгүнкү сабакта окуучулар «Күчтүү жана коопсуз паролдор» темасын үйрөнүштү. 📚
+📚 Бүгүнкү сабакта окуучулар «Күчтүү жана коопсуз паролдор» темасын үйрөнүштү.
 
 👥 Сабакка катышкан окуучулар:
 • Бекнур Абдыбеков
@@ -29,11 +29,32 @@ EXAMPLE = """Саламатсыздарбы, урматтуу ата-энеле�
 ❌ Үй тапшырмасын аткарбаган окуучулар:
 • Эрбол Зулпукаров
 
-📝 Кийинки үй тапшырмасы:
+📚 Кийинки үй тапшырмасы:
 
 3 Strong Passwords — создать 3 уникальных безопасных пароля.
 
 📚 Кийинки сабакта жаңы теманы улантабыз. Рахмат! 🌟"""
+
+TRAINER_EXAMPLE = """Саламатсыздарбы, урматтуу ата-энелер! 🌟
+
+Бүгүнкү сабакта «Күчтүү жана коопсуз паролдор» темасын өттүк. 📚
+
+👥 Сабакка катышкандар:
+• Бекнур Абдыбеков
+• Талант Аманжолов
+• Эрбол Зулпукаров
+• Айжамал Мурзабекова
+
+🚫 Сабакка катышпагандар:
+• Йасин Ибрахимов
+
+❌ Өткөн сабактын үй тапшырмасын аткарбагандар:
+• Эрбол Зулпукаров
+
+📚 Кийинки үй тапшырмасы:
+3 Strong Passwords — создать 3 уникальных безопасных пароля.
+
+Рахмат! Кийинки сабакта жолугушабыз 🌟"""
 
 
 def make_teacher(username: str) -> Teacher:
@@ -86,6 +107,7 @@ class ParentReportTests(TestCase):
         self.full_example()
         report = ParentLessonReportService.generate(self.today.pk)
         self.assertEqual(report["message"], EXAMPLE)
+        self.assertEqual(report["messages"], {"system": EXAMPLE, "trainer": TRAINER_EXAMPLE})
         self.assertEqual(report["topic"], "Күчтүү жана коопсуз паролдор")
         self.assertEqual(report["absent_students"], ["Йасин Ибрахимов"])
         self.assertEqual(report["homework_not_completed"], ["Эрбол Зулпукаров"])
@@ -98,10 +120,14 @@ class ParentReportTests(TestCase):
         self.mark(self.today, **{name: "present" for name in self.students})
         old = Homework.objects.create(lesson=self.prev, title="ДЗ")
         self.grade(old, **{name: "checked" for name in self.students})
-        message = ParentLessonReportService.generate(self.today.pk)["message"]
-        self.assertNotIn("🚫", message)
-        self.assertIn("❌ Үй тапшырмасын аткарбаган окуучулар:\nБаары аткарды ✅", message)
-        self.assertIn("📝 Кийинки үй тапшырмасы:\n\nҮй тапшырмасы азырынча берилген жок.", message)
+        messages = ParentLessonReportService.generate(self.today.pk)["messages"]
+        for message in messages.values():
+            self.assertNotIn("🚫", message)
+            self.assertNotIn("❌", message)
+        self.assertIn("✅ Үй тапшырмасын баары аткарды.", messages["system"])
+        self.assertIn("✅ Өткөн сабактын үй тапшырмасын баары аткарды.", messages["trainer"])
+        self.assertIn("📚 Кийинки үй тапшырмасы:\n\nҮй тапшырмасы азырынча берилген жок.", messages["system"])
+        self.assertIn("📚 Кийинки үй тапшырмасы:\nҮй тапшырмасы азырынча берилген жок.", messages["trainer"])
 
     def test_missing_data_is_never_invented(self):
         Lesson.objects.filter(pk=self.today.pk).update(topic="")
@@ -110,7 +136,10 @@ class ParentReportTests(TestCase):
         self.assertIn("⚠️ Тема занятия не указана.", message)
         self.assertIn("👥 Сабакка катышкан окуучулар:\n⚠️ Посещаемость не отмечена.", message)
         self.assertNotIn("❌", message)  # no homework was given at the previous lesson
-        self.assertNotIn("Баары аткарды", message)
+        self.assertNotIn("баары аткарды", message)
+        trainer = report["messages"]["trainer"]
+        self.assertIn("⚠️ Тема занятия не указана.", trainer)
+        self.assertIn("👥 Сабакка катышкандар:\n⚠️ Посещаемость не отмечена.", trainer)
         self.assertIsNone(report["next_homework"])
         self.assertEqual(len(report["warnings"]), 2)
 
@@ -119,8 +148,9 @@ class ParentReportTests(TestCase):
         old = Homework.objects.create(lesson=self.prev, title="ДЗ")
         self.grade(old, Бекнур="checked")
         report = ParentLessonReportService.generate(self.today.pk)
-        self.assertIn("⚠️ Результаты ДЗ отмечены не у всех.", report["message"])
-        self.assertNotIn("Баары аткарды", report["message"])
+        for message in report["messages"].values():
+            self.assertIn("⚠️ Результаты ДЗ отмечены не у всех.", message)
+            self.assertNotIn("баары аткарды", message)
         self.assertTrue(any("не отмечены у 4" in w for w in report["warnings"]))
 
     def test_previous_lesson_skips_cancelled_and_other_programs(self):
@@ -138,11 +168,25 @@ class ParentReportTests(TestCase):
 
     def test_no_technical_data_in_the_message(self):
         self.full_example()
-        message = ParentLessonReportService.generate(self.today.pk)["message"]
-        for student in self.students.values():
-            self.assertNotIn(f"#{student.pk}", message)
-        self.assertNotIn("@", message)
-        self.assertNotIn("%", message)
+        for message in ParentLessonReportService.generate(self.today.pk)["messages"].values():
+            for student in self.students.values():
+                self.assertNotIn(f"#{student.pk}", message)
+            self.assertNotIn("@", message)
+            self.assertNotIn("%", message)
+
+    def test_trainer_text_has_no_lesson_description(self):
+        Lesson.objects.filter(pk=self.today.pk).update(description="Узун сабактын сүрөттөмөсү")
+        self.full_example()
+        report = ParentLessonReportService.generate(self.today.pk)
+        self.assertNotIn("Узун сабактын сүрөттөмөсү", report["messages"]["trainer"])
+        self.assertEqual(report["messages"]["trainer"], TRAINER_EXAMPLE)
+
+    def test_building_the_report_changes_nothing(self):
+        self.full_example()
+        tables = (Lesson, Attendance, Homework, HomeworkResult, Student)
+        before = [list(model.objects.order_by("pk").values()) for model in tables]
+        ParentLessonReportService.generate(self.today.pk)
+        self.assertEqual([list(model.objects.order_by("pk").values()) for model in tables], before)
 
     def test_api(self):
         self.full_example()
@@ -152,6 +196,7 @@ class ParentReportTests(TestCase):
         response = client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["message"], EXAMPLE)
+        self.assertEqual(response.json()["messages"]["trainer"], TRAINER_EXAMPLE)
 
         stranger = APIClient()
         stranger.force_authenticate(make_teacher("other").user)
