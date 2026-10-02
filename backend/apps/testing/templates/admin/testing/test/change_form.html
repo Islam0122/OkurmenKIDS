@@ -1,0 +1,51 @@
+{% extends "admin/change_form.html" %}
+{% load jazzmin report_tags question_bank %}
+
+{# Test add/change page. Jazzmin's change form with:                        #}
+{#  - a header bar (title, level/status/count, the three save buttons);     #}
+{#  - the test's questions under the main card (_questions.html), with      #}
+{#    drag & drop ordering (static/testing/admin/test_questions.js).        #}
+{# The right-hand Jazzmin actions column (save/delete/history) is kept.     #}
+
+{% block content_title %}{% if add %}Новый тест{% else %}Тест: {{ original.title }}{% endif %}{% endblock %}
+
+{% block form_top %}
+    <div class="ok-test-header">
+        <div class="ok-test-header__info">
+            <span class="ok-test-header__icon">{% icon "clipboard-check" 22 %}</span>
+            <div>
+                <div class="ok-test-header__title">{% if add %}Новый тест{% else %}{{ original.title }}{% endif %}</div>
+                {% if not add %}
+                    <div class="ok-test-header__meta">
+                        {{ original.level|difficulty_badge }}
+                        {{ original.is_active|active_badge }}
+                        <a href="#questions" class="ok-test-header__count">{% icon "list-checks" 14 %}{{ test_question_count|question_count_label }}</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        {% if add and has_add_permission or change and has_change_permission %}
+            <div class="ok-test-header__actions">
+                <button type="submit" class="btn btn-success" name="_save">Сохранить</button>
+                <button type="submit" class="btn btn-outline-success" name="_continue">Сохранить и продолжить</button>
+                {% if has_add_permission %}
+                    <button type="submit" class="btn btn-outline-success" name="_addanother">Сохранить и добавить другой</button>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}
+
+{% block field_sets %}
+    <div class="col-12 col-lg-9">
+        <div class="card">
+            <div class="card-body">
+                {% get_changeform_template adminform as changeform_template %}
+                {% include changeform_template %}
+            </div>
+        </div>
+        {% if not add %}
+            {% include "admin/testing/test/_questions.html" %}
+        {% endif %}
+    </div>
+{% endblock %}

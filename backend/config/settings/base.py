@@ -288,7 +288,7 @@ JAZZMIN_SETTINGS = {
     # Hide the raw Django app groups from the sidebar — every model in them
     # is exposed instead through the sections below, grouped the way an
     # academy admin actually thinks about them rather than by app label.
-    "hide_apps": ["users", "academy", "data_io", "news", "feedback", "scholarships"],
+    "hide_apps": ["users", "academy", "data_io", "news", "feedback", "scholarships", "testing"],
 
     # Sidebar sections, in display order. Each key is one collapsible
     # section of the custom sidebar (templates/admin/base_site.html); the
@@ -358,6 +358,24 @@ JAZZMIN_SETTINGS = {
             {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar3"},
         ],
 
+        # Test bank (apps.testing admin). "url" links for the short labels;
+        # their permissions mirror what the target admin view checks.
+        "тестирование": [
+            {
+                "name": "Все тесты",
+                "url": "admin:testing_test_changelist",
+                "icon": "bi bi-clipboard2-check",
+                "permissions": ["testing.view_test"],
+            },
+            {
+                "name": "Добавить тест",
+                "url": "admin:testing_test_add",
+                "icon": "bi bi-plus-circle",
+                "permissions": ["testing.add_test"],
+            },
+            {"name": "Вопросы", "model": "testing.question", "icon": "bi bi-patch-question"},
+        ],
+
         "аналитика": [
             {"name": "Обзор аналитики", "url": "admin:academy_analytics", "icon": "bi bi-graph-up-arrow"},
             {"name": "Посещаемость", "model": "academy.attendance", "icon": "bi bi-clipboard-check"},
@@ -422,6 +440,7 @@ JAZZMIN_SETTINGS = {
         # A section key listed here gets an icon next to its sidebar
         # heading (templates/admin/base_site.html); others stay text-only.
         "отчёты": "bi bi-bar-chart-line",
+        "тестирование": "bi bi-clipboard2-check",
         "auth": "bi bi-people",
         "auth.group": "bi bi-people",
         "users.user": "bi bi-shield-lock",
@@ -450,6 +469,9 @@ JAZZMIN_SETTINGS = {
         "scholarships.trainerfeedback": "bi bi-chat-square-text",
         "scholarships.scholarshipconfiguration": "bi bi-sliders",
         "scholarships.scholarshiprunlog": "bi bi-journal-text",
+        "testing.test": "bi bi-clipboard2-check",
+        "testing.question": "bi bi-patch-question",
+        "testing.questionoption": "bi bi-list-check",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",
