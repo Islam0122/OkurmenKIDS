@@ -5395,125 +5395,136 @@ class LessonSummaryFieldsTests(AcademyTestBase):
 
 
 class HomeworkToCheckFieldTests(AcademyTestBase):
-    """LessonSerializer.homework / previous_lesson / homework_to_check — on
-    lesson N the trainer checks the homework set in lesson N-1 of the same
-    Teaching Program (group_teacher) and sets homework N. Homework rows are
-    never moved: Lesson N -> Homework N stays as is."""
+    """LessonSerializer.homework / homework_to_check — homework N stays set
+    in lesson N; once lesson N is completed it is the homework the trainer
+    checks during lesson N+1 of the same Teaching Program (group_teacher).
+    Homework rows are never moved."""
 
     def setUp(self):
         super().setUp()
-        lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
-        self.lesson1, self.lesson2, self.lesson3 = lessons[:3]
-        self.assertEqual(
-            {self.lesson1.group_teacher_id, self.lesson2.group_teacher_id, self.lesson3.group_teacher_id},
-            {self.lesson1.group_teacher_id},
-        )
+        self.lessons = list(Lesson.objects.filter(group=self.group1).order_by("lesson_number"))
+        self.lesson1, self.lesson2, self.lesson3, self.lesson4 = self.lessons[:4]
+        self.assertEqual({lesson.group_teacher_id for lesson in self.lessons[:4]}, {self.lesson1.group_teacher_id})
 
     def _get(self, lesson, client=None):
         response = (client or self.teacher1_client).get(f"/api/v1/lessons/{lesson.id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         return response.data
 
-    def _other_program_lesson(self, *, group, teacher, lesson_number):
-        group_teacher = GroupTeacher.objects.create(group=group, teacher=teacher, subject=self.subject_frontend)
-        return Lesson.objects.create(
-            group=group,
-            group_teacher=group_teacher,
-            teacher=teacher,
-            lesson_number=lesson_number,
-            date=self.lesson1.date,
-            start_time=dt.time(9, 0),
-            end_time=dt.time(10, 0),
+    def _completed(self, *lessons):
+        Lesson.objects.filter(pk__in=[lesson.pk for lesson in lessons]).update(status=Lesson.Status.COMPLETED)
+
+    def _complete_through_api(self, lesson):
+        for student in (self.student1, self.student2):
+            Attendance.objects.create(student=student, lesson=lesson, status=Attendance.Status.PRESENT)
+        self.assertEqual(self.teacher1_client.post(f"/api/v1/lessons/{lesson.id}/start/").status_code, 200)
+        response = self.teacher1_client.post(f"/api/v1/lessons/{lesson.id}/complete/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+    def _grade(self, homework):
+        response = self.teacher1_client.post(
+            f"/api/v1/homework/{homework.id}/results/",
+            [
+                {"student": self.student1.id, "status": HomeworkResult.Status.CHECKED, "score": 9},
+                {"student": self.student2.id, "status": HomeworkResult.Status.NOT_SUBMITTED},
+            ],
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(HomeworkResult.objects.filter(homework=homework).count(), 2)
+
+    def test_each_lesson_checks_the_previous_lessons_homework(self):
+        homeworks = [Homework.objects.create(lesson=lesson, title=f"ДЗ {lesson.lesson_number}") for lesson in self.lessons[:4]]
+        self._completed(*self.lessons[:3])
+
+        self.assertIsNone(self._get(self.lesson1)["homework_to_check"])
+        for lesson, expected in zip(self.lessons[1:4], homeworks[:3]):
+            data = self._get(lesson)
+            self.assertEqual(data["homework_to_check"]["id"], expected.id)
+            self.assertEqual(data["homework"]["id"], homeworks[lesson.lesson_number - 1].id)
+        # Data stays where it was set.
+        self.assertEqual(
+            [hw.lesson_id for hw in Homework.objects.filter(pk__in=[h.pk for h in homeworks]).order_by("pk")],
+            [lesson.id for lesson in self.lessons[:4]],
         )
 
-    def test_first_lesson_has_nothing_to_check(self):
-        Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
-        data = self._get(self.lesson1)
-        self.assertIsNone(data["previous_lesson"])
-        self.assertIsNone(data["homework_to_check"])
-        self.assertEqual(data["homework"]["title"], "ДЗ 1")
-
-    def test_second_lesson_checks_first_lessons_homework(self):
-        hw1 = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
-        hw2 = Homework.objects.create(lesson=self.lesson2, title="ДЗ 2")
-        HomeworkResult.objects.create(homework=hw1, student=self.student1, status=HomeworkResult.Status.CHECKED, score=8)
-        HomeworkResult.objects.create(homework=hw1, student=self.student2, status=HomeworkResult.Status.SUBMITTED)
-
-        data = self._get(self.lesson2)
-        to_check = data["homework_to_check"]
-        self.assertEqual(to_check["id"], hw1.id)
-        self.assertEqual(to_check["lesson"], self.lesson1.id)
-        self.assertEqual(to_check["lesson_number"], self.lesson1.lesson_number)
-        self.assertEqual(to_check["lesson_topic"], self.lesson1.topic)
-        self.assertEqual(to_check["title"], "ДЗ 1")
-        self.assertEqual(to_check["results_summary"], {"results_total": 2, "checked": 1, "pending": 1})
-        self.assertTrue(to_check["can_check"])
-        # The lesson's own homework is a separate object — never mixed up.
-        self.assertEqual(data["homework"]["id"], hw2.id)
-        # Data stays where it was set.
-        hw1.refresh_from_db()
-        self.assertEqual(hw1.lesson_id, self.lesson1.id)
-
-    def test_third_lesson_checks_second_lessons_homework(self):
+    def test_full_lifecycle_check_complete_next_lesson(self):
         Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
         hw2 = Homework.objects.create(lesson=self.lesson2, title="ДЗ 2")
+        hw3 = Homework.objects.create(lesson=self.lesson3, title="ДЗ 3")
+        self._completed(self.lesson1, self.lesson2)
+
+        # Lesson 3 open -> homework 2 is the one to check; grading is saved.
         data = self._get(self.lesson3)
         self.assertEqual(data["homework_to_check"]["id"], hw2.id)
-        self.assertEqual(data["previous_lesson"]["id"], self.lesson2.id)
+        self.assertTrue(data["homework_to_check"]["can_check"])
+        self._grade(hw2)
+        self.assertEqual(
+            self._get(self.lesson3)["homework_to_check"]["results_summary"],
+            {"results_total": 2, "checked": 1, "pending": 1},
+        )
+        # Lesson 4 can't check homework 3 while lesson 3 is still open.
+        self.assertIsNone(self._get(self.lesson4)["homework_to_check"])
+
+        # Completing lesson 3 hands homework 3 over to lesson 4.
+        self._complete_through_api(self.lesson3)
+        data = self._get(self.lesson4)
+        self.assertEqual(data["homework_to_check"]["id"], hw3.id)
+        self._grade(hw3)
 
     def test_previous_lesson_without_homework_gives_null(self):
+        self._completed(self.lesson1)
         data = self._get(self.lesson2)
         self.assertIsNone(data["homework_to_check"])
-        self.assertEqual(data["previous_lesson"]["id"], self.lesson1.id)
         self.assertIsNone(data["homework"])
 
     def test_cancelled_lesson_is_skipped(self):
         hw1 = Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
         Homework.objects.create(lesson=self.lesson2, title="ДЗ 2")
+        self._completed(self.lesson1)
         lesson_lifecycle.cancel_lesson(self.lesson2, self.teacher1.user)
 
-        data = self._get(self.lesson3)
-        self.assertEqual(data["previous_lesson"]["id"], self.lesson1.id)
-        self.assertEqual(data["homework_to_check"]["id"], hw1.id)
+        self.assertEqual(self._get(self.lesson3)["homework_to_check"]["id"], hw1.id)
 
     def test_other_groups_lesson_is_never_used(self):
         other = Lesson.objects.filter(group=self.group2).order_by("lesson_number").first()
         Homework.objects.create(lesson=other, title="ДЗ другой группы")
+        self._completed(other, self.lesson1)
 
-        data = self._get(self.lesson2)
-        self.assertIsNone(data["homework_to_check"])
-        self.assertEqual(data["previous_lesson"]["id"], self.lesson1.id)
+        self.assertIsNone(self._get(self.lesson2)["homework_to_check"])
 
     def test_other_group_teachers_homework_is_never_used(self):
         # Same group, another trainer's independent program — its lesson #1
         # has homework, ours does not.
-        other = self._other_program_lesson(group=self.group1, teacher=self.teacher2, lesson_number=1)
-        Homework.objects.create(lesson=other, title="ДЗ другого тренера")
+        group_teacher = GroupTeacher.objects.create(group=self.group1, teacher=self.teacher2, subject=self.subject_frontend)
+        other1, other2 = (
+            Lesson.objects.create(
+                group=self.group1,
+                group_teacher=group_teacher,
+                teacher=self.teacher2,
+                lesson_number=number,
+                date=self.lesson1.date,
+                start_time=dt.time(9 + number, 0),
+                end_time=dt.time(9 + number, 45),
+            )
+            for number in (1, 2)
+        )
+        Homework.objects.create(lesson=other1, title="ДЗ другого тренера")
+        self._completed(other1, self.lesson1)
 
-        data = self._get(self.lesson2)
-        self.assertIsNone(data["homework_to_check"])
-        self.assertEqual(data["previous_lesson"]["id"], self.lesson1.id)
+        self.assertIsNone(self._get(self.lesson2)["homework_to_check"])
 
         # And the other program's lesson #2 sees only its own lesson #1.
-        other2 = Lesson.objects.create(
-            group=self.group1,
-            group_teacher=other.group_teacher,
-            teacher=self.teacher2,
-            lesson_number=2,
-            date=self.lesson2.date,
-            start_time=dt.time(9, 0),
-            end_time=dt.time(10, 0),
-        )
         Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
         data = self._get(other2, client=self.teacher2_client)
         self.assertEqual(data["homework_to_check"]["title"], "ДЗ другого тренера")
 
     def test_can_check_false_when_previous_lesson_was_given_by_someone_else(self):
         Homework.objects.create(lesson=self.lesson1, title="ДЗ 1")
+        self._completed(self.lesson1)
         Lesson.objects.filter(pk=self.lesson1.pk).update(teacher=self.teacher2)  # substitute
 
-        data = self._get(self.lesson2)
-        self.assertFalse(data["homework_to_check"]["can_check"])
+        self.assertFalse(self._get(self.lesson2)["homework_to_check"]["can_check"])
         self.assertTrue(self._get(self.lesson2, client=self.admin_client)["homework_to_check"]["can_check"])
 
 

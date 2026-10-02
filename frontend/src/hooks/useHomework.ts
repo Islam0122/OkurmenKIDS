@@ -71,9 +71,10 @@ export function useSaveHomeworkResults(homeworkId: number, lessonId?: number) {
       // Grading doesn't change the lesson's own completion requirements
       // (only *having* Homework does — see useCreateHomework), but the
       // Lesson Detail page the teacher lands back on shows this homework's
-      // results_count too — refresh it for consistency regardless.
+      // results — either its own lesson, or the next lesson, where it is
+      // the homework to check — so refresh every lesson detail.
       if (lessonId !== undefined) {
-        void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail', lessonId] })
+        void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail'] })
         void queryClient.invalidateQueries({ queryKey: ['lessons', 'list'] })
       }
     },

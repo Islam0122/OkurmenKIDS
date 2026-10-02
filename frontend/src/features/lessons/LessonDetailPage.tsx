@@ -20,7 +20,7 @@ import { formatDate, formatTimeRange } from '@/utils/format'
 import { AttendanceStatsCard } from './AttendanceStatsCard'
 import { CompletedLessonKpis, CompletedLessonNotice } from './CompletedLessonSummary'
 import { HomeworkSummaryCard } from './HomeworkSummaryCard'
-import { PreviousHomeworkCard } from './PreviousHomeworkCard'
+import { HomeworkToCheckCard } from './HomeworkToCheckCard'
 import { LessonActionBar } from './LessonActionBar'
 import type { LessonActionKey } from './lessonActions'
 import { LessonProgressChecklist } from './LessonProgressChecklist'
@@ -53,7 +53,7 @@ export function LessonDetailPage() {
     if (homework) navigate(homeworkUrlFor(homework.id, `/app/lessons/${lesson.id}`))
   }
 
-  // Homework of the *previous* lesson, checked during this one — the
+  // The homework checked during this lesson (picked by the backend) — the
   // existing grading page, returning here afterwards.
   function goToHomeworkToCheck(homeworkId: number) {
     navigate(homeworkUrlFor(homeworkId, `/app/lessons/${lesson.id}`))
@@ -145,24 +145,16 @@ export function LessonDetailPage() {
               <MaterialsCard lesson={lesson} />
             </div>
 
-            <div className="space-y-4">
-              <PreviousHomeworkCard lesson={lesson} onCheck={goToHomeworkToCheck} />
-              {homework ? (
-                <HomeworkSummaryCard
-                  homework={homework}
-                  summary={lesson.homework_summary}
-                  onView={goToHomework}
-                  lessonNumber={lesson.lesson_number}
-                />
-              ) : (
-                <div className="card card-body">
-                  <p className="mb-1 text-sm font-medium text-ink-secondary">Домашнее задание</p>
-                  <p className="text-sm text-ink-secondary">
-                    {lesson.homework_not_required ? 'ДЗ не требуется.' : 'ДЗ не было добавлено.'}
-                  </p>
-                </div>
-              )}
-            </div>
+            {homework ? (
+              <HomeworkSummaryCard homework={homework} summary={lesson.homework_summary} onView={goToHomework} />
+            ) : (
+              <div className="card card-body">
+                <p className="mb-1 text-sm font-medium text-ink-secondary">Домашнее задание</p>
+                <p className="text-sm text-ink-secondary">
+                  {lesson.homework_not_required ? 'ДЗ не требуется.' : 'ДЗ не было добавлено.'}
+                </p>
+              </div>
+            )}
           </div>
 
           <AttendanceStatsCard summary={lesson.attendance_summary} onView={() => void handleAction('view_attendance')} />
@@ -197,19 +189,8 @@ export function LessonDetailPage() {
               ) : null}
             </div>
 
-            {lesson.status !== 'cancelled' ? (
-              <PreviousHomeworkCard lesson={lesson} onCheck={goToHomeworkToCheck} />
-            ) : null}
-
-            {homework ? (
-              <div className="card card-body">
-                <h2 className="section-title mb-3">📚 Домашнее задание</h2>
-                <p className="mb-1 text-sm text-ink-secondary">Урок №{lesson.lesson_number}</p>
-                <p className="font-medium text-ink">{homework.title}</p>
-                {homework.deadline ? <p className="mt-1 text-sm text-ink-secondary">Срок: {formatDate(homework.deadline)}</p> : null}
-                <p className="mt-2 text-sm text-ink-secondary">{homework.results_count} результатов</p>
-                <p className="mt-2 text-xs text-ink-secondary">ℹ️ Это задание будет проверяться на следующем занятии.</p>
-              </div>
+            {lesson.status !== 'cancelled' && lesson.homework_to_check ? (
+              <HomeworkToCheckCard homework={lesson.homework_to_check} onCheck={goToHomeworkToCheck} />
             ) : null}
           </div>
         </div>

@@ -109,6 +109,18 @@ def lesson_homework(lesson: Lesson) -> Homework | None:
     return Homework.objects.filter(lesson=lesson).order_by("-id").first()
 
 
+def homework_to_check(lesson: Lesson) -> Homework | None:
+    """The homework the trainer checks during `lesson`: the one set in the
+    previous lesson of the same program, once that lesson is completed —
+    completing lesson N is what hands homework N over to lesson N+1. None
+    for the first lesson, when the previous lesson set no homework, or
+    while it is still open."""
+    previous = previous_lesson(lesson)
+    if previous is None or previous.status != Lesson.Status.COMPLETED:
+        return None
+    return lesson_homework(previous)
+
+
 def homework_results_summary(homework: Homework) -> dict:
     """Checked vs. still-pending among one Homework's recorded results."""
     agg = HomeworkResult.objects.filter(homework=homework).aggregate(

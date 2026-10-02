@@ -163,7 +163,6 @@ export function buildLesson(overrides: Partial<Lesson> = {}): Lesson {
     attendance_summary: { total_students: 2, present: 0, absent: 0, late: 0, excused: 0, attendance_rate: null },
     homework_summary: null,
     homework: null,
-    previous_lesson: null,
     homework_to_check: null,
     attendance_editable: true,
     created_at: '2026-09-01T00:00:00Z',

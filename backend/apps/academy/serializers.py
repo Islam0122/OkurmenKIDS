@@ -686,7 +686,6 @@ class LessonSerializer(_RequestAwareSerializer):
     attendance_summary = serializers.SerializerMethodField()
     homework_summary = serializers.SerializerMethodField()
     homework = serializers.SerializerMethodField()
-    previous_lesson = serializers.SerializerMethodField()
     homework_to_check = serializers.SerializerMethodField()
     attendance_editable = serializers.SerializerMethodField()
     rescheduled_to = serializers.SerializerMethodField()
@@ -732,7 +731,6 @@ class LessonSerializer(_RequestAwareSerializer):
             "attendance_summary",
             "homework_summary",
             "homework",
-            "previous_lesson",
             "homework_to_check",
             "attendance_editable",
             "rescheduled_from",
@@ -810,14 +808,6 @@ class LessonSerializer(_RequestAwareSerializer):
     def get_homework_summary(self, obj: Lesson) -> dict | None:
         return lesson_summary.homework_summary(obj)
 
-    def _previous_lesson(self, obj: Lesson) -> Lesson | None:
-        # Shared by `previous_lesson` and `homework_to_check` — one lookup
-        # per serialized lesson, not two.
-        cache = self.__dict__.setdefault("_previous_lesson_cache", {})
-        if obj.pk not in cache:
-            cache[obj.pk] = lesson_summary.previous_lesson(obj)
-        return cache[obj.pk]
-
     def get_homework(self, obj: Lesson) -> dict | None:
         """The homework set in *this* lesson (checked at the next one)."""
         homework = lesson_summary.lesson_homework(obj)
@@ -830,33 +820,15 @@ class LessonSerializer(_RequestAwareSerializer):
             "deadline": homework.deadline,
         }
 
-    def get_previous_lesson(self, obj: Lesson) -> dict | None:
-        """The previous lesson of the same Teaching Program (see
-        services.lesson_summary.previous_lesson), or None for the first
-        lesson — lets the page tell "first lesson, nothing to check" apart
-        from "previous lesson set no homework"."""
-        previous = self._previous_lesson(obj)
-        if previous is None:
-            return None
-        return {
-            "id": previous.id,
-            "lesson_number": previous.lesson_number,
-            "topic": previous.topic,
-            "date": previous.date,
-            "homework_not_required": previous.homework_not_required,
-        }
-
     def get_homework_to_check(self, obj: Lesson) -> dict | None:
-        """The homework set in the previous lesson — what the trainer checks
-        during this one. Homework rows are never moved: it stays attached to
-        the lesson it was set in, this is read-only context. None when there
-        is no previous lesson or it set no homework."""
-        previous = self._previous_lesson(obj)
-        if previous is None:
-            return None
-        homework = lesson_summary.lesson_homework(previous)
+        """The homework the trainer checks during this lesson (see
+        services.lesson_summary.homework_to_check). Homework rows are never
+        moved: it stays attached to the lesson it was set in, this is
+        read-only context."""
+        homework = lesson_summary.homework_to_check(obj)
         if homework is None:
             return None
+        previous = homework.lesson
         # Same ownership rule as HomeworkSerializer.results_editable — e.g.
         # a substitute gave the previous lesson, so its homework is theirs.
         user = self._request_user()

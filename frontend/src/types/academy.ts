@@ -194,20 +194,10 @@ export interface LessonHomeworkBrief {
   deadline: string | null
 }
 
-/** `LessonSerializer.previous_lesson` — the previous lesson of the same
- * Teaching Program (`group_teacher`), cancelled lessons skipped; `null` for
- * the first lesson. */
-export interface LessonPreviousLesson {
-  id: number
-  lesson_number: number
-  topic: string
-  date: string
-  homework_not_required: boolean
-}
-
-/** `LessonSerializer.homework_to_check` — the homework set in the previous
- * lesson, checked during this one. `null` when there is no previous lesson
- * or it set no homework. */
+/** `LessonSerializer.homework_to_check` — the homework checked during this
+ * lesson: set in the previous lesson of the same program, once that lesson
+ * is completed. `null` for the first lesson, when the previous lesson set
+ * none, or while it is still open. */
 export interface LessonHomeworkToCheck extends LessonHomeworkBrief {
   lesson: number
   lesson_number: number
@@ -255,7 +245,6 @@ export interface Lesson {
   attendance_summary: LessonAttendanceSummary
   homework_summary: LessonHomeworkSummary | null
   homework: LessonHomeworkBrief | null
-  previous_lesson: LessonPreviousLesson | null
   homework_to_check: LessonHomeworkToCheck | null
   attendance_editable: boolean
   created_at: string
