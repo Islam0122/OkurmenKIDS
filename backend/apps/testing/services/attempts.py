@@ -222,13 +222,14 @@ def result_rows(attempt: StudentAttempt) -> list[dict]:
     rows = []
     for number, question in enumerate(attempt_questions(attempt), start=1):
         answer = answers.get(str(question.pk))
-        option_text = {str(o.pk): o.text for o in question.display_options}
+        # Options (not just texts): a picture-only option has no text.
+        by_id = {str(o.pk): o for o in question.display_options}
         rows.append({
             "number": number,
             "question": question,
             "answer": answer,
-            "selected": [option_text[i] for i in (answer.selected_options if answer else []) if i in option_text],
-            "correct_options": [o.text for o in question.display_options if o.is_correct],
+            "selected": [by_id[i] for i in (answer.selected_options if answer else []) if i in by_id],
+            "correct_options": [o for o in question.display_options if o.is_correct],
             "status": _row_status(answer),
         })
     return rows

@@ -1,4 +1,5 @@
 {% extends "testing/public/base.html" %}
+{% load question_bank %}
 
 {% block title %}Результат · {{ test.title }}{% endblock %}
 
@@ -36,18 +37,21 @@
         {% for row in rows %}
           <li class="ex-review__item is-{{ row.status }}">
             <div class="ex-review__head">
-              <span class="ex-review__q">{{ row.question.text|truncatechars:200 }}</span>
+              <span class="ex-review__q">
+                {% with qimg=row.question.image_url|safe_image_url %}{% if qimg %}<span class="ex-review__thumb" data-ex-figure><img src="{{ qimg }}" alt="" loading="lazy" referrerpolicy="no-referrer"><span class="ex-figure__fallback" hidden></span></span>{% endif %}{% endwith %}
+                {{ row.question.text|truncatechars:200 }}
+              </span>
               <span class="ex-review__badge">{% if row.status == "correct" %}Верно{% elif row.status == "wrong" %}Неверно{% elif row.status == "pending" %}На проверке{% else %}Нет ответа{% endif %}</span>
             </div>
             {% if row.answer %}
               <div class="ex-review__given">
                 <span>Ваш ответ:</span>
-                {% if row.selected %}{{ row.selected|join:", " }}{% elif row.question.question_type == "code" %}<pre>{{ row.answer.answer_text }}</pre>{% else %}{{ row.answer.answer_text|default:"—" }}{% endif %}
+                {% if row.selected %}{% include "testing/public/_options_inline.html" with options=row.selected %}{% elif row.question.question_type == "code" %}<pre>{{ row.answer.answer_text }}</pre>{% else %}{{ row.answer.answer_text|default:"—" }}{% endif %}
               </div>
             {% endif %}
             {% if show_correct and row.status != "correct" %}
               {% if row.correct_options %}
-                <div class="ex-review__correct"><span>Правильно:</span> {{ row.correct_options|join:", " }}</div>
+                <div class="ex-review__correct"><span>Правильно:</span> {% include "testing/public/_options_inline.html" with options=row.correct_options %}</div>
               {% elif row.question.question_type == "text" and row.question.correct_answers %}
                 <div class="ex-review__correct"><span>Правильно:</span> {{ row.question.correct_answers.0 }}</div>
               {% endif %}

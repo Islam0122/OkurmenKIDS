@@ -37,7 +37,7 @@ class DateTimeLocalInput(forms.DateTimeInput):
         super().__init__(attrs, format="%Y-%m-%dT%H:%M")
 
 
-INFO_FIELDS = ("title", "description", "subject", "level")
+INFO_FIELDS = ("title", "description", "image_url", "subject", "level")
 SETTINGS_FIELDS = (
     "status", "time_limit_minutes", "max_attempts", "passing_score", "questions_per_attempt",
     "shuffle_questions", "shuffle_options", "show_result", "show_correct_answers", "allow_retry",
@@ -140,6 +140,9 @@ class QuestionForm(StyledFormMixin, forms.Form):
 
     question_type = forms.ChoiceField(label="Тип вопроса", choices=QuestionType.choices)
     text = forms.CharField(label="Текст вопроса", widget=forms.Textarea(attrs={"rows": 3}), required=False)
+    # Checked (http/https only) together with the option images in
+    # services/question_rules.py, so editor and API reject the same URLs.
+    image_url = forms.CharField(label="Изображение вопроса", required=False, max_length=1000)
     hint = forms.CharField(label="Подсказка", widget=forms.Textarea(attrs={"rows": 2}), required=False)
     points = forms.IntegerField(label="Баллы", min_value=1, max_value=100, initial=1)
     is_required = forms.BooleanField(label="Обязательный вопрос", required=False, initial=True)
@@ -164,22 +167,28 @@ class QuestionForm(StyledFormMixin, forms.Form):
         return {name: data[name] for name in ("hint", "points", "is_required", "answer_match", "starter_code", "difficulty")}
 
 
-def question_data_from_post(post, question_type: str, text: str, language: str) -> QuestionData:
+def question_data_from_post(post, question_type: str, text: str, language: str, image_url: str = "") -> QuestionData:
     """Repeated editor rows → QuestionData.
 
-    option_text / option_id are parallel lists; correctness comes from
+    option_text / option_id / option_image are parallel lists; correctness comes from
     ``option_correct`` (checkbox values = row index) or ``option_correct_single``
     (radio value = row index). Accepted answers: ``correct_answer`` (main) +
     ``accepted_answers`` (one per line). Code tests: test_input / test_output.
     """
     texts = post.getlist("option_text")
     ids = post.getlist("option_id")
+    images = post.getlist("option_image")
     if question_type == QuestionType.SINGLE_CHOICE:
         correct = {post.get("option_correct_single", "")}
     else:
         correct = set(post.getlist("option_correct"))
     options = [
-        OptionData(text=t, is_correct=str(i) in correct, id=(ids[i] if i < len(ids) and ids[i] else None))
+        OptionData(
+            text=t,
+            is_correct=str(i) in correct,
+            id=(ids[i] if i < len(ids) and ids[i] else None),
+            image_url=images[i] if i < len(images) else "",
+        )
         for i, t in enumerate(texts)
     ]
     accepted = [post.get("correct_answer", ""), *post.get("accepted_answers", "").splitlines()]
@@ -194,6 +203,6 @@ def question_data_from_post(post, question_type: str, text: str, language: str) 
     if question_type != QuestionType.CODE:
         tests = []
     return QuestionData(
-        question_type=question_type, text=text, language=language,
+        question_type=question_type, text=text, language=language, image_url=image_url,
         correct_answers=accepted, options=options, code_tests=tests,
     )

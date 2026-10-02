@@ -82,6 +82,15 @@ def points_label(n) -> str:
     return f"{n} {plural_ru(n, 'балл', 'балла', 'баллов')}"
 
 
+@register.filter
+def safe_image_url(value) -> str:
+    """The URL only if it is http(s) — anything else (javascript:, data:,
+    file:, a typo) renders as no image. Stored URLs are already validated;
+    this also guards a value re-displayed after a failed form submit."""
+    value = (value or "").strip()
+    return value if value.lower().startswith(("http://", "https://")) else ""
+
+
 @register.simple_tag
 def ticon(name: str, size: int = 16, css_class: str = ""):
     """Inline Lucide SVG, decorative (the control next to it has a label)."""

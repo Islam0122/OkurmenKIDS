@@ -34,6 +34,11 @@
       {% for t in tests %}
         {% url 'admin:testing_test_change' t.pk as test_url %}
         <article class="okt-card">
+          {% with cover=t.image_url|safe_image_url %}{% if cover %}
+            <a class="okt-card__cover" href="{{ test_url }}" tabindex="-1" aria-hidden="true" data-okt-img-wrap>
+              <img src="{{ cover }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-okt-img>
+            </a>
+          {% endif %}{% endwith %}
           <div class="okt-card__top">
             <a class="okt-card__title" href="{{ test_url }}">{{ t.title }}</a>
             <details class="ok-menu okt-card__menu">

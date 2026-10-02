@@ -23,6 +23,9 @@
       <div class="ok-card-body okt-form-grid">
         {% include "admin/testing/tests/_field.html" with field=form.title wide=True %}
         {% include "admin/testing/tests/_field.html" with field=form.description wide=True %}
+        <div class="okt-field okt-field--wide">
+          {% include "admin/testing/tests/_image_url_field.html" with name="image_url" value=form.image_url.value field_id="id_image_url" label="Изображение теста" errors=form.image_url.errors %}
+        </div>
         {% include "admin/testing/tests/_field.html" with field=form.subject %}
         {% include "admin/testing/tests/_field.html" with field=form.level %}
         {% include "admin/testing/tests/_field.html" with field=form.status %}

@@ -6,6 +6,7 @@
  *    radio (one variant) or checkbox (several). Before submit every row's
  *    marker value is set to its current index, which is what the server
  *    reads (option_correct / option_correct_single).
+ *  - Each option may carry an image URL (shown with its image button).
  *  - Code tests: add / remove rows. */
 (function () {
   "use strict";
@@ -73,6 +74,17 @@
     if (button.hasAttribute("data-okt-add-test")) { addTest(); return; }
     var option = button.closest("[data-okt-option]");
     var test = button.closest("[data-okt-test]");
+    if (button.hasAttribute("data-okt-image-toggle") && option) {
+      // Show the option's image field; it only hides again while empty
+      // (a set image is removed with the field's own «Удалить» button).
+      var box = option.querySelector("[data-okt-option-image]");
+      var input = box.querySelector("[data-image-url-input]");
+      if (box.hidden) { box.hidden = false; input.focus(); }
+      else if (!input.value.trim()) box.hidden = true;
+      else input.focus();
+      button.setAttribute("aria-expanded", String(!box.hidden));
+      return;
+    }
     if (button.hasAttribute("data-okt-remove")) {
       if (option) { option.remove(); renumberOptions(); }
       else if (test) test.remove();

@@ -56,6 +56,13 @@
             {% for e in errors.text %}<p class="okt-error">{{ e }}</p>{% endfor %}
           </div>
           <div class="okt-field okt-field--wide">
+            {% include "admin/testing/tests/_image_url_field.html" with name="image_url" value=form.image_url.value field_id="id_image_url" label="Изображение вопроса" errors=errors.image_url %}
+            <p class="ok-help-text okt-imgfield__where">
+              <span data-okt-for="code">Студент увидит картинку над заданием и редактором кода.</span>
+              <span data-okt-for="text single_choice multiple_choice">Студент увидит картинку над текстом вопроса.</span>
+            </p>
+          </div>
+          <div class="okt-field okt-field--wide">
             <label class="ok-label" for="id_hint">{% ticon "lightbulb" 14 %} Подсказка</label>
             {{ form.hint }}
             <p class="ok-help-text">Необязательно. Студент увидит её под вопросом.</p>
@@ -71,6 +78,7 @@
         <p class="ok-help-text okt-options-hint">
           <span data-okt-for="single_choice">Отметьте кружком один правильный вариант.</span>
           <span data-okt-for="multiple_choice">Отметьте галочками все правильные варианты.</span>
+          Вариант может быть текстом, картинкой ({% ticon "image" 13 %}) или текстом с картинкой.
         </p>
         <ol class="okt-options" data-okt-options>
           {% for row in option_rows %}
@@ -83,10 +91,14 @@
               <input type="hidden" name="option_id" value="{{ row.id }}">
               <input type="text" name="option_text" class="ok-input okt-option__text" value="{{ row.text }}" placeholder="Вариант {{ forloop.counter }}" aria-label="Текст варианта">
               <span class="okt-option__tools">
+                <button type="button" class="okt-icon-btn" data-okt-image-toggle title="Изображение варианта" aria-label="Изображение варианта">{% ticon "image" 15 %}</button>
                 <button type="button" class="okt-icon-btn" data-okt-move="up" title="Выше" aria-label="Вариант выше">{% ticon "arrow-up" 15 %}</button>
                 <button type="button" class="okt-icon-btn" data-okt-move="down" title="Ниже" aria-label="Вариант ниже">{% ticon "arrow-down" 15 %}</button>
                 <button type="button" class="okt-icon-btn okt-icon-btn--danger" data-okt-remove title="Удалить" aria-label="Удалить вариант">{% ticon "trash-2" 15 %}</button>
               </span>
+              <div class="okt-option__image" data-okt-option-image{% if not row.image_url %} hidden{% endif %}>
+                {% include "admin/testing/tests/_image_url_field.html" with name="option_image" value=row.image_url compact=True label="URL изображения варианта" %}
+              </div>
             </li>
           {% endfor %}
         </ol>
@@ -188,10 +200,14 @@
         <input type="hidden" name="option_id" value="">
         <input type="text" name="option_text" class="ok-input okt-option__text" value="" aria-label="Текст варианта">
         <span class="okt-option__tools">
+          <button type="button" class="okt-icon-btn" data-okt-image-toggle title="Изображение варианта" aria-label="Изображение варианта">{% ticon "image" 15 %}</button>
           <button type="button" class="okt-icon-btn" data-okt-move="up" title="Выше" aria-label="Вариант выше">{% ticon "arrow-up" 15 %}</button>
           <button type="button" class="okt-icon-btn" data-okt-move="down" title="Ниже" aria-label="Вариант ниже">{% ticon "arrow-down" 15 %}</button>
           <button type="button" class="okt-icon-btn okt-icon-btn--danger" data-okt-remove title="Удалить" aria-label="Удалить вариант">{% ticon "trash-2" 15 %}</button>
         </span>
+        <div class="okt-option__image" data-okt-option-image hidden>
+          {% include "admin/testing/tests/_image_url_field.html" with name="option_image" value="" compact=True label="URL изображения варианта" %}
+        </div>
       </li>
     </template>
     <template data-okt-test-template>

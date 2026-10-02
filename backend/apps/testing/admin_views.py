@@ -380,6 +380,7 @@ def question_editor_view(request, test_id, question_id=None):
                 form.cleaned_data["question_type"],
                 form.cleaned_data["text"],
                 form.cleaned_data["language"],
+                form.cleaned_data["image_url"],
             )
             try:
                 saved = question_service.save_question(test, data, question=question, **form.extra_values())
@@ -406,7 +407,7 @@ def question_editor_view(request, test_id, question_id=None):
             rows = _blank_rows()
         errors = {}
 
-    field_keys = ("text", "options", "correct_answers", "language", "code_tests")
+    field_keys = ("text", "image_url", "options", "correct_answers", "language", "code_tests")
     non_field_errors = [m for key, msgs in errors.items() if key not in field_keys for m in msgs]
     number = None
     if question:
@@ -429,7 +430,7 @@ def question_editor_view(request, test_id, question_id=None):
 
 def _blank_rows() -> dict:
     return {
-        "option_rows": [{"id": "", "text": "", "is_correct": False} for _ in range(4)],
+        "option_rows": [{"id": "", "text": "", "image_url": "", "is_correct": False} for _ in range(4)],
         "correct_answer": "",
         "accepted_answers": "",
         "test_rows": [{"input": "", "expected_output": ""}],
@@ -439,7 +440,7 @@ def _blank_rows() -> dict:
 def _rows_from_question(question: Question) -> dict:
     answers = list(question.correct_answers or [])
     options = [
-        {"id": str(o.pk), "text": o.text, "is_correct": o.is_correct}
+        {"id": str(o.pk), "text": o.text, "image_url": o.image_url, "is_correct": o.is_correct}
         for o in question.options.order_by("order", "pk")
     ]
     return {
@@ -451,14 +452,19 @@ def _rows_from_question(question: Question) -> dict:
 
 
 def _rows_from_post(post) -> dict:
-    texts, ids = post.getlist("option_text"), post.getlist("option_id")
+    texts, ids, images = post.getlist("option_text"), post.getlist("option_id"), post.getlist("option_image")
     if post.get("question_type") == QuestionType.SINGLE_CHOICE:
         correct = {post.get("option_correct_single", "")}
     else:
         correct = set(post.getlist("option_correct"))
     return {
         "option_rows": [
-            {"id": ids[i] if i < len(ids) else "", "text": t, "is_correct": str(i) in correct}
+            {
+                "id": ids[i] if i < len(ids) else "",
+                "text": t,
+                "image_url": images[i] if i < len(images) else "",
+                "is_correct": str(i) in correct,
+            }
             for i, t in enumerate(texts)
         ] or _blank_rows()["option_rows"],
         "correct_answer": post.get("correct_answer", ""),

@@ -1,0 +1,33 @@
+{% load question_bank %}
+{% comment %}
+  ImageUrlField — optional image given as a link (nothing is uploaded).
+  URL input, live preview, «Удалить изображение», client-side http(s)
+  check and a fallback when the picture can't be loaded; behaviour in
+  static/testing/js/image_url_field.js, the server validates again
+  (models.validate_image_url / services/question_rules.py).
+
+  Params: name, value, field_id, label, errors (list), compact (option rows).
+{% endcomment %}
+{% with safe_src=value|safe_image_url %}
+<div class="okt-imgfield{% if compact %} okt-imgfield--compact{% endif %}{% if errors %} has-error{% endif %}" data-image-url-field>
+  {% if not compact %}
+    <label class="ok-label" for="{{ field_id }}">{{ label|default:"Изображение" }} <span class="okt-optional">необязательно</span></label>
+  {% endif %}
+  <div class="okt-imgfield__row">
+    <span class="okt-imgfield__icon" aria-hidden="true">{% ticon "image" 15 %}</span>
+    <input type="url" inputmode="url" class="ok-input okt-imgfield__input" name="{{ name }}"{% if field_id %} id="{{ field_id }}"{% endif %}
+           value="{{ value|default:'' }}" maxlength="1000" autocomplete="off" spellcheck="false"
+           placeholder="https://example.com/image.png" data-image-url-input
+           {% if compact %}aria-label="{{ label|default:'URL изображения' }}"{% endif %}>
+    <button type="button" class="okt-icon-btn okt-icon-btn--danger" data-image-url-clear
+            title="Удалить изображение" aria-label="Удалить изображение"{% if not value %} hidden{% endif %}>{% ticon "x" 15 %}</button>
+  </div>
+  <p class="okt-error" data-image-url-error hidden></p>
+  {% for error in errors %}<p class="okt-error">{{ error }}</p>{% endfor %}
+  <figure class="okt-imgfield__preview" data-image-url-preview{% if not safe_src %} hidden{% endif %}>
+    <img alt="Предпросмотр изображения" referrerpolicy="no-referrer" loading="lazy" data-image-url-img{% if safe_src %} src="{{ safe_src }}"{% endif %}>
+    <figcaption class="okt-imgfield__fallback" data-image-url-fallback hidden>{% ticon "image-off" 18 %}<span>Не удалось загрузить изображение</span></figcaption>
+  </figure>
+  {% if not compact %}<p class="ok-help-text">Только ссылка (http:// или https://) — файл на сервер не загружается.</p>{% endif %}
+</div>
+{% endwith %}
