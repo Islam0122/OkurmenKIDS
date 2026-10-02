@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{# Base of every page of the «Тесты» section (list, create, test workspace). #}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'testing/css/tests.css' %}">
+  <link rel="stylesheet" href="{% static 'testing/css/code_editor.css' %}">
+{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block breadcrumbs %}
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    {% block crumbs %}<li class="breadcrumb-item active">Тесты</li>{% endblock %}
+  </ol>
+{% endblock %}
+
+{% block content %}
+  <div class="okt">
+    {% block section %}{% endblock %}
+  </div>
+{% endblock %}
+
+{% block extrajs %}
+  {{ block.super }}
+  <script src="{% static 'testing/js/tests.js' %}"></script>
+  {% block section_js %}{% endblock %}
+{% endblock %}

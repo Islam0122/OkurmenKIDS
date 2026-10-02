@@ -1,0 +1,65 @@
+{% extends "admin/testing/tests/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  <div class="okt-kpis">
+    <div class="okt-kpi"><span class="okt-kpi__label">Попыток</span><span class="okt-kpi__value">{{ attempts_total }}</span><span class="okt-kpi__hint">идёт сейчас: {{ active_total }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Завершено</span><span class="okt-kpi__value">{{ finished_total }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Средний балл</span><span class="okt-kpi__value">{% if average_score is not None %}{{ average_score|floatformat:0 }}%{% else %}—{% endif %}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Сдали</span><span class="okt-kpi__value">{% if pass_rate is not None %}{{ pass_rate }}%{% else %}—{% endif %}</span><span class="okt-kpi__hint">проходной балл {{ test.passing_score }}%</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">На проверке</span><span class="okt-kpi__value">{{ pending_total }}</span><span class="okt-kpi__hint">ответов ждут преподавателя</span></div>
+  </div>
+
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "chart-column" 16 %}<span>Вопросы</span></div>
+    <div class="ok-card-body">
+      {% if question_rows %}
+        <div class="okt-qtable-wrap">
+          <table class="okt-qtable">
+            <thead><tr><th class="okt-qtable__num">№</th><th>Вопрос</th><th>Тип</th><th class="okt-qtable__center">Ответов</th><th>Верных</th></tr></thead>
+            <tbody>
+              {% for row in question_rows %}
+                <tr>
+                  <td class="okt-qtable__num">{{ row.number }}</td>
+                  <td class="okt-qtable__text"><a href="{% url 'admin:testing_question_change' test.pk row.question.pk %}">{{ row.question.text|truncatechars:120 }}</a></td>
+                  <td class="okt-nowrap">{{ row.type_label }}</td>
+                  <td class="okt-qtable__center">{{ row.total }}{% if row.pending %}<div class="okt-qtable__meta">на проверке: {{ row.pending }}</div>{% endif %}</td>
+                  <td class="okt-rate">
+                    {% if row.rate is not None %}
+                      <span class="okt-bar"><span class="okt-bar__fill{% if row.rate < 50 %} is-low{% endif %}" style="width: {{ row.rate }}%"></span></span>
+                      <span class="okt-rate__value">{{ row.rate }}%</span>
+                    {% else %}<span class="okt-muted">—</span>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="okt-muted">В тесте нет вопросов.</p>{% endif %}
+    </div>
+  </section>
+
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "users" 16 %}<span>Последние попытки</span></div>
+    <div class="ok-card-body">
+      {% if recent_attempts %}
+        <div class="okt-qtable-wrap">
+          <table class="okt-qtable">
+            <thead><tr><th>Студент</th><th>Сессия</th><th>Начата</th><th>Статус</th><th class="okt-qtable__center">Балл</th></tr></thead>
+            <tbody>
+              {% for a in recent_attempts %}
+                <tr>
+                  <td>{{ a.student_name }}</td>
+                  <td><span class="okt-key okt-key--sm">{{ a.session.key }}</span></td>
+                  <td class="okt-nowrap">{{ a.started_at|date:"j E, H:i" }}</td>
+                  <td>{{ a.get_status_display }}</td>
+                  <td class="okt-qtable__center">{% if a.status == "finished" %}<strong{% if a.score >= test.passing_score %} class="okt-pass"{% endif %}>{{ a.score|floatformat:0 }}%</strong>{% else %}—{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="okt-muted">Тест ещё никто не проходил.</p>{% endif %}
+    </div>
+  </section>
+{% endblock %}

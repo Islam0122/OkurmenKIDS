@@ -1,0 +1,112 @@
+{% extends "admin/testing/tests/workspace.html" %}
+{% load question_bank %}
+
+{% block head_primary %}
+  <button type="submit" form="test-info-form" class="ok-btn-primary ok-btn-sm okt-btn">{% ticon "save" 15 %}<span>Сохранить</span></button>
+  {{ block.super }}
+{% endblock %}
+
+{% block workspace %}
+  <section class="ok-card okt-section" id="test-info">
+    <div class="ok-card-header">{% ticon "file-text" 16 %}<span>Основная информация</span></div>
+    <form method="post" id="test-info-form" class="ok-card-body okt-form-grid" novalidate data-okt-guard>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="ok-alert ok-alert-danger okt-field--wide">{{ form.non_field_errors }}</div>{% endif %}
+      {% include "admin/testing/tests/_field.html" with field=form.title wide=True %}
+      {% include "admin/testing/tests/_field.html" with field=form.description wide=True %}
+      {% include "admin/testing/tests/_field.html" with field=form.subject %}
+      {% include "admin/testing/tests/_field.html" with field=form.level %}
+      <div class="okt-form-actions okt-field--wide">
+        <button type="submit" class="ok-btn-primary ok-btn-sm okt-btn">{% ticon "save" 15 %}<span>Сохранить</span></button>
+      </div>
+    </form>
+  </section>
+
+  <section class="ok-card okt-section okt-questions" id="questions"
+           data-reorder-url="{% url 'admin:testing_questions_reorder' test.pk %}">
+    <div class="okt-questions__head">
+      <div>
+        <h2 class="okt-h2">Вопросы</h2>
+        <p class="okt-sub">{{ question_total|question_count_label }} · {{ points_total|points_label }}</p>
+      </div>
+      <div class="okt-add-question">
+        <a class="ok-btn-primary ok-btn-sm okt-btn" href="{% url 'admin:testing_question_add' test.pk %}">{% ticon "plus" 15 %}<span>Добавить вопрос</span></a>
+        <details class="ok-menu">
+          <summary class="ok-btn-primary ok-btn-sm okt-btn okt-btn--split" aria-label="Выбрать тип нового вопроса">{% ticon "chevron-down" 15 %}</summary>
+          <div class="ok-menu-list ok-menu-list-right">
+            {% for value, label, icon in type_tabs %}
+              <a href="{% url 'admin:testing_question_add' test.pk %}?type={{ value }}">{% ticon icon 15 %} {{ label }}</a>
+            {% endfor %}
+          </div>
+        </details>
+      </div>
+    </div>
+
+    {% if questions %}
+      <p class="okt-hint">{% ticon "grip-vertical" 14 %} Перетащите вопрос за ручку или используйте стрелки — порядок сохраняется сразу.</p>
+      <div class="okt-status" data-okt-status role="status" aria-live="polite"></div>
+      <div class="okt-qtable-wrap">
+        <table class="okt-qtable">
+          <thead>
+            <tr>
+              <th class="okt-qtable__grip"><span class="ok-visually-hidden">Перетащить</span></th>
+              <th class="okt-qtable__num">№</th>
+              <th>Тип</th>
+              <th>Вопрос</th>
+              <th class="okt-qtable__center">Баллы</th>
+              <th class="okt-qtable__center">Обязательный</th>
+              <th class="okt-qtable__actions">Действия</th>
+            </tr>
+          </thead>
+          <tbody data-okt-rows>
+            {% for q in questions %}
+              {% url 'admin:testing_question_change' test.pk q.pk as edit_url %}
+              <tr id="question-{{ q.pk }}" data-id="{{ q.pk }}" draggable="true">
+                <td class="okt-qtable__grip" title="Перетащите, чтобы изменить порядок">{% ticon "grip-vertical" 16 %}</td>
+                <td class="okt-qtable__num" data-okt-num>{{ forloop.counter }}</td>
+                <td><span class="okt-type okt-type--{{ q.question_type }}">{% if q.question_type == "text" %}{% ticon "type" 13 %}{% elif q.question_type == "single_choice" %}{% ticon "circle-dot" 13 %}{% elif q.question_type == "multiple_choice" %}{% ticon "list-checks" 13 %}{% else %}{% ticon "code" 13 %}{% endif %}{{ q.type_label }}</span></td>
+                <td class="okt-qtable__text">
+                  <a href="{{ edit_url }}" draggable="false">{{ q.text|truncatechars:160 }}</a>
+                  <div class="okt-qtable__meta">
+                    {% if q.question_type == "single_choice" or q.question_type == "multiple_choice" %}{{ q.options_total }} вар.{% elif q.question_type == "code" %}{{ q.get_language_display }}{% if q.code_tests %} · тестов: {{ q.code_tests|length }}{% endif %}{% elif q.correct_answers %}ответов: {{ q.correct_answers|length }}{% else %}проверка вручную{% endif %}
+                    {% if q.hint %} · {% ticon "lightbulb" 12 %} подсказка{% endif %}
+                  </div>
+                </td>
+                <td class="okt-qtable__center okt-qtable__points" data-label="Баллы">{{ q.points }}</td>
+                <td class="okt-qtable__center okt-qtable__required" data-label="Обязательный">{% if q.is_required %}<span class="okt-yes" title="Обязательный">{% ticon "check" 16 %}<span class="ok-visually-hidden">Да</span></span>{% else %}<span class="okt-no">—</span>{% endif %}</td>
+                <td class="okt-qtable__actions">
+                  <div class="okt-actions">
+                    <form method="post" action="{% url 'admin:testing_question_action' test.pk q.pk 'up' %}">{% csrf_token %}
+                      <button type="submit" class="okt-icon-btn" title="Выше" aria-label="Переместить вопрос {{ forloop.counter }} выше"{% if forloop.first %} disabled{% endif %}>{% ticon "arrow-up" 15 %}</button>
+                    </form>
+                    <form method="post" action="{% url 'admin:testing_question_action' test.pk q.pk 'down' %}">{% csrf_token %}
+                      <button type="submit" class="okt-icon-btn" title="Ниже" aria-label="Переместить вопрос {{ forloop.counter }} ниже"{% if forloop.last %} disabled{% endif %}>{% ticon "arrow-down" 15 %}</button>
+                    </form>
+                    <a class="okt-icon-btn" href="{{ edit_url }}" title="Редактировать" aria-label="Редактировать вопрос {{ forloop.counter }}" draggable="false">{% ticon "pencil" 15 %}</a>
+                    <form method="post" action="{% url 'admin:testing_question_action' test.pk q.pk 'duplicate' %}">{% csrf_token %}
+                      <button type="submit" class="okt-icon-btn" title="Копировать" aria-label="Копировать вопрос {{ forloop.counter }}">{% ticon "copy" 15 %}</button>
+                    </form>
+                    <form method="post" action="{% url 'admin:testing_question_action' test.pk q.pk 'delete' %}" data-okt-confirm="Удалить вопрос {{ forloop.counter }}? Ответы студентов на него тоже будут удалены.">{% csrf_token %}
+                      <button type="submit" class="okt-icon-btn okt-icon-btn--danger" title="Удалить" aria-label="Удалить вопрос {{ forloop.counter }}">{% ticon "trash-2" 15 %}</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="okt-empty okt-empty--inline">
+        <span class="okt-empty__icon">{% ticon "circle-help" 26 %}</span>
+        <h3>В тесте пока нет вопросов</h3>
+        <p>Выберите тип первого вопроса:</p>
+        <div class="okt-type-picker">
+          {% for value, label, icon in type_tabs %}
+            <a class="okt-type-picker__item" href="{% url 'admin:testing_question_add' test.pk %}?type={{ value }}">{% ticon icon 18 %}<span>{{ label }}</span></a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

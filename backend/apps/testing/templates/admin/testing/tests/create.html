@@ -1,0 +1,45 @@
+{% extends "admin/testing/tests/base.html" %}
+{% load question_bank %}
+
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_test_changelist' %}">Тесты</a></li>
+  <li class="breadcrumb-item active">Новый тест</li>
+{% endblock %}
+
+{% block section %}
+  <a class="okt-back" href="{% url 'admin:testing_test_changelist' %}">{% ticon "arrow-left" 15 %}<span>Тесты</span></a>
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">Новый тест</h1>
+      <p class="okt-sub">После сохранения вы попадёте в тест и сможете добавить вопросы.</p>
+    </div>
+  </header>
+
+  <form method="post" class="okt-form" novalidate data-okt-guard>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="ok-alert ok-alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "file-text" 16 %}<span>Основная информация</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.title wide=True %}
+        {% include "admin/testing/tests/_field.html" with field=form.description wide=True %}
+        {% include "admin/testing/tests/_field.html" with field=form.subject %}
+        {% include "admin/testing/tests/_field.html" with field=form.level %}
+        {% include "admin/testing/tests/_field.html" with field=form.status %}
+      </div>
+    </section>
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "settings" 16 %}<span>Прохождение</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.time_limit_minutes %}
+        {% include "admin/testing/tests/_field.html" with field=form.max_attempts %}
+        {% include "admin/testing/tests/_field.html" with field=form.passing_score %}
+      </div>
+    </section>
+    <div class="okt-form-actions">
+      <button type="submit" name="_save" class="ok-btn-primary okt-btn">{% ticon "save" 16 %}<span>Сохранить</span></button>
+      <button type="submit" name="_continue" class="ok-btn-secondary okt-btn">Сохранить и продолжить</button>
+      <a class="ok-btn-secondary okt-btn okt-btn--ghost" href="{% url 'admin:testing_test_changelist' %}">Отмена</a>
+    </div>
+  </form>
+{% endblock %}

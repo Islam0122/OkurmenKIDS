@@ -1,0 +1,55 @@
+{% extends "admin/testing/tests/workspace.html" %}
+{% load question_bank %}
+
+{% block head_primary %}
+  <button type="submit" form="test-settings-form" class="ok-btn-primary ok-btn-sm okt-btn">{% ticon "save" 15 %}<span>Сохранить</span></button>
+{% endblock %}
+
+{% block workspace %}
+  <form method="post" id="test-settings-form" class="okt-form" novalidate data-okt-guard>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="ok-alert ok-alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "send" 16 %}<span>Публикация</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.status %}
+        <div class="okt-field"></div>
+        {% include "admin/testing/tests/_field.html" with field=form.available_from %}
+        {% include "admin/testing/tests/_field.html" with field=form.available_until %}
+        <p class="ok-help-text okt-field--wide">Студенты могут пройти тест, только когда он «Активен» и сейчас между датой начала и окончания (пустая дата — без ограничения).</p>
+      </div>
+    </section>
+
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "clock" 16 %}<span>Прохождение</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.time_limit_minutes %}
+        {% include "admin/testing/tests/_field.html" with field=form.passing_score %}
+        {% include "admin/testing/tests/_field.html" with field=form.max_attempts %}
+        {% include "admin/testing/tests/_field.html" with field=form.questions_per_attempt %}
+        {% include "admin/testing/tests/_field.html" with field=form.allow_retry %}
+      </div>
+    </section>
+
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "refresh-cw" 16 %}<span>Порядок</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.shuffle_questions %}
+        {% include "admin/testing/tests/_field.html" with field=form.shuffle_options %}
+      </div>
+    </section>
+
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "target" 16 %}<span>Результат</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.show_result %}
+        {% include "admin/testing/tests/_field.html" with field=form.show_correct_answers %}
+      </div>
+    </section>
+
+    <div class="okt-form-actions">
+      <button type="submit" class="ok-btn-primary okt-btn">{% ticon "save" 16 %}<span>Сохранить настройки</span></button>
+    </div>
+  </form>
+{% endblock %}

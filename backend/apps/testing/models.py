@@ -26,6 +26,7 @@ import uuid
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
@@ -46,9 +47,32 @@ class DifficultyLevel(models.TextChoices):
 class ProgrammingLanguage(models.TextChoices):
     PYTHON = "python", "Python"
     JAVASCRIPT = "javascript", "JavaScript"
+    TYPESCRIPT = "typescript", "TypeScript"
     HTML = "html", "HTML"
     CSS = "css", "CSS"
     NONE = "", "—"
+
+
+class TestLevel(models.TextChoices):
+    """Test.level — same stored values as DifficultyLevel (legacy rows keep
+    working), labelled the way the LMS describes a whole test."""
+
+    EASY = "easy", "Начальный"
+    MEDIUM = "medium", "Средний"
+    HARD = "hard", "Продвинутый"
+
+
+class TestStatus(models.TextChoices):
+    DRAFT = "draft", "Черновик"
+    ACTIVE = "active", "Активен"
+    ARCHIVED = "archived", "Архив"
+
+
+class AnswerMatch(models.TextChoices):
+    """How a text answer is compared with the accepted answers."""
+
+    EXACT = "exact", "Точное совпадение"
+    IGNORE_CASE = "ignore_case", "Без учёта регистра"
 
 
 class SessionType(models.TextChoices):
@@ -104,12 +128,56 @@ class Test(models.Model):
     )
     level = models.CharField(
         max_length=10,
-        choices=DifficultyLevel.choices,
-        default=DifficultyLevel.MEDIUM,
+        choices=TestLevel.choices,
+        default=TestLevel.MEDIUM,
         verbose_name="Уровень",
     )
-    # UI: True → «🟢 Active», False → «⚪ Draft» (no separate draft model).
-    is_active = models.BooleanField(default=True, verbose_name="Активен")
+    status = models.CharField(
+        max_length=10,
+        choices=TestStatus.choices,
+        default=TestStatus.DRAFT,
+        verbose_name="Статус",
+        db_index=True,
+    )
+    # Legacy column, kept in sync with ``status`` (== ACTIVE) by save():
+    # the ported services and analytics still filter on it.
+    is_active = models.BooleanField(default=False, verbose_name="Активен")
+
+    # -- Settings (all optional: legacy tests have none of them) -------------
+    time_limit_minutes = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(720)],
+        verbose_name="Время прохождения, мин",
+        help_text="Пусто — без ограничения времени.",
+    )
+    max_attempts = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        verbose_name="Количество попыток",
+        help_text="Пусто — без ограничений.",
+    )
+    passing_score = models.PositiveSmallIntegerField(
+        default=60,
+        validators=[MaxValueValidator(100)],
+        verbose_name="Проходной балл, %",
+    )
+    questions_per_attempt = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        verbose_name="Вопросов в попытке",
+        help_text="Пусто — все вопросы теста. Иначе — случайная выборка такого размера.",
+    )
+    shuffle_questions = models.BooleanField(default=False, verbose_name="Перемешивать вопросы")
+    shuffle_options = models.BooleanField(default=False, verbose_name="Перемешивать варианты ответа")
+    show_result = models.BooleanField(default=True, verbose_name="Показывать результат")
+    show_correct_answers = models.BooleanField(default=False, verbose_name="Показывать правильные ответы")
+    allow_retry = models.BooleanField(default=True, verbose_name="Разрешить повторную попытку")
+    available_from = models.DateTimeField(null=True, blank=True, verbose_name="Дата начала")
+    available_until = models.DateTimeField(null=True, blank=True, verbose_name="Дата окончания")
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлён")
 
@@ -121,9 +189,39 @@ class Test(models.Model):
     def __str__(self):
         return self.title
 
+    def save(self, *args, **kwargs):
+        self.is_active = self.status == TestStatus.ACTIVE
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "status" in update_fields:
+            kwargs["update_fields"] = {*update_fields, "is_active"}
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        if self.available_from and self.available_until and self.available_from >= self.available_until:
+            raise ValidationError({"available_until": "Дата окончания должна быть позже даты начала."})
+
     @property
     def question_count(self):
         return self.questions.count()
+
+    @property
+    def effective_max_attempts(self) -> int | None:
+        """Attempts one student may make; None = unlimited."""
+        if not self.allow_retry:
+            return 1
+        return self.max_attempts
+
+    def availability_error(self, now=None) -> str | None:
+        """Why students can't take the test right now (None = they can)."""
+        now = now or timezone.now()
+        if self.status != TestStatus.ACTIVE:
+            return "Тест не опубликован."
+        if self.available_from and now < self.available_from:
+            return "Тест ещё не начался."
+        if self.available_until and now >= self.available_until:
+            return "Срок прохождения теста истёк."
+        return None
 
 
 class Question(models.Model):
@@ -155,6 +253,28 @@ class Question(models.Model):
         verbose_name="Сложность",
     )
     order = models.PositiveIntegerField(default=0, verbose_name="Порядок")
+    hint = models.TextField(blank=True, verbose_name="Подсказка")
+    points = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(100)], verbose_name="Баллы"
+    )
+    is_required = models.BooleanField(default=True, verbose_name="Обязательный вопрос")
+    # Text questions: accepted answers (the first is «Правильный ответ»).
+    # Empty (legacy) → the answer goes to review instead of auto-grading.
+    correct_answers = models.JSONField(default=list, blank=True, verbose_name="Правильные ответы")
+    answer_match = models.CharField(
+        max_length=12,
+        choices=AnswerMatch.choices,
+        default=AnswerMatch.IGNORE_CASE,
+        verbose_name="Проверка ответа",
+    )
+    # Code questions. There is no code execution engine in the project:
+    # code answers are reviewed by a teacher; the tests below are the
+    # reference for that review (and for a future runner).
+    starter_code = models.TextField(blank=True, verbose_name="Стартовый код")
+    code_tests = models.JSONField(
+        default=list, blank=True, verbose_name="Тесты к коду",
+        help_text='Список {"input": ..., "expected_output": ...}.',
+    )
     metadata = models.JSONField(default=dict, blank=True, verbose_name="Метаданные")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
 
@@ -683,6 +803,10 @@ class StudentAttempt(models.Model):
         verbose_name="Статус",
         db_index=True,
     )
+    # The questions this attempt shows, in display order (set when the
+    # attempt starts). Empty for legacy attempts, which keep the legacy
+    # score formula — see _recalculate_score().
+    question_ids = models.JSONField(default=list, blank=True, verbose_name="Вопросы попытки")
 
     class Meta:
         ordering = ["-started_at"]
@@ -727,7 +851,15 @@ class StudentAttempt(models.Model):
         return None
 
     def _recalculate_score(self) -> None:
-        """score = correct / TOTAL_QUESTIONS · 100 (unchanged from the legacy app)."""
+        """Attempts with their own question list: earned points / possible
+        points · 100 (services.grading). Legacy attempts: correct /
+        TOTAL_QUESTIONS · 100, unchanged from the legacy app."""
+        if self.question_ids:
+            from .services.grading import attempt_score
+
+            self.score = attempt_score(self).percent
+            return
+
         from .services.question_selector import TOTAL_QUESTIONS
 
         answers = list(self.answers.all())

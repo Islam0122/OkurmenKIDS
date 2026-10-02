@@ -1,0 +1,60 @@
+{% extends "testing/public/base.html" %}
+
+{% block title %}Результат · {{ test.title }}{% endblock %}
+
+{% block content %}
+  <section class="ex-card ex-result">
+    <p class="ex-eyebrow">{{ attempt.student_name }}</p>
+    <h1 class="ex-h1">{{ test.title }}</h1>
+    {% if attempt.status == "expired" %}
+      <p class="ex-alert">Время вышло — попытка не была отправлена.</p>
+    {% elif not test.show_result %}
+      <p class="ex-result__done">Ответы отправлены. Результат сообщит преподаватель.</p>
+    {% else %}
+      <div class="ex-score{% if passed %} is-passed{% elif passed is False %} is-failed{% endif %}">
+        <span class="ex-score__value">{{ attempt.score|floatformat:0 }}%</span>
+        <span class="ex-score__label">
+          {% if passed %}Тест сдан{% elif passed is False %}Тест не сдан{% else %}Часть ответов на проверке{% endif %}
+        </span>
+      </div>
+      {% if score %}
+        <ul class="ex-facts">
+          <li>Верно: {{ score.correct }} из {{ score.total_questions }}</li>
+          <li>Баллы: {{ score.earned }} из {{ score.possible }}</li>
+          <li>Проходной балл: {{ test.passing_score }}%</li>
+          {% if score.pending %}<li>На проверке: {{ score.pending }}</li>{% endif %}
+        </ul>
+      {% endif %}
+    {% endif %}
+    {% if can_retry %}<a class="ex-link" href="{% url 'testing_public_join' %}?key={{ attempt.session.key }}">Пройти ещё раз</a>{% endif %}
+  </section>
+
+  {% if rows %}
+    <section class="ex-card">
+      <h2 class="ex-h2">Ответы</h2>
+      <ol class="ex-review">
+        {% for row in rows %}
+          <li class="ex-review__item is-{{ row.status }}">
+            <div class="ex-review__head">
+              <span class="ex-review__q">{{ row.question.text|truncatechars:200 }}</span>
+              <span class="ex-review__badge">{% if row.status == "correct" %}Верно{% elif row.status == "wrong" %}Неверно{% elif row.status == "pending" %}На проверке{% else %}Нет ответа{% endif %}</span>
+            </div>
+            {% if row.answer %}
+              <div class="ex-review__given">
+                <span>Ваш ответ:</span>
+                {% if row.selected %}{{ row.selected|join:", " }}{% elif row.question.question_type == "code" %}<pre>{{ row.answer.answer_text }}</pre>{% else %}{{ row.answer.answer_text|default:"—" }}{% endif %}
+              </div>
+            {% endif %}
+            {% if show_correct and row.status != "correct" %}
+              {% if row.correct_options %}
+                <div class="ex-review__correct"><span>Правильно:</span> {{ row.correct_options|join:", " }}</div>
+              {% elif row.question.question_type == "text" and row.question.correct_answers %}
+                <div class="ex-review__correct"><span>Правильно:</span> {{ row.question.correct_answers.0 }}</div>
+              {% endif %}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    </section>
+  {% endif %}
+{% endblock %}
