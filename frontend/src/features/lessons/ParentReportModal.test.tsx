@@ -112,55 +112,60 @@ describe('Мини-отчёт родителям', () => {
     return user
   }
 
-  it('offers three report authors, «🤖 Система» by default, and only edit + copy actions', async () => {
+  it('offers three report authors, «Система» by default, and only edit + copy actions', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     await openReport()
 
-    expect(screen.getByRole('heading', { name: '📩 Мини-отчёт родителям' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Мини-отчёт родителям' })).toBeInTheDocument()
     const group = screen.getByRole('radiogroup', { name: 'Автор отчёта' })
     const authors = within(group).getAllByRole('radio')
     expect(authors.map((radio) => radio.textContent)).toEqual([
-      '🤖 СистемаАвтоматически сформированный отчёт',
-      '👨‍🏫 ТренерОтчёт от имени тренера',
-      '✏️ Свой вариантМожно изменить текст вручную',
+      'СистемаАвтоматически сформированный отчёт',
+      'ТренерОтчёт от имени тренера',
+      'Свой вариантМожно изменить текст вручную',
     ])
     expect(authors.map((radio) => radio.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false'])
     expect(screen.getByTestId('parent-report-preview').textContent).toBe(MESSAGE)
     // The system text can't be changed by accident: no textarea until «Редактировать».
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '✏️ Редактировать' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '📋 Копировать' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Редактировать' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Копировать' })).toBeInTheDocument()
   })
 
-  it('shows the title, authors and buttons as plain Unicode emoji, never SVG icons', async () => {
+  it('uses the project\'s Lucide icons for the title, authors and buttons — no emoji', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     const user = await openReport()
 
-    expect(screen.getByRole('heading', { name: '📩 Мини-отчёт родителям' }).querySelector('svg')).toBeNull()
-    const labels = ['🤖 Система', '👨\u200d🏫 Тренер', '✏\ufe0f Свой вариант']
-    within(screen.getByRole('radiogroup', { name: 'Автор отчёта' }))
-      .getAllByRole('radio')
-      .forEach((radio, index) => {
-        expect(radio.textContent).toContain(labels[index])
-        expect(radio.querySelector('svg')).toBeNull()
-      })
-    const edit = screen.getByRole('button', { name: '✏\ufe0f Редактировать' })
-    const copy = screen.getByRole('button', { name: '📋 Копировать' })
-    expect(edit.querySelector('svg')).toBeNull()
-    expect(copy.querySelector('svg')).toBeNull()
+    const hasIcon = (element: HTMLElement, name: string) =>
+      expect(element.querySelector(`svg.lucide-${name}`), `${element.textContent} → ${name}`).not.toBeNull()
+    hasIcon(screen.getByRole('heading', { name: 'Мини-отчёт родителям' }), 'message-square')
+    const [system, trainer, custom] = within(screen.getByRole('radiogroup', { name: 'Автор отчёта' })).getAllByRole('radio')
+    hasIcon(system, 'bot')
+    hasIcon(trainer, 'user-round')
+    hasIcon(custom, 'pen-line')
+    hasIcon(screen.getByRole('button', { name: 'Редактировать' }), 'pen-line')
+    hasIcon(screen.getByRole('button', { name: 'Копировать' }), 'copy')
 
-    // The copy button keeps its text after copying — the confirmation is the toast.
-    await user.click(copy)
+    const emoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u
+    const chrome = [
+      screen.getByRole('heading', { name: 'Мини-отчёт родителям' }),
+      screen.getByRole('radiogroup', { name: 'Автор отчёта' }),
+      screen.getByRole('button', { name: 'Редактировать' }),
+      screen.getByRole('button', { name: 'Копировать' }),
+    ]
+    chrome.forEach((element) => expect(element.textContent).not.toMatch(emoji))
+
+    await user.click(screen.getByRole('button', { name: 'Копировать' }))
     expect(await screen.findByText('Отчёт скопирован')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '📋 Копировать' }).querySelector('svg')).toBeNull()
+    hasIcon(screen.getByRole('button', { name: 'Копировать' }), 'copy')
   })
 
   it('has no Telegram in the dialog at all — not even hidden', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     const user = await openReport()
 
-    for (const author of ['🤖 Система', '👨‍🏫 Тренер', '✏️ Свой вариант']) {
+    for (const author of ['Система', 'Тренер', 'Свой вариант']) {
       await user.click(screen.getByRole('radio', { name: new RegExp(author) }))
       const dialog = screen.getByRole('dialog')
       expect(dialog.textContent).not.toMatch(/telegram/i)
@@ -169,7 +174,7 @@ describe('Мини-отчёт родителям', () => {
     }
   })
 
-  it('«👨‍🏫 Тренер» switches the preview to the trainer text', async () => {
+  it('«Тренер» switches the preview to the trainer text', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     const user = await openReport()
 
@@ -186,13 +191,13 @@ describe('Мини-отчёт родителям', () => {
     const user = await openReport()
 
     await user.click(screen.getByRole('radio', { name: /Тренер/ }))
-    await user.click(screen.getByRole('button', { name: '📋 Копировать' }))
+    await user.click(screen.getByRole('button', { name: 'Копировать' }))
 
     expect(writeText).toHaveBeenCalledWith(TRAINER_MESSAGE)
     expect(await screen.findByText('Отчёт скопирован')).toBeInTheDocument()
   })
 
-  it('«✏️ Свой вариант» opens the textarea; «Сохранить» keeps the edit, copy sends it to the clipboard', async () => {
+  it('«Свой вариант» opens the textarea; «Сохранить» keeps the edit, copy sends it to the clipboard', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     const user = await openReport('in_progress')
@@ -203,7 +208,7 @@ describe('Мини-отчёт родителям', () => {
     expect(textarea).toHaveValue(MESSAGE)
     expect(screen.getByText(`Символов: ${MESSAGE.length}`)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '📋 Копировать' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Копировать' })).toBeInTheDocument()
 
     await user.type(textarea, '\nP.S. Эртең 10:00дө.')
     const edited = `${MESSAGE}\nP.S. Эртең 10:00дө.`
@@ -211,7 +216,7 @@ describe('Мини-отчёт родителям', () => {
 
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.getByTestId('parent-report-preview').textContent).toBe(edited)
-    await user.click(screen.getByRole('button', { name: '📋 Копировать' }))
+    await user.click(screen.getByRole('button', { name: 'Копировать' }))
     expect(writeText).toHaveBeenCalledWith(edited)
 
     // A look at the automatic text and back keeps the edit.
@@ -229,7 +234,7 @@ describe('Мини-отчёт родителям', () => {
     const user = await openReport()
 
     await user.click(screen.getByRole('radio', { name: /Тренер/ }))
-    await user.click(screen.getByRole('button', { name: '✏️ Редактировать' }))
+    await user.click(screen.getByRole('button', { name: 'Редактировать' }))
 
     expect(screen.getByRole('radio', { name: /Свой вариант/ })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('textbox', { name: 'Текст отчёта' })).toHaveValue(TRAINER_MESSAGE)
@@ -242,7 +247,7 @@ describe('Мини-отчёт родителям', () => {
     await user.click(screen.getByRole('radio', { name: /Свой вариант/ }))
     await user.clear(screen.getByRole('textbox', { name: 'Текст отчёта' }))
 
-    expect(screen.getByRole('button', { name: '📋 Копировать' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Копировать' })).toBeDisabled()
     expect(screen.getByText('Символов: 0')).toBeInTheDocument()
   })
 })
