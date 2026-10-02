@@ -2,9 +2,12 @@
 
 Upsert keys:
 - Course: ``name`` (the model's own unique field).
-- CourseLessonPlan: the pair (``course``, ``lesson_number``) — there's no
-  single natural key, but that pair is already the model's own unique
-  constraint (see ``CourseLessonPlan.Meta.constraints``).
+- CourseLessonPlan: ``course`` + ``lesson_number`` + ``subject``. An
+  existing plan with that key is updated in place (same primary key),
+  otherwise a new one is created — never delete + create. The model's own
+  unique constraint is the pair (``course``, ``lesson_number``), so a row
+  whose number is already taken in that course by a plan of *another*
+  subject is reported as a row error instead of creating a duplicate.
 
 Both adapters build an in-memory model instance from the parsed row and
 call ``full_clean()`` on it rather than re-implementing the model's own
@@ -237,17 +240,36 @@ def _validate_lesson_plan_row(row_number: int, raw: dict[str, str], seen: dict):
         errors.extend(url_errors)
 
     if course is not None and lesson_number is not None:
+        # A course can hold only one plan per lesson number (the model's
+        # unique constraint), so the pair — not the full key — is what may
+        # appear only once per file.
         seen_pairs = seen.setdefault("pairs", {})
         pair_key = (course.pk, lesson_number)
         if pair_key in seen_pairs:
-            errors.append(f"Дублирующаяся пара «курс + номер занятия» в файле (строка {seen_pairs[pair_key]}).")
+            errors.append(
+                f"Занятие №{lesson_number} курса «{course.name}» уже есть в файле "
+                f"(строка {seen_pairs[pair_key]}) — строка пропущена."
+            )
         else:
             seen_pairs[pair_key] = row_number
 
     if errors:
         return None, errors
 
-    existing = CourseLessonPlan.objects.filter(course=course, lesson_number=lesson_number).first()
+    # Upsert key: course + lesson_number + subject.
+    existing = CourseLessonPlan.objects.filter(course=course, lesson_number=lesson_number, subject=subject).first()
+    if existing is None:
+        taken = (
+            CourseLessonPlan.objects.filter(course=course, lesson_number=lesson_number)
+            .select_related("subject")
+            .first()
+        )
+        if taken is not None:
+            return None, [
+                f"В курсе «{course.name}» занятие №{lesson_number} уже есть с предметом "
+                f"«{taken.subject.name}». Номер занятия в курсе должен быть уникальным — "
+                f"укажите предмет «{taken.subject.name}» или другой номер."
+            ]
     instance = existing or CourseLessonPlan()
     instance.course = course
     instance.lesson_number = lesson_number
@@ -296,8 +318,9 @@ LESSON_PLAN_ADAPTER = ModelAdapter(
         "updated_at",
     ],
     import_notes=(
-        "Строка ищется по паре «Курс + Номер занятия» (обновляется существующий план, иначе "
-        "создаётся новый). Курс и Предмет ищутся по названию — предмет обязательно должен "
+        "Строка ищется по ключу «Курс + Номер занятия + Предмет»: существующий план обновляется "
+        "(ID не меняется), иначе создаётся новый; планы не удаляются. Занятия и домашние задания "
+        "групп импорт не меняет. Курс и Предмет ищутся по названию — предмет обязательно должен "
         "входить в состав указанного курса, а номер занятия не может превышать количество "
         "занятий курса."
     ),

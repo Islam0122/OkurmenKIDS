@@ -14,7 +14,7 @@ from apps.users.import_export.formats import UnsupportedFileFormat
 from .forms import GenericImportForm
 from .models import ExportTemplate
 from .registry import get_adapter
-from .services import ImportValidationError, build_import_template_file, commit_import, preview_import, render_export
+from .services import build_import_template_file, commit_import, preview_import, render_export
 
 
 class TemplatedIOAdminMixin:
@@ -127,7 +127,7 @@ class TemplatedIOAdminMixin:
     def io_import_view(self, request):
         adapter = self._adapter()
         preview = None
-        failed = False
+        result = None
 
         if request.method == "POST":
             form = GenericImportForm(request.POST, request.FILES)
@@ -143,16 +143,15 @@ class TemplatedIOAdminMixin:
                         result = commit_import(adapter, file_obj)
                     except UnsupportedFileFormat as exc:
                         messages.error(request, str(exc))
-                    except ImportValidationError as exc:
-                        preview = exc.preview
-                        failed = True
                     else:
-                        messages.success(
-                            request,
-                            f"Импорт завершён: создано {result.created}, обновлено {result.updated} "
-                            f"из {result.total}.",
-                        )
-                        return redirect(f"admin:{self._url_name('changelist')}")
+                        if not result.errors:
+                            messages.success(
+                                request,
+                                f"Импорт завершён. Создано: {result.created} · Обновлено: {result.updated} "
+                                f"· Пропущено: 0 · Ошибок: 0",
+                            )
+                            return redirect(f"admin:{self._url_name('changelist')}")
+                        # Some rows were skipped — stay on the page and list them.
         else:
             form = GenericImportForm()
 
@@ -163,7 +162,7 @@ class TemplatedIOAdminMixin:
             "adapter": adapter,
             "form": form,
             "preview": preview,
-            "failed": failed,
+            "result": result,
             "template_csv_url": reverse(f"admin:{self._url_name('io_import_template')}") + "?format=csv",
             "template_xlsx_url": reverse(f"admin:{self._url_name('io_import_template')}") + "?format=xlsx",
             "changelist_url": reverse(f"admin:{self._url_name('changelist')}"),

@@ -7,22 +7,37 @@ architecture: one implementation, reused by every registered adapter.
 """
 from __future__ import annotations
 
-from django.db import transaction
+from dataclasses import dataclass, field
+
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.http import HttpResponse
 
-from apps.users.import_export.formats import build_export_response, read_rows
-from apps.users.import_export.results import ImportPreview, ImportResult, RowError
+from apps.users.import_export.formats import build_export_response, read_numbered_rows
+from apps.users.import_export.results import ImportPreview, RowError
 
 from .registry import ModelAdapter
+from .validation import flatten_validation_error
 
 
-class ImportValidationError(Exception):
-    """Raised when a file fails validation (or a row fails at save-time)."""
+@dataclass
+class ImportSummary:
+    """What a committed import did. Rows with errors are skipped (and listed
+    in ``errors``); every other row is created or updated."""
 
-    def __init__(self, preview: ImportPreview):
-        self.preview = preview
-        super().__init__("Import validation failed")
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    errors: list[RowError] = field(default_factory=list)
+
+    @property
+    def error_count(self) -> int:
+        return len(self.errors)
+
+    @property
+    def total(self) -> int:
+        return self.created + self.updated + self.skipped
 
 
 def render_export(
@@ -70,22 +85,25 @@ def _normalize_raw_row(adapter: ModelAdapter, raw: dict[str, str]) -> dict[str, 
     return {label_to_key.get(header, header): value for header, value in raw.items()}
 
 
-def _validate_all_rows(adapter: ModelAdapter, raw_rows: list[dict[str, str]]):
+def _validate_all_rows(adapter: ModelAdapter, raw_rows: list[tuple[int, dict[str, str]]]):
+    """``raw_rows`` / ``clean_rows`` are ``(row_number, row)`` pairs — the
+    row's real line in the file (1 = header), so reported rows match the
+    spreadsheet even when blank rows were skipped."""
     seen: dict = {}
     clean_rows = []
     row_errors: list[RowError] = []
-    for index, raw in enumerate(raw_rows, start=2):  # row 1 is the header
+    for index, raw in raw_rows:
         normalized = _normalize_raw_row(adapter, raw)
         clean, errors = adapter.validate_row(index, normalized, seen)
         if errors:
             row_errors.append(RowError(row=index, errors=errors))
         else:
-            clean_rows.append(clean)
+            clean_rows.append((index, clean))
     return clean_rows, row_errors
 
 
 def preview_import(adapter: ModelAdapter, uploaded_file) -> ImportPreview:
-    raw_rows = read_rows(uploaded_file)
+    raw_rows = read_numbered_rows(uploaded_file)
     _clean_rows, row_errors = _validate_all_rows(adapter, raw_rows)
     return ImportPreview(
         total=len(raw_rows),
@@ -95,27 +113,30 @@ def preview_import(adapter: ModelAdapter, uploaded_file) -> ImportPreview:
     )
 
 
-def commit_import(adapter: ModelAdapter, uploaded_file) -> ImportResult:
-    raw_rows = read_rows(uploaded_file)
+def commit_import(adapter: ModelAdapter, uploaded_file) -> ImportSummary:
+    """Upsert every valid row (the adapter decides create vs. update); rows
+    with errors are skipped and reported, never half-saved — each row is
+    saved in its own savepoint, so a row that still fails at save-time
+    (e.g. a constraint) rolls back alone."""
+    raw_rows = read_numbered_rows(uploaded_file)
     clean_rows, row_errors = _validate_all_rows(adapter, raw_rows)
-    if row_errors:
-        raise ImportValidationError(
-            ImportPreview(
-                total=len(raw_rows),
-                valid=len(raw_rows) - len(row_errors),
-                invalid=len(row_errors),
-                errors=row_errors,
-            )
-        )
 
-    created = 0
-    updated = 0
+    summary = ImportSummary(errors=list(row_errors))
     with transaction.atomic():
-        for clean in clean_rows:
-            _obj, was_created = adapter.apply_row(clean)
-            if was_created:
-                created += 1
+        for row_number, clean in clean_rows:
+            try:
+                with transaction.atomic():
+                    _obj, was_created = adapter.apply_row(clean)
+            except DjangoValidationError as exc:
+                summary.errors.append(RowError(row=row_number, errors=flatten_validation_error(exc)))
+            except IntegrityError as exc:
+                summary.errors.append(RowError(row=row_number, errors=[f"Ошибка сохранения: {exc}"]))
             else:
-                updated += 1
+                if was_created:
+                    summary.created += 1
+                else:
+                    summary.updated += 1
 
-    return ImportResult(created=created, updated=updated, total=created + updated)
+    summary.errors.sort(key=lambda error: error.row)
+    summary.skipped = len(summary.errors)
+    return summary
