@@ -1,0 +1,77 @@
+{% load question_bank %}
+{# Fields of a session (create page and the «Настройки» tab). sessions.js fills the #}
+{# test card from #oks-test-info and loads a group's students into the roster.     #}
+{{ test_info|json_script:"oks-test-info" }}
+{% if form.non_field_errors %}<div class="ok-alert ok-alert-danger">{% for e in form.non_field_errors %}<div>{{ e }}</div>{% endfor %}</div>{% endif %}
+
+<section class="ok-card okt-section">
+  <div class="ok-card-header">{% ticon "file-text" 16 %}<span>Основная информация</span></div>
+  <div class="ok-card-body okt-form-grid">
+    {% include "admin/testing/tests/_field.html" with field=form.title wide=True %}
+    <div class="okt-field okt-field--wide{% if form.test.errors %} has-error{% endif %}">
+      <label class="ok-label" for="{{ form.test.id_for_label }}">Тест <span class="ok-label-required">*</span></label>
+      {{ form.test }}
+      {% for e in form.test.errors %}<p class="okt-error">{{ e }}</p>{% endfor %}
+      <div class="oks-test-card" data-oks-test-card hidden>
+        <span class="oks-test-card__icon">{% ticon "clipboard-check" 18 %}</span>
+        <div>
+          <div class="oks-test-card__title" data-oks-test-title></div>
+          <div class="oks-test-card__facts" data-oks-test-facts></div>
+        </div>
+      </div>
+      {% if creating %}<p class="ok-help-text">В списке только опубликованные («Активен») тесты.</p>{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="ok-card okt-section">
+  <div class="ok-card-header">{% ticon "users" 16 %}<span>Группа и участники</span></div>
+  <div class="ok-card-body okt-form-grid">
+    <div class="okt-field{% if form.group.errors %} has-error{% endif %}">
+      <label class="ok-label" for="{{ form.group.id_for_label }}">Группа <span class="ok-label-required">*</span></label>
+      {{ form.group }}
+      {% for e in form.group.errors %}<p class="okt-error">{{ e }}</p>{% endfor %}
+      {% if form.group.field.disabled %}<p class="ok-help-text">Группу нельзя сменить: студенты уже начали тест.</p>{% endif %}
+    </div>
+    <div class="okt-field okt-field--wide oks-roster" data-oks-roster
+         data-students-url="{% url 'admin:testing_session_group_students' 0 %}">
+      <div class="oks-roster__head">
+        <span class="ok-label">Студенты <span class="oks-roster__count" data-oks-roster-count>{% if form.students.field.choices %}{{ form.students.field.choices|length|student_count_label }}{% endif %}</span></span>
+        <label class="ok-check" for="{{ form.all_students.id_for_label }}">{{ form.all_students }}<span class="okt-check__label">Все студенты</span></label>
+      </div>
+      <div class="oks-roster__list" data-oks-roster-list>
+        {% for value, label in form.students.field.choices %}
+          <label class="oks-roster__item"><input type="checkbox" name="students" value="{{ value }}"{% if value in form.students.value %} checked{% endif %}><span>{{ label }}</span></label>
+        {% empty %}
+          <p class="okt-muted oks-roster__empty" data-oks-roster-empty>Выберите группу — здесь появятся её студенты.</p>
+        {% endfor %}
+      </div>
+      {% for e in form.students.errors %}<p class="okt-error">{{ e }}</p>{% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="ok-card okt-section">
+  <div class="ok-card-header">{% ticon "calendar" 16 %}<span>Дата и время</span></div>
+  <div class="ok-card-body okt-form-grid okt-form-grid--3">
+    {% include "admin/testing/tests/_field.html" with field=form.date %}
+    {% include "admin/testing/tests/_field.html" with field=form.start_time %}
+    {% include "admin/testing/tests/_field.html" with field=form.end_time %}
+    <p class="ok-help-text okt-field--wide">
+      С датой и временем сессия «Запланирована»: откроется и закроется сама. Без них — «Черновик», запускается кнопкой «Начать сейчас».
+    </p>
+  </div>
+</section>
+
+<section class="ok-card okt-section">
+  <div class="ok-card-header">{% ticon "settings" 16 %}<span>Прохождение</span></div>
+  <div class="ok-card-body okt-form-grid{% if not creating %} okt-form-grid--3{% endif %}">
+    {% include "admin/testing/tests/_field.html" with field=form.max_attempts %}
+    {% if not creating %}
+      {% include "admin/testing/tests/_field.html" with field=form.time_limit_minutes %}
+      {% include "admin/testing/tests/_field.html" with field=form.session_type %}
+    {% else %}
+      <input type="hidden" name="session_type" value="{{ form.session_type.value|default:'exam' }}">
+    {% endif %}
+  </div>
+</section>

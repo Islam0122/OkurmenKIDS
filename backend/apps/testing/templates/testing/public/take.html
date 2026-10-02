@@ -21,6 +21,7 @@
   <form method="post" class="ex-take" data-ex-take
         {% if preview %}data-ex-preview{% endif %}
         {% if seconds_left is not None %}data-ex-seconds-left="{{ seconds_left }}"{% endif %}
+        {% if not preview and attempt %}data-ex-progress-url="{% url 'testing_public_progress' attempt.pk %}" data-ex-attempt="{{ attempt.pk }}"{% endif %}
         novalidate>
     {% csrf_token %}
     <input type="hidden" name="timed_out" value="0" data-ex-timed-out>

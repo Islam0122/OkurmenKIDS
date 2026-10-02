@@ -1,0 +1,13 @@
+{% extends "admin/testing/sessions/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "list-checks" 16 %}<span>Аналитика вопросов</span></div>
+    <div class="ok-card-body">
+      {% include "admin/testing/sessions/_question_table.html" %}
+      <p class="ok-help-text">% правильных — среди оценённых ответов этой сессии; ответы на проверке не учитываются.</p>
+    </div>
+  </section>
+  {% include "admin/testing/sessions/_success_blocks.html" %}
+{% endblock %}

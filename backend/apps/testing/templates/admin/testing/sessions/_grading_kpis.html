@@ -1,0 +1,14 @@
+{% load question_bank %}
+{# Answer.grading_status counts — grading: GradingCounts. #}
+<section class="ok-card okt-section">
+  <div class="ok-card-header">{% ticon "bot" 16 %}<span>Проверка ответов</span></div>
+  <div class="ok-card-body">
+    <div class="okt-kpis oks-kpis--compact">
+      <div class="okt-kpi"><span class="okt-kpi__label">Автоматически</span><span class="okt-kpi__value">{{ grading.auto }}</span></div>
+      <div class="okt-kpi"><span class="okt-kpi__label">На проверке</span><span class="okt-kpi__value">{{ grading.pending }}</span></div>
+      <div class="okt-kpi"><span class="okt-kpi__label">Обработано AI</span><span class="okt-kpi__value">{{ grading.ai_done }}</span>{% if grading.ai_confidence_avg is not None %}<span class="okt-kpi__hint">уверенность AI: {{ grading.ai_confidence_avg|floatformat:2 }}</span>{% endif %}</div>
+      <div class="okt-kpi"><span class="okt-kpi__label">Проверено вручную</span><span class="okt-kpi__value">{{ grading.manual }}</span></div>
+      <div class="okt-kpi"><span class="okt-kpi__label">Ошибки AI</span><span class="okt-kpi__value{% if grading.ai_failed %} oks-fail{% endif %}">{{ grading.ai_failed }}</span></div>
+    </div>
+  </div>
+</section>

@@ -26,6 +26,7 @@ from ..models import (
     TestSession,
     normalize_session_key,
 )
+from . import participants as participant_events
 from .grading import AttemptScore, attempt_score, check_answer
 
 # A submit that arrives just after the deadline (network, the auto-submit
@@ -43,15 +44,22 @@ class AttemptError(ValidationError):
 
 def find_session(key: str) -> TestSession:
     try:
-        return TestSession.objects.select_related("test", "group").get(key=normalize_session_key(key))
+        session = TestSession.objects.select_related("test", "group").get(key=normalize_session_key(key))
     except TestSession.DoesNotExist:
         raise AttemptError("Сессия с таким ключом не найдена. Проверьте ключ у преподавателя.")
+    session.sync_schedule()
+    return session
 
 
 def session_error(session: TestSession) -> str | None:
     status = session.effective_status
     if status == SessionStatus.CREATED:
+        if session.scheduled_start:
+            start = timezone.localtime(session.scheduled_start)
+            return f"Сессия начнётся {start:%d.%m.%Y} в {start:%H:%M}."
         return "Сессия ещё не запущена. Дождитесь сигнала преподавателя."
+    if status == SessionStatus.CANCELLED:
+        return "Сессия отменена."
     if status == SessionStatus.PAUSED:
         return "Сессия на паузе. Дождитесь, пока преподаватель её продолжит."
     if status in TestSession.ENDED_STATUSES:
@@ -83,20 +91,30 @@ def join(session: TestSession, student_name: str = "", student=None) -> StudentA
     current = mine.first()
     if current is not None:
         if attempt_deadline(current) and timezone.now() > attempt_deadline(current) + SUBMIT_GRACE:
-            current.expire()
+            expire_attempt(current)
         else:
+            participant_events.attempt_started(current)  # reconnected
             return current
 
-    limit = test.effective_max_attempts
-    if limit is not None and _attempts_used(test, student, student_name) >= limit:
-        raise AttemptError("Вы уже использовали все попытки для этого теста.")
-    if not session.can_student_attempt(student_name=student_name, student=student):
-        raise AttemptError("Лимит попыток в этой сессии исчерпан.")
+    if session.participants.exists() and (
+        student is None or not session.participants.filter(student=student).exists()
+    ):
+        raise AttemptError("Вас нет в списке участников этой сессии.")
+
+    # The session's own attempt limit overrides the test's.
+    if session.max_attempts_per_student is not None:
+        if not session.can_student_attempt(student_name=student_name, student=student):
+            raise AttemptError("Лимит попыток в этой сессии исчерпан.")
+    else:
+        limit = test.effective_max_attempts
+        if limit is not None and _attempts_used(test, student, student_name) >= limit:
+            raise AttemptError("Вы уже использовали все попытки для этого теста.")
 
     with transaction.atomic():
         attempt = StudentAttempt.objects.create(session=session, student=student, student_name=student_name)
         attempt.question_ids = pick_question_ids(test, seed=attempt.pk.int)
         attempt.save(update_fields=["question_ids"])
+        participant_events.attempt_started(attempt)
     return attempt
 
 
@@ -119,10 +137,11 @@ def pick_question_ids(test, seed: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def attempt_deadline(attempt: StudentAttempt):
-    """When the attempt must be submitted: the test's time limit from the
-    attempt start, capped by the session's own deadline. None = no limit."""
+    """When the attempt must be submitted: the time limit (session override,
+    else the test's) from the attempt start, capped by the session's own
+    deadline. None = no limit."""
     deadlines = []
-    limit = attempt.session.test.time_limit_minutes
+    limit = attempt.session.effective_time_limit_minutes
     if limit:
         deadlines.append(attempt.started_at + timedelta(minutes=limit))
     if attempt.session.expires_at and not attempt.session.is_training:
@@ -171,11 +190,11 @@ def submit(attempt: StudentAttempt, answers: dict[str, SubmittedAnswer], *, time
         raise AttemptError("Сессия на паузе — ответы можно отправить после продолжения.")
     ended_at = session.ended_at or session.expires_at
     if session.effective_status in TestSession.ENDED_STATUSES and ended_at and now > ended_at + SUBMIT_GRACE:
-        attempt.expire()
+        expire_attempt(attempt)
         raise AttemptError("Сессия завершена — ответы больше не принимаются.")
     deadline = attempt_deadline(attempt)
     if deadline and now > deadline + SUBMIT_GRACE:
-        attempt.expire()
+        expire_attempt(attempt)
         raise AttemptError("Время на прохождение теста истекло.")
 
     questions = attempt_questions(attempt)
@@ -208,7 +227,13 @@ def submit(attempt: StudentAttempt, answers: dict[str, SubmittedAnswer], *, time
                 },
             )
         attempt.finish()
+        participant_events.attempt_finished(attempt)
     return attempt_score(attempt)
+
+
+def expire_attempt(attempt: StudentAttempt) -> None:
+    attempt.expire()
+    participant_events.attempt_expired(attempt)
 
 
 # ---------------------------------------------------------------------------

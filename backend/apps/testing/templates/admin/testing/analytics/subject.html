@@ -1,0 +1,25 @@
+{% extends "admin/testing/analytics/base.html" %}
+{% load question_bank %}
+
+{% block section %}
+  <a class="okt-back" href="{% if group %}{% url 'admin:testing_analytics_group' group.pk %}{% else %}{% url 'admin:testing_analytics' %}{% endif %}">{% ticon "arrow-left" 15 %}<span>{% if group %}Группа {{ group.name }}{% else %}Аналитика{% endif %}</span></a>
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">{{ subject.name }}{% if group %} · {{ group.name }}{% endif %}</h1>
+      <p class="okt-sub">Тесты предмета{% if group %} в группе {{ group.name }}{% else %} во всех группах{% endif %}.</p>
+    </div>
+    {% if group %}<a class="ok-btn-secondary okt-btn" href="{% url 'admin:testing_analytics_subject' subject.pk %}">{% ticon "users" 16 %}<span>Все группы</span></a>{% endif %}
+  </header>
+
+  {% include "admin/testing/analytics/_summary.html" %}
+
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "clipboard-check" 16 %}<span>Тесты</span></div>
+    <div class="ok-card-body">{% include "admin/testing/analytics/_tests_table.html" %}</div>
+  </section>
+
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "calendar-check" 16 %}<span>Сессии</span></div>
+    <div class="ok-card-body">{% include "admin/testing/analytics/_sessions_table.html" %}</div>
+  </section>
+{% endblock %}

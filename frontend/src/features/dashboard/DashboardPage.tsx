@@ -10,6 +10,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { StatCard } from '@/components/ui/StatCard'
 import { StatGrid } from '@/components/ui/StatGrid'
+import { LiveExamsWidget } from '@/features/exams/LiveExamsWidget'
 import { NewsWidget } from '@/features/news/NewsWidget'
 import { useAuth } from '@/hooks/useAuth'
 import { formatTimeRange } from '@/utils/format'
@@ -54,6 +55,8 @@ export function DashboardPage() {
               tone={data.pendingHomeworkCount > 0 ? 'warning' : 'default'}
             />
           </StatGrid>
+
+          <LiveExamsWidget />
 
           <NewsWidget />
 

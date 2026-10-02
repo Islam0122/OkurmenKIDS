@@ -13,6 +13,7 @@ import type { Homework, HomeworkResult } from '@/types/homework'
 import type { AnalyticsDashboard, ComparisonMetric } from '@/types/kpi'
 import type { News } from '@/types/news'
 import type { Paginated } from '@/types/common'
+import type { ExamParticipant, ExamSession } from '@/types/exams'
 
 export function paginated<T>(results: T[]): Paginated<T> {
   return { count: results.length, next: null, previous: null, results }
@@ -334,6 +335,50 @@ export function buildNews(overrides: Partial<News> = {}): News {
     created_at: '2026-09-10T15:30:00Z',
     expires_at: null,
     is_read: false,
+    ...overrides,
+  }
+}
+
+// -- Exams (teacher sessions) ------------------------------------------------
+
+export function buildExamSession(overrides: Partial<ExamSession> = {}): ExamSession {
+  return {
+    id: 'session-1',
+    title: 'Python — Итоговый экзамен',
+    key: 'PY-82X91',
+    session_type: 'exam',
+    phase: 'active',
+    phase_label: 'Активна',
+    is_live: true,
+    is_paused: false,
+    test: { id: 'test-1', title: 'Python — Основы', level: 'medium', level_label: 'Средний', passing_score: 70, question_count: 20 },
+    group: { id: 7, name: 'Python-01' },
+    scheduled_start: '2026-10-02T08:00:00Z',
+    scheduled_end: '2026-10-02T09:00:00Z',
+    started_at: '2026-10-02T08:00:00Z',
+    ends_at: '2026-10-02T09:00:00Z',
+    time_limit_minutes: 60,
+    counts: { total: 18, started: 16, in_progress: 2, disconnected: 0, completed: 14, not_started: 2, expired: 0, average_score: 78 },
+    ...overrides,
+  }
+}
+
+export function buildExamParticipant(overrides: Partial<ExamParticipant> = {}): ExamParticipant {
+  return {
+    id: 'participant-1',
+    student: { id: 1, name: 'Ислам Дуйшобаев' },
+    status: 'in_progress',
+    status_label: 'Проходит экзамен',
+    current_question: 15,
+    answered_count: 14,
+    question_total: 20,
+    progress_percent: 70,
+    started_at: '2026-10-02T08:03:00Z',
+    finished_at: null,
+    last_seen_at: '2026-10-02T08:38:00Z',
+    duration_seconds: 2322,
+    score: null,
+    result_available: false,
     ...overrides,
   }
 }

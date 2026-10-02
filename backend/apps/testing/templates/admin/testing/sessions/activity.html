@@ -1,0 +1,22 @@
+{% extends "admin/testing/sessions/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">
+      {% ticon "activity" 16 %}<span>Активность</span>
+      {% if live %}<span class="oks-live ok-card-header-action">{% ticon "activity" 14 %} обновляется автоматически</span>{% endif %}
+    </div>
+    <div class="ok-card-body">
+      <div class="oks-state">
+        {{ phase|phase_badge }}
+        {% if session.started_at %}<span>Начало: <strong>{{ session.started_at|date:"H:i" }}</strong></span>{% elif session.scheduled_start %}<span>Начало: <strong>{{ session.scheduled_start|date:"d.m H:i" }}</strong></span>{% endif %}
+        {% if session.expires_at and session.is_exam %}<span>Окончание: <strong>{{ session.expires_at|date:"H:i" }}</strong></span>{% elif session.scheduled_end %}<span>Окончание: <strong>{{ session.scheduled_end|date:"H:i" }}</strong></span>{% endif %}
+        <span class="oks-state__actions">{% include "admin/testing/sessions/_actions.html" with next=request.get_full_path %}</span>
+      </div>
+      <div {% if live %}data-oks-live="{{ request.path }}?fragment=1" data-oks-every="{{ refresh_seconds }}"{% endif %}>
+        {% include "admin/testing/sessions/_activity_live.html" %}
+      </div>
+    </div>
+  </section>
+{% endblock %}

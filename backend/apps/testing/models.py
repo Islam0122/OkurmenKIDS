@@ -81,10 +81,38 @@ class SessionType(models.TextChoices):
 
 
 class SessionStatus(models.TextChoices):
+    """Stored state-machine status (see TestSession)."""
+
     CREATED = "created", "Создана"
     RUNNING = "running", "Идёт"
     PAUSED = "paused", "На паузе"
     FINISHED = "finished", "Завершена"
+    EXPIRED = "expired", "Время истекло"
+    CANCELLED = "cancelled", "Отменена"
+
+
+class SessionPhase(models.TextChoices):
+    """What the LMS shows for a session (TestSession.phase), derived from the
+    stored status and the schedule — never stored itself."""
+
+    DRAFT = "draft", "Черновик"
+    SCHEDULED = "scheduled", "Запланирована"
+    ACTIVE = "active", "Активна"
+    FINISHED = "finished", "Завершена"
+    CANCELLED = "cancelled", "Отменена"
+
+
+class ParticipantStatus(models.TextChoices):
+    """A student's state in a session (SessionParticipant.live_status).
+    Stored: NOT_STARTED / IN_PROGRESS / COMPLETED / EXPIRED; PAUSED and
+    DISCONNECTED are derived at read time from the session and the last
+    heartbeat, so they never go stale."""
+
+    NOT_STARTED = "not_started", "Не начал"
+    IN_PROGRESS = "in_progress", "Проходит экзамен"
+    PAUSED = "paused", "Приостановлен"
+    DISCONNECTED = "disconnected", "Нет соединения"
+    COMPLETED = "completed", "Завершил"
     EXPIRED = "expired", "Время истекло"
 
 
@@ -439,8 +467,9 @@ class TestSession(models.Model):
         "resume": ({SessionStatus.PAUSED}, SessionStatus.RUNNING),
         "finish": ({SessionStatus.RUNNING, SessionStatus.PAUSED}, SessionStatus.FINISHED),
         "expire": ({SessionStatus.RUNNING}, SessionStatus.EXPIRED),
+        "cancel": ({SessionStatus.CREATED, SessionStatus.RUNNING, SessionStatus.PAUSED}, SessionStatus.CANCELLED),
     }
-    ENDED_STATUSES = frozenset({SessionStatus.FINISHED, SessionStatus.EXPIRED})
+    ENDED_STATUSES = frozenset({SessionStatus.FINISHED, SessionStatus.EXPIRED, SessionStatus.CANCELLED})
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test = models.ForeignKey(
@@ -534,6 +563,20 @@ class TestSession(models.Model):
         help_text="Служебное поле: сессия ещё не завершена и не истекла.",
     )
 
+    # -- Schedule (LMS sessions; legacy ones have none) ---------------------
+    # A session with a start time is «Запланирована» until then and starts
+    # by itself (sync_schedule); the end time closes it. For an exam the
+    # window is also its duration.
+    scheduled_start = models.DateTimeField(null=True, blank=True, verbose_name="Начало", db_index=True)
+    scheduled_end = models.DateTimeField(null=True, blank=True, verbose_name="Окончание")
+    time_limit_minutes = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(720)],
+        verbose_name="Время на прохождение, мин",
+        help_text="Пусто — как в настройках теста.",
+    )
+
     # None = без ограничений (training); exam defaults to 1 at creation time.
     max_attempts_per_student = models.PositiveSmallIntegerField(
         null=True,
@@ -544,8 +587,8 @@ class TestSession(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        verbose_name = "Сессия тестирования"
-        verbose_name_plural = "Сессии тестирования"
+        verbose_name = "Сессия"
+        verbose_name_plural = "Сессии"
         indexes = [
             models.Index(fields=["status", "is_active"], name="session_status_active_idx"),
         ]
@@ -599,6 +642,14 @@ class TestSession(models.Model):
                 errors["group"] = "Укажите группу: урок выбирается внутри группы."
             elif self.lesson.group_id != self.group_id:
                 errors["lesson"] = "Урок не принадлежит выбранной группе."
+        if self.scheduled_start and self.scheduled_end:
+            if self.scheduled_end <= self.scheduled_start:
+                errors["scheduled_end"] = "Время окончания должно быть позже начала."
+            elif self.is_exam and self.status == SessionStatus.CREATED:
+                # The scheduled window is the exam's duration.
+                self.duration = self.scheduled_end - self.scheduled_start
+        elif self.scheduled_end and not self.scheduled_start:
+            errors["scheduled_start"] = "Укажите время начала."
         if self.duration is not None:
             if self.is_training:
                 errors["duration"] = "У тренажёра нет ограничения по времени."
@@ -641,6 +692,51 @@ class TestSession(models.Model):
     @property
     def effective_status(self) -> str:
         return self.effective_status_at(timezone.now())
+
+    def phase_at(self, now) -> str:
+        """Черновик / Запланирована / Активна / Завершена / Отменена."""
+        status = self.effective_status_at(now)
+        if status == SessionStatus.CANCELLED:
+            return SessionPhase.CANCELLED
+        if status in self.ENDED_STATUSES:
+            return SessionPhase.FINISHED
+        if status in (SessionStatus.RUNNING, SessionStatus.PAUSED):
+            return SessionPhase.ACTIVE
+        return SessionPhase.SCHEDULED if self.scheduled_start else SessionPhase.DRAFT
+
+    @property
+    def phase(self) -> str:
+        return self.phase_at(timezone.now())
+
+    @property
+    def phase_label(self) -> str:
+        return SessionPhase(self.phase).label
+
+    @property
+    def effective_time_limit_minutes(self) -> int | None:
+        """Per-attempt time limit: the session's override, else the test's."""
+        return self.time_limit_minutes or self.test.time_limit_minutes
+
+    def sync_schedule(self, now=None) -> None:
+        """Apply the schedule: start a scheduled session once its start time
+        has come, finish a running one after its end time. Called lazily
+        (lists, the student page, monitoring) — there is no background
+        worker; the state machine's own rules and locking still apply."""
+        now = now or timezone.now()
+        try:
+            if self.status == SessionStatus.CREATED and self.scheduled_start and now >= self.scheduled_start:
+                if self.scheduled_end and now >= self.scheduled_end:
+                    return  # the whole window passed unopened: leave it for the admin
+                self.start()
+            if (
+                self.scheduled_end
+                and now >= self.scheduled_end
+                and self.status in (SessionStatus.RUNNING, SessionStatus.PAUSED)
+                and self.effective_status_at(now) != SessionStatus.EXPIRED
+            ):
+                self.finish()
+        except SessionTransitionError:
+            self.refresh_from_db()
 
     @property
     def is_time_expired(self) -> bool:
@@ -712,6 +808,9 @@ class TestSession(models.Model):
     def expire(self) -> None:
         self._transition("expire")
 
+    def cancel(self) -> None:
+        self._transition("cancel")
+
     def extend(self, delta: timedelta) -> None:
         """Add time to a not-yet-ended exam.
 
@@ -761,6 +860,9 @@ class TestSession(models.Model):
             self.started_at = now
             if self.duration is not None:
                 self.expires_at = now + self.duration
+            if self.is_exam and self.scheduled_end and self.scheduled_end > now:
+                # A scheduled exam closes at its end time, whenever it opened.
+                self.expires_at = self.scheduled_end
         elif target == SessionStatus.RUNNING and self.status == SessionStatus.PAUSED:
             if self.expires_at is not None:
                 self.expires_at += now - self.paused_at
@@ -908,6 +1010,88 @@ class StudentAttempt(models.Model):
             return
         self.status = AttemptStatus.EXPIRED
         self.save(update_fields=["status"])
+
+
+# A student in progress whose page hasn't reported for this long is shown
+# as «Нет соединения» (the student page sends a heartbeat every 15 s).
+PARTICIPANT_STALE_AFTER = timedelta(seconds=45)
+
+
+class SessionParticipant(models.Model):
+    """One student invited to a session (the session's roster) and their
+    live state in it — what the teacher monitors. Results themselves stay
+    in StudentAttempt/Answer; ``attempt`` points at the current/latest one.
+
+    Updated by services.participants when the student starts, reports
+    progress, leaves the page and finishes.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        TestSession, on_delete=models.CASCADE, related_name="participants", verbose_name="Сессия",
+    )
+    student = models.ForeignKey(
+        "academy.Student", on_delete=models.CASCADE, related_name="test_participations", verbose_name="Студент",
+    )
+    attempt = models.ForeignKey(
+        StudentAttempt, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="participations", verbose_name="Текущая попытка",
+    )
+    status = models.CharField(
+        max_length=15, choices=ParticipantStatus.choices, default=ParticipantStatus.NOT_STARTED,
+        verbose_name="Статус", db_index=True,
+    )
+    current_question = models.PositiveSmallIntegerField(default=0, verbose_name="Текущий вопрос")
+    answered_count = models.PositiveSmallIntegerField(default=0, verbose_name="Отвечено вопросов")
+    question_total = models.PositiveSmallIntegerField(default=0, verbose_name="Вопросов в попытке")
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name="Начал")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Завершил")
+    last_seen_at = models.DateTimeField(null=True, blank=True, verbose_name="Последняя активность")
+    left_at = models.DateTimeField(null=True, blank=True, verbose_name="Закрыл страницу")
+    score = models.FloatField(null=True, blank=True, verbose_name="Балл (0–100)")
+
+    class Meta:
+        ordering = ["student__first_name", "student__last_name"]
+        verbose_name = "Участник сессии"
+        verbose_name_plural = "Участники сессии"
+        constraints = [
+            models.UniqueConstraint(fields=["session", "student"], name="unique_participant_per_session"),
+        ]
+
+    def __str__(self):
+        return f"{self.student} → {self.session}"
+
+    def live_status_at(self, now) -> str:
+        if self.status != ParticipantStatus.IN_PROGRESS:
+            return self.status
+        session_status = self.session.effective_status_at(now)
+        if session_status == SessionStatus.PAUSED:
+            return ParticipantStatus.PAUSED
+        if session_status in TestSession.ENDED_STATUSES:
+            return ParticipantStatus.EXPIRED
+        limit = self.session.effective_time_limit_minutes
+        if limit and self.started_at and now > self.started_at + timedelta(minutes=limit, seconds=90):
+            return ParticipantStatus.EXPIRED
+        if self.left_at and (self.last_seen_at is None or self.left_at >= self.last_seen_at):
+            return ParticipantStatus.DISCONNECTED
+        if self.last_seen_at and now - self.last_seen_at > PARTICIPANT_STALE_AFTER:
+            return ParticipantStatus.DISCONNECTED
+        return ParticipantStatus.IN_PROGRESS
+
+    @property
+    def live_status(self) -> str:
+        return self.live_status_at(timezone.now())
+
+    @property
+    def live_status_label(self) -> str:
+        return ParticipantStatus(self.live_status).label
+
+    @property
+    def duration_seconds(self) -> int | None:
+        if not self.started_at:
+            return None
+        end = self.finished_at or (timezone.now() if self.status == ParticipantStatus.IN_PROGRESS else None)
+        return int((end - self.started_at).total_seconds()) if end else None
 
 
 class Answer(models.Model):

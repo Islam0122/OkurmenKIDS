@@ -1,22 +1,29 @@
 """Forms of the «Тесты» admin section (apps/testing/admin_views.py)."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django import forms
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
-from apps.academy.models import Group
+from apps.academy.models import Group, Student
 
 from .models import (
+    MAX_SESSION_DURATION,
     AnswerMatch,
     DifficultyLevel,
     ProgrammingLanguage,
     Question,
     QuestionType,
+    SessionStatus,
     SessionType,
     Test,
     TestSession,
+    TestStatus,
 )
+from .services.participants import set_roster
 from .services.question_rules import CodeTestData, OptionData, QuestionData
 
 
@@ -88,49 +95,134 @@ class TestSettingsForm(StyledFormMixin, forms.ModelForm):
         self._style()
 
 
-class SessionCreateForm(StyledFormMixin, forms.Form):
-    """Launch a test for students: a TestSession with its own key."""
+class SessionForm(StyledFormMixin, forms.Form):
+    """«Создание сессии» and the session's «Настройки».
 
-    session_type = forms.ChoiceField(label="Режим", choices=SessionType.choices, initial=SessionType.EXAM)
-    group = forms.ModelChoiceField(
-        label="Группа", queryset=Group.objects.order_by("name"), required=False, empty_label="— Любые студенты —",
-        help_text="Если указана, студенты выбирают себя из списка группы.",
-    )
+    A session is held for a group — all of its active students or chosen
+    ones (the roster, SessionParticipant). The date with start/end time is
+    optional together: without it the session is a «Черновик» started by
+    hand; with it, «Запланирована» and it opens/closes by itself.
+    """
+
     title = forms.CharField(label="Название сессии", max_length=255, required=False)
-    duration_minutes = forms.IntegerField(
-        label="Длительность сессии, мин", min_value=1, max_value=720, required=False,
-        help_text="Для экзамена: сколько сессия принимает ответы после запуска.",
+    test = forms.ModelChoiceField(label="Тест", queryset=Test.objects.none(), empty_label="— Выберите тест —")
+    group = forms.ModelChoiceField(label="Группа", queryset=Group.objects.none(), empty_label="— Выберите группу —")
+    all_students = forms.BooleanField(label="Все студенты группы", required=False, initial=True)
+    students = forms.MultipleChoiceField(label="Студенты", required=False)
+    date = forms.DateField(label="Дата", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    start_time = forms.TimeField(label="Время начала", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
+    end_time = forms.TimeField(label="Время окончания", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
+    max_attempts = forms.IntegerField(
+        label="Количество попыток", min_value=1, max_value=20, required=False, initial=1,
+        help_text="Пусто — без ограничений.",
     )
-    start_now = forms.BooleanField(label="Сразу запустить", required=False, initial=True)
+    # Settings tab only (the create page keeps the spec's short form).
+    session_type = forms.ChoiceField(label="Режим", choices=SessionType.choices, initial=SessionType.EXAM)
+    time_limit_minutes = forms.IntegerField(
+        label="Время на прохождение, мин", min_value=1, max_value=720, required=False,
+        help_text="Переопределяет время из настроек теста. Пусто — как в тесте.",
+    )
 
-    def __init__(self, *args, test: Test, **kwargs):
+    def __init__(self, *args, session: TestSession | None = None, **kwargs):
+        self.session = session
+        if session is not None and not args and "initial" not in kwargs:
+            kwargs["initial"] = self.initial_for(session)
         super().__init__(*args, **kwargs)
-        self.test = test
-        self.fields["duration_minutes"].initial = test.time_limit_minutes or 60
+        tests = Test.objects.filter(status=TestStatus.ACTIVE)
+        if session is not None:
+            tests = Test.objects.filter(Q(status=TestStatus.ACTIVE) | Q(pk=session.test_id))
+        self.fields["test"].queryset = tests.select_related("subject").order_by("title")
+        self.fields["group"].queryset = Group.objects.order_by("name")
+        group_id = self.data.get("group") if self.is_bound else (self.initial.get("group") or None)
+        self.fields["students"].choices = [(str(s.pk), str(s)) for s in self.group_students(group_id)]
+        if session is not None and session.participants.exclude(status="not_started").exists():
+            # Started students can't be moved to another group's session.
+            self.fields["group"].disabled = True
         self._style()
+
+    @staticmethod
+    def group_students(group_id):
+        if not group_id or not str(group_id).isdigit():
+            return Student.objects.none()
+        return Student.objects.filter(group_id=group_id, status=Student.Status.ACTIVE).order_by("first_name", "last_name")
+
+    @staticmethod
+    def initial_for(session: TestSession) -> dict:
+        start = timezone.localtime(session.scheduled_start) if session.scheduled_start else None
+        end = timezone.localtime(session.scheduled_end) if session.scheduled_end else None
+        roster = [str(pk) for pk in session.participants.values_list("student_id", flat=True)]
+        group_size = SessionForm.group_students(session.group_id).count() if session.group_id else 0
+        return {
+            "title": session.title,
+            "test": session.test_id,
+            "group": session.group_id,
+            "all_students": not roster or len(roster) >= group_size,
+            "students": roster,
+            "date": start.date() if start else None,
+            "start_time": start.time() if start else None,
+            "end_time": end.time() if end else None,
+            "max_attempts": session.max_attempts_per_student,
+            "session_type": session.session_type,
+            "time_limit_minutes": session.time_limit_minutes,
+        }
 
     def clean(self):
         data = super().clean()
-        if data.get("session_type") == SessionType.EXAM and not data.get("duration_minutes"):
-            self.add_error("duration_minutes", "Укажите длительность экзамена.")
+        date, start, end = data.get("date"), data.get("start_time"), data.get("end_time")
+        if any(v is not None for v in (date, start, end)):
+            if date is None:
+                self.add_error("date", "Укажите дату.")
+            if start is None:
+                self.add_error("start_time", "Укажите время начала.")
+            if end is None:
+                self.add_error("end_time", "Укажите время окончания.")
+            if date and start and end:
+                if end <= start:
+                    self.add_error("end_time", "Время окончания должно быть позже начала.")
+                elif datetime.combine(date, end) - datetime.combine(date, start) > MAX_SESSION_DURATION:
+                    self.add_error("end_time", "Сессия не может длиться больше 12 часов.")
+                else:
+                    data["scheduled_start"] = timezone.make_aware(datetime.combine(date, start))
+                    data["scheduled_end"] = timezone.make_aware(datetime.combine(date, end))
+        group = data.get("group") or (self.session.group if self.session else None)
+        if group is not None:
+            students = list(self.group_students(group.pk))
+            if data.get("all_students"):
+                data["roster"] = students
+            else:
+                chosen = set(data.get("students") or [])
+                data["roster"] = [s for s in students if str(s.pk) in chosen]
+                if not data["roster"]:
+                    self.add_error("students", "Выберите хотя бы одного студента или отметьте «Все студенты».")
         return data
 
     def save(self, teacher=None) -> TestSession:
         data = self.cleaned_data
-        is_exam = data["session_type"] == SessionType.EXAM
-        session = TestSession(
-            test=self.test,
-            group=data["group"],
-            teacher=teacher,
-            session_type=data["session_type"],
-            title=data["title"].strip(),
-            duration=timedelta(minutes=data["duration_minutes"]) if is_exam else None,
-            max_attempts_per_student=self.test.effective_max_attempts,
-        )
-        session.full_clean()
-        session.save()
-        if data["start_now"]:
-            session.start()
+        session = self.session or TestSession(teacher=teacher)
+        session.title = data["title"].strip()
+        session.test = data["test"]
+        session.group = data.get("group") or session.group
+        session.session_type = data.get("session_type") or session.session_type or SessionType.EXAM
+        session.time_limit_minutes = data.get("time_limit_minutes")
+        session.max_attempts_per_student = data.get("max_attempts")
+        old_end = session.scheduled_end
+        session.scheduled_start = data.get("scheduled_start")
+        session.scheduled_end = data.get("scheduled_end")
+        if session.is_training:
+            session.duration = None
+        elif session.status == SessionStatus.CREATED and not session.scheduled_start and session.duration is None:
+            # A draft exam without a schedule: its window = the test's time (or 1 h).
+            session.duration = timedelta(minutes=session.effective_time_limit_minutes or 60)
+        if (
+            session.pk and session.is_exam and session.status in (SessionStatus.RUNNING, SessionStatus.PAUSED)
+            and session.scheduled_end and session.scheduled_end != old_end
+        ):
+            session.expires_at = session.scheduled_end  # moving the end of a running exam
+        session.full_clean(exclude=["key"])
+        with transaction.atomic():
+            session.save()
+            set_roster(session, data["roster"])
+        session.sync_schedule()
         return session
 
 

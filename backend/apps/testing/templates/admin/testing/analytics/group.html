@@ -1,0 +1,27 @@
+{% extends "admin/testing/analytics/base.html" %}
+{% load question_bank %}
+
+{% block section %}
+  <a class="okt-back" href="{% url 'admin:testing_analytics' %}">{% ticon "arrow-left" 15 %}<span>Аналитика</span></a>
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">Группа {{ group.name }}</h1>
+      <p class="okt-sub">Результаты тестов группы по всем её сессиям (завершённые попытки).</p>
+    </div>
+    <a class="ok-btn-secondary okt-btn" href="{% url 'admin:testing_testsession_changelist' %}?group={{ group.pk }}">{% ticon "calendar-check" 16 %}<span>Сессии группы</span></a>
+  </header>
+
+  {% include "admin/testing/analytics/_summary.html" %}
+
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "clipboard-check" 16 %}<span>Тесты группы</span></div>
+    <div class="ok-card-body">{% include "admin/testing/analytics/_tests_table.html" %}</div>
+  </section>
+
+  {% if node %}
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "network" 16 %}<span>Предмет → Тест → Сессии</span></div>
+      <div class="ok-card-body oks-tree">{% include "admin/testing/analytics/_group_node.html" %}</div>
+    </section>
+  {% endif %}
+{% endblock %}

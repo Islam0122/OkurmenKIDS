@@ -1,7 +1,12 @@
 /* Taking a test (testing/public/take.html): one question at a time with
  * Назад / Далее, progress, required-question checks, and a countdown that
  * submits the answers itself when the time is up (timed_out=1, so required
- * questions don't block it). In the admin preview nothing is submitted. */
+ * questions don't block it). In the admin preview nothing is submitted.
+ *
+ * Live monitoring: the page reports which question is open and how many
+ * are answered (never the answers) every 15 s, on navigation and when the
+ * page is closed (sendBeacon). Answers are also kept as a draft in this
+ * browser (localStorage), so a student who reconnects doesn't lose them. */
 (function () {
   "use strict";
 
@@ -31,7 +36,9 @@
   }
 
   function show(i) {
+    var changed = index !== Math.max(0, Math.min(i, questions.length - 1));
     index = Math.max(0, Math.min(i, questions.length - 1));
+    if (changed || !show.reported) { show.reported = true; window.setTimeout(function () { if (typeof report === "function") { report(false); saveDraft(); } }, 0); }
     questions.forEach(function (q, n) { q.hidden = n !== index; });
     var last = index === questions.length - 1;
     prev.disabled = index === 0;
@@ -78,6 +85,70 @@
     if (!preview && !submitting) { event.preventDefault(); event.returnValue = ""; }
   });
 
+  // -- Progress heartbeat + local draft ----------------------------------------
+  var progressUrl = form.getAttribute("data-ex-progress-url");
+  var draftKey = form.getAttribute("data-ex-attempt") ? "ex-draft-" + form.getAttribute("data-ex-attempt") : null;
+  var csrf = form.querySelector("input[name=csrfmiddlewaretoken]");
+
+  function answeredCount() { return questions.filter(answered).length; }
+
+  function report(left) {
+    if (!progressUrl || submitting) return;
+    var data = new FormData();
+    if (csrf) data.append("csrfmiddlewaretoken", csrf.value);
+    data.append("current", String(index + 1));
+    data.append("answered", String(answeredCount()));
+    if (left) {
+      data.append("left", "1");
+      if (navigator.sendBeacon) navigator.sendBeacon(progressUrl, data);
+      return;
+    }
+    fetch(progressUrl, { method: "POST", body: data, credentials: "same-origin" }).catch(function () {});
+  }
+
+  function saveDraft() {
+    if (!draftKey) return;
+    var values = {};
+    form.querySelectorAll("input[name^=answer_], textarea[name^=answer_]").forEach(function (input) {
+      if (input.type === "radio" || input.type === "checkbox") {
+        if (input.checked) (values[input.name] = values[input.name] || []).push(input.value);
+      } else {
+        values[input.name] = input.value;
+      }
+    });
+    try { window.localStorage.setItem(draftKey, JSON.stringify({ index: index, values: values })); } catch (e) { /* storage unavailable */ }
+  }
+
+  function restoreDraft() {
+    if (!draftKey) return null;
+    var draft = null;
+    try { draft = JSON.parse(window.localStorage.getItem(draftKey) || "null"); } catch (e) { return null; }
+    if (!draft || !draft.values) return null;
+    form.querySelectorAll("input[name^=answer_], textarea[name^=answer_]").forEach(function (input) {
+      var value = draft.values[input.name];
+      if (value === undefined) return;
+      if (input.type === "radio" || input.type === "checkbox") input.checked = value.indexOf(input.value) !== -1;
+      else input.value = value;
+    });
+    return draft;
+  }
+
+  var draftTimer = null;
+  form.addEventListener("input", function () {
+    window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(function () { saveDraft(); report(false); }, 800);
+  });
+  form.addEventListener("change", function () { saveDraft(); });
+  form.addEventListener("submit", function () {
+    if (!submitting) return;  // the confirm/required checks above may still cancel
+    try { if (draftKey) window.localStorage.removeItem(draftKey); } catch (e) { /* ignore */ }
+  });
+  if (progressUrl) {
+    window.setInterval(function () { if (!document.hidden) report(false); }, 15000);
+    document.addEventListener("visibilitychange", function () { report(document.hidden); });
+    window.addEventListener("pagehide", function () { report(true); });
+  }
+
   // -- Timer ----------------------------------------------------------------
   var secondsAttr = form.getAttribute("data-ex-seconds-left");
   var timerEl = form.querySelector("[data-ex-timer]");
@@ -99,6 +170,8 @@
     tick();
   }
 
+  var serverError = form.querySelector(".ex-alert");
+  var draft = serverError ? null : restoreDraft();
   var firstError = questions.findIndex ? questions.findIndex(function (q) { return q.querySelector(".ex-error:not([hidden])"); }) : -1;
-  show(firstError > 0 ? firstError : 0);
+  show(firstError > 0 ? firstError : (draft && draft.index) || 0);
 })();

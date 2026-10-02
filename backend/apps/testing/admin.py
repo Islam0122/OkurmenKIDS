@@ -7,13 +7,16 @@ have no admin of their own — a question only exists inside a test.
 """
 from __future__ import annotations
 
+import uuid
+
 from django.contrib import admin
+from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import path
 
-from . import admin_views
+from . import admin_views, analytics_admin_views, session_admin_views
 from .admin_views import is_admin_user
-from .models import Test
+from .models import Test, TestSession
 
 
 @admin.register(Test)
@@ -56,11 +59,6 @@ class TestAdmin(admin.ModelAdmin):
             path(test + "stats/", view(admin_views.test_stats_view), name="testing_test_stats"),
             path(test + "preview/", view(admin_views.test_preview_view), name="testing_test_preview"),
             path(test + "status/<str:action>/", view(admin_views.test_status_action_view), name="testing_test_status"),
-            path(
-                test + "sessions/<uuid:session_id>/<str:action>/",
-                view(admin_views.session_action_view),
-                name="testing_session_action",
-            ),
             path(test + "questions/add/", view(admin_views.question_editor_view), name="testing_question_add"),
             path(test + "questions/reorder/", view(admin_views.questions_reorder_view), name="testing_questions_reorder"),
             path(question, view(admin_views.question_editor_view), name="testing_question_change"),
@@ -69,17 +67,81 @@ class TestAdmin(admin.ModelAdmin):
         return urls + super().get_urls()
 
 
-# /admin/tests/ — the section's short address.
+class AdminRoleOnly:
+    """ADMIN role only (not every staff account) — same rule as surveys."""
+
+    def has_module_permission(self, request):
+        return is_admin_user(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return is_admin_user(request.user)
+
+    def has_add_permission(self, request):
+        return is_admin_user(request.user)
+
+    def has_change_permission(self, request, obj=None):
+        return is_admin_user(request.user)
+
+    def has_delete_permission(self, request, obj=None):
+        return is_admin_user(request.user)
+
+
+@admin.register(TestSession)
+class TestSessionAdmin(AdminRoleOnly, admin.ModelAdmin):
+    """«Сессии» — its own section, separate from «Тесты». Its list, add and
+    change pages are the section's pages (session_admin_views.py)."""
+
+    search_fields = ("title", "key")
+
+    def changelist_view(self, request, extra_context=None):
+        return session_admin_views.sessions_list_view(request)
+
+    def add_view(self, request, form_url="", extra_context=None):
+        return session_admin_views.session_create_view(request)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        try:
+            uuid.UUID(str(object_id))
+        except ValueError:
+            raise Http404("Сессия не найдена.")
+        return session_admin_views.session_overview_view(request, object_id)
+
+    def get_urls(self):
+        view = self.admin_site.admin_view
+        session = "<uuid:session_id>/"
+        urls = [
+            path(session + "participants/", view(session_admin_views.session_participants_view), name="testing_session_participants"),
+            path(session + "questions/", view(analytics_admin_views.session_questions_view), name="testing_session_questions"),
+            path(session + "analytics/", view(analytics_admin_views.session_analytics_view), name="testing_session_analytics"),
+            path(session + "analytics/export.<str:fmt>", view(analytics_admin_views.session_export_view), name="testing_session_export"),
+            path(session + "results/", view(analytics_admin_views.session_results_view), name="testing_session_results"),
+            path("attempts/<uuid:attempt_id>/", view(analytics_admin_views.attempt_detail_view), name="testing_attempt_detail"),
+            path("analytics/", view(analytics_admin_views.analytics_tree_view), name="testing_analytics"),
+            path("analytics/groups/<int:group_id>/", view(analytics_admin_views.group_analytics_view), name="testing_analytics_group"),
+            path("analytics/subjects/<int:subject_id>/", view(analytics_admin_views.subject_analytics_view), name="testing_analytics_subject"),
+            path("analytics/tests/<uuid:test_id>/", view(analytics_admin_views.test_analytics_view), name="testing_analytics_test"),
+            path(session + "activity/", view(session_admin_views.session_activity_view), name="testing_session_activity"),
+            path(session + "settings/", view(session_admin_views.session_settings_view), name="testing_session_settings"),
+            path(session + "action/<str:action>/", view(session_admin_views.session_action_view), name="testing_session_action"),
+            path("group-students/<int:group_id>/", view(session_admin_views.group_students_view), name="testing_session_group_students"),
+        ]
+        return urls + super().get_urls()
+
+
+# /admin/tests/ and /admin/sessions/ — the sections' short addresses.
 _original_get_urls = admin.site.get_urls
 
 
 def _get_urls_with_tests_shortcut():
-    shortcut = path(
-        "tests/",
-        admin.site.admin_view(lambda request: redirect("admin:testing_test_changelist")),
-        name="testing_tests",
-    )
-    return [shortcut, *_original_get_urls()]
+    shortcuts = [
+        path("tests/", admin.site.admin_view(lambda request: redirect("admin:testing_test_changelist")), name="testing_tests"),
+        path(
+            "sessions/",
+            admin.site.admin_view(lambda request: redirect("admin:testing_testsession_changelist")),
+            name="testing_sessions",
+        ),
+    ]
+    return [*shortcuts, *_original_get_urls()]
 
 
 admin.site.get_urls = _get_urls_with_tests_shortcut

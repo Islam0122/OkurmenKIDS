@@ -14,13 +14,11 @@ answer for someone else. All rules live in services/attempts.py.
 from __future__ import annotations
 
 from django.core.cache import cache
-from django.http import Http404
+from django.http import Http404, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
-
-from apps.academy.models import Student
 
 from .models import AttemptStatus, QuestionType, StudentAttempt
 from .services.attempts import (
@@ -35,6 +33,7 @@ from .services.attempts import (
     submit,
 )
 from .services.grading import attempt_score
+from .services.participants import attempt_progress, roster_students
 
 _ATTEMPTS_SESSION_KEY = "testing_attempts"
 
@@ -97,20 +96,18 @@ def join_view(request):
             context["error"] = error.messages[0]
             return render(request, "testing/public/join.html", context)
         context["session"] = session
-        context["students"] = (
-            Student.objects.filter(group=session.group, status=Student.Status.ACTIVE).order_by("first_name", "last_name")
-            if session.group_id else None
-        )
+        roster = roster_students(session)
+        has_roster = session.group_id is not None or session.participants.exists()
+        context["students"] = roster if has_roster else None
 
         if request.method == "POST" and "start" in request.POST:
             student = None
             name = request.POST.get("student_name", "")
-            if session.group_id:
-                student = Student.objects.filter(
-                    pk=request.POST.get("student") or 0, group=session.group
-                ).first() if (request.POST.get("student") or "").isdigit() else None
+            if has_roster:
+                raw = request.POST.get("student") or ""
+                student = roster.filter(pk=int(raw)).first() if raw.isdigit() else None
                 if student is None:
-                    context["error"] = "Выберите себя из списка группы."
+                    context["error"] = "Выберите себя из списка."
                     return render(request, "testing/public/join.html", context)
             try:
                 attempt = join(session, student_name=name, student=student)
@@ -187,3 +184,25 @@ def result_view(request, attempt_id):
         "show_correct": test.show_correct_answers,
         "can_retry": test.allow_retry and attempt.session.effective_status == "running",
     })
+
+
+@csrf_protect
+def progress_view(request, attempt_id):
+    """Heartbeat from the take page: which question is open and how many are
+    answered (never the answers themselves); ``left=1`` when the page is
+    closed (sent with navigator.sendBeacon, CSRF token in the form data)."""
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    attempt = _own_attempt(request, attempt_id)
+
+    def number(name):
+        raw = request.POST.get(name, "")
+        return int(raw) if raw.isdigit() else None
+
+    attempt_progress(
+        attempt,
+        current=number("current"),
+        answered=number("answered"),
+        left=request.POST.get("left") == "1",
+    )
+    return JsonResponse({"ok": True, "status": attempt.status})

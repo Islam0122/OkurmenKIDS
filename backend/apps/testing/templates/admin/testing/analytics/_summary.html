@@ -1,0 +1,9 @@
+{% load question_bank %}
+{# total: services.analytics.Summary (finished attempts). #}
+<div class="okt-kpis">
+  <div class="okt-kpi"><span class="okt-kpi__label">Попыток завершено</span><span class="okt-kpi__value">{{ total.attempts }}</span><span class="okt-kpi__hint">студентов: {{ total.students }}</span></div>
+  <div class="okt-kpi"><span class="okt-kpi__label">Средний балл</span><span class="okt-kpi__value">{{ total.average|percent:1 }}</span></div>
+  <div class="okt-kpi"><span class="okt-kpi__label">Макс. / мин.</span><span class="okt-kpi__value">{{ total.best|percent }} <span class="okt-muted">/</span> {{ total.worst|percent }}</span></div>
+  <div class="okt-kpi"><span class="okt-kpi__label">Процент прохождения</span><span class="okt-kpi__value">{{ total.pass_rate|percent:1 }}</span><span class="okt-kpi__hint">прошли: {{ total.passed }}</span></div>
+  <div class="okt-kpi"><span class="okt-kpi__label">Среднее время</span><span class="okt-kpi__value">{{ total.average_seconds|duration_label }}</span></div>
+</div>

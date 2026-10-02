@@ -1,0 +1,155 @@
+{% extends "admin/testing/sessions/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  <dl class="oks-chain" aria-label="Сессия">
+    <div><dt>Группа</dt><dd>{% if session.group_id %}<a href="{% url 'admin:testing_analytics_group' session.group_id %}">{{ session.group.name }}</a>{% else %}—{% endif %}</dd></div>
+    <div><dt>Предмет</dt><dd>{% if session.test.subject_id %}<a href="{% url 'admin:testing_analytics_subject' session.test.subject_id %}{% if session.group_id %}?group={{ session.group_id }}{% endif %}">{{ session.test.subject.name }}</a>{% else %}—{% endif %}</dd></div>
+    <div><dt>Тест</dt><dd><a href="{% url 'admin:testing_analytics_test' session.test_id %}">{{ session.test.title }}</a></dd></div>
+    <div><dt>Тренер</dt><dd>{{ session.teacher|default:"—" }}</dd></div>
+    <div><dt>Тип</dt><dd>{{ session.get_session_type_display }}</dd></div>
+    <div><dt>Статус</dt><dd>{{ phase|phase_badge }}</dd></div>
+  </dl>
+
+  <div class="okt-kpis">
+    <div class="okt-kpi"><span class="okt-kpi__label">Всего студентов</span><span class="okt-kpi__value">{{ a.total_students }}</span><span class="okt-kpi__hint">завершили: {{ a.finished }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Прошли</span><span class="okt-kpi__value okt-pass">{{ a.passed }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Не прошли</span><span class="okt-kpi__value{% if a.failed %} oks-fail{% endif %}">{{ a.failed }}</span>{% if a.under_review %}<span class="okt-kpi__hint">на проверке: {{ a.under_review }}</span>{% endif %}</div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Средний балл</span><span class="okt-kpi__value">{{ a.average|percent:1 }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Максимальный</span><span class="okt-kpi__value">{{ a.best|percent }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Минимальный</span><span class="okt-kpi__value">{{ a.worst|percent }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Процент прохождения</span><span class="okt-kpi__value">{{ a.pass_rate|percent:1 }}</span><span class="okt-kpi__hint">проходной балл: {{ session.test.passing_score }}%</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Среднее время</span><span class="okt-kpi__value">{{ a.average_seconds|duration_label }}</span></div>
+  </div>
+
+  <div class="oks-two">
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "target" 16 %}<span>Процент прохождения</span></div>
+      <div class="ok-card-body">
+        <div class="oks-stack" role="img" aria-label="Успешно {{ a.passed }}, неуспешно {{ a.failed }}, на проверке {{ a.under_review }}, не завершили {{ a.not_finished }}">
+          {% for key, label, n, share in pass_bar %}{% if n %}<span class="oks-stack__part oks-stack__part--{{ key }}" style="width: {{ share|stringformat:'s' }}%"></span>{% endif %}{% endfor %}
+        </div>
+        <ul class="oks-legend">
+          {% for key, label, n, share in pass_bar %}
+            {% if key != "review" or n %}
+              <li><span class="oks-legend__dot oks-stack__part--{{ key }}"></span><span class="oks-legend__label">{{ label }}</span><strong>{{ n }}</strong><span class="okt-muted">{{ share }}%</span></li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+        <p class="ok-help-text">Успешно — балл не ниже проходного ({{ session.test.passing_score }}%, из настроек теста). Последняя попытка каждого студента.</p>
+      </div>
+    </section>
+
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "chart-column" 16 %}<span>Распределение баллов</span></div>
+      <div class="ok-card-body">
+        <div class="oks-chart" role="img" aria-label="Распределение баллов{% for c in a.distribution %}, {{ c.label }}%: {{ c.count }}{% endfor %}">
+          {% for c in a.distribution %}
+            <div class="oks-chart__col">
+              <span class="oks-chart__count">{{ c.count }}</span>
+              <span class="oks-chart__bar{% if forloop.counter <= 2 %} is-low{% endif %}" style="height: {{ c.height }}%"></span>
+              <span class="oks-chart__label">{{ c.label }}</span>
+            </div>
+          {% endfor %}
+        </div>
+        <p class="ok-help-text">Сколько студентов (завершили) набрали балл в каждом диапазоне, %.</p>
+      </div>
+    </section>
+  </div>
+
+  <section class="ok-card okt-section" id="students">
+    <div class="ok-card-header">
+      {% ticon "users" 16 %}<span>Результаты студентов</span>
+      <span class="ok-card-header-action oks-exports">
+        <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_session_export' session.pk 'xlsx' %}{{ export_qs }}">{% ticon "table-2" 14 %}<span>Excel</span></a>
+        <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_session_export' session.pk 'csv' %}{{ export_qs }}">{% ticon "download" 14 %}<span>CSV</span></a>
+        <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_session_export' session.pk 'pdf' %}{{ export_qs }}">{% ticon "file-text" 14 %}<span>PDF</span></a>
+        <button type="button" class="ok-btn-secondary ok-btn-sm okt-btn" onclick="window.print()">{% ticon "printer" 14 %}<span>Печать</span></button>
+      </span>
+    </div>
+    <div class="ok-card-body">
+      <form class="oks-row-filters" method="get" action="#students">
+        <label class="ok-visually-hidden" for="oks-status">Студенты</label>
+        <select id="oks-status" name="status" class="ok-input">
+          <option value="">Все студенты</option>
+          {% for value, label in status_filters %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <label class="ok-visually-hidden" for="oks-result">Результат</label>
+        <select id="oks-result" name="result" class="ok-input">
+          <option value="">Все результаты</option>
+          {% for value, label in result_filters %}<option value="{{ value }}"{% if filters.result == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <div class="okt-search">
+          <label class="ok-visually-hidden" for="oks-student-q">Поиск студента</label>
+          <span class="okt-search__icon">{% ticon "search" 16 %}</span>
+          <input id="oks-student-q" class="ok-input" type="search" name="q" value="{{ filters.query }}" placeholder="Поиск студента…">
+        </div>
+        <button type="submit" class="ok-btn-secondary okt-btn">Показать</button>
+        {% if has_filters %}<a class="okt-link-reset" href="?#students">Сбросить</a>{% endif %}
+      </form>
+
+      {% if rows %}
+        <div class="okt-qtable-wrap">
+          <table class="okt-qtable">
+            <thead>
+              <tr>
+                <th>№</th><th>Студент</th><th>Статус</th><th class="okt-qtable__center">Балл</th>
+                <th class="okt-qtable__center">Правильных</th><th class="okt-qtable__center">Неправильных</th>
+                <th>Время</th><th>Начало</th><th>Завершение</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in rows %}
+                <tr>
+                  <td class="okt-qtable__num">{{ r.number }}</td>
+                  <td class="okt-qtable__text">
+                    {% if r.attempt %}<a href="{% url 'admin:testing_attempt_detail' r.attempt.pk %}">{{ r.student_name }}</a>{% else %}{{ r.student_name }}{% endif %}
+                    {% if r.attempts_count > 1 %}<div class="okt-qtable__meta">{{ r.attempts_count|attempt_count_label }}, показана последняя</div>{% endif %}
+                  </td>
+                  <td>{{ r.status_label }} {{ r.passed|pass_badge }}{% if r.pending %}<div class="okt-qtable__meta">на проверке: {{ r.pending }}</div>{% endif %}</td>
+                  <td class="okt-qtable__center"><strong class="{{ r.percent|score_class:session.test.passing_score }}">{{ r.percent|percent }}</strong></td>
+                  <td class="okt-qtable__center">{{ r.correct|default_if_none:"—" }}{% if r.total and r.correct is not None %}<span class="okt-muted"> / {{ r.total }}</span>{% endif %}</td>
+                  <td class="okt-qtable__center">{{ r.wrong|default_if_none:"—" }}</td>
+                  <td class="okt-nowrap">{{ r.duration_seconds|duration_label }}</td>
+                  <td class="okt-nowrap">{{ r.started_at|date:"d.m H:i"|default:"—" }}</td>
+                  <td class="okt-nowrap">{{ r.finished_at|date:"d.m H:i"|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="ok-help-text">Показано: {{ rows|length }} из {{ a.total_students }}. Неправильных — включая вопросы без ответа; ответы на проверке не считаются. Экспорт учитывает фильтры.</p>
+      {% elif has_filters %}
+        <p class="okt-muted">Никто не подходит под фильтры.</p>
+      {% else %}
+        <p class="okt-muted">Студентов и попыток пока нет.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% include "admin/testing/sessions/_success_blocks.html" with low_success=a.low_success high_success=a.high_success %}
+  <p class="oks-more"><a href="{% url 'admin:testing_session_questions' session.pk %}">Аналитика всех вопросов {% ticon "arrow-right" 14 %}</a></p>
+
+  {% include "admin/testing/sessions/_grading_kpis.html" with grading=a.grading %}
+
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "network" 16 %}<span>В разрезе группы и предмета</span></div>
+    <div class="ok-card-body">
+      {% if subject_summary %}
+        <p class="okt-sub okt-sub--tight">
+          {{ session.test.subject.name }}{% if session.group_id %} · группа {{ session.group.name }}{% endif %}, все сессии:
+          попыток — <strong>{{ subject_summary.attempts }}</strong>,
+          средний балл — <strong>{{ subject_summary.average|percent:1 }}</strong>,
+          прохождение — <strong>{{ subject_summary.pass_rate|percent:1 }}</strong>.
+        </p>
+      {% else %}
+        <p class="okt-sub okt-sub--tight">У теста не указан предмет — сводка по предмету недоступна.</p>
+      {% endif %}
+      <div class="oks-exports">
+        {% if session.test.subject_id %}<a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_analytics_subject' session.test.subject_id %}{% if session.group_id %}?group={{ session.group_id }}{% endif %}">{% ticon "book-open" 14 %}<span>Аналитика предмета</span></a>{% endif %}
+        {% if session.group_id %}<a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_analytics_group' session.group_id %}">{% ticon "users" 14 %}<span>Аналитика группы</span></a>{% endif %}
+        <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_analytics_test' session.test_id %}">{% ticon "clipboard-check" 14 %}<span>Аналитика теста</span></a>
+      </div>
+    </div>
+  </section>
+{% endblock %}

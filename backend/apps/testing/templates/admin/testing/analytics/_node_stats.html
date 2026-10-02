@@ -1,0 +1,8 @@
+{% load question_bank %}{# node.summary → inline stats #}
+{% if node.summary and node.summary.attempts %}
+  <span class="oks-node__stats">
+    <span>попыток: <strong>{{ node.summary.attempts }}</strong></span>
+    <span>средний: <strong>{{ node.summary.average|percent:1 }}</strong></span>
+    <span>прохождение: <strong>{{ node.summary.pass_rate|percent:0 }}</strong></span>
+  </span>
+{% else %}<span class="oks-node__stats okt-muted">нет завершённых попыток</span>{% endif %}

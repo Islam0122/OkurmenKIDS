@@ -1,0 +1,37 @@
+{% extends "admin/testing/sessions/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  {% include "admin/testing/sessions/_kpis.html" %}
+
+  <div class="oks-overview">
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "info" 16 %}<span>Сессия</span></div>
+      <div class="ok-card-body">
+        <dl class="oks-facts">
+          <dt>Статус</dt><dd>{{ phase|phase_badge }}{% if session.effective_status == "paused" %} <span class="okt-muted">на паузе</span>{% endif %}</dd>
+          <dt>Тест</dt><dd><a href="{% url 'admin:testing_test_change' session.test.pk %}">{{ session.test.title }}</a> · {{ session.test.get_level_display }} · {{ test_questions|question_count_label }}</dd>
+          <dt>Группа</dt><dd>{{ session.group.name|default:"—" }}</dd>
+          <dt>Дата и время</dt><dd>{% if session.scheduled_start %}{{ session.scheduled_start|date:"d.m.Y, H:i" }}–{{ session.scheduled_end|date:"H:i" }}{% else %}не назначены (черновик){% endif %}</dd>
+          <dt>Время на прохождение</dt><dd>{% if session.effective_time_limit_minutes %}{{ session.effective_time_limit_minutes }} мин{% if session.time_limit_minutes %} <span class="okt-muted">(задано в сессии)</span>{% endif %}{% else %}без ограничения{% endif %}</dd>
+          <dt>Попытки</dt><dd>{% if session.max_attempts_per_student %}{{ session.max_attempts_per_student }}{% else %}без ограничений{% endif %}</dd>
+          <dt>Режим</dt><dd>{{ session.get_session_type_display }}</dd>
+          <dt>Проходной балл</dt><dd>{{ session.test.passing_score }}%</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "key-round" 16 %}<span>Вход для студентов</span></div>
+      <div class="ok-card-body">
+        <p class="okt-sub okt-sub--tight">Студенты открывают ссылку (или вводят ключ на странице входа) и выбирают себя из списка.</p>
+        <div class="oks-key">{{ session.key }}</div>
+        <div class="oks-link">
+          <input class="ok-input" type="text" readonly value="{{ join_url }}" id="oks-join" aria-label="Ссылка для студентов">
+          <button type="button" class="ok-btn-secondary ok-btn-sm okt-btn" data-oks-copy="oks-join">{% ticon "copy" 14 %}<span>Копировать</span></button>
+        </div>
+        {% if session.test.status != "active" %}<div class="ok-alert ok-alert-warning">Тест не опубликован — студенты не смогут войти, пока он не станет «Активен».</div>{% endif %}
+      </div>
+    </section>
+  </div>
+{% endblock %}

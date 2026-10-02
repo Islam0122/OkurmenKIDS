@@ -1,0 +1,27 @@
+{% load question_bank %}
+{# sessions: TestSession queryset annotated by analytics.with_list_stats. #}
+{% if sessions %}
+  <div class="okt-qtable-wrap">
+    <table class="okt-qtable">
+      <thead><tr><th>Сессия</th><th>Группа</th><th>Тренер</th><th>Дата</th><th>Статус</th><th class="okt-qtable__center">Студентов</th><th class="okt-qtable__center">Попыток</th><th class="okt-qtable__center">Средний балл</th><th class="okt-qtable__center">Прошли</th><th><span class="ok-visually-hidden">Действия</span></th></tr></thead>
+      <tbody>
+        {% for s in sessions %}
+          <tr>
+            <td class="okt-qtable__text"><a href="{% url 'admin:testing_testsession_change' s.pk %}">{{ s.title|default:s.test.title }}</a><div class="okt-qtable__meta">{{ s.test.title }} · {{ s.key }}</div></td>
+            <td>{{ s.group.name|default:"—" }}</td>
+            <td>{{ s.teacher|default:"—" }}</td>
+            <td class="okt-nowrap">{% firstof s.scheduled_start s.started_at s.created_at as when %}{{ when|date:"d.m.Y H:i" }}</td>
+            <td>{{ s.phase|phase_badge }}</td>
+            <td class="okt-qtable__center">{% if s.roster_total %}{{ s.roster_total }}{% else %}{{ s.attempt_students }}{% endif %}</td>
+            <td class="okt-qtable__center">{{ s.attempts_total }}</td>
+            <td class="okt-qtable__center"><strong class="{{ s.average_score|score_class:s.test.passing_score }}">{{ s.average_score|percent }}</strong></td>
+            <td class="okt-qtable__center">{% if s.finished_total %}{{ s.passed_total }} / {{ s.finished_total }}{% else %}—{% endif %}</td>
+            <td class="okt-nowrap"><a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_session_analytics' s.pk %}">{% ticon "chart-column" 14 %}<span>Аналитика</span></a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="okt-muted">Сессий нет.</p>
+{% endif %}

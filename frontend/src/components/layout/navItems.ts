@@ -7,6 +7,7 @@ import {
   FileText,
   GraduationCap,
   LayoutDashboard,
+  ListChecks,
   Megaphone,
   NotebookPen,
   School,
@@ -46,6 +47,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/lessons', label: 'Занятия', icon: BookOpen, roles: ['admin'] },
   { to: '/app/attendance', label: 'Посещаемость', icon: ClipboardCheck, roles: ['admin'] },
   { to: '/app/homework', label: 'Домашние задания', icon: NotebookPen, roles: ['admin'] },
+  // Exam sessions of the trainer's own groups, monitored live (backend-scoped).
+  { to: '/app/exams', label: 'Экзамены', icon: ListChecks },
   { to: '/app/kpi', label: 'KPI', icon: BarChart3 },
   { to: '/app/control', label: 'Контроль', icon: ShieldCheck },
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },

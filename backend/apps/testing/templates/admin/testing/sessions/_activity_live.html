@@ -1,0 +1,23 @@
+{% load question_bank %}
+{# Activity tab body — also returned alone (?fragment=1) for the live refresh. #}
+<div class="oks-activity">
+  <div class="oks-activity__big">
+    <span class="oks-activity__num">{{ counts.started }} / {{ counts.total }}</span>
+    <span>студентов начали</span>
+  </div>
+  <div class="oks-activity__row"><span class="okt-dot okt-dot--live"></span><strong>{{ counts.in_progress }}</strong>&nbsp;проходят тест{% if counts.disconnected %} <span class="okt-muted">(нет соединения: {{ counts.disconnected }})</span>{% endif %}</div>
+  <div class="oks-activity__row"><span class="okt-dot okt-dot--done"></span><strong>{{ counts.completed }}</strong>&nbsp;завершили</div>
+  <div class="oks-activity__row"><span class="okt-dot"></span><strong>{{ counts.not_started }}</strong>&nbsp;не начали</div>
+  {% if counts.expired %}<div class="oks-activity__row"><span class="okt-dot okt-dot--danger"></span><strong>{{ counts.expired }}</strong>&nbsp;время истекло</div>{% endif %}
+</div>
+
+<h3 class="okt-h2 oks-subhead">События</h3>
+{% if events %}
+  <ol class="oks-events">
+    {% for e in events %}
+      <li class="oks-events__item oks-events__item--{{ e.kind }}"><time>{{ e.at|date:"H:i:s" }}</time><span>{{ e.text }}</span></li>
+    {% endfor %}
+  </ol>
+{% else %}
+  <p class="okt-muted">Пока ничего не происходило.</p>
+{% endif %}

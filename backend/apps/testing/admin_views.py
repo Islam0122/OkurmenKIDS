@@ -30,7 +30,6 @@ from apps.users.models import User
 
 from .forms import (
     QuestionForm,
-    SessionCreateForm,
     TestCreateForm,
     TestInfoForm,
     TestSettingsForm,
@@ -42,10 +41,8 @@ from .models import (
     GradingStatus,
     Question,
     QuestionType,
-    SessionTransitionError,
     StudentAttempt,
     Test,
-    TestSession,
     TestStatus,
 )
 from .services import questions as question_service
@@ -249,49 +246,22 @@ def test_status_action_view(request, test_id, action):
 
 
 def test_publish_view(request, test_id):
+    """Publication status of the test, and the sessions it is used in.
+    Sessions themselves are created and run in the «Сессии» section."""
     _require_admin(request)
     test = get_object_or_404(Test, pk=test_id)
-    form = SessionCreateForm(request.POST or None, test=test)
-    if request.method == "POST":
-        if test.status != TestStatus.ACTIVE:
-            messages.error(request, "Сначала опубликуйте тест.")
-        elif form.is_valid():
-            try:
-                session = form.save(teacher=getattr(request.user, "teacher_profile", None))
-            except ValidationError as error:
-                form.add_error(None, error)
-            else:
-                messages.success(request, f"Сессия создана. Ключ для студентов: {session.key}")
-                return redirect(_test_url(test, "publish"))
     sessions = list(
         test.sessions.select_related("group")
-        .annotate(attempts_total=Count("attempts"))
-        .order_by("-created_at")[:30]
+        .annotate(attempts_total=Count("attempts", distinct=True), participants_total=Count("participants", distinct=True))
+        .order_by("-scheduled_start", "-created_at")[:30]
     )
     context = _workspace_context(request, test, "publish")
     context.update({
-        "form": form,
         "sessions": sessions,
-        "join_url": request.build_absolute_uri(reverse("testing_public_join")),
         "availability_error": test.availability_error(),
+        "sessions_url": f"{reverse('admin:testing_testsession_changelist')}?test={test.pk}",
     })
     return render(request, "admin/testing/tests/publish.html", context)
-
-
-def session_action_view(request, test_id, session_id, action):
-    _require_admin(request)
-    if (response := _require_post(request)) is not None:
-        return response
-    session = get_object_or_404(TestSession, pk=session_id, test_id=test_id)
-    if action not in ("start", "pause", "resume", "finish"):
-        raise PermissionDenied
-    try:
-        getattr(session, action)()
-    except SessionTransitionError as error:
-        messages.error(request, " ".join(error.messages))
-    else:
-        messages.success(request, f"Сессия {session.key}: «{session.get_status_display()}».")
-    return redirect(_test_url(session.test, "publish"))
 
 
 def test_stats_view(request, test_id):
