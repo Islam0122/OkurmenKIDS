@@ -159,6 +159,12 @@ def student_count_label(n) -> str:
 
 
 @register.filter
+def test_count_label(n) -> str:
+    n = int(n or 0)
+    return f"{n} {plural_ru(n, 'тест', 'теста', 'тестов')}"
+
+
+@register.filter
 def question_count_label(n) -> str:
     """`155` → «155 вопросов», `1` → «1 вопрос», `0` → «0 вопросов»."""
     n = int(n or 0)

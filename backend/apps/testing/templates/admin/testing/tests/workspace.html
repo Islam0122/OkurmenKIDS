@@ -9,7 +9,7 @@
 {% endblock %}
 
 {% block section %}
-  <a class="okt-back" href="{% url 'admin:testing_test_changelist' %}">{% ticon "arrow-left" 15 %}<span>Тесты</span></a>
+  <a class="okt-back" href="{% url 'admin:testing_test_changelist' %}">{% ticon "arrow-left" 15 %}<span>Назад к тестам</span></a>
 
   <header class="okt-test-head">
     <div class="okt-test-head__main">
@@ -38,6 +38,11 @@
       <details class="ok-menu">
         <summary class="ok-btn-secondary ok-btn-sm okt-btn ok-menu-trigger" aria-label="Другие действия">{% ticon "ellipsis" 16 %}</summary>
         <div class="ok-menu-list ok-menu-list-right">
+          <a href="{% url 'admin:testing_questions_import' test.pk %}" data-okt-dialog="okt-questions-import">{% ticon "download" 15 %} Импорт вопросов</a>
+          <a href="{% url 'admin:testing_questions_export' test.pk %}" data-okt-dialog="okt-questions-export">{% ticon "upload" 15 %} Экспорт вопросов</a>
+          <form method="post" action="{% url 'admin:testing_test_duplicate' test.pk %}">{% csrf_token %}
+            <button type="submit">{% ticon "copy" 15 %} Дублировать</button>
+          </form>
           {% include "admin/testing/tests/_status_actions.html" with next=request.get_full_path %}
           <a class="ok-menu-danger" href="{% url 'admin:testing_test_delete' test.pk %}">{% ticon "trash-2" 15 %} Удалить тест</a>
         </div>
@@ -56,4 +61,14 @@
   <div class="okt-workspace">
     {% block workspace %}{% endblock %}
   </div>
+
+  {# Questions import / export dialogs (menu above, «Вопросы» toolbar); without JS the links open the same forms as pages. #}
+  <dialog id="okt-questions-import" class="ok-modal" aria-label="Импорт вопросов">
+    {% url 'admin:testing_questions_import' test.pk as action %}{% url 'admin:testing_questions_import_template' test.pk as template_url %}
+    {% include "admin/testing/tests/_import_form.html" with kind="questions" in_dialog=True test_title=test.title %}
+  </dialog>
+  <dialog id="okt-questions-export" class="ok-modal" aria-label="Экспорт вопросов">
+    {% url 'admin:testing_questions_export' test.pk as action %}
+    {% include "admin/testing/tests/_export_form.html" with kind="questions" in_dialog=True test_title=test.title formats=export_formats %}
+  </dialog>
 {% endblock %}

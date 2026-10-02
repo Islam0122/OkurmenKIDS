@@ -32,6 +32,9 @@
         <h2 class="okt-h2">Вопросы</h2>
         <p class="okt-sub">{{ question_total|question_count_label }} · {{ points_total|points_label }}</p>
       </div>
+      <div class="okt-questions__tools">
+      <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_questions_import' test.pk %}" data-okt-dialog="okt-questions-import">{% ticon "download" 15 %}<span>Импорт вопросов</span></a>
+      <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_questions_export' test.pk %}" data-okt-dialog="okt-questions-export">{% ticon "upload" 15 %}<span>Экспорт вопросов</span></a>
       <div class="okt-add-question">
         <a class="ok-btn-primary ok-btn-sm okt-btn" href="{% url 'admin:testing_question_add' test.pk %}">{% ticon "plus" 15 %}<span>Добавить вопрос</span></a>
         <details class="ok-menu">
@@ -42,6 +45,7 @@
             {% endfor %}
           </div>
         </details>
+      </div>
       </div>
     </div>
 
@@ -69,11 +73,22 @@
                 <td class="okt-qtable__num" data-okt-num>{{ forloop.counter }}</td>
                 <td><span class="okt-type okt-type--{{ q.question_type }}">{% if q.question_type == "text" %}{% ticon "type" 13 %}{% elif q.question_type == "single_choice" %}{% ticon "circle-dot" 13 %}{% elif q.question_type == "multiple_choice" %}{% ticon "list-checks" 13 %}{% else %}{% ticon "code" 13 %}{% endif %}{{ q.type_label }}</span></td>
                 <td class="okt-qtable__text">
+                  <div class="okt-qrow">
+                  {% with img=q.image_url|safe_image_url %}{% if img %}
+                    <a class="okt-qthumb" href="{{ edit_url }}" draggable="false" tabindex="-1" aria-hidden="true" data-okt-img-wrap>
+                      <img src="{{ img }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-okt-img>
+                      <span class="okt-cover__placeholder" title="Изображение не загрузилось">{% ticon "image-off" 16 %}</span>
+                    </a>
+                  {% endif %}{% endwith %}
+                  <div class="okt-qrow__main">
                   <a href="{{ edit_url }}" draggable="false">{{ q.text|truncatechars:160 }}</a>
                   <div class="okt-qtable__meta">
                     {% if q.question_type == "single_choice" or q.question_type == "multiple_choice" %}{{ q.options_total }} вар.{% elif q.question_type == "code" %}{{ q.get_language_display }}{% if q.code_tests %} · тестов: {{ q.code_tests|length }}{% endif %}{% elif q.correct_answers %}ответов: {{ q.correct_answers|length }}{% else %}проверка вручную{% endif %}
                     {% if q.image_url %} · {% ticon "image" 12 %} изображение{% endif %}
                     {% if q.hint %} · {% ticon "lightbulb" 12 %} подсказка{% endif %}
+                    {% if q.metadata.explanation %} · {% ticon "info" 12 %} пояснение{% endif %}
+                  </div>
+                  </div>
                   </div>
                 </td>
                 <td class="okt-qtable__center okt-qtable__points" data-label="Баллы">{{ q.points }}</td>

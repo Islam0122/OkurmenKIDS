@@ -26,7 +26,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
-from apps.users.models import User
+from apps.users.models import Subject, User
 
 from .forms import (
     QuestionForm,
@@ -43,9 +43,11 @@ from .models import (
     QuestionType,
     StudentAttempt,
     Test,
+    TestLevel,
     TestStatus,
 )
 from .services import questions as question_service
+from .services import import_export
 from .services.attempts import ordered_questions
 from .services.question_rules import CHOICE_TYPES
 
@@ -108,45 +110,68 @@ def _attempts_of(test):
 # List / create
 # ---------------------------------------------------------------------------
 
+def filter_tests(params, tests=None) -> tuple:
+    """The list's filters (q, status, subject, level) applied to ``tests``.
+    Shared by the list and «Экспорт → текущий фильтр»."""
+    tests = Test.objects.all() if tests is None else tests
+    filters = {
+        "q": (params.get("q") or "").strip(),
+        "status": params.get("status") or "",
+        "subject": params.get("subject") or "",
+        "level": params.get("level") or "",
+    }
+    if filters["status"] in TestStatus.values:
+        tests = tests.filter(status=filters["status"])
+    else:
+        filters["status"] = ""
+    if filters["level"] in TestLevel.values:
+        tests = tests.filter(level=filters["level"])
+    else:
+        filters["level"] = ""
+    if filters["subject"] == "none":
+        tests = tests.filter(subject__isnull=True)
+    elif filters["subject"].isdigit():
+        tests = tests.filter(subject_id=int(filters["subject"]))
+    else:
+        filters["subject"] = ""
+    if filters["q"]:
+        q = filters["q"]
+        tests = tests.filter(Q(title__icontains=q) | Q(description__icontains=q) | Q(subject__name__icontains=q))
+    return tests, filters
+
+
 def tests_list_view(request):
     _require_admin(request)
-    query = (request.GET.get("q") or "").strip()
-    status = request.GET.get("status") or "all"
-    tests = (
+    tests, filters = filter_tests(
+        request.GET,
         Test.objects.select_related("subject")
         .annotate(
             questions_total=Count("questions", distinct=True),
             attempts_total=Count("sessions__attempts", distinct=True),
         )
-        .order_by("-updated_at")
+        .order_by("-updated_at"),
     )
     counts = dict(Test.objects.values_list("status").annotate(n=Count("pk")))
-    if status in TestStatus.values:
-        tests = tests.filter(status=status)
-    else:
-        status = "all"
-    if query:
-        tests = tests.filter(
-            Q(title__icontains=query) | Q(description__icontains=query) | Q(subject__name__icontains=query)
-        )
     page = Paginator(tests, 24).get_page(request.GET.get("page"))
-    filters = [
-        {
-            "key": key,
-            "label": label,
-            "count": sum(counts.values()) if key == "all" else counts.get(key, 0),
-            "active": key == status,
-        }
-        for key, label in STATUS_FILTERS
-    ]
+    query = request.GET.copy()
+    query.pop("page", None)
     return render(request, "admin/testing/tests/list.html", {
         "title": "Тесты",
         "page": page,
         "tests": page.object_list,
-        "query": query,
-        "status": status,
         "filters": filters,
+        "has_filters": any(filters.values()),
+        "filter_qs": query.urlencode(),
+        "status_options": [
+            (key, label, counts.get(key, 0)) for key, label in STATUS_FILTERS if key != "all"
+        ],
+        "level_options": TestLevel.choices,
+        "subjects": Subject.objects.filter(pk__in=Test.objects.values("subject")).order_by("name"),
+        "has_unassigned": Test.objects.filter(subject__isnull=True).exists(),
         "total": sum(counts.values()),
+        "found": page.paginator.count,
+        "export_formats": import_export.FORMATS,
+        "export_scopes": import_export.EXPORT_SCOPES,
     })
 
 
@@ -181,6 +206,7 @@ def _workspace_context(request, test: Test, tab: str) -> dict:
         "question_total": test.questions.count(),
         "attempt_total": _attempts_of(test).count(),
         "preview_url": reverse("admin:testing_test_preview", args=[test.pk]),
+        "export_formats": import_export.FORMATS,
     }
 
 

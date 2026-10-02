@@ -1,0 +1,45 @@
+{% load question_bank %}
+{% comment %} Export form (GET → file) — inside a <dialog> (in_dialog) or on the export page.
+   kind: "tests" (format + scope; selected cards post their ids via form="okt-export-form",
+   the current filters ride along as hidden fields) | "questions" (format only).
+   form_id: the list page's tests export form is referenced by the card checkboxes.{% endcomment %}
+<form class="ok-modal-form okt-io" method="get" action="{{ action }}"{% if form_id %} id="{{ form_id }}"{% endif %} data-okt-io-form>
+  <div class="ok-modal-header">
+    <span>{% ticon "upload" 16 %} {% if kind == "questions" %}Экспорт вопросов{% else %}Экспорт тестов{% endif %}</span>
+    {% if in_dialog %}<button type="button" class="ok-modal-close" data-okt-close aria-label="Закрыть">{% ticon "x" 18 %}</button>{% endif %}
+  </div>
+  <div class="ok-modal-body okt-io__body">
+    {% if kind == "questions" %}
+      <p class="okt-io__target">Тест: <strong data-okt-io-test>{{ test_title }}</strong></p>
+    {% endif %}
+    <fieldset class="okt-choice">
+      <legend>Формат</legend>
+      {% for value, label in formats %}
+        <label class="okt-choice__item"><input type="radio" name="format" value="{{ value }}"{% if forloop.first %} checked{% endif %}><span>{{ label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    {% if kind == "tests" %}
+      <fieldset class="okt-choice">
+        <legend>Что экспортировать</legend>
+        {% for value, label in scopes %}
+          <label class="okt-choice__item">
+            <input type="radio" name="scope" value="{{ value }}"{% if forloop.first %} checked{% endif %}{% if value == "selected" %} data-okt-scope-selected{% endif %}{% if value == "filtered" and not has_filters %} disabled{% endif %}>
+            <span>{{ label }}{% if value == "selected" %} <span class="okt-muted" data-okt-selected-count></span>{% elif value == "filtered" %}{% if has_filters %} <span class="okt-muted">({{ found }})</span>{% else %} <span class="okt-muted">— фильтр не задан</span>{% endif %}{% elif value == "all" and total %} <span class="okt-muted">({{ total }})</span>{% endif %}</span>
+          </label>
+        {% endfor %}
+      </fieldset>
+      {% for key, value in filters.items %}{% if value %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+      <p class="okt-io__note okt-muted">Чтобы выбрать тесты, отметьте их галочкой на карточках.</p>
+    {% else %}
+      <p class="okt-io__note okt-muted">Все вопросы теста с вариантами, правильными ответами и баллами. Файл можно отредактировать и загрузить обратно через «Импорт вопросов».</p>
+    {% endif %}
+  </div>
+  <div class="ok-modal-footer">
+    {% if in_dialog %}
+      <button type="button" class="ok-btn-secondary ok-btn-sm" data-okt-close>Отмена</button>
+    {% else %}
+      <a class="ok-btn-secondary ok-btn-sm" href="{{ cancel_url }}">Отмена</a>
+    {% endif %}
+    <button type="submit" class="ok-btn-primary ok-btn-sm okt-btn">{% ticon "upload" 15 %}<span>Экспортировать</span></button>
+  </div>
+</form>

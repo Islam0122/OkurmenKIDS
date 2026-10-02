@@ -220,8 +220,10 @@ def _serialize_question(question: Any) -> Dict[str, Any]:
     if getattr(question, "language", None):
         item["language"] = question.language
 
-    if getattr(question, "metadata", None):
-        item["metadata"] = question.metadata
+    # metadata["explanation"] (from the questions import) may give the answer away.
+    metadata = {k: v for k, v in (getattr(question, "metadata", None) or {}).items() if k != "explanation"}
+    if metadata:
+        item["metadata"] = metadata
 
     if question.question_type in ("single_choice", "multiple_choice"):
         options_qs = getattr(question, "cached_options", None)

@@ -7,7 +7,7 @@ import uuid
 from django.db import transaction
 from django.db.models import F, Max
 
-from ..models import Question, QuestionOption, QuestionType
+from ..models import Question, QuestionOption, QuestionType, Test, TestStatus
 from .question_rules import CHOICE_TYPES, QuestionData, validate
 
 # Fields copied as-is from the editor/API onto the Question row.
@@ -85,6 +85,36 @@ def duplicate_question(question: Question) -> Question:
         QuestionOption(question=copy, text=o.text, image_url=o.image_url, is_correct=o.is_correct, order=o.order)
         for o in options
     )
+    return copy
+
+
+@transaction.atomic
+def duplicate_test(test: Test) -> Test:
+    """Copy of a test with all its questions and options, as a draft. The
+    title gets a «(копия)» suffix (titles are unique); sessions and attempts
+    are not copied."""
+    title = f"{test.title} (копия)"
+    number = 2
+    while Test.objects.filter(title__iexact=title).exists():
+        title = f"{test.title} (копия {number})"
+        number += 1
+    questions = list(test.questions.prefetch_related("options").order_by("order", "created_at"))
+    copy = Test.objects.get(pk=test.pk)
+    copy.id = uuid.uuid4()
+    copy._state.adding = True
+    copy.title = title
+    copy.status = TestStatus.DRAFT
+    copy.save()
+    for question in questions:
+        options = list(question.options.all())
+        question.id = uuid.uuid4()
+        question._state.adding = True
+        question.test = copy
+        question.save()
+        QuestionOption.objects.bulk_create(
+            QuestionOption(question=question, text=o.text, image_url=o.image_url, is_correct=o.is_correct, order=o.order)
+            for o in options
+        )
     return copy
 
 

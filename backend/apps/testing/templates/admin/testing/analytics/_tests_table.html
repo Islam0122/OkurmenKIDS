@@ -1,6 +1,6 @@
 {% load question_bank %}
-{# test_rows: [{test, summary: TestSummary|None}] — summary is None when the test
-   has no finished attempt in these sessions; group: optional Group. #}
+{% comment %} test_rows: [{test, summary: TestSummary|None}] — summary is None when the test
+   has no finished attempt in these sessions; group: optional Group.{% endcomment %}
 {% if test_rows %}
   <div class="okt-qtable-wrap">
     <table class="okt-qtable">

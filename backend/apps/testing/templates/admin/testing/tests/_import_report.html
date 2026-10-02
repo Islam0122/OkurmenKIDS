@@ -1,0 +1,37 @@
+{% load question_bank %}
+{# Result of an import: report = services.import_export.ImportReport; kind: tests | questions. #}
+<section class="ok-card okt-section okt-report" aria-labelledby="okt-report-title">
+  <div class="ok-card-header">{% ticon "clipboard-check" 16 %}<span id="okt-report-title">Результат импорта · {{ file_name }}</span></div>
+  <div class="ok-card-body">
+    <div class="okt-report__kpis">
+      <div class="okt-report__kpi is-ok"><span>{% if kind == "questions" %}Создано вопросов{% else %}Создано тестов{% endif %}</span><strong>{{ report.created }}</strong></div>
+      <div class="okt-report__kpi"><span>Обновлено</span><strong>{{ report.updated }}</strong></div>
+      <div class="okt-report__kpi"><span>Пропущено (уже есть)</span><strong>{{ report.skipped|length }}</strong></div>
+      <div class="okt-report__kpi{% if report.errors %} is-bad{% endif %}"><span>Строк с ошибками</span><strong>{{ report.error_rows }}</strong></div>
+    </div>
+    {% if not report.total %}
+      <p class="okt-muted">В файле нет строк с данными.</p>
+    {% endif %}
+    {% if report.errors %}
+      <h3 class="okt-report__title">Ошибки — эти строки не импортированы</h3>
+      <div class="okt-qtable-wrap">
+        <table class="okt-qtable okt-report__table">
+          <thead><tr><th class="okt-qtable__num">Строка</th><th>Что не так</th></tr></thead>
+          <tbody>
+            {% for row in report.errors %}
+              <tr><td class="okt-qtable__num">{{ row.row }}</td><td class="okt-qtable__text"><ul>{% for e in row.errors %}<li>{{ e }}</li>{% endfor %}</ul></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="okt-io__note okt-muted">Исправьте эти строки и загрузите файл ещё раз: уже импортированные строки повторно не создадутся.</p>
+    {% endif %}
+    {% if report.skipped %}
+      <details class="okt-report__skipped">
+        <summary>Пропущенные строки ({{ report.skipped|length }})</summary>
+        <ul>{% for row in report.skipped %}<li>Строка {{ row.row }}: {{ row.errors.0 }}</li>{% endfor %}</ul>
+        <p class="okt-muted">Чтобы обновить их из файла, загрузите его снова с галочкой «Обновлять существующие».</p>
+      </details>
+    {% endif %}
+  </div>
+</section>
