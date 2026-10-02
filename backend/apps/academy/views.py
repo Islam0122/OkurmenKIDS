@@ -72,6 +72,7 @@ from .serializers import (
     GroupTeacherLessonPlanSerializer,
     GroupTeacherSerializer,
     HomeworkNotRequiredRequestSerializer,
+    ParentLessonReportSerializer,
     HomeworkResultSerializer,
     HomeworkSerializer,
     LessonCancelRequestSerializer,
@@ -93,6 +94,7 @@ from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
 from .services import lesson_lifecycle
 from .services.lesson_status import held_q
+from .services.parent_report import ParentLessonReportService
 from .services.monthly_report_pdf import build_monthly_report_pdf
 from .services.academy_monthly_report_pdf import build_academy_monthly_report_pdf
 from .services.import_export import (
@@ -896,6 +898,23 @@ class LessonViewSet(
         except DjangoValidationError as exc:
             raise _as_drf_validation_error(exc)
         return Response(LessonRescheduleResultSerializer.from_result(result))
+
+    @extend_schema(
+        tags=["Lessons"],
+        responses=ParentLessonReportSerializer,
+        description=(
+            "«Мини-отчёт родителям»: a short Kyrgyz message for the parents' chat — topic, who attended, "
+            "who didn't do the homework checked today (the previous lesson's), the homework given at this "
+            "lesson — plus the same data as fields. Built from the lesson's real records; nothing is stored. "
+            "Only for a lesson in progress or completed."
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="parent-report")
+    def parent_report(self, request, pk=None):
+        lesson = self.get_object()
+        if lesson.status not in (Lesson.Status.IN_PROGRESS, Lesson.Status.COMPLETED):
+            raise DRFValidationError({"detail": "Отчёт родителям доступен для идущего или проведённого занятия."})
+        return Response(ParentLessonReportService.generate_for(lesson))
 
     @extend_schema(
         tags=["Lessons"],
