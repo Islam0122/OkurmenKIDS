@@ -263,3 +263,22 @@ export interface RoomAvailability {
   available: Room[]
   occupied: RoomOccupancy[]
 }
+
+/** GET /lessons/{id}/parent-report/ — «Мини-отчёт родителям», built on the backend
+ * (services.parent_report). `message` is the ready Kyrgyz text; `warnings` are
+ * Russian notes for the trainer only (never part of the message). */
+export interface ParentLessonReport {
+  lesson_id: number
+  group: string
+  lesson_date: string
+  topic: string | null
+  present_students: string[]
+  absent_students: string[]
+  /** The previous lesson's homework, whose results are reported today; null when there was none. */
+  homework_checked: { title: string; lesson_id: number; lesson_number: number; lesson_date: string } | null
+  homework_not_completed: string[]
+  homework_partial: string[]
+  next_homework: string | null
+  warnings: string[]
+  message: string
+}

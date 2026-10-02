@@ -17,6 +17,17 @@ export function useLesson(id: number | undefined) {
   })
 }
 
+/** Always rebuilt when the dialog opens — attendance/homework may have changed since. */
+export function useParentReport(id: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['lessons', 'parent-report', id],
+    queryFn: () => lessonsApi.parentReport(id),
+    enabled,
+    refetchOnMount: 'always',
+    gcTime: 0,
+  })
+}
+
 /** Shared invalidation for every lesson-lifecycle mutation (start/complete/
  * cancel/homework-not-required) — each one changes the lesson's status, so
  * every list/tab/KPI that reads it needs to refetch. */

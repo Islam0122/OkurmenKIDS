@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, FileText, Youtube } from 'lucide-react'
+import { ExternalLink, FileText, MessageSquareText, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { LESSON_STATUS_LABEL, LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
@@ -23,6 +23,7 @@ import { HomeworkSummaryCard } from './HomeworkSummaryCard'
 import { LessonActionBar } from './LessonActionBar'
 import type { LessonActionKey } from './lessonActions'
 import { LessonProgressChecklist } from './LessonProgressChecklist'
+import { ParentReportModal } from './ParentReportModal'
 
 export function LessonDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -40,12 +41,15 @@ export function LessonDetailPage() {
 
   const [isCancelModalOpen, setCancelModalOpen] = useState(false)
   const [isHomeworkModalOpen, setHomeworkModalOpen] = useState(false)
+  const [isParentReportOpen, setParentReportOpen] = useState(false)
   const [pendingKey, setPendingKey] = useState<LessonActionKey | null>(null)
 
   if (isPending) return <LoadingState label="Загружаем занятие…" />
   if (isError || !lesson) return <ErrorState onRetry={() => void refetch()} />
 
   const homework = homeworkList.data?.results[0]
+  // Only once the lesson has really happened (attendance/homework exist).
+  const canReportToParents = lesson.status === 'in_progress' || lesson.status === 'completed'
   const missingLabels = lesson.completion_requirements.filter((r) => !r.satisfied).map((r) => r.label)
 
   function goToHomework() {
@@ -113,7 +117,21 @@ export function LessonDetailPage() {
       <PageHeader
         title={formatTimeRange(lesson.start_time, lesson.end_time)}
         description={`${formatDate(lesson.date)} · ${lesson.subject_name ?? 'Без предмета'}${lesson.topic ? ` — ${lesson.topic}` : ''}`}
-        actions={<Badge tone={LESSON_STATUS_TONE[lesson.status]}>{LESSON_STATUS_LABEL[lesson.status]}</Badge>}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={LESSON_STATUS_TONE[lesson.status]}>{LESSON_STATUS_LABEL[lesson.status]}</Badge>
+            {canReportToParents ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<MessageSquareText className="size-4" aria-hidden />}
+                onClick={() => setParentReportOpen(true)}
+              >
+                Сформировать отчёт родителям
+              </Button>
+            ) : null}
+          </div>
+        }
       />
 
       {lesson.status === 'cancelled' ? (
@@ -196,6 +214,7 @@ export function LessonDetailPage() {
 
       <CancelLessonModal lessonId={lesson.id} isOpen={isCancelModalOpen} onClose={() => setCancelModalOpen(false)} mutation={cancelMutation} />
       <AddHomeworkModal lessonId={lesson.id} isOpen={isHomeworkModalOpen} onClose={() => setHomeworkModalOpen(false)} />
+      <ParentReportModal lessonId={lesson.id} isOpen={isParentReportOpen} onClose={() => setParentReportOpen(false)} />
     </div>
   )
 }
