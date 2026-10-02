@@ -302,7 +302,13 @@ def add_generation_messages(request, report: LessonGenerationReport, *, prefix: 
     shared by the Schedule page's quick action, the Group Workspace button
     and the Group changelist action, so all three tell the admin the same
     thing, including which lessons were *not* created and why."""
-    summary_parts = [f"Создано: {report.created}", f"Уже существовало: {report.already_existed}"]
+    summary_parts = [
+        f"Создано: {report.created}",
+        f"Обновлено: {report.updated}",
+        f"Без изменений: {report.unchanged}",
+        f"Пропущено завершённых: {report.locked}",
+        f"Пропущено вручную изменённых: {report.manually_edited}",
+    ]
     if report.orphans_deleted:
         summary_parts.append(f"Удалено занятий без программы: {len(report.orphans_deleted)}")
     if report.expected:
@@ -315,15 +321,15 @@ def add_generation_messages(request, report: LessonGenerationReport, *, prefix: 
         summary_parts.append(f"Конфликтов: {report.conflicts}")
     summary_parts.append(f"Ошибок: {len(report.errors)}")
 
-    if report.errors and not report.created:
+    if report.errors and not report.created and not report.updated:
         level = messages.ERROR
     elif report.warnings or report.errors:
         level = messages.WARNING
-    elif report.created:
+    elif report.created or report.updated:
         level = messages.SUCCESS
     else:
         level = messages.INFO
-    messages.add_message(request, level, prefix + " · ".join(summary_parts))
+    messages.add_message(request, level, prefix + "Синхронизация завершена · " + " · ".join(summary_parts))
     if report.orphans_deleted:
         messages.info(
             request,
@@ -1820,8 +1826,9 @@ def group_workspace_generate_preview_view(request, group_id):
 
 @require_POST
 def group_workspace_generate_lessons_view(request, group_id):
-    """Step 2: generate. Idempotent — only missing lessons are created,
-    existing ones are never modified. Untouched orphan lessons (see
+    """Step 2: generate + sync. Idempotent — missing lessons are created and
+    plain future lessons are re-synced with the current plan; completed/
+    started/cancelled and manually edited lessons are never modified. Untouched orphan lessons (see
     find_orphan_lessons) are deleted and recreated only when the admin
     ticked the confirmation in the preview (`confirm_cleanup`); otherwise
     they are kept and reported."""

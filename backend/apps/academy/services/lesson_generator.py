@@ -43,8 +43,19 @@ saving a single schedule slot. See signals.py.
 
 Idempotent: only missing lesson_numbers are filled in, into slot
 occurrences no existing lesson of the group already occupies; existing
-Lesson rows (and their attendance/homework) are never modified or
-duplicated, whatever their status.
+Lesson rows are never duplicated.
+
+Generate = create + sync. Before filling in missing lessons, every existing
+lesson generated from a plan row is compared with the *current* plan (see
+_sync_existing_lessons):
+
+* COMPLETED / IN_PROGRESS / CANCELLED, or a SCHEDULED lesson that already
+  carries data (started, attendance marked, homework graded) — locked,
+  never touched: it is history.
+* SCHEDULED with ``manually_edited`` — skipped, the trainer's edit wins.
+* any other SCHEDULED lesson — its content (Lesson.PLAN_CONTENT_FIELDS) and
+  its plan homework are updated from the plan row with the same
+  lesson_number. Date, time, room, trainer, subject and number never change.
 """
 from __future__ import annotations
 
@@ -56,9 +67,20 @@ from dataclasses import dataclass, field
 
 from django.db import transaction
 from django.db.models import Count, Q
+from django.utils import timezone
 
 from ..constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
-from ..models import Group, GroupSchedule, GroupTeacher, Homework, Lesson
+from ..models import (
+    Attendance,
+    CourseLessonPlan,
+    Group,
+    GroupSchedule,
+    GroupTeacher,
+    GroupTeacherLessonPlan,
+    Homework,
+    HomeworkResult,
+    Lesson,
+)
 from .group_schedule_conflicts import (
     find_schedule_group_conflict,
     find_schedule_room_conflict,
@@ -100,6 +122,12 @@ class _GenerationRun:
     scraped back out of log output) so the report built from it is exact."""
 
     created: list[Lesson] = field(default_factory=list)
+    # Existing lessons re-synced from the current plan (see _sync_existing_lessons)
+    updated: list[Lesson] = field(default_factory=list)
+    unchanged: int = 0
+    # Lessons that are history (completed/in progress/cancelled, or already carrying data)
+    locked: int = 0
+    manually_edited: int = 0
     errors: list[str] = field(default_factory=list)
     slot_conflicts: int = 0
     slot_skips: int = 0
@@ -117,9 +145,10 @@ class _GenerationRun:
     # Lessons without a program that were deliberately kept, with why
     orphans_kept: list[str] = field(default_factory=list)
     inactive_assignments: list[str] = field(default_factory=list)
+    sync_warnings: list[str] = field(default_factory=list)
 
     def warnings(self) -> list[str]:
-        messages = []
+        messages = list(self.sync_warnings)
         for subject, numbers in sorted(self.unscheduled.items()):
             messages.append(
                 f"Предмет «{subject}»: нет программы с расписанием (тренер + слоты этого предмета) — "
@@ -375,6 +404,143 @@ def _get_or_create_lesson(kwargs: dict) -> tuple[Lesson, bool]:
     lookup = {"group_teacher": kwargs["group_teacher"], "lesson_number": kwargs["lesson_number"]}
     defaults = {key: value for key, value in kwargs.items() if key not in lookup}
     return Lesson.objects.exclude(status=Lesson.Status.CANCELLED).get_or_create(defaults=defaults, **lookup)
+
+
+def _lesson_is_locked(lesson: Lesson, lessons_with_data: set[int]) -> bool:
+    """History that sync never touches: anything but a plain SCHEDULED
+    lesson, plus a SCHEDULED one that already carries data — started, or
+    with attendance / graded homework (a trainer who forgot «Завершить»).
+    Status-based, never date-based, like the rest of the lifecycle (see
+    services.lesson_lifecycle)."""
+    return (
+        lesson.status != Lesson.Status.SCHEDULED
+        or lesson.started_at is not None
+        or lesson.pk in lessons_with_data
+    )
+
+
+def _sync_plan_homework(lesson: Lesson, plan, homeworks: list[Homework], run: _GenerationRun) -> bool:
+    """Bring a future lesson's plan homework in line with `plan`. Only called
+    for a lesson that is neither locked nor manually edited, so none of its
+    homework has results and none was added or changed by hand — whatever
+    homework it has came from the generator. Returns whether anything changed.
+
+    One-to-one with the plan row of the same lesson_number, exactly as
+    _create_homework_if_planned does on creation — the "lesson N checks
+    homework N-1" sequence (and no homework on a subject's first/last
+    lesson) lives in the plan's data and is never re-derived here."""
+    if len(homeworks) > 1:
+        # Not something the generator ever produces (it creates at most one):
+        # leave it to a human rather than guess which one is "the plan's".
+        run.sync_warnings.append(
+            f"Занятие №{lesson.lesson_number} ({lesson.date:%d.%m.%Y}): несколько домашних заданий — "
+            "ДЗ не синхронизировано с планом, проверьте вручную."
+        )
+        return False
+
+    current = homeworks[0] if homeworks else None
+    if not plan.homework_title:
+        if current is None:
+            return False
+        current.delete()
+        return True
+    if current is None:
+        _create_homework_if_planned(lesson, plan)
+        return True
+    if current.title == plan.homework_title and current.description == plan.homework_description:
+        return False
+    current.title = plan.homework_title
+    current.description = plan.homework_description
+    current.save(update_fields=["title", "description", "updated_at"])
+    return True
+
+
+def _sync_existing_lessons(group: Group, run: _GenerationRun) -> None:
+    """Re-sync the group's existing plan-generated lessons with the current
+    plan — see the module docstring for which lessons are locked, skipped or
+    updated. A lesson is matched to the plan row with its own lesson_number
+    (the shared course plan, or its program's individual plan), the same
+    identity the generator created it from. Runs inside _run_generation's
+    transaction, under its group lock."""
+    lessons = list(
+        Lesson.objects.filter(group=group, group_teacher__isnull=False)
+        .filter(Q(plan__isnull=False) | Q(individual_plan__isnull=False))
+        .order_by("lesson_number", "date", "start_time")
+    )
+    if not lessons:
+        return
+
+    lesson_ids = [lesson.pk for lesson in lessons]
+    lessons_with_data = set(
+        Attendance.objects.filter(lesson_id__in=lesson_ids).values_list("lesson_id", flat=True)
+    ) | set(
+        HomeworkResult.objects.filter(homework__lesson_id__in=lesson_ids).values_list("homework__lesson_id", flat=True)
+    )
+
+    course_plans = {
+        plan.lesson_number: plan for plan in CourseLessonPlan.objects.filter(course_id=group.course_id)
+    } if group.course_id else {}
+    individual_plans = {
+        (plan.group_teacher_id, plan.lesson_number): plan
+        for plan in GroupTeacherLessonPlan.objects.filter(group_teacher__group=group)
+    }
+    homeworks_by_lesson: dict[int, list[Homework]] = defaultdict(list)
+    for homework in Homework.objects.filter(lesson_id__in=lesson_ids).order_by("pk"):
+        homeworks_by_lesson[homework.lesson_id].append(homework)
+
+    for lesson in lessons:
+        if _lesson_is_locked(lesson, lessons_with_data):
+            run.locked += 1
+            continue
+        if lesson.manually_edited:
+            run.manually_edited += 1
+            continue
+
+        if lesson.individual_plan_id:
+            plan = individual_plans.get((lesson.group_teacher_id, lesson.lesson_number))
+            plan_link = {"individual_plan": plan}
+        else:
+            plan = course_plans.get(lesson.lesson_number)
+            plan_link = {"plan": plan}
+            if plan is not None and plan.subject_id != lesson.subject_id:
+                # The lesson sits in its subject's program and slots; moving
+                # it to another subject is a schedule change, not a sync.
+                run.sync_warnings.append(
+                    f"Занятие №{lesson.lesson_number} ({lesson.date:%d.%m.%Y}): в плане курса теперь другой "
+                    f"предмет («{plan.subject}») — содержание не синхронизировано."
+                )
+                plan = None
+        if plan is None:
+            run.unchanged += 1
+            continue
+
+        changes = {
+            name: getattr(plan, name)
+            for name in Lesson.PLAN_CONTENT_FIELDS
+            if getattr(lesson, name) != getattr(plan, name)
+        }
+        changes.update(
+            {name: value for name, value in plan_link.items() if getattr(lesson, f"{name}_id") != value.pk}
+        )
+
+        if changes:
+            # Conditional on the lesson still being a plain future one at the
+            # moment of the write, so a trainer's concurrent edit or start
+            # (which doesn't take the group lock) is never overwritten.
+            written = Lesson.objects.filter(
+                pk=lesson.pk, status=Lesson.Status.SCHEDULED, started_at__isnull=True, manually_edited=False,
+            ).update(**changes, updated_at=timezone.now())
+            if not written:
+                run.locked += 1
+                continue
+            for name, value in changes.items():
+                setattr(lesson, name, value)
+
+        homework_changed = _sync_plan_homework(lesson, plan, homeworks_by_lesson.get(lesson.pk, []), run)
+        if changes or homework_changed:
+            run.updated.append(lesson)
+        else:
+            run.unchanged += 1
 
 
 def _walk_and_generate(*, group: Group, slots_by_weekday, take_next, remaining, lesson_kwargs_for,
@@ -932,6 +1098,7 @@ def _run_generation(group: Group, not_before: dt.date | None = None, *, cleanup_
 
     run = _GenerationRun()
     _remove_orphan_lessons(group, run, not_before, cleanup=cleanup_orphans)
+    _sync_existing_lessons(group, run)
 
     if shared_group_teachers:
         try:
@@ -956,6 +1123,9 @@ def _run_generation(group: Group, not_before: dt.date | None = None, *, cleanup_
                 group.pk, len(run.orphans_deleted),
             )
             run.orphans_deleted = []
+            # The rollback undid this run's sync as well.
+            run.unchanged += len(run.updated)
+            run.updated = []
     elif run.errors:
         logger.warning(
             "[lesson_generator] Group id=%s: %s lesson(s) created, but %s program(s) failed: %s",
@@ -968,14 +1138,21 @@ def _run_generation(group: Group, not_before: dt.date | None = None, *, cleanup_
             "[lesson_generator] Group id=%s: %s lesson(s) created across %s active program(s).",
             group.pk, len(run.created), len(group_teachers),
         )
+    if run.updated:
+        logger.info(
+            "[lesson_generator] Group id=%s: %s future lesson(s) synced with the plan "
+            "(%s locked, %s manually edited, %s unchanged).",
+            group.pk, len(run.updated), run.locked, run.manually_edited, run.unchanged,
+        )
     return run
 
 
 def generate_lessons_for_group(group: Group) -> list[Lesson]:
     """Generate every missing Lesson for `group`, across all of its active
-    GroupTeacher assignments (see module docstring). Idempotent and safe to
-    call repeatedly — already-generated lesson_numbers are never touched
-    again, and existing Lessons are never modified.
+    GroupTeacher assignments, and re-sync its plain future lessons with the
+    current plan (see module docstring). Idempotent and safe to call
+    repeatedly — already-generated lesson_numbers are never created again,
+    and locked or manually edited lessons are never modified.
 
     Raises LessonGenerationError only if *nothing at all* could be
     generated because of an error — a partial failure (one teacher's plan
@@ -986,7 +1163,7 @@ def generate_lessons_for_group(group: Group) -> list[Lesson]:
     see them.
     """
     run = _run_generation(group)
-    if run.errors and not run.created:
+    if run.errors and not run.created and not run.updated:
         raise LessonGenerationError(" ".join(run.errors))
     return run.created
 
@@ -1014,6 +1191,11 @@ class LessonGenerationReport:
     missing: int = 0
     created_lessons: list[Lesson] = field(default_factory=list)
     orphans_deleted: list[str] = field(default_factory=list)
+    # Sync of existing lessons with the current plan (see _sync_existing_lessons)
+    updated: int = 0
+    unchanged: int = 0
+    locked: int = 0
+    manually_edited: int = 0
 
 
 def _expected_lesson_count(group: Group) -> int:
@@ -1072,6 +1254,10 @@ def generate_lessons_for_group_with_report(group: Group, *, not_before: dt.date 
         missing=max(expected - total, 0),
         created_lessons=list(run.created),
         orphans_deleted=list(run.orphans_deleted),
+        updated=len(run.updated),
+        unchanged=run.unchanged,
+        locked=run.locked,
+        manually_edited=run.manually_edited,
     )
 
 
@@ -1093,6 +1279,7 @@ class ProgramGenerationPreview:
     to_create: int
     first_date: dt.date | None = None
     last_date: dt.date | None = None
+    to_update: int = 0
 
 
 @dataclass
@@ -1112,10 +1299,13 @@ class GenerationPreview:
     orphans_to_delete: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    to_update: int = 0
+    locked: int = 0
+    manually_edited: int = 0
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.to_create or self.orphans_to_delete)
+        return bool(self.to_create or self.to_update or self.orphans_to_delete)
 
 
 def preview_generation(group: Group) -> GenerationPreview:
@@ -1151,6 +1341,9 @@ def preview_generation(group: Group) -> GenerationPreview:
     created_by_program: dict[int | None, list[Lesson]] = defaultdict(list)
     for lesson in created:
         created_by_program[lesson.group_teacher_id].append(lesson)
+    updated_by_program: dict[int | None, int] = defaultdict(int)
+    for lesson in (run.updated if run else []):
+        updated_by_program[lesson.group_teacher_id] += 1
 
     programs = []
     for gt in group_teachers:
@@ -1173,6 +1366,7 @@ def preview_generation(group: Group) -> GenerationPreview:
                 to_create=len(new),
                 first_date=new[0].date if new else None,
                 last_date=new[-1].date if new else None,
+                to_update=updated_by_program.get(gt.pk, 0),
             )
         )
 
@@ -1188,4 +1382,7 @@ def preview_generation(group: Group) -> GenerationPreview:
         orphans_to_delete=list(run.orphans_deleted) if run else [],
         warnings=run.warnings() if run else [],
         errors=errors,
+        to_update=len(run.updated) if run else 0,
+        locked=run.locked if run else 0,
+        manually_edited=run.manually_edited if run else 0,
     )

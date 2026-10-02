@@ -151,6 +151,14 @@ def _assert_teacher_owns_lesson(request, lesson) -> None:
         raise PermissionDenied("Вы можете работать только со своими занятиями.")
 
 
+def _mark_manually_edited(lesson) -> None:
+    """A trainer/admin changed this lesson's homework by hand — sync must
+    not put the plan's homework back (see Lesson.manually_edited)."""
+    if lesson is not None and not lesson.manually_edited:
+        Lesson.objects.filter(pk=lesson.pk).update(manually_edited=True)
+        lesson.manually_edited = True
+
+
 def _assert_lesson_editable(request, lesson) -> None:
     """A completed or cancelled lesson is an immutable historical record for
     a Teacher — no new Attendance or Homework may be attached to it, on top
@@ -470,9 +478,12 @@ class GroupViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=["post"], url_path="generate-lessons", permission_classes=[IsAuthenticated, IsAdmin])
     def generate_lessons(self, request, pk=None):
-        """Idempotent: fills in only the missing lessons of the group's
-        plan(s). 201 when something was created, 200 for a no-op re-run, 400
-        when nothing could be generated because of an error. `warnings`
+        """Idempotent generate + sync: fills in the missing lessons of the
+        group's plan(s) and re-syncs plain future lessons with the current
+        plan — completed/started/cancelled and manually edited lessons are
+        never changed (see services.lesson_generator). 201 when something was
+        created, 200 otherwise, 400 when nothing could be generated or synced
+        because of an error. `warnings`
         lists every plan lesson that was deliberately *not* created (no
         trainer assigned to its subject, a clash, the group's period ended)
         — see services.lesson_generator. Before generating, untouched
@@ -482,7 +493,7 @@ class GroupViewSet(viewsets.ModelViewSet):
         find_orphan_lessons)."""
         group = self.get_object()
         report = generate_lessons_for_group_with_report(group)
-        if report.errors and not report.created:
+        if report.errors and not report.created and not report.updated:
             raise DRFValidationError(" ".join(report.errors))
 
         if report.created_lessons:
@@ -505,6 +516,10 @@ class GroupViewSet(viewsets.ModelViewSet):
             "warnings": report.warnings,
             "errors": report.errors,
             "deleted_orphans": report.orphans_deleted,
+            "updated_count": report.updated,
+            "unchanged_count": report.unchanged,
+            "locked_count": report.locked,
+            "manually_edited_count": report.manually_edited,
         }
         response_status = status.HTTP_201_CREATED if report.created else status.HTTP_200_OK
         return Response(GenerateLessonsResponseSerializer(payload).data, status=response_status)
@@ -759,6 +774,17 @@ class LessonViewSet(
         # Only Lessons this teacher actually gives — a Group's other Teaching
         # Programs (see models.GroupTeacher) belong to other teachers.
         return qs.for_teacher(teacher)
+
+    def perform_update(self, serializer):
+        # A hand edit of plan-controlled content makes this lesson the
+        # trainer's: «Сгенерировать занятия» no longer re-syncs it from the
+        # plan (see services.lesson_generator._sync_existing_lessons).
+        lesson = serializer.instance
+        edited = any(
+            name in serializer.validated_data and serializer.validated_data[name] != getattr(lesson, name)
+            for name in Lesson.PLAN_CONTENT_FIELDS
+        )
+        serializer.save(**({"manually_edited": True} if edited else {}))
 
     @extend_schema(
         tags=["Attendance"],
@@ -1040,6 +1066,26 @@ class HomeworkViewSet(viewsets.ModelViewSet):
         _assert_teacher_owns_lesson(self.request, lesson)
         _assert_lesson_editable(self.request, lesson)
         serializer.save()
+        _mark_manually_edited(lesson)
+
+    def perform_update(self, serializer):
+        # Only a change of what the plan controls (title/description, or
+        # moving the homework to another lesson) — a new deadline is not.
+        homework = serializer.instance
+        previous_lesson = homework.lesson
+        edited = any(
+            name in serializer.validated_data and serializer.validated_data[name] != getattr(homework, name)
+            for name in ("title", "description", "lesson")
+        )
+        serializer.save()
+        if edited:
+            _mark_manually_edited(previous_lesson)
+            _mark_manually_edited(serializer.instance.lesson)
+
+    def perform_destroy(self, instance):
+        lesson = instance.lesson
+        instance.delete()
+        _mark_manually_edited(lesson)
 
     @extend_schema(
         methods=["GET"],

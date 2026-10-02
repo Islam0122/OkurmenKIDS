@@ -192,6 +192,7 @@ def reschedule_cancelled_lesson(lesson: Lesson) -> RescheduleResult:
                     youtube_url=lesson.youtube_url,
                     presentation_urls=lesson.presentation_urls,
                     homework_not_required=lesson.homework_not_required,
+                    manually_edited=lesson.manually_edited,
                     status=Lesson.Status.SCHEDULED,
                     rescheduled_from=lesson,
                     **positions[0],
