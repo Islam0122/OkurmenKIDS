@@ -406,6 +406,7 @@ select.ok-input { appearance: auto; }
 .oks-progress-cell { min-width: 9rem; }
 .oks-progress-cell .okt-bar { display: block; margin-bottom: 0.2rem; }
 .oks-fail { color: var(--ok-danger); }
+.oks-empty { color: var(--ok-text-muted); }
 .oks-exports { display: inline-flex; gap: 0.4rem; flex-wrap: wrap; }
 .ok-card-header { flex-wrap: wrap; }
 
