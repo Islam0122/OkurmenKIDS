@@ -185,6 +185,39 @@ export interface LessonHomeworkSummary {
   average_score: number | null
 }
 
+/** `LessonSerializer.homework` — the homework set in this lesson (checked
+ * at the next one). */
+export interface LessonHomeworkBrief {
+  id: number
+  title: string
+  description: string
+  deadline: string | null
+}
+
+/** `LessonSerializer.previous_lesson` — the previous lesson of the same
+ * Teaching Program (`group_teacher`), cancelled lessons skipped; `null` for
+ * the first lesson. */
+export interface LessonPreviousLesson {
+  id: number
+  lesson_number: number
+  topic: string
+  date: string
+  homework_not_required: boolean
+}
+
+/** `LessonSerializer.homework_to_check` — the homework set in the previous
+ * lesson, checked during this one. `null` when there is no previous lesson
+ * or it set no homework. */
+export interface LessonHomeworkToCheck extends LessonHomeworkBrief {
+  lesson: number
+  lesson_number: number
+  lesson_topic: string
+  lesson_date: string
+  results_summary: { results_total: number; checked: number; pending: number }
+  /** Whether the current user may grade it (owner of that lesson or Admin). */
+  can_check: boolean
+}
+
 /** `apps.academy.serializers.LessonSerializer` */
 export interface Lesson {
   id: number
@@ -221,6 +254,9 @@ export interface Lesson {
   completion_progress: LessonCompletionProgress
   attendance_summary: LessonAttendanceSummary
   homework_summary: LessonHomeworkSummary | null
+  homework: LessonHomeworkBrief | null
+  previous_lesson: LessonPreviousLesson | null
+  homework_to_check: LessonHomeworkToCheck | null
   attendance_editable: boolean
   created_at: string
   updated_at: string

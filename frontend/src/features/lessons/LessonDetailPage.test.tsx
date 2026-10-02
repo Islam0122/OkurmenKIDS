@@ -367,4 +367,99 @@ describe('LessonDetailPage', () => {
       expect(screen.queryByRole('button', { name: /Отменить/ })).not.toBeInTheDocument()
     })
   })
+
+  describe('previous lesson homework check', () => {
+    const previousLesson = { id: 6, lesson_number: 1, topic: 'Что такое интернет', date: '2026-09-08', homework_not_required: false }
+    const homeworkToCheck = {
+      id: 101,
+      lesson: 6,
+      lesson_number: 1,
+      lesson_topic: 'Что такое интернет',
+      lesson_date: '2026-09-08',
+      title: 'Написать 5 предложений',
+      description: '',
+      deadline: null,
+      results_summary: { results_total: 3, checked: 1, pending: 2 },
+      can_check: true,
+    }
+
+    it('hides the check card on the first lesson', async () => {
+      vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status: 'in_progress' }))
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+
+      renderLessonDetail(7)
+
+      await waitFor(() => expect(screen.getByText('Действия')).toBeInTheDocument())
+      expect(screen.queryByText('📝 Проверка ДЗ прошлого занятия')).not.toBeInTheDocument()
+    })
+
+    it('shows the previous lesson homework separately from the current one and opens the existing grading page', async () => {
+      vi.mocked(lessonsApi.get).mockResolvedValue(
+        buildLesson({
+          id: 7,
+          lesson_number: 2,
+          status: 'in_progress',
+          previous_lesson: previousLesson,
+          homework_to_check: homeworkToCheck,
+        }),
+      )
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(
+        paginated([buildHomework({ id: 102, lesson: 7, title: 'Мини-видео «Мой первый выход»' })]),
+      )
+      const user = userEvent.setup()
+
+      renderLessonDetail(7)
+
+      const card = await screen.findByTestId('previous-homework-card')
+      expect(within(card).getByText(/Урок №1/)).toBeInTheDocument()
+      expect(within(card).getByText('Что такое интернет')).toBeInTheDocument()
+      expect(within(card).getByText('Написать 5 предложений')).toBeInTheDocument()
+      expect(within(card).queryByText('Мини-видео «Мой первый выход»')).not.toBeInTheDocument()
+      // The current lesson's own homework stays in its own block.
+      expect(await screen.findByText('Мини-видео «Мой первый выход»')).toBeInTheDocument()
+      expect(screen.getByText('Урок №2')).toBeInTheDocument()
+      expect(screen.getByText('ℹ️ Это задание будет проверяться на следующем занятии.')).toBeInTheDocument()
+
+      await user.click(within(card).getByRole('button', { name: 'Проверить ДЗ' }))
+      expect(await screen.findByText('Homework detail page')).toBeInTheDocument()
+    })
+
+    it('says no homework was set when the previous lesson had none — without a check button', async () => {
+      vi.mocked(lessonsApi.get).mockResolvedValue(
+        buildLesson({ id: 7, lesson_number: 2, status: 'in_progress', previous_lesson: previousLesson, homework_to_check: null }),
+      )
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+
+      renderLessonDetail(7)
+
+      const card = await screen.findByTestId('previous-homework-card')
+      expect(within(card).getByText('На предыдущем занятии домашнее задание не задавалось.')).toBeInTheDocument()
+      expect(within(card).queryByRole('button', { name: 'Проверить ДЗ' })).not.toBeInTheDocument()
+    })
+
+    it('is also shown on a completed lesson', async () => {
+      vi.mocked(lessonsApi.get).mockResolvedValue(
+        buildLesson({
+          id: 7,
+          lesson_number: 2,
+          status: 'completed',
+          can_start: false,
+          can_cancel: false,
+          attendance_editable: false,
+          previous_lesson: previousLesson,
+          homework_to_check: homeworkToCheck,
+        }),
+      )
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+
+      renderLessonDetail(7)
+
+      const card = await screen.findByTestId('previous-homework-card')
+      expect(within(card).getByRole('button', { name: 'Проверить ДЗ' })).toBeInTheDocument()
+    })
+  })
 })

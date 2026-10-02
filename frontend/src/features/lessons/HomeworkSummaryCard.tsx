@@ -9,6 +9,8 @@ export interface HomeworkSummaryCardProps {
   homework: Homework
   summary: Lesson['homework_summary']
   onView: () => void
+  /** The lesson this homework was set in — shown as "Урок №N". */
+  lessonNumber?: number
 }
 
 /**
@@ -19,11 +21,12 @@ export interface HomeworkSummaryCardProps {
  * homework section itself rather than a separate action on the lesson
  * overview.
  */
-export function HomeworkSummaryCard({ homework, summary, onView }: HomeworkSummaryCardProps) {
+export function HomeworkSummaryCard({ homework, summary, onView, lessonNumber }: HomeworkSummaryCardProps) {
   const resultsTotal = summary ? summary.results_total : homework.results_count
   return (
     <div className="flex h-full flex-col card card-body">
-      <h2 className="section-title mb-3">Домашнее задание</h2>
+      <h2 className="section-title mb-3">📚 Домашнее задание</h2>
+      {lessonNumber ? <p className="mb-1 text-sm text-ink-secondary">Урок №{lessonNumber}</p> : null}
       <p className="font-medium text-ink">{homework.title}</p>
       {homework.description ? <p className="mt-1 text-sm text-ink-secondary">{homework.description}</p> : null}
       {homework.deadline ? <p className="mt-1 text-sm text-ink-secondary">Срок: {formatDate(homework.deadline)}</p> : null}
@@ -31,6 +34,7 @@ export function HomeworkSummaryCard({ homework, summary, onView }: HomeworkSumma
         {resultsTotal} результатов
         {summary ? ` · проверено ${summary.checked}, ожидает ${summary.pending}` : ''}
       </p>
+      <p className="mt-2 text-xs text-ink-secondary">ℹ️ Это задание будет проверяться на следующем занятии.</p>
       <div className="mt-auto pt-3">
         <Button variant="secondary" size="sm" leftIcon={<Eye className="size-4" aria-hidden />} onClick={onView}>
           Посмотреть домашнее задание

@@ -67,3 +67,54 @@ def homework_summary(lesson: Lesson) -> dict | None:
         "pending": max(total - checked, 0),
         "average_score": round(avg_score, 1) if avg_score is not None else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# "Check the previous lesson's homework" context.
+#
+# Homework always stays attached to the lesson it was *set* in (Lesson N ->
+# Homework N); it is checked at the next lesson. These helpers only give a
+# lesson the context of its predecessor — they never move or reinterpret
+# Homework rows. Reusable by anything that needs the same per-lesson view
+# (Lesson Detail page today, a parent report later): topic/attendance of
+# lesson N, homework to check = homework of lesson N-1, next homework =
+# homework of lesson N.
+# ---------------------------------------------------------------------------
+
+def previous_lesson(lesson: Lesson) -> Lesson | None:
+    """The lesson right before `lesson` within the same Teaching Program —
+    same `group_teacher` (and therefore the same group and trainer
+    sequence), the highest `lesson_number` below this one, never a
+    cancelled lesson (its topic is taught by the make-up lesson, which
+    carries the same lesson_number). `None` for the program's first
+    lesson, or a lesson with no `group_teacher` (no sequence to look in)."""
+    if not lesson.group_teacher_id:
+        return None
+    return (
+        Lesson.objects.filter(
+            group_teacher_id=lesson.group_teacher_id,
+            group_id=lesson.group_id,
+            lesson_number__lt=lesson.lesson_number,
+        )
+        .exclude(status=Lesson.Status.CANCELLED)
+        .order_by("-lesson_number")
+        .first()
+    )
+
+
+def lesson_homework(lesson: Lesson) -> Homework | None:
+    """The homework set in `lesson` — the newest row if there are several,
+    the same one the Lesson Detail page has always shown (`?lesson=` list,
+    newest first)."""
+    return Homework.objects.filter(lesson=lesson).order_by("-id").first()
+
+
+def homework_results_summary(homework: Homework) -> dict:
+    """Checked vs. still-pending among one Homework's recorded results."""
+    agg = HomeworkResult.objects.filter(homework=homework).aggregate(
+        total=Count("id"),
+        checked=Count("id", filter=Q(status=HomeworkResult.Status.CHECKED)),
+    )
+    total = agg["total"] or 0
+    checked = agg["checked"] or 0
+    return {"results_total": total, "checked": checked, "pending": max(total - checked, 0)}
