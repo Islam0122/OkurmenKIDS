@@ -582,6 +582,14 @@ class GenerateLessonsResponseSerializer(serializers.Serializer):
             "и результатов ДЗ, созданные из строки плана (см. services.lesson_generator.find_orphan_lessons)."
         ),
     )
+    updated_count = serializers.IntegerField(help_text="Будущих занятий обновлено по актуальному плану.")
+    unchanged_count = serializers.IntegerField(help_text="Будущих занятий, уже совпадающих с планом.")
+    locked_count = serializers.IntegerField(
+        help_text="Проведённых / начатых / отменённых занятий (или с посещаемостью и оценками) — не изменялись."
+    )
+    manually_edited_count = serializers.IntegerField(
+        help_text="Будущих занятий, изменённых тренером вручную, — не перезаписывались."
+    )
 
 
 class ProgramGenerationPreviewSerializer(serializers.Serializer):
@@ -591,6 +599,7 @@ class ProgramGenerationPreviewSerializer(serializers.Serializer):
     schedule = serializers.ListField(child=serializers.CharField())
     planned = serializers.IntegerField(help_text="Занятий программы по плану.")
     existing = serializers.IntegerField(help_text="Уже созданных занятий программы.")
+    to_update = serializers.IntegerField(help_text="Будущих занятий, которые будут обновлены по плану.")
     to_create = serializers.IntegerField(help_text="Сколько занятий будет создано.")
     first_date = serializers.DateField(allow_null=True)
     last_date = serializers.DateField(allow_null=True)
@@ -600,6 +609,9 @@ class GenerateLessonsPreviewSerializer(serializers.Serializer):
     """services.lesson_generator.preview_generation — nothing is written."""
 
     to_create = serializers.IntegerField()
+    to_update = serializers.IntegerField()
+    locked = serializers.IntegerField()
+    manually_edited = serializers.IntegerField()
     existing = serializers.IntegerField()
     expected = serializers.IntegerField()
     missing_after = serializers.IntegerField(help_text="Сколько занятий плана останется не созданными после генерации.")
@@ -715,6 +727,7 @@ class LessonSerializer(_RequestAwareSerializer):
             "status_display",
             "cancellation_reason",
             "homework_not_required",
+            "manually_edited",
             "started_at",
             "completed_at",
             "completed_by",
@@ -743,7 +756,7 @@ class LessonSerializer(_RequestAwareSerializer):
         # PATCH, so a completed/cancelled lesson can never be silently reset.
         read_only_fields = [
             "id", "group", "group_teacher", "plan", "individual_plan", "lesson_number", "teacher",
-            "status", "cancellation_reason", "homework_not_required",
+            "status", "cancellation_reason", "homework_not_required", "manually_edited",
             "started_at", "completed_at", "completed_by", "rescheduled_from",
             "created_at", "updated_at",
         ]

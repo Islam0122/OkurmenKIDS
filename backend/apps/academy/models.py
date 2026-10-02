@@ -1130,6 +1130,17 @@ class Lesson(models.Model):
         verbose_name="Причина отмены",
     )
 
+    manually_edited = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="Изменено вручную",
+        help_text=(
+            "Тренер или администратор вручную изменил содержание занятия (тему, описание, "
+            "материалы) или его домашнее задание. «Сгенерировать занятия» не перезаписывает "
+            "такое занятие данными плана."
+        ),
+    )
+
     homework_not_required = models.BooleanField(
         default=False,
         verbose_name="ДЗ не требуется",
@@ -1198,6 +1209,12 @@ class Lesson(models.Model):
             models.Index(fields=["status", "date"], name="ix_lesson_status_date"),
             models.Index(fields=["group_teacher", "lesson_number"], name="ix_lesson_gteacher_number"),
         ]
+
+    # Content copied from the plan row on generation and re-synced from it
+    # by «Сгенерировать занятия» while the lesson is still a plain future
+    # one (see services.lesson_generator._sync_existing_lessons). A manual
+    # edit of any of them sets `manually_edited`.
+    PLAN_CONTENT_FIELDS = ("topic", "description", "youtube_url", "presentation_urls")
 
     def __str__(self):
         return f"{self.group.name} — занятие {self.lesson_number} ({self.date})"

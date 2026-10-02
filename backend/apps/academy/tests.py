@@ -2616,10 +2616,11 @@ class MultiScheduleLessonGeneratorTests(TestCase):
         Homework.objects.create(lesson=lesson3, title="Дополнительное ДЗ")
         self.assertEqual(Homework.objects.filter(lesson=lesson3).count(), 2)
 
-    def test_past_lesson_untouched_by_regeneration(self):
+    def test_manually_edited_lesson_untouched_by_regeneration(self):
         lesson1 = Lesson.objects.get(group=self.group, lesson_number=1)
         lesson1.topic = "Отредактировано вручную"
-        lesson1.save(update_fields=["topic"])
+        lesson1.manually_edited = True
+        lesson1.save(update_fields=["topic", "manually_edited"])
         generate_lessons_for_group(self.group)
         lesson1.refresh_from_db()
         self.assertEqual(lesson1.topic, "Отредактировано вручную")
@@ -3161,7 +3162,9 @@ class GroupWorkspaceViewTests(AcademyTestBase):
 
         response = self.admin_web.post(self._url("_generate_lessons"), follow=True)
         self.assertEqual(Lesson.objects.filter(group=self.group1).count(), created_total)
-        self.assertContains(response, "Уже существовало")
+        self.assertContains(response, "Синхронизация завершена")
+        self.assertContains(response, "Создано: 0")
+        self.assertContains(response, f"Без изменений: {created_total}")
 
     def test_generate_lessons_requires_post(self):
         response = self.admin_web.get(self._url("_generate_lessons"))
@@ -8587,7 +8590,7 @@ class GenerationPreviewTests(WorkspaceProgramFixture):
         response = self.web.get(self.url("_generate_preview"), {"program": self.python_program.pk})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["preview"]["focus_program_id"], self.python_program.pk)
-        self.assertContains(response, "Создать занятия (4)")
+        self.assertContains(response, "Синхронизировать (создать 4, обновить 0)")
         self.assertEqual(Lesson.objects.filter(group=self.group).count(), 0)
         self.assertEqual(self.web.get(self.url("_generate_lessons")).status_code, 405)
 
