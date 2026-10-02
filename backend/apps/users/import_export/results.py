@@ -36,6 +36,11 @@ class ImportResult:
     created: int
     updated: int
     total: int
+    # Only filled by imports that save the valid rows and skip the invalid
+    # ones (see ``ModelAdapter.partial_import``); all-or-nothing imports
+    # never get this far with a bad row.
+    skipped: int = 0
+    errors: list[RowError] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {"created": self.created, "updated": self.updated, "total": self.total}

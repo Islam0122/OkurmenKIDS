@@ -7,14 +7,16 @@ architecture: one implementation, reused by every registered adapter.
 """
 from __future__ import annotations
 
-from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.http import HttpResponse
 
-from apps.users.import_export.formats import build_export_response, read_rows
+from apps.users.import_export.formats import build_export_response, read_numbered_rows
 from apps.users.import_export.results import ImportPreview, ImportResult, RowError
 
 from .registry import ModelAdapter
+from .validation import flatten_validation_error
 
 
 class ImportValidationError(Exception):
@@ -70,39 +72,51 @@ def _normalize_raw_row(adapter: ModelAdapter, raw: dict[str, str]) -> dict[str, 
     return {label_to_key.get(header, header): value for header, value in raw.items()}
 
 
-def _validate_all_rows(adapter: ModelAdapter, raw_rows: list[dict[str, str]]):
+def _validate_all_rows(adapter: ModelAdapter, numbered_rows: list[tuple[int, dict[str, str]]]):
+    """Validate every row. Returns ``(clean_rows, row_errors)`` where each
+    clean row is paired with its line number in the file (1 = header), so a
+    save-time failure can still be reported against the right line.
+    """
     seen: dict = {}
-    clean_rows = []
+    clean_rows: list[tuple[int, dict]] = []
     row_errors: list[RowError] = []
-    for index, raw in enumerate(raw_rows, start=2):  # row 1 is the header
+    for row_number, raw in numbered_rows:
         normalized = _normalize_raw_row(adapter, raw)
-        clean, errors = adapter.validate_row(index, normalized, seen)
+        clean, errors = adapter.validate_row(row_number, normalized, seen)
         if errors:
-            row_errors.append(RowError(row=index, errors=errors))
+            row_errors.append(RowError(row=row_number, errors=errors))
         else:
-            clean_rows.append(clean)
+            clean_rows.append((row_number, clean))
     return clean_rows, row_errors
 
 
 def preview_import(adapter: ModelAdapter, uploaded_file) -> ImportPreview:
-    raw_rows = read_rows(uploaded_file)
-    _clean_rows, row_errors = _validate_all_rows(adapter, raw_rows)
+    numbered_rows = read_numbered_rows(uploaded_file)
+    _clean_rows, row_errors = _validate_all_rows(adapter, numbered_rows)
     return ImportPreview(
-        total=len(raw_rows),
-        valid=len(raw_rows) - len(row_errors),
+        total=len(numbered_rows),
+        valid=len(numbered_rows) - len(row_errors),
         invalid=len(row_errors),
         errors=row_errors,
     )
 
 
 def commit_import(adapter: ModelAdapter, uploaded_file) -> ImportResult:
-    raw_rows = read_rows(uploaded_file)
-    clean_rows, row_errors = _validate_all_rows(adapter, raw_rows)
-    if row_errors:
+    """Upsert every row through ``adapter.apply_row``.
+
+    All-or-nothing by default: any invalid row raises ``ImportValidationError``
+    and nothing is saved. With ``adapter.partial_import`` the valid rows are
+    saved, invalid ones are skipped, and every skipped row comes back in
+    ``ImportResult.errors``; each row is saved in its own savepoint so a
+    save-time failure only drops that one row.
+    """
+    numbered_rows = read_numbered_rows(uploaded_file)
+    clean_rows, row_errors = _validate_all_rows(adapter, numbered_rows)
+    if row_errors and not adapter.partial_import:
         raise ImportValidationError(
             ImportPreview(
-                total=len(raw_rows),
-                valid=len(raw_rows) - len(row_errors),
+                total=len(numbered_rows),
+                valid=len(numbered_rows) - len(row_errors),
                 invalid=len(row_errors),
                 errors=row_errors,
             )
@@ -111,11 +125,29 @@ def commit_import(adapter: ModelAdapter, uploaded_file) -> ImportResult:
     created = 0
     updated = 0
     with transaction.atomic():
-        for clean in clean_rows:
-            _obj, was_created = adapter.apply_row(clean)
+        for row_number, clean in clean_rows:
+            if not adapter.partial_import:
+                _obj, was_created = adapter.apply_row(clean)
+            else:
+                try:
+                    with transaction.atomic():
+                        _obj, was_created = adapter.apply_row(clean)
+                except DjangoValidationError as exc:
+                    row_errors.append(RowError(row=row_number, errors=flatten_validation_error(exc)))
+                    continue
+                except IntegrityError as exc:
+                    row_errors.append(RowError(row=row_number, errors=[f"Ошибка сохранения: {exc}"]))
+                    continue
             if was_created:
                 created += 1
             else:
                 updated += 1
 
-    return ImportResult(created=created, updated=updated, total=created + updated)
+    row_errors.sort(key=lambda error: error.row)
+    return ImportResult(
+        created=created,
+        updated=updated,
+        total=created + updated,
+        skipped=len(row_errors),
+        errors=row_errors,
+    )

@@ -45,6 +45,10 @@ class ModelAdapter:
     apply_row: Callable[[dict], tuple[Any, bool]]
     default_fields: list[str] | None = None
     import_notes: str = ""
+    # False (default): one bad row rejects the whole file and nothing is
+    # saved. True: valid rows are saved, bad rows are skipped and reported
+    # back in ``ImportResult.errors``.
+    partial_import: bool = False
 
     def field_map(self) -> dict[str, FieldSpec]:
         return {f.key: f for f in self.fields}

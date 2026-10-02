@@ -63,6 +63,37 @@
     </div>
   </div>
 
+  {% if result %}
+    <div class="ok-card">
+      <div class="ok-card-header">
+        <i class="bi bi-clipboard-check"></i>
+        <span>Импорт завершён</span>
+      </div>
+      <div class="ok-card-body">
+        <div style="display:flex; gap:1.5rem; margin-bottom:1rem; flex-wrap: wrap;">
+          <div style="color:var(--ok-success,#2F8F5B);">Создано: <strong>{{ result.created }}</strong></div>
+          <div>Обновлено: <strong>{{ result.updated }}</strong></div>
+          <div>Пропущено: <strong>{{ result.skipped }}</strong></div>
+          <div style="color:var(--ok-danger,#C7402E);">Ошибок: <strong>{{ result.errors|length }}</strong></div>
+        </div>
+
+        {% if result.errors %}
+          <div class="ok-alert ok-alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            <div>Строки ниже не сохранены, остальные строки файла импортированы.</div>
+          </div>
+          <ul style="margin:0; padding-left:1.2rem;">
+            {% for error in result.errors %}
+              <li class="ok-error-text" style="display:list-item; margin-bottom:0.4rem;">
+                Строка {{ error.row }} — {{ error.errors|join:"; " }}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
   {% if preview %}
     <div class="ok-card">
       <div class="ok-card-header">
