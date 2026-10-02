@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, RotateCcw, Save, TriangleAlert } from 'lucide-react'
+import { RotateCcw, Save, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -64,7 +64,6 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
   // «Свой вариант»: a copy of an automatic text, created on first use.
   const [customText, setCustomText] = useState<string | null>(null)
   const [isEditing, setEditing] = useState(false)
-  const [copied, setCopied] = useState(false)
   const text = author === 'custom' ? (customText ?? report.messages.system) : report.messages[author]
   const isEmpty = !text.trim()
 
@@ -88,8 +87,6 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
   async function handleCopy() {
     try {
       await copyText(text)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
       showToast('Отчёт скопирован', 'success')
     } catch {
       showToast('Не удалось скопировать — выделите текст вручную', 'error')
@@ -120,11 +117,11 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
                 <span
                   aria-hidden
                   className={cn(
-                    'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border',
-                    isActive ? 'border-brand-500 bg-brand-500 text-white' : 'border-border bg-surface',
+                    'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border-2',
+                    isActive ? 'border-brand-500' : 'border-border',
                   )}
                 >
-                  {isActive ? <Check className="size-3" /> : null}
+                  {isActive ? <span className="size-2 rounded-full bg-brand-500" /> : null}
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-ink">{option.label}</span>
@@ -208,13 +205,8 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
             ✏️ Редактировать
           </Button>
         )}
-        <Button
-          size="sm"
-          leftIcon={copied ? <Check className="size-4" aria-hidden /> : undefined}
-          onClick={() => void handleCopy()}
-          disabled={isEmpty}
-        >
-          {copied ? 'Скопировано' : '📋 Копировать'}
+        <Button size="sm" onClick={() => void handleCopy()} disabled={isEmpty}>
+          📋 Копировать
         </Button>
       </div>
     </div>
