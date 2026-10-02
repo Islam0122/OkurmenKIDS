@@ -37,6 +37,13 @@ def read_rows(uploaded_file) -> list[dict[str, str]]:
     type. Fully blank rows are skipped (common trailing-rows artifact from
     spreadsheet exports).
     """
+    return [row for _number, row in read_numbered_rows(uploaded_file)]
+
+
+def read_numbered_rows(uploaded_file) -> list[tuple[int, dict[str, str]]]:
+    """Same as `read_rows`, each row paired with its line number in the file
+    (1 = header), so error reports still match the spreadsheet when blank
+    rows were skipped."""
     name = (getattr(uploaded_file, "name", "") or "").lower()
     if name.endswith(XLSX_EXTENSIONS):
         return _read_xlsx(uploaded_file)
@@ -45,7 +52,7 @@ def read_rows(uploaded_file) -> list[dict[str, str]]:
     raise UnsupportedFileFormat("Неподдерживаемый формат файла. Используйте CSV или XLSX.")
 
 
-def _read_csv(uploaded_file) -> list[dict[str, str]]:
+def _read_csv(uploaded_file) -> list[tuple[int, dict[str, str]]]:
     raw = uploaded_file.read()
     text = raw.decode("utf-8-sig") if isinstance(raw, bytes) else raw
     all_rows = list(csv.reader(io.StringIO(text)))
@@ -54,15 +61,15 @@ def _read_csv(uploaded_file) -> list[dict[str, str]]:
 
     header = [cell.strip() for cell in all_rows[0]]
     rows = []
-    for raw_row in all_rows[1:]:
+    for number, raw_row in enumerate(all_rows[1:], start=2):
         if not any(cell.strip() for cell in raw_row):
             continue
         row = {key: (raw_row[i].strip() if i < len(raw_row) else "") for i, key in enumerate(header)}
-        rows.append(row)
+        rows.append((number, row))
     return rows
 
 
-def _read_xlsx(uploaded_file) -> list[dict[str, str]]:
+def _read_xlsx(uploaded_file) -> list[tuple[int, dict[str, str]]]:
     workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
     sheet = workbook.active
     rows_iter = sheet.iter_rows(values_only=True)
@@ -74,11 +81,11 @@ def _read_xlsx(uploaded_file) -> list[dict[str, str]]:
     header = [str(cell).strip() if cell is not None else "" for cell in header_row]
 
     rows = []
-    for raw_row in rows_iter:
+    for number, raw_row in enumerate(rows_iter, start=2):
         if raw_row is None or not any(cell not in (None, "") for cell in raw_row):
             continue
         row = {key: _cell_to_str(raw_row[i] if i < len(raw_row) else None) for i, key in enumerate(header)}
-        rows.append(row)
+        rows.append((number, row))
     return rows
 
 

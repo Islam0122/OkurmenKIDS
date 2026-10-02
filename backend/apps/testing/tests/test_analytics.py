@@ -237,6 +237,7 @@ class NoResultTests(AnalyticsFixture):
         self.assertContains(response, "Python Basics")
         self.assertContains(response, '<strong class="oks-empty">—</strong>', html=True)
         self.assertNotContains(response, "0,0%")
+        self.assertNotContains(response, "{#")
 
     def test_zero_score_is_a_real_result(self):
         self.take(self.student, right=0)

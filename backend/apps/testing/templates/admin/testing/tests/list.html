@@ -5,28 +5,48 @@
   <header class="okt-page-head">
     <div>
       <h1 class="okt-h1">Тесты</h1>
-      <p class="okt-sub">Создавайте тесты, добавляйте вопросы и публикуйте их для студентов.</p>
+      <p class="okt-sub">{{ total|test_count_label }}{% if has_filters %} · найдено {{ found }}{% endif %}</p>
     </div>
-    <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_test_add' %}">{% ticon "plus" 16 %}<span>Создать тест</span></a>
   </header>
 
-  <div class="okt-toolbar">
-    <form class="okt-search" method="get" role="search">
-      <label class="ok-visually-hidden" for="okt-q">Поиск тестов</label>
-      <span class="okt-search__icon">{% ticon "search" 16 %}</span>
-      <input id="okt-q" class="ok-input" type="search" name="q" value="{{ query }}" placeholder="Поиск тестов…">
-      {% if status != "all" %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
-      <button type="submit" class="ok-btn-secondary okt-btn">Найти</button>
+  <div class="okt-listbar">
+    <form class="okt-listbar__filters" method="get" role="search" data-okt-autosubmit>
+      <div class="okt-search okt-listbar__search">
+        <label class="ok-visually-hidden" for="okt-q">Поиск тестов</label>
+        <span class="okt-search__icon">{% ticon "search" 16 %}</span>
+        <input id="okt-q" class="ok-input" type="search" name="q" value="{{ filters.q }}" placeholder="Поиск тестов…">
+      </div>
+      <label class="okt-select">
+        <span class="ok-visually-hidden">Предмет</span>
+        <select name="subject" class="ok-input" aria-label="Предмет">
+          <option value="">Все предметы</option>
+          {% for s in subjects %}<option value="{{ s.pk }}"{% if filters.subject == s.pk|stringformat:"d" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+          {% if has_unassigned %}<option value="none"{% if filters.subject == "none" %} selected{% endif %}>Без предмета</option>{% endif %}
+        </select>
+      </label>
+      <label class="okt-select">
+        <span class="ok-visually-hidden">Статус</span>
+        <select name="status" class="ok-input" aria-label="Статус">
+          <option value="">Все статусы</option>
+          {% for value, label, count in status_options %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }} ({{ count }})</option>{% endfor %}
+        </select>
+      </label>
+      <label class="okt-select">
+        <span class="ok-visually-hidden">Сложность</span>
+        <select name="level" class="ok-input" aria-label="Сложность">
+          <option value="">Любая сложность</option>
+          {% for value, label in level_options %}<option value="{{ value }}"{% if filters.level == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="ok-btn-secondary okt-btn okt-listbar__apply" data-okt-autosubmit-hide>{% ticon "filter" 15 %}<span>Применить</span></button>
+      {% if has_filters %}<a class="okt-link-reset" href="{% url 'admin:testing_test_changelist' %}">{% ticon "x" 14 %} Сбросить</a>{% endif %}
     </form>
-    <nav class="okt-filters" aria-label="Статус">
-      {% for f in filters %}
-        <a class="okt-filter{% if f.active %} is-active{% endif %}"
-           href="?{% if f.key != 'all' %}status={{ f.key }}{% endif %}{% if query %}{% if f.key != 'all' %}&amp;{% endif %}q={{ query|urlencode }}{% endif %}"
-           {% if f.active %}aria-current="page"{% endif %}>
-          {{ f.label }} <span class="okt-filter__count">{{ f.count }}</span>
-        </a>
-      {% endfor %}
-    </nav>
+
+    <div class="okt-listbar__actions">
+      <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_test_add' %}">{% ticon "plus" 16 %}<span>Создать тест</span></a>
+      <a class="ok-btn-secondary okt-btn" href="{% url 'admin:testing_test_import' %}" data-okt-dialog="okt-tests-import">{% ticon "download" 16 %}<span>Импорт</span></a>
+      <a class="ok-btn-secondary okt-btn" href="{% url 'admin:testing_test_export' %}{% if filter_qs %}?{{ filter_qs }}{% endif %}" data-okt-dialog="okt-tests-export">{% ticon "upload" 16 %}<span>Экспорт</span></a>
+    </div>
   </div>
 
   {% if tests %}
@@ -34,39 +54,48 @@
       {% for t in tests %}
         {% url 'admin:testing_test_change' t.pk as test_url %}
         <article class="okt-card">
-          {% with cover=t.image_url|safe_image_url %}{% if cover %}
-            <a class="okt-card__cover" href="{{ test_url }}" tabindex="-1" aria-hidden="true" data-okt-img-wrap>
-              <img src="{{ cover }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-okt-img>
+          <div class="okt-card__media">
+            <a class="okt-cover" href="{{ test_url }}" tabindex="-1" aria-hidden="true" data-okt-img-wrap>
+              {% with cover=t.image_url|safe_image_url %}{% if cover %}<img src="{{ cover }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-okt-img>{% endif %}{% endwith %}
+              <span class="okt-cover__placeholder">{% ticon "clipboard-check" 30 %}</span>
             </a>
-          {% endif %}{% endwith %}
-          <div class="okt-card__top">
-            <a class="okt-card__title" href="{{ test_url }}">{{ t.title }}</a>
-            <details class="ok-menu okt-card__menu">
-              <summary class="okt-icon-btn" aria-label="Действия с тестом «{{ t.title }}»">{% ticon "ellipsis" 18 %}</summary>
-              <div class="ok-menu-list ok-menu-list-right">
-                <a href="{% url 'admin:testing_test_preview' t.pk %}" target="_blank" rel="noopener">{% ticon "eye" 15 %} Предпросмотр</a>
-                <a href="{% url 'admin:testing_test_settings' t.pk %}">{% ticon "settings" 15 %} Настройки</a>
-                <a href="{% url 'admin:testing_test_publish' t.pk %}">{% ticon "send" 15 %} Публикация</a>
-                <a href="{% url 'admin:testing_test_stats' t.pk %}">{% ticon "chart-column" 15 %} Статистика</a>
-                {% include "admin/testing/tests/_status_actions.html" with test=t next=request.get_full_path %}
-                <a class="ok-menu-danger" href="{% url 'admin:testing_test_delete' t.pk %}">{% ticon "trash-2" 15 %} Удалить</a>
-              </div>
-            </details>
+            <label class="okt-card__select" title="Выбрать для экспорта">
+              <input type="checkbox" name="ids" value="{{ t.pk }}" form="okt-export-form" data-okt-select aria-label="Выбрать тест «{{ t.title }}» для экспорта">
+            </label>
           </div>
-          {% if t.subject %}<div class="okt-card__subject">{% ticon "book-open" 14 %}<span>{{ t.subject.name }}</span></div>{% endif %}
-          {% if t.description %}<p class="okt-card__desc">{{ t.description|truncatechars:150 }}</p>{% endif %}
-          <div class="okt-card__badges">{{ t.level|level_badge }}{{ t.status|status_badge }}</div>
-          <div class="okt-card__stats">
-            <span>{% ticon "list-checks" 14 %}{{ t.questions_total|question_count_label }}</span>
-            <span>{% ticon "users" 14 %}{{ t.attempts_total|attempt_count_label }}</span>
-          </div>
-          <div class="okt-card__dates">
-            <span>Создан {{ t.created_at|date:"j E Y" }}</span>
-            <span>Обновлён {{ t.updated_at|date:"j E Y, H:i" }}</span>
-          </div>
-          <div class="okt-card__actions">
-            <a class="ok-btn-primary ok-btn-sm okt-btn" href="{{ test_url }}">Открыть</a>
-            <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{{ test_url }}#test-info">{% ticon "pencil" 14 %}<span>Редактировать</span></a>
+          <div class="okt-card__body">
+            <div class="okt-card__top">
+              <a class="okt-card__title" href="{{ test_url }}" title="{{ t.title }}">{{ t.title }}</a>
+              <details class="ok-menu okt-card__menu">
+                <summary class="okt-icon-btn" aria-label="Действия с тестом «{{ t.title }}»">{% ticon "ellipsis" 18 %}</summary>
+                <div class="ok-menu-list ok-menu-list-right">
+                  <a href="{{ test_url }}">{% ticon "external-link" 15 %} Открыть</a>
+                  <a href="{{ test_url }}#test-info">{% ticon "pencil" 15 %} Редактировать</a>
+                  <a href="{{ test_url }}#questions">{% ticon "list-checks" 15 %} Управление вопросами</a>
+                  <a href="{% url 'admin:testing_questions_import' t.pk %}" data-okt-dialog="okt-questions-import" data-okt-test="{{ t.title }}"
+                     data-okt-template="{% url 'admin:testing_questions_import_template' t.pk %}">{% ticon "download" 15 %} Импорт вопросов</a>
+                  <a href="{% url 'admin:testing_questions_export' t.pk %}" data-okt-dialog="okt-questions-export" data-okt-test="{{ t.title }}">{% ticon "upload" 15 %} Экспорт вопросов</a>
+                  <form method="post" action="{% url 'admin:testing_test_duplicate' t.pk %}">{% csrf_token %}
+                    <button type="submit">{% ticon "copy" 15 %} Дублировать</button>
+                  </form>
+                  {% include "admin/testing/tests/_status_actions.html" with test=t next=request.get_full_path %}
+                  <a class="ok-menu-danger" href="{% url 'admin:testing_test_delete' t.pk %}">{% ticon "trash-2" 15 %} Удалить</a>
+                </div>
+              </details>
+            </div>
+            <div class="okt-card__subject">{% ticon "book-open" 14 %}<span>{{ t.subject.name|default:"Без предмета" }}</span></div>
+            <div class="okt-card__badges">{{ t.level|level_badge }}{{ t.status|status_badge }}</div>
+            <div class="okt-card__stats">
+              <span>{% ticon "list-checks" 14 %}{{ t.questions_total|question_count_label }}</span>
+              <span>{% ticon "users" 14 %}{{ t.attempts_total|attempt_count_label }}</span>
+            </div>
+            <div class="okt-card__dates" title="Создан {{ t.created_at|date:'d.m.Y H:i' }} · Обновлён {{ t.updated_at|date:'d.m.Y H:i' }}">
+              {% ticon "calendar" 13 %}<span>Создан {{ t.created_at|date:"d.m.Y" }}</span>{% if t.updated_at|date:"Ymd" != t.created_at|date:"Ymd" %}<span>· обновлён {{ t.updated_at|date:"d.m.Y" }}</span>{% endif %}
+            </div>
+            <div class="okt-card__actions">
+              <a class="ok-btn-primary ok-btn-sm okt-btn" href="{{ test_url }}">Открыть</a>
+              <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{{ test_url }}#test-info">{% ticon "pencil" 14 %}<span>Редактировать</span></a>
+            </div>
           </div>
         </article>
       {% endfor %}
@@ -74,9 +103,9 @@
 
     {% if page.has_other_pages %}
       <nav class="okt-pager" aria-label="Страницы">
-        {% if page.has_previous %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.previous_page_number }}{% if status != 'all' %}&amp;status={{ status }}{% endif %}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">{% ticon "chevron-left" 14 %} Назад</a>{% endif %}
+        {% if page.has_previous %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.previous_page_number }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">{% ticon "chevron-left" 14 %} Назад</a>{% endif %}
         <span>Страница {{ page.number }} из {{ page.paginator.num_pages }}</span>
-        {% if page.has_next %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.next_page_number }}{% if status != 'all' %}&amp;status={{ status }}{% endif %}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">Далее {% ticon "chevron-right" 14 %}</a>{% endif %}
+        {% if page.has_next %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.next_page_number }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">Далее {% ticon "chevron-right" 14 %}</a>{% endif %}
       </nav>
     {% endif %}
   {% else %}
@@ -84,13 +113,32 @@
       <span class="okt-empty__icon">{% ticon "clipboard-check" 28 %}</span>
       {% if total %}
         <h2>Ничего не найдено</h2>
-        <p>Попробуйте изменить поиск или фильтр.</p>
-        <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:testing_test_changelist' %}">Сбросить</a>
+        <p>Попробуйте изменить поиск или фильтры.</p>
+        <a class="ok-btn-secondary ok-btn-sm" href="{% url 'admin:testing_test_changelist' %}">Сбросить фильтры</a>
       {% else %}
         <h2>Тестов пока нет</h2>
-        <p>Создайте первый тест — затем добавьте в него вопросы.</p>
-        <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_test_add' %}">{% ticon "plus" 16 %}<span>Создать тест</span></a>
+        <p>Создайте первый тест или импортируйте готовые из CSV / XLSX.</p>
+        <div class="okt-empty__actions">
+          <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_test_add' %}">{% ticon "plus" 16 %}<span>Создать тест</span></a>
+          <a class="ok-btn-secondary okt-btn" href="{% url 'admin:testing_test_import' %}" data-okt-dialog="okt-tests-import">{% ticon "download" 16 %}<span>Импорт</span></a>
+        </div>
       {% endif %}
     </div>
   {% endif %}
+
+  {# Dialogs (tests.js opens them; without JS the buttons above are plain links to the same forms as pages). #}
+  <dialog id="okt-tests-import" class="ok-modal" aria-label="Импорт тестов">
+    {% url 'admin:testing_test_import' as action %}{% url 'admin:testing_test_import_template' as template_url %}
+    {% include "admin/testing/tests/_import_form.html" with kind="tests" in_dialog=True %}
+  </dialog>
+  <dialog id="okt-tests-export" class="ok-modal" aria-label="Экспорт тестов">
+    {% url 'admin:testing_test_export' as action %}
+    {% include "admin/testing/tests/_export_form.html" with kind="tests" in_dialog=True form_id="okt-export-form" formats=export_formats scopes=export_scopes %}
+  </dialog>
+  <dialog id="okt-questions-import" class="ok-modal" aria-label="Импорт вопросов">
+    {% include "admin/testing/tests/_import_form.html" with kind="questions" in_dialog=True action="" template_url="" %}
+  </dialog>
+  <dialog id="okt-questions-export" class="ok-modal" aria-label="Экспорт вопросов">
+    {% include "admin/testing/tests/_export_form.html" with kind="questions" in_dialog=True action="" formats=export_formats %}
+  </dialog>
 {% endblock %}

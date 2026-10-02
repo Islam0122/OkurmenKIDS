@@ -1,0 +1,48 @@
+{% load question_bank %}
+{% comment %} Import form — inside a <dialog> (in_dialog) or on the import page.
+   kind: "tests" | "questions"; action, template_url (?format= is appended),
+   test_title (questions), cancel_url (page only). The list page's shared
+   questions dialog gets action / test / template links from tests.js.{% endcomment %}
+<form class="ok-modal-form okt-io" method="post" enctype="multipart/form-data" action="{{ action }}" data-okt-io-form>
+  {% csrf_token %}
+  <div class="ok-modal-header">
+    <span>{% ticon "download" 16 %} {% if kind == "questions" %}Импорт вопросов{% else %}Импорт тестов{% endif %}</span>
+    {% if in_dialog %}<button type="button" class="ok-modal-close" data-okt-close aria-label="Закрыть">{% ticon "x" 18 %}</button>{% endif %}
+  </div>
+  <div class="ok-modal-body okt-io__body">
+    {% if kind == "questions" %}
+      <p class="okt-io__target">Тест: <strong data-okt-io-test>{{ test_title }}</strong></p>
+    {% endif %}
+    {% if error %}<div class="ok-alert ok-alert-danger" role="alert">{{ error }}</div>{% endif %}
+    <label class="okt-dropzone">
+      <input class="okt-dropzone__input" type="file" name="file" required data-okt-file
+             accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <span class="okt-dropzone__icon">{% ticon "file-spreadsheet" 22 %}</span>
+      <span class="okt-dropzone__text" data-okt-file-name>Выберите CSV / XLSX файл</span>
+      <span class="okt-dropzone__hint">до 5 МБ · первая строка — названия колонок, как в шаблоне</span>
+    </label>
+    <div class="okt-io__template">
+      <span class="okt-muted">Скачать шаблон:</span>
+      <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{{ template_url }}?format=xlsx" data-okt-io-template="xlsx">{% ticon "download" 14 %}<span>XLSX</span></a>
+      <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{{ template_url }}?format=csv" data-okt-io-template="csv">{% ticon "download" 14 %}<span>CSV</span></a>
+    </div>
+    {% if kind == "questions" %}
+      <p class="okt-io__note">Типы: <code>single_choice</code>, <code>multiple_choice</code>, <code>text</code>, <code>code</code>. В XLSX-шаблоне есть лист «Пример» и «Справка» по колонкам.</p>
+    {% else %}
+      <p class="okt-io__note">Колонки: <code>title</code>, <code>subject</code>, <code>level</code>, <code>status</code>, <code>description</code>, <code>image_url</code>… Вопросы импортируются отдельно, внутри теста.</p>
+    {% endif %}
+    <label class="okt-check">
+      <input type="checkbox" name="update_existing" value="1">
+      <span>{% if kind == "questions" %}Обновлять существующие вопросы (тот же ID из экспорта или тот же текст){% else %}Обновлять существующие тесты с тем же названием{% endif %}</span>
+    </label>
+    <p class="okt-io__note okt-muted">Без галочки совпадения пропускаются — дубликаты не создаются.</p>
+  </div>
+  <div class="ok-modal-footer">
+    {% if in_dialog %}
+      <button type="button" class="ok-btn-secondary ok-btn-sm" data-okt-close>Отмена</button>
+    {% else %}
+      <a class="ok-btn-secondary ok-btn-sm" href="{{ cancel_url }}">Отмена</a>
+    {% endif %}
+    <button type="submit" class="ok-btn-primary ok-btn-sm okt-btn">{% ticon "download" 15 %}<span>Импортировать</span></button>
+  </div>
+</form>

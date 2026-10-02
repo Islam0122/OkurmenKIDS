@@ -3,7 +3,11 @@
  *  - forms with data-okt-confirm ask before submitting (deletes, finish);
  *  - forms with data-okt-guard warn about unsaved changes on leave;
  *  - drag & drop ordering of the questions table (#questions), saved via
- *    POST {order: [ids]} to its data-reorder-url (Question.order = 1..n).
+ *    POST {order: [ids]} to its data-reorder-url (Question.order = 1..n);
+ *  - links with data-okt-dialog="<id>" open that import / export <dialog>
+ *    (a shared questions dialog takes its test, action and template links
+ *    from the link); list filters apply on change; card checkboxes feed
+ *    «Экспорт → Только выбранные».
  * Every action also works without JS (plain forms / links). */
 (function () {
   "use strict";
@@ -36,14 +40,112 @@
     if (dirty.size) { event.preventDefault(); event.returnValue = ""; }
   });
 
-  // Decorative test images (list cover, header thumb): hide if they fail to load.
+  // Test / question images: a URL that fails to load shows the placeholder
+  // (card cover, question thumb) or hides the image (header thumb).
+  function markBroken(img) {
+    var wrap = img.closest("[data-okt-img-wrap]");
+    if (wrap) wrap.classList.add("is-broken");
+  }
   document.addEventListener("error", function (event) {
     var img = event.target;
-    if (img.matches && img.matches("img[data-okt-img]")) {
-      var wrap = img.closest("[data-okt-img-wrap]");
-      if (wrap) wrap.classList.add("is-broken");
-    }
+    if (img.matches && img.matches("img[data-okt-img]")) markBroken(img);
   }, true);
+  // Failed before this script ran (the error event is gone by now).
+  document.querySelectorAll("img[data-okt-img]").forEach(function (img) {
+    if (img.complete && !img.naturalWidth) markBroken(img);
+  });
+
+  // -- Import / export dialogs -------------------------------------------
+  function resetFile(dialog) {
+    dialog.querySelectorAll("[data-okt-file]").forEach(function (input) {
+      input.value = "";
+      var label = dialog.querySelector("[data-okt-file-name]");
+      if (label) label.textContent = label.getAttribute("data-empty") || label.textContent;
+    });
+  }
+
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest && event.target.closest("[data-okt-dialog]");
+    if (!link) return;
+    var dialog = document.getElementById(link.getAttribute("data-okt-dialog"));
+    if (!dialog || typeof dialog.showModal !== "function") return;  // no <dialog>: follow the link
+    event.preventDefault();
+    var menu = link.closest("details.ok-menu");
+    if (menu) menu.removeAttribute("open");
+    var form = dialog.querySelector("[data-okt-io-form]");
+    if (link.hasAttribute("data-okt-test") && form) {
+      form.setAttribute("action", link.getAttribute("href"));
+      dialog.querySelectorAll("[data-okt-io-test]").forEach(function (el) { el.textContent = link.getAttribute("data-okt-test"); });
+      var base = link.getAttribute("data-okt-template");
+      if (base) {
+        dialog.querySelectorAll("[data-okt-io-template]").forEach(function (a) {
+          a.setAttribute("href", base + "?format=" + a.getAttribute("data-okt-io-template"));
+        });
+      }
+    }
+    resetFile(dialog);
+    updateSelection(true);
+    dialog.showModal();
+  });
+
+  document.querySelectorAll("dialog.ok-modal").forEach(function (dialog) {
+    dialog.addEventListener("click", function (event) {
+      if (event.target === dialog || (event.target.closest && event.target.closest("[data-okt-close]"))) dialog.close();
+    });
+    var form = dialog.querySelector("[data-okt-io-form]");
+    if (!form) return;
+    form.addEventListener("submit", function () {
+      if (form.method.toLowerCase() === "get") {
+        window.setTimeout(function () { dialog.close(); }, 150);  // a download: the page stays
+      } else {
+        var button = form.querySelector("button[type=submit]");
+        if (button) { button.disabled = true; button.lastElementChild.textContent = "Импорт…"; }
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-okt-file]").forEach(function (input) {
+    var label = input.parentElement.querySelector("[data-okt-file-name]");
+    if (label) label.setAttribute("data-empty", label.textContent);
+    input.addEventListener("change", function () {
+      if (label) label.textContent = input.files && input.files.length ? input.files[0].name : label.getAttribute("data-empty");
+      input.closest(".okt-dropzone").classList.toggle("has-file", !!(input.files && input.files.length));
+    });
+  });
+
+  // -- List: filters apply on change, card selection for export -----------
+  document.querySelectorAll("form[data-okt-autosubmit]").forEach(function (form) {
+    form.querySelectorAll("[data-okt-autosubmit-hide]").forEach(function (el) { el.hidden = true; });
+    form.querySelectorAll("select").forEach(function (select) {
+      select.addEventListener("change", function () { form.submit(); });
+    });
+  });
+
+  function updateSelection(preferSelected) {
+    var boxes = Array.prototype.slice.call(document.querySelectorAll("[data-okt-select]"));
+    if (!boxes.length) return;
+    var count = 0;
+    boxes.forEach(function (box) {
+      var card = box.closest(".okt-card");
+      if (card) card.classList.toggle("is-selected", box.checked);
+      if (box.checked) count += 1;
+    });
+    document.querySelectorAll("[data-okt-selected-count]").forEach(function (el) {
+      el.textContent = count ? "(" + count + ")" : "— отметьте карточки";
+    });
+    document.querySelectorAll("[data-okt-scope-selected]").forEach(function (radio) {
+      radio.disabled = !count;
+      if (!count && radio.checked) {
+        var first = radio.form && radio.form.querySelector("input[name=scope]");
+        if (first) first.checked = true;
+      }
+      if (count && preferSelected) radio.checked = true;
+    });
+  }
+  document.addEventListener("change", function (event) {
+    if (event.target.matches && event.target.matches("[data-okt-select]")) updateSelection(false);
+  });
+  updateSelection(false);
 
   // -- Questions: drag & drop ---------------------------------------------
   var section = document.getElementById("questions");

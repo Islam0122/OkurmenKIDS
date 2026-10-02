@@ -1,0 +1,42 @@
+{% extends "admin/testing/tests/base.html" %}
+{% load question_bank %}
+
+{% comment %} Import / export as a page: the result of an import, and the no-JS
+   fallback of the dialogs on the list and test pages.
+   mode: tests_import | tests_export | questions_import | questions_export.{% endcomment %}
+
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_test_changelist' %}">Тесты</a></li>
+  {% if test %}<li class="breadcrumb-item"><a href="{% url 'admin:testing_test_change' test.pk %}">{{ test.title }}</a></li>{% endif %}
+  <li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+
+{% block section %}
+  {% if test %}
+    {% url 'admin:testing_test_change' test.pk as back_url %}
+    <a class="okt-back" href="{{ back_url }}#questions">{% ticon "arrow-left" 15 %}<span>Назад к тесту «{{ test.title }}»</span></a>
+  {% else %}
+    {% url 'admin:testing_test_changelist' as back_url %}
+    <a class="okt-back" href="{{ back_url }}">{% ticon "arrow-left" 15 %}<span>Назад к тестам</span></a>
+  {% endif %}
+
+  {% if report %}
+    {% include "admin/testing/tests/_import_report.html" with kind=test|yesno:"questions,tests" %}
+  {% endif %}
+
+  <div class="ok-card okt-io-card">
+    {% if mode == "tests_import" %}
+      {% url 'admin:testing_test_import' as action %}{% url 'admin:testing_test_import_template' as template_url %}
+      {% include "admin/testing/tests/_import_form.html" with kind="tests" cancel_url=back_url %}
+    {% elif mode == "questions_import" %}
+      {% url 'admin:testing_questions_import' test.pk as action %}{% url 'admin:testing_questions_import_template' test.pk as template_url %}
+      {% include "admin/testing/tests/_import_form.html" with kind="questions" test_title=test.title cancel_url=back_url %}
+    {% elif mode == "tests_export" %}
+      {% url 'admin:testing_test_export' as action %}
+      {% include "admin/testing/tests/_export_form.html" with kind="tests" cancel_url=back_url %}
+    {% else %}
+      {% url 'admin:testing_questions_export' test.pk as action %}
+      {% include "admin/testing/tests/_export_form.html" with kind="questions" test_title=test.title cancel_url=back_url %}
+    {% endif %}
+  </div>
+{% endblock %}

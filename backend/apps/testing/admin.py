@@ -14,7 +14,7 @@ from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import path
 
-from . import admin_views, analytics_admin_views, session_admin_views
+from . import admin_views, analytics_admin_views, io_admin_views, session_admin_views
 from .admin_views import is_admin_user
 from .models import Test, TestSession
 
@@ -54,6 +54,17 @@ class TestAdmin(admin.ModelAdmin):
         test = "<uuid:test_id>/"
         question = test + "questions/<uuid:question_id>/"
         urls = [
+            path("export/", view(io_admin_views.tests_export_view), name="testing_test_export"),
+            path("import/", view(io_admin_views.tests_import_view), name="testing_test_import"),
+            path("import/template/", view(io_admin_views.tests_import_template_view), name="testing_test_import_template"),
+            path(test + "duplicate/", view(io_admin_views.test_duplicate_view), name="testing_test_duplicate"),
+            path(test + "questions/export/", view(io_admin_views.questions_export_view), name="testing_questions_export"),
+            path(test + "questions/import/", view(io_admin_views.questions_import_view), name="testing_questions_import"),
+            path(
+                test + "questions/import/template/",
+                view(io_admin_views.questions_import_template_view),
+                name="testing_questions_import_template",
+            ),
             path(test + "settings/", view(admin_views.test_settings_view), name="testing_test_settings"),
             path(test + "publish/", view(admin_views.test_publish_view), name="testing_test_publish"),
             path(test + "stats/", view(admin_views.test_stats_view), name="testing_test_stats"),
