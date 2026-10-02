@@ -44,6 +44,12 @@
       <section class="ex-card ex-q" data-ex-q data-required="{{ q.is_required|yesno:'1,0' }}" id="q-{{ forloop.counter }}"
                aria-labelledby="q-{{ forloop.counter }}-title">
         <p class="ex-eyebrow">Вопрос {{ forloop.counter }} из {{ questions|length }}{% if q.points > 1 %} · {{ q.points|points_label }}{% endif %}{% if not q.is_required %} · необязательный{% endif %}</p>
+        {% with qimg=q.image_url|safe_image_url %}{% if qimg %}
+          <figure class="ex-figure" data-ex-figure>
+            <img src="{{ qimg }}" alt="Изображение к вопросу {{ forloop.counter }}" loading="lazy" referrerpolicy="no-referrer">
+            <figcaption class="ex-figure__fallback" hidden>Не удалось загрузить изображение</figcaption>
+          </figure>
+        {% endif %}{% endwith %}
         <h2 class="ex-q__title" id="q-{{ forloop.counter }}-title">{{ q.text|linebreaksbr }}</h2>
         {% if q.hint %}<p class="ex-hint"><strong>Подсказка:</strong> {{ q.hint }}</p>{% endif %}
 
@@ -52,11 +58,22 @@
             <legend class="ex-visually-hidden">Варианты ответа</legend>
             {% if q.question_type == "multiple_choice" %}<p class="ex-muted ex-small">Можно выбрать несколько вариантов.</p>{% endif %}
             {% for o in q.display_options %}
-              <label class="ex-option">
+              {% with oimg=o.image_url|safe_image_url %}
+              <label class="ex-option{% if oimg %} ex-option--image{% endif %}">
                 <input type="{% if q.question_type == 'single_choice' %}radio{% else %}checkbox{% endif %}"
                        name="answer_{{ q.pk }}" value="{{ o.pk }}"{% if o.pk|stringformat:"s" in q.given_options %} checked{% endif %}>
-                <span>{{ o.text }}</span>
+                <span class="ex-option__body">
+                  {% if oimg %}
+                    <span class="ex-option__img" data-ex-figure>
+                      <img src="{{ oimg }}" alt="{% if not o.text %}Вариант {{ forloop.counter }}{% endif %}" loading="lazy" referrerpolicy="no-referrer">
+                      {# A broken picture next to text just disappears; a picture-only option says why it's empty. #}
+                      <span class="ex-figure__fallback" hidden>{% if not o.text %}Не удалось загрузить изображение{% endif %}</span>
+                    </span>
+                  {% endif %}
+                  {% if o.text %}<span>{{ o.text }}</span>{% elif not oimg %}<span>—</span>{% endif %}
+                </span>
               </label>
+              {% endwith %}
             {% endfor %}
           </fieldset>
         {% elif q.question_type == "code" %}

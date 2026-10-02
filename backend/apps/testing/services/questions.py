@@ -31,6 +31,7 @@ def save_question(test, data: QuestionData, *, question: Question | None = None,
     question = question or Question(test=test, order=next_order(test))
     question.question_type = data.question_type
     question.text = data.text
+    question.image_url = data.image_url
     question.language = data.language
     question.correct_answers = data.correct_answers if data.question_type == QuestionType.TEXT else []
     question.code_tests = (
@@ -53,6 +54,7 @@ def save_question(test, data: QuestionData, *, question: Question | None = None,
             if row is None:
                 row = QuestionOption(question=question)
             row.text, row.is_correct, row.order = option.text, option.is_correct, position
+            row.image_url = option.image_url
             row.save()
             keep.add(str(row.pk))
     question.options.exclude(pk__in=keep).delete()
@@ -80,7 +82,8 @@ def duplicate_question(question: Question) -> Question:
     copy.order = question.order + 1
     copy.save()
     QuestionOption.objects.bulk_create(
-        QuestionOption(question=copy, text=o.text, is_correct=o.is_correct, order=o.order) for o in options
+        QuestionOption(question=copy, text=o.text, image_url=o.image_url, is_correct=o.is_correct, order=o.order)
+        for o in options
     )
     return copy
 

@@ -26,7 +26,7 @@ import uuid
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, URLValidator
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
@@ -113,10 +113,31 @@ REVIEW_GRADING_STATUSES = (GradingStatus.PENDING, GradingStatus.PROCESSING, Grad
 # Test / Question / QuestionOption
 # ---------------------------------------------------------------------------
 
+# Images are links only: the URL is stored, nothing is uploaded or kept in
+# MEDIA_ROOT. Only http(s) — never javascript:, data:, file: and the like.
+IMAGE_URL_MAX_LENGTH = 1000
+validate_image_url = URLValidator(
+    schemes=["http", "https"],
+    message="Укажите ссылку на изображение, начинающуюся с http:// или https://.",
+)
+
+
+def image_url_field(verbose_name: str = "Изображение (URL)"):
+    return models.URLField(
+        max_length=IMAGE_URL_MAX_LENGTH,
+        blank=True,
+        default="",
+        validators=[validate_image_url],
+        verbose_name=verbose_name,
+        help_text="Необязательно. Ссылка на картинку (http:// или https://); файл не загружается на сервер.",
+    )
+
+
 class Test(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, unique=True, verbose_name="Название")
     description = models.TextField(blank=True, verbose_name="Описание")
+    image_url = image_url_field("Изображение теста")
     subject = models.ForeignKey(
         "users.Subject",
         on_delete=models.SET_NULL,
@@ -233,6 +254,7 @@ class Question(models.Model):
         verbose_name="Тест",
     )
     text = models.TextField(verbose_name="Текст вопроса")
+    image_url = image_url_field("Изображение вопроса")
     question_type = models.CharField(
         max_length=20,
         choices=QuestionType.choices,
@@ -311,7 +333,9 @@ class QuestionOption(models.Model):
         related_name="options",
         verbose_name="Вопрос",
     )
-    text = models.CharField(max_length=1024, verbose_name="Текст варианта")
+    # Blank when the option is a picture only (image_url).
+    text = models.CharField(max_length=1024, blank=True, verbose_name="Текст варианта")
+    image_url = image_url_field("Изображение варианта")
     is_correct = models.BooleanField(default=False, verbose_name="Правильный")
     order = models.PositiveSmallIntegerField(default=0, verbose_name="Порядок")
 
@@ -324,7 +348,7 @@ class QuestionOption(models.Model):
         ]
 
     def __str__(self):
-        return f'{"✓" if self.is_correct else "✗"} {self.text[:60]}'
+        return f'{"✓" if self.is_correct else "✗"} {(self.text or self.image_url)[:60]}'
 
 # ---------------------------------------------------------------------------
 # TestSession

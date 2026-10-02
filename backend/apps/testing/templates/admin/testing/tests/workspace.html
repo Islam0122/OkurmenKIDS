@@ -13,6 +13,9 @@
 
   <header class="okt-test-head">
     <div class="okt-test-head__main">
+      {% with thumb=test.image_url|safe_image_url %}{% if thumb %}
+        <span class="okt-test-head__thumb" data-okt-img-wrap><img src="{{ thumb }}" alt="" referrerpolicy="no-referrer" data-okt-img></span>
+      {% endif %}{% endwith %}
       <h1 class="okt-h1">{{ test.title }}</h1>
       <div class="okt-test-head__meta">
         {{ test.level|level_badge }}{{ test.status|status_badge }}

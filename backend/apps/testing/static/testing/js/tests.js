@@ -36,6 +36,15 @@
     if (dirty.size) { event.preventDefault(); event.returnValue = ""; }
   });
 
+  // Decorative test images (list cover, header thumb): hide if they fail to load.
+  document.addEventListener("error", function (event) {
+    var img = event.target;
+    if (img.matches && img.matches("img[data-okt-img]")) {
+      var wrap = img.closest("[data-okt-img-wrap]");
+      if (wrap) wrap.classList.add("is-broken");
+    }
+  }, true);
+
   // -- Questions: drag & drop ---------------------------------------------
   var section = document.getElementById("questions");
   var body = section && section.querySelector("[data-okt-rows]");

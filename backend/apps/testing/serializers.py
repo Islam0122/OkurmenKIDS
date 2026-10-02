@@ -6,10 +6,37 @@ from rest_framework import serializers
 
 from .models import DifficultyLevel, Question, Test
 from .services import questions as question_service
-from .services.question_rules import CodeTestData, OptionData, QuestionData
+from .services.question_rules import CodeTestData, OptionData, QuestionData, image_url_error
+
+
+class ImageUrlField(serializers.CharField):
+    """An optional image link: http(s) URL in, the URL or null out.
+    Only the string is stored — no upload, file path or base64."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("allow_blank", True)
+        kwargs.setdefault("allow_null", True)
+        kwargs.setdefault("max_length", 1000)
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data).strip()
+        if (message := image_url_error(value)):
+            raise serializers.ValidationError(message)
+        return value
+
+    def validate_empty_values(self, data):
+        if data is None:
+            return True, ""
+        return super().validate_empty_values(data)
+
+    def to_representation(self, value):
+        return value or None
 
 
 class TestSerializer(serializers.ModelSerializer):
+    image_url = ImageUrlField()
     subject_name = serializers.CharField(source="subject.name", read_only=True, default=None)
     level_display = serializers.CharField(source="get_level_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -19,7 +46,7 @@ class TestSerializer(serializers.ModelSerializer):
     class Meta:
         model = Test
         fields = (
-            "id", "title", "description", "subject", "subject_name", "level", "level_display",
+            "id", "title", "description", "image_url", "subject", "subject_name", "level", "level_display",
             "status", "status_display", "time_limit_minutes", "max_attempts", "passing_score",
             "questions_per_attempt", "shuffle_questions", "shuffle_options", "show_result",
             "show_correct_answers", "allow_retry", "available_from", "available_until",
@@ -39,7 +66,8 @@ class TestSerializer(serializers.ModelSerializer):
 
 class OptionSerializer(serializers.Serializer):
     id = serializers.UUIDField(required=False, allow_null=True)
-    text = serializers.CharField(allow_blank=True, max_length=1024)
+    text = serializers.CharField(allow_blank=True, required=False, default="", max_length=1024)
+    image_url = ImageUrlField()
     is_correct = serializers.BooleanField(default=False)
     order = serializers.IntegerField(read_only=True)
 
@@ -54,6 +82,7 @@ class QuestionSerializer(serializers.ModelSerializer):
     services.questions.save_question — the same rules as the admin editor
     (services/question_rules.py)."""
 
+    image_url = ImageUrlField()
     options = OptionSerializer(many=True, required=False)
     code_tests = CodeTestSerializer(many=True, required=False)
     correct_answers = serializers.ListField(child=serializers.CharField(allow_blank=True), required=False)
@@ -62,7 +91,7 @@ class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = (
-            "id", "test", "order", "question_type", "question_type_display", "text", "hint", "points",
+            "id", "test", "order", "question_type", "question_type_display", "text", "image_url", "hint", "points",
             "is_required", "difficulty", "language", "answer_match", "correct_answers",
             "starter_code", "code_tests", "options", "created_at",
         )
@@ -71,7 +100,13 @@ class QuestionSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["options"] = [
-            {"id": str(o.pk), "text": o.text, "is_correct": o.is_correct, "order": o.order}
+            {
+                "id": str(o.pk),
+                "text": o.text,
+                "image_url": o.image_url or None,
+                "is_correct": o.is_correct,
+                "order": o.order,
+            }
             for o in instance.options.order_by("order", "pk")
         ]
         return data
@@ -81,7 +116,10 @@ class QuestionSerializer(serializers.ModelSerializer):
             return attrs[name]
         if self.instance is not None:
             if name == "options":
-                return [{"id": o.pk, "text": o.text, "is_correct": o.is_correct} for o in self.instance.options.order_by("order", "pk")]
+                return [
+                    {"id": o.pk, "text": o.text, "image_url": o.image_url, "is_correct": o.is_correct}
+                    for o in self.instance.options.order_by("order", "pk")
+                ]
             return getattr(self.instance, name)
         return default
 
@@ -90,10 +128,16 @@ class QuestionSerializer(serializers.ModelSerializer):
         data = QuestionData(
             question_type=question_type,
             text=self._value(attrs, "text", ""),
+            image_url=self._value(attrs, "image_url", "") or "",
             language=self._value(attrs, "language", ""),
             correct_answers=list(self._value(attrs, "correct_answers", [])),
             options=[
-                OptionData(o.get("text", ""), o.get("is_correct", False), str(o["id"]) if o.get("id") else None)
+                OptionData(
+                    o.get("text", ""),
+                    o.get("is_correct", False),
+                    str(o["id"]) if o.get("id") else None,
+                    o.get("image_url") or "",
+                )
                 for o in self._value(attrs, "options", [])
             ] if question_type in ("single_choice", "multiple_choice") else [],
             code_tests=[CodeTestData(t.get("input", ""), t.get("expected_output", "")) for t in self._value(attrs, "code_tests", [])],

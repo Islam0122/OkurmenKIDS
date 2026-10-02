@@ -1,4 +1,5 @@
 {% extends "testing/public/base.html" %}
+{% load question_bank %}
 
 {% block title %}{% if session %}{{ session.test.title }}{% else %}Вход в тест{% endif %}{% endblock %}
 
@@ -15,6 +16,12 @@
         <button type="submit" class="ex-btn ex-btn--primary ex-btn--block">Продолжить</button>
       </form>
     {% else %}
+      {% with cover=session.test.image_url|safe_image_url %}{% if cover %}
+        <figure class="ex-figure ex-figure--cover" data-ex-figure>
+          <img src="{{ cover }}" alt="" referrerpolicy="no-referrer">
+          <figcaption class="ex-figure__fallback" hidden></figcaption>
+        </figure>
+      {% endif %}{% endwith %}
       <p class="ex-eyebrow">Ключ {{ session.key }}</p>
       <h1 class="ex-h1">{{ session.test.title }}</h1>
       {% if session.test.description %}<p class="ex-muted">{{ session.test.description }}</p>{% endif %}

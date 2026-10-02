@@ -120,7 +120,7 @@ class StudentFlowTests(StudentFlowFixture):
         self.assertNotContains(self.client.get(url), "Правильно:")
         self.test.show_correct_answers = True
         self.test.save()
-        self.assertContains(self.client.get(url), "Правильно:</span> Python")
+        self.assertContains(self.client.get(url), 'Правильно:</span> <span class="ex-inline-option">Python</span>')
         self.test.show_result = False
         self.test.save()
         page = self.client.get(url)

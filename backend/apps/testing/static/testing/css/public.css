@@ -143,3 +143,17 @@ html:not(.ex-js) .ex-nav { justify-content: flex-end; }
   .ex-card { padding: 28px; }
 }
 .ex-q__title:focus { outline: none; }
+
+/* Images (always optional: no image → no container at all). */
+.ex-figure { margin: 0 0 14px; display: flex; justify-content: center; padding: 8px; border-radius: var(--ex-radius); background: #F3F4F6; }
+.ex-figure img { display: block; max-width: 100%; max-height: 360px; border-radius: 8px; object-fit: contain; }
+.ex-figure--cover { padding: 0; margin: -6px 0 16px; background: none; }
+.ex-figure--cover img { width: 100%; max-height: 220px; object-fit: cover; border-radius: var(--ex-radius); }
+.ex-figure__fallback { padding: 24px 12px; color: var(--ex-text-2); font-size: 14px; font-weight: 600; text-align: center; }
+.ex-option__body { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+.ex-option__img { display: flex; flex-direction: column; }
+.ex-option__img img { display: block; max-width: 100%; max-height: 200px; border-radius: 8px; object-fit: contain; align-self: flex-start; }
+.ex-option__img .ex-figure__fallback { padding: 8px 0; text-align: left; }
+.ex-review__thumb { display: inline-flex; vertical-align: middle; margin-right: 6px; }
+.ex-review__thumb img { display: block; height: 40px; max-width: 80px; border-radius: 6px; object-fit: cover; }
+.ex-inline-option { display: inline-flex; align-items: center; gap: 4px; }
