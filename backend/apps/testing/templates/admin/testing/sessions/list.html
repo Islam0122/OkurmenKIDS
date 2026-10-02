@@ -1,0 +1,100 @@
+{% extends "admin/testing/sessions/base.html" %}
+{% load question_bank %}
+
+{% block section %}
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">Сессии</h1>
+      <p class="okt-sub">Кто, когда и в какой группе проходит тест — и результаты.</p>
+    </div>
+    <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_testsession_add' %}">{% ticon "plus" 16 %}<span>Создать сессию</span></a>
+  </header>
+
+  <form class="okt-session-filters" method="get" role="search">
+    <div class="okt-search okt-search--grow">
+      <label class="ok-visually-hidden" for="oks-q">Поиск сессий</label>
+      <span class="okt-search__icon">{% ticon "search" 16 %}</span>
+      <input id="oks-q" class="ok-input" type="search" name="q" value="{{ query }}" placeholder="Поиск: название, тест, группа, ключ…">
+    </div>
+    <label class="ok-visually-hidden" for="oks-group">Группа</label>
+    <select id="oks-group" name="group" class="ok-input">
+      <option value="">Все группы</option>
+      {% for g in groups %}<option value="{{ g.pk }}"{% if group_id == g.pk|stringformat:"d" %} selected{% endif %}>{{ g.name }}</option>{% endfor %}
+    </select>
+    <label class="ok-visually-hidden" for="oks-test">Тест</label>
+    <select id="oks-test" name="test" class="ok-input">
+      <option value="">Все тесты</option>
+      {% for t in tests %}<option value="{{ t.pk }}"{% if test_id == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.title }}</option>{% endfor %}
+    </select>
+    <label class="ok-visually-hidden" for="oks-date">Дата</label>
+    <input id="oks-date" type="date" name="date" value="{{ date }}" class="ok-input">
+    {% if phase != "all" %}<input type="hidden" name="status" value="{{ phase }}">{% endif %}
+    <button type="submit" class="ok-btn-secondary okt-btn">Найти</button>
+    {% if has_filters %}<a class="okt-link-reset" href="?{% if phase != 'all' %}status={{ phase }}{% endif %}">Сбросить</a>{% endif %}
+  </form>
+
+  <nav class="okt-filters" aria-label="Статус">
+    {% for tab in tabs %}
+      <a class="okt-filter{% if tab.active %} is-active{% endif %}"
+         href="?{% if tab.key != 'all' %}status={{ tab.key }}&amp;{% endif %}{{ filter_qs }}"
+         {% if tab.active %}aria-current="page"{% endif %}>{{ tab.label }} <span class="okt-filter__count">{{ tab.count }}</span></a>
+    {% endfor %}
+  </nav>
+
+  {% if cards %}
+    <div class="okt-session-list">
+      {% for card in cards %}
+        {% url 'admin:testing_testsession_change' card.session.pk as session_url %}
+        <article class="okt-session-card{% if card.phase == 'active' %} is-live{% endif %}">
+          <div class="okt-session-card__main">
+            <a class="okt-card__title" href="{{ session_url }}">{{ card.title }}</a>
+            {% if card.session.title %}<div class="okt-session-card__test">{% ticon "clipboard-check" 14 %}{{ card.session.test.title }}</div>{% endif %}
+            <div class="okt-session-card__meta">
+              <span>{% ticon "users" 14 %}Группа: {{ card.session.group.name|default:"—" }}</span>
+              {% if card.when %}<span>{% ticon "calendar" 14 %}{{ card.when|date:"d.m.Y · H:i" }}{% if card.session.scheduled_end %}–{{ card.session.scheduled_end|date:"H:i" }}{% endif %}</span>{% endif %}
+              <span>{% ticon "graduation-cap" 14 %}{{ card.students_total|student_count_label }}</span>
+              <span class="okt-key okt-key--sm">{{ card.session.key }}</span>
+            </div>
+            {% if card.counts and card.phase != "draft" and card.phase != "scheduled" %}
+              <div class="okt-session-card__live">
+                <span class="okt-dot okt-dot--done"></span>{{ card.counts.completed }} завершили
+                <span class="okt-dot okt-dot--live"></span>{{ card.counts.in_progress }} проходят
+                <span class="okt-dot"></span>{{ card.counts.not_started }} не начали
+              </div>
+            {% endif %}
+          </div>
+          <div class="okt-session-card__side">
+            {{ card.phase|phase_badge }}
+            <div class="okt-session-card__actions">
+              <a class="ok-btn-primary ok-btn-sm okt-btn" href="{{ session_url }}">Открыть</a>
+              <details class="ok-menu">
+                <summary class="ok-btn-secondary ok-btn-sm okt-btn ok-menu-trigger" aria-label="Действия с сессией">{% ticon "ellipsis" 16 %}</summary>
+                <div class="ok-menu-list ok-menu-list-right">
+                  <a href="{% url 'admin:testing_session_participants' card.session.pk %}">{% ticon "users" 15 %} Участники</a>
+                  <a href="{% url 'admin:testing_session_results' card.session.pk %}">{% ticon "target" 15 %} Результаты</a>
+                  <a href="{% url 'admin:testing_session_settings' card.session.pk %}">{% ticon "settings" 15 %} Настройки</a>
+                  {% include "admin/testing/sessions/_actions.html" with session=card.session phase=card.phase next=request.get_full_path menu=True %}
+                  <a class="ok-menu-danger" href="{% url 'admin:testing_testsession_delete' card.session.pk %}">{% ticon "trash-2" 15 %} Удалить</a>
+                </div>
+              </details>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+    {% if page.has_other_pages %}
+      <nav class="okt-pager" aria-label="Страницы">
+        {% if page.has_previous %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.previous_page_number }}{% if phase != 'all' %}&amp;status={{ phase }}{% endif %}&amp;{{ filter_qs }}">{% ticon "chevron-left" 14 %} Назад</a>{% endif %}
+        <span>Страница {{ page.number }} из {{ page.paginator.num_pages }}</span>
+        {% if page.has_next %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.next_page_number }}{% if phase != 'all' %}&amp;status={{ phase }}{% endif %}&amp;{{ filter_qs }}">Далее {% ticon "chevron-right" 14 %}</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="okt-empty">
+      <span class="okt-empty__icon">{% ticon "calendar-check" 28 %}</span>
+      <h2>Сессий не найдено</h2>
+      <p>Создайте сессию: выберите тест, группу, дату и время.</p>
+      <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_testsession_add' %}">{% ticon "plus" 16 %}<span>Создать сессию</span></a>
+    </div>
+  {% endif %}
+{% endblock %}

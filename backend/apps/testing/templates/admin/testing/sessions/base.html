@@ -1,0 +1,10 @@
+{% extends "admin/testing/tests/base.html" %}
+{% load static %}
+
+{# Base of the «Сессии» section — same look as «Тесты» (tests.css), own crumbs and script. #}
+
+{% block crumbs %}<li class="breadcrumb-item active">Сессии</li>{% endblock %}
+
+{% block section_js %}
+  <script src="{% static 'testing/js/sessions.js' %}"></script>
+{% endblock %}

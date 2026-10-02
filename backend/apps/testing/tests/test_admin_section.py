@@ -6,7 +6,7 @@ import json
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.testing.models import Question, QuestionType, SessionStatus, Test, TestSession, TestStatus
+from apps.testing.models import Question, QuestionType, Test, TestStatus
 from apps.testing.services import questions as svc
 from apps.testing.services.question_rules import OptionData, QuestionData
 from apps.users.models import User
@@ -140,26 +140,6 @@ class WorkspaceTests(AdminFixture):
         response = self.client.post(self.url("testing_test_status", self.test.pk, "publish"), {"next": "https://evil.example/"})
         self.assertRedirects(response, self.url("testing_test_publish", self.test.pk))
         self.assertEqual(self.client.get("/admin/testing/test/not-a-uuid/change/").status_code, 404)
-
-    def test_create_and_control_a_session(self):
-        svc.save_question(self.test, choice())
-        self.test.status = TestStatus.ACTIVE
-        self.test.time_limit_minutes = 20
-        self.test.save()
-        response = self.client.post(self.url("testing_test_publish", self.test.pk), {
-            "session_type": "exam", "duration_minutes": "40", "title": "Группа A", "start_now": "on",
-        })
-        self.assertRedirects(response, self.url("testing_test_publish", self.test.pk))
-        session = TestSession.objects.get()
-        self.assertEqual((session.status, session.duration.total_seconds()), (SessionStatus.RUNNING, 2400))
-        page = self.client.get(self.url("testing_test_publish", self.test.pk))
-        self.assertContains(page, session.key)
-        self.client.post(self.url("testing_session_action", self.test.pk, session.pk, "pause"))
-        session.refresh_from_db()
-        self.assertEqual(session.status, SessionStatus.PAUSED)
-        self.client.post(self.url("testing_session_action", self.test.pk, session.pk, "finish"))
-        session.refresh_from_db()
-        self.assertEqual(session.status, SessionStatus.FINISHED)
 
     def test_stats_and_preview_render(self):
         svc.save_question(self.test, choice())

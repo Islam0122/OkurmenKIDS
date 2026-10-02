@@ -1,0 +1,8 @@
+{# KPI row of a session (Обзор / Активность). #}
+<div class="okt-kpis">
+  <div class="okt-kpi"><span class="okt-kpi__label">Участники</span><span class="okt-kpi__value">{{ counts.total }}</span></div>
+  <div class="okt-kpi"><span class="okt-kpi__label">Начали</span><span class="okt-kpi__value">{{ counts.started }}</span></div>
+  <div class="okt-kpi"><span class="okt-kpi__label">Завершили</span><span class="okt-kpi__value">{{ counts.completed }}</span></div>
+  <div class="okt-kpi"><span class="okt-kpi__label">В процессе</span><span class="okt-kpi__value">{{ counts.in_progress }}</span>{% if counts.disconnected %}<span class="okt-kpi__hint">нет соединения: {{ counts.disconnected }}</span>{% endif %}</div>
+  <div class="okt-kpi"><span class="okt-kpi__label">Средний балл</span><span class="okt-kpi__value">{% if counts.average_score is not None %}{{ counts.average_score|floatformat:0 }}%{% else %}—{% endif %}</span></div>
+</div>

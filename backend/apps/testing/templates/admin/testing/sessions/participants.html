@@ -1,0 +1,14 @@
+{% extends "admin/testing/sessions/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">
+      {% ticon "users" 16 %}<span>Участники</span>
+      {% if live %}<span class="oks-live ok-card-header-action">{% ticon "activity" 14 %} обновляется автоматически</span>{% endif %}
+    </div>
+    <div class="ok-card-body" {% if live %}data-oks-live="{{ request.path }}?fragment=1" data-oks-every="{{ refresh_seconds }}"{% endif %}>
+      {% include "admin/testing/sessions/_participants_table.html" %}
+    </div>
+  </section>
+{% endblock %}

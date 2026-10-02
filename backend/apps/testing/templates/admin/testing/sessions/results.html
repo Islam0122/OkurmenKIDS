@@ -1,0 +1,40 @@
+{% extends "admin/testing/sessions/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">
+      {% ticon "target" 16 %}<span>Результаты</span>
+      <span class="ok-card-header-action oks-exports">
+        <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_session_export' session.pk 'xlsx' %}">{% ticon "table-2" 14 %}<span>Экспорт Excel</span></a>
+        <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_session_export' session.pk 'pdf' %}">{% ticon "file-text" 14 %}<span>Экспорт PDF</span></a>
+      </span>
+    </div>
+    <div class="ok-card-body">
+      {% if results %}
+        <div class="okt-qtable-wrap">
+          <table class="okt-qtable">
+            <thead><tr><th>Студент</th><th>Статус</th><th class="okt-qtable__center">Процент</th><th class="okt-qtable__center">Баллы</th><th class="okt-qtable__center">Верно</th><th class="okt-qtable__center">Неверно</th><th>Время</th><th>Завершил</th></tr></thead>
+            <tbody>
+              {% for r in results %}
+                <tr>
+                  <td class="okt-qtable__text">{{ r.student_name }}</td>
+                  <td>{{ r.status_label }}{% if r.pending %}<div class="okt-qtable__meta">на проверке: {{ r.pending }}</div>{% endif %}</td>
+                  <td class="okt-qtable__center">{% if r.percent is not None %}<strong{% if r.passed %} class="okt-pass"{% elif r.passed is False %} class="oks-fail"{% endif %}>{{ r.percent|floatformat:0 }}%</strong>{% else %}—{% endif %}</td>
+                  <td class="okt-qtable__center">{% if r.earned is not None %}{{ r.earned }} / {{ r.possible }}{% else %}—{% endif %}</td>
+                  <td class="okt-qtable__center">{{ r.correct|default_if_none:"—" }}</td>
+                  <td class="okt-qtable__center">{{ r.wrong|default_if_none:"—" }}</td>
+                  <td class="okt-nowrap">{{ r.duration_seconds|duration_label }}</td>
+                  <td class="okt-nowrap">{{ r.finished_at|date:"d.m.Y H:i"|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="ok-help-text">Проходной балл теста: {{ session.test.passing_score }}%. Ответы с кодом и старые текстовые ответы ждут проверки преподавателя и пока не приносят баллов.</p>
+      {% else %}
+        <p class="okt-muted">Попыток пока нет.</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

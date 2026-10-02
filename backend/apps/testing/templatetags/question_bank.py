@@ -10,7 +10,7 @@ from django.utils.safestring import mark_safe
 
 from apps.academy.templatetags.lucide_icons import ICONS
 
-from ..models import DifficultyLevel, TestLevel, TestStatus
+from ..models import DifficultyLevel, ParticipantStatus, SessionPhase, TestLevel, TestStatus
 
 register = template.Library()
 
@@ -61,6 +61,56 @@ def status_badge(value: str) -> str:
     if value not in TestStatus.values:
         return "—"
     return badge(STATUS_BADGE_CLASSES[value], TestStatus(value).label)
+
+
+PHASE_BADGE_CLASSES = {
+    SessionPhase.DRAFT: "ok-badge-muted",
+    SessionPhase.SCHEDULED: "ok-badge-info",
+    SessionPhase.ACTIVE: "ok-badge-success",
+    SessionPhase.FINISHED: "ok-badge-muted",
+    SessionPhase.CANCELLED: "ok-badge-danger",
+}
+
+PARTICIPANT_BADGE_CLASSES = {
+    ParticipantStatus.NOT_STARTED: "ok-badge-muted",
+    ParticipantStatus.IN_PROGRESS: "ok-badge-success",
+    ParticipantStatus.PAUSED: "ok-badge-warning",
+    ParticipantStatus.DISCONNECTED: "ok-badge-warning",
+    ParticipantStatus.COMPLETED: "ok-badge-info",
+    ParticipantStatus.EXPIRED: "ok-badge-danger",
+}
+
+
+@register.filter
+def phase_badge(value: str) -> str:
+    """Session phase → «Черновик / Запланирована / Активна / …» badge."""
+    if value not in SessionPhase.values:
+        return "—"
+    css = PHASE_BADGE_CLASSES[value]
+    if value == SessionPhase.ACTIVE:
+        css += " okt-badge-live"
+    return badge(css, SessionPhase(value).label)
+
+
+@register.filter
+def participant_badge(value: str) -> str:
+    if value not in ParticipantStatus.values:
+        return "—"
+    return badge(PARTICIPANT_BADGE_CLASSES[value], ParticipantStatus(value).label)
+
+
+@register.filter
+def duration_label(seconds) -> str:
+    """`2531` → «42:11», `None` → «—»."""
+    from ..services.sessions import format_duration
+
+    return format_duration(seconds)
+
+
+@register.filter
+def student_count_label(n) -> str:
+    n = int(n or 0)
+    return f"{n} {plural_ru(n, 'студент', 'студента', 'студентов')}"
 
 
 @register.filter

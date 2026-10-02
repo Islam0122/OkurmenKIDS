@@ -1,0 +1,33 @@
+{% load question_bank %}
+{# Session lifecycle actions for its current phase. menu=True → menu rows, else buttons. #}
+{% if phase == "draft" or phase == "scheduled" %}
+  <form method="post" action="{% url 'admin:testing_session_action' session.pk 'start' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit"{% if not menu %} class="ok-btn-primary ok-btn-sm okt-btn"{% endif %}>{% ticon "play" 15 %} <span>Начать сейчас</span></button>
+  </form>
+{% endif %}
+{% if session.effective_status == "running" %}
+  <form method="post" action="{% url 'admin:testing_session_action' session.pk 'pause' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit"{% if not menu %} class="ok-btn-secondary ok-btn-sm okt-btn"{% endif %}>{% ticon "pause" 15 %} <span>Пауза</span></button>
+  </form>
+{% elif session.effective_status == "paused" %}
+  <form method="post" action="{% url 'admin:testing_session_action' session.pk 'resume' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit"{% if not menu %} class="ok-btn-primary ok-btn-sm okt-btn"{% endif %}>{% ticon "play" 15 %} <span>Продолжить</span></button>
+  </form>
+{% endif %}
+{% if phase == "active" %}
+  <form method="post" action="{% url 'admin:testing_session_action' session.pk 'finish' %}"
+        data-okt-confirm="Завершить сессию? Студенты, которые ещё отвечают, смогут отправить ответы в течение 90 секунд.">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit"{% if not menu %} class="ok-btn-danger ok-btn-sm okt-btn"{% endif %}>{% ticon "square" 15 %} <span>Завершить сессию</span></button>
+  </form>
+{% endif %}
+{% if phase == "draft" or phase == "scheduled" or phase == "active" %}
+  <form method="post" action="{% url 'admin:testing_session_action' session.pk 'cancel' %}"
+        data-okt-confirm="Отменить сессию? Студенты больше не смогут в неё войти.">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit"{% if menu %} class="ok-menu-danger"{% else %} class="ok-btn-secondary ok-btn-sm okt-btn"{% endif %}>{% ticon "x" 15 %} <span>Отменить сессию</span></button>
+  </form>
+{% endif %}

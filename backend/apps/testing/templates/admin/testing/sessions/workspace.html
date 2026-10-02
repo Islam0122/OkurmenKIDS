@@ -1,0 +1,40 @@
+{% extends "admin/testing/sessions/base.html" %}
+{% load question_bank %}
+
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_testsession_changelist' %}">Сессии</a></li>
+  <li class="breadcrumb-item active">{{ session_title }}</li>
+{% endblock %}
+
+{% block section %}
+  <a class="okt-back" href="{% url 'admin:testing_testsession_changelist' %}">{% ticon "arrow-left" 15 %}<span>Сессии</span></a>
+
+  <header class="okt-test-head">
+    <div class="okt-test-head__main">
+      <h1 class="okt-h1">{{ session_title }}</h1>
+      <div class="okt-test-head__meta">
+        {{ phase|phase_badge }}
+        <span class="okt-meta">{% ticon "clipboard-check" 14 %}Тест: <a href="{% url 'admin:testing_test_change' session.test.pk %}">{{ session.test.title }}</a></span>
+        <span class="okt-meta">{% ticon "users" 14 %}Группа: {{ session.group.name|default:"—" }}</span>
+        {% if when %}<span class="okt-meta">{% ticon "calendar" 14 %}{{ when|date:"d.m.Y" }}</span>
+        <span class="okt-meta">{% ticon "clock" 14 %}{{ when|date:"H:i" }}{% if session.scheduled_end %}–{{ session.scheduled_end|date:"H:i" }}{% endif %}</span>{% endif %}
+        <span class="okt-meta okt-key okt-key--sm">{{ session.key }}</span>
+      </div>
+    </div>
+    <div class="okt-test-head__actions">
+      {% include "admin/testing/sessions/_actions.html" with next=request.get_full_path %}
+    </div>
+  </header>
+
+  <nav class="okt-tabs" aria-label="Разделы сессии">
+    {% for tab in tabs %}
+      <a class="okt-tab{% if tab.key == active_tab %} is-active{% endif %}" href="{{ tab.url }}"{% if tab.key == active_tab %} aria-current="page"{% endif %}>
+        {% ticon tab.icon 15 %}<span>{{ tab.label }}</span>{% if tab.key == "participants" %} <span class="okt-tab__count">{{ counts.total }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div class="okt-workspace">
+    {% block workspace %}{% endblock %}
+  </div>
+{% endblock %}

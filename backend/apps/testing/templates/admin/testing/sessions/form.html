@@ -1,0 +1,25 @@
+{% extends "admin/testing/sessions/base.html" %}
+{% load question_bank %}
+
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_testsession_changelist' %}">Сессии</a></li>
+  <li class="breadcrumb-item active">Создание сессии</li>
+{% endblock %}
+
+{% block section %}
+  <a class="okt-back" href="{% url 'admin:testing_testsession_changelist' %}">{% ticon "arrow-left" 15 %}<span>Сессии</span></a>
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">Создание сессии</h1>
+      <p class="okt-sub">Выберите тест и группу, назначьте дату и время.</p>
+    </div>
+  </header>
+  <form method="post" class="okt-form" novalidate data-okt-guard data-oks-form>
+    {% csrf_token %}
+    {% include "admin/testing/sessions/_session_fields.html" %}
+    <div class="okt-form-actions">
+      <a class="ok-btn-secondary okt-btn okt-btn--ghost" href="{% url 'admin:testing_testsession_changelist' %}">Отмена</a>
+      <button type="submit" class="ok-btn-primary okt-btn">{% ticon "plus" 16 %}<span>Создать сессию</span></button>
+    </div>
+  </form>
+{% endblock %}

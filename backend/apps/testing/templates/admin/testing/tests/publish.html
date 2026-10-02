@@ -36,66 +36,32 @@
   </section>
 
   <section class="ok-card okt-section">
-    <div class="ok-card-header">{% ticon "play" 16 %}<span>Запустить тест для студентов</span></div>
-    <div class="ok-card-body">
-      <p class="okt-sub okt-sub--tight">
-        Студенты открывают <a href="{{ join_url }}" target="_blank" rel="noopener">{{ join_url }}</a> и вводят ключ сессии.
-      </p>
-      {% if test.status != "active" %}
-        <div class="ok-alert ok-alert-warning">Чтобы запустить сессию, сначала опубликуйте тест.</div>
-      {% else %}
-        <form method="post" class="okt-form-grid okt-form-grid--3" novalidate>
-          {% csrf_token %}
-          {% if form.non_field_errors %}<div class="ok-alert ok-alert-danger okt-field--wide">{{ form.non_field_errors }}</div>{% endif %}
-          {% include "admin/testing/tests/_field.html" with field=form.session_type %}
-          {% include "admin/testing/tests/_field.html" with field=form.group %}
-          {% include "admin/testing/tests/_field.html" with field=form.duration_minutes %}
-          {% include "admin/testing/tests/_field.html" with field=form.title %}
-          {% include "admin/testing/tests/_field.html" with field=form.start_now %}
-          <div class="okt-form-actions okt-field--wide">
-            <button type="submit" class="ok-btn-primary okt-btn">{% ticon "key-round" 16 %}<span>Создать сессию</span></button>
-          </div>
-        </form>
-      {% endif %}
+    <div class="ok-card-header">
+      {% ticon "key-round" 16 %}<span>Сессии с этим тестом</span>
+      <a class="ok-btn-secondary ok-btn-sm okt-btn ok-card-header-action" href="{{ sessions_url }}">{% ticon "arrow-right" 14 %}<span>Открыть в разделе «Сессии»</span></a>
     </div>
-  </section>
-
-  <section class="ok-card okt-section">
-    <div class="ok-card-header">{% ticon "key-round" 16 %}<span>Сессии</span></div>
     <div class="ok-card-body">
+      <p class="okt-sub okt-sub--tight">Сессии создаются и проводятся в разделе «Сессии»: там выбирается группа, дата и время.</p>
       {% if sessions %}
         <div class="okt-qtable-wrap">
-          <table class="okt-qtable okt-sessions">
-            <thead><tr><th>Ключ</th><th>Режим</th><th>Группа</th><th>Статус</th><th class="okt-qtable__center">Попытки</th><th>Создана</th><th class="okt-qtable__actions">Управление</th></tr></thead>
+          <table class="okt-qtable">
+            <thead><tr><th>Сессия</th><th>Группа</th><th>Дата</th><th>Статус</th><th class="okt-qtable__center">Участники</th><th class="okt-qtable__center">Попытки</th></tr></thead>
             <tbody>
               {% for s in sessions %}
                 <tr>
-                  <td><span class="okt-key">{{ s.key }}</span>{% if s.title %}<div class="okt-qtable__meta">{{ s.title }}</div>{% endif %}</td>
-                  <td>{{ s.get_session_type_display }}{% if s.duration %}<div class="okt-qtable__meta">{{ s.duration }}</div>{% endif %}</td>
+                  <td class="okt-qtable__text"><a href="{% url 'admin:testing_testsession_change' s.pk %}">{{ s.title|default:s.key }}</a><div class="okt-qtable__meta">Ключ {{ s.key }}</div></td>
                   <td>{{ s.group.name|default:"—" }}</td>
-                  <td><span class="okt-session-status okt-session-status--{{ s.effective_status }}">{% if s.effective_status == "running" %}Идёт{% elif s.effective_status == "paused" %}На паузе{% elif s.effective_status == "created" %}Не запущена{% elif s.effective_status == "expired" %}Время истекло{% else %}Завершена{% endif %}</span></td>
+                  <td class="okt-nowrap">{% if s.scheduled_start %}{{ s.scheduled_start|date:"d.m.Y H:i" }}{% else %}{{ s.created_at|date:"d.m.Y" }}{% endif %}</td>
+                  <td>{{ s.phase|phase_badge }}</td>
+                  <td class="okt-qtable__center">{{ s.participants_total }}</td>
                   <td class="okt-qtable__center">{{ s.attempts_total }}</td>
-                  <td class="okt-nowrap">{{ s.created_at|date:"j E, H:i" }}</td>
-                  <td class="okt-qtable__actions">
-                    <div class="okt-actions">
-                      {% if s.effective_status == "created" %}
-                        <form method="post" action="{% url 'admin:testing_session_action' test.pk s.pk 'start' %}">{% csrf_token %}<button class="ok-btn-primary ok-btn-sm okt-btn" type="submit">{% ticon "play" 13 %}<span>Запустить</span></button></form>
-                      {% elif s.effective_status == "running" %}
-                        <form method="post" action="{% url 'admin:testing_session_action' test.pk s.pk 'pause' %}">{% csrf_token %}<button class="okt-icon-btn" type="submit" title="Пауза" aria-label="Пауза">{% ticon "pause" 15 %}</button></form>
-                        <form method="post" action="{% url 'admin:testing_session_action' test.pk s.pk 'finish' %}" data-okt-confirm="Завершить сессию {{ s.key }}? Студенты больше не смогут отвечать.">{% csrf_token %}<button class="okt-icon-btn okt-icon-btn--danger" type="submit" title="Завершить" aria-label="Завершить">{% ticon "square" 15 %}</button></form>
-                      {% elif s.effective_status == "paused" %}
-                        <form method="post" action="{% url 'admin:testing_session_action' test.pk s.pk 'resume' %}">{% csrf_token %}<button class="okt-icon-btn" type="submit" title="Продолжить" aria-label="Продолжить">{% ticon "play" 15 %}</button></form>
-                        <form method="post" action="{% url 'admin:testing_session_action' test.pk s.pk 'finish' %}" data-okt-confirm="Завершить сессию {{ s.key }}?">{% csrf_token %}<button class="okt-icon-btn okt-icon-btn--danger" type="submit" title="Завершить" aria-label="Завершить">{% ticon "square" 15 %}</button></form>
-                      {% else %}<span class="okt-muted">—</span>{% endif %}
-                    </div>
-                  </td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
       {% else %}
-        <p class="okt-muted">Сессий пока нет.</p>
+        <p class="okt-muted">Этот тест ещё не проводился.</p>
       {% endif %}
     </div>
   </section>

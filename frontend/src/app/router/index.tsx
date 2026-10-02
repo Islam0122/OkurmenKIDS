@@ -92,6 +92,20 @@ export const router = createBrowserRouter([
             },
           },
           {
+            path: 'exams',
+            lazy: async () => {
+              const { ExamsListPage } = await import('@/features/exams/ExamsListPage')
+              return { Component: ExamsListPage }
+            },
+          },
+          {
+            path: 'exams/:id',
+            lazy: async () => {
+              const { ExamDetailPage } = await import('@/features/exams/ExamDetailPage')
+              return { Component: ExamDetailPage }
+            },
+          },
+          {
             path: 'homework/:id',
             lazy: async () => {
               const { HomeworkDetailPage } = await import('@/features/homework/HomeworkDetailPage')

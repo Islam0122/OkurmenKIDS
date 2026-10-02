@@ -356,13 +356,11 @@ JAZZMIN_SETTINGS = {
             {"name": "Предметы", "model": "users.subject", "icon": "bi bi-book"},
             {"name": "Занятия", "model": "academy.lesson", "icon": "bi bi-easel"},
             {"name": "Расписание", "url": "admin:academy_schedule", "icon": "bi bi-calendar3"},
-        ],
-
-        # Tests: one entry. Questions, settings, publication and statistics
-        # all live inside a test (apps/testing/admin_views.py), so there is
-        # no separate «Вопросы» item.
-        "тесты": [
+            # Tests define what is asked (questions, settings, publishing);
+            # Sessions define who takes a test, when and for which group,
+            # and hold the results. «Создать сессию» lives inside «Сессии».
             {"name": "Тесты", "model": "testing.test", "icon": "bi bi-clipboard2-check"},
+            {"name": "Сессии", "model": "testing.testsession", "icon": "bi bi-broadcast"},
         ],
 
         "аналитика": [
@@ -429,7 +427,6 @@ JAZZMIN_SETTINGS = {
         # A section key listed here gets an icon next to its sidebar
         # heading (templates/admin/base_site.html); others stay text-only.
         "отчёты": "bi bi-bar-chart-line",
-        "тесты": "bi bi-clipboard2-check",
         "auth": "bi bi-people",
         "auth.group": "bi bi-people",
         "users.user": "bi bi-shield-lock",
@@ -459,6 +456,7 @@ JAZZMIN_SETTINGS = {
         "scholarships.scholarshipconfiguration": "bi bi-sliders",
         "scholarships.scholarshiprunlog": "bi bi-journal-text",
         "testing.test": "bi bi-clipboard2-check",
+        "testing.testsession": "bi bi-broadcast",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

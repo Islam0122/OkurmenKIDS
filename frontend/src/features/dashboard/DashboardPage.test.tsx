@@ -15,6 +15,10 @@ vi.mock('@/features/dashboard/useDashboardData', () => ({
   todayISO: () => '2026-09-10',
 }))
 
+vi.mock('@/hooks/useExams', () => ({
+  useExamList: () => ({ data: { count: 0, next: null, previous: null, results: [] }, isPending: false }),
+}))
+
 vi.mock('@/hooks/useNews', () => ({
   useNewsList: () => ({ data: { count: 0, next: null, previous: null, results: [] }, isPending: false }),
 }))

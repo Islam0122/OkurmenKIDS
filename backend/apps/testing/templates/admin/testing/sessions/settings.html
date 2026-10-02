@@ -1,0 +1,13 @@
+{% extends "admin/testing/sessions/workspace.html" %}
+{% load question_bank %}
+
+{% block workspace %}
+  <p class="okt-sub okt-sub--tight">Настройки этой сессии. Вопросы, баллы и уровень — в настройках теста «{{ session.test.title }}».</p>
+  <form method="post" class="okt-form" novalidate data-okt-guard data-oks-form>
+    {% csrf_token %}
+    {% include "admin/testing/sessions/_session_fields.html" %}
+    <div class="okt-form-actions">
+      <button type="submit" class="ok-btn-primary okt-btn">{% ticon "save" 16 %}<span>Сохранить настройки</span></button>
+    </div>
+  </form>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% load question_bank %}
+{# Participants table — also returned alone (?fragment=1) for the live refresh. #}
+{% if rows %}
+  <div class="okt-qtable-wrap">
+    <table class="okt-qtable oks-participants">
+      <thead><tr><th>Студент</th><th>Статус</th><th>Прогресс</th><th class="okt-qtable__center">Балл</th><th>Время</th><th>Последняя активность</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td class="okt-qtable__text">{{ row.participant.student }}</td>
+            <td>{{ row.status|participant_badge }}</td>
+            <td class="oks-progress-cell">
+              {% if row.participant.question_total %}
+                <span class="okt-bar"><span class="okt-bar__fill" style="width: {{ row.progress_percent }}%"></span></span>
+                <span class="okt-qtable__meta">{{ row.participant.answered_count }} / {{ row.participant.question_total }}{% if row.status == "in_progress" or row.status == "disconnected" %} · вопрос {{ row.participant.current_question }}{% endif %}</span>
+              {% else %}<span class="okt-muted">—</span>{% endif %}
+            </td>
+            <td class="okt-qtable__center">{% if row.score is not None %}<strong>{{ row.score|floatformat:0 }}%</strong>{% else %}—{% endif %}</td>
+            <td class="okt-nowrap">{{ row.duration|duration_label }}</td>
+            <td class="okt-nowrap">{% if row.participant.last_seen_at %}{{ row.participant.last_seen_at|date:"H:i:s" }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="okt-muted">У этой сессии нет списка участников{% if not session.group %} (сессия без группы — студенты входили по имени){% endif %}. Попытки — на вкладке «Результаты».</p>
+{% endif %}
