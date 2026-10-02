@@ -880,6 +880,31 @@ class HomeworkNotRequiredRequestSerializer(serializers.Serializer):
     value = serializers.BooleanField(required=False, default=True)
 
 
+class ParentReportHomeworkSerializer(serializers.Serializer):
+    title = serializers.CharField()
+    lesson_id = serializers.IntegerField()
+    lesson_number = serializers.IntegerField()
+    lesson_date = serializers.DateField()
+
+
+class ParentLessonReportSerializer(serializers.Serializer):
+    """Read-only shape of services.parent_report.ParentLessonReportService
+    (documentation only — the view returns the service's dict as is)."""
+
+    lesson_id = serializers.IntegerField()
+    group = serializers.CharField()
+    lesson_date = serializers.DateField()
+    topic = serializers.CharField(allow_null=True)
+    present_students = serializers.ListField(child=serializers.CharField())
+    absent_students = serializers.ListField(child=serializers.CharField())
+    homework_checked = ParentReportHomeworkSerializer(allow_null=True)
+    homework_not_completed = serializers.ListField(child=serializers.CharField())
+    homework_partial = serializers.ListField(child=serializers.CharField())
+    next_homework = serializers.CharField(allow_null=True)
+    warnings = serializers.ListField(child=serializers.CharField())
+    message = serializers.CharField()
+
+
 # ---------------------------------------------------------------------------
 # Attendance
 # ---------------------------------------------------------------------------

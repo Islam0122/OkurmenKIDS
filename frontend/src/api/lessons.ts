@@ -1,6 +1,6 @@
 import { apiClient } from '@/api/client'
 import type { AttendanceRecord, BulkAttendanceItem } from '@/types/attendance'
-import type { Lesson, LessonStatus } from '@/types/academy'
+import type { Lesson, LessonStatus, ParentLessonReport } from '@/types/academy'
 import type { Paginated } from '@/types/common'
 
 export interface LessonListParams {
@@ -38,6 +38,10 @@ export const lessonsApi = {
   /** SCHEDULED/IN_PROGRESS → CANCELLED. A completed lesson can never be cancelled. Idempotent. */
   cancel: (id: number, reason?: string): Promise<Lesson> =>
     apiClient.post<Lesson>(`/lessons/${id}/cancel/`, { reason: reason ?? '' }).then((r) => r.data),
+
+  /** «Мини-отчёт родителям» for an in-progress or completed lesson (400 otherwise). */
+  parentReport: (id: number): Promise<ParentLessonReport> =>
+    apiClient.get<ParentLessonReport>(`/lessons/${id}/parent-report/`).then((r) => r.data),
 
   /** Explicitly mark (or unmark) that this lesson needs no Homework. */
   setHomeworkNotRequired: (id: number, value = true): Promise<Lesson> =>
