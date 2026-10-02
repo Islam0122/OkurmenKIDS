@@ -1,0 +1,23 @@
+/* Code editor (static/testing/js/code_editor.js): gutter with line numbers
+ * + the original textarea. Dark editor surface in both themes, like most
+ * code editors, so code reads the same in the admin and for students. */
+
+.okc-editor {
+  display: flex; width: 100%; overflow: hidden;
+  border: 1px solid #2B3540; border-radius: 10px; background: #1B2129;
+}
+.okc-editor:focus-within { border-color: #35A866; box-shadow: 0 0 0 3px rgba(53, 168, 102, 0.25); }
+.okc-gutter {
+  flex-shrink: 0; overflow: hidden; padding: 0.75rem 0.5rem 0.75rem 0.75rem;
+  background: #161B22; color: #6B7684; text-align: right; user-select: none;
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.okc-gutter span { display: block; min-width: 1.5em; }
+textarea.okc-input, textarea.okc-input:focus {
+  flex: 1; min-width: 0; min-height: 12rem; margin: 0; padding: 0.75rem;
+  border: 0 !important; border-radius: 0; outline: none; box-shadow: none !important; resize: vertical;
+  background: transparent !important; color: #E6EDF3 !important; caret-color: #7EE2A8;
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4;
+}
+textarea.okc-input::placeholder { color: #6B7684; }

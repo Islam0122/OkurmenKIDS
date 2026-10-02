@@ -1,0 +1,29 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  {# same-origin (not no-referrer): the page's own POST must keep its Origin for CSRF. #}
+  <meta name="referrer" content="same-origin">
+  <meta name="color-scheme" content="only light">
+  <meta name="theme-color" content="#F6F9F7">
+  <title>{% block title %}Тест{% endblock %} · OkurmenKIDS</title>
+  <link rel="icon" href="{% static 'images/logo.png' %}">
+  <link rel="stylesheet" href="{% static 'testing/css/public.css' %}">
+  <link rel="stylesheet" href="{% static 'testing/css/code_editor.css' %}">
+  <script>document.documentElement.classList.add("ex-js");</script>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {% block banner %}{% endblock %}
+  <header class="ex-brand">
+    <img src="{% static 'images/logo.png' %}" alt="" width="34" height="34">
+    <span>Okurmen<strong>KIDS</strong></span>
+  </header>
+  <main class="ex-main">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="ex-footer">© OkurmenKIDS</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

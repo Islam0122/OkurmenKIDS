@@ -1,0 +1,101 @@
+{% extends "testing/public/base.html" %}
+{% load static question_bank %}
+
+{# Taking a test — and the admin «Предпросмотр» (preview=True: nothing is #}
+{# submitted). Without JS all questions show as one long form; take.js     #}
+{# turns it into «Вопрос N из M» with Назад / Далее and the timer.         #}
+
+{% block title %}{{ test.title }}{% endblock %}
+{% block body_class %}ex-taking{% endblock %}
+
+{% block banner %}
+  {% if preview %}
+    <div class="ex-preview-banner">
+      <span>Предпросмотр — так тест видит студент. Ответы не сохраняются.</span>
+      <a href="{{ back_url }}">Вернуться к тесту</a>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <form method="post" class="ex-take" data-ex-take
+        {% if preview %}data-ex-preview{% endif %}
+        {% if seconds_left is not None %}data-ex-seconds-left="{{ seconds_left }}"{% endif %}
+        novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="timed_out" value="0" data-ex-timed-out>
+
+    <header class="ex-take__head">
+      <h1 class="ex-h1 ex-h1--sm">{{ test.title }}</h1>
+      <div class="ex-take__bar">
+        <span class="ex-progress-label" data-ex-progress-label>Вопросов: {{ questions|length }}</span>
+        {% if seconds_left is not None %}
+          <span class="ex-timer" role="timer">{% ticon "clock" 15 %}<span data-ex-timer>--:--</span></span>
+        {% elif preview and time_limit_minutes %}
+          <span class="ex-timer">{% ticon "clock" 15 %}<span>{{ time_limit_minutes }} мин</span></span>
+        {% endif %}
+      </div>
+      <div class="ex-progress" aria-hidden="true"><span class="ex-progress__fill" data-ex-progress></span></div>
+    </header>
+
+    {% if error %}<div class="ex-alert" role="alert">{{ error }}</div>{% endif %}
+
+    {% for q in questions %}
+      <section class="ex-card ex-q" data-ex-q data-required="{{ q.is_required|yesno:'1,0' }}" id="q-{{ forloop.counter }}"
+               aria-labelledby="q-{{ forloop.counter }}-title">
+        <p class="ex-eyebrow">Вопрос {{ forloop.counter }} из {{ questions|length }}{% if q.points > 1 %} · {{ q.points|points_label }}{% endif %}{% if not q.is_required %} · необязательный{% endif %}</p>
+        <h2 class="ex-q__title" id="q-{{ forloop.counter }}-title">{{ q.text|linebreaksbr }}</h2>
+        {% if q.hint %}<p class="ex-hint"><strong>Подсказка:</strong> {{ q.hint }}</p>{% endif %}
+
+        {% if q.question_type == "single_choice" or q.question_type == "multiple_choice" %}
+          <fieldset class="ex-options">
+            <legend class="ex-visually-hidden">Варианты ответа</legend>
+            {% if q.question_type == "multiple_choice" %}<p class="ex-muted ex-small">Можно выбрать несколько вариантов.</p>{% endif %}
+            {% for o in q.display_options %}
+              <label class="ex-option">
+                <input type="{% if q.question_type == 'single_choice' %}radio{% else %}checkbox{% endif %}"
+                       name="answer_{{ q.pk }}" value="{{ o.pk }}"{% if o.pk|stringformat:"s" in q.given_options %} checked{% endif %}>
+                <span>{{ o.text }}</span>
+              </label>
+            {% endfor %}
+          </fieldset>
+        {% elif q.question_type == "code" %}
+          <label class="ex-label" for="answer-{{ q.pk }}">Ваш код{% if q.language %} · {{ q.get_language_display }}{% endif %}</label>
+          <textarea id="answer-{{ q.pk }}" name="answer_{{ q.pk }}" class="ex-input" rows="12" data-code-editor spellcheck="false"
+                    autocapitalize="off" autocomplete="off">{{ q.given_text }}</textarea>
+          {% if q.code_tests %}
+            <div class="ex-examples">
+              <p class="ex-label">Примеры</p>
+              {% for t in q.code_tests|slice:":3" %}
+                <div class="ex-example"><div><span>Input</span><pre>{{ t.input|default:"—" }}</pre></div><div><span>Output</span><pre>{{ t.expected_output }}</pre></div></div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% else %}
+          <label class="ex-label" for="answer-{{ q.pk }}">Ваш ответ</label>
+          <input id="answer-{{ q.pk }}" type="text" name="answer_{{ q.pk }}" class="ex-input" value="{{ q.given_text }}" autocomplete="off">
+        {% endif %}
+        <p class="ex-error ex-q__error" data-ex-q-error hidden>Это обязательный вопрос — ответьте на него.</p>
+      </section>
+    {% empty %}
+      <section class="ex-card"><p class="ex-muted">В тесте пока нет вопросов.</p></section>
+    {% endfor %}
+
+    {% if questions %}
+      <nav class="ex-nav">
+        <button type="button" class="ex-btn ex-btn--ghost" data-ex-prev>Назад</button>
+        <button type="button" class="ex-btn ex-btn--primary" data-ex-next>Далее</button>
+        {% if preview %}
+          <button type="button" class="ex-btn ex-btn--primary" data-ex-finish disabled title="В предпросмотре ответы не отправляются">Завершить тест</button>
+        {% else %}
+          <button type="submit" class="ex-btn ex-btn--primary" data-ex-finish>Завершить тест</button>
+        {% endif %}
+      </nav>
+    {% endif %}
+  </form>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'testing/js/code_editor.js' %}"></script>
+  <script src="{% static 'testing/js/take.js' %}"></script>
+{% endblock %}

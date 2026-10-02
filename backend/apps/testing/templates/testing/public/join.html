@@ -1,0 +1,45 @@
+{% extends "testing/public/base.html" %}
+
+{% block title %}{% if session %}{{ session.test.title }}{% else %}Вход в тест{% endif %}{% endblock %}
+
+{% block content %}
+  <section class="ex-card">
+    {% if not session %}
+      <h1 class="ex-h1">Вход в тест</h1>
+      <p class="ex-muted">Введите ключ сессии, который дал преподаватель.</p>
+      <form method="get" class="ex-form" novalidate>
+        <label class="ex-label" for="ex-key">Ключ сессии</label>
+        <input id="ex-key" class="ex-input ex-input--key" type="text" name="key" value="{{ key }}" placeholder="PY-82X91"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" required autofocus>
+        {% if error %}<p class="ex-error" role="alert">{{ error }}</p>{% endif %}
+        <button type="submit" class="ex-btn ex-btn--primary ex-btn--block">Продолжить</button>
+      </form>
+    {% else %}
+      <p class="ex-eyebrow">Ключ {{ session.key }}</p>
+      <h1 class="ex-h1">{{ session.test.title }}</h1>
+      {% if session.test.description %}<p class="ex-muted">{{ session.test.description }}</p>{% endif %}
+      <ul class="ex-facts">
+        <li>{{ session.test.questions.count }} вопр.</li>
+        {% if session.test.time_limit_minutes %}<li>{{ session.test.time_limit_minutes }} мин</li>{% endif %}
+        <li>Проходной балл {{ session.test.passing_score }}%</li>
+      </ul>
+      <form method="post" class="ex-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="key" value="{{ session.key }}">
+        {% if students is not None %}
+          <label class="ex-label" for="ex-student">Кто вы?</label>
+          <select id="ex-student" name="student" class="ex-input" required>
+            <option value="">— Выберите себя из списка —</option>
+            {% for s in students %}<option value="{{ s.pk }}"{% if request.POST.student == s.pk|stringformat:"d" %} selected{% endif %}>{{ s }}</option>{% endfor %}
+          </select>
+        {% else %}
+          <label class="ex-label" for="ex-name">Имя и фамилия</label>
+          <input id="ex-name" class="ex-input" type="text" name="student_name" value="{{ student_name|default:'' }}" maxlength="255" autocomplete="name" required autofocus>
+        {% endif %}
+        {% if error %}<p class="ex-error" role="alert">{{ error }}</p>{% endif %}
+        <button type="submit" name="start" value="1" class="ex-btn ex-btn--primary ex-btn--block">Начать тест</button>
+        <a class="ex-link" href="{% url 'testing_public_join' %}">Другой ключ</a>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

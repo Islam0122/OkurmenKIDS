@@ -1,0 +1,216 @@
+{% extends "admin/testing/tests/workspace.html" %}
+{% load question_bank static %}
+
+{# Question editor. The type is picked on top; sections carry data-okt-for  #}
+{# with the types they belong to and question_editor.js shows only those.  #}
+{# Without JS every section is visible and the server still validates by    #}
+{# type (services/question_rules.py).                                       #}
+
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_test_changelist' %}">Тесты</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_test_change' test.pk %}">{{ test.title }}</a></li>
+  <li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+
+{% block head_primary %}{% endblock %}
+
+{% block workspace %}
+  <form method="post" class="okt-qform" data-okt-qform data-okt-guard novalidate
+        data-choice-types="{{ choice_types|join:' ' }}">
+    {% csrf_token %}
+
+    <div class="okt-qform__head">
+      <a class="okt-back okt-back--inline" href="{% url 'admin:testing_test_change' test.pk %}#questions">{% ticon "arrow-left" 15 %}<span>К вопросам</span></a>
+      <h2 class="okt-h2">{{ title }}</h2>
+    </div>
+
+    {% if non_field_errors or form.non_field_errors %}
+      <div class="ok-alert ok-alert-danger">
+        {% for e in non_field_errors %}<div>{{ e }}</div>{% endfor %}
+        {% for e in form.non_field_errors %}<div>{{ e }}</div>{% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="ok-card okt-section">
+      <div class="ok-card-body">
+        <fieldset class="okt-typeswitch">
+          <legend class="ok-label">Тип вопроса</legend>
+          <div class="okt-typeswitch__options" role="radiogroup">
+            {% for value, label, icon in type_tabs %}
+              <label class="okt-typeswitch__item">
+                <input type="radio" name="question_type" value="{{ value }}"{% if value == question_type %} checked{% endif %}>
+                <span>{% ticon icon 16 %}{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <div class="okt-form-grid">
+          <div class="okt-field okt-field--wide{% if errors.text %} has-error{% endif %}">
+            <label class="ok-label" for="id_text">
+              <span data-okt-for="text single_choice multiple_choice">Текст вопроса</span>
+              <span data-okt-for="code">Задание</span>
+              <span class="ok-label-required">*</span>
+            </label>
+            {{ form.text }}
+            {% for e in errors.text %}<p class="okt-error">{{ e }}</p>{% endfor %}
+          </div>
+          <div class="okt-field okt-field--wide">
+            <label class="ok-label" for="id_hint">{% ticon "lightbulb" 14 %} Подсказка</label>
+            {{ form.hint }}
+            <p class="ok-help-text">Необязательно. Студент увидит её под вопросом.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {# -- Choice: options ------------------------------------------------ #}
+    <section class="ok-card okt-section" data-okt-for="single_choice multiple_choice">
+      <div class="ok-card-header">{% ticon "list-checks" 16 %}<span>Варианты ответа</span></div>
+      <div class="ok-card-body">
+        <p class="ok-help-text okt-options-hint">
+          <span data-okt-for="single_choice">Отметьте кружком один правильный вариант.</span>
+          <span data-okt-for="multiple_choice">Отметьте галочками все правильные варианты.</span>
+        </p>
+        <ol class="okt-options" data-okt-options>
+          {% for row in option_rows %}
+            <li class="okt-option" data-okt-option>
+              <span class="okt-option__grip" aria-hidden="true">{% ticon "grip-vertical" 15 %}</span>
+              <label class="okt-option__mark" title="Правильный ответ">
+                <input type="radio" name="option_correct_single" value="{{ forloop.counter0 }}" data-okt-for="single_choice"{% if row.is_correct %} checked{% endif %} aria-label="Правильный вариант">
+                <input type="checkbox" name="option_correct" value="{{ forloop.counter0 }}" data-okt-for="multiple_choice"{% if row.is_correct %} checked{% endif %} aria-label="Правильный вариант">
+              </label>
+              <input type="hidden" name="option_id" value="{{ row.id }}">
+              <input type="text" name="option_text" class="ok-input okt-option__text" value="{{ row.text }}" placeholder="Вариант {{ forloop.counter }}" aria-label="Текст варианта">
+              <span class="okt-option__tools">
+                <button type="button" class="okt-icon-btn" data-okt-move="up" title="Выше" aria-label="Вариант выше">{% ticon "arrow-up" 15 %}</button>
+                <button type="button" class="okt-icon-btn" data-okt-move="down" title="Ниже" aria-label="Вариант ниже">{% ticon "arrow-down" 15 %}</button>
+                <button type="button" class="okt-icon-btn okt-icon-btn--danger" data-okt-remove title="Удалить" aria-label="Удалить вариант">{% ticon "trash-2" 15 %}</button>
+              </span>
+            </li>
+          {% endfor %}
+        </ol>
+        {% for e in errors.options %}<p class="okt-error">{{ e }}</p>{% endfor %}
+        <button type="button" class="ok-btn-secondary ok-btn-sm okt-btn" data-okt-add-option>{% ticon "plus" 15 %}<span>Добавить вариант</span></button>
+      </div>
+    </section>
+
+    {# -- Text: correct answers ------------------------------------------- #}
+    <section class="ok-card okt-section" data-okt-for="text">
+      <div class="ok-card-header">{% ticon "check" 16 %}<span>Правильный ответ</span></div>
+      <div class="ok-card-body okt-form-grid">
+        <div class="okt-field okt-field--wide{% if errors.correct_answers %} has-error{% endif %}">
+          <label class="ok-label" for="okt-correct">Правильный ответ <span class="ok-label-required">*</span></label>
+          <input id="okt-correct" type="text" name="correct_answer" class="ok-input" value="{{ correct_answer }}" placeholder="Например: Язык программирования">
+          {% for e in errors.correct_answers %}<p class="okt-error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="okt-field okt-field--wide">
+          <label class="ok-label" for="okt-accepted">Допустимые варианты ответа</label>
+          <textarea id="okt-accepted" name="accepted_answers" class="ok-input" rows="3" placeholder="По одному на строку">{{ accepted_answers }}</textarea>
+          <p class="ok-help-text">Ответ засчитывается, если совпадает с правильным или с любым из этих вариантов. Лишние пробелы не учитываются.</p>
+        </div>
+        <div class="okt-field">
+          <label class="ok-label" for="id_answer_match">Проверка ответа</label>
+          {{ form.answer_match }}
+        </div>
+      </div>
+    </section>
+
+    {# -- Code ------------------------------------------------------------ #}
+    <section class="ok-card okt-section" data-okt-for="code">
+      <div class="ok-card-header">{% ticon "code" 16 %}<span>Код</span></div>
+      <div class="ok-card-body okt-form-grid">
+        <div class="okt-field{% if errors.language %} has-error{% endif %}">
+          <label class="ok-label" for="id_language">Язык программирования <span class="ok-label-required">*</span></label>
+          {{ form.language }}
+          {% for e in errors.language %}<p class="okt-error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="okt-field okt-field--wide">
+          <label class="ok-label" for="id_starter_code">Стартовый код</label>
+          <textarea name="starter_code" id="id_starter_code" class="ok-input" rows="8" data-code-editor spellcheck="false">{{ form.starter_code.value|default_if_none:"" }}</textarea>
+          <p class="ok-help-text">Студент начнёт с этого кода.</p>
+        </div>
+        <div class="okt-field okt-field--wide">
+          <span class="ok-label">Тесты</span>
+          <p class="ok-help-text okt-tests-note">
+            Ответы на вопросы с кодом проверяет преподаватель: в проекте нет движка запуска кода.
+            Тесты — эталон для проверки (и для будущего автозапуска).
+          </p>
+          <ol class="okt-codetests" data-okt-tests>
+            {% for row in test_rows %}
+              <li class="okt-codetest" data-okt-test>
+                <div class="okt-codetest__col">
+                  <label class="ok-label">Input</label>
+                  <textarea name="test_input" class="ok-input okt-mono" rows="2" spellcheck="false" placeholder="2 3">{{ row.input }}</textarea>
+                </div>
+                <div class="okt-codetest__col">
+                  <label class="ok-label">Expected output</label>
+                  <textarea name="test_output" class="ok-input okt-mono" rows="2" spellcheck="false" placeholder="5">{{ row.expected_output }}</textarea>
+                </div>
+                <button type="button" class="okt-icon-btn okt-icon-btn--danger" data-okt-remove title="Удалить тест" aria-label="Удалить тест">{% ticon "trash-2" 15 %}</button>
+              </li>
+            {% endfor %}
+          </ol>
+          {% for e in errors.code_tests %}<p class="okt-error">{{ e }}</p>{% endfor %}
+          <button type="button" class="ok-btn-secondary ok-btn-sm okt-btn" data-okt-add-test>{% ticon "plus" 15 %}<span>Добавить тест</span></button>
+        </div>
+      </div>
+    </section>
+
+    {# -- Scoring ---------------------------------------------------------- #}
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "target" 16 %}<span>Оценивание</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.points %}
+        {% include "admin/testing/tests/_field.html" with field=form.difficulty %}
+        <div class="okt-field okt-field--wide">
+          <label class="ok-check" for="id_is_required">
+            {{ form.is_required }}
+            <span><span class="okt-check__label">Обязательный вопрос</span><span class="ok-help-text">Без ответа на него тест нельзя завершить.</span></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <div class="okt-form-actions okt-form-actions--sticky">
+      <button type="submit" name="_save" class="ok-btn-primary okt-btn">{% ticon "save" 16 %}<span>Сохранить</span></button>
+      <button type="submit" name="_addanother" class="ok-btn-secondary okt-btn">Сохранить и добавить ещё</button>
+      <a class="ok-btn-secondary okt-btn okt-btn--ghost" href="{% url 'admin:testing_test_change' test.pk %}#questions">Отмена</a>
+    </div>
+
+    <template data-okt-option-template>
+      <li class="okt-option" data-okt-option>
+        <span class="okt-option__grip" aria-hidden="true">{% ticon "grip-vertical" 15 %}</span>
+        <label class="okt-option__mark" title="Правильный ответ">
+          <input type="radio" name="option_correct_single" value="" data-okt-for="single_choice" aria-label="Правильный вариант">
+          <input type="checkbox" name="option_correct" value="" data-okt-for="multiple_choice" aria-label="Правильный вариант">
+        </label>
+        <input type="hidden" name="option_id" value="">
+        <input type="text" name="option_text" class="ok-input okt-option__text" value="" aria-label="Текст варианта">
+        <span class="okt-option__tools">
+          <button type="button" class="okt-icon-btn" data-okt-move="up" title="Выше" aria-label="Вариант выше">{% ticon "arrow-up" 15 %}</button>
+          <button type="button" class="okt-icon-btn" data-okt-move="down" title="Ниже" aria-label="Вариант ниже">{% ticon "arrow-down" 15 %}</button>
+          <button type="button" class="okt-icon-btn okt-icon-btn--danger" data-okt-remove title="Удалить" aria-label="Удалить вариант">{% ticon "trash-2" 15 %}</button>
+        </span>
+      </li>
+    </template>
+    <template data-okt-test-template>
+      <li class="okt-codetest" data-okt-test>
+        <div class="okt-codetest__col">
+          <label class="ok-label">Input</label>
+          <textarea name="test_input" class="ok-input okt-mono" rows="2" spellcheck="false"></textarea>
+        </div>
+        <div class="okt-codetest__col">
+          <label class="ok-label">Expected output</label>
+          <textarea name="test_output" class="ok-input okt-mono" rows="2" spellcheck="false"></textarea>
+        </div>
+        <button type="button" class="okt-icon-btn okt-icon-btn--danger" data-okt-remove title="Удалить тест" aria-label="Удалить тест">{% ticon "trash-2" 15 %}</button>
+      </li>
+    </template>
+  </form>
+{% endblock %}
+
+{% block section_js %}
+  <script src="{% static 'testing/js/code_editor.js' %}"></script>
+  <script src="{% static 'testing/js/question_editor.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,17 @@
+{# One form field: label (+ required mark), widget, help text, errors. Checkboxes render as label.ok-check. #}
+{% if field.widget_type == "checkbox" %}
+  <div class="okt-field okt-field--check">
+    <label class="ok-check" for="{{ field.id_for_label }}">
+      {{ field }}
+      <span><span class="okt-check__label">{{ field.label }}</span>{% if field.help_text %}<span class="ok-help-text">{{ field.help_text }}</span>{% endif %}</span>
+    </label>
+    {% for error in field.errors %}<p class="okt-error">{{ error }}</p>{% endfor %}
+  </div>
+{% else %}
+  <div class="okt-field{% if wide %} okt-field--wide{% endif %}{% if field.errors %} has-error{% endif %}">
+    <label class="ok-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="ok-label-required">*</span>{% endif %}</label>
+    {{ field }}
+    {% if field.help_text %}<p class="ok-help-text">{{ field.help_text }}</p>{% endif %}
+    {% for error in field.errors %}<p class="okt-error">{{ error }}</p>{% endfor %}
+  </div>
+{% endif %}

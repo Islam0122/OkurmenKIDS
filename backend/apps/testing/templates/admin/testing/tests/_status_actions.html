@@ -1,0 +1,20 @@
+{% load question_bank %}
+{# Publish / back to draft / archive, as menu buttons. `next` = where to return. #}
+{% if test.status != "active" %}
+  <form method="post" action="{% url 'admin:testing_test_status' test.pk 'publish' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit">{% ticon "send" 15 %} Опубликовать</button>
+  </form>
+{% endif %}
+{% if test.status != "draft" %}
+  <form method="post" action="{% url 'admin:testing_test_status' test.pk 'draft' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit">{% ticon "pencil" 15 %} Вернуть в черновики</button>
+  </form>
+{% endif %}
+{% if test.status != "archived" %}
+  <form method="post" action="{% url 'admin:testing_test_status' test.pk 'archive' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit">{% ticon "archive" 15 %} В архив</button>
+  </form>
+{% endif %}
