@@ -265,8 +265,9 @@ export interface RoomAvailability {
 }
 
 /** GET /lessons/{id}/parent-report/ — «Мини-отчёт родителям», built on the backend
- * (services.parent_report). `message` is the ready Kyrgyz text; `warnings` are
- * Russian notes for the trainer only (never part of the message). */
+ * (services.parent_report). `messages` holds the ready Kyrgyz text in both built-in
+ * wordings (`message` = `messages.system`); `warnings` are Russian notes for the
+ * trainer only (never part of the message). */
 export interface ParentLessonReport {
   lesson_id: number
   group: string
@@ -281,4 +282,10 @@ export interface ParentLessonReport {
   next_homework: string | null
   warnings: string[]
   message: string
+  messages: Record<ParentReportStyle, string>
 }
+
+/** «🤖 Системный» and «👨‍🏫 От тренера» come from the backend; «✏️ Свой вариант» is the
+ * trainer's own edit of the system text, kept only in the dialog. */
+export type ParentReportStyle = 'system' | 'trainer'
+export type ParentReportType = ParentReportStyle | 'custom'

@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { Check, Copy, Pencil, RotateCcw, Send, TriangleAlert } from 'lucide-react'
+import { Check, Copy, RotateCcw, Send, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Modal } from '@/components/ui/Modal'
+import { SegmentedControl, type SegmentedOption } from '@/components/ui/SegmentedControl'
 import { Textarea } from '@/components/ui/Textarea'
 import { useToast } from '@/components/ui/Toast'
 import { useParentReport } from '@/hooks/useLessons'
-import type { ParentLessonReport } from '@/types/academy'
+import type { ParentLessonReport, ParentReportType } from '@/types/academy'
 import { formatDate } from '@/utils/format'
 
 /** Telegram's share screen with the text prefilled (there is no bot integration —
@@ -35,9 +36,10 @@ async function copyText(text: string): Promise<void> {
 }
 
 /**
- * «Мини-отчёт родителям»: preview → edit → copy / send to Telegram.
- * The text is built on the backend from the lesson's real records; edits stay
- * local to this dialog (reopening it rebuilds the report).
+ * «Мини-отчёт родителям»: pick the report type → preview (or edit «Свой вариант»)
+ * → copy / send to Telegram. Both built-in texts come from the backend, built from
+ * the lesson's real records; «Свой вариант» stays local to this dialog (reopening
+ * it rebuilds the report) and never changes anything in the LMS.
  */
 export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: number; isOpen: boolean; onClose: () => void }) {
   const { data, isPending, isError, refetch } = useParentReport(lessonId, isOpen)
@@ -55,12 +57,19 @@ export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: num
   )
 }
 
+const REPORT_TYPES: SegmentedOption<ParentReportType>[] = [
+  { value: 'system', label: '🤖 Системный' },
+  { value: 'trainer', label: '👨‍🏫 От тренера' },
+  { value: 'custom', label: '✏️ Свой вариант' },
+]
+
 function ReportEditor({ report }: { report: ParentLessonReport }) {
   const { showToast } = useToast()
-  const [text, setText] = useState(report.message)
-  const [isEditing, setEditing] = useState(false)
+  const [type, setType] = useState<ParentReportType>('system')
+  // «Свой вариант» starts from the system text and survives switching types back and forth.
+  const [customText, setCustomText] = useState(report.messages.system)
   const [copied, setCopied] = useState(false)
-  const isEdited = text !== report.message
+  const text = type === 'custom' ? customText : report.messages[type]
   const isEmpty = !text.trim()
 
   async function handleCopy(silent = false) {
@@ -76,6 +85,11 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
 
   return (
     <div className="space-y-4">
+      <div className="space-y-1.5">
+        <p className="text-sm font-medium text-ink">Тип отчёта</p>
+        <SegmentedControl aria-label="Тип отчёта" options={REPORT_TYPES} value={type} onChange={setType} />
+      </div>
+
       {report.warnings.length > 0 ? (
         <div className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" role="status">
           <p className="flex items-center gap-1.5 font-medium">
@@ -97,15 +111,33 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
           : ''}
       </p>
 
-      {isEditing ? (
-        <Textarea
-          aria-label="Текст отчёта"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          rows={16}
-          className="text-sm leading-relaxed"
-          autoFocus
-        />
+      {type === 'custom' ? (
+        <div className="space-y-1.5">
+          <Textarea
+            aria-label="Текст отчёта"
+            value={customText}
+            onChange={(event) => setCustomText(event.target.value)}
+            rows={16}
+            className="text-sm leading-relaxed"
+            autoFocus
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
+            <span>Символов: {customText.length}</span>
+            {customText !== report.messages.system ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<RotateCcw className="size-4" aria-hidden />}
+                onClick={() => setCustomText(report.messages.system)}
+              >
+                Вернуть системный текст
+              </Button>
+            ) : null}
+          </div>
+          <p className="text-xs text-ink-muted">
+            Меняется только текст сообщения — занятие, посещаемость, ДЗ и оценки остаются как есть.
+          </p>
+        </div>
       ) : (
         <div
           data-testid="parent-report-preview"
@@ -115,30 +147,7 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={isEditing ? <Check className="size-4" aria-hidden /> : <Pencil className="size-4" aria-hidden />}
-            onClick={() => setEditing((value) => !value)}
-          >
-            {isEditing ? 'Готово' : 'Редактировать'}
-          </Button>
-          {isEdited ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              leftIcon={<RotateCcw className="size-4" aria-hidden />}
-              onClick={() => {
-                setText(report.message)
-                setEditing(false)
-              }}
-            >
-              Сбросить правки
-            </Button>
-          ) : null}
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
         <div className="flex w-full flex-wrap gap-2 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">
           <Button
             variant="secondary"

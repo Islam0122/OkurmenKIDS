@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -31,11 +31,18 @@ import { lessonsApi } from '@/api/lessons'
 
 const MESSAGE = [
   'Саламатсыздарбы, урматтуу ата-энелер! 🌟',
-  'Бүгүнкү сабакта окуучулар «Күчтүү жана коопсуз паролдор» темасын үйрөнүштү. 📚',
+  '📚 Бүгүнкү сабакта окуучулар «Күчтүү жана коопсуз паролдор» темасын үйрөнүштү.',
   '👥 Сабакка катышкан окуучулар:\n• Бекнур Абдыбеков',
-  '📝 Кийинки үй тапшырмасы:',
-  'Үй тапшырмасы азырынча берилген жок.',
+  '📚 Кийинки үй тапшырмасы:\n\nҮй тапшырмасы азырынча берилген жок.',
   '📚 Кийинки сабакта жаңы теманы улантабыз. Рахмат! 🌟',
+].join('\n\n')
+
+const TRAINER_MESSAGE = [
+  'Саламатсыздарбы, урматтуу ата-энелер! 🌟',
+  'Бүгүнкү сабакта «Күчтүү жана коопсуз паролдор» темасын өттүк. 📚',
+  '👥 Сабакка катышкандар:\n• Бекнур Абдыбеков',
+  '📚 Кийинки үй тапшырмасы:\nҮй тапшырмасы азырынча берилген жок.',
+  'Рахмат! Кийинки сабакта жолугушабыз 🌟',
 ].join('\n\n')
 
 function buildReport(overrides: Partial<ParentLessonReport> = {}): ParentLessonReport {
@@ -52,6 +59,7 @@ function buildReport(overrides: Partial<ParentLessonReport> = {}): ParentLessonR
     next_homework: null,
     warnings: [],
     message: MESSAGE,
+    messages: { system: MESSAGE, trainer: TRAINER_MESSAGE },
     ...overrides,
   }
 }
@@ -97,7 +105,32 @@ describe('Мини-отчёт родителям', () => {
     expect(preview.textContent).not.toContain('Посещаемость не отмечена у 1')
   })
 
-  it('lets the trainer edit, copy and send the edited text to Telegram', async () => {
+  it('switches between the system and the trainer text, «Системный» by default', async () => {
+    vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
+    const user = userEvent.setup()
+    renderLesson('completed')
+
+    await user.click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
+    await screen.findByTestId('parent-report-preview')
+
+    const group = screen.getByRole('radiogroup', { name: 'Тип отчёта' })
+    expect(within(group).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
+      '🤖 Системный',
+      '👨‍🏫 От тренера',
+      '✏️ Свой вариант',
+    ])
+    expect(screen.getByRole('radio', { name: '🤖 Системный' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('parent-report-preview').textContent).toBe(MESSAGE)
+
+    await user.click(screen.getByRole('radio', { name: '👨‍🏫 От тренера' }))
+    expect(screen.getByRole('radio', { name: '👨‍🏫 От тренера' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '🤖 Системный' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByTestId('parent-report-preview').textContent).toBe(TRAINER_MESSAGE)
+    expect(screen.queryByRole('textbox', { name: 'Текст отчёта' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Отправить в Telegram' })).toHaveAttribute('href', telegramShareUrl(TRAINER_MESSAGE))
+  })
+
+  it('«Свой вариант» edits a copy of the system text, then copies and sends it', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     const user = userEvent.setup()
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
@@ -106,24 +139,52 @@ describe('Мини-отчёт родителям', () => {
     await user.click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
     await screen.findByTestId('parent-report-preview')
 
-    await user.click(screen.getByRole('button', { name: 'Редактировать' }))
+    await user.click(screen.getByRole('radio', { name: '✏️ Свой вариант' }))
+    expect(screen.queryByTestId('parent-report-preview')).not.toBeInTheDocument()
     const textarea = screen.getByRole('textbox', { name: 'Текст отчёта' })
-    await user.type(textarea, '\nP.S. Эртең 10:00дө.')
-    await user.click(screen.getByRole('button', { name: 'Готово' }))
+    expect(textarea).toHaveValue(MESSAGE)
+    expect(screen.getByText(`Символов: ${MESSAGE.length}`)).toBeInTheDocument()
 
+    await user.type(textarea, '\nP.S. Эртең 10:00дө.')
     const edited = `${MESSAGE}\nP.S. Эртең 10:00дө.`
-    expect(screen.getByTestId('parent-report-preview').textContent).toBe(edited)
+    expect(textarea).toHaveValue(edited)
+    expect(screen.getByText(`Символов: ${edited.length}`)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Копировать' }))
     expect(writeText).toHaveBeenCalledWith(edited)
     expect(await screen.findByText('Текст скопирован')).toBeInTheDocument()
-
     const send = screen.getByRole('link', { name: 'Отправить в Telegram' })
     expect(send).toHaveAttribute('href', telegramShareUrl(edited))
     expect(send).toHaveAttribute('target', '_blank')
 
-    await user.click(screen.getByRole('button', { name: 'Сбросить правки' }))
+    // The edit survives a look at another type, and the system text itself is untouched.
+    await user.click(screen.getByRole('radio', { name: '🤖 Системный' }))
     expect(screen.getByTestId('parent-report-preview').textContent).toBe(MESSAGE)
+    await user.click(screen.getByRole('radio', { name: '✏️ Свой вариант' }))
+    expect(screen.getByRole('textbox', { name: 'Текст отчёта' })).toHaveValue(edited)
+
+    await user.click(screen.getByRole('button', { name: 'Вернуть системный текст' }))
+    expect(screen.getByRole('textbox', { name: 'Текст отчёта' })).toHaveValue(MESSAGE)
+    // Only GETs the report: editing the message never writes to the LMS.
+    expect(lessonsApi.parentReport).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables copy and Telegram for an empty custom text', async () => {
+    vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
+    const user = userEvent.setup()
+    renderLesson('completed')
+
+    await user.click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
+    await screen.findByTestId('parent-report-preview')
+    await user.click(screen.getByRole('radio', { name: '✏️ Свой вариант' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Текст отчёта' }))
+
+    expect(screen.getByRole('button', { name: 'Копировать' })).toBeDisabled()
+    // Without an href the anchor is no longer a link — it's disabled.
+    const send = screen.getByText('Отправить в Telegram').closest('a')
+    expect(send).toHaveAttribute('aria-disabled', 'true')
+    expect(send).not.toHaveAttribute('href')
+    expect(screen.getByText('Символов: 0')).toBeInTheDocument()
   })
 
   it('builds the Telegram share link from the whole message', () => {
