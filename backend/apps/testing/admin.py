@@ -14,7 +14,7 @@ from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import path
 
-from . import admin_views, session_admin_views
+from . import admin_views, analytics_admin_views, session_admin_views
 from .admin_views import is_admin_user
 from .models import Test, TestSession
 
@@ -111,8 +111,15 @@ class TestSessionAdmin(AdminRoleOnly, admin.ModelAdmin):
         session = "<uuid:session_id>/"
         urls = [
             path(session + "participants/", view(session_admin_views.session_participants_view), name="testing_session_participants"),
-            path(session + "results/", view(session_admin_views.session_results_view), name="testing_session_results"),
-            path(session + "results/export.<str:fmt>", view(session_admin_views.session_export_view), name="testing_session_export"),
+            path(session + "questions/", view(analytics_admin_views.session_questions_view), name="testing_session_questions"),
+            path(session + "analytics/", view(analytics_admin_views.session_analytics_view), name="testing_session_analytics"),
+            path(session + "analytics/export.<str:fmt>", view(analytics_admin_views.session_export_view), name="testing_session_export"),
+            path(session + "results/", view(analytics_admin_views.session_results_view), name="testing_session_results"),
+            path("attempts/<uuid:attempt_id>/", view(analytics_admin_views.attempt_detail_view), name="testing_attempt_detail"),
+            path("analytics/", view(analytics_admin_views.analytics_tree_view), name="testing_analytics"),
+            path("analytics/groups/<int:group_id>/", view(analytics_admin_views.group_analytics_view), name="testing_analytics_group"),
+            path("analytics/subjects/<int:subject_id>/", view(analytics_admin_views.subject_analytics_view), name="testing_analytics_subject"),
+            path("analytics/tests/<uuid:test_id>/", view(analytics_admin_views.test_analytics_view), name="testing_analytics_test"),
             path(session + "activity/", view(session_admin_views.session_activity_view), name="testing_session_activity"),
             path(session + "settings/", view(session_admin_views.session_settings_view), name="testing_session_settings"),
             path(session + "action/<str:action>/", view(session_admin_views.session_action_view), name="testing_session_action"),

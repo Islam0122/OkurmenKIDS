@@ -7,30 +7,69 @@
       <h1 class="okt-h1">Сессии</h1>
       <p class="okt-sub">Кто, когда и в какой группе проходит тест — и результаты.</p>
     </div>
-    <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_testsession_add' %}">{% ticon "plus" 16 %}<span>Создать сессию</span></a>
+    <div class="oks-head-actions">
+      <a class="ok-btn-secondary okt-btn" href="{% url 'admin:testing_analytics' %}">{% ticon "chart-column" 16 %}<span>Аналитика</span></a>
+      <a class="ok-btn-primary okt-btn" href="{% url 'admin:testing_testsession_add' %}">{% ticon "plus" 16 %}<span>Создать сессию</span></a>
+    </div>
   </header>
 
-  <form class="okt-session-filters" method="get" role="search">
-    <div class="okt-search okt-search--grow">
+  <form class="oks-list-filters" method="get" role="search">
+    <div class="okt-search oks-list-filters__search">
       <label class="ok-visually-hidden" for="oks-q">Поиск сессий</label>
       <span class="okt-search__icon">{% ticon "search" 16 %}</span>
-      <input id="oks-q" class="ok-input" type="search" name="q" value="{{ query }}" placeholder="Поиск: название, тест, группа, ключ…">
+      <input id="oks-q" class="ok-input" type="search" name="q" value="{{ query }}" placeholder="Название, ключ или название теста…">
     </div>
-    <label class="ok-visually-hidden" for="oks-group">Группа</label>
-    <select id="oks-group" name="group" class="ok-input">
-      <option value="">Все группы</option>
-      {% for g in groups %}<option value="{{ g.pk }}"{% if group_id == g.pk|stringformat:"d" %} selected{% endif %}>{{ g.name }}</option>{% endfor %}
-    </select>
-    <label class="ok-visually-hidden" for="oks-test">Тест</label>
-    <select id="oks-test" name="test" class="ok-input">
-      <option value="">Все тесты</option>
-      {% for t in tests %}<option value="{{ t.pk }}"{% if test_id == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.title }}</option>{% endfor %}
-    </select>
-    <label class="ok-visually-hidden" for="oks-date">Дата</label>
-    <input id="oks-date" type="date" name="date" value="{{ date }}" class="ok-input">
+    <label class="oks-field"><span>Группа</span>
+      <select name="group" class="ok-input">
+        <option value="">Все</option>
+        {% for g in groups %}<option value="{{ g.pk }}"{% if filters.group == g.pk|stringformat:"d" %} selected{% endif %}>{{ g.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="oks-field"><span>Предмет</span>
+      <select name="subject" class="ok-input">
+        <option value="">Все</option>
+        {% for s in subjects %}<option value="{{ s.pk }}"{% if filters.subject == s.pk|stringformat:"d" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="oks-field"><span>Тест</span>
+      <select name="test" class="ok-input">
+        <option value="">Все</option>
+        {% for t in tests %}<option value="{{ t.pk }}"{% if filters.test == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.title }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="oks-field"><span>Тренер</span>
+      <select name="teacher" class="ok-input">
+        <option value="">Все</option>
+        {% for t in teachers %}<option value="{{ t.pk }}"{% if filters.teacher == t.pk|stringformat:"d" %} selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="oks-field"><span>Тип</span>
+      <select name="type" class="ok-input">
+        <option value="">Все</option>
+        {% for value, label in session_types %}<option value="{{ value }}"{% if filters.type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="oks-field"><span>Активность</span>
+      <select name="active" class="ok-input">
+        <option value="">Все</option>
+        <option value="1"{% if filters.active == "1" %} selected{% endif %}>Активные</option>
+        <option value="0"{% if filters.active == "0" %} selected{% endif %}>Неактивные</option>
+      </select>
+    </label>
+    <label class="oks-field"><span>Создана с</span><input type="date" name="created_from" value="{{ filters.created_from }}" class="ok-input"></label>
+    <label class="oks-field"><span>по</span><input type="date" name="created_to" value="{{ filters.created_to }}" class="ok-input"></label>
+    <label class="oks-field"><span>Сортировка</span>
+      <select name="sort" class="ok-input">
+        <option value="created"{% if sort == "created" %} selected{% endif %}>Сначала новые</option>
+        <option value="start"{% if sort == "start" %} selected{% endif %}>По дате проведения</option>
+        <option value="average"{% if sort == "average" %} selected{% endif %}>По среднему баллу</option>
+      </select>
+    </label>
     {% if phase != "all" %}<input type="hidden" name="status" value="{{ phase }}">{% endif %}
-    <button type="submit" class="ok-btn-secondary okt-btn">Найти</button>
-    {% if has_filters %}<a class="okt-link-reset" href="?{% if phase != 'all' %}status={{ phase }}{% endif %}">Сбросить</a>{% endif %}
+    <div class="oks-list-filters__actions">
+      <button type="submit" class="ok-btn-secondary okt-btn">{% ticon "filter" 15 %}<span>Применить</span></button>
+      {% if has_filters %}<a class="okt-link-reset" href="?{% if phase != 'all' %}status={{ phase }}{% endif %}">Сбросить</a>{% endif %}
+    </div>
   </form>
 
   <nav class="okt-filters" aria-label="Статус">
@@ -41,51 +80,57 @@
     {% endfor %}
   </nav>
 
-  {% if cards %}
-    <div class="okt-session-list">
-      {% for card in cards %}
-        {% url 'admin:testing_testsession_change' card.session.pk as session_url %}
-        <article class="okt-session-card{% if card.phase == 'active' %} is-live{% endif %}">
-          <div class="okt-session-card__main">
-            <a class="okt-card__title" href="{{ session_url }}">{{ card.title }}</a>
-            {% if card.session.title %}<div class="okt-session-card__test">{% ticon "clipboard-check" 14 %}{{ card.session.test.title }}</div>{% endif %}
-            <div class="okt-session-card__meta">
-              <span>{% ticon "users" 14 %}Группа: {{ card.session.group.name|default:"—" }}</span>
-              {% if card.when %}<span>{% ticon "calendar" 14 %}{{ card.when|date:"d.m.Y · H:i" }}{% if card.session.scheduled_end %}–{{ card.session.scheduled_end|date:"H:i" }}{% endif %}</span>{% endif %}
-              <span>{% ticon "graduation-cap" 14 %}{{ card.students_total|student_count_label }}</span>
-              <span class="okt-key okt-key--sm">{{ card.session.key }}</span>
-            </div>
-            {% if card.counts and card.phase != "draft" and card.phase != "scheduled" %}
-              <div class="okt-session-card__live">
-                <span class="okt-dot okt-dot--done"></span>{{ card.counts.completed }} завершили
-                <span class="okt-dot okt-dot--live"></span>{{ card.counts.in_progress }} проходят
-                <span class="okt-dot"></span>{{ card.counts.not_started }} не начали
-              </div>
-            {% endif %}
-          </div>
-          <div class="okt-session-card__side">
-            {{ card.phase|phase_badge }}
-            <div class="okt-session-card__actions">
-              <a class="ok-btn-primary ok-btn-sm okt-btn" href="{{ session_url }}">Открыть</a>
-              <details class="ok-menu">
-                <summary class="ok-btn-secondary ok-btn-sm okt-btn ok-menu-trigger" aria-label="Действия с сессией">{% ticon "ellipsis" 16 %}</summary>
-                <div class="ok-menu-list ok-menu-list-right">
-                  <a href="{% url 'admin:testing_session_participants' card.session.pk %}">{% ticon "users" 15 %} Участники</a>
-                  <a href="{% url 'admin:testing_session_results' card.session.pk %}">{% ticon "target" 15 %} Результаты</a>
-                  <a href="{% url 'admin:testing_session_settings' card.session.pk %}">{% ticon "settings" 15 %} Настройки</a>
-                  {% include "admin/testing/sessions/_actions.html" with session=card.session phase=card.phase next=request.get_full_path menu=True %}
-                  <a class="ok-menu-danger" href="{% url 'admin:testing_testsession_delete' card.session.pk %}">{% ticon "trash-2" 15 %} Удалить</a>
-                </div>
-              </details>
-            </div>
-          </div>
-        </article>
-      {% endfor %}
+  {% if rows %}
+    <div class="okt-qtable-wrap">
+      <table class="okt-qtable oks-table">
+        <thead>
+          <tr>
+            <th>Группа</th><th>Предмет</th><th>Тест</th><th>Тренер</th><th>Тип</th><th>Название</th><th>Статус</th>
+            <th class="okt-qtable__center">Студентов</th><th class="okt-qtable__center">Попыток</th><th class="okt-qtable__center">Средний балл</th>
+            <th>Создана</th><th>Истекает</th><th><span class="ok-visually-hidden">Действия</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            {% with s=row.session %}
+              <tr{% if row.phase == "active" %} class="is-live"{% endif %}>
+                <td>{% if s.group_id %}<a href="{% url 'admin:testing_analytics_group' s.group_id %}">{{ s.group.name }}</a>{% else %}—{% endif %}</td>
+                <td>{{ s.test.subject.name|default:"—" }}</td>
+                <td class="oks-table__test"><a href="{% url 'admin:testing_analytics_test' s.test_id %}">{{ s.test.title }}</a></td>
+                <td>{{ s.teacher|default:"—" }}</td>
+                <td>{{ s.get_session_type_display }}</td>
+                <td class="oks-table__title"><a href="{% url 'admin:testing_testsession_change' s.pk %}">{{ row.title }}</a><div class="okt-qtable__meta okt-key okt-key--sm">{{ s.key }}</div></td>
+                <td>{{ row.phase|phase_badge }}</td>
+                <td class="okt-qtable__center">{% if s.roster_total %}{{ s.roster_total }}{% else %}{{ s.attempt_students }}{% endif %}</td>
+                <td class="okt-qtable__center">{{ s.attempts_total }}</td>
+                <td class="okt-qtable__center"><strong class="{{ s.average_score|score_class:s.test.passing_score }}">{{ s.average_score|percent }}</strong></td>
+                <td class="okt-nowrap">{{ s.created_at|date:"d.m.Y H:i" }}</td>
+                <td class="okt-nowrap">{% if s.expires_at %}{{ s.expires_at|date:"d.m.Y H:i" }}{% elif s.scheduled_end %}{{ s.scheduled_end|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+                <td class="okt-nowrap oks-table__actions">
+                  <a class="ok-btn-primary ok-btn-sm okt-btn" href="{% url 'admin:testing_testsession_change' s.pk %}">Открыть</a>
+                  <a class="ok-btn-secondary ok-btn-sm okt-btn" href="{% url 'admin:testing_session_analytics' s.pk %}">{% ticon "chart-column" 14 %}<span>Аналитика</span></a>
+                  <details class="ok-menu">
+                    <summary class="ok-btn-secondary ok-btn-sm okt-btn ok-menu-trigger" aria-label="Действия с сессией">{% ticon "ellipsis" 16 %}</summary>
+                    <div class="ok-menu-list ok-menu-list-right">
+                      <a href="{% url 'admin:testing_session_participants' s.pk %}">{% ticon "users" 15 %} Студенты</a>
+                      <a href="{% url 'admin:testing_session_questions' s.pk %}">{% ticon "list-checks" 15 %} Вопросы</a>
+                      <a href="{% url 'admin:testing_session_settings' s.pk %}">{% ticon "settings" 15 %} Настройки</a>
+                      {% include "admin/testing/sessions/_actions.html" with session=s phase=row.phase next=request.get_full_path menu=True %}
+                      <a class="ok-menu-danger" href="{% url 'admin:testing_testsession_delete' s.pk %}">{% ticon "trash-2" 15 %} Удалить</a>
+                    </div>
+                  </details>
+                </td>
+              </tr>
+            {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+    <p class="ok-help-text">Средний балл — по завершённым попыткам; цвет — относительно проходного балла теста.</p>
     {% if page.has_other_pages %}
       <nav class="okt-pager" aria-label="Страницы">
         {% if page.has_previous %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.previous_page_number }}{% if phase != 'all' %}&amp;status={{ phase }}{% endif %}&amp;{{ filter_qs }}">{% ticon "chevron-left" 14 %} Назад</a>{% endif %}
-        <span>Страница {{ page.number }} из {{ page.paginator.num_pages }}</span>
+        <span>Страница {{ page.number }} из {{ page.paginator.num_pages }} · {{ page.paginator.count }} сессий</span>
         {% if page.has_next %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.next_page_number }}{% if phase != 'all' %}&amp;status={{ phase }}{% endif %}&amp;{{ filter_qs }}">Далее {% ticon "chevron-right" 14 %}</a>{% endif %}
       </nav>
     {% endif %}

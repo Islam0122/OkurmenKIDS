@@ -1,0 +1,6 @@
+{% extends "admin/testing/sessions/base.html" %}
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_testsession_changelist' %}">Сессии</a></li>
+  {% if crumb_title %}<li class="breadcrumb-item"><a href="{% url 'admin:testing_analytics' %}">Аналитика</a></li>
+  <li class="breadcrumb-item active">{{ crumb_title }}</li>{% else %}<li class="breadcrumb-item active">Аналитика</li>{% endif %}
+{% endblock %}

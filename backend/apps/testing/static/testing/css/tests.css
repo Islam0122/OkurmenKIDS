@@ -434,3 +434,102 @@ select.ok-input { appearance: auto; }
 }
 .okt-session-filters .okt-search { flex: 1 1 18rem; max-width: none; }
 .okt-session-filters .okt-search .ok-input { width: 100%; }
+
+/* ---------------------------------------------------------------------------
+   Sessions table + analytics
+   --------------------------------------------------------------------------- */
+.oks-head-actions { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
+.oks-list-filters {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.6rem 0.75rem; align-items: end;
+  margin-bottom: 1rem; padding: 0.9rem 1rem; background: var(--ok-surface); border: 1px solid var(--ok-border); border-radius: var(--ok-radius-lg);
+}
+.oks-list-filters__search { grid-column: 1 / -1; max-width: none; }
+.oks-list-filters__search .ok-input { width: 100%; }
+.oks-list-filters__actions { display: flex; align-items: center; gap: 0.6rem; }
+.oks-field { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; min-width: 0; }
+.oks-field > span { color: var(--ok-text-muted); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.oks-field .ok-input { width: 100%; min-width: 0; }
+.oks-table td { font-size: 0.85rem; }
+.oks-table__title { min-width: 11rem; }
+.oks-table__title a, .oks-table__test a { font-weight: 600; color: var(--ok-text); }
+.oks-table__test { min-width: 10rem; }
+.oks-table__actions { display: flex; gap: 0.35rem; align-items: center; }
+.oks-table tr.is-live td:first-child { box-shadow: inset 3px 0 0 var(--ok-primary); }
+
+.oks-chain {
+  display: flex; flex-wrap: wrap; gap: 0.5rem 1.6rem; margin: 0 0 1rem; padding: 0.75rem 1rem;
+  background: var(--ok-surface); border: 1px solid var(--ok-border); border-radius: var(--ok-radius-lg);
+}
+.oks-chain > div { display: flex; flex-direction: column; gap: 0.1rem; }
+.oks-chain dt { color: var(--ok-text-muted); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.oks-chain dd { margin: 0; color: var(--ok-text); font-weight: 600; }
+
+.oks-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.1rem; align-items: start; margin-top: 1.1rem; }
+.oks-two .okt-section { margin-top: 0; }
+
+.oks-stack { display: flex; height: 0.9rem; border-radius: 999px; overflow: hidden; background: var(--ok-surface-hover); margin-bottom: 0.9rem; }
+.oks-stack__part { display: block; height: 100%; }
+.oks-stack__part--ok { background: var(--ok-primary); }
+.oks-stack__part--bad { background: var(--ok-danger); }
+.oks-stack__part--review { background: var(--ok-warning); }
+.oks-stack__part--none { background: var(--ok-border-strong); }
+.oks-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.9rem; }
+.oks-legend li { display: flex; align-items: center; gap: 0.55rem; }
+.oks-legend__dot { width: 0.7rem; height: 0.7rem; border-radius: 3px; flex-shrink: 0; }
+.oks-legend__label { flex: 1; color: var(--ok-text-secondary); }
+.oks-legend strong { font-variant-numeric: tabular-nums; }
+.oks-legend .okt-muted { width: 3.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+.oks-chart { display: flex; align-items: flex-end; gap: 0.6rem; height: 11rem; padding-top: 1.2rem; border-bottom: 1px solid var(--ok-border); }
+.oks-chart__col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; position: relative; }
+.oks-chart__bar { display: block; width: 100%; max-width: 3rem; min-height: 2px; border-radius: 6px 6px 0 0; background: var(--ok-primary); }
+.oks-chart__bar.is-low { background: var(--ok-warning); }
+.oks-chart__count { font-size: 0.8rem; font-weight: 700; color: var(--ok-text); margin-bottom: 0.2rem; font-variant-numeric: tabular-nums; }
+.oks-chart__label { position: absolute; bottom: -1.5rem; font-size: 0.75rem; color: var(--ok-text-muted); white-space: nowrap; }
+.oks-chart + .ok-help-text { margin-top: 2rem; }
+
+.oks-row-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.9rem; }
+.oks-row-filters select.ok-input { width: auto; min-width: 11rem; }
+.oks-row-filters .okt-search { flex: 1 1 14rem; }
+.oks-row-filters .okt-search .ok-input { width: 100%; }
+
+.oks-qlist { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 0.45rem; }
+.oks-qlist li { display: flex; gap: 0.75rem; justify-content: space-between; align-items: baseline; font-size: 0.88rem; padding-bottom: 0.4rem; border-bottom: 1px dashed var(--ok-border); }
+.oks-qlist li:last-child { border-bottom: 0; }
+.oks-qlist__text { color: var(--ok-text); }
+.oks-more { margin: 0.6rem 0 0; text-align: right; font-size: 0.88rem; }
+.oks-more a { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 600; }
+.oks-kpis--compact { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.oks-kpis--compact .okt-kpi { box-shadow: none; }
+.oks-kpi__value--sm { font-size: 1.15rem; }
+
+.oks-answers td { vertical-align: top; }
+.oks-answers__result { min-width: 9rem; }
+.oks-answer-list { margin: 0; padding-left: 1rem; }
+.oks-code {
+  margin: 0; max-width: 28rem; max-height: 14rem; overflow: auto; padding: 0.5rem 0.65rem; border-radius: var(--ok-radius-sm);
+  background: var(--ok-surface-hover); font-size: 0.78rem; white-space: pre;
+}
+
+.oks-tree { display: flex; flex-direction: column; gap: 0.9rem; }
+.oks-node > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.45rem 0.2rem; list-style-position: outside; }
+.oks-node > summary a { font-weight: 700; color: var(--ok-text); }
+.oks-node--subject { margin-bottom: 0.5rem; }
+.oks-node--subject > summary { font-size: 0.98rem; }
+.oks-node--test { margin: 0.2rem 0 0.4rem 1.4rem; }
+.oks-node--test > .okt-qtable-wrap { margin: 0.4rem 0 0.8rem; }
+.oks-node__stats { display: inline-flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin-left: auto; font-size: 0.82rem; color: var(--ok-text-secondary); font-weight: 400; }
+.oks-node--group > .ok-card-header a { font-weight: 700; color: var(--ok-text); }
+
+@media (max-width: 991.98px) { .oks-two { grid-template-columns: 1fr; } }
+@media (max-width: 767.98px) {
+  .oks-node__stats { margin-left: 0; width: 100%; }
+  .oks-node--test { margin-left: 0.4rem; }
+}
+
+@media print {
+  #jazzy-navbar, .main-sidebar, .main-header, .content-header, .okt-tabs, .okt-test-head__actions,
+  .oks-exports, .oks-row-filters, .okt-back, .oks-more, .main-footer { display: none !important; }
+  .content-wrapper { margin-left: 0 !important; }
+  .okt-kpi, .ok-card { box-shadow: none !important; break-inside: avoid; }
+}

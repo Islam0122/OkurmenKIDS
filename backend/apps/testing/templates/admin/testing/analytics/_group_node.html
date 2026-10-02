@@ -1,0 +1,22 @@
+{% load question_bank %}
+{# One group of the tree: Предмет → Тест → Сессии. node: TreeNode (group). #}
+{% for subject in node.children %}
+  <details class="oks-node oks-node--subject" open>
+    <summary>
+      {% ticon "book-open" 15 %}
+      {% if subject.key %}<a href="{% url 'admin:testing_analytics_subject' subject.key %}{% if node.key %}?group={{ node.key }}{% endif %}">{{ subject.label }}</a>{% else %}<span>{{ subject.label }}</span>{% endif %}
+      {% include "admin/testing/analytics/_node_stats.html" with node=subject %}
+    </summary>
+    {% for test in subject.children %}
+      <details class="oks-node oks-node--test">
+        <summary>
+          {% ticon "clipboard-check" 15 %}
+          <a href="{% url 'admin:testing_analytics_test' test.key %}{% if node.key %}?group={{ node.key }}{% endif %}">{{ test.label }}</a>
+          <span class="okt-muted">· {{ test.sessions|length }} сесс.</span>
+          {% include "admin/testing/analytics/_node_stats.html" with node=test %}
+        </summary>
+        {% include "admin/testing/analytics/_sessions_table.html" with sessions=test.sessions %}
+      </details>
+    {% endfor %}
+  </details>
+{% endfor %}

@@ -1,0 +1,50 @@
+{% extends "admin/testing/analytics/base.html" %}
+{% load question_bank %}
+
+{% block section %}
+  <a class="okt-back" href="{% url 'admin:testing_testsession_changelist' %}">{% ticon "arrow-left" 15 %}<span>Сессии</span></a>
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">Аналитика тестов</h1>
+      <p class="okt-sub">Группа → Предмет → Тест → Сессии. Откройте сессию, чтобы увидеть студентов, попытки и ответы.</p>
+    </div>
+  </header>
+
+  <form class="oks-row-filters" method="get">
+    <label class="ok-visually-hidden" for="oka-group">Группа</label>
+    <select id="oka-group" name="group" class="ok-input">
+      <option value="">Все группы</option>
+      {% for g in groups %}<option value="{{ g.pk }}"{% if group_id == g.pk %} selected{% endif %}>{{ g.name }}</option>{% endfor %}
+    </select>
+    <label class="ok-visually-hidden" for="oka-subject">Предмет</label>
+    <select id="oka-subject" name="subject" class="ok-input">
+      <option value="">Все предметы</option>
+      {% for s in subjects %}<option value="{{ s.pk }}"{% if subject_id == s.pk %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="ok-btn-secondary okt-btn">Показать</button>
+    {% if group_id or subject_id %}<a class="okt-link-reset" href="?">Сбросить</a>{% endif %}
+  </form>
+
+  {% include "admin/testing/analytics/_summary.html" %}
+
+  {% if tree %}
+    <div class="oks-tree">
+      {% for node in tree %}
+        <section class="ok-card okt-section oks-node oks-node--group">
+          <div class="ok-card-header">
+            {% ticon "users" 16 %}
+            {% if node.key %}<a href="{% url 'admin:testing_analytics_group' node.key %}">{{ node.label }}</a>{% else %}<span>{{ node.label }}</span>{% endif %}
+            {% include "admin/testing/analytics/_node_stats.html" %}
+          </div>
+          <div class="ok-card-body">{% include "admin/testing/analytics/_group_node.html" %}</div>
+        </section>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="okt-empty">
+      <span class="okt-empty__icon">{% ticon "chart-column" 28 %}</span>
+      <h2>Данных пока нет</h2>
+      <p>Аналитика появится, когда студенты пройдут тесты в сессиях.</p>
+    </div>
+  {% endif %}
+{% endblock %}

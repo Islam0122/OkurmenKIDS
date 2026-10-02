@@ -1,0 +1,91 @@
+{% extends "admin/testing/sessions/base.html" %}
+{% load question_bank %}
+
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_testsession_changelist' %}">Сессии</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_session_analytics' session.pk %}">{{ session_title }}</a></li>
+  <li class="breadcrumb-item active">{{ student_name }}</li>
+{% endblock %}
+
+{% block section %}
+  <a class="okt-back" href="{% url 'admin:testing_session_analytics' session.pk %}#students">{% ticon "arrow-left" 15 %}<span>Аналитика сессии</span></a>
+
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">{{ student_name }}</h1>
+      <p class="okt-sub">Попытка от {{ attempt.started_at|date:"d.m.Y H:i" }} · {{ attempt.get_status_display }} {{ detail.passed|pass_badge }}</p>
+    </div>
+  </header>
+
+  <dl class="oks-chain" aria-label="Попытка">
+    <div><dt>Группа</dt><dd>{% if session.group_id %}<a href="{% url 'admin:testing_analytics_group' session.group_id %}">{{ session.group.name }}</a>{% else %}—{% endif %}</dd></div>
+    <div><dt>Предмет</dt><dd>{{ session.test.subject.name|default:"—" }}</dd></div>
+    <div><dt>Тест</dt><dd><a href="{% url 'admin:testing_analytics_test' session.test_id %}">{{ session.test.title }}</a></dd></div>
+    <div><dt>Сессия</dt><dd><a href="{% url 'admin:testing_testsession_change' session.pk %}">{{ session_title }}</a></dd></div>
+  </dl>
+
+  <div class="okt-kpis">
+    <div class="okt-kpi"><span class="okt-kpi__label">Результат</span><span class="okt-kpi__value {% if finished %}{{ attempt.score|score_class:session.test.passing_score }}{% endif %}">{% if finished %}{{ attempt.score|percent:1 }}{% else %}—{% endif %}</span><span class="okt-kpi__hint">проходной: {{ session.test.passing_score }}%</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Правильных</span><span class="okt-kpi__value">{{ detail.correct }} / {{ detail.total }}</span>{% if detail.pending %}<span class="okt-kpi__hint">на проверке: {{ detail.pending }}</span>{% endif %}</div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Время</span><span class="okt-kpi__value">{{ attempt.duration_seconds|duration_label }}</span></div>
+    <div class="okt-kpi"><span class="okt-kpi__label">Начало · завершение</span><span class="okt-kpi__value oks-kpi__value--sm">{{ attempt.started_at|date:"H:i" }} – {{ attempt.finished_at|date:"H:i"|default:"…" }}</span></div>
+  </div>
+
+  {% if others|length > 1 %}
+    <nav class="okt-filters" aria-label="Попытки студента">
+      {% for other in others %}
+        <a class="okt-filter{% if other.pk == attempt.pk %} is-active{% endif %}" href="{% url 'admin:testing_attempt_detail' other.pk %}">Попытка {{ forloop.counter }}{% if other.status == "finished" %} · {{ other.score|percent }}{% endif %}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "list-checks" 16 %}<span>Ответы</span></div>
+    <div class="ok-card-body">
+      {% if not finished %}<div class="ok-alert ok-alert-info">Попытка ещё не завершена — показаны ответы, сохранённые на данный момент.</div>{% endif %}
+      {% if detail.rows %}
+        <div class="okt-qtable-wrap">
+          <table class="okt-qtable oks-answers">
+            <thead><tr><th>№</th><th>Вопрос</th><th>Ответ студента</th><th>Правильный</th><th>Результат</th></tr></thead>
+            <tbody>
+              {% for row in detail.rows %}
+                {% with q=row.question answer=row.answer %}
+                  <tr>
+                    <td class="okt-qtable__num">{{ row.number }}</td>
+                    <td class="okt-qtable__text">{{ q.text|truncatechars:160 }}<div class="okt-qtable__meta">{{ q.get_question_type_display }} · {{ q.points|points_label }}</div></td>
+                    <td>
+                      {% if row.selected %}
+                        <ul class="oks-answer-list">{% for o in row.selected %}<li>{{ o.text|default:"(вариант-изображение)" }}</li>{% endfor %}</ul>
+                      {% elif answer and answer.answer_text %}
+                        {% if q.question_type == "code" %}<pre class="oks-code">{{ answer.answer_text }}</pre>{% else %}{{ answer.answer_text|linebreaksbr }}{% endif %}
+                      {% else %}<span class="okt-muted">нет ответа</span>{% endif %}
+                    </td>
+                    <td>
+                      {% if row.correct_options %}
+                        <ul class="oks-answer-list">{% for o in row.correct_options %}<li>{{ o.text|default:"(вариант-изображение)" }}</li>{% endfor %}</ul>
+                      {% elif q.correct_answers %}{{ q.correct_answers|join:" · " }}
+                      {% else %}<span class="okt-muted">проверяет преподаватель / AI</span>{% endif %}
+                    </td>
+                    <td class="oks-answers__result">
+                      {% if row.status == "correct" %}<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Верно</span>
+                      {% elif row.status == "wrong" %}<span class="ok-badge ok-badge-danger"><span class="ok-badge-dot"></span>Неверно</span>
+                      {% elif row.status == "pending" %}<span class="ok-badge ok-badge-warning"><span class="ok-badge-dot"></span>На проверке</span>
+                      {% else %}<span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>Пропущен</span>{% endif %}
+                      {% if answer %}
+                        <div class="okt-qtable__meta">{{ answer.get_grading_status_display }}</div>
+                        {% if answer.ai_score is not None %}<div class="okt-qtable__meta">AI: {{ answer.ai_score|floatformat:1 }}/10{% if answer.ai_confidence is not None %} · уверенность {{ answer.ai_confidence|floatformat:2 }}{% endif %}</div>{% endif %}
+                        {% if answer.ai_feedback %}<div class="okt-qtable__meta">{{ answer.ai_feedback|truncatechars:160 }}</div>{% endif %}
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endwith %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="okt-muted">Ответов нет.</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

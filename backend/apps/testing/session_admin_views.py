@@ -3,8 +3,9 @@
 A test defines *what* is asked; a session defines *who* takes it, *when*,
 for which group, with how much time and attempts, and collects results:
 
-    Сессии (list) → + Создать сессию
-                  → Сессия: Обзор · Участники · Результаты · Активность · Настройки
+    Сессии (table) → + Создать сессию
+                   → Сессия: Обзор · Студенты · Вопросы · Аналитика · Активность · Настройки
+                   → Аналитика (analytics_admin_views.py)
 
 Live parts (participants, activity) refresh themselves by polling a
 server-rendered fragment every few seconds — the project has no WebSocket
@@ -17,7 +18,7 @@ import uuid
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.http import HttpResponse, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -25,6 +26,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 
 from apps.academy.models import Group
+from apps.users.models import Subject, Teacher
 
 from .admin_views import _require_admin
 from .forms import SessionForm
@@ -32,16 +34,15 @@ from .models import (
     ParticipantStatus,
     SessionPhase,
     SessionTransitionError,
+    SessionType,
     Test,
     TestSession,
 )
+from .services import analytics
 from .services.participants import session_counts
 from .services.sessions import (
     display_title,
-    export_results_excel,
-    export_results_pdf,
     filter_by_phase,
-    result_rows,
     session_date,
     sync_due_sessions,
 )
@@ -62,16 +63,19 @@ def _session_url(session, tab: str = "overview") -> str:
     names = {
         "overview": "admin:testing_testsession_change",
         "participants": "admin:testing_session_participants",
-        "results": "admin:testing_session_results",
+        "questions": "admin:testing_session_questions",
+        "analytics": "admin:testing_session_analytics",
         "activity": "admin:testing_session_activity",
         "settings": "admin:testing_session_settings",
     }
     return reverse(names[tab], args=[session.pk])
 
 
-def _get_session(session_id) -> TestSession:
+def _get_session(request, session_id) -> TestSession:
+    """The session, if this user may see it (services.analytics.visible_sessions)."""
     session = get_object_or_404(
-        TestSession.objects.select_related("test", "test__subject", "group", "teacher__user"), pk=session_id,
+        analytics.visible_sessions(request.user).select_related("test", "test__subject", "group", "teacher__user"),
+        pk=session_id,
     )
     session.sync_schedule()
     return session
@@ -81,74 +85,91 @@ def _get_session(session_id) -> TestSession:
 # List / create
 # ---------------------------------------------------------------------------
 
+LIST_SORTS = {
+    "created": "-created_at",
+    "start": "-scheduled_start",
+    "average": "-average_score",
+}
+
+
 def sessions_list_view(request):
+    """The sessions table with every filter of the section. One query for
+    the rows (stats are subqueries — services.analytics.with_list_stats)."""
     _require_admin(request)
     sync_due_sessions()
     params = request.GET
     query = (params.get("q") or "").strip()
     phase = params.get("status") or "all"
-    group_id = params.get("group") or ""
-    test_id = params.get("test") or ""
-    date = params.get("date") or ""
+    filters = {
+        "group": params.get("group") or "",
+        "subject": params.get("subject") or "",
+        "test": params.get("test") or "",
+        "teacher": params.get("teacher") or "",
+        "type": params.get("type") or "",
+        "active": params.get("active") or "",
+        "created_from": params.get("created_from") or "",
+        "created_to": params.get("created_to") or "",
+    }
 
-    sessions = (
-        TestSession.objects.select_related("test", "group")
-        .annotate(participants_total=Count("participants", distinct=True))
-        .order_by("-scheduled_start", "-created_at")
-    )
-    base = sessions
+    visible = analytics.visible_sessions(request.user)
+    sessions = visible
     if query:
         sessions = sessions.filter(
-            Q(title__icontains=query) | Q(test__title__icontains=query)
-            | Q(group__name__icontains=query) | Q(key__icontains=query)
+            Q(title__icontains=query) | Q(key__icontains=query) | Q(test__title__icontains=query)
         )
-    if group_id.isdigit():
-        sessions = sessions.filter(group_id=group_id)
-    if test_id:
-        try:
-            sessions = sessions.filter(test_id=uuid.UUID(test_id))
-        except ValueError:
-            test_id = ""
-    if date:
-        try:
-            day = timezone.datetime.strptime(date, "%Y-%m-%d").date()
-        except ValueError:
-            date = ""
+    for key, lookup in (("group", "group_id"), ("subject", "test__subject_id"), ("teacher", "teacher_id")):
+        if filters[key].isdigit():
+            sessions = sessions.filter(**{lookup: filters[key]})
         else:
-            sessions = sessions.filter(
-                Q(scheduled_start__date=day) | Q(scheduled_start__isnull=True, created_at__date=day)
-            )
+            filters[key] = ""
+    if filters["test"]:
+        try:
+            sessions = sessions.filter(test_id=uuid.UUID(filters["test"]))
+        except ValueError:
+            filters["test"] = ""
+    if filters["type"] in SessionType.values:
+        sessions = sessions.filter(session_type=filters["type"])
+    else:
+        filters["type"] = ""
+    if filters["active"] in ("1", "0"):
+        sessions = sessions.filter(is_active=filters["active"] == "1")
+    else:
+        filters["active"] = ""
+    for key, lookup in (("created_from", "created_at__date__gte"), ("created_to", "created_at__date__lte")):
+        if filters[key]:
+            try:
+                day = timezone.datetime.strptime(filters[key], "%Y-%m-%d").date()
+            except ValueError:
+                filters[key] = ""
+            else:
+                sessions = sessions.filter(**{lookup: day})
+
+    base = sessions
     counts = {key: (base if key == "all" else filter_by_phase(base, key)).count() for key, _ in PHASE_TABS}
     sessions = filter_by_phase(sessions, phase) if phase != "all" else sessions
+    sort = params.get("sort") if params.get("sort") in LIST_SORTS else "created"
+    sessions = analytics.with_list_stats(sessions).order_by(F(LIST_SORTS[sort][1:]).desc(nulls_last=True), "-created_at")
 
-    page = Paginator(sessions, 20).get_page(params.get("page"))
+    page = Paginator(sessions, 25).get_page(params.get("page"))
     now = timezone.now()
-    cards = []
-    for session in page.object_list:
-        participants = list(session.participants.all())
-        cards.append({
-            "session": session,
-            "title": display_title(session),
-            "when": session_date(session),
-            "phase": session.phase_at(now),
-            "counts": session_counts(session, participants, now) if participants else None,
-            "students_total": len(participants) or (
-                session.group.students.filter(status="active").count() if session.group_id else 0
-            ),
-        })
-    filter_query = {k: v for k, v in (("q", query), ("group", group_id), ("test", test_id), ("date", date)) if v}
+    rows = [{"session": s, "title": display_title(s), "phase": s.phase_at(now)} for s in page.object_list]
+    filter_query = {k: v for k, v in (("q", query), *filters.items()) if v}
+    if sort != "created":
+        filter_query["sort"] = sort
     return render(request, "admin/testing/sessions/list.html", {
         "title": "Сессии",
         "page": page,
-        "cards": cards,
+        "rows": rows,
         "query": query,
         "phase": phase,
-        "group_id": group_id,
-        "test_id": str(test_id),
-        "date": date,
+        "filters": filters,
+        "sort": sort,
         "tabs": [{"key": k, "label": label, "count": counts[k], "active": k == phase} for k, label in PHASE_TABS],
-        "groups": Group.objects.order_by("name"),
-        "tests": Test.objects.order_by("title"),
+        "groups": Group.objects.filter(pk__in=visible.values("group")).order_by("name"),
+        "subjects": Subject.objects.filter(pk__in=visible.values("test__subject")).order_by("name"),
+        "tests": Test.objects.filter(pk__in=visible.values("test")).order_by("title"),
+        "teachers": Teacher.objects.filter(pk__in=visible.values("teacher")).select_related("user"),
+        "session_types": SessionType.choices,
         "filter_qs": urlencode(filter_query),
         "has_filters": bool(filter_query),
     })
@@ -203,9 +224,10 @@ def group_students_view(request, group_id):
 
 def _workspace_context(session: TestSession, tab: str) -> dict:
     tabs = [
-        ("overview", "Обзор", "chart-column"),
-        ("participants", "Участники", "users"),
-        ("results", "Результаты", "target"),
+        ("overview", "Обзор", "info"),
+        ("participants", "Студенты", "users"),
+        ("questions", "Вопросы", "list-checks"),
+        ("analytics", "Аналитика", "chart-column"),
         ("activity", "Активность", "activity"),
         ("settings", "Настройки", "settings"),
     ]
@@ -250,7 +272,7 @@ def _participant_rows(session: TestSession, participants) -> list[dict]:
 
 def session_overview_view(request, session_id):
     _require_admin(request)
-    session = _get_session(session_id)
+    session = _get_session(request, session_id)
     context = _workspace_context(session, "overview")
     context["join_url"] = request.build_absolute_uri(reverse("testing_public_join")) + f"?key={session.key}"
     context["test_questions"] = session.test.questions.count()
@@ -259,7 +281,7 @@ def session_overview_view(request, session_id):
 
 def session_participants_view(request, session_id):
     _require_admin(request)
-    session = _get_session(session_id)
+    session = _get_session(request, session_id)
     context = _workspace_context(session, "participants")
     context["rows"] = _participant_rows(session, context["participants"])
     if request.GET.get("fragment"):
@@ -267,34 +289,9 @@ def session_participants_view(request, session_id):
     return render(request, "admin/testing/sessions/participants.html", context)
 
 
-def session_results_view(request, session_id):
-    _require_admin(request)
-    session = _get_session(session_id)
-    context = _workspace_context(session, "results")
-    context["results"] = result_rows(session)
-    return render(request, "admin/testing/sessions/results.html", context)
-
-
-def session_export_view(request, session_id, fmt):
-    _require_admin(request)
-    session = _get_session(session_id)
-    filename = f"session-{session.key}"
-    if fmt == "xlsx":
-        response = HttpResponse(
-            export_results_excel(session),
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-    elif fmt == "pdf":
-        response = HttpResponse(export_results_pdf(session), content_type="application/pdf")
-    else:
-        return HttpResponse(status=404)
-    response["Content-Disposition"] = f'attachment; filename="{filename}.{fmt}"'
-    return response
-
-
 def session_activity_view(request, session_id):
     _require_admin(request)
-    session = _get_session(session_id)
+    session = _get_session(request, session_id)
     context = _workspace_context(session, "activity")
     context["rows"] = _participant_rows(session, context["participants"])
     context["events"] = _activity_events(context["participants"])
@@ -319,7 +316,7 @@ def _activity_events(participants) -> list[dict]:
 
 def session_settings_view(request, session_id):
     _require_admin(request)
-    session = _get_session(session_id)
+    session = _get_session(request, session_id)
     form = SessionForm(request.POST or None, session=session)
     if request.method == "POST" and form.is_valid():
         try:
@@ -339,7 +336,7 @@ def session_action_view(request, session_id, action):
     _require_admin(request)
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    session = _get_session(session_id)
+    session = _get_session(request, session_id)
     if action not in ("start", "pause", "resume", "finish", "cancel"):
         return HttpResponse(status=404)
     try:

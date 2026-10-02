@@ -108,6 +108,32 @@ def duration_label(seconds) -> str:
 
 
 @register.filter
+def pass_badge(passed) -> str:
+    """True / False / None (not finished or under review) → badge."""
+    if passed is True:
+        return badge("ok-badge-success", "Прошёл")
+    if passed is False:
+        return badge("ok-badge-danger", "Не прошёл")
+    return ""
+
+
+@register.filter
+def percent(value, digits=0) -> str:
+    """`83.333` → «83%», `None` → «—»."""
+    if value is None or value == "":
+        return "—"
+    return f"{float(value):.{int(digits)}f}%".replace(".", ",")
+
+
+@register.filter
+def score_class(value, passing) -> str:
+    """CSS modifier for a score vs the test's passing score."""
+    if value is None or passing is None:
+        return ""
+    return "okt-pass" if float(value) >= float(passing) else "oks-fail"
+
+
+@register.filter
 def student_count_label(n) -> str:
     n = int(n or 0)
     return f"{n} {plural_ru(n, 'студент', 'студента', 'студентов')}"

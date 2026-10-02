@@ -1,0 +1,39 @@
+{% load question_bank %}
+{# Аналитика вопросов: questions = [QuestionStat]. #}
+{% if questions %}
+  <div class="okt-qtable-wrap">
+    <table class="okt-qtable">
+      <thead>
+        <tr>
+          <th>№</th><th>Вопрос</th><th>Тип</th><th>Сложность</th>
+          <th class="okt-qtable__center">Ответили</th><th class="okt-qtable__center">Правильно</th>
+          <th class="okt-qtable__center">Неправильно</th><th>% правильных</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stat in questions %}
+          <tr>
+            <td class="okt-qtable__num">{{ stat.number }}</td>
+            <td class="okt-qtable__text">
+              <a href="{% url 'admin:testing_question_change' stat.question.test_id stat.question.pk %}">{{ stat.question.text|truncatechars:110 }}</a>
+              {% if stat.pending %}<div class="okt-qtable__meta">на проверке: {{ stat.pending }}</div>{% endif %}
+              {% if stat.ai_scored %}<div class="okt-qtable__meta">средняя оценка AI: {{ stat.ai_score_avg|floatformat:1 }}</div>{% endif %}
+            </td>
+            <td class="okt-nowrap">{{ stat.question.get_question_type_display }}</td>
+            <td>{{ stat.question.difficulty|difficulty_badge }}</td>
+            <td class="okt-qtable__center">{{ stat.answered }}</td>
+            <td class="okt-qtable__center">{{ stat.correct }}</td>
+            <td class="okt-qtable__center">{{ stat.wrong }}</td>
+            <td>
+              {% if stat.rate is not None %}
+                <div class="okt-rate"><span class="okt-bar"><span class="okt-bar__fill{% if stat.rate < 50 %} is-low{% endif %}" style="width: {{ stat.rate }}%"></span></span><span class="okt-rate__value">{{ stat.rate }}%</span></div>
+              {% else %}<span class="okt-muted">нет оценённых ответов</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="okt-muted">В тесте нет вопросов.</p>
+{% endif %}

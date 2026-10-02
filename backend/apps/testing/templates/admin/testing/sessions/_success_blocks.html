@@ -1,0 +1,29 @@
+{% load question_bank %}
+{# «Вопросы с низкой / высокой успешностью» — low_success / high_success: [QuestionStat]. #}
+<div class="oks-two">
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "trending-down" 16 %}<span>Вопросы с низкой успешностью</span></div>
+    <div class="ok-card-body">
+      {% if low_success %}
+        <ol class="oks-qlist">
+          {% for stat in low_success %}
+            <li><span class="oks-qlist__text">{{ stat.number }}. {{ stat.question.text|truncatechars:90 }}</span><strong class="oks-fail">{{ stat.rate }}%</strong></li>
+          {% endfor %}
+        </ol>
+        <p class="ok-help-text">Стоит разобрать с группой или проверить формулировку.</p>
+      {% else %}<p class="okt-muted">Пока нет оценённых ответов.</p>{% endif %}
+    </div>
+  </section>
+  <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "trending-up" 16 %}<span>Вопросы с высокой успешностью</span></div>
+    <div class="ok-card-body">
+      {% if high_success %}
+        <ol class="oks-qlist">
+          {% for stat in high_success %}
+            <li><span class="oks-qlist__text">{{ stat.number }}. {{ stat.question.text|truncatechars:90 }}</span><strong class="okt-pass">{{ stat.rate }}%</strong></li>
+          {% endfor %}
+        </ol>
+      {% else %}<p class="okt-muted">Пока нет оценённых ответов.</p>{% endif %}
+    </div>
+  </section>
+</div>

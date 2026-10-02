@@ -1,0 +1,26 @@
+{% load question_bank %}
+{# test_rows: [{test, summary: TestSummary|None}]; group: optional Group. #}
+{% if test_rows %}
+  <div class="okt-qtable-wrap">
+    <table class="okt-qtable">
+      <thead><tr><th>Предмет</th><th>Тест</th><th class="okt-qtable__center">Сессий</th><th class="okt-qtable__center">Попыток</th><th class="okt-qtable__center">Средний балл</th><th class="okt-qtable__center">Макс. / мин.</th><th>Прохождение</th></tr></thead>
+      <tbody>
+        {% for row in test_rows %}
+          {% with t=row.test s=row.summary %}
+            <tr>
+              <td>{{ t.subject.name|default:"—" }}</td>
+              <td class="okt-qtable__text"><a href="{% url 'admin:testing_analytics_test' t.pk %}{% if group %}?group={{ group.pk }}{% endif %}">{{ t.title }}</a><div class="okt-qtable__meta">проходной балл: {{ t.passing_score }}%</div></td>
+              <td class="okt-qtable__center">{{ s.sessions|default:"—" }}</td>
+              <td class="okt-qtable__center">{{ s.attempts|default:"0" }}</td>
+              <td class="okt-qtable__center"><strong class="{{ s.average|score_class:t.passing_score }}">{{ s.average|percent:1 }}</strong></td>
+              <td class="okt-qtable__center okt-nowrap">{{ s.best|percent }} / {{ s.worst|percent }}</td>
+              <td>{% if s.pass_rate is not None %}<div class="okt-rate"><span class="okt-bar"><span class="okt-bar__fill{% if s.pass_rate < 50 %} is-low{% endif %}" style="width: {{ s.pass_rate|stringformat:'s' }}%"></span></span><span class="okt-rate__value">{{ s.pass_rate|floatformat:0 }}%</span></div>{% else %}<span class="okt-muted">нет завершённых</span>{% endif %}</td>
+            </tr>
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="okt-muted">Сессий пока нет.</p>
+{% endif %}

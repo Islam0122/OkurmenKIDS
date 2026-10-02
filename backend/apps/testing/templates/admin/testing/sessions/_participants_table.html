@@ -7,7 +7,7 @@
       <tbody>
         {% for row in rows %}
           <tr>
-            <td class="okt-qtable__text">{{ row.participant.student }}</td>
+            <td class="okt-qtable__text">{% if row.participant.attempt_id and row.status == "completed" or row.participant.attempt_id and row.status == "expired" %}<a href="{% url 'admin:testing_attempt_detail' row.participant.attempt_id %}">{{ row.participant.student }}</a>{% else %}{{ row.participant.student }}{% endif %}</td>
             <td>{{ row.status|participant_badge }}</td>
             <td class="oks-progress-cell">
               {% if row.participant.question_total %}
@@ -24,5 +24,5 @@
     </table>
   </div>
 {% else %}
-  <p class="okt-muted">У этой сессии нет списка участников{% if not session.group %} (сессия без группы — студенты входили по имени){% endif %}. Попытки — на вкладке «Результаты».</p>
+  <p class="okt-muted">У этой сессии нет списка участников{% if not session.group %} (сессия без группы — студенты входили по имени){% endif %}. Результаты всех попыток — на вкладке «Аналитика».</p>
 {% endif %}

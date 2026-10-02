@@ -219,18 +219,25 @@ class AdminSessionsTests(SessionFixture):
         live.start()
         self.create_session(title="Planned", date="2026-10-05")
         url = reverse("admin:testing_testsession_changelist")
-        titles = lambda **q: [c["title"] for c in self.client.get(url, q).context["cards"]]  # noqa: E731
+        titles = lambda **q: [r["title"] for r in self.client.get(url, q).context["rows"]]  # noqa: E731
         self.assertEqual(titles(status="active"), ["Live one"])
         self.assertEqual(titles(status="scheduled"), ["Planned"])
         self.assertEqual(titles(group=str(self.other_group.pk)), [])
-        self.assertEqual(titles(date="2026-10-05"), ["Planned"])
+        self.assertEqual(titles(created_from="2026-10-02", created_to="2026-10-02", sort="start"), ["Planned", "Live one"])
+        self.assertEqual(titles(created_from="2026-10-03"), [])
+        self.assertEqual(titles(type="training"), [])
+        self.assertEqual(titles(subject="999"), [])
         self.assertEqual(sorted(titles(q="Live")), ["Live one"])
         self.assertEqual(titles(test="not-a-uuid"), titles())
 
     def test_session_tabs_actions_and_exports(self):
         session = self.create_session(date="", start_time="", end_time="")
-        for name in ("participants", "results", "activity", "settings"):
+        for name in ("participants", "questions", "analytics", "activity", "settings"):
             self.assertEqual(self.client.get(reverse(f"admin:testing_session_{name}", args=[session.pk])).status_code, 200)
+        self.assertRedirects(
+            self.client.get(reverse("admin:testing_session_results", args=[session.pk])),
+            reverse("admin:testing_session_analytics", args=[session.pk]),
+        )
         overview = self.client.get(reverse("admin:testing_testsession_change", args=[session.pk]))
         self.assertContains(overview, session.key)
         self.client.post(reverse("admin:testing_session_action", args=[session.pk, "start"]))
