@@ -10,6 +10,8 @@ export interface ModalProps {
   isOpen: boolean
   onClose: () => void
   title: string
+  /** Optional small icon shown before the title (decorative). */
+  icon?: ReactNode
   children: ReactNode
   /** `md` (512px) for forms/confirmations, `lg` (672px) for richer content. */
   size?: 'md' | 'lg'
@@ -23,7 +25,7 @@ const SIZE_CLASSES = { md: 'max-w-lg', lg: 'max-w-2xl' } as const
  * the viewport height with its body scrolling inside — so a long form never
  * pushes the dialog off-screen.
  */
-export function Modal({ isOpen, onClose, title, children, size = 'md', className }: ModalProps) {
+export function Modal({ isOpen, onClose, title, icon, children, size = 'md', className }: ModalProps) {
   const titleId = useId()
   useOverlay(isOpen, onClose)
 
@@ -43,7 +45,8 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', className
         )}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 px-4 pt-4 pb-3 sm:px-6 sm:pt-6">
-          <h2 id={titleId} className="min-w-0 text-lg font-semibold text-ink">
+          <h2 id={titleId} className="flex min-w-0 items-center gap-2 text-lg font-semibold text-ink">
+            {icon}
             {title}
           </h2>
           <button

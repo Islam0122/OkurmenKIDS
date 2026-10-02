@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RotateCcw, Save, TriangleAlert } from 'lucide-react'
+import { Bot, Copy, MessageSquare, PenLine, RotateCcw, Save, TriangleAlert, UserRound, type LucideIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -40,7 +40,13 @@ export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: num
   const { data, isPending, isError, refetch } = useParentReport(lessonId, isOpen)
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="📩 Мини-отчёт родителям" size="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Мини-отчёт родителям"
+      icon={<MessageSquare size={18} className="shrink-0 text-brand-500" aria-hidden />}
+      size="lg"
+    >
       {isPending ? (
         <LoadingState label="Формируем отчёт…" />
       ) : isError || !data ? (
@@ -52,10 +58,10 @@ export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: num
   )
 }
 
-const AUTHORS: { value: ParentReportType; label: string; hint: string }[] = [
-  { value: 'system', label: '🤖 Система', hint: 'Автоматически сформированный отчёт' },
-  { value: 'trainer', label: '👨‍🏫 Тренер', hint: 'Отчёт от имени тренера' },
-  { value: 'custom', label: '✏️ Свой вариант', hint: 'Можно изменить текст вручную' },
+const AUTHORS: { value: ParentReportType; label: string; hint: string; icon: LucideIcon }[] = [
+  { value: 'system', label: 'Система', hint: 'Автоматически сформированный отчёт', icon: Bot },
+  { value: 'trainer', label: 'Тренер', hint: 'Отчёт от имени тренера', icon: UserRound },
+  { value: 'custom', label: 'Свой вариант', hint: 'Можно изменить текст вручную', icon: PenLine },
 ]
 
 function ReportEditor({ report }: { report: ParentLessonReport }) {
@@ -97,9 +103,10 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
     <div className="space-y-4">
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium text-ink">Автор отчёта</legend>
-        <div role="radiogroup" aria-label="Автор отчёта" className="grid gap-2 sm:grid-cols-3">
+        <div role="radiogroup" aria-label="Автор отчёта" className="grid gap-2 sm:grid-cols-2">
           {AUTHORS.map((option) => {
             const isActive = option.value === author
+            const Icon = option.icon
             return (
               <button
                 key={option.value}
@@ -109,6 +116,8 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
                 onClick={() => selectAuthor(option.value)}
                 className={cn(
                   'flex items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors',
+                  // «Свой вариант» takes the full row under «Система» and «Тренер».
+                  option.value === 'custom' && 'sm:col-span-2',
                   isActive
                     ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500'
                     : 'border-border bg-surface hover:border-brand-200 hover:bg-brand-50',
@@ -124,7 +133,10 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
                   {isActive ? <span className="size-2 rounded-full bg-brand-500" /> : null}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-ink">{option.label}</span>
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                    <Icon size={18} className={cn('shrink-0', isActive ? 'text-brand-500' : 'text-ink-muted')} aria-hidden />
+                    {option.label}
+                  </span>
                   <span className="block text-xs text-ink-muted">{option.hint}</span>
                 </span>
               </button>
@@ -201,12 +213,12 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
             Сохранить
           </Button>
         ) : (
-          <Button variant="secondary" size="sm" onClick={startEditing}>
-            ✏️ Редактировать
+          <Button variant="secondary" size="sm" leftIcon={<PenLine size={16} aria-hidden />} onClick={startEditing}>
+            Редактировать
           </Button>
         )}
-        <Button size="sm" onClick={() => void handleCopy()} disabled={isEmpty}>
-          📋 Копировать
+        <Button size="sm" leftIcon={<Copy size={16} aria-hidden />} onClick={() => void handleCopy()} disabled={isEmpty}>
+          Копировать
         </Button>
       </div>
     </div>
