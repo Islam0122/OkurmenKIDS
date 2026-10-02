@@ -132,6 +132,30 @@ describe('Мини-отчёт родителям', () => {
     expect(screen.getByRole('button', { name: '📋 Копировать' })).toBeInTheDocument()
   })
 
+  it('shows the title, authors and buttons as plain Unicode emoji, never SVG icons', async () => {
+    vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
+    vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const user = await openReport()
+
+    expect(screen.getByRole('heading', { name: '📩 Мини-отчёт родителям' }).querySelector('svg')).toBeNull()
+    const labels = ['🤖 Система', '👨\u200d🏫 Тренер', '✏\ufe0f Свой вариант']
+    within(screen.getByRole('radiogroup', { name: 'Автор отчёта' }))
+      .getAllByRole('radio')
+      .forEach((radio, index) => {
+        expect(radio.textContent).toContain(labels[index])
+        expect(radio.querySelector('svg')).toBeNull()
+      })
+    const edit = screen.getByRole('button', { name: '✏\ufe0f Редактировать' })
+    const copy = screen.getByRole('button', { name: '📋 Копировать' })
+    expect(edit.querySelector('svg')).toBeNull()
+    expect(copy.querySelector('svg')).toBeNull()
+
+    // The copy button keeps its text after copying — the confirmation is the toast.
+    await user.click(copy)
+    expect(await screen.findByText('Отчёт скопирован')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '📋 Копировать' }).querySelector('svg')).toBeNull()
+  })
+
   it('has no Telegram in the dialog at all — not even hidden', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     const user = await openReport()
