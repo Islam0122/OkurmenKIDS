@@ -2,9 +2,14 @@
 
 Upsert keys:
 - Course: ``name`` (the model's own unique field).
-- CourseLessonPlan: the pair (``course``, ``lesson_number``) — there's no
-  single natural key, but that pair is already the model's own unique
-  constraint (see ``CourseLessonPlan.Meta.constraints``).
+- CourseLessonPlan: ``course`` + ``lesson_number`` + ``subject``. A row
+  matching an existing plan on all three updates that plan in place (same
+  primary key); otherwise a new plan is created. The model's own unique
+  constraint is the narrower pair (``course``, ``lesson_number``), so a row
+  whose pair is already taken by a plan of *another* subject is rejected
+  instead of silently re-assigning that plan's subject. The import is
+  partial: such rows (and any other invalid row) are skipped and reported,
+  the rest are saved.
 
 Both adapters build an in-memory model instance from the parsed row and
 call ``full_clean()`` on it rather than re-implementing the model's own
@@ -236,18 +241,37 @@ def _validate_lesson_plan_row(row_number: int, raw: dict[str, str], seen: dict):
         presentation_urls, url_errors = parse_url_list(presentation_urls_raw, field_label="Ссылки на презентации")
         errors.extend(url_errors)
 
+    # Keyed on the pair, not the full (course, lesson_number, subject) key:
+    # two rows sharing the pair can never both be saved (unique constraint),
+    # whatever their subjects. The first one wins, later ones are reported.
     if course is not None and lesson_number is not None:
         seen_pairs = seen.setdefault("pairs", {})
         pair_key = (course.pk, lesson_number)
         if pair_key in seen_pairs:
-            errors.append(f"Дублирующаяся пара «курс + номер занятия» в файле (строка {seen_pairs[pair_key]}).")
+            errors.append(
+                f"Занятие №{lesson_number} курса «{course.name}» уже есть в файле "
+                f"(строка {seen_pairs[pair_key]}) — повторная строка пропущена."
+            )
         else:
             seen_pairs[pair_key] = row_number
 
     if errors:
         return None, errors
 
-    existing = CourseLessonPlan.objects.filter(course=course, lesson_number=lesson_number).first()
+    existing = CourseLessonPlan.objects.filter(course=course, lesson_number=lesson_number, subject=subject).first()
+    if existing is None:
+        taken = (
+            CourseLessonPlan.objects.filter(course=course, lesson_number=lesson_number)
+            .select_related("subject")
+            .first()
+        )
+        if taken is not None:
+            return None, [
+                f"Занятие №{lesson_number} курса «{course.name}» уже существует с предметом "
+                f"«{taken.subject.name}» (ID {taken.pk}), а в файле указан «{subject.name}». "
+                "Импорт не меняет предмет существующего плана — исправьте предмет в файле "
+                "или в карточке плана."
+            ]
     instance = existing or CourseLessonPlan()
     instance.course = course
     instance.lesson_number = lesson_number
@@ -281,6 +305,7 @@ LESSON_PLAN_ADAPTER = ModelAdapter(
     prepare_queryset=_lesson_plan_prepare_queryset,
     validate_row=_validate_lesson_plan_row,
     apply_row=_apply_lesson_plan_row,
+    partial_import=True,
     default_fields=[
         "id",
         "course",
@@ -296,10 +321,11 @@ LESSON_PLAN_ADAPTER = ModelAdapter(
         "updated_at",
     ],
     import_notes=(
-        "Строка ищется по паре «Курс + Номер занятия» (обновляется существующий план, иначе "
-        "создаётся новый). Курс и Предмет ищутся по названию — предмет обязательно должен "
-        "входить в состав указанного курса, а номер занятия не может превышать количество "
-        "занятий курса."
+        "План ищется по «Курс + Номер занятия + Предмет»: найденный план обновляется "
+        "(его ID не меняется), иначе создаётся новый. Импорт ничего не удаляет и не "
+        "создаёт реальные занятия. Курс и Предмет ищутся по названию — предмет обязательно "
+        "должен входить в состав указанного курса, а номер занятия не может превышать "
+        "количество занятий курса. Строки с ошибками пропускаются, остальные сохраняются."
     ),
 )
 

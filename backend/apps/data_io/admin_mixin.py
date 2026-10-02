@@ -128,6 +128,7 @@ class TemplatedIOAdminMixin:
         adapter = self._adapter()
         preview = None
         failed = False
+        result = None
 
         if request.method == "POST":
             form = GenericImportForm(request.POST, request.FILES)
@@ -147,12 +148,16 @@ class TemplatedIOAdminMixin:
                         preview = exc.preview
                         failed = True
                     else:
-                        messages.success(
-                            request,
-                            f"Импорт завершён: создано {result.created}, обновлено {result.updated} "
-                            f"из {result.total}.",
+                        summary = (
+                            f"Импорт завершён. Создано: {result.created}, обновлено: {result.updated}, "
+                            f"пропущено: {result.skipped}, ошибок: {len(result.errors)}."
                         )
-                        return redirect(f"admin:{self._url_name('changelist')}")
+                        if not result.errors:
+                            messages.success(request, summary)
+                            return redirect(f"admin:{self._url_name('changelist')}")
+                        # Partial import with skipped rows: stay on the page so
+                        # the per-row errors are visible next to the summary.
+                        messages.warning(request, summary)
         else:
             form = GenericImportForm()
 
@@ -164,6 +169,7 @@ class TemplatedIOAdminMixin:
             "form": form,
             "preview": preview,
             "failed": failed,
+            "result": result,
             "template_csv_url": reverse(f"admin:{self._url_name('io_import_template')}") + "?format=csv",
             "template_xlsx_url": reverse(f"admin:{self._url_name('io_import_template')}") + "?format=xlsx",
             "changelist_url": reverse(f"admin:{self._url_name('changelist')}"),
