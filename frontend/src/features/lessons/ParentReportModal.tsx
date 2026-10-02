@@ -1,22 +1,16 @@
 import { useState } from 'react'
-import { Check, Copy, RotateCcw, Send, TriangleAlert } from 'lucide-react'
+import { Check, RotateCcw, Save, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Modal } from '@/components/ui/Modal'
-import { SegmentedControl, type SegmentedOption } from '@/components/ui/SegmentedControl'
 import { Textarea } from '@/components/ui/Textarea'
 import { useToast } from '@/components/ui/Toast'
 import { useParentReport } from '@/hooks/useLessons'
 import type { ParentLessonReport, ParentReportType } from '@/types/academy'
+import { cn } from '@/utils/cn'
 import { formatDate } from '@/utils/format'
-
-/** Telegram's share screen with the text prefilled (there is no bot integration —
- * the trainer picks the parents' chat themselves). */
-export function telegramShareUrl(text: string): string {
-  return `https://t.me/share/url?url=${encodeURIComponent(text)}`
-}
 
 async function copyText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -36,16 +30,17 @@ async function copyText(text: string): Promise<void> {
 }
 
 /**
- * «Мини-отчёт родителям»: pick the report type → preview (or edit «Свой вариант»)
- * → copy / send to Telegram. Both built-in texts come from the backend, built from
- * the lesson's real records; «Свой вариант» stays local to this dialog (reopening
- * it rebuilds the report) and never changes anything in the LMS.
+ * «Мини-отчёт родителям»: pick the report author → preview → edit → copy. The trainer
+ * pastes the copied text into whatever chat they use — nothing is sent from here.
+ * Both automatic texts come from the backend, built from the lesson's real records;
+ * the author choice and «Свой вариант» edits stay local to this dialog (reopening it
+ * rebuilds the report) and never change anything in the LMS.
  */
 export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: number; isOpen: boolean; onClose: () => void }) {
   const { data, isPending, isError, refetch } = useParentReport(lessonId, isOpen)
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Мини-отчёт родителям" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="📩 Мини-отчёт родителям" size="lg">
       {isPending ? (
         <LoadingState label="Формируем отчёт…" />
       ) : isError || !data ? (
@@ -57,27 +52,45 @@ export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: num
   )
 }
 
-const REPORT_TYPES: SegmentedOption<ParentReportType>[] = [
-  { value: 'system', label: '🤖 Системный' },
-  { value: 'trainer', label: '👨‍🏫 От тренера' },
-  { value: 'custom', label: '✏️ Свой вариант' },
+const AUTHORS: { value: ParentReportType; label: string; hint: string }[] = [
+  { value: 'system', label: '🤖 Система', hint: 'Автоматически сформированный отчёт' },
+  { value: 'trainer', label: '👨‍🏫 Тренер', hint: 'Отчёт от имени тренера' },
+  { value: 'custom', label: '✏️ Свой вариант', hint: 'Можно изменить текст вручную' },
 ]
 
 function ReportEditor({ report }: { report: ParentLessonReport }) {
   const { showToast } = useToast()
-  const [type, setType] = useState<ParentReportType>('system')
-  // «Свой вариант» starts from the system text and survives switching types back and forth.
-  const [customText, setCustomText] = useState(report.messages.system)
+  const [author, setAuthor] = useState<ParentReportType>('system')
+  // «Свой вариант»: a copy of an automatic text, created on first use.
+  const [customText, setCustomText] = useState<string | null>(null)
+  const [isEditing, setEditing] = useState(false)
   const [copied, setCopied] = useState(false)
-  const text = type === 'custom' ? customText : report.messages[type]
+  const text = author === 'custom' ? (customText ?? report.messages.system) : report.messages[author]
   const isEmpty = !text.trim()
 
-  async function handleCopy(silent = false) {
+  function selectAuthor(next: ParentReportType) {
+    if (next === 'custom') {
+      if (customText === null) setCustomText(author === 'custom' ? report.messages.system : report.messages[author])
+      setEditing(true)
+    } else {
+      setEditing(false)
+    }
+    setAuthor(next)
+  }
+
+  function startEditing() {
+    // Editing an automatic text turns it into «Свой вариант», starting from what is on screen.
+    if (author !== 'custom') setCustomText(text)
+    setAuthor('custom')
+    setEditing(true)
+  }
+
+  async function handleCopy() {
     try {
       await copyText(text)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
-      if (!silent) showToast('Текст скопирован', 'success')
+      showToast('Отчёт скопирован', 'success')
     } catch {
       showToast('Не удалось скопировать — выделите текст вручную', 'error')
     }
@@ -85,10 +98,43 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1.5">
-        <p className="text-sm font-medium text-ink">Тип отчёта</p>
-        <SegmentedControl aria-label="Тип отчёта" options={REPORT_TYPES} value={type} onChange={setType} />
-      </div>
+      <fieldset>
+        <legend className="mb-1.5 text-sm font-medium text-ink">Автор отчёта</legend>
+        <div role="radiogroup" aria-label="Автор отчёта" className="grid gap-2 sm:grid-cols-3">
+          {AUTHORS.map((option) => {
+            const isActive = option.value === author
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                onClick={() => selectAuthor(option.value)}
+                className={cn(
+                  'flex items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors',
+                  isActive
+                    ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500'
+                    : 'border-border bg-surface hover:border-brand-200 hover:bg-brand-50',
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border',
+                    isActive ? 'border-brand-500 bg-brand-500 text-white' : 'border-border bg-surface',
+                  )}
+                >
+                  {isActive ? <Check className="size-3" /> : null}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-ink">{option.label}</span>
+                  <span className="block text-xs text-ink-muted">{option.hint}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </fieldset>
 
       {report.warnings.length > 0 ? (
         <div className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" role="status">
@@ -111,19 +157,19 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
           : ''}
       </p>
 
-      {type === 'custom' ? (
+      {isEditing ? (
         <div className="space-y-1.5">
           <Textarea
             aria-label="Текст отчёта"
-            value={customText}
+            value={text}
             onChange={(event) => setCustomText(event.target.value)}
             rows={16}
             className="text-sm leading-relaxed"
             autoFocus
           />
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
-            <span>Символов: {customText.length}</span>
-            {customText !== report.messages.system ? (
+            <span>Символов: {text.length}</span>
+            {text !== report.messages.system ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -147,36 +193,29 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
-        <div className="flex w-full flex-wrap gap-2 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4 [&>*]:flex-1 sm:[&>*]:flex-none">
+        {isEditing ? (
           <Button
             variant="secondary"
             size="sm"
-            leftIcon={copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
-            onClick={() => void handleCopy()}
-            disabled={isEmpty}
+            leftIcon={<Save className="size-4" aria-hidden />}
+            onClick={() => setEditing(false)}
           >
-            {copied ? 'Скопировано' : 'Копировать'}
+            Сохранить
           </Button>
-          <a
-            href={isEmpty ? undefined : telegramShareUrl(text)}
-            target="_blank"
-            rel="noreferrer"
-            aria-disabled={isEmpty}
-            onClick={(event) => {
-              if (isEmpty) {
-                event.preventDefault()
-                return
-              }
-              // Also on the clipboard: if Telegram trims the prefilled text, it can be pasted.
-              void handleCopy(true)
-            }}
-            className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-brand-500 px-3 text-sm font-medium text-white hover:bg-brand-600 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-          >
-            <Send className="size-4" aria-hidden />
-            Отправить в Telegram
-          </a>
-        </div>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={startEditing}>
+            ✏️ Редактировать
+          </Button>
+        )}
+        <Button
+          size="sm"
+          leftIcon={copied ? <Check className="size-4" aria-hidden /> : undefined}
+          onClick={() => void handleCopy()}
+          disabled={isEmpty}
+        >
+          {copied ? 'Скопировано' : '📋 Копировать'}
+        </Button>
       </div>
     </div>
   )
