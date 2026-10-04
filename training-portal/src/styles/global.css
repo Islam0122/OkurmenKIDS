@@ -6,9 +6,13 @@
    * working; they now hold the blue scale. Amber stays as the brand CTA. */
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
-  --background: #f7f8fa;
-  --text-primary: #111827;
+  --background: #f8fafc;
+  --text-primary: #172033;
   --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --blue-light: #eff6ff;
+  --cta: #f5b400;
+  --cta-hover: #e5a500;
   --success: #16a34a;
   --warning: #d97706;
   --danger: #dc2626;
@@ -41,12 +45,12 @@
 
   --bg: var(--background);
   --surface: #ffffff;
-  --surface-2: #f9fafb;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
+  --surface-2: #f8fafc;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
   --text: var(--text-primary);
   --text-2: var(--text-secondary);
-  --text-3: #94a3b8;
+  --text-3: var(--text-muted);
 
   --font-display: 'Unbounded', 'Manrope', system-ui, sans-serif;
   --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;

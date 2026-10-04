@@ -80,6 +80,8 @@ export const ky = {
     progress: (current: number, total: number) => `Суроо ${current} / ${total}`,
     answered: 'Жооп берилди',
     single: 'Бир жоопту танда',
+    typeSingle: 'Бир жооптуу суроо',
+    typeMultiple: 'Бир нече жооптуу суроо',
     multiple: 'Бир нече жоопту тандаса болот',
     textPlaceholder: 'Жообуңузду жазыңыз…',
     codePlaceholder: 'Кодуңузду бул жерге жазыңыз…',

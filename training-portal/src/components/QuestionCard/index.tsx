@@ -7,9 +7,10 @@ import { t } from '@/i18n'
 import { Icon } from '../Icon'
 import './QuestionCard.css'
 
-const TYPE_TAGS: Record<Question['type'], { icon: string; label: string }> = {
-  single_choice: { icon: 'record-circle', label: t.training.single },
-  multiple_choice: { icon: 'check2-square', label: t.training.multiple },
+// label — the question type (badge); hint — what to do (above the options).
+const TYPE_TAGS: Record<Question['type'], { icon: string; label: string; hint?: string }> = {
+  single_choice: { icon: 'record-circle', label: t.training.typeSingle, hint: t.training.single },
+  multiple_choice: { icon: 'check2-square', label: t.training.typeMultiple, hint: t.training.multiple },
   text: { icon: 'input-cursor-text', label: 'Текст' },
   code: { icon: 'code-slash', label: 'Код' },
 }
@@ -96,7 +97,7 @@ export function QuestionCard({ question, index, total, answer, onChange, locked,
       <div className="qcard__body">
         {isChoice ? (
           <>
-            <p className="options__hint"><Icon name={tag.icon} />{tag.label}</p>
+            <p className="options__hint">{tag.hint}</p>
             <div className="options" role={question.type === 'single_choice' ? 'radiogroup' : 'group'} aria-labelledby={`q-${question.id}`}>
               {question.options.map((option, i) => {
                 const selected = value.options.includes(option.id)

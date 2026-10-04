@@ -1,4 +1,4 @@
-.exam-layout { width: 100%; min-height: 100vh; min-height: 100dvh; background: var(--bg); }
+.exam-layout { width: 100%; min-height: 100vh; min-height: 100dvh; background: var(--background); }
 .exam-layout .train__bar { top: 0; }
 .exam-layout .train { padding-top: 0; }
 :fullscreen .exam-layout, .exam-layout:fullscreen { overflow-y: auto; }
@@ -8,7 +8,7 @@
 .exam-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 14px; min-width: 0; }
 .exam-topline .brand__logo { width: 36px; height: 36px; }
 
-.lock-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .94); color: #fff; text-align: center; animation: fadeIn .2s ease both; }
+.lock-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .94); color: #fff; text-align: center; }
 .lock-overlay__box { width: 100%; max-width: 460px; display: grid; justify-items: center; gap: 14px; }
 .lock-overlay__icon { width: 76px; height: 76px; border-radius: 24px; display: grid; place-items: center; font-size: 34px; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .2); color: var(--amber-400); }
 .lock-overlay h2 { color: #fff; font-size: clamp(22px, 4vw, 30px); }

@@ -183,7 +183,7 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
           </div>
         ) : null}
 
-        <QuestionNavigation states={training.navStates} onSelect={training.goTo} />
+        <QuestionNavigation states={training.navStates} onSelect={training.goTo} showOutcome={attempt.show_explanation} />
 
         <div className="train__question">
           <QuestionCard
@@ -198,10 +198,9 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
           />
         </div>
 
-        <div className="train__save"><SaveIndicator state={training.saveState} /></div>
-
         <div className="train__controls">
           <Button className="train__prev" variant="outline" icon="arrow-left" disabled={index === 0} onClick={() => training.goTo(index - 1)}>{t.training.prev}</Button>
+          <div className="train__save"><SaveIndicator state={training.saveState} /></div>
           <div className="train__controls-right">
             {canCheck ? <Button variant="navy" icon="check2-circle" disabled={training.busy} onClick={() => { void training.check(question.id) }}>{t.training.check}</Button> : null}
             {last
