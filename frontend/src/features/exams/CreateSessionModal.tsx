@@ -24,7 +24,16 @@ function today(): string {
 /** «Создать сессию» — a test session for a group (Admin / Team Lead). The
  * backend applies the same rules as the admin's session form and gives the
  * session to the group's active students (its roster). */
-export function CreateSessionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export function CreateSessionModal({
+  isOpen,
+  onClose,
+  initialGroup,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  /** Preselected group (opened from a group's «Сессии» tab). */
+  initialGroup?: number
+}) {
   const navigate = useNavigate()
   const { showToast } = useToast()
   const mutation = useCreateExamSession()
@@ -37,7 +46,7 @@ export function CreateSessionModal({ isOpen, onClose }: { isOpen: boolean; onClo
   })
 
   const [test, setTest] = useState('')
-  const [group, setGroup] = useState('')
+  const [group, setGroup] = useState(initialGroup ? String(initialGroup) : '')
   const [date, setDate] = useState(today)
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
@@ -125,7 +134,7 @@ export function CreateSessionModal({ isOpen, onClose }: { isOpen: boolean; onClo
         {group ? (
           <Field label="Тренер">
             <p className="text-sm text-ink" data-testid="session-trainer">
-              {groupDetail.isPending ? 'Загружаем…' : trainer ? `👨‍🏫 ${trainer}` : 'Не назначен — назначьте в карточке группы'}
+              {groupDetail.isPending ? 'Загружаем…' : trainer ?? 'Не назначен — назначьте в расписании группы'}
             </p>
           </Field>
         ) : null}

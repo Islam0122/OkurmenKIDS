@@ -184,7 +184,8 @@ class TeamLeadWriteDeniedTests(TeamLeadTestBase):
     def test_groups_and_programs_are_read_only(self):
         self.assertDenied(self.client.patch(f"/api/v1/groups/{self.g1.id}/", {"name": "X"}))
         self.assertDenied(self.client.delete(f"/api/v1/groups/{self.g1.id}/"))
-        self.assertDenied(self.client.post(f"/api/v1/groups/{self.g1.id}/generate-lessons/"))
+        # Generating lessons is part of the academic configuration a Team Lead
+        # manages — see test_group_academic_config.
         self.assertDenied(self.client.delete(f"/api/v1/programs/{self.gt1.id}/"))
         self.assertDenied(self.client.post("/api/v1/courses/", {"name": "X", "count_lesson": 1}))
 

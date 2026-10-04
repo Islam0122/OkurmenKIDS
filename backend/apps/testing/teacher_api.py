@@ -214,6 +214,9 @@ class TeacherSessionListView(ListAPIView):
         status = self.request.query_params.get("status") or "all"
         if status in STATUS_FILTERS:
             sessions = filter_by_phase(sessions, STATUS_FILTERS[status])
+        group = self.request.query_params.get("group")
+        if group and group.isdigit():
+            sessions = sessions.filter(group_id=int(group))
         if self.request.query_params.get("today") == "1":
             # Dashboard: today's sessions plus anything running right now.
             sessions = sessions.filter(Q(scheduled_start__date=timezone.localdate()) | PHASE_FILTERS[SessionPhase.ACTIVE])

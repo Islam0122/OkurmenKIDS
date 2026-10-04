@@ -290,36 +290,63 @@ export interface ParentLessonReport {
 export type ParentReportStyle = 'system' | 'trainer'
 export type ParentReportType = ParentReportStyle | 'custom'
 
-/** `GET /groups/{id}/assign-trainer/` — who teaches each subject of the
- * group (its Teaching Programs), who assigned them and when, plus what can
- * be chosen. Admin / Team Lead only. */
-export interface TrainerAssignmentProgram {
+/** `GET /groups/{id}/academic-config/` — «Учебная конфигурация» (Admin /
+ * Team Lead): the group's programs (trainer + subject), each with its own
+ * weekly slots — every day its own time and room. */
+export interface AcademicSlot {
+  id: number
+  day: DayOfWeek
+  day_label: string
+  start: string
+  end: string
+  room: { id: number; name: string } | null
+  is_active: boolean
+}
+
+export interface AcademicProgram {
   id: number
   subject: { id: number; name: string } | null
   teacher: { id: number; name: string }
   is_active: boolean
+  /** A program with lessons can't change its subject (backend rule). */
+  has_lessons: boolean
   assigned_by: string | null
   assigned_at: string | null
+  slots: AcademicSlot[]
 }
 
-export interface TrainerAssignmentOverview {
-  group: { id: number; name: string; course: string }
-  programs: TrainerAssignmentProgram[]
+export interface AcademicConfig {
+  group: { id: number; name: string; course: string; status: string }
+  programs: AcademicProgram[]
   subjects: { id: number; name: string }[]
   trainers: { id: number; name: string; subjects: string[] }[]
-  result?: {
-    program: number
-    created: boolean
-    previous_teacher: string | null
-    teacher: string
-    lessons_reassigned: number
-  }
+  rooms: { id: number; name: string; capacity: number | null }[]
+  weekdays: { code: DayOfWeek; label: string }[]
+  saved_program?: number
 }
 
-/** `POST /groups/{id}/assign-trainer/`: replace a program's trainer
- * (`program`), or give a subject to a trainer (`subject`). */
-export interface AssignTrainerPayload {
+export interface AcademicSlotInput {
+  id?: number
+  day: DayOfWeek
+  start: string
+  end: string
+  room: number | null
+}
+
+export interface AcademicProgramInput {
   teacher: number
-  program?: number
-  subject?: number
+  subject: number
+  schedule: AcademicSlotInput[]
+}
+
+/** `POST /groups/{id}/generate-lessons/` (the existing generator). */
+export interface GenerateLessonsResult {
+  created_count: number
+  updated_count: number
+  already_existed: number
+  expected_total: number
+  first_date: string | null
+  last_date: string | null
+  warnings: string[]
+  errors: string[]
 }

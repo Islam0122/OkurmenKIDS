@@ -250,7 +250,7 @@ describe('Team Lead — Сессии', () => {
     await screen.findByRole('option', { name: 'Python PRO — группа 3' })
     await user.selectOptions(screen.getByLabelText('Группа *'), '3')
     // The group's trainer comes from the Group → Trainer link — not chosen again.
-    await waitFor(() => expect(screen.getByTestId('session-trainer')).toHaveTextContent('👨‍🏫'))
+    await waitFor(() => expect(screen.getByTestId('session-trainer')).toHaveTextContent('Айгуль Сатыбалдиева'))
     const date = screen.getByLabelText('Дата *')
     await user.clear(date)
     await user.type(date, '2026-10-04')

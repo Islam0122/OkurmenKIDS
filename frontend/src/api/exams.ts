@@ -15,15 +15,17 @@ export interface ExamListParams {
   /** Today's sessions plus anything running now (dashboard). */
   today?: boolean
   page?: number
+  /** Sessions of one group (Admin / Team Lead group page). */
+  group?: number
 }
 
 /** A Trainer only ever gets sessions of their own groups; Admin / Team Lead
  * get every session and may also create, start and take one (backend-checked). */
 export const examsApi = {
-  list: ({ status, today, page }: ExamListParams = {}): Promise<Paginated<ExamSession>> =>
+  list: ({ status, today, page, group }: ExamListParams = {}): Promise<Paginated<ExamSession>> =>
     apiClient
       .get<Paginated<ExamSession>>('/teacher/sessions/', {
-        params: { status: status && status !== 'all' ? status : undefined, today: today ? 1 : undefined, page },
+        params: { status: status && status !== 'all' ? status : undefined, today: today ? 1 : undefined, page, group },
       })
       .then((r) => r.data),
 

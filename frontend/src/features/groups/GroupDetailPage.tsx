@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
+import { ClipboardList, Plus } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { HOMEWORK_ORDERING } from '@/api/homework'
 import { LESSON_STATUS_TONE } from '@/components/academy/lessonStatus'
 import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -13,7 +15,10 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Tabs } from '@/components/ui/Tabs'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useAttendanceList } from '@/hooks/useAttendance'
-import { GroupTrainers } from './GroupTrainers'
+import { CreateSessionModal } from '@/features/exams/CreateSessionModal'
+import { ExamCard } from '@/features/exams/ExamCard'
+import { useExamList } from '@/hooks/useExams'
+import { AcademicConfigSummary, GroupAcademicConfig } from './GroupAcademicConfig'
 import { useAuth } from '@/hooks/useAuth'
 import { useReportGroup } from '@/hooks/useReports'
 import { seesWholeAcademy } from '@/lib/roles'
@@ -45,9 +50,13 @@ const TABS = [
   { key: 'attendance', label: 'Посещаемость' },
   { key: 'homework', label: 'Домашние задания' },
   { key: 'kpi', label: 'KPI' },
+  // Admin / Team Lead only: the group's test sessions (create one for this group).
+  { key: 'sessions', label: 'Сессии' },
   // Admin / Team Lead only: every trainer of the group side by side (backend: /reports/groups/{id}/).
   { key: 'analytics', label: 'Аналитика' },
 ] as const
+
+const ACADEMY_ONLY_TABS: readonly string[] = ['sessions', 'analytics']
 
 type TabKey = (typeof TABS)[number]['key']
 
@@ -57,7 +66,9 @@ export function GroupDetailPage() {
   const [tab, setTab] = useState<TabKey>('overview')
   const { user } = useAuth()
   const academyView = seesWholeAcademy(user?.role)
-  const tabs = academyView ? TABS : TABS.filter((item) => item.key !== 'analytics')
+  const tabs = academyView
+    ? TABS.map((item) => (item.key === 'overview' ? { ...item, label: 'Общая информация' } : item))
+    : TABS.filter((item) => !ACADEMY_ONLY_TABS.includes(item.key))
 
   const { data: group, isPending, isError, refetch } = useGroup(groupId)
 
@@ -74,9 +85,24 @@ export function GroupDetailPage() {
 
       <Tabs aria-label="Разделы группы" items={tabs} value={tab} onChange={setTab} />
 
-      {tab === 'overview' ? <OverviewTab group={group} linkTrainers={academyView} /> : null}
+      {tab === 'overview' ? (
+        <OverviewTab group={group} linkTrainers={academyView} onEditSchedule={() => setTab('schedule')} />
+      ) : null}
       {tab === 'students' ? <StudentsTab groupId={groupId} /> : null}
-      {tab === 'schedule' ? <ScheduleTab groupId={groupId} /> : null}
+      {tab === 'schedule' ? (
+        academyView ? (
+          <div className="space-y-8">
+            <GroupAcademicConfig groupId={groupId} />
+            <div>
+              <h3 className="section-title mb-4">Занятия по дням</h3>
+              <ScheduleTab groupId={groupId} />
+            </div>
+          </div>
+        ) : (
+          <ScheduleTab groupId={groupId} />
+        )
+      ) : null}
+      {tab === 'sessions' && academyView ? <SessionsTab groupId={groupId} /> : null}
       {tab === 'attendance' ? <AttendanceTab groupId={groupId} /> : null}
       {tab === 'homework' ? <HomeworkTab groupId={groupId} /> : null}
       {tab === 'kpi' ? <KpiTab groupId={groupId} /> : null}
@@ -85,7 +111,7 @@ export function GroupDetailPage() {
   )
 }
 
-function OverviewTab({ group, linkTrainers }: { group: Group; linkTrainers: boolean }) {
+function OverviewTab({ group, linkTrainers, onEditSchedule }: { group: Group; linkTrainers: boolean; onEditSchedule: () => void }) {
   return (
     <div className="space-y-6">
       <dl className="grid grid-cols-1 gap-4 card card-body sm:grid-cols-2">
@@ -97,7 +123,7 @@ function OverviewTab({ group, linkTrainers }: { group: Group; linkTrainers: bool
       </dl>
 
       {linkTrainers ? (
-        <GroupTrainers groupId={group.id} />
+        <AcademicConfigSummary groupId={group.id} onEdit={onEditSchedule} />
       ) : (
       <div>
         <h3 className="section-title mb-4">Учебные программы</h3>
@@ -419,6 +445,33 @@ function AnalyticsTab({ groupId }: { groupId: number }) {
           </div>
         </>
       ) : null}
+    </div>
+  )
+}
+
+/** The group's test sessions + «Создать сессию» for this group (its trainer
+ * and the test's subject are filled in by the backend). */
+function SessionsTab({ groupId }: { groupId: number }) {
+  const [isCreateOpen, setCreateOpen] = useState(false)
+  const { data, isPending, isError, refetch } = useExamList({ group: groupId })
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => setCreateOpen(true)}>
+          Создать сессию
+        </Button>
+      </div>
+      {isPending ? <LoadingState label="Загружаем сессии…" /> : null}
+      {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
+      {data && data.results.length === 0 ? <EmptyState icon={ClipboardList} title="У группы пока нет тестовых сессий" /> : null}
+      {data && data.results.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {data.results.map((session) => (
+            <ExamCard key={session.id} session={session} />
+          ))}
+        </div>
+      ) : null}
+      <CreateSessionModal isOpen={isCreateOpen} onClose={() => setCreateOpen(false)} initialGroup={groupId} />
     </div>
   )
 }

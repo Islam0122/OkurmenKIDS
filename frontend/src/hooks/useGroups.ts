@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { groupsApi, type GroupListParams } from '@/api/groups'
-import type { AssignTrainerPayload, LessonStatus } from '@/types/academy'
+import type { AcademicProgramInput, LessonStatus } from '@/types/academy'
 
 export function useGroups(params: GroupListParams) {
   return useQuery({
@@ -27,23 +27,35 @@ export function useGroupSchedule(id: number | undefined, params?: { status?: Les
   })
 }
 
-export function useTrainerAssignments(id: number | undefined, enabled = true) {
+export function useAcademicConfig(id: number | undefined, enabled = true) {
   return useQuery({
-    queryKey: ['groups', 'detail', id, 'trainer-assignments'],
-    queryFn: () => groupsApi.trainerAssignments(id as number),
+    queryKey: ['groups', 'detail', id, 'academic-config'],
+    queryFn: () => groupsApi.academicConfig(id as number),
     enabled: enabled && id !== undefined,
   })
 }
 
-export function useAssignTrainer(id: number) {
+/** Create (`programId` null) or save one program of the group's configuration. */
+export function useSaveAcademicProgram(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (payload: AssignTrainerPayload) => groupsApi.assignTrainer(id, payload),
+    mutationFn: ({ programId, payload }: { programId: number | null; payload: AcademicProgramInput }) =>
+      programId === null ? groupsApi.createProgram(id, payload) : groupsApi.saveProgram(id, programId, payload),
     onSuccess: (data) => {
-      queryClient.setQueryData(['groups', 'detail', id, 'trainer-assignments'], data)
-      // Programs, schedule, lessons and every report follow the new trainer.
+      queryClient.setQueryData(['groups', 'detail', id, 'academic-config'], data)
       void queryClient.invalidateQueries({ queryKey: ['groups'] })
       void queryClient.invalidateQueries({ queryKey: ['reports'] })
+      void queryClient.invalidateQueries({ queryKey: ['lessons'] })
+    },
+  })
+}
+
+export function useGenerateLessons(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => groupsApi.generateLessons(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
       void queryClient.invalidateQueries({ queryKey: ['lessons'] })
     },
   })

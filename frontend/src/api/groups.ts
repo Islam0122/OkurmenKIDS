@@ -1,12 +1,13 @@
 import { apiClient } from '@/api/client'
 import type {
-  AssignTrainerPayload,
+  AcademicConfig,
+  AcademicProgramInput,
+  GenerateLessonsResult,
   Group,
   GroupSchedule,
   GroupStatus,
   LessonStatus,
   Student,
-  TrainerAssignmentOverview,
 } from '@/types/academy'
 import type { Paginated } from '@/types/common'
 
@@ -35,12 +36,19 @@ export const groupsApi = {
   students: (id: number, params?: { is_active?: boolean }): Promise<Student[]> =>
     apiClient.get<Student[]>(`/groups/${id}/students/`, { params }).then((r) => r.data),
 
-  /** Admin / Team Lead: the group's trainers per subject + who can be chosen. */
-  trainerAssignments: (id: number): Promise<TrainerAssignmentOverview> =>
-    apiClient.get<TrainerAssignmentOverview>(`/groups/${id}/assign-trainer/`).then((r) => r.data),
+  /** Admin / Team Lead: «Учебная конфигурация» — programs with per-day slots. */
+  academicConfig: (id: number): Promise<AcademicConfig> =>
+    apiClient.get<AcademicConfig>(`/groups/${id}/academic-config/`).then((r) => r.data),
 
-  /** Admin / Team Lead: the dedicated «назначить тренера» action — never a
-   * general edit of the group or the trainer (backend-enforced). */
-  assignTrainer: (id: number, payload: AssignTrainerPayload): Promise<TrainerAssignmentOverview> =>
-    apiClient.post<TrainerAssignmentOverview>(`/groups/${id}/assign-trainer/`, payload).then((r) => r.data),
+  /** A new program (trainer + subject + its weekly slots). */
+  createProgram: (id: number, payload: AcademicProgramInput): Promise<AcademicConfig> =>
+    apiClient.post<AcademicConfig>(`/groups/${id}/academic-config/`, payload).then((r) => r.data),
+
+  /** Replace a program's trainer, subject and whole slot list (left-out slots are removed). */
+  saveProgram: (id: number, programId: number, payload: AcademicProgramInput): Promise<AcademicConfig> =>
+    apiClient.put<AcademicConfig>(`/groups/${id}/academic-config/programs/${programId}/`, payload).then((r) => r.data),
+
+  /** The existing lesson generator: one lesson per slot occurrence (its time, room, trainer, subject). */
+  generateLessons: (id: number): Promise<GenerateLessonsResult> =>
+    apiClient.post<GenerateLessonsResult>(`/groups/${id}/generate-lessons/`).then((r) => r.data),
 }
