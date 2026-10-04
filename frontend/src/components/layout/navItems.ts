@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarDays,
   ClipboardCheck,
+  FileQuestion,
   FileText,
   GraduationCap,
   LineChart,
@@ -56,11 +57,14 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/trainers', label: 'Тренеры', icon: UserCog, roles: ['admin', 'team_lead'] },
   { to: '/app/groups', label: 'Мои группы', shortLabel: 'Группы', icon: Users, roleLabels: { team_lead: 'Группы' } },
   { to: '/app/students', label: 'Студенты', icon: GraduationCap, roles: ['admin', 'team_lead'] },
-  { to: '/app/lessons', label: 'Занятия', icon: BookOpen, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'Сессии' } },
+  { to: '/app/lessons', label: 'Занятия', icon: BookOpen, roles: ['admin', 'team_lead'] },
   { to: '/app/attendance', label: 'Посещаемость', icon: ClipboardCheck, roles: ['admin', 'team_lead'] },
   { to: '/app/homework', label: 'Домашние задания', icon: NotebookPen, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'ДЗ' } },
-  // Exam sessions of the trainer's own groups, monitored live (backend-scoped).
-  { to: '/app/exams', label: 'Экзамены', icon: ListChecks, roleLabels: { team_lead: 'Тесты' } },
+  // Test sessions: a Trainer's own groups, monitored live (backend-scoped);
+  // Admin / Team Lead — every session, plus create / start / take one.
+  { to: '/app/exams', label: 'Экзамены', icon: ListChecks, roleLabels: { team_lead: 'Сессии' } },
+  // The test bank, view only.
+  { to: '/app/tests', label: 'Тесты', icon: FileQuestion, roles: ['team_lead'] },
   { to: '/app/kpi', label: 'KPI', icon: BarChart3 },
   // Посещаемость / ДЗ / баллы по каждому тренеру и группе.
   { to: '/app/control', label: 'Контроль', icon: ShieldCheck },

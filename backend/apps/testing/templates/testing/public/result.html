@@ -28,6 +28,7 @@
       {% endif %}
     {% endif %}
     {% if can_retry %}<a class="ex-link" href="{% url 'testing_public_join' %}?key={{ attempt.session.key }}">Пройти ещё раз</a>{% endif %}
+    {% if lms_url %}<a class="ex-link" href="{{ lms_url }}">Вернуться в LMS</a>{% endif %}
   </section>
 
   {% if rows %}

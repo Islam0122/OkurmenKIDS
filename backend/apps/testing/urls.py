@@ -3,10 +3,13 @@ from django.urls import path
 
 from .api_views import TestQuestionViewSet, TestViewSet
 from .teacher_api import (
+    MyAttemptsView,
     TeacherParticipantListView,
     TeacherParticipantResultView,
     TeacherSessionDetailView,
     TeacherSessionListView,
+    TeacherSessionStartView,
+    TeacherSessionTakeView,
 )
 
 tests = TestViewSet.as_view({"get": "list", "post": "create"})
@@ -24,6 +27,10 @@ urlpatterns = [
     # Teacher portal: exam sessions of the teacher's own groups (read-only, live).
     path("teacher/sessions/", TeacherSessionListView.as_view(), name="teacher-session-list"),
     path("teacher/sessions/<uuid:pk>/", TeacherSessionDetailView.as_view(), name="teacher-session-detail"),
+    # Team Lead / Admin: start a session, take its test, own results.
+    path("teacher/sessions/<uuid:pk>/start/", TeacherSessionStartView.as_view(), name="teacher-session-start"),
+    path("teacher/sessions/<uuid:pk>/take/", TeacherSessionTakeView.as_view(), name="teacher-session-take"),
+    path("teacher/my-attempts/", MyAttemptsView.as_view(), name="teacher-my-attempts"),
     path("teacher/sessions/<uuid:pk>/participants/", TeacherParticipantListView.as_view(), name="teacher-session-participants"),
     path(
         "teacher/sessions/<uuid:pk>/participants/<uuid:participant_id>/result/",

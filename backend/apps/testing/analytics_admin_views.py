@@ -62,7 +62,7 @@ def session_analytics_view(request, session_id):
         scope = analytics.visible_sessions(request.user).filter(test__subject=session.test.subject_id)
         if session.group_id:
             scope = scope.filter(group=session.group_id)
-        subject_summary = analytics.summarize_attempts(StudentAttempt.objects.filter(session__in=scope))
+        subject_summary = analytics.summarize_attempts(StudentAttempt.objects.filter(user__isnull=True, session__in=scope))
 
     query = request.GET.urlencode()
     context.update({
@@ -171,7 +171,7 @@ def analytics_tree_view(request):
     return render(request, "admin/testing/analytics/tree.html", {
         "title": "Аналитика тестов",
         "tree": analytics.analytics_tree(sessions),
-        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(session__in=sessions)),
+        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(user__isnull=True, session__in=sessions)),
         "groups": Group.objects.filter(pk__in=visible.values("group")).order_by("name"),
         "subjects": Subject.objects.filter(pk__in=visible.values("test__subject")).order_by("name"),
         "group_id": group_id,
@@ -181,7 +181,7 @@ def analytics_tree_view(request):
 
 def _test_rows(sessions) -> list[dict]:
     """Tests of the given sessions with their (finished-attempt) results."""
-    summaries = analytics.test_summaries(StudentAttempt.objects.filter(session__in=sessions), by_group=False)
+    summaries = analytics.test_summaries(StudentAttempt.objects.filter(user__isnull=True, session__in=sessions), by_group=False)
     tests ={t.pk: t for t in Test.objects.filter(pk__in=sessions.values("test")).select_related("subject")}
     by_test = {key[2]: summary for key, summary in summaries.items()}
     rows = [{"test": test, "summary": by_test.get(pk)} for pk, test in tests.items()]
@@ -198,7 +198,7 @@ def group_analytics_view(request, group_id):
         "title": f"Аналитика группы: {group.name}",
         "group": group,
         "crumb_title": group.name,
-        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(session__in=sessions)),
+        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(user__isnull=True, session__in=sessions)),
         "test_rows": _test_rows(sessions),
         "node": tree[0] if tree else None,
     })
@@ -217,7 +217,7 @@ def subject_analytics_view(request, subject_id):
         "subject": subject,
         "group": group,
         "crumb_title": subject.name,
-        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(session__in=sessions)),
+        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(user__isnull=True, session__in=sessions)),
         "test_rows": _test_rows(sessions),
         "sessions": analytics.with_list_stats(sessions).order_by("-created_at"),
     })
@@ -238,7 +238,7 @@ def test_analytics_view(request, test_id):
         "test": test,
         "group": group,
         "crumb_title": test.title,
-        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(session__in=sessions)),
+        "total": analytics.summarize_attempts(StudentAttempt.objects.filter(user__isnull=True, session__in=sessions)),
         "sessions": analytics.with_list_stats(sessions).order_by("-created_at"),
         "questions": stats,
         "low_success": low,

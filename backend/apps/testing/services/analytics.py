@@ -90,8 +90,10 @@ def visible_sessions(user) -> QuerySet:
 def with_list_stats(sessions: QuerySet) -> QuerySet:
     """Session list columns (students, attempts, average) as subqueries —
     one query for the whole page, no row multiplication from joins."""
-    finished = StudentAttempt.objects.filter(session=OuterRef("pk"), status=AttemptStatus.FINISHED)
-    attempts = StudentAttempt.objects.filter(session=OuterRef("pk"))
+    # Students only: an LMS account's own attempt (StudentAttempt.user, e.g.
+    # the Team Lead checking the test) never enters student statistics.
+    finished = StudentAttempt.objects.filter(session=OuterRef("pk"), user__isnull=True, status=AttemptStatus.FINISHED)
+    attempts = StudentAttempt.objects.filter(session=OuterRef("pk"), user__isnull=True)
     participants = SessionParticipant.objects.filter(session=OuterRef("pk"))
 
     def count(qs, expr="pk", distinct=False):
@@ -166,7 +168,7 @@ def student_rows(session: TestSession) -> list[StudentRow]:
     """One row per student: their latest attempt (earlier ones are counted
     in ``attempts_count``), plus roster students who never started."""
     passing = session.test.passing_score
-    attempts = list(_attempts_with_counts(session.attempts.order_by("started_at")))
+    attempts = list(_attempts_with_counts(session.attempts.filter(user__isnull=True).order_by("started_at")))
     latest: dict[str, StudentAttempt] = {}
     counts: dict[str, int] = {}
     for attempt in attempts:
@@ -558,7 +560,7 @@ def test_summaries(attempts: QuerySet, *, by_group: bool = True) -> dict[tuple, 
 
 
 def finished_attempts_of(sessions: QuerySet) -> QuerySet:
-    return StudentAttempt.objects.filter(session__in=sessions)
+    return StudentAttempt.objects.filter(session__in=sessions, user__isnull=True)
 
 
 @dataclass
