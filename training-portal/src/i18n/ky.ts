@@ -24,6 +24,10 @@ export const ky = {
     noTests: 'Азырынча жарыяланган тренировкалык тесттер жок.',
     testsTitle: 'Тренировкалык тесттер',
     testsSubtitle: 'Каалаган убакта, каалагандай көп жолу тапшырып, билимиңди бекемде.',
+    allCategories: 'Баары',
+    otherCategory: 'Башка',
+    categoryCount: (n: number) => `${n} тест`,
+    categoriesLabel: 'Багыттар',
     stepsTitle: 'Кантип иштейт?',
     steps: [
       { title: 'Тестти танда', text: 'Предметти тандап, «Тренировка баштоо» баскычын бас.' },

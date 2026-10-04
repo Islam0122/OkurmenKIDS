@@ -34,7 +34,7 @@ and portal settings got their own small models here.
 | Method | Path | |
 |---|---|---|
 | GET | `portal/` | hero texts, exam link |
-| GET | `tests/` · `tests/<id>/` | public training tests (`questions_count`, `duration`, …) |
+| GET | `tests/` · `tests/<id>/` | public training tests (`questions_count`, `duration`, `category {id, name, slug}` = the test's Subject or `null`, …); sorted by category, then naturally by title («Month 2» before «Month 10»), uncategorised last |
 | POST | `attempts/` | `{test_id, student_name}` → `{attempt_id, token, started_at, expires_at, …}` |
 | GET | `attempts/<id>/` | questions (no correct answers), saved answers, feedback of checked ones — needs `X-Attempt-Token` |
 | PUT | `attempts/<id>/answers/<question_id>/` | `{options, text}` — needs token |

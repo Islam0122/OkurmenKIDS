@@ -14,13 +14,12 @@ import { Hero } from '@/components/Hero'
 import { Icon } from '@/components/Icon'
 import { LeaderboardTable } from '@/components/Leaderboard'
 import { Loader } from '@/components/Loader'
-import { TestCard } from '@/components/TestCard'
+import { CategorySections } from '@/components/CategorySections'
 import { UsefulLinkCard } from '@/components/UsefulLinkCard'
 import { VideoCard, VideoPlayerModal } from '@/components/VideoCard'
 import { usePortal } from '@/context/PortalContext'
 import { useAsync } from '@/hooks/useAsync'
 import { t } from '@/i18n'
-import { storageService } from '@/services/storageService'
 import './HomePage.css'
 
 const STEP_ICONS = ['ui-checks-grid', 'person-badge', 'patch-question', 'bar-chart']
@@ -49,11 +48,7 @@ export function HomePage() {
             </div>
           </div>
           {tests.loading ? <Loader /> : tests.error ? <ErrorState error={tests.error} onRetry={tests.reload} /> : tests.data?.length ? (
-            <div className="grid-cards">
-              {tests.data.map((test) => (
-                <TestCard key={test.id} test={test} inProgress={Boolean(storageService.getActiveAttempt(test.id))} />
-              ))}
-            </div>
+            <CategorySections tests={tests.data} />
           ) : (
             <div className="empty"><Icon name="clipboard" /><p>{t.home.noTests}</p></div>
           )}

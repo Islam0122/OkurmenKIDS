@@ -4,7 +4,7 @@ from rest_framework import serializers
 from apps.testing.models import TestSession
 
 from .models import PortalSettings, TrainingLink, TrainingVideo
-from .services import exam_url_for, question_count, security_settings
+from .services import category_of, exam_url_for, question_count, security_settings
 
 
 class PortalSettingsSerializer(serializers.ModelSerializer):
@@ -28,6 +28,7 @@ class TrainingTestSerializer(serializers.Serializer):
             "title": session.title or test.title,
             "description": test.description,
             "subject": test.subject.name if test.subject_id else "",
+            "category": category_of(test),
             "level": test.level,
             "level_display": test.get_level_display(),
             "image_url": test.image_url or None,

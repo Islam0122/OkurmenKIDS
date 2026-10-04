@@ -75,16 +75,38 @@ class TrainingError(Exception):
 # Tests
 # ---------------------------------------------------------------------------
 
+def _natural(text: str) -> list:
+    """«Month 2» before «Month 10»."""
+    return [int(part) if part.isdigit() else part.casefold() for part in re.split(r"(\d+)", text)]
+
+
 def public_sessions():
-    """Running public training sessions of published tests."""
+    """Running public training sessions of published tests, grouped by their
+    category (the test's Subject) and naturally ordered by title inside it;
+    trainers without a subject come last."""
     candidates = TestSession.objects.filter(is_public=True, session_type=SessionType.TRAINING)
     sync_due_sessions(candidates)
     sessions = (
         candidates.filter(status=SessionStatus.RUNNING, test__status=TestStatus.ACTIVE)
         .select_related("test__subject")
-        .order_by("test__title", "created_at")
+        .order_by("created_at")
     )
-    return [s for s in sessions if s.test.availability_error() is None]
+    visible = [s for s in sessions if s.test.availability_error() is None]
+    return sorted(visible, key=lambda s: (
+        s.test.subject_id is None,
+        _natural(s.test.subject.name) if s.test.subject_id else [],
+        _natural(s.title or s.test.title),
+    ))
+
+
+def category_of(test) -> dict | None:
+    """A trainer's category is its test's Subject (IT, English, Soft Skills, …)."""
+    subject = test.subject if test.subject_id else None
+    if subject is None:
+        return None
+    from django.utils.text import slugify
+
+    return {"id": subject.pk, "name": subject.name, "slug": slugify(subject.name) or f"subject-{subject.pk}"}
 
 
 def get_public_session(session_id) -> TestSession:
