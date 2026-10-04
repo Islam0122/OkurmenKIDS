@@ -1,6 +1,8 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { ExamLayout } from '@/layouts/ExamLayout'
+import { ExamAttemptPage } from '@/pages/ExamAttemptPage'
+import { ExamResultPage } from '@/pages/ExamResultPage'
 import { MainLayout } from '@/layouts/MainLayout'
 import { PortalProvider } from '@/context/PortalContext'
 import { ExamPage } from '@/pages/ExamPage'
@@ -20,6 +22,9 @@ export function AppRoutes() {
       {/* The test itself: ExamLayout — no site navigation. */}
       <Route element={<ExamLayout />}>
         <Route path="training/:testId" element={<TrainingPage />} />
+        {/* The exam runs on the same test screen (attempt from the student portal). */}
+        <Route path="exam/:attemptId" element={<ExamAttemptPage />} />
+        <Route path="exam/:attemptId/result" element={<ExamResultPage />} />
       </Route>
       <Route element={<MainLayout />}>
         <Route index element={<HomePage />} />

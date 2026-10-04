@@ -219,6 +219,14 @@ def attempt_view(request, exam_id, attempt_id):
     attempt = portal.ensure_current(_own_attempt(request, exam_id, attempt_id), request)
     if attempt.status != AttemptStatus.ACTIVE:
         return redirect(_result_url(attempt))
+    # Training and Exam are one testing system: the exam runs in the same
+    # test UI as the trainers (the React portal), with Exam Mode's rules on
+    # the backend (training.exam_api). This page stays as the fallback when
+    # the portal address isn't configured.
+    from apps.training.exam_api import portal_exam_url
+
+    if (shared := portal_exam_url(attempt)) is not None:
+        return redirect(shared)
     questions = attempt_questions(attempt)
     drafts = attempt.draft_answers or {}
     for question in questions:
