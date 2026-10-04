@@ -35,7 +35,7 @@ export function MonitoringPage() {
     <div>
       <PageHeader
         title="Мониторинг"
-        description={`Экзамены и тренажёры${team ? ' всей академии' : ' ваших групп'}: кто проходит сейчас, результаты и нарушения. Обновляется каждые ${MONITORING_REFRESH_MS / 1000} с.`}
+        description={`Экзамены и тренажёры${team ? ' всей академии' : ' ваших групп и публичные тренажёры ваших предметов'}: кто проходит сейчас, результаты и нарушения. Обновляется каждые ${MONITORING_REFRESH_MS / 1000} с.`}
       />
       <Tabs items={tabs} value={tab} onChange={setTab} aria-label="Разделы мониторинга" />
       {tab === 'attempts' ? <AttemptsTab filters={filters} setFilters={setFilters} /> : null}

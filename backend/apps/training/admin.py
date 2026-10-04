@@ -3,7 +3,9 @@
 * «Тренажёры» — a trainer is a training session of a test (proxy model
   Trainer). One form edits the trainer and the test settings behind it;
   questions are edited in the test's question editor («Вопросы»).
-  Publish / unpublish / archive from the list.
+  Publication status in the form («Статус») or from the list: a published
+  trainer is open to anyone on the portal — no student, group or teacher
+  assignment is needed.
 * «Попытки тренажёров» — read-only; an attempt opens on its page with
   answers and the event log.
 * «Настройки портала», «Видео», «Полезные ссылки».
@@ -49,12 +51,12 @@ TEST_FIELDS = {
 class TrainerForm(forms.ModelForm):
     class Meta:
         model = Trainer
-        fields = ("title", "test", "course", "group", "time_limit_minutes", "max_attempts_per_student", "exam_url")
-        labels = {"title": "Название", "test": "Тест (вопросы)", "time_limit_minutes": "Время, мин",
+        fields = ("title", "test", "course", "teacher", "time_limit_minutes", "max_attempts_per_student", "exam_url")
+        labels = {"title": "Название", "test": "Тест (вопросы)", "teacher": "Ответственный тренер", "time_limit_minutes": "Время, мин",
                   "max_attempts_per_student": "Попыток на одно имя"}
         help_texts = {
             "test": "Существующий тест с вопросами. Пусто — будет создан новый тест с этим названием; вопросы добавьте после сохранения («Вопросы»).",
-            "group": "Необязательно: преподаватели этой группы увидят попытки в мониторинге.",
+            "teacher": "Необязательно. Тренажёр открыт всем; тренеры предмета и ответственный тренер видят попытки в мониторинге.",
             "time_limit_minutes": "Пусто — время из теста (или без ограничения).",
             "max_attempts_per_student": "Пусто — без ограничений.",
         }
@@ -67,6 +69,12 @@ class TrainerForm(forms.ModelForm):
 
         self.fields["test"].required = False
         self.fields["title"].required = True
+        self.fields["teacher"].required = False
+        self.fields["publication"] = forms.ChoiceField(
+            label="Статус", choices=TrainerStatus.choices,
+            initial=self.instance.trainer_status if self.instance.pk else TrainerStatus.DRAFT,
+            help_text="Опубликован — тренажёр сразу виден всем посетителям портала, без входа и регистрации.",
+        )
         for name, field in TEST_FIELDS.items():
             if name == "subject":
                 field = forms.ModelChoiceField(label="Предмет", queryset=Subject.objects.order_by("name"), required=False)
@@ -80,7 +88,23 @@ class TrainerForm(forms.ModelForm):
         data = super().clean()
         if not data.get("test") and data.get("title") and Test.objects.filter(title=data["title"].strip()).exists():
             self.add_error("test", "Тест с таким названием уже есть — выберите его здесь или измените название.")
+        target = data.get("publication")
+        current = self.instance.trainer_status if self.instance.pk else TrainerStatus.DRAFT
+        if target == TrainerStatus.PUBLISHED and current != TrainerStatus.PUBLISHED:
+            test = data.get("test")
+            if test is None or not test.questions.exists():
+                self.add_error("publication", "Добавьте вопросы («Вопросы») перед публикацией — пока сохраните как черновик.")
+        if current == TrainerStatus.ARCHIVED and target != TrainerStatus.ARCHIVED:
+            self.add_error("publication", "Архивный тренажёр нельзя вернуть — создайте новый.")
         return data
+
+    def apply_publication(self, trainer) -> None:
+        """Move the saved trainer to the chosen status (publish / draft / archive)."""
+        target = self.cleaned_data.get("publication")
+        if target == trainer.trainer_status:
+            return
+        {TrainerStatus.PUBLISHED: trainer.publish, TrainerStatus.DRAFT: trainer.unpublish,
+         TrainerStatus.ARCHIVED: trainer.archive}[target]()
 
     def save(self, commit=True):
         trainer = super().save(commit=False)
@@ -102,6 +126,9 @@ class TrainerForm(forms.ModelForm):
 # them at class level); they are read from / written to trainer.test.
 TrainerForm.declared_fields.update(TEST_FIELDS)
 TrainerForm.base_fields.update(TEST_FIELDS)
+TrainerForm.declared_fields["publication"] = TrainerForm.base_fields["publication"] = forms.ChoiceField(
+    label="Статус", choices=TrainerStatus.choices, initial=TrainerStatus.DRAFT,
+)
 
 
 class AdminRoleOnlyMixin(AdminRoleOnly):
@@ -117,19 +144,29 @@ class TrainerAdmin(AdminRoleOnlyMixin, admin.ModelAdmin):
     actions = ["publish", "unpublish", "archive"]
     readonly_fields = ("status_badge", "links")
     fieldsets = (
-        ("Основная информация", {"fields": ("title", "test", "description", "subject", "course", "group", "image_url", "status_badge", "links")}),
+        ("Основная информация", {"fields": ("title", "test", "description", "subject", "course", "image_url", "publication", "status_badge", "links"),
+                                 "description": "Тренажёр — публичный продукт: после публикации его может пройти любой посетитель портала, "
+                                                "указав только имя. Назначать студентам, группам или тренерам не нужно."}),
         ("Настройки теста", {"fields": ("questions_per_attempt", "time_limit_minutes", "passing_score", "show_correct_answers",
                                         "show_result", "allow_retry", "max_attempts_per_student", "shuffle_questions", "shuffle_options")}),
         ("Безопасность", {"fields": ("require_fullscreen", "track_tab_switches", "max_tab_switches", "block_copy_paste"),
                           "description": "Браузер не позволяет запретить другие вкладки или устройства: система предотвращает, "
                                          "что может, фиксирует действия и показывает их в мониторинге."}),
         ("Настоящий экзамен", {"fields": ("exam_url",)}),
+        ("Мониторинг (необязательно)", {"fields": ("teacher",)}),
     )
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        try:
+            form.apply_publication(obj)
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0])
 
     def get_queryset(self, request):
         return (
             super().get_queryset(request)
-            .select_related("test__subject", "course")
+            .select_related("test__subject", "course", "teacher__user")
             .annotate(question_total=Count("test__questions", distinct=True), attempt_total=Count("attempts", distinct=True))
         )
 

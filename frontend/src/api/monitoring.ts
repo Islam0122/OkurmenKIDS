@@ -18,7 +18,7 @@ function params(filters: MonitoringFilters): Record<string, string | number> {
   return Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string | number>
 }
 
-/** Scope (own groups vs whole academy) is decided by the backend from the JWT. */
+/** Scope (own groups + public trainers of own subjects vs whole academy) is decided by the backend from the JWT. */
 export const monitoringApi = {
   overview: (filters: MonitoringFilters) =>
     apiClient.get<MonitoringOverview>('/monitoring/overview/', { params: params(filters) }).then((r) => r.data),

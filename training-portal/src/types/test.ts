@@ -27,6 +27,7 @@ export interface TrainingTest {
   /** «Текшерүү» with the correct answer + explanation after each answer */
   show_explanation: boolean
   show_result: boolean
+  allow_retry: boolean
   /** program (Course) name, may be empty */
   course: string
   /** this trainer's exam link, else the portal's; empty — no exam button */

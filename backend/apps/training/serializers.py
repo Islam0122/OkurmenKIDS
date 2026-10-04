@@ -37,6 +37,7 @@ class TrainingTestSerializer(serializers.Serializer):
             "passing_score": test.passing_score,
             "show_explanation": test.show_correct_answers,
             "show_result": test.show_result,
+            "allow_retry": test.allow_retry,
             "course": session.course.name if session.course_id else "",
             "exam_url": exam_url_for(session),
             "security": security_settings(session),

@@ -78,7 +78,7 @@ export function AttemptsTab({ filters, setFilters }: { filters: MonitoringFilter
       </FilterBar>
 
       {attempts.isLoading ? <LoadingState /> : attempts.isError ? <ErrorState onRetry={() => attempts.refetch()} /> : !attempts.data?.results.length ? (
-        <EmptyState title="Попыток нет" description="Здесь появятся попытки студентов ваших групп — экзамены и тренажёры." />
+        <EmptyState title="Попыток нет" description="Здесь появятся экзамены студентов ваших групп и прохождения публичных тренажёров ваших предметов." />
       ) : (
         <div className="card overflow-hidden">
           <div className="scroll-x">
