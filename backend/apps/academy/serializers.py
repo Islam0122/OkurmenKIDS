@@ -897,13 +897,6 @@ class HomeworkNotRequiredRequestSerializer(serializers.Serializer):
     value = serializers.BooleanField(required=False, default=True)
 
 
-class ParentReportHomeworkSerializer(serializers.Serializer):
-    title = serializers.CharField()
-    lesson_id = serializers.IntegerField()
-    lesson_number = serializers.IntegerField()
-    lesson_date = serializers.DateField()
-
-
 class ParentReportHomeworkItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     title = serializers.CharField()
@@ -925,15 +918,14 @@ class ParentLessonReportSerializer(serializers.Serializer):
     topic = serializers.CharField(allow_null=True)
     present_students = serializers.ListField(child=serializers.CharField())
     absent_students = serializers.ListField(child=serializers.CharField())
-    homework_checked = ParentReportHomeworkSerializer(allow_null=True)
-    previous_homework = ParentReportHomeworkItemSerializer(
-        allow_null=True, help_text="ДЗ предыдущего занятия — его результаты в отчёте.",
+    homework = ParentReportHomeworkItemSerializer(
+        allow_null=True, help_text="ДЗ этого занятия — по его результатам строится «не выполнили».",
     )
     homework_not_completed = serializers.ListField(child=serializers.CharField())
     homework_partial = serializers.ListField(child=serializers.CharField())
     next_homework = serializers.CharField(allow_null=True, help_text="Текст «Кийинки үй тапшырмасы».")
-    current_homework = ParentReportHomeworkItemSerializer(
-        allow_null=True, help_text="ДЗ, выданное на этом занятии (следующее ДЗ).",
+    next_homework_details = ParentReportHomeworkItemSerializer(
+        allow_null=True, help_text="ДЗ следующего занятия программы.",
     )
     warnings = serializers.ListField(child=serializers.CharField())
     message = serializers.CharField(help_text="Системный вариант (то же, что messages.system).")

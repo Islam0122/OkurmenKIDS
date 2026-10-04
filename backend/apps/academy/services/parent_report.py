@@ -6,12 +6,14 @@ Everything comes from existing rows; nothing is invented:
 
 - topic — ``Lesson.topic``;
 - attended — Attendance PRESENT / LATE, absent — ABSENT / EXCUSED;
-- homework checked today — the Homework of this program's previous
-  (not cancelled, by lesson_number: Lesson N checks Homework N-1) lesson: in this project a Homework belongs to the lesson
-  it was *given* at, and is graded afterwards. «Не выполнили» = its
-  HomeworkResult rows with NOT_SUBMITTED (LATE counts as done). There is
-  no «partial» status, so ``homework_partial`` is always empty;
-- next homework — the Homework given at this lesson.
+- homework results — the Homework of *this* lesson (``Homework.lesson`` =
+  this lesson), the same one the lesson page opens for grading. «Не
+  выполнили» = its HomeworkResult rows with NOT_SUBMITTED (SUBMITTED, LATE
+  and CHECKED count as done). There is no «partial» status, so
+  ``homework_partial`` is always empty;
+- next homework — the Homework of the program's next lesson (same
+  GroupTeacher, the next not-cancelled lesson_number). A separate object
+  from the one above — the two blocks never share a Homework.
 
 Two wordings of the same data (``messages``), one per «Автор отчёта»:
 ``system`` — «🤖 Система», the standard LMS report, and ``trainer`` —
@@ -30,8 +32,6 @@ it in Russian for the LMS screen only.
     report = ParentLessonReportService.generate(lesson_id)
 """
 from __future__ import annotations
-
-import logging
 
 from django.db.models import Q
 
@@ -60,15 +60,12 @@ STYLES = {
         "topic": "Бүгүнкү сабакта «{topic}» темасын өттүк. 📚",
         "present": "👥 Сабакка катышкандар:",
         "absent": "🚫 Сабакка катышпагандар:",
-        "not_done": "❌ Өткөн сабактын үй тапшырмасын аткарбагандар:",
-        "all_done": "✅ Өткөн сабактын үй тапшырмасын баары аткарды.",
+        "not_done": "❌ Үй тапшырмасын аткарбагандар:",
+        "all_done": "✅ Үй тапшырмасын баары аткарды.",
         "next_separator": "\n",
         "closing": "Рахмат! Кийинки сабакта жолугушабыз 🌟",
     },
 }
-
-# TEMP DEBUG («Мини-отчёт родителям» shows old results): remove once diagnosed.
-debug_log = logging.getLogger("okurmen.mini_report_debug")
 
 PRESENT_STATUSES = (Attendance.Status.PRESENT, Attendance.Status.LATE)
 
@@ -86,27 +83,25 @@ def _bullets(names: list[str]) -> list[str]:
     return [f"• {name}" for name in names]
 
 
-def previous_lesson(lesson: Lesson) -> Lesson | None:
-    """The lesson whose homework is checked at `lesson`: Lesson N checks
-    Homework N-1. Within a program (GroupTeacher) that is the not-cancelled
-    lesson with the highest lesson_number below this one — by number, not by
-    date, so a moved/edited date or a make-up lesson can never make the report
-    read another lesson's results. A lesson without a program falls back to
-    the group's last not-cancelled lesson before it in time."""
+def next_lesson(lesson: Lesson) -> Lesson | None:
+    """The program's next lesson — whose homework is «Кийинки үй тапшырмасы».
+    Within a GroupTeacher: the not-cancelled lesson with the lowest
+    lesson_number above this one. A lesson without a program falls back to
+    the group's first not-cancelled lesson after it in time."""
     if lesson.group_teacher_id:
         return (
-            Lesson.objects.filter(group_teacher_id=lesson.group_teacher_id, lesson_number__lt=lesson.lesson_number)
+            Lesson.objects.filter(group_teacher_id=lesson.group_teacher_id, lesson_number__gt=lesson.lesson_number)
             .exclude(pk=lesson.pk)
             .exclude(status=Lesson.Status.CANCELLED)
-            .order_by("-lesson_number", "-date", "-start_time")
+            .order_by("lesson_number", "date", "start_time")
             .first()
         )
     return (
         Lesson.objects.filter(group_id=lesson.group_id)
         .exclude(pk=lesson.pk)
         .exclude(status=Lesson.Status.CANCELLED)
-        .filter(Q(date__lt=lesson.date) | Q(date=lesson.date, start_time__lt=lesson.start_time))
-        .order_by("-date", "-start_time")
+        .filter(Q(date__gt=lesson.date) | Q(date=lesson.date, start_time__gt=lesson.start_time))
+        .order_by("date", "start_time")
         .first()
     )
 
@@ -152,16 +147,14 @@ class ParentLessonReportService:
         elif unmarked:
             warnings.append(f"Посещаемость не отмечена у {len(unmarked)} студент(ов): {', '.join(_names(unmarked))}.")
 
-        # -- Homework checked today (given at the previous lesson) -------
-        checked = None
+        # -- This lesson's homework and its results ----------------------
         not_done: list[str] = []
         results_complete = True
-        prev = previous_lesson(lesson)
-        prev_homeworks = list(Homework.objects.filter(lesson=prev).order_by("created_at")) if prev else []
-        if prev_homeworks:
+        homeworks = list(Homework.objects.filter(lesson=lesson).order_by("created_at"))
+        if homeworks:
             results = list(
                 HomeworkResult.objects.filter(
-                    homework__in=prev_homeworks, student__group=lesson.group, student__is_active=True,
+                    homework__in=homeworks, student__group=lesson.group, student__is_active=True,
                 )
                 .select_related("student")
             )
@@ -171,31 +164,15 @@ class ParentLessonReportService:
             graded_ids = {r.student_id for r in results}
             ungraded = [s for s in active if s.id not in graded_ids]
             results_complete = not ungraded
-            checked = {
-                "title": "; ".join(h.title for h in prev_homeworks),
-                "lesson_id": prev.pk,
-                "lesson_number": prev.lesson_number,
-                "lesson_date": prev.date.isoformat(),
-            }
             if ungraded:
                 warnings.append(
-                    f"Результаты ДЗ «{checked['title']}» не отмечены у {len(ungraded)} студент(ов): "
-                    f"{', '.join(_names(ungraded))}."
+                    f"Результаты ДЗ «{'; '.join(h.title for h in homeworks)}» не отмечены у {len(ungraded)} "
+                    f"студент(ов): {', '.join(_names(ungraded))}."
                 )
 
-        debug_log.warning(
-            "[MINI-REPORT DEBUG] PARENT REPORT lesson_id=%s lesson_number=%s date=%s group_teacher_id=%s "
-            "-> previous lesson_id=%s lesson_number=%s date=%s; checked homework=%s; not_done=%s",
-            lesson.pk, lesson.lesson_number, lesson.date, lesson.group_teacher_id,
-            prev and prev.pk, prev and prev.lesson_number, prev and prev.date,
-            [(h.pk, h.title, sorted(HomeworkResult.objects.filter(homework=h).values_list("student_id", "status", "score")))
-             for h in prev_homeworks],
-            not_done,
-        )
-
-        # -- Next homework (given at this lesson) -----------------------
-        homeworks = list(Homework.objects.filter(lesson=lesson).order_by("created_at"))
-        next_homework = "\n".join(homework_text(h) for h in homeworks) or None
+        # -- Next homework (the program's next lesson) ------------------
+        upcoming = next_lesson(lesson)
+        next_homeworks = list(Homework.objects.filter(lesson=upcoming).order_by("created_at")) if upcoming else []
 
         data = {
             "lesson_id": lesson.pk,
@@ -204,12 +181,11 @@ class ParentLessonReportService:
             "topic": topic or None,
             "present_students": present,
             "absent_students": absent,
-            "homework_checked": checked,
-            "previous_homework": homework_data(prev_homeworks),
+            "homework": homework_data(homeworks),
             "homework_not_completed": not_done,
             "homework_partial": [],  # no «partial» HomeworkResult status in the system
-            "next_homework": next_homework,
-            "current_homework": homework_data(homeworks),
+            "next_homework": "\n".join(homework_text(h) for h in next_homeworks) or None,
+            "next_homework_details": homework_data(next_homeworks),
             "warnings": warnings,
         }
         data["messages"] = {
@@ -234,7 +210,7 @@ class ParentLessonReportService:
         ]
         if data["absent_students"]:
             blocks.append([words["absent"], *_bullets(data["absent_students"])])
-        if data["homework_checked"] is not None:
+        if data["homework"] is not None:
             if data["homework_not_completed"]:
                 blocks.append([words["not_done"], *_bullets(data["homework_not_completed"])])
             elif results_complete:

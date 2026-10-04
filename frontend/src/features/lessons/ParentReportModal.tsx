@@ -73,7 +73,7 @@ const AUTHORS: { value: ParentReportType; label: string; hint: string; icon: Luc
 function ReportEditor({ report }: { report: ParentLessonReport }) {
   const { showToast } = useToast()
   const navigate = useNavigate()
-  const checkedHomework = report.previous_homework
+  const checkedHomework = report.homework
   const [author, setAuthor] = useState<ParentReportType>('system')
   // «Свой вариант»: a copy of an automatic text, created on first use.
   const [customText, setCustomText] = useState<string | null>(null)
@@ -173,12 +173,11 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
 
 
       {checkedHomework ? (
-        // «❌ не выполнили» is built from the *previous* lesson's homework (lesson N
-        // checks homework N-1), not from this lesson's own — the one the lesson page
-        // opens. Say which, and open exactly that one for grading.
+        // «❌ не выполнили» is built from this lesson's own homework — the same one
+        // the lesson page opens; grading it here updates the next opening.
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm">
           <span className="text-ink-secondary">
-            Список «не выполнили» — по ДЗ прошлого занятия:{' '}
+            Список «не выполнили» — по ДЗ этого занятия:{' '}
             <span className="font-medium text-ink">«{checkedHomework.title}»</span>
           </span>
           <Button
@@ -187,7 +186,7 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
             leftIcon={<ClipboardCheck className="size-4" aria-hidden />}
             onClick={() => navigate(homeworkUrlFor(checkedHomework.id, `/app/lessons/${report.lesson_id}`))}
           >
-            Проверить ДЗ прошлого занятия
+            Проверить ДЗ
           </Button>
         </div>
       ) : null}
