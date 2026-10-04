@@ -1,0 +1,9 @@
+.footer { margin-top: auto; background: var(--navy-950); color: rgba(255, 255, 255, .72); padding: 48px 0 32px; }
+.footer__top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 28px; }
+.footer .brand__name { color: #fff; }
+.footer__about { max-width: 360px; margin-top: 14px; font-size: 14px; }
+.footer__links { display: grid; grid-template-columns: repeat(2, minmax(140px, auto)); gap: 10px 32px; align-content: start; }
+.footer__links a { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; transition: color .2s; }
+.footer__links a:hover { color: var(--amber-400); }
+.footer__bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 36px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, .1); font-size: 13px; }
+.footer__note { display: inline-flex; align-items: center; gap: 8px; color: rgba(255, 255, 255, .55); }

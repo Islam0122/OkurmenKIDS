@@ -1,0 +1,25 @@
+.header { position: sticky; top: 0; z-index: 100; height: var(--header-h); display: flex; align-items: center; background: rgba(246, 247, 251, .78); backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid transparent; transition: border-color .2s, background .2s; }
+.header.is-scrolled { border-bottom-color: var(--border); background: rgba(255, 255, 255, .86); }
+.header__inner { display: flex; align-items: center; gap: 24px; }
+.brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.brand__logo { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 14px -4px rgba(245, 165, 36, .6); background: #fff; }
+.brand__text { display: grid; line-height: 1.05; }
+.brand__name { font-family: var(--font-display); font-weight: 800; font-size: 16px; color: var(--navy-700); letter-spacing: .02em; }
+.brand__sub { font-size: 11px; font-weight: 800; letter-spacing: .24em; color: var(--amber-600); text-transform: uppercase; }
+.nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.nav__link { white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 12px; font-weight: 700; font-size: 15px; color: var(--text-2); transition: background .2s, color .2s; }
+.nav__link:hover { color: var(--navy-700); background: var(--navy-50); }
+.nav__link.active { color: var(--navy-700); background: var(--navy-100); }
+.header__cta { margin-left: 8px; }
+.burger { display: none; margin-left: auto; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); place-items: center; font-size: 22px; color: var(--navy-700); cursor: pointer; }
+.drawer { display: none; }
+
+@media (max-width: 960px) {
+  .nav, .header__cta { display: none; }
+  .burger { display: grid; }
+  .drawer { display: block; position: fixed; inset: var(--header-h) 0 auto 0; z-index: 99; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-lg); padding: 12px 16px 20px; animation: fadeUp .25s var(--ease) both; }
+  .drawer[hidden] { display: none; }
+  .drawer .nav__link { display: flex; padding: 14px 16px; font-size: 16px; }
+  .drawer__cta { margin-top: 12px; }
+}
+@media (max-width: 380px) { .brand__text { display: none; } }
