@@ -11,9 +11,10 @@ Everything comes from existing rows; nothing is invented:
   выполнили» = its HomeworkResult rows with NOT_SUBMITTED (SUBMITTED, LATE
   and CHECKED count as done). There is no «partial» status, so
   ``homework_partial`` is always empty;
-- next homework — the Homework of the program's next lesson (same
-  GroupTeacher, the next not-cancelled lesson_number). A separate object
-  from the one above — the two blocks never share a Homework.
+- next homework — Homework N+1: the Homework of the program's next lesson
+  (same GroupTeacher, the next not-cancelled lesson_number). A separate
+  object from the one above — the two blocks never share a Homework. On
+  the program's last lesson (no lesson N+1) the block is left out.
 
 Two wordings of the same data (``messages``), one per «Автор отчёта»:
 ``system`` — «🤖 Система», the standard LMS report, and ``trainer`` —
@@ -191,6 +192,7 @@ class ParentLessonReportService:
         data["messages"] = {
             style: cls.build_message(
                 data, style=style, attendance_marked=bool(records), results_complete=results_complete,
+                has_next_lesson=upcoming is not None,
             )
             for style in STYLES
         }
@@ -199,7 +201,7 @@ class ParentLessonReportService:
 
     @staticmethod
     def build_message(data: dict, *, style: str = "system", attendance_marked: bool = True,
-                      results_complete: bool = True) -> str:
+                      results_complete: bool = True, has_next_lesson: bool = True) -> str:
         words = STYLES[style]
         blocks = [
             [GREETING],
@@ -219,6 +221,7 @@ class ParentLessonReportService:
                 blocks.append([words["not_done"], RESULTS_INCOMPLETE])
         if data["homework_partial"]:
             blocks.append([PARTIAL_TITLE, *_bullets(data["homework_partial"])])
-        blocks.append([NEXT_TITLE + words["next_separator"] + (data["next_homework"] or NO_NEXT)])
+        if has_next_lesson:  # the last lesson of the program has no «next homework»
+            blocks.append([NEXT_TITLE + words["next_separator"] + (data["next_homework"] or NO_NEXT)])
         blocks.append([words["closing"]])
         return "\n\n".join("\n".join(lines) for lines in blocks)

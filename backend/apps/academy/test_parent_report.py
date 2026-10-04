@@ -133,6 +133,38 @@ class ParentReportTests(TestCase):
         self.assertEqual(Homework.objects.get(pk=report["next_homework_details"]["id"]).lesson_id, self.next.pk)
         self.assertNotEqual(report["homework"]["id"], report["next_homework_details"]["id"])
 
+    def test_lesson_5_checks_homework_5_and_shows_homework_6_as_next(self):
+        lesson5 = self.lesson(5, dt.date(2025, 3, 12), topic="Flexbox", status=Lesson.Status.COMPLETED)
+        lesson6 = self.lesson(6, dt.date(2025, 3, 14), topic="Grid", status=Lesson.Status.SCHEDULED)
+        hw5 = Homework.objects.create(lesson=lesson5, title="Оформить страницу")
+        Homework.objects.create(
+            lesson=lesson6, title="Сверстать блоки карточек",
+            description="Создать адаптивный ряд карточек с использованием Flexbox.",
+        )
+        self.grade(hw5, Бекнур="submitted", Талант="submitted", Эрбол="not_submitted", Айжамал="checked", Йасин="late")
+        report = ParentLessonReportService.generate(lesson5.pk)
+        self.assertEqual(report["homework"]["id"], hw5.pk)
+        self.assertEqual(report["homework_not_completed"], ["Эрбол Зулпукаров"])
+        self.assertEqual(
+            report["next_homework"], "Сверстать блоки карточек — Создать адаптивный ряд карточек с использованием Flexbox.",
+        )
+        self.assertIn(
+            "📚 Кийинки үй тапшырмасы:\n\nСверстать блоки карточек — Создать адаптивный ряд карточек "
+            "с использованием Flexbox.", report["message"],
+        )
+        for message in report["messages"].values():
+            self.assertNotIn("Оформить страницу", message)  # Homework N is never the «next» one
+
+    def test_last_lesson_of_the_program_has_no_next_homework_block(self):
+        self.full_example()
+        Lesson.objects.filter(pk=self.next.pk).delete()
+        report = ParentLessonReportService.generate(self.today.pk)
+        self.assertIsNone(report["next_homework"])
+        for message in report["messages"].values():
+            self.assertNotIn("Кийинки үй тапшырмасы", message)
+            self.assertNotIn("азырынча берилген жок", message)
+            self.assertIn("❌", message)  # the results block stays
+
     def test_previous_lessons_homework_is_never_used(self):
         """Spec test 16: Homework №4 has everyone «Не сдано», Homework №5 has 3 done —
         lesson №5's report must show 9, never 12."""
