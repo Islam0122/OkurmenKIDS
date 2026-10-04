@@ -358,3 +358,75 @@ class ParentReportTests(TestCase):
         earlier = client.get(f"/api/v1/lessons/{self.prev.pk}/parent-report/").json()
         self.assertIsNone(earlier["homework_checked"])
         self.assertEqual(earlier["next_homework"], "Оформить страницу")
+
+
+class ParentReportLiveResultsTests(TestCase):
+    """The spec's acceptance tests 1–3 and 5, through POST /homework/{id}/results/."""
+
+    lesson = ParentReportTests.lesson
+
+    def setUp(self):
+        ParentReportTests.setUp(self)
+        for i in range(7):
+            Student.objects.create(first_name=f"Окуучу{i}", last_name="Тест", group=self.group)
+        self.roster = list(self.group.students.filter(is_active=True))
+        Lesson.objects.filter(pk=self.today.pk).update(status=Lesson.Status.COMPLETED)
+        self.old = Homework.objects.create(lesson=self.prev, title="Оформить страницу")
+        for s in self.roster:
+            HomeworkResult.objects.create(homework=self.old, student=s)  # «Не сдано»
+        self.client = APIClient()
+        self.client.force_authenticate(self.teacher.user)
+
+    def save(self, *items):
+        response = self.client.post(f"/api/v1/homework/{self.old.pk}/results/", list(items), format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def report(self):
+        return self.client.get(f"/api/v1/lessons/{self.today.pk}/parent-report/").json()
+
+    def test_1_five_of_twelve_submitted_leaves_seven(self):
+        self.assertEqual(len(self.roster), 12)
+        self.assertEqual(len(self.report()["homework_not_completed"]), 12)
+        self.save(*({"student": s.pk, "status": "submitted"} for s in self.roster[:5]))
+        report = self.report()
+        self.assertEqual(len(report["homework_not_completed"]), 7)
+        self.assertEqual(report["message"].split("❌", 1)[1].split("\n\n")[0].count("• "), 7)
+
+    def test_2_submitted_late_and_checked_all_count_as_done(self):
+        self.save(
+            {"student": self.students["Бекнур"].pk, "status": "submitted", "score": 8},
+            {"student": self.students["Талант"].pk, "status": "late", "score": 7},
+            {"student": self.students["Эрбол"].pk, "status": "checked", "score": 10},
+        )
+        report = self.report()
+        for name in ("Бекнур Абдыбеков", "Талант Аманжолов", "Эрбол Зулпукаров"):
+            self.assertNotIn(name, report["homework_not_completed"])
+            for message in report["messages"].values():
+                self.assertNotIn(name, message.split("❌", 1)[1])
+        self.assertIn("Айжамал Мурзабекова", report["homework_not_completed"])
+
+    def test_3_score_changes_are_read_fresh(self):
+        # The report format has no average/score aggregate — only the «не выполнили» list.
+        self.save({"student": self.students["Эрбол"].pk, "status": "checked", "score": 5})
+        first = self.report()
+        self.save({"student": self.students["Эрбол"].pk, "status": "checked", "score": 9})
+        second = self.report()
+        self.assertEqual(HomeworkResult.objects.get(homework=self.old, student=self.students["Эрбол"]).score, 9)
+        self.assertNotIn("Эрбол Зулпукаров", second["homework_not_completed"])
+        self.assertEqual(first["message"], second["message"])
+        # A score on a «Не сдано» row does not make it done.
+        self.save({"student": self.students["Эрбол"].pk, "status": "not_submitted", "score": 2})
+        self.assertIn("Эрбол Зулпукаров", self.report()["homework_not_completed"])
+
+    def test_5_other_lessons_homework_is_never_used(self):
+        # Every student «Сдано» for the right homework…
+        self.save(*({"student": s.pk, "status": "submitted"} for s in self.roster))
+        # …but «Не сдано» everywhere else: this lesson's own homework and a later lesson's.
+        later = self.lesson(3, dt.date(2025, 3, 7), status=Lesson.Status.SCHEDULED)
+        for lesson in (self.today, later):
+            hw = Homework.objects.create(lesson=lesson, title=f"ДЗ урока {lesson.lesson_number}")
+            for s in self.roster:
+                HomeworkResult.objects.create(homework=hw, student=s)
+        report = self.report()
+        self.assertEqual(report["previous_homework"]["id"], self.old.pk)
+        self.assertEqual(report["homework_not_completed"], [])
