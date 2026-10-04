@@ -289,3 +289,37 @@ export interface ParentLessonReport {
  * «✏️ Свой вариант» is the trainer's own edit, kept only in the dialog. */
 export type ParentReportStyle = 'system' | 'trainer'
 export type ParentReportType = ParentReportStyle | 'custom'
+
+/** `GET /groups/{id}/assign-trainer/` — who teaches each subject of the
+ * group (its Teaching Programs), who assigned them and when, plus what can
+ * be chosen. Admin / Team Lead only. */
+export interface TrainerAssignmentProgram {
+  id: number
+  subject: { id: number; name: string } | null
+  teacher: { id: number; name: string }
+  is_active: boolean
+  assigned_by: string | null
+  assigned_at: string | null
+}
+
+export interface TrainerAssignmentOverview {
+  group: { id: number; name: string; course: string }
+  programs: TrainerAssignmentProgram[]
+  subjects: { id: number; name: string }[]
+  trainers: { id: number; name: string; subjects: string[] }[]
+  result?: {
+    program: number
+    created: boolean
+    previous_teacher: string | null
+    teacher: string
+    lessons_reassigned: number
+  }
+}
+
+/** `POST /groups/{id}/assign-trainer/`: replace a program's trainer
+ * (`program`), or give a subject to a trainer (`subject`). */
+export interface AssignTrainerPayload {
+  teacher: number
+  program?: number
+  subject?: number
+}

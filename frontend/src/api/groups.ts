@@ -1,5 +1,13 @@
 import { apiClient } from '@/api/client'
-import type { Group, GroupSchedule, GroupStatus, LessonStatus, Student } from '@/types/academy'
+import type {
+  AssignTrainerPayload,
+  Group,
+  GroupSchedule,
+  GroupStatus,
+  LessonStatus,
+  Student,
+  TrainerAssignmentOverview,
+} from '@/types/academy'
 import type { Paginated } from '@/types/common'
 
 export interface GroupListParams {
@@ -26,4 +34,13 @@ export const groupsApi = {
   /** The group's active students (or all, with `is_active: false`). */
   students: (id: number, params?: { is_active?: boolean }): Promise<Student[]> =>
     apiClient.get<Student[]>(`/groups/${id}/students/`, { params }).then((r) => r.data),
+
+  /** Admin / Team Lead: the group's trainers per subject + who can be chosen. */
+  trainerAssignments: (id: number): Promise<TrainerAssignmentOverview> =>
+    apiClient.get<TrainerAssignmentOverview>(`/groups/${id}/assign-trainer/`).then((r) => r.data),
+
+  /** Admin / Team Lead: the dedicated «назначить тренера» action — never a
+   * general edit of the group or the trainer (backend-enforced). */
+  assignTrainer: (id: number, payload: AssignTrainerPayload): Promise<TrainerAssignmentOverview> =>
+    apiClient.post<TrainerAssignmentOverview>(`/groups/${id}/assign-trainer/`, payload).then((r) => r.data),
 }

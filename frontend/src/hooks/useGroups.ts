@@ -1,7 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { groupsApi, type GroupListParams } from '@/api/groups'
-import type { LessonStatus } from '@/types/academy'
+import type { AssignTrainerPayload, LessonStatus } from '@/types/academy'
 
 export function useGroups(params: GroupListParams) {
   return useQuery({
@@ -24,5 +24,27 @@ export function useGroupSchedule(id: number | undefined, params?: { status?: Les
     queryKey: ['groups', 'schedule', id, params],
     queryFn: () => groupsApi.schedule(id as number, params),
     enabled: id !== undefined,
+  })
+}
+
+export function useTrainerAssignments(id: number | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['groups', 'detail', id, 'trainer-assignments'],
+    queryFn: () => groupsApi.trainerAssignments(id as number),
+    enabled: enabled && id !== undefined,
+  })
+}
+
+export function useAssignTrainer(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AssignTrainerPayload) => groupsApi.assignTrainer(id, payload),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['groups', 'detail', id, 'trainer-assignments'], data)
+      // Programs, schedule, lessons and every report follow the new trainer.
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['reports'] })
+      void queryClient.invalidateQueries({ queryKey: ['lessons'] })
+    },
   })
 }

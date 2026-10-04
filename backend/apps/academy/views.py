@@ -19,7 +19,13 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.users.import_export.formats import UnsupportedFileFormat
 from apps.users.models import Teacher, User
-from apps.users.permissions import IsAdmin, IsAdminOrTeamLeadReadOnly, can_view_academy, is_team_lead
+from apps.users.permissions import (
+    CanAssignTrainerToGroup,
+    IsAdmin,
+    IsAdminOrTeamLeadReadOnly,
+    can_view_academy,
+    is_team_lead,
+)
 from apps.users.serializers import (
     ImportFileRequestSerializer,
     ImportPreviewSerializer,
@@ -107,6 +113,7 @@ from .services.group_analytics import GroupAnalyticsFilters, get_group_analytics
 from .services.lesson_generator import generate_lessons_for_group_with_report, preview_generation
 from .services.lesson_reschedule import cancel_and_reschedule, reschedule_cancelled_lesson
 from .services.subject_assignments import subject_assignment_overview
+from .services.trainer_assignment import assign_trainer, assignment_overview
 
 
 def _teacher_profile(request):
@@ -568,6 +575,61 @@ class GroupViewSet(viewsets.ModelViewSet):
         group = get_object_or_404(self.get_queryset(), pk=pk)
         data = get_group_analytics(group, GroupAnalyticsFilters.from_query(request.query_params)).as_dict()
         return Response(GroupAnalyticsSerializer(data).data)
+
+    @extend_schema(
+        tags=["Groups"],
+        description=(
+            "GET: the group's trainers per subject (with who assigned them and when), the course "
+            "subjects and the active trainers to choose from. POST {teacher, program} replaces a "
+            "program's trainer; POST {teacher, subject} assigns a trainer to a subject (or replaces "
+            "its current one). Admin and Team Lead only — a separate action, not a change right on "
+            "Trainer or Group (see services.trainer_assignment)."
+        ),
+    )
+    @action(
+        detail=True, methods=["get", "post"], url_path="assign-trainer",
+        permission_classes=[IsAuthenticated, CanAssignTrainerToGroup],
+    )
+    def assign_trainer(self, request, pk=None):
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        if request.method == "GET":
+            return Response(assignment_overview(group))
+
+        def pick(model, key, **filters):
+            raw = request.data.get(key)
+            if raw in (None, ""):
+                return None
+            if not str(raw).isdigit():
+                raise DRFValidationError({key: ["Неверное значение."]})
+            obj = model.objects.filter(pk=int(raw), **filters).first()
+            if obj is None:
+                raise DRFValidationError({key: ["Не найдено."]})
+            return obj
+
+        from apps.users.models import Subject
+
+        teacher = pick(Teacher, "teacher")
+        if teacher is None:
+            raise DRFValidationError({"teacher": ["Выберите тренера."]})
+        try:
+            result = assign_trainer(
+                group,
+                teacher=teacher,
+                user=request.user,
+                subject=pick(Subject, "subject"),
+                program=pick(GroupTeacher, "program", group=group),
+            )
+        except DjangoValidationError as exc:
+            raise DRFValidationError(exc.message_dict if hasattr(exc, "error_dict") else {"detail": exc.messages})
+        payload = assignment_overview(group)
+        payload["result"] = {
+            "program": result.program.pk,
+            "created": result.created,
+            "previous_teacher": str(result.previous_teacher) if result.previous_teacher else None,
+            "teacher": str(result.program.teacher),
+            "lessons_reassigned": result.lessons_reassigned,
+        }
+        return Response(payload, status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK)
 
     @extend_schema(tags=["Groups"], responses=SubjectAssignmentSerializer(many=True))
     @action(detail=True, methods=["get"], url_path="subject-assignments")

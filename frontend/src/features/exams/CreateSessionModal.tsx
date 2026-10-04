@@ -44,6 +44,21 @@ export function CreateSessionModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const subject = useMemo(() => tests.data?.find((t) => t.id === test)?.subject_name ?? '—', [tests.data, test])
+  // The group's trainer comes from its existing Group → Trainer link (the
+  // program for the test's subject) — the backend sets the same on create.
+  const groupDetail = useQuery({
+    queryKey: ['groups', 'detail', Number(group)],
+    queryFn: () => groupsApi.get(Number(group)),
+    enabled: isOpen && group !== '',
+  })
+  const trainer = useMemo(() => {
+    const programs = (groupDetail.data?.teachers ?? []).filter((p) => p.is_active)
+    const name = (p: (typeof programs)[number]) => `${p.teacher_detail.user.first_name} ${p.teacher_detail.user.last_name}`.trim()
+    const match = programs.find((p) => p.subject_detail?.name === subject)
+    if (match) return name(match)
+    const names = [...new Set(programs.map(name))]
+    return names.length === 1 ? names[0] : null
+  }, [groupDetail.data, subject])
 
   async function handleSubmit() {
     const missing: Record<string, string> = {}
@@ -107,6 +122,13 @@ export function CreateSessionModal({ isOpen, onClose }: { isOpen: boolean; onClo
             options={(groups.data ?? []).map((g) => ({ value: String(g.id), label: g.name }))}
           />
         </Field>
+        {group ? (
+          <Field label="Тренер">
+            <p className="text-sm text-ink" data-testid="session-trainer">
+              {groupDetail.isPending ? 'Загружаем…' : trainer ? `👨‍🏫 ${trainer}` : 'Не назначен — назначьте в карточке группы'}
+            </p>
+          </Field>
+        ) : null}
         <Field label="Дата *" error={errors.date} htmlFor="session-date">
           <Input id="session-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         </Field>

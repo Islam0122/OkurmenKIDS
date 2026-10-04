@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Tabs } from '@/components/ui/Tabs'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useAttendanceList } from '@/hooks/useAttendance'
+import { GroupTrainers } from './GroupTrainers'
 import { useAuth } from '@/hooks/useAuth'
 import { useReportGroup } from '@/hooks/useReports'
 import { seesWholeAcademy } from '@/lib/roles'
@@ -95,6 +96,9 @@ function OverviewTab({ group, linkTrainers }: { group: Group; linkTrainers: bool
         {group.description ? <Field label="Описание" value={group.description} className="sm:col-span-2" /> : null}
       </dl>
 
+      {linkTrainers ? (
+        <GroupTrainers groupId={group.id} />
+      ) : (
       <div>
         <h3 className="section-title mb-4">Учебные программы</h3>
         {group.teachers.length === 0 ? (
@@ -138,6 +142,7 @@ function OverviewTab({ group, linkTrainers }: { group: Group; linkTrainers: bool
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
