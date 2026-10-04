@@ -25,6 +25,8 @@ import './HomePage.css'
 const STEP_ICONS = ['ui-checks-grid', 'person-badge', 'patch-question', 'bar-chart']
 const LEADERS_PREVIEW = 5
 
+const TESTS_SECTION_ID = 'training-tests'
+
 export function HomePage() {
   const portal = usePortal()
   const tests = useAsync(getTests)
@@ -32,14 +34,16 @@ export function HomePage() {
   const links = useAsync(getMaterials)
   const leaders = useAsync(() => getLeaderboard(undefined, LEADERS_PREVIEW))
   const [playing, setPlaying] = useState<Video | null>(null)
-  const firstTest = tests.data?.[0]
-  const startTo = firstTest ? `/training/${firstTest.id}` : '/training'
+  // «Тренировка баштоо» stays on this page: it scrolls down to the tests.
+  const handleStartTraining = () => {
+    document.getElementById(TESTS_SECTION_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <>
-      <Hero portal={portal.data} startTo={startTo} />
+      <Hero portal={portal.data} onStart={handleStartTraining} />
 
-      <section className="section" id="tests" style={{ paddingTop: 0 }}>
+      <section className="section home-tests" id={TESTS_SECTION_ID} style={{ paddingTop: 0 }}>
         <div className="container">
           <div className="section-head">
             <div>
@@ -121,7 +125,7 @@ export function HomePage() {
                 <p>{t.home.examText}</p>
               </div>
               <div className="exam-band__actions">
-                <Button to={startTo} variant="glass" size="lg" icon="play-circle">{portal.data.start_button_label}</Button>
+                <Button onClick={handleStartTraining} variant="glass" size="lg" icon="play-circle">{portal.data.start_button_label}</Button>
                 <ExamButton variant="primary" size="lg" />
               </div>
             </div>

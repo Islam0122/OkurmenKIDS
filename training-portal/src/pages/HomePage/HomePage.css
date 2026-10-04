@@ -14,7 +14,9 @@
 .alt-bg { background: linear-gradient(180deg, transparent, rgba(232, 232, 251, .55) 30%, rgba(232, 232, 251, .55) 70%, transparent); }
 @media (max-width: 960px) {
   .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .home-split { grid-template-columns: 1fr; }
-  .exam-band { grid-template-columns: 1fr; }
+  .home-split { grid-template-columns: minmax(0, 1fr); }
+  .exam-band { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } .exam-band__actions > * { flex: 1 1 100%; } }
+/* Scrolled to by «Тренировка баштоо»: keep the heading clear of the sticky header. */
+.home-tests { scroll-margin-top: calc(var(--header-h) + 16px); }
