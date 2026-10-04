@@ -52,6 +52,7 @@ LOCAL_APPS = [
     "apps.feedback.apps.FeedbackConfig",
     "apps.scholarships.apps.ScholarshipsConfig",
     "apps.testing.apps.TestingConfig",
+    "apps.worklog.apps.WorklogConfig",
 
 ]
 

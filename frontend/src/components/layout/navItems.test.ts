@@ -19,6 +19,7 @@ describe('navigation by role', () => {
       'KPI',
       'Контроль',
       'Аналитика',
+      'Рабочий журнал',
       'Отчёты',
     ])
   })
@@ -30,6 +31,8 @@ describe('navigation by role', () => {
     }
     expect(canOpen('team_lead', '/app/scholarships')).toBe(false)
     expect(canOpen('team_lead', '/app/trainers/5')).toBe(true)
+    expect(canOpen('team_lead', '/app/worklog/reports/3')).toBe(true)
+    expect(canOpen('teacher', '/app/worklog')).toBe(false)
   })
 
   it('keeps the Trainer menu unchanged', () => {

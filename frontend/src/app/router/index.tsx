@@ -68,6 +68,21 @@ export const router = createBrowserRouter([
                   return { Component: AnalyticsPage }
                 },
               },
+              {
+                // Рабочий журнал Team Lead (backend: apps.worklog, author-only writes).
+                path: 'worklog',
+                lazy: async () => {
+                  const { WorklogPage } = await import('@/features/worklog/WorklogPage')
+                  return { Component: WorklogPage }
+                },
+              },
+              {
+                path: 'worklog/reports/:id',
+                lazy: async () => {
+                  const { ReportPage } = await import('@/features/worklog/ReportPage')
+                  return { Component: ReportPage }
+                },
+              },
             ],
           },
           {
