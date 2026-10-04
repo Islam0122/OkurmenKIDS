@@ -4,6 +4,8 @@ import { attendanceApi, type AttendanceListParams } from '@/api/attendance'
 import { lessonsApi } from '@/api/lessons'
 import type { BulkAttendanceItem } from '@/types/attendance'
 
+import { PARENT_REPORT_KEY } from './useLessons'
+
 export function useAttendanceRoster(lessonId: number | undefined) {
   return useQuery({
     queryKey: ['lessons', 'detail', lessonId, 'attendance'],
@@ -33,6 +35,7 @@ export function useSaveAttendance(lessonId: number) {
       void queryClient.invalidateQueries({ queryKey: ['kpi'] })
       void queryClient.invalidateQueries({ queryKey: ['control'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: [...PARENT_REPORT_KEY, lessonId] })
     },
   })
 }

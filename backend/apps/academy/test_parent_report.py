@@ -205,3 +205,50 @@ class ParentReportTests(TestCase):
 
         scheduled = self.lesson(4, dt.date(2025, 3, 10))
         self.assertEqual(client.get(f"/api/v1/lessons/{scheduled.pk}/parent-report/").status_code, 400)
+
+    def test_every_request_reflects_the_current_records(self):
+        """The report is a view of the LMS, never a snapshot: whatever the trainer
+        changes after the first opening shows up on the next one."""
+        self.full_example()
+        url = f"/api/v1/lessons/{self.today.pk}/parent-report/"
+        client = APIClient()
+        client.force_authenticate(self.teacher.user)
+        Lesson.objects.filter(pk=self.today.pk).update(status=Lesson.Status.COMPLETED)
+        self.assertEqual(client.get(url).json()["message"], EXAMPLE)
+
+        # Next homework edited (title and description).
+        Homework.objects.filter(lesson=self.today).update(
+            title="5 Strong Passwords", description="создать 5 уникальных безопасных пароля.",
+        )
+        # Эрбол's homework checked after all; Йасин's grade and comment changed.
+        old = Homework.objects.get(lesson=self.prev)
+        HomeworkResult.objects.filter(homework=old, student=self.students["Эрбол"]).update(
+            status=HomeworkResult.Status.CHECKED, score=10, comment="Молодец",
+        )
+        HomeworkResult.objects.filter(homework=old, student=self.students["Айжамал"]).update(
+            status=HomeworkResult.Status.NOT_SUBMITTED,
+        )
+        # Йасин was actually present.
+        Attendance.objects.filter(lesson=self.today, student=self.students["Йасин"]).update(
+            status=Attendance.Status.PRESENT,
+        )
+
+        report = client.get(url).json()
+        self.assertEqual(report["next_homework"], "5 Strong Passwords — создать 5 уникальных безопасных пароля.")
+        self.assertEqual(report["homework_not_completed"], ["Айжамал Мурзабекова"])
+        self.assertIn("Йасин Ибрахимов", report["present_students"])
+        self.assertEqual(report["absent_students"], [])
+        for message in report["messages"].values():
+            self.assertIn("5 Strong Passwords — создать 5 уникальных безопасных пароля.", message)
+            self.assertNotIn("3 Strong Passwords", message)
+            self.assertNotIn("🚫", message)
+            self.assertIn("• Айжамал Мурзабекова", message.split("❌", 1)[1])
+            self.assertNotIn("Эрбол", message.split("❌", 1)[1])
+        self.assertEqual(report["message"], report["messages"]["system"])
+
+        # The next homework replaced entirely — the new one, not the old one, is reported.
+        Homework.objects.filter(lesson=self.today).delete()
+        Homework.objects.create(lesson=self.today, title="Создать адаптивную страницу Portfolio")
+        report = client.get(url).json()
+        self.assertEqual(report["next_homework"], "Создать адаптивную страницу Portfolio")
+        self.assertIn("📚 Кийинки үй тапшырмасы:\n\nСоздать адаптивную страницу Portfolio", report["message"])

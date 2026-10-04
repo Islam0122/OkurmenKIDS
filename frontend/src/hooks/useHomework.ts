@@ -9,6 +9,8 @@ import {
 } from '@/api/homework'
 import type { BulkHomeworkResultItem } from '@/types/homework'
 
+import { PARENT_REPORT_KEY } from './useLessons'
+
 export function useHomeworkList(params: HomeworkListParams) {
   return useQuery({
     queryKey: ['homework', 'list', params],
@@ -49,6 +51,7 @@ export function useCreateHomework() {
       void queryClient.invalidateQueries({ queryKey: ['lessons', 'detail', payload.lesson] })
       void queryClient.invalidateQueries({ queryKey: ['lessons', 'list'] })
       void queryClient.invalidateQueries({ queryKey: ['control'] })
+      void queryClient.invalidateQueries({ queryKey: PARENT_REPORT_KEY })
     },
   })
 }
@@ -68,6 +71,8 @@ export function useSaveHomeworkResults(homeworkId: number, lessonId?: number) {
       void queryClient.invalidateQueries({ queryKey: ['kpi'] })
       void queryClient.invalidateQueries({ queryKey: ['control'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      // Graded at the *next* lesson, so any lesson's parent report may change.
+      void queryClient.invalidateQueries({ queryKey: PARENT_REPORT_KEY })
       // Grading doesn't change the lesson's own completion requirements
       // (only *having* Homework does — see useCreateHomework), but the
       // Lesson Detail page the teacher lands back on shows this homework's

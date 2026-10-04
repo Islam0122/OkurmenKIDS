@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LessonDetailPage } from '@/features/lessons/LessonDetailPage'
 import { buildLesson, buildUser, paginated } from '@/test/fixtures'
-import { renderWithProviders } from '@/test/testUtils'
+import { createTestQueryClient, renderWithProviders } from '@/test/testUtils'
 import type { UserRole } from '@/types/auth'
 import type { ParentLessonReport } from '@/types/academy'
 
@@ -70,7 +70,7 @@ function buildReport(overrides: Partial<ParentLessonReport> = {}): ParentLessonR
   }
 }
 
-function renderLesson(status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled') {
+function renderLesson(status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled', queryClient = createTestQueryClient()) {
   vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status }))
   vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
   vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
@@ -78,7 +78,7 @@ function renderLesson(status: 'scheduled' | 'in_progress' | 'completed' | 'cance
     <Routes>
       <Route path="/app/lessons/:id" element={<LessonDetailPage />} />
     </Routes>,
-    { route: '/app/lessons/7' },
+    { route: '/app/lessons/7', queryClient },
   )
 }
 
@@ -109,6 +109,36 @@ describe('Мини-отчёт родителям', () => {
     expect(screen.getByText('Проверьте перед отправкой')).toBeInTheDocument()
     expect(screen.getByText(/Йасин Ибрахимов/)).toBeInTheDocument()
     expect(preview.textContent).not.toContain('Посещаемость не отмечена у 1')
+  })
+
+  it('re-reads the report on every opening — never shows the previous one', async () => {
+    const updated = MESSAGE.replace('Үй тапшырмасы азырынча берилген жок.', 'Создать 5 Strong Passwords')
+    let respond = (_report: ParentLessonReport) => {}
+    vi.mocked(lessonsApi.parentReport)
+      .mockResolvedValueOnce(buildReport())
+      .mockReturnValueOnce(new Promise((resolve) => (respond = resolve)))
+    const user = userEvent.setup()
+    // The app's own default: other queries are reused for 30s.
+    const queryClient = createTestQueryClient()
+    queryClient.setDefaultOptions({ queries: { retry: false, staleTime: 30_000 } })
+    renderLesson('completed', queryClient)
+    const open = async () => user.click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
+
+    await open()
+    expect((await screen.findByTestId('parent-report-preview')).textContent).toBe(MESSAGE)
+    await user.click(screen.getByRole('radio', { name: /Свой вариант/ }))
+    await user.type(screen.getByRole('textbox', { name: 'Текст отчёта' }), ' правка')
+    await user.click(screen.getByRole('button', { name: 'Закрыть окно' }))
+
+    // Reopened right away (well within the app-wide 30s staleTime): a new GET, and
+    // the old text is not even flashed while it loads.
+    await open()
+    expect(await screen.findByText('Формируем отчёт…')).toBeInTheDocument()
+    expect(screen.queryByTestId('parent-report-preview')).not.toBeInTheDocument()
+    respond(buildReport({ message: updated, messages: { system: updated, trainer: TRAINER_MESSAGE } }))
+    expect((await screen.findByTestId('parent-report-preview')).textContent).toBe(updated)
+    expect(lessonsApi.parentReport).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('radio', { name: /Система/ })).toHaveAttribute('aria-checked', 'true')
   })
 
   async function openReport(status: 'in_progress' | 'completed' = 'completed') {

@@ -33,12 +33,12 @@ async function copyText(text: string): Promise<void> {
  * «Мини-отчёт родителям»: pick the report author → preview → edit → copy. The trainer
  * pastes the copied text into whatever chat they use — nothing is sent from here.
  * Both automatic texts come from the backend, built from the lesson's real records;
- * the author choice and «Свой вариант» edits stay local to this dialog (reopening it
- * rebuilds the report) and never change anything in the LMS.
+ * the author choice and «Свой вариант» edits stay local to this dialog and never change
+ * anything in the LMS. The report is fetched only while the dialog is open and is never
+ * reused: each opening sends a new GET, so changes to attendance, homework or grades
+ * made since the last opening are always in the preview.
  */
 export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: number; isOpen: boolean; onClose: () => void }) {
-  const { data, isPending, isError, refetch } = useParentReport(lessonId, isOpen)
-
   return (
     <Modal
       isOpen={isOpen}
@@ -47,15 +47,19 @@ export function ParentReportModal({ lessonId, isOpen, onClose }: { lessonId: num
       icon={<MessageSquare size={18} className="shrink-0 text-brand-500" aria-hidden />}
       size="lg"
     >
-      {isPending ? (
-        <LoadingState label="Формируем отчёт…" />
-      ) : isError || !data ? (
-        <ErrorState onRetry={() => void refetch()} />
-      ) : (
-        <ReportEditor key={data.message} report={data} />
-      )}
+      <ParentReportBody lessonId={lessonId} />
     </Modal>
   )
+}
+
+/** Mounted only while the dialog is open, so the query (and its cache entry) lives
+ * exactly as long as one opening. */
+function ParentReportBody({ lessonId }: { lessonId: number }) {
+  const { data, isPending, isError, refetch } = useParentReport(lessonId)
+
+  if (isPending) return <LoadingState label="Формируем отчёт…" />
+  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />
+  return <ReportEditor key={data.message} report={data} />
 }
 
 const AUTHORS: { value: ParentReportType; label: string; hint: string; icon: LucideIcon }[] = [

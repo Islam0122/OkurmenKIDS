@@ -17,14 +17,20 @@ export function useLesson(id: number | undefined) {
   })
 }
 
-/** Always rebuilt when the dialog opens — attendance/homework may have changed since. */
-export function useParentReport(id: number, enabled: boolean) {
+/** Every key a «Мини-отчёт родителям» lives under — invalidated by anything that
+ * changes what the report is built from (attendance, homework, grades). */
+export const PARENT_REPORT_KEY = ['lessons', 'parent-report'] as const
+
+/** The report is a view of the lesson's current records, never a snapshot: it is
+ * always stale (no global 30s staleTime), refetched on every mount and dropped from
+ * the cache as soon as the dialog closes — so each opening starts from a fresh GET. */
+export function useParentReport(id: number) {
   return useQuery({
-    queryKey: ['lessons', 'parent-report', id],
+    queryKey: [...PARENT_REPORT_KEY, id],
     queryFn: () => lessonsApi.parentReport(id),
-    enabled,
-    refetchOnMount: 'always',
+    staleTime: 0,
     gcTime: 0,
+    refetchOnMount: 'always',
   })
 }
 
