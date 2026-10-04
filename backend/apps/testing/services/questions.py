@@ -43,6 +43,15 @@ def save_question(test, data: QuestionData, *, question: Question | None = None,
             setattr(question, name, extra[name])
     if data.question_type != QuestionType.CODE:
         question.starter_code = ""
+    if extra.get("explanation") is not None:
+        # Not a column: kept in metadata, where the questions import puts it.
+        metadata = dict(question.metadata or {})
+        explanation = extra["explanation"].strip()
+        if explanation:
+            metadata["explanation"] = explanation
+        else:
+            metadata.pop("explanation", None)
+        question.metadata = metadata
     question.full_clean()
     question.save()
 

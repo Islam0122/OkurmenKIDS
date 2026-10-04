@@ -70,6 +70,7 @@
     {% if not creating %}
       {% include "admin/testing/tests/_field.html" with field=form.time_limit_minutes %}
       {% include "admin/testing/tests/_field.html" with field=form.session_type %}
+      {% include "admin/testing/tests/_field.html" with field=form.is_public %}
     {% else %}
       <input type="hidden" name="session_type" value="{{ form.session_type.value|default:'exam' }}">
     {% endif %}

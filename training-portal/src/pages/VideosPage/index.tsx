@@ -2,15 +2,16 @@ import { useState } from 'react'
 
 import type { Video } from '@/types'
 
+import { getVideos } from '@/api/videos'
+import { ErrorState } from '@/components/ErrorState'
 import { Icon } from '@/components/Icon'
 import { Loader } from '@/components/Loader'
 import { VideoCard, VideoPlayerModal } from '@/components/VideoCard'
 import { useAsync } from '@/hooks/useAsync'
 import { t } from '@/i18n'
-import { contentService } from '@/services/contentService'
 
 export function VideosPage() {
-  const { data, loading } = useAsync(() => contentService.getVideos())
+  const { data, loading, error, reload } = useAsync(getVideos)
   const [category, setCategory] = useState<string | null>(null)
   const [playing, setPlaying] = useState<Video | null>(null)
   const videos = data ?? []
@@ -32,7 +33,7 @@ export function VideosPage() {
           ))}
         </div>
       ) : null}
-      {loading ? <Loader /> : shown.length ? (
+      {loading ? <Loader /> : error ? <ErrorState error={error} onRetry={reload} /> : shown.length ? (
         <div className="grid-cards">{shown.map((video) => <VideoCard key={video.id} video={video} onPlay={setPlaying} />)}</div>
       ) : (
         <div className="empty"><Icon name="camera-video-off" /><p>{t.videos.empty}</p></div>

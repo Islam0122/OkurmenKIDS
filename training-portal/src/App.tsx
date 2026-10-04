@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { Layout } from '@/components/Layout'
+import { PortalProvider } from '@/context/PortalContext'
 import { ExamPage } from '@/pages/ExamPage'
 import { HomePage } from '@/pages/HomePage'
 import { LeaderboardPage } from '@/pages/LeaderboardPage'
@@ -13,6 +14,7 @@ import { VideosPage } from '@/pages/VideosPage'
 
 export function AppRoutes() {
   return (
+    <PortalProvider>
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
@@ -26,6 +28,7 @@ export function AppRoutes() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
+    </PortalProvider>
   )
 }
 

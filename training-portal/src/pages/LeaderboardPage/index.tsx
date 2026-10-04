@@ -1,20 +1,20 @@
 import { useState } from 'react'
 
+import { getLeaderboard } from '@/api/leaderboard'
+import { getTests } from '@/api/tests'
 import { Button } from '@/components/Button'
+import { ErrorState } from '@/components/ErrorState'
 import { Icon } from '@/components/Icon'
 import { LeaderboardTable, Podium } from '@/components/Leaderboard'
 import { Loader } from '@/components/Loader'
-import { siteConfig } from '@/config/site'
 import { useAsync } from '@/hooks/useAsync'
 import { t } from '@/i18n'
-import { contentService } from '@/services/contentService'
-import { leaderboardService } from '@/services/leaderboardService'
-import { studentService } from '@/services/studentService'
+import { storageService } from '@/services/storageService'
 
 export function LeaderboardPage() {
-  const tests = useAsync(() => contentService.getTests())
+  const tests = useAsync(getTests)
   const [testId, setTestId] = useState<string | undefined>(undefined)
-  const board = useAsync(() => leaderboardService.getLeaderboard(testId), [testId])
+  const board = useAsync(() => getLeaderboard(testId), [testId])
   const entries = board.data ?? []
 
   return (
@@ -25,19 +25,21 @@ export function LeaderboardPage() {
         <p className="section-subtitle">{t.leaderboard.subtitle}</p>
       </header>
 
-      <div className="chips" role="tablist" aria-label="Тесттер">
-        <button type="button" role="tab" aria-selected={!testId} className={`chip${!testId ? ' is-active' : ''}`} onClick={() => setTestId(undefined)}>{t.leaderboard.all}</button>
-        {(tests.data ?? []).map((test) => (
-          <button key={test.id} type="button" role="tab" aria-selected={testId === test.id} className={`chip${testId === test.id ? ' is-active' : ''}`} onClick={() => setTestId(test.id)}>
-            {test.title}
-          </button>
-        ))}
-      </div>
+      {tests.data && tests.data.length > 1 ? (
+        <div className="chips" role="tablist" aria-label={t.home.testsTitle}>
+          <button type="button" role="tab" aria-selected={!testId} className={`chip${!testId ? ' is-active' : ''}`} onClick={() => setTestId(undefined)}>{t.leaderboard.all}</button>
+          {tests.data.map((test) => (
+            <button key={test.id} type="button" role="tab" aria-selected={testId === test.id} className={`chip${testId === test.id ? ' is-active' : ''}`} onClick={() => setTestId(test.id)}>
+              {test.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
-      {board.loading ? <Loader /> : entries.length ? (
+      {board.loading ? <Loader /> : board.error ? <ErrorState error={board.error} onRetry={board.reload} /> : entries.length ? (
         <>
           <Podium entries={entries} />
-          <LeaderboardTable entries={entries} highlightName={studentService.getName()} showTest={!testId} />
+          <LeaderboardTable entries={entries} highlightName={storageService.getStudentName()} showTest={!testId} />
           <p className="muted" style={{ marginTop: 14, fontSize: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
             <Icon name="info-circle" />{t.leaderboard.note}
           </p>
@@ -46,7 +48,7 @@ export function LeaderboardPage() {
         <div className="empty">
           <Icon name="trophy" />
           <p>{t.leaderboard.empty}</p>
-          <div style={{ marginTop: 20 }}><Button to={`/training/${testId ?? siteConfig.defaultTestId}`} icon="play-circle">{t.test.start}</Button></div>
+          <div style={{ marginTop: 20 }}><Button to={testId ? `/training/${testId}` : '/training'} icon="play-circle">{t.test.start}</Button></div>
         </div>
       )}
     </div>

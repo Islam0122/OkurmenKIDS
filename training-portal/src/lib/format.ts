@@ -18,8 +18,8 @@ export function formatDuration(totalSeconds: number): string {
   return `${minutes} мүн ${seconds} сек`
 }
 
-export function formatDate(epochMs: number): string {
-  return new Date(epochMs).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+export function formatDate(value: string | number): string {
+  return new Date(value).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 export function pad2(n: number): string {

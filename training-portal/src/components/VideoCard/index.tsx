@@ -12,7 +12,7 @@ import './VideoCard.css'
 
 /** Plays a YouTube / Vimeo / direct video in a modal; other links open outside. */
 export function VideoPlayerModal({ video, onClose }: { video: Video | null; onClose: () => void }) {
-  const source = video ? parseVideoUrl(video.url) : null
+  const source = video ? parseVideoUrl(video.video_url) : null
   return (
     <Modal open={Boolean(video)} onClose={onClose} title={video?.title ?? ''} width={880}>
       {source && video ? (
@@ -34,8 +34,8 @@ export function VideoPlayerModal({ video, onClose }: { video: Video | null; onCl
 }
 
 export function VideoCard({ video, onPlay }: { video: Video; onPlay: (video: Video) => void }) {
-  const source = parseVideoUrl(video.url)
-  const thumbnail = video.thumbnail ?? source.thumbnail
+  const source = parseVideoUrl(video.video_url)
+  const thumbnail = video.thumbnail_url || source.thumbnail
   const [broken, setBroken] = useState(false)
   return (
     <article className="video-card">

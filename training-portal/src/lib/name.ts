@@ -1,6 +1,4 @@
-import { STORAGE_KEYS, storageService } from './storageService'
-
-/** The student's name — kept on this device only, never sent anywhere. */
+/** Client-side hints only — the backend validates the name again. */
 export const NAME_MIN = 2
 export const NAME_MAX = 50
 
@@ -16,13 +14,4 @@ export function validateName(raw: string): NameError | null {
   if (name.length < NAME_MIN) return 'tooShort'
   if (name.length > NAME_MAX) return 'tooLong'
   return null
-}
-
-export const studentService = {
-  getName(): string {
-    return storageService.read<string>(STORAGE_KEYS.studentName, '')
-  },
-  setName(name: string): void {
-    storageService.write(STORAGE_KEYS.studentName, cleanName(name))
-  },
 }

@@ -22,3 +22,4 @@
 .review__row strong { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
 .review__row pre { margin: 4px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--navy-950); color: #e6e6ff; font: 14px/1.6 var(--font-mono); overflow-x: auto; }
 .result-actions .btn { white-space: normal; text-align: center; }
+.result-note--wait { background: var(--amber-50); border-color: #fcd68b; color: var(--amber-600); }

@@ -3,34 +3,42 @@ import { Link } from 'react-router-dom'
 
 import type { Video } from '@/types'
 
-import { ExamButton } from '@/components/Button/ExamButton'
+import { getLeaderboard } from '@/api/leaderboard'
+import { getMaterials } from '@/api/materials'
+import { getTests } from '@/api/tests'
+import { getVideos } from '@/api/videos'
 import { Button } from '@/components/Button'
+import { ExamButton } from '@/components/Button/ExamButton'
+import { ErrorState } from '@/components/ErrorState'
 import { Hero } from '@/components/Hero'
 import { Icon } from '@/components/Icon'
 import { LeaderboardTable } from '@/components/Leaderboard'
+import { Loader } from '@/components/Loader'
 import { TestCard } from '@/components/TestCard'
 import { UsefulLinkCard } from '@/components/UsefulLinkCard'
 import { VideoCard, VideoPlayerModal } from '@/components/VideoCard'
-import { siteConfig } from '@/config/site'
+import { usePortal } from '@/context/PortalContext'
 import { useAsync } from '@/hooks/useAsync'
 import { t } from '@/i18n'
-import { contentService } from '@/services/contentService'
-import { leaderboardService } from '@/services/leaderboardService'
-import { trainingService } from '@/services/trainingService'
+import { storageService } from '@/services/storageService'
 import './HomePage.css'
 
 const STEP_ICONS = ['ui-checks-grid', 'person-badge', 'patch-question', 'bar-chart']
+const LEADERS_PREVIEW = 5
 
 export function HomePage() {
-  const tests = useAsync(() => contentService.getTests())
-  const videos = useAsync(() => contentService.getVideos())
-  const links = useAsync(() => contentService.getLinks())
-  const leaders = useAsync(() => leaderboardService.getLeaderboard())
+  const portal = usePortal()
+  const tests = useAsync(getTests)
+  const videos = useAsync(getVideos)
+  const links = useAsync(getMaterials)
+  const leaders = useAsync(() => getLeaderboard(undefined, LEADERS_PREVIEW))
   const [playing, setPlaying] = useState<Video | null>(null)
+  const firstTest = tests.data?.[0]
+  const startTo = firstTest ? `/training/${firstTest.id}` : '/training'
 
   return (
     <>
-      <Hero />
+      <Hero portal={portal.data} startTo={startTo} />
 
       <section className="section" id="tests" style={{ paddingTop: 0 }}>
         <div className="container">
@@ -40,11 +48,15 @@ export function HomePage() {
               <p className="section-subtitle">{t.home.testsSubtitle}</p>
             </div>
           </div>
-          <div className="grid-cards">
-            {(tests.data ?? []).map((test) => (
-              <TestCard key={test.id} test={test} inProgress={Boolean(trainingService.getProgress(test.id))} />
-            ))}
-          </div>
+          {tests.loading ? <Loader /> : tests.error ? <ErrorState error={tests.error} onRetry={tests.reload} /> : tests.data?.length ? (
+            <div className="grid-cards">
+              {tests.data.map((test) => (
+                <TestCard key={test.id} test={test} inProgress={Boolean(storageService.getActiveAttempt(test.id))} />
+              ))}
+            </div>
+          ) : (
+            <div className="empty"><Icon name="clipboard" /><p>{t.home.noTests}</p></div>
+          )}
         </div>
       </section>
 
@@ -71,50 +83,56 @@ export function HomePage() {
               <h2 className="section-title">{t.home.leadersTitle}</h2>
               <Link className="link-arrow" to="/leaderboard">{t.home.leadersAll}<Icon name="arrow-right" /></Link>
             </div>
-            {leaders.data?.length ? (
-              <LeaderboardTable entries={leaders.data.slice(0, siteConfig.leaderboardPreviewSize)} showTest compact />
-            ) : (
+            {leaders.error ? <ErrorState error={leaders.error} onRetry={leaders.reload} /> : leaders.data?.length ? (
+              <LeaderboardTable entries={leaders.data} showTest compact />
+            ) : leaders.loading ? <Loader /> : (
               <div className="empty home-leaders__empty"><Icon name="trophy" /><p>{t.leaderboard.empty}</p></div>
             )}
           </div>
-          <div>
+          {links.data?.length ? (
+            <div>
+              <div className="section-head">
+                <h2 className="section-title">{t.home.materialsTitle}</h2>
+                <Link className="link-arrow" to="/materials">{t.home.materialsAll}<Icon name="arrow-right" /></Link>
+              </div>
+              <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))' }}>
+                {links.data.slice(0, 4).map((link) => <UsefulLinkCard key={link.id} link={link} />)}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      {videos.data?.length ? (
+        <section className="section alt-bg">
+          <div className="container">
             <div className="section-head">
-              <h2 className="section-title">{t.home.materialsTitle}</h2>
-              <Link className="link-arrow" to="/materials">{t.home.materialsAll}<Icon name="arrow-right" /></Link>
+              <h2 className="section-title">{t.home.videosTitle}</h2>
+              <Link className="link-arrow" to="/videos">{t.home.videosAll}<Icon name="arrow-right" /></Link>
             </div>
-            <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))' }}>
-              {(links.data ?? []).slice(0, 4).map((link) => <UsefulLinkCard key={link.id} link={link} />)}
+            <div className="grid-cards">
+              {videos.data.slice(0, 3).map((video) => <VideoCard key={video.id} video={video} onPlay={setPlaying} />)}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
-      <section className="section alt-bg">
-        <div className="container">
-          <div className="section-head">
-            <h2 className="section-title">{t.home.videosTitle}</h2>
-            <Link className="link-arrow" to="/videos">{t.home.videosAll}<Icon name="arrow-right" /></Link>
-          </div>
-          <div className="grid-cards">
-            {(videos.data ?? []).slice(0, 3).map((video) => <VideoCard key={video.id} video={video} onPlay={setPlaying} />)}
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="container">
-          <div className="exam-band">
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <h2>{t.home.examTitle}</h2>
-              <p>{t.home.examText}</p>
-            </div>
-            <div className="exam-band__actions">
-              <Button to={`/training/${siteConfig.defaultTestId}`} variant="glass" size="lg" icon="play-circle">{t.hero.start}</Button>
-              <ExamButton variant="primary" size="lg" />
+      {portal.data?.exam_url ? (
+        <section className="section">
+          <div className="container">
+            <div className="exam-band">
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                <h2>{t.home.examTitle}</h2>
+                <p>{t.home.examText}</p>
+              </div>
+              <div className="exam-band__actions">
+                <Button to={startTo} variant="glass" size="lg" icon="play-circle">{portal.data.start_button_label}</Button>
+                <ExamButton variant="primary" size="lg" />
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <VideoPlayerModal video={playing} onClose={() => setPlaying(null)} />
     </>
