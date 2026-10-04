@@ -349,3 +349,87 @@ class OtherRolesRegressionTests(UserAdminTestBase):
         self.assertEqual(api.get("/api/v1/groups/").status_code, 200)
         self.assertEqual(api.get("/api/v1/trainers/").status_code, 403)
         self.assertEqual(api.get("/api/v1/reports/overview/").status_code, 403)
+
+
+class TeamLeadLoginTests(TestCase):
+    """How a Team Lead signs in: the LMS login (POST /api/v1/auth/login/ with
+    the username), never Django's /admin/ — and with is_staff/is_superuser off."""
+
+    def setUp(self):
+        self.lead = User.objects.create_user(
+            username="nurlan", email="nurlan@okurmen.kg", password=PASSWORD, first_name="Нурлан",
+            role=User.Role.TEAM_LEAD, is_verified=True,
+        )
+
+    def test_team_lead_logs_into_the_lms_without_staff(self):
+        self.assertFalse(self.lead.is_staff)
+        self.assertFalse(self.lead.is_superuser)
+        api = APIClient()
+        response = api.post("/api/v1/auth/login/", {"username": "nurlan", "password": PASSWORD}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+        self.assertEqual(response.data["user"]["role"], "team_lead")
+        api.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+        me = api.get("/api/v1/auth/me/")
+        self.assertEqual(me.status_code, status.HTTP_200_OK)
+        self.assertEqual(me.data["role"], "team_lead")
+        self.assertTrue(me.data["is_active"])
+        refresh = APIClient().post("/api/v1/auth/refresh/", {"refresh": response.data["refresh"]}, format="json")
+        self.assertEqual(refresh.status_code, status.HTTP_200_OK)
+
+    def test_unverified_team_lead_still_logs_in(self):
+        # Verification gates Trainer accounts only (LoginSerializer).
+        self.lead.is_verified = False
+        self.lead.save()
+        response = APIClient().post("/api/v1/auth/login/", {"username": "nurlan", "password": PASSWORD}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_inactive_team_lead_cannot_log_in(self):
+        self.lead.is_active = False
+        self.lead.save()
+        response = APIClient().post("/api/v1/auth/login/", {"username": "nurlan", "password": PASSWORD}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_login_is_by_username_not_email(self):
+        response = APIClient().post(
+            "/api/v1/auth/login/", {"username": "nurlan@okurmen.kg", "password": PASSWORD}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_login_points_team_lead_to_the_lms(self):
+        response = self.client.post(
+            reverse("admin:login"), {"username": "nurlan", "password": PASSWORD, "next": "/admin/"}
+        )
+        self.assertEqual(response.status_code, 200)  # not logged into the admin
+        self.assertContains(response, "входит в LMS")
+        self.assertContains(response, "/login")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_admin_login_wrong_password_keeps_generic_error(self):
+        response = self.client.post(reverse("admin:login"), {"username": "nurlan", "password": "wrong-pass"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "входит в LMS")
+
+    def test_staff_trainer_admin_login_unchanged(self):
+        User.objects.create_user(
+            username="staffer", email="staffer@okurmen.kg", password=PASSWORD, first_name="S",
+            role=User.Role.TEACHER, is_verified=True, is_staff=True,
+        )
+        response = self.client.post(reverse("admin:login"), {"username": "staffer", "password": PASSWORD, "next": "/admin/"})
+        self.assertEqual(response.status_code, 302)
+
+    def test_saving_a_team_lead_in_admin_shows_where_to_log_in(self):
+        root = User.objects.create_superuser(username="root", email="root@okurmen.kg", password=PASSWORD, first_name="R")
+        self.client.force_login(root)
+        response = self.client.post(
+            reverse("admin:users_user_add"),
+            {
+                "first_name": "Айбек", "last_name": "", "username": "aibek", "email": "aibek@okurmen.kg",
+                "password1": PASSWORD, "password2": PASSWORD, "role": User.Role.TEAM_LEAD,
+                "is_verified": "on", "is_active": "on",
+            },
+            follow=True,
+        )
+        self.assertContains(response, "Team Lead входит в LMS")
+        self.assertContains(response, "логин «aibek»")

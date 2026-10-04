@@ -8,7 +8,10 @@ unchanged; we only touch ``index()``.
 """
 from __future__ import annotations
 
+from django.conf import settings
 from django.contrib.admin import AdminSite
+from django.contrib.admin.forms import AdminAuthenticationForm
+from django.core.exceptions import ValidationError
 from django.db.models import Avg, Count, Prefetch, Q
 from django.utils import timezone
 
@@ -29,6 +32,29 @@ def _with_trainer_names(groups) -> list:
     return groups
 
 
+def lms_login_url() -> str:
+    return f"{settings.LMS_FRONTEND_URL}/login"
+
+
+class LmsAwareAdminAuthenticationForm(AdminAuthenticationForm):
+    """Django admin is for administrators only. A Team Lead or a Trainer who
+    types their (correct) LMS credentials here would otherwise get Django's
+    «enter a correct username and password for a staff account» — which
+    reads like a wrong password. Tell them where they actually sign in."""
+
+    def confirm_login_allowed(self, user):
+        role = getattr(user, "role", None)
+        lms_only = role == User.Role.TEAM_LEAD or (role == User.Role.TEACHER and not user.is_staff)
+        if user.is_active and lms_only and not user.is_superuser:
+            raise ValidationError(
+                "Это вход в панель администратора. %(role)s входит в LMS: %(url)s "
+                "— тем же логином и паролем.",
+                code="lms_account",
+                params={"role": user.get_role_display(), "url": lms_login_url()},
+            )
+        super().confirm_login_allowed(user)
+
+
 class OkurmenKidsAdminSite(AdminSite):
     site_header = "OkurmenKIDS"
     site_title = "OkurmenKIDS"
@@ -38,6 +64,7 @@ class OkurmenKidsAdminSite(AdminSite):
     # collide with — or accidentally be shadowed by — Jazzmin's own index
     # template, regardless of INSTALLED_APPS ordering.
     index_template = "admin/okurmenkids/index.html"
+    login_form = LmsAwareAdminAuthenticationForm
 
     def has_permission(self, request):
         """Django admin is system management — never a Team Lead's, even if
