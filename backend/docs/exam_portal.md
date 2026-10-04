@@ -145,3 +145,35 @@ JSON API (Django-сессия + CSRF):
    (или по одному).
 3. Студенты входят на `/student/login/`. Старый вход по ключу `/exam/`
    продолжает работать для обычных сессий.
+
+## Shared test UI (Training = Exam)
+
+Training and Exam are one testing system. The exam runs on the same React
+test screen as the trainers (`training-portal`: `TestScreen`, `QuestionCard`,
+`ProgressBar`, `Timer`, `QuestionNavigation`, `ResultView`), with Exam
+Mode's rules on the backend (`services/exam_portal.py`):
+
+1. Student portal → «Начать экзамен» → `start_exam` (an active attempt is
+   resumed, never duplicated; attempt limit applies).
+2. `attempt_view` redirects to `{PortalSettings.portal_url}/exam/<id>#t=<token>`
+   (`apps.training.exam_api.portal_exam_url`). Without a portal address the
+   old student-portal page stays as the fallback.
+3. The React page keeps the token for the tab (sessionStorage), removes it
+   from the address bar and talks to `/api/v1/training/exam-attempts/<id>/…`
+   (same shapes as the training API): state, autosave per answer, events,
+   submit (`timed_out`), result.
+4. A reload restores the same attempt: saved answers, the first unanswered
+   question, the timer from the server's remaining time (re-synced on every
+   save). `ensure_current` closes an overdue attempt on the server;
+   auto-submit at 00:00 sends `timed_out`.
+5. Tab switches follow `Test.max_tab_switches` (warning «n / max», the
+   attempt ends past it); fullscreen follows `Test.require_fullscreen`.
+
+Exam-only differences on the screen: «Экзамен» badge instead of «Артка», no
+answer checking, «answered / left» counts, timer amber under 10 min and red
+under 5, «Экзаменди аяктоо» confirmation with the unanswered count, the
+result page with «Кабинетке кайтуу» and no retake / leaderboard.
+
+Roles: only the student gets a token (from the student portal). A Team
+Lead / Trainer cannot take a test (403); an Admin may check a test on the
+legacy student page.

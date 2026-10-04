@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import type { ReviewRow } from '@/types'
+import type { AttemptResult, ReviewRow } from '@/types'
 
 import { getResult } from '@/api/attempts'
 import { getTest } from '@/api/tests'
@@ -32,7 +32,6 @@ export function ResultPage() {
     [result.data?.test_id],
   )
   const trainer = useAsync(() => (result.data ? getTest(result.data.test_id) : Promise.resolve(null)), [result.data?.test_id])
-  const [showReview, setShowReview] = useState(false)
 
   if (result.loading) return <Loader />
   if (result.error || !result.data) {
@@ -52,39 +51,65 @@ export function ResultPage() {
 
   const data = result.data
   const rank = (board.data ?? []).find((e) => e.student_name.toLocaleLowerCase() === data.student_name.toLocaleLowerCase())?.rank
-  const review = data.review ?? []
 
   return (
     <div className="container result-page">
-      {data.show_result && data.percentage !== undefined ? (
-        <ResultCard result={data} />
-      ) : (
-        <div className="empty"><Icon name="send-check" /><h1 className="section-title" style={{ marginBottom: 8 }}>{t.result.title}</h1><p>{t.result.hidden}</p></div>
-      )}
-      {data.finish_reason === 'time_expired' ? <p className="result-note"><Icon name="alarm" />{t.result.timedOut}</p> : null}
-      {data.finish_reason === 'violations' ? <p className="result-note"><Icon name="shield-exclamation" />{t.guard.terminated}</p> : null}
-      {data.pending ? <p className="result-note result-note--wait"><Icon name="hourglass-split" />{t.result.pendingNote(data.pending)}</p> : null}
-
-      <div className="result-actions">
-        {trainer.data?.allow_retry === false ? null : (
-          <Button icon="arrow-repeat" onClick={() => navigate(`/training/${data.test_id}`, { state: { retake: true } })}>{t.result.retake}</Button>
-        )}
-        {review.length ? (
-          <Button variant="outline" icon={showReview ? 'eye-slash' : 'list-check'} onClick={() => setShowReview((v) => !v)}>
-            {showReview ? t.result.hideReview : t.result.review}
-          </Button>
-        ) : null}
-        <Button variant="outline" to="/leaderboard" icon="trophy">{t.result.leaders}</Button>
-        <Button variant="outline" to="/materials" icon="journal-bookmark">{t.result.materials}</Button>
-        <ExamButton url={trainer.data?.exam_url} />
-      </div>
-
+      <ResultView
+        data={data}
+        actions={<>
+          {trainer.data?.allow_retry === false ? null : (
+            <Button icon="arrow-repeat" onClick={() => navigate(`/training/${data.test_id}`, { state: { retake: true } })}>{t.result.retake}</Button>
+          )}
+        </>}
+        moreActions={<>
+          <Button variant="outline" to="/leaderboard" icon="trophy">{t.result.leaders}</Button>
+          <Button variant="outline" to="/materials" icon="journal-bookmark">{t.result.materials}</Button>
+          <ExamButton url={trainer.data?.exam_url} />
+        </>}
+      />
       {rank ? (
         <div className="result-rank">
           <span className="result-rank__icon"><Icon name="trophy-fill" /></span>
           <p><strong>{String(rank).padStart(2, '0')}</strong> — {t.result.rankText(data.test_title)}</p>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * The result of an attempt — Training and Exam alike: the score card (or
+ * «hidden» when the test doesn't show results), the notes (time out,
+ * violations, answers waiting for review), the actions and the review.
+ */
+export function ResultView({ data, actions, moreActions, hiddenText = t.result.hidden }: {
+  data: AttemptResult
+  actions?: ReactNode
+  moreActions?: ReactNode
+  hiddenText?: string
+}) {
+  const [showReview, setShowReview] = useState(false)
+  const review = data.review ?? []
+  return (
+    <>
+      {data.show_result && data.percentage !== undefined ? (
+        <ResultCard result={data} />
+      ) : (
+        <div className="empty"><Icon name="send-check" /><h1 className="section-title" style={{ marginBottom: 8 }}>{t.result.title}</h1><p>{hiddenText}</p></div>
+      )}
+      {data.finish_reason === 'time_expired' ? <p className="result-note"><Icon name="alarm" />{t.result.timedOut}</p> : null}
+      {data.finish_reason === 'violations' ? <p className="result-note"><Icon name="shield-exclamation" />{t.guard.terminated}</p> : null}
+      {data.pending ? <p className="result-note result-note--wait"><Icon name="hourglass-split" />{t.result.pendingNote(data.pending)}</p> : null}
+
+      <div className="result-actions">
+        {actions}
+        {review.length ? (
+          <Button variant="outline" icon={showReview ? 'eye-slash' : 'list-check'} onClick={() => setShowReview((v) => !v)}>
+            {showReview ? t.result.hideReview : t.result.review}
+          </Button>
+        ) : null}
+        {moreActions}
+      </div>
 
       {showReview ? (
         <section className="review" aria-label={t.result.reviewTitle}>
@@ -112,6 +137,6 @@ export function ResultPage() {
           })}
         </section>
       ) : null}
-    </div>
+    </>
   )
 }

@@ -1,4 +1,4 @@
-import type { SaveState } from '@/hooks/useTraining'
+import type { SaveState } from '@/hooks/useAttemptRunner'
 import { t } from '@/i18n'
 
 import { Icon } from '../Icon'

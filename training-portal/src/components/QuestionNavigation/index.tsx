@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import type { NavState } from '@/hooks/useTraining'
+import type { NavState } from '@/hooks/useAttemptRunner'
 import { t } from '@/i18n'
 
 import './QuestionNavigation.css'
