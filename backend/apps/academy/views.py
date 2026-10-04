@@ -1097,6 +1097,7 @@ class LessonViewSet(
         response = Response(ParentLessonReportService.generate_for(lesson))
         # Built from the current rows on every request — no browser/proxy may reuse it.
         add_never_cache_headers(response)
+        response["Pragma"] = "no-cache"
         return response
 
     @extend_schema(

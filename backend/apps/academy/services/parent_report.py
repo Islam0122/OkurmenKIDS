@@ -31,6 +31,8 @@ it in Russian for the LMS screen only.
 """
 from __future__ import annotations
 
+import logging
+
 from django.db.models import Q
 
 from ..models import Attendance, Homework, HomeworkResult, Lesson, Student
@@ -64,6 +66,9 @@ STYLES = {
         "closing": "Рахмат! Кийинки сабакта жолугушабыз 🌟",
     },
 }
+
+# TEMP DEBUG («Мини-отчёт родителям» shows old results): remove once diagnosed.
+debug_log = logging.getLogger("okurmen.mini_report_debug")
 
 PRESENT_STATUSES = (Attendance.Status.PRESENT, Attendance.Status.LATE)
 
@@ -177,6 +182,16 @@ class ParentLessonReportService:
                     f"Результаты ДЗ «{checked['title']}» не отмечены у {len(ungraded)} студент(ов): "
                     f"{', '.join(_names(ungraded))}."
                 )
+
+        debug_log.warning(
+            "[MINI-REPORT DEBUG] PARENT REPORT lesson_id=%s lesson_number=%s date=%s group_teacher_id=%s "
+            "-> previous lesson_id=%s lesson_number=%s date=%s; checked homework=%s; not_done=%s",
+            lesson.pk, lesson.lesson_number, lesson.date, lesson.group_teacher_id,
+            prev and prev.pk, prev and prev.lesson_number, prev and prev.date,
+            [(h.pk, h.title, sorted(HomeworkResult.objects.filter(homework=h).values_list("student_id", "status", "score")))
+             for h in prev_homeworks],
+            not_done,
+        )
 
         # -- Next homework (given at this lesson) -----------------------
         homeworks = list(Homework.objects.filter(lesson=lesson).order_by("created_at"))
