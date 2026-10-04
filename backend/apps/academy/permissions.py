@@ -1,8 +1,9 @@
 """Role-based permissions for the academy app.
 
 Academy has no roles of its own — it reuses ``apps.users.models.User.Role``
-(ADMIN / TEACHER). Admin has full access everywhere; a Teacher may only
-read or write data that belongs to their own groups. Object-level scoping
+(ADMIN / TEACHER / TEAM_LEAD). Admin has full access everywhere; a Teacher may
+only read or write data that belongs to their own groups; a Team Lead reads
+the whole academy and never writes. Object-level scoping
 here is a second line of defence — ``get_queryset()`` in each viewset
 already excludes other teachers' data, so a Teacher normally gets a plain
 404, not a 403.
@@ -12,6 +13,7 @@ from __future__ import annotations
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from apps.users.models import User
+from apps.users.permissions import is_team_lead
 
 
 def _is_admin(user) -> bool:
@@ -82,7 +84,13 @@ class IsAdminOrOwningTeacher(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         user = request.user
-        return bool(user and user.is_authenticated)
+        if not (user and user.is_authenticated):
+            return False
+        if request.method not in SAFE_METHODS and is_team_lead(user):
+            # Team Lead: read-only, even on a lesson-scoped action.
+            self.message = "Руководитель тренеров может только просматривать данные."
+            return False
+        return True
 
     def has_object_permission(self, request, view, obj) -> bool:
         user = request.user

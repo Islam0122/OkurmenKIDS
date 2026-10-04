@@ -1,7 +1,8 @@
 """Reports API — /api/v1/reports/...
 
-Admin-only end to end (`IsAdmin`: Admin role or superuser), the same gate
-as the Academy Monthly Report API: the academy-wide report is management
+Admin and Team Lead (`IsAdminOrTeamLeadReadOnly` — every endpoint here is a
+GET, so a Team Lead reads all of it), the same gate as the Academy Monthly
+Report API: the academy-wide report is management
 data, and a Teacher already has their own scoped reports (monthly-reports,
 analytics). Every endpoint reads the same query parameters:
 
@@ -29,10 +30,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.users.models import Subject, Teacher
-from apps.users.permissions import IsAdmin
+from apps.users.permissions import IsAdminOrTeamLeadReadOnly
 
 from .models import Group
 from .services.reports import (
+    build_all_student_rows,
     PERIOD_CHOICES,
     ReportFilterError,
     ReportFilters,
@@ -49,6 +51,7 @@ from .services.reports import (
     group_student_rows,
     period_options,
 )
+from .services.reports.service import report_group_ids
 from .services.reports.excel import build_reports_excel, excel_filename
 from .services.reports.kpi import weights_description
 from .services.reports.pdf import build_reports_pdf, pdf_filename
@@ -72,7 +75,7 @@ _TABLE_PARAMS = [
 
 
 class _ReportsView(APIView):
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, IsAdminOrTeamLeadReadOnly]
 
     def filters(self, request) -> ReportFilters:
         try:
@@ -133,6 +136,18 @@ class ReportsSubjectDetailView(_ReportsView):
     def get(self, request, pk: int):
         subject = get_object_or_404(Subject, pk=pk)
         return Response(build_subject_detail(subject, self.filters(request)))
+
+
+@extend_schema(tags=["Reports"], parameters=_FILTER_PARAMS + _TABLE_PARAMS)
+class ReportsStudentsView(_ReportsView):
+    """Every student of the groups in the report's scope — attendance,
+    homework, average score, progress (same figures as a group's student
+    list, academy-wide)."""
+
+    def get(self, request):
+        filters = self.filters(request)
+        page = paginate_students(build_all_student_rows(filters, report_group_ids(filters)), request.query_params)
+        return Response({"filters": filters.as_dict(), **page.as_dict()})
 
 
 @extend_schema(tags=["Reports"], parameters=_FILTER_PARAMS + _TABLE_PARAMS)

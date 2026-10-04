@@ -5,8 +5,8 @@ see services.control. Every endpoint reads the Reports filter vocabulary
 (`period`, `start_date`, `end_date`, `program`, `group`, `teacher`,
 `subject`; see services.reports.filters) plus `status`.
 
-Access (services.control.access): Admin, superuser or a manager with the
-Reports permission sees the whole academy. A Trainer is
+Access (services.control.access): Admin, superuser, Team Lead or a manager
+with the Reports permission sees the whole academy. A Trainer is
 always scoped to the lessons they are responsible for — a `teacher` param
 from a Trainer is ignored, the same rule the Analytics dashboard applies —
 and a lesson that isn't theirs is a 404. Any other account gets 403.

@@ -5,6 +5,7 @@ import { NavLink } from 'react-router-dom'
 import logo from '@/assets/logo.png'
 import { Drawer } from '@/components/ui/Drawer'
 import { useAuth } from '@/hooks/useAuth'
+import { isTeamLead, ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/utils/cn'
 
 import { getMobileMoreNav } from './navItems'
@@ -36,7 +37,8 @@ export function Header() {
           Ещё
         </button>
 
-        <NewsBell />
+        {/* News is the Trainer feed (backend: IsTeacher) — not a Team Lead's. */}
+        {isTeamLead(user?.role) ? null : <NewsBell />}
 
         <div className="hidden items-center gap-2 sm:flex">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
@@ -46,7 +48,7 @@ export function Header() {
             <p className="truncate text-sm font-medium text-ink">
               {user?.first_name} {user?.last_name}
             </p>
-            <p className="text-xs text-ink-secondary">{user?.role === 'admin' ? 'Администратор' : 'Тренер'}</p>
+            <p className="text-xs text-ink-secondary">{user ? ROLE_LABEL[user.role] : ''}</p>
           </div>
         </div>
 

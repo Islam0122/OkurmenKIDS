@@ -22,6 +22,7 @@ import { Select } from '@/components/ui/Select'
 import { StatCard } from '@/components/ui/StatCard'
 import { StatGrid } from '@/components/ui/StatGrid'
 import { useAuth } from '@/hooks/useAuth'
+import { seesWholeAcademy } from '@/lib/roles'
 import { useControlOverview } from '@/hooks/useControl'
 import type { ControlPeriodKey, ControlRow, ControlStatus } from '@/types/control'
 import { formatDateShort, formatRuPercent } from '@/utils/format'
@@ -91,7 +92,8 @@ function sortRows(rows: ControlRow[], sort: SortKey): ControlRow[] {
 
 export function ControlPage() {
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  // Admin and Team Lead see every trainer (backend: services.control.access).
+  const isAdmin = seesWholeAcademy(user?.role)
   const [draft, setDraft] = useState<Draft>(DEFAULT_DRAFT)
   const [applied, setApplied] = useState<ControlParams>(() => toParams(DEFAULT_DRAFT))
   const [sort, setSort] = useState<SortKey>('problems')

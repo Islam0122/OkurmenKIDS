@@ -11,8 +11,10 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { useCreateHomework, useHomeworkList } from '@/hooks/useHomework'
+import { useAuth } from '@/hooks/useAuth'
 import { useCancelLesson, useCompleteLesson, useLesson, useSetHomeworkNotRequired, useStartLesson } from '@/hooks/useLessons'
 import { extractErrorMessage } from '@/lib/apiError'
+import { isTeamLead } from '@/lib/roles'
 import { attendanceUrlFor, homeworkUrlFor } from '@/lib/returnTo'
 import type { Lesson } from '@/types/academy'
 import { formatDate, formatTimeRange } from '@/utils/format'
@@ -30,6 +32,9 @@ export function LessonDetailPage() {
   const lessonId = Number(id)
   const navigate = useNavigate()
   const { showToast } = useToast()
+  const { user } = useAuth()
+  // Team Lead: read-only (backend refuses every lesson write for this role).
+  const isReadOnlyViewer = isTeamLead(user?.role)
 
   const { data: lesson, isPending, isError, refetch } = useLesson(lessonId)
   const homeworkList = useHomeworkList({ lesson: lessonId })
@@ -182,9 +187,25 @@ export function LessonDetailPage() {
             <div className="card card-body">
               <h2 className="section-title mb-4">Действия</h2>
 
-              <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
+              {isReadOnlyViewer ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-ink-secondary">Режим просмотра: занятие ведёт тренер.</p>
+                  {lesson.status !== 'scheduled' ? (
+                    <Button variant="secondary" onClick={() => void handleAction('view_attendance')}>
+                      Посмотреть посещаемость
+                    </Button>
+                  ) : null}
+                  {homework ? (
+                    <Button variant="secondary" onClick={goToHomework}>
+                      Посмотреть домашнее задание
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <LessonActionBar lesson={lesson} onAction={(key) => void handleAction(key)} pendingKey={pendingKey} />
+              )}
 
-              {lesson.status === 'in_progress' ? (
+              {lesson.status === 'in_progress' && !isReadOnlyViewer ? (
                 <div className="mt-4 border-t border-border pt-4">
                   <LessonProgressChecklist
                     lesson={lesson}

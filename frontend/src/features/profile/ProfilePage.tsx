@@ -4,12 +4,55 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { useAuth } from '@/hooks/useAuth'
 import { resolveMediaUrl } from '@/lib/mediaUrl'
+import { isTeamLead, ROLE_LABEL } from '@/lib/roles'
+import type { User } from '@/types/auth'
 import { formatDate, pluralize } from '@/utils/format'
 
 import { useTeacherProfile } from './useTeacherProfile'
 
 export function ProfilePage() {
+  const { user } = useAuth()
+  // A Team Lead has no Trainer profile (GET /trainers/me/ is Trainer-only) —
+  // their account itself is the profile.
+  if (user && isTeamLead(user.role)) return <AccountProfile user={user} />
+  return <TeacherProfile />
+}
+
+function AccountProfile({ user }: { user: User }) {
+  const fullName = `${user.last_name} ${user.first_name}`.trim() || user.username
+  return (
+    <div>
+      <PageHeader title="Профиль" description="Данные вашего аккаунта — доступны только для просмотра." />
+      <div className="card card-body">
+        <div className="flex items-center gap-4 border-b border-border pb-5">
+          <span className="flex size-16 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
+            <UserIcon className="size-8" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-ink">{fullName}</h2>
+            <p className="text-sm text-ink-secondary">{ROLE_LABEL[user.role]} — руководитель тренеров</p>
+          </div>
+        </div>
+        <dl className="mt-5 space-y-2 text-sm">
+          <div className="flex items-center gap-2">
+            <Mail className="size-4 text-ink-muted" aria-hidden />
+            <dt className="sr-only">Email</dt>
+            <dd className="text-ink">{user.email || '—'}</dd>
+          </div>
+          <div className="flex items-center gap-2">
+            <UserIcon className="size-4 text-ink-muted" aria-hidden />
+            <dt className="sr-only">Логин</dt>
+            <dd className="text-ink">{user.username}</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function TeacherProfile() {
   const { data: teacher, isPending, isError, refetch } = useTeacherProfile()
 
   if (isPending) return <LoadingState label="Загружаем профиль…" />

@@ -39,6 +39,14 @@ class OkurmenKidsAdminSite(AdminSite):
     # template, regardless of INSTALLED_APPS ordering.
     index_template = "admin/okurmenkids/index.html"
 
+    def has_permission(self, request):
+        """Django admin is system management — never a Team Lead's, even if
+        the account was given is_staff by mistake."""
+        user = request.user
+        if getattr(user, "role", None) == User.Role.TEAM_LEAD and not user.is_superuser:
+            return False
+        return super().has_permission(request)
+
     def index(self, request, extra_context=None):
         extra_context = extra_context or {}
         extra_context["ok_stats"] = self._build_dashboard_stats()
