@@ -221,6 +221,21 @@ describe('content comes from the backend', () => {
     expect((await screen.findAllByText('Islam')).length).toBeGreaterThan(0)
   })
 
+  it('«Тренировка баштоо» on the home page scrolls to the tests and stays on the page', async () => {
+    const user = userEvent.setup()
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    backend()
+    renderAt('/')
+    const section = await screen.findByRole('heading', { level: 2, name: 'Тренировкалык тесттер' })
+    await screen.findAllByText('Python Training')
+    await user.click(screen.getAllByRole('button', { name: 'Тренировка баштоо' })[0])
+    expect(scroll).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(scroll.mock.contexts[0]).toBe(document.getElementById('training-tests'))
+    expect(section.closest('section')?.id).toBe('training-tests')
+    expect(screen.queryByRole('dialog', { name: 'Атыңызды жазыңыз' })).not.toBeInTheDocument()  // no training page
+  })
+
   it('no exam URL in the backend → no exam button', async () => {
     routeFetch({
       'GET /portal/': () => ({ body: { ...PORTAL, exam_url: '' } }),

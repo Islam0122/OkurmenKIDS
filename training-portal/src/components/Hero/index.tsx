@@ -8,7 +8,7 @@ import { Icon } from '../Icon'
 import './Hero.css'
 
 /** Texts come from the backend (portal settings); the visual is abstract. */
-export function Hero({ portal, startTo }: { portal: PortalSettings | undefined; startTo: string }) {
+export function Hero({ portal, onStart }: { portal: PortalSettings | undefined; onStart: () => void }) {
   const title = portal?.hero_title ?? ''
   const [first, ...rest] = title.split(' ')
   return (
@@ -19,7 +19,7 @@ export function Hero({ portal, startTo }: { portal: PortalSettings | undefined; 
           <h1 className="hero__title">{first ? <><em>{first}</em> {rest.join(' ')}</> : <span className="hero__title-skeleton" />}</h1>
           {portal?.hero_subtitle ? <p className="hero__subtitle">{portal.hero_subtitle}</p> : null}
           <div className="hero__actions">
-            <Button to={startTo} size="lg" icon="play-circle">{portal?.start_button_label ?? t.hero.start}</Button>
+            <Button onClick={onStart} size="lg" icon="play-circle">{portal?.start_button_label ?? t.hero.start}</Button>
             <ExamButton variant="outline" size="lg" />
           </div>
           <ul className="hero__perks">
