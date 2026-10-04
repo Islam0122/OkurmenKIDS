@@ -275,16 +275,14 @@ export interface ParentLessonReport {
   topic: string | null
   present_students: string[]
   absent_students: string[]
-  /** The previous lesson's homework, whose results are reported today; null when there was none. */
-  homework_checked: { title: string; lesson_id: number; lesson_number: number; lesson_date: string } | null
-  /** The previous lesson's homework — the one whose current results are reported. */
-  previous_homework: ParentReportHomework | null
+  /** This lesson's own homework — «не выполнили» is built from its results; null when none was given. */
+  homework: ParentReportHomework | null
   homework_not_completed: string[]
   homework_partial: string[]
   /** Ready text of «Кийинки үй тапшырмасы». */
   next_homework: string | null
-  /** The homework given at this lesson (the next homework) as data. */
-  current_homework: ParentReportHomework | null
+  /** The program's next lesson's homework as data. */
+  next_homework_details: ParentReportHomework | null
   warnings: string[]
   message: string
   messages: Record<ParentReportStyle, string>

@@ -1084,8 +1084,7 @@ class LessonViewSet(
         responses=ParentLessonReportSerializer,
         description=(
             "«Мини-отчёт родителям»: a short Kyrgyz message for the parents' chat — topic, who attended, "
-            "who didn't do the homework checked today (the previous lesson's), the homework given at this "
-            "lesson — plus the same data as fields. Built from the lesson's real records; nothing is stored. "
+            "who didn't do this lesson's homework, the next lesson's homework — plus the same data as fields. Built from the lesson's real records; nothing is stored. "
             "Only for a lesson in progress or completed."
         ),
     )

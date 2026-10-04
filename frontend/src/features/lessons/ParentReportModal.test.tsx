@@ -59,12 +59,11 @@ function buildReport(overrides: Partial<ParentLessonReport> = {}): ParentLessonR
     topic: 'Күчтүү жана коопсуз паролдор',
     present_students: ['Бекнур Абдыбеков'],
     absent_students: [],
-    homework_checked: null,
-    previous_homework: null,
+    homework: null,
     homework_not_completed: [],
     homework_partial: [],
     next_homework: null,
-    current_homework: null,
+    next_homework_details: null,
     warnings: [],
     message: MESSAGE,
     messages: { system: MESSAGE, trainer: TRAINER_MESSAGE },
@@ -115,10 +114,7 @@ describe('Мини-отчёт родителям', () => {
 
   it('shows no technical «ДЗ проверено по занятию №…» line', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(
-      buildReport({
-        homework_checked: { title: 'Безопасный браузер', lesson_id: 6, lesson_number: 25, lesson_date: '2026-09-30' },
-        previous_homework: { id: 3, title: 'Безопасный браузер', description: '' },
-      }),
+      buildReport({ homework: { id: 3, title: 'Безопасный браузер', description: '' } }),
     )
     const user = userEvent.setup()
     renderLesson('completed')
@@ -158,9 +154,9 @@ describe('Мини-отчёт родителям', () => {
     expect(screen.getByRole('radio', { name: /Система/ })).toHaveAttribute('aria-checked', 'true')
   })
 
-  it('names the previous lesson\'s homework the «не выполнили» list uses and opens it for grading', async () => {
+  it('names this lesson\'s homework the «не выполнили» list uses and opens it for grading', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(
-      buildReport({ previous_homework: { id: 41, title: 'Оформить страницу', description: '' } }),
+      buildReport({ homework: { id: 41, title: 'Сверстать блоки карточек', description: '' } }),
     )
     const user = userEvent.setup()
     renderWithProviders(
@@ -175,17 +171,17 @@ describe('Мини-отчёт родителям', () => {
     vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
     await user.click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
 
-    expect(await screen.findByText('«Оформить страницу»')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Проверить ДЗ прошлого занятия' }))
+    expect(await screen.findByText('«Сверстать блоки карточек»')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Проверить ДЗ' }))
     expect(await screen.findByText('homework page')).toBeInTheDocument()
   })
 
-  it('shows no previous-homework hint when the previous lesson gave none', async () => {
+  it('shows no homework hint when the lesson has no homework', async () => {
     vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
     renderLesson('completed')
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
     await screen.findByTestId('parent-report-preview')
-    expect(screen.queryByRole('button', { name: 'Проверить ДЗ прошлого занятия' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Проверить ДЗ' })).not.toBeInTheDocument()
   })
 
   async function openReport(status: 'in_progress' | 'completed' = 'completed') {
