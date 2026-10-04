@@ -7,6 +7,13 @@ export interface SecuritySettings {
   block_copy_paste: boolean
 }
 
+/** A trainer's category — its test's Subject in the backend (IT, English, …). */
+export interface TrainerCategory {
+  id: number
+  name: string
+  slug: string
+}
+
 /** GET /api/v1/training/tests/ and tests/<id>/ */
 export type TestLevel = 'easy' | 'medium' | 'hard'
 
@@ -15,6 +22,8 @@ export interface TrainingTest {
   title: string
   description: string
   subject: string
+  /** null — the trainer has no category yet */
+  category: TrainerCategory | null
   level: TestLevel
   level_display: string
   image_url: string | null

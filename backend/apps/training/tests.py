@@ -86,6 +86,22 @@ class ContentTests(TrainingFixture):
         self.assertEqual([v["title"] for v in self.api.get(reverse("training-videos")).json()], ["Shown"])
         self.assertEqual([l["title"] for l in self.api.get(reverse("training-links")).json()], ["Docs"])
 
+    def test_trainers_come_with_their_category_grouped_and_naturally_ordered(self):
+        english = Subject.objects.get_or_create(name="English")[0]
+        def trainer(title, subject):
+            test = Test.objects.create(title=title, subject=subject, status=TestStatus.ACTIVE)
+            svc.save_question(test, QuestionData(QuestionType.TEXT, "Q?", correct_answers=["a"]))
+            session = TestSession.objects.create(test=test, session_type=SessionType.TRAINING, is_public=True)
+            session.start()
+        trainer("English Month 10", english)
+        trainer("English Month 2", english)
+        trainer("No category", None)
+        tests = self.api.get(reverse("training-test-list")).json()
+        self.assertEqual([t["title"] for t in tests], ["English Month 2", "English Month 10", "Python Training", "No category"])
+        self.assertEqual(tests[0]["category"], {"id": english.pk, "name": "English", "slug": "english"})
+        self.assertEqual(tests[2]["category"]["name"], "Python")
+        self.assertIsNone(tests[3]["category"])
+
     def test_only_running_public_training_sessions_of_active_tests(self):
         TestSession.objects.create(test=self.test, session_type=SessionType.TRAINING)            # not public
         exam = TestSession.objects.create(test=self.test, session_type=SessionType.EXAM, is_public=True, duration=timedelta(hours=1))
