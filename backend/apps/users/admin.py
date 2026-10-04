@@ -6,6 +6,7 @@ import string
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
 from django.db.models import Count, Q
@@ -24,8 +25,100 @@ from .widgets import PhotoPreviewWidget
 admin.site.unregister(Group)
 
 
+# ---------------------------------------------------------------------------
+# Users: the role is the access. A user gets their rights from `User.Role`
+# (apps.users.permissions: is_admin_user / is_team_lead / can_view_academy …),
+# so the everyday form shows the role only — never Django's groups or the
+# hundreds of «Can add / change / delete / view» permissions. Those stay in
+# the database untouched (a few features still check `has_perm`, e.g.
+# scholarship payments) — the form just never edits them, so saving a user
+# keeps whatever a user already had.
+# ---------------------------------------------------------------------------
+
+ROLE_ADMIN_LABELS = {
+    User.Role.ADMIN: "👑 Администратор",
+    User.Role.TEAM_LEAD: "👨‍🏫 Team Lead — руководитель тренеров",
+    User.Role.TEACHER: "👨‍💻 Тренер",
+}
+
+ROLE_HELP_TEXT = (
+    "Роль определяет доступ автоматически — отдельные права выдавать не нужно. "
+    "Team Lead видит всю академию (тренеры, группы, студенты, KPI, аналитика, отчёты) "
+    "только для просмотра. Тренера с профилем удобнее создавать в разделе «Тренеры»."
+)
+
+
+def _role_choices(*, allow_admin: bool) -> list[tuple[str, str]]:
+    return [("", "— Выберите роль —")] + [
+        (value, ROLE_ADMIN_LABELS.get(value, label))
+        for value, label in User.Role.choices
+        if allow_admin or value != User.Role.ADMIN
+    ]
+
+
+class RoleFormMixin:
+    """Role select (readable labels, explicit choice) + the Team Lead rules,
+    shared by the create and the edit form. `allow_admin_role` is set per
+    request by UserAdmin.get_form: only a superuser may hand out ADMIN."""
+
+    allow_admin_role = True
+
+    def _setup_role_field(self):
+        field = self.fields.get("role")
+        if field is None:
+            return
+        instance_role = getattr(self.instance, "role", None) if self.instance.pk else None
+        allow_admin = self.allow_admin_role or instance_role == User.Role.ADMIN
+        field.choices = _role_choices(allow_admin=allow_admin)
+        field.required = True
+        field.help_text = ROLE_HELP_TEXT
+        if not self.instance.pk:
+            field.initial = None
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("role") == User.Role.TEAM_LEAD:
+            if cleaned.get("is_superuser"):
+                self.add_error("is_superuser", "Team Lead не может быть суперпользователем.")
+            if cleaned.get("is_staff"):
+                self.add_error("is_staff", "Team Lead работает в LMS и не получает доступ в Django admin.")
+        return cleaned
+
+
+class UserAddForm(RoleFormMixin, AdminUserCreationForm):
+    # Always a normal password login — no «password-based authentication» switch.
+    usable_password = None
+
+    class Meta(AdminUserCreationForm.Meta):
+        model = User
+        fields = ("username", "email", "first_name", "last_name", "role")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["password1"].required = True
+        self.fields["password2"].required = True
+        self.fields["email"].required = True
+        self._setup_role_field()
+
+
+class UserEditForm(RoleFormMixin, UserChangeForm):
+    class Meta(UserChangeForm.Meta):
+        model = User
+        # Neither is part of the project's RBAC (access = User.Role) — never
+        # editable here; existing rows stay as they are.
+        exclude = ("groups", "user_permissions")
+        fields = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._setup_role_field()
+
+
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
+    form = UserEditForm
+    add_form = UserAddForm
+
     list_display = (
         "username",
         "email",
@@ -39,26 +132,61 @@ class UserAdmin(DjangoUserAdmin):
     search_fields = ("username", "email", "first_name", "last_name")
     readonly_fields = ("created_at", "updated_at", "last_login", "date_joined")
     ordering = ("-created_at",)
+    filter_horizontal = ()
+    # One page with every field — Django's two-step «username + password
+    # first» add page (admin/auth/user/add_form.html) isn't needed.
+    add_form_template = "admin/change_form.html"
+
+    add_fieldsets = (
+        (
+            "Основная информация",
+            {"classes": ("wide",), "fields": ("first_name", "last_name", "username", "email", "password1", "password2")},
+        ),
+        ("Доступ", {"classes": ("wide",), "fields": ("role", "is_verified", "is_active")}),
+    )
 
     fieldsets = (
-        (None, {"fields": ("username", "password")}),
-        ("Личные данные", {"fields": ("first_name", "last_name", "email")}),
-        (
-            "Права доступа",
-            {
-                "fields": (
-                    "role",
-                    "is_verified",
-                    "is_active",
-                    "is_staff",
-                    "is_superuser",
-                    "groups",
-                    "user_permissions",
-                )
-            },
-        ),
-        ("Даты", {"fields": ("last_login", "date_joined", "created_at", "updated_at")}),
+        ("Основная информация", {"fields": ("first_name", "last_name", "username", "email", "password")}),
+        ("Доступ", {"fields": ("role", "is_verified", "is_active")}),
+        ("Даты", {"classes": ("collapse",), "fields": ("last_login", "date_joined", "created_at", "updated_at")}),
     )
+
+    # Superuser only: Django's own two system flags. Groups and per-user
+    # permissions are not shown anywhere — access comes from the role.
+    system_fieldset = (
+        "Системные флаги Django (только для суперпользователя)",
+        {
+            "classes": ("collapse",),
+            "description": (
+                "Обычно не нужны: доступ определяется ролью. is_staff — вход в Django admin, "
+                "is_superuser — полный доступ ко всему. Для Team Lead оба всегда выключены."
+            ),
+            "fields": ("is_staff", "is_superuser"),
+        },
+    )
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = tuple(super().get_fieldsets(request, obj))
+        if request.user.is_superuser:
+            fieldsets += (self.system_fieldset,)
+        return fieldsets
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Only a superuser may make someone an Administrator.
+        form.allow_admin_role = bool(request.user.is_superuser)
+        return form
+
+    def has_change_permission(self, request, obj=None):
+        # A non-superuser staff account never edits a superuser.
+        if obj is not None and obj.is_superuser and not request.user.is_superuser:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.is_superuser and not request.user.is_superuser:
+            return False
+        return super().has_delete_permission(request, obj)
 
     @admin.display(description="Полное имя")
     def full_name(self, obj: User) -> str:
@@ -70,7 +198,7 @@ class UserAdmin(DjangoUserAdmin):
         return format_html(
             '<span class="ok-badge {}"><span class="ok-badge-dot"></span>{}</span>',
             css,
-            obj.get_role_display(),
+            ROLE_ADMIN_LABELS.get(obj.role, obj.get_role_display()),
         )
 
     @admin.display(description="Подтверждён")

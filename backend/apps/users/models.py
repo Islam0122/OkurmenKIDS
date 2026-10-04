@@ -90,6 +90,19 @@ class User(AbstractUser):
     def __str__(self):
         return self.get_full_name() or self.username
 
+    def save(self, *args, **kwargs):
+        # Team Lead works only through the LMS (frontend/API), read-only: it
+        # is never a Django superuser nor a Django admin (staff) account,
+        # whatever form or script saved it. Access itself comes from the role
+        # (apps.users.permissions), never from Django permissions.
+        if self.role == self.Role.TEAM_LEAD:
+            self.is_superuser = False
+            self.is_staff = False
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "is_superuser", "is_staff"}
+        super().save(*args, **kwargs)
+
     @property
     def is_teacher(self):
         return self.role == self.Role.TEACHER
