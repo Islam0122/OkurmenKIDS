@@ -252,3 +252,53 @@ class ParentReportTests(TestCase):
         report = client.get(url).json()
         self.assertEqual(report["next_homework"], "Создать адаптивную страницу Portfolio")
         self.assertIn("📚 Кийинки үй тапшырмасы:\n\nСоздать адаптивную страницу Portfolio", report["message"])
+
+    def test_trainer_flow_through_the_api(self):
+        """Step 9 of the spec, through the same endpoints the LMS screens use:
+        report → «Проверить ДЗ» (save results) → report again."""
+        self.full_example()
+        Lesson.objects.filter(pk=self.today.pk).update(status=Lesson.Status.COMPLETED)
+        client = APIClient()
+        client.force_authenticate(self.teacher.user)
+        report_url = f"/api/v1/lessons/{self.today.pk}/parent-report/"
+        old = Homework.objects.get(lesson=self.prev)
+        self.assertEqual(client.get(report_url).json()["homework_not_completed"], ["Эрбол Зулпукаров"])
+
+        # Эрбол: «Не сдано» → «Сдано», 10/10; Бекнур: «Проверено» → «Сдано с опозданием» (still done).
+        response = client.post(f"/api/v1/homework/{old.pk}/results/", [
+            {"student": self.students["Эрбол"].pk, "status": "submitted", "score": 10, "comment": "Молодец"},
+            {"student": self.students["Бекнур"].pk, "status": "late", "score": 8},
+        ], format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+
+        report = client.get(report_url).json()
+        self.assertEqual(report["homework_not_completed"], [])
+        for message in report["messages"].values():
+            self.assertNotIn("❌", message)
+            self.assertIn("✅", message)
+
+        # Grade lowered back to «Не сдано» — he is listed again.
+        client.post(f"/api/v1/homework/{old.pk}/results/", [
+            {"student": self.students["Эрбол"].pk, "status": "not_submitted", "score": None},
+        ], format="json")
+        self.assertEqual(client.get(report_url).json()["homework_not_completed"], ["Эрбол Зулпукаров"])
+
+    def test_homework_objects_and_current_group_only(self):
+        self.full_example()
+        report = ParentLessonReportService.generate(self.today.pk)
+        old = Homework.objects.get(lesson=self.prev)
+        current = Homework.objects.get(lesson=self.today)
+        self.assertEqual(report["previous_homework"], {"id": old.pk, "title": "Безопасный браузер", "description": ""})
+        self.assertEqual(report["current_homework"], {
+            "id": current.pk, "title": "3 Strong Passwords", "description": "создать 3 уникальных безопасных пароля.",
+        })
+
+        # Homework text changed after the lesson — the report follows.
+        Homework.objects.filter(pk=current.pk).update(title="Сверстать адаптивную карточку товара", description="")
+        report = ParentLessonReportService.generate(self.today.pk)
+        self.assertEqual(report["current_homework"]["title"], "Сверстать адаптивную карточку товара")
+        self.assertIn("📚 Кийинки үй тапшырмасы:\n\nСверстать адаптивную карточку товара\n", report["message"])
+
+        # A student who left the group is not reported as «не выполнил».
+        Student.objects.filter(pk=self.students["Эрбол"].pk).update(is_active=False)
+        self.assertEqual(ParentLessonReportService.generate(self.today.pk)["homework_not_completed"], [])

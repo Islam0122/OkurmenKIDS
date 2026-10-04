@@ -19,6 +19,10 @@ Two wordings of the same data (``messages``), one per «Автор отчёта�
 one. «✏️ Свой вариант» is the trainer's own edit in the browser — never
 stored, and nothing in the LMS changes when it is edited.
 
+Nothing is stored or cached: every call re-reads the rows above, so a
+grade, status, attendance mark or homework text changed after the lesson
+is in the next report. The view calls it on every GET.
+
 When something is missing the message says so with a ⚠️ line (for the
 trainer to fix before sending) instead of guessing; ``warnings`` repeats
 it in Russian for the LMS screen only.
@@ -96,6 +100,17 @@ def homework_text(homework: Homework) -> str:
     return f"{title} — {description}" if description else title
 
 
+def homework_data(homeworks: list[Homework]) -> dict | None:
+    """The lesson's homework as data (several are joined, the first id kept)."""
+    if not homeworks:
+        return None
+    return {
+        "id": homeworks[0].pk,
+        "title": "; ".join(h.title.strip() for h in homeworks),
+        "description": "\n".join(h.description.strip() for h in homeworks if h.description.strip()),
+    }
+
+
 class ParentLessonReportService:
     @classmethod
     def generate(cls, lesson_id: int) -> dict:
@@ -129,7 +144,9 @@ class ParentLessonReportService:
         prev_homeworks = list(Homework.objects.filter(lesson=prev).order_by("created_at")) if prev else []
         if prev_homeworks:
             results = list(
-                HomeworkResult.objects.filter(homework__in=prev_homeworks, student__group=lesson.group)
+                HomeworkResult.objects.filter(
+                    homework__in=prev_homeworks, student__group=lesson.group, student__is_active=True,
+                )
                 .select_related("student")
             )
             not_done = _names({
@@ -162,9 +179,11 @@ class ParentLessonReportService:
             "present_students": present,
             "absent_students": absent,
             "homework_checked": checked,
+            "previous_homework": homework_data(prev_homeworks),
             "homework_not_completed": not_done,
             "homework_partial": [],  # no «partial» HomeworkResult status in the system
             "next_homework": next_homework,
+            "current_homework": homework_data(homeworks),
             "warnings": warnings,
         }
         data["messages"] = {

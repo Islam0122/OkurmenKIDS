@@ -904,6 +904,12 @@ class ParentReportHomeworkSerializer(serializers.Serializer):
     lesson_date = serializers.DateField()
 
 
+class ParentReportHomeworkItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+
+
 class ParentReportMessagesSerializer(serializers.Serializer):
     system = serializers.CharField(help_text="🤖 Системный отчёт LMS.")
     trainer = serializers.CharField(help_text="👨‍🏫 Короткий текст от имени тренера.")
@@ -920,9 +926,15 @@ class ParentLessonReportSerializer(serializers.Serializer):
     present_students = serializers.ListField(child=serializers.CharField())
     absent_students = serializers.ListField(child=serializers.CharField())
     homework_checked = ParentReportHomeworkSerializer(allow_null=True)
+    previous_homework = ParentReportHomeworkItemSerializer(
+        allow_null=True, help_text="ДЗ предыдущего занятия — его результаты в отчёте.",
+    )
     homework_not_completed = serializers.ListField(child=serializers.CharField())
     homework_partial = serializers.ListField(child=serializers.CharField())
-    next_homework = serializers.CharField(allow_null=True)
+    next_homework = serializers.CharField(allow_null=True, help_text="Текст «Кийинки үй тапшырмасы».")
+    current_homework = ParentReportHomeworkItemSerializer(
+        allow_null=True, help_text="ДЗ, выданное на этом занятии (следующее ДЗ).",
+    )
     warnings = serializers.ListField(child=serializers.CharField())
     message = serializers.CharField(help_text="Системный вариант (то же, что messages.system).")
     messages = ParentReportMessagesSerializer()

@@ -165,9 +165,6 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
 
       <p className="text-xs text-ink-muted">
         {report.group} · {formatDate(report.lesson_date)}
-        {report.homework_checked
-          ? ` · ДЗ проверено по занятию №${report.homework_checked.lesson_number} от ${formatDate(report.homework_checked.lesson_date)}`
-          : ''}
       </p>
 
       {isEditing ? (
