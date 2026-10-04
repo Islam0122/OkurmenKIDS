@@ -5,6 +5,7 @@ from django.db.models import Count, ProtectedError, Q, RestrictedError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.cache import add_never_cache_headers
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -1093,7 +1094,10 @@ class LessonViewSet(
         lesson = self.get_object()
         if lesson.status not in (Lesson.Status.IN_PROGRESS, Lesson.Status.COMPLETED):
             raise DRFValidationError({"detail": "Отчёт родителям доступен для идущего или проведённого занятия."})
-        return Response(ParentLessonReportService.generate_for(lesson))
+        response = Response(ParentLessonReportService.generate_for(lesson))
+        # Built from the current rows on every request — no browser/proxy may reuse it.
+        add_never_cache_headers(response)
+        return response
 
     @extend_schema(
         tags=["Lessons"],
