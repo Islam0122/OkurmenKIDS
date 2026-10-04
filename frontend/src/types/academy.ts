@@ -277,12 +277,23 @@ export interface ParentLessonReport {
   absent_students: string[]
   /** The previous lesson's homework, whose results are reported today; null when there was none. */
   homework_checked: { title: string; lesson_id: number; lesson_number: number; lesson_date: string } | null
+  /** The previous lesson's homework — the one whose current results are reported. */
+  previous_homework: ParentReportHomework | null
   homework_not_completed: string[]
   homework_partial: string[]
+  /** Ready text of «Кийинки үй тапшырмасы». */
   next_homework: string | null
+  /** The homework given at this lesson (the next homework) as data. */
+  current_homework: ParentReportHomework | null
   warnings: string[]
   message: string
   messages: Record<ParentReportStyle, string>
+}
+
+export interface ParentReportHomework {
+  id: number
+  title: string
+  description: string
 }
 
 /** «Автор отчёта»: «🤖 Система» and «👨‍🏫 Тренер» texts come from the backend;

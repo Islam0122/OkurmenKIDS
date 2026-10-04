@@ -60,9 +60,11 @@ function buildReport(overrides: Partial<ParentLessonReport> = {}): ParentLessonR
     present_students: ['Бекнур Абдыбеков'],
     absent_students: [],
     homework_checked: null,
+    previous_homework: null,
     homework_not_completed: [],
     homework_partial: [],
     next_homework: null,
+    current_homework: null,
     warnings: [],
     message: MESSAGE,
     messages: { system: MESSAGE, trainer: TRAINER_MESSAGE },
@@ -109,6 +111,21 @@ describe('Мини-отчёт родителям', () => {
     expect(screen.getByText('Проверьте перед отправкой')).toBeInTheDocument()
     expect(screen.getByText(/Йасин Ибрахимов/)).toBeInTheDocument()
     expect(preview.textContent).not.toContain('Посещаемость не отмечена у 1')
+  })
+
+  it('shows no technical «ДЗ проверено по занятию №…» line', async () => {
+    vi.mocked(lessonsApi.parentReport).mockResolvedValue(
+      buildReport({
+        homework_checked: { title: 'Безопасный браузер', lesson_id: 6, lesson_number: 25, lesson_date: '2026-09-30' },
+        previous_homework: { id: 3, title: 'Безопасный браузер', description: '' },
+      }),
+    )
+    const user = userEvent.setup()
+    renderLesson('completed')
+    await user.click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
+
+    await screen.findByTestId('parent-report-preview')
+    expect(screen.getByRole('dialog').textContent).not.toMatch(/ДЗ проверено|занятию №/)
   })
 
   it('re-reads the report on every opening — never shows the previous one', async () => {
