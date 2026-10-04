@@ -25,8 +25,10 @@ export interface ExamSession {
   created_by_name: string | null
   /** Backend decides: Admin — any created session; Team Lead — one they created. */
   can_start: boolean
-  /** Admin / Team Lead may take the test themselves. */
+  /** Only an Admin may take the test (to check it) — never a Team Lead. */
   can_take: boolean
+  /** The page students open to join this session (absolute, from the API). */
+  join_url: string | null
   max_attempts: number | null
   title: string
   key: string

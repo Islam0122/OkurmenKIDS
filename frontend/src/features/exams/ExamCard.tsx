@@ -7,6 +7,16 @@ import { pluralize } from '@/utils/format'
 
 import { PhaseBadge, StatusDot, formatSessionDate, formatSessionTime } from './examUi'
 
+/** What opening the session is for, by phase — its page is the session's
+ * live monitoring and its results; nobody takes the test from here. */
+const ACTION_LABEL: Record<string, string> = {
+  draft: 'Открыть сессию',
+  scheduled: 'Открыть сессию',
+  active: 'Мониторинг',
+  finished: 'Результаты',
+  cancelled: 'Просмотреть',
+}
+
 export function ExamCard({ session }: { session: ExamSession }) {
   const { counts } = session
   const date = formatSessionDate(session)
@@ -81,7 +91,7 @@ export function ExamCard({ session }: { session: ExamSession }) {
           to={`/app/exams/${session.id}`}
           className="inline-flex h-9 items-center justify-center rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600"
         >
-          Открыть
+          {ACTION_LABEL[session.phase] ?? 'Открыть'}
         </Link>
       </div>
     </article>

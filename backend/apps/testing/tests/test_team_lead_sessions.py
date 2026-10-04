@@ -1,6 +1,7 @@
-"""Team Lead and test sessions: create a session for a group, start it, take
-the test themselves on the student pages (same timer/grading), see their own
-result and the students' results — and nothing more.
+"""Team Lead and test sessions: create a session for a group, start it,
+monitor it and see the students' results — never take the test themselves
+(that is a student's action; only an Admin may check a test that way, on the
+same student pages, with the same timer/grading).
 
 Absolute imports only — see the note at the top of apps/academy/tests.py.
 """
@@ -32,6 +33,10 @@ class TeamLeadSessionFixture(StudentFlowFixture):
         self.student2 = Student.objects.create(first_name="Aida", last_name="Bek", group=self.group)
         self.api = APIClient()
         self.api.force_authenticate(self.lead)
+        # The only LMS account that may take a session's test (to check it).
+        self.admin = User.objects.create_superuser(username="root", email="root@okurmen.kg", password=PASSWORD, first_name="R")
+        self.taker = APIClient()
+        self.taker.force_authenticate(self.admin)
 
     def create_session(self, client=None, **overrides):
         body = {
@@ -110,9 +115,29 @@ class TeamLeadCreatesAndStartsSessionTests(TeamLeadSessionFixture):
         self.assertTrue({str(mine.pk), str(theirs.pk)} <= ids)
 
 
-class TeamLeadTakesTestTests(TeamLeadSessionFixture):
-    def take(self, session) -> dict:
+class TeamLeadCannotTakeTests(TeamLeadSessionFixture):
+    def test_team_lead_never_enters_the_student_test_flow(self):
+        session = self.created_and_started()
         response = self.api.post(f"/api/v1/teacher/sessions/{session.pk}/take/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(StudentAttempt.objects.filter(user=self.lead).exists())
+        data = self.api.get(f"/api/v1/teacher/sessions/{session.pk}/participants/").data["session"]
+        self.assertFalse(data["can_take"])
+        self.assertTrue(self.taker.get(f"/api/v1/teacher/sessions/{session.pk}/participants/").data["session"]["can_take"])
+
+    def test_join_url_is_the_real_student_entry_for_this_session(self):
+        session = self.created_and_started()
+        data = self.api.get(f"/api/v1/teacher/sessions/{session.pk}/participants/").data["session"]
+        self.assertEqual(data["join_url"], f"http://testserver{reverse('testing_public_join')}?key={session.key}")
+        page = self.client.get(urlparse(data["join_url"]).path, {"key": session.key})
+        self.assertContains(page, session.test.title)
+        # An id that is not a visible session is a 404 — changing the id gets nothing.
+        self.assertEqual(self.api.get("/api/v1/teacher/sessions/00000000-0000-0000-0000-000000000000/participants/").status_code, 404)
+
+
+class AdminTakesTestTests(TeamLeadSessionFixture):
+    def take(self, session) -> dict:
+        response = self.taker.post(f"/api/v1/teacher/sessions/{session.pk}/take/")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
         return response.data
 
@@ -120,8 +145,8 @@ class TeamLeadTakesTestTests(TeamLeadSessionFixture):
         session = self.created_and_started()
         data = self.take(session)
         attempt = StudentAttempt.objects.get(pk=data["id"])
-        # The attempt is the Team Lead's own — not a roster student's.
-        self.assertEqual(attempt.user, self.lead)
+        # The attempt is the admin's own — not a roster student's.
+        self.assertEqual(attempt.user, self.admin)
         self.assertIsNone(attempt.student)
         self.assertEqual(attempt.status, AttemptStatus.ACTIVE)
         self.assertEqual(len(attempt.question_ids), 4)
@@ -140,7 +165,7 @@ class TeamLeadTakesTestTests(TeamLeadSessionFixture):
         self.assertEqual(attempt.score, 80.0)
 
         # Own result, in the LMS.
-        mine = self.api.get("/api/v1/teacher/my-attempts/")
+        mine = self.taker.get("/api/v1/teacher/my-attempts/")
         self.assertEqual(mine.status_code, status.HTTP_200_OK)
         self.assertEqual(len(mine.data), 1)
         result = mine.data[0]
@@ -159,14 +184,14 @@ class TeamLeadTakesTestTests(TeamLeadSessionFixture):
         first = self.take(session)
         second = self.take(session)
         self.assertEqual(first["id"], second["id"])
-        self.assertEqual(StudentAttempt.objects.filter(user=self.lead).count(), 1)
+        self.assertEqual(StudentAttempt.objects.filter(user=self.admin).count(), 1)
 
     def test_cannot_take_a_session_that_has_not_started(self):
         response = self.create_session()
-        take = self.api.post(f"/api/v1/teacher/sessions/{response.data['id']}/take/")
+        take = self.taker.post(f"/api/v1/teacher/sessions/{response.data['id']}/take/")
         self.assertEqual(take.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_team_lead_attempt_stays_out_of_student_statistics(self):
+    def test_staff_attempt_stays_out_of_student_statistics(self):
         session = self.created_and_started()
         data = self.take(session)
         self.open_handoff(data["take_url"])
@@ -206,7 +231,7 @@ class AttemptOwnershipTests(TeamLeadSessionFixture):
 
     def test_a_token_opens_only_its_own_attempt(self):
         session = self.created_and_started()
-        mine = self.api.post(f"/api/v1/teacher/sessions/{session.pk}/take/").data
+        mine = self.taker.post(f"/api/v1/teacher/sessions/{session.pk}/take/").data
         student_attempt = attempt_service.join(session, student=self.student)
         token = urlparse(mine["take_url"]).query.split("t=", 1)[1]
         response = self.client.get(f"{reverse('testing_public_take', args=[student_attempt.pk])}?t={token}")
@@ -227,8 +252,8 @@ class AttemptOwnershipTests(TeamLeadSessionFixture):
         response = self.client.get(f"{reverse('testing_public_take', args=[theirs.pk])}?t=forged")
         self.assertEqual(response.status_code, 404)
         # And the API lists only the caller's own attempts.
-        self.api.post(f"/api/v1/teacher/sessions/{session.pk}/take/")
-        ids = {row["id"] for row in self.api.get("/api/v1/teacher/my-attempts/").data}
+        self.taker.post(f"/api/v1/teacher/sessions/{session.pk}/take/")
+        ids = {row["id"] for row in self.taker.get("/api/v1/teacher/my-attempts/").data}
         self.assertNotIn(str(theirs.pk), ids)
 
 
@@ -278,9 +303,7 @@ class TrainerGetsNoNewRightsTests(TeamLeadSessionFixture):
         self.assertTrue(all(not row["can_start"] and not row["can_take"] for row in listing.data["results"]))
 
     def test_admin_still_can_everything_here(self):
-        admin = User.objects.create_superuser(username="root", email="root@okurmen.kg", password=PASSWORD, first_name="R")
-        client = APIClient()
-        client.force_authenticate(admin)
+        client = self.taker
         response = self.create_session(client=client)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(client.post(f"/api/v1/teacher/sessions/{response.data['id']}/start/").status_code, 200)
@@ -289,7 +312,7 @@ class TrainerGetsNoNewRightsTests(TeamLeadSessionFixture):
 class TeamLeadResultPageTests(TeamLeadSessionFixture):
     def test_result_page_leads_back_to_the_lms_not_to_the_student_join(self):
         session = self.created_and_started()
-        data = self.api.post(f"/api/v1/teacher/sessions/{session.pk}/take/").data
+        data = self.taker.post(f"/api/v1/teacher/sessions/{session.pk}/take/").data
         self.open_handoff(data["take_url"])
         self.client.post(reverse("testing_public_take", args=[data["id"]]), self.correct_post())
         page = self.client.get(reverse("testing_public_result", args=[data["id"]]))
@@ -299,10 +322,10 @@ class TeamLeadResultPageTests(TeamLeadSessionFixture):
 
     def test_an_unfinished_attempt_of_an_ended_session_shows_as_expired(self):
         session = self.created_and_started()
-        self.api.post(f"/api/v1/teacher/sessions/{session.pk}/take/")
+        self.taker.post(f"/api/v1/teacher/sessions/{session.pk}/take/")
         session.refresh_from_db()
         session.finish()
-        rows = self.api.get("/api/v1/teacher/my-attempts/").data
+        rows = self.taker.get("/api/v1/teacher/my-attempts/").data
         self.assertEqual(rows[0]["status"], AttemptStatus.EXPIRED)
 
 

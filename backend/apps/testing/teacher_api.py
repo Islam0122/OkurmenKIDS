@@ -34,6 +34,7 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework import status as http
@@ -133,6 +134,14 @@ def _counts(session, participants=None) -> dict:
     }
 
 
+def _join_url(request, session: TestSession) -> str | None:
+    if request is None:
+        return None
+    from urllib.parse import urlencode
+
+    return request.build_absolute_uri(f"{reverse('testing_public_join')}?{urlencode({'key': session.key})}")
+
+
 class TeacherSessionSerializer(serializers.Serializer):
     def to_representation(self, session: TestSession) -> dict:
         now = timezone.now()
@@ -144,11 +153,16 @@ class TeacherSessionSerializer(serializers.Serializer):
             "teacher_name": str(session.teacher) if session.teacher_id else None,
             "created_by_name": (session.created_by.get_full_name() or session.created_by.username) if session.created_by_id else None,
             "can_start": bool(user) and can_start(user, session) and session.effective_status_at(now) == "created",
-            "can_take": bool(user) and _can_run_sessions(user),
+            # Taking the test is a student's action — a Team Lead manages and
+            # monitors the session instead (see TeacherSessionTakeView).
+            "can_take": bool(user) and _is_admin(user),
             "max_attempts": session.max_attempts_per_student,
             "id": str(session.pk),
             "title": display_title(session),
             "key": session.key,
+            # The page students open to join (enter the key, pick themselves
+            # from the group list) — absolute, on this backend's own host.
+            "join_url": _join_url(self.context.get("request"), session),
             "session_type": session.session_type,
             "phase": phase,
             "phase_label": SessionPhase(phase).label,
@@ -265,7 +279,7 @@ class TeacherSessionListView(ListAPIView):
         session = sessions_for(request.user).annotate(questions_total=Count("test__questions", distinct=True)).get(pk=session.pk)
         participants = list(session.participants.select_related("student"))
         return Response(
-            TeacherSessionSerializer(session, context={"participants": {session.pk: participants}, "user": request.user}).data,
+            TeacherSessionSerializer(session, context={"participants": {session.pk: participants}, "user": request.user, "request": request}).data,
             status=http.HTTP_201_CREATED,
         )
 
@@ -275,7 +289,7 @@ class TeacherSessionListView(ListAPIView):
         by_session: dict = {}
         for participant in SessionParticipant.objects.filter(session__in=sessions).select_related("student"):
             by_session.setdefault(participant.session_id, []).append(participant)
-        serializer = TeacherSessionSerializer(sessions, many=True, context={"participants": by_session, "user": request.user})
+        serializer = TeacherSessionSerializer(sessions, many=True, context={"participants": by_session, "user": request.user, "request": request})
         if page is not None:
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
@@ -308,7 +322,7 @@ class TeacherParticipantListView(APIView):
             participant.session = session
         return Response({
             "session": TeacherSessionSerializer(
-                session, context={"participants": {session.pk: participants}, "user": request.user}
+                session, context={"participants": {session.pk: participants}, "user": request.user, "request": request}
             ).data,
             "participants": ParticipantSerializer(participants, many=True).data,
             "server_time": timezone.now(),
@@ -400,7 +414,7 @@ class TeacherSessionStartView(APIView):
         except SessionTransitionError as error:
             return Response({"detail": " ".join(error.messages)}, status=http.HTTP_400_BAD_REQUEST)
         session = sessions_for(request.user).annotate(questions_total=Count("test__questions", distinct=True)).get(pk=pk)
-        return Response(TeacherSessionSerializer(session, context={"participants": {}, "user": request.user}).data)
+        return Response(TeacherSessionSerializer(session, context={"participants": {}, "user": request.user, "request": request}).data)
 
 
 def _attempt_payload(request, attempt: StudentAttempt) -> dict:
@@ -437,12 +451,20 @@ def _attempt_payload(request, attempt: StudentAttempt) -> dict:
     }
 
 
-class TeacherSessionTakeView(APIView):
-    """«Пройти тест»: the Team Lead (or Admin) takes the session's test
-    themselves — same join rules, timer and grading as a student; the
-    attempt belongs to their account. Returns the link to the test page."""
+class IsAdminRole(BasePermission):
+    message = "Руководитель тренеров не проходит тест: откройте мониторинг и результаты сессии."
 
-    permission_classes = [IsAdminOrTeamLead]
+    def has_permission(self, request, view) -> bool:
+        return _is_admin(request.user)
+
+
+class TeacherSessionTakeView(APIView):
+    """«Пройти тест» — Admin only (checking a test as a student would). A
+    Team Lead never enters the student test flow: they manage the session,
+    watch it live and read its results. Same join rules, timer and grading
+    as a student; the attempt belongs to the admin's account."""
+
+    permission_classes = [IsAdminRole]
 
     def post(self, request, pk):
         session = get_object_or_404(sessions_for(request.user), pk=pk)
