@@ -181,6 +181,7 @@ class ParticipantSerializer(serializers.Serializer):
         status = participant.live_status_at(now)
         finished = status == ParticipantStatus.COMPLETED
         total = participant.question_total
+        attempt = participant.attempt
         return {
             "id": str(participant.pk),
             "student": {"id": participant.student_id, "name": str(participant.student)},
@@ -197,6 +198,9 @@ class ParticipantSerializer(serializers.Serializer):
             # Only once the student has finished — never mid-exam.
             "score": participant.score if finished else None,
             "result_available": finished,
+            # Exam Mode (student portal) violations of the current attempt.
+            "tab_switch_count": attempt.tab_switch_count if attempt else 0,
+            "violation_count": attempt.violation_count if attempt else 0,
         }
 
 
@@ -299,7 +303,7 @@ class TeacherParticipantListView(APIView):
     def get(self, request, pk):
         session = get_object_or_404(sessions_for(request.user), pk=pk)
         session.sync_schedule()
-        participants = list(session.participants.select_related("student"))
+        participants = list(session.participants.select_related("student", "attempt"))
         for participant in participants:
             participant.session = session
         return Response({

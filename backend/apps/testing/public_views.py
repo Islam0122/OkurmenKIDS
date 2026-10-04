@@ -154,6 +154,10 @@ def take_view(request, attempt_id):
     attempt = _own_attempt(request, attempt_id)
     if attempt.status != AttemptStatus.ACTIVE:
         return redirect("testing_public_result", attempt_id=attempt.pk)
+    if attempt.exam_mode:
+        # Started in the student portal: only its Exam Mode page (with the
+        # timer, autosave and restrictions) may take answers for it.
+        return render(request, "testing/public/exam_mode_only.html", status=403)
     questions = attempt_questions(attempt)
     error = None
     given: dict[str, SubmittedAnswer] = {}

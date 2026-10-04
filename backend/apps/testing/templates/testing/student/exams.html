@@ -1,0 +1,61 @@
+{% extends "testing/student/base.html" %}
+
+{% block title %}Экзамены{% endblock %}
+
+{% block content %}
+  <a class="sp-back" href="{% url 'student_portal_dashboard' %}"><i class="bi bi-chevron-left" aria-hidden="true"></i>Кабинет студента</a>
+  <header class="sp-head">
+    <div>
+      <h1 class="sp-h1">Экзамены</h1>
+      {% include "testing/student/_student_meta.html" %}
+    </div>
+  </header>
+
+  {% include "testing/student/_summary.html" %}
+
+  <h2 class="sp-h2">Доступные экзамены</h2>
+  {% if cards %}
+    <div class="sp-grid">
+      {% for card in cards %}
+        <article class="sp-card sp-exam" aria-labelledby="exam-{{ forloop.counter }}">
+          <div class="sp-exam__top">
+            <div>
+              <div class="sp-exam__subject"><i class="bi bi-book" aria-hidden="true"></i>{{ card.test.subject.name|default:"Без предмета" }}</div>
+              <h3 class="sp-exam__title" id="exam-{{ forloop.counter }}">{{ card.title }}</h3>
+            </div>
+            <span class="sp-badge sp-badge--{{ card.status }}">{{ card.status_label }}</span>
+          </div>
+          <dl class="sp-facts">
+            <div><dt><i class="bi bi-list-check" aria-hidden="true"></i>Вопросов</dt><dd>{{ card.question_count }}</dd></div>
+            <div><dt><i class="bi bi-hourglass-split" aria-hidden="true"></i>Продолжительность</dt><dd>{% if card.duration_minutes %}{{ card.duration_minutes }} мин{% else %}без ограничения{% endif %}</dd></div>
+            <div><dt><i class="bi bi-bar-chart" aria-hidden="true"></i>Максимальный балл</dt><dd>{% if card.max_points is not None %}{{ card.max_points }}{% else %}100%{% endif %}</dd></div>
+            <div><dt><i class="bi bi-check-circle" aria-hidden="true"></i>Проходной балл</dt><dd>{{ card.test.passing_score }}%</dd></div>
+          </dl>
+          <div class="sp-exam__dates">
+            <span><i class="bi bi-calendar-event" aria-hidden="true"></i>Начало: {{ card.starts_at|date:"d.m.Y H:i"|default:"—" }}</span>
+            <span><i class="bi bi-calendar-check" aria-hidden="true"></i>Окончание: {{ card.ends_at|date:"d.m.Y H:i"|default:"—" }}</span>
+          </div>
+          <div class="sp-exam__foot">
+            <span class="sp-exam__note">
+              {% if card.best_score is not None %}Лучший результат: {{ card.best_score|floatformat:0 }}%
+              {% elif card.attempts_left is not None and card.status != "finished" %}Попыток осталось: {{ card.attempts_left }}
+              {% endif %}
+            </span>
+            {% if card.active_attempt %}
+              <a class="sp-btn sp-btn--primary" href="{% url 'student_exam_attempt' card.session.pk card.active_attempt.pk %}"><i class="bi bi-play-circle" aria-hidden="true"></i>Продолжить</a>
+            {% elif card.status == "available" or card.status == "upcoming" %}
+              <a class="sp-btn {% if card.can_start %}sp-btn--primary{% else %}sp-btn--ghost{% endif %}" href="{% url 'student_exam_prepare' card.session.pk %}"><i class="bi bi-list-check" aria-hidden="true"></i>Подготовиться</a>
+            {% elif card.last_attempt %}
+              <a class="sp-btn sp-btn--ghost" href="{% url 'student_exam_result' card.session.pk card.last_attempt.pk %}"><i class="bi bi-clipboard-data" aria-hidden="true"></i>Результат</a>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="sp-card sp-empty">
+      <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+      <p>Пока нет экзаменов для вашей группы.</p>
+    </div>
+  {% endif %}
+{% endblock %}

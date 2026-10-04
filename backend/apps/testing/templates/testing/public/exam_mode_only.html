@@ -1,0 +1,11 @@
+{% extends "testing/public/base.html" %}
+
+{% block title %}Экзамен{% endblock %}
+
+{% block content %}
+  <section class="ex-card">
+    <h1 class="ex-h1 ex-h1--sm">Экзамен проходит в Exam Mode</h1>
+    <p class="ex-muted">Эта попытка начата в кабинете студента. Продолжить её можно только там — войдите в кабинет студента и откройте раздел «Экзамены».</p>
+    <p><a class="ex-btn ex-btn--primary" href="{% url 'student_exams' %}">Открыть кабинет студента</a></p>
+  </section>
+{% endblock %}

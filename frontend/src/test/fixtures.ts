@@ -385,6 +385,8 @@ export function buildExamParticipant(overrides: Partial<ExamParticipant> = {}): 
     duration_seconds: 2322,
     score: null,
     result_available: false,
+    tab_switch_count: 0,
+    violation_count: 0,
     ...overrides,
   }
 }

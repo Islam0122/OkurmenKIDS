@@ -1,0 +1,11 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  <li><a href="{% url 'admin:testing_studentportalaccess_issue_group' %}" class="btn btn-sm btn-outline-primary"><i class="bi bi-people"></i> Выдать коды группе</a></li>
+  {{ block.super }}
+{% endblock %}
+
+{% block content %}
+  <p class="help">Студент входит в кабинет на странице <strong>/student/login/</strong> по своему коду и проходит там экзамены в Exam Mode.</p>
+  {{ block.super }}
+{% endblock %}

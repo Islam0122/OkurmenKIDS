@@ -1,0 +1,88 @@
+{% extends "admin/testing/sessions/base.html" %}
+{% load question_bank %}
+
+{% block crumbs %}
+  <li class="breadcrumb-item"><a href="{% url 'admin:testing_testsession_changelist' %}">Сессии</a></li>
+  <li class="breadcrumb-item active">Мониторинг экзаменов</li>
+{% endblock %}
+
+{% block section %}
+  <header class="okt-page-head">
+    <div>
+      <h1 class="okt-h1">Мониторинг экзаменов</h1>
+      <p class="okt-sub">Попытки, пройденные в Exam Mode кабинета студента: время, результат и зафиксированные нарушения.</p>
+    </div>
+  </header>
+
+  <form class="oks-list-filters" method="get" role="search">
+    <div class="okt-search oks-list-filters__search">
+      <label class="ok-visually-hidden" for="oks-q">Поиск</label>
+      <span class="okt-search__icon">{% ticon "search" 16 %}</span>
+      <input id="oks-q" class="ok-input" type="search" name="q" value="{{ query }}" placeholder="Студент, сессия или тест…">
+    </div>
+    <label class="oks-field"><span>Группа</span>
+      <select name="group" class="ok-input">
+        <option value="">Все</option>
+        {% for g in groups %}<option value="{{ g.pk }}"{% if filters.group == g.pk|stringformat:"d" %} selected{% endif %}>{{ g.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="oks-field"><span>Статус</span>
+      <select name="status" class="ok-input">
+        <option value="">Все</option>
+        {% for value, label in statuses %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="oks-field"><span>Нарушения</span>
+      <select name="violations" class="ok-input">
+        <option value="">Все попытки</option>
+        <option value="1"{% if filters.violations %} selected{% endif %}>Только с нарушениями</option>
+      </select>
+    </label>
+    <div class="oks-list-filters__actions">
+      <button type="submit" class="ok-btn-secondary okt-btn">{% ticon "filter" 15 %}<span>Применить</span></button>
+      {% if has_filters %}<a class="okt-link-reset" href="?">Сбросить</a>{% endif %}
+    </div>
+  </form>
+
+  {% if page.object_list %}
+    <div class="okt-qtable-wrap">
+      <table class="okt-qtable oks-table">
+        <thead>
+          <tr>
+            <th>Студент</th><th>Экзамен</th><th>Начало</th><th>Завершение</th><th>Статус</th>
+            <th class="okt-qtable__center">Балл</th><th class="okt-qtable__center">Уходов со страницы</th>
+            <th class="okt-qtable__center">Нарушений</th><th>Время</th><th><span class="ok-visually-hidden">Действия</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in page.object_list %}
+            <tr{% if a.status == "active" %} class="is-live"{% endif %}>
+              <td>{{ a.student|default:a.student_name }}<div class="okt-qtable__meta">{{ a.session.group.name|default:"—" }}</div></td>
+              <td class="oks-table__test"><a href="{% url 'admin:testing_testsession_change' a.session_id %}">{{ a.session.title|default:a.session.test.title }}</a></td>
+              <td class="okt-nowrap">{{ a.started_at|date:"d.m.Y H:i" }}</td>
+              <td class="okt-nowrap">{{ a.finished_at|date:"d.m.Y H:i"|default:"—" }}</td>
+              <td>{{ a.get_status_display }}{% if a.finish_reason %}<div class="okt-qtable__meta">{{ a.get_finish_reason_display }}</div>{% endif %}</td>
+              <td class="okt-qtable__center">{% if a.status == "finished" %}<strong class="{{ a.score|score_class:a.session.test.passing_score }}">{{ a.score|percent }}</strong>{% else %}—{% endif %}</td>
+              <td class="okt-qtable__center">{% if a.tab_switch_count %}<span class="ok-badge ok-badge-warning">{{ a.tab_switch_count }}</span>{% else %}0{% endif %}</td>
+              <td class="okt-qtable__center">{% if a.violation_count %}<span class="ok-badge ok-badge-danger">{{ a.violation_count }}</span>{% else %}0{% endif %}</td>
+              <td class="okt-nowrap">{{ a.duration_seconds|duration_label }}</td>
+              <td class="okt-nowrap"><a class="ok-btn-primary ok-btn-sm okt-btn" href="{% url 'admin:testing_attempt_detail' a.pk %}">{% ticon "eye" 14 %}<span>Открыть</span></a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if page.has_other_pages %}
+      <nav class="okt-pager" aria-label="Страницы">
+        {% if page.has_previous %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.previous_page_number }}&amp;{{ filter_qs }}">{% ticon "chevron-left" 14 %} Назад</a>{% endif %}
+        <span>Страница {{ page.number }} из {{ page.paginator.num_pages }} · {{ page.paginator.count }} попыток</span>
+        {% if page.has_next %}<a class="ok-btn-secondary ok-btn-sm" href="?page={{ page.next_page_number }}&amp;{{ filter_qs }}">Далее {% ticon "chevron-right" 14 %}</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="okt-empty">
+      <span class="okt-empty__icon">{% ticon "shield-check" 28 %}</span>
+      <h2>Попыток в Exam Mode пока нет</h2>
+    </div>
+  {% endif %}
+{% endblock %}
