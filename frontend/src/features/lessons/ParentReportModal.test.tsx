@@ -4,9 +4,16 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LessonDetailPage } from '@/features/lessons/LessonDetailPage'
-import { buildLesson, paginated } from '@/test/fixtures'
+import { buildLesson, buildUser, paginated } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
+import type { UserRole } from '@/types/auth'
 import type { ParentLessonReport } from '@/types/academy'
+
+const mockRole = vi.hoisted(() => ({ role: 'teacher' as UserRole }))
+
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ user: buildUser({ role: mockRole.role }), status: 'authenticated', login: vi.fn(), logout: vi.fn() }),
+}))
 
 vi.mock('@/api/lessons', () => ({
   lessonsApi: {

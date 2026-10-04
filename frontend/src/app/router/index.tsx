@@ -6,6 +6,7 @@ import { LoginPage } from '@/features/auth/LoginPage'
 
 import { NotFoundPage } from './NotFoundPage'
 import { ProtectedRoute } from './ProtectedRoute'
+import { RequireRoles } from './RequireRoles'
 import { RouteErrorPage } from './RouteErrorPage'
 
 export const router = createBrowserRouter([
@@ -34,6 +35,33 @@ export const router = createBrowserRouter([
               const { SchedulePage } = await import('@/features/schedule/SchedulePage')
               return { Component: SchedulePage }
             },
+          },
+          {
+            // Academy-wide sections: Admin and Team Lead (backend: IsAdminOrTeamLeadReadOnly).
+            element: <RequireRoles roles={['admin', 'team_lead']} />,
+            children: [
+              {
+                path: 'trainers',
+                lazy: async () => {
+                  const { TrainersListPage } = await import('@/features/trainers/TrainersListPage')
+                  return { Component: TrainersListPage }
+                },
+              },
+              {
+                path: 'trainers/:id',
+                lazy: async () => {
+                  const { TrainerDetailPage } = await import('@/features/trainers/TrainerDetailPage')
+                  return { Component: TrainerDetailPage }
+                },
+              },
+              {
+                path: 'analytics',
+                lazy: async () => {
+                  const { AnalyticsPage } = await import('@/features/analytics/AnalyticsPage')
+                  return { Component: AnalyticsPage }
+                },
+              },
+            ],
           },
           {
             path: 'groups',

@@ -19,7 +19,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.users.import_export.formats import UnsupportedFileFormat
 from apps.users.models import Teacher, User
-from apps.users.permissions import IsAdmin
+from apps.users.permissions import IsAdmin, IsAdminOrTeamLeadReadOnly, can_view_academy, is_team_lead
 from apps.users.serializers import (
     ImportFileRequestSerializer,
     ImportPreviewSerializer,
@@ -126,6 +126,14 @@ def _is_admin(user) -> bool:
     if not getattr(user, "is_authenticated", False):
         return False
     return bool(user.is_superuser or user.role == User.Role.ADMIN)
+
+
+def _sees_academy(user) -> bool:
+    """Read scope = the whole academy: Admin or Team Lead. Only ever used to
+    widen what a *read* returns — every write path checks `_is_admin` (or
+    lesson ownership) instead, and Team Lead writes are refused up front by
+    the permission classes (IsAdminOrReadOnly / IsAdminOrOwningTeacher)."""
+    return can_view_academy(user)
 
 
 def _as_drf_validation_error(exc: DjangoValidationError) -> DRFValidationError:
@@ -332,7 +340,7 @@ class StudentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Student.objects.select_related("group")
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -464,7 +472,7 @@ class GroupViewSet(viewsets.ModelViewSet):
             )
         )
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -549,11 +557,14 @@ class GroupViewSet(viewsets.ModelViewSet):
             OpenApiParameter("status", str, enum=[value for value, _ in Lesson.Status.choices]),
         ],
     )
-    @action(detail=True, methods=["get"], url_path="analytics", permission_classes=[IsAuthenticated, IsAdmin])
+    @action(
+        detail=True, methods=["get"], url_path="analytics",
+        permission_classes=[IsAuthenticated, IsAdminOrTeamLeadReadOnly],
+    )
     def analytics(self, request, pk=None):
         """Group Analytics across every Teaching Program of the group (see
-        services.group_analytics). Admin only: it puts every trainer's
-        programs side by side."""
+        services.group_analytics). Admin and Team Lead only: it puts every
+        trainer's programs side by side."""
         group = get_object_or_404(self.get_queryset(), pk=pk)
         data = get_group_analytics(group, GroupAnalyticsFilters.from_query(request.query_params)).as_dict()
         return Response(GroupAnalyticsSerializer(data).data)
@@ -590,7 +601,7 @@ class GroupViewSet(viewsets.ModelViewSet):
         # invisible to another teacher of the same group's other Teaching
         # Programs (see models.GroupTeacher / models.LessonQuerySet.for_teacher) —
         # Admin still sees every lesson of the group.
-        if not _is_admin(request.user):
+        if not _sees_academy(request.user):
             teacher = _teacher_profile(request)
             lessons = lessons.for_teacher(teacher) if teacher is not None else lessons.none()
 
@@ -650,7 +661,7 @@ class GroupScheduleViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = GroupSchedule.objects.select_related("group", "teacher__user", "subject", "room")
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -691,7 +702,7 @@ class GroupTeacherViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = GroupTeacher.objects.select_related("group", "teacher__user", "subject").prefetch_related("schedules")
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -729,7 +740,7 @@ class GroupTeacherLessonPlanViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = GroupTeacherLessonPlan.objects.select_related("group_teacher__group", "group_teacher__teacher__user")
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -766,7 +777,7 @@ class LessonViewSet(
             "group__teacher__user", "teacher__user", "room", "subject", "plan", "rescheduled_to",
         )
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -988,7 +999,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Attendance.objects.select_related("student", "lesson__group__teacher__user")
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -1040,7 +1051,7 @@ class HomeworkViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Homework.objects.select_related("lesson__group__teacher__user")
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -1168,7 +1179,7 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = HomeworkResult.objects.select_related("student", "homework__lesson__group__teacher__user")
         user = self.request.user
-        if _is_admin(user):
+        if _sees_academy(user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -1316,7 +1327,7 @@ class AnalyticsDashboardView(APIView):
         course_id = data["course"].id if data.get("course") else None
         subject_id = data["subject"].id if data.get("subject") else None
 
-        if not _is_admin(request.user):
+        if not _sees_academy(request.user):
             teacher = _teacher_profile(request)
             # No id can ever be 0 — forcing this keeps every downstream
             # query empty instead of special-casing "no teacher profile".
@@ -1359,8 +1370,8 @@ class MonthlyTeacherReportViewSet(
     """A Teacher's own once-a-month report (spec: "Один Teacher может иметь
     только один отчёт за один месяц" — `MonthlyTeacherReport`'s own
     unique_teacher_monthly_report constraint). A Teacher may only see and
-    create/comment on their own reports; Admin may see every report but
-    never creates or edits one — every figure besides `comment` is always
+    create/comment on their own reports; Admin and Team Lead may see every
+    report but never create or edit one — every figure besides `comment` is always
     computed, never entered (see .services.monthly_report)."""
 
     serializer_class = MonthlyTeacherReportSerializer
@@ -1372,7 +1383,7 @@ class MonthlyTeacherReportViewSet(
 
     def get_queryset(self):
         qs = MonthlyTeacherReport.objects.select_related("teacher__user").prefetch_related("teacher__subjects")
-        if _is_admin(self.request.user):
+        if _sees_academy(self.request.user):
             return qs
         teacher = _teacher_profile(self.request)
         if teacher is None:
@@ -1382,6 +1393,8 @@ class MonthlyTeacherReportViewSet(
     def create(self, request, *args, **kwargs):
         if _is_admin(request.user):
             raise PermissionDenied("Отчёт создаёт только тренер — администратор может только просматривать.")
+        if is_team_lead(request.user):
+            raise PermissionDenied("Отчёт создаёт только тренер — руководитель тренеров может только просматривать.")
         teacher = _teacher_profile(request)
         if teacher is None:
             raise PermissionDenied("Профиль тренера не найден.")
@@ -1405,8 +1418,8 @@ class MonthlyTeacherReportViewSet(
             raise MethodNotAllowed("PUT")
 
         instance = self.get_object()
-        if _is_admin(request.user):
-            raise PermissionDenied("Администратор может только просматривать отчёты тренеров.")
+        if _sees_academy(request.user):
+            raise PermissionDenied("Администратор и руководитель тренеров могут только просматривать отчёты тренеров.")
         teacher = _teacher_profile(request)
         if teacher is None or instance.teacher_id != teacher.id:
             raise PermissionDenied("Вы можете редактировать только свой отчёт.")
@@ -1450,13 +1463,15 @@ class AcademyMonthlyReportViewSet(
 ):
     """One report per calendar month for the whole academy (spec: "Не
     создавать два отчёта за один месяц" — `AcademyMonthlyReport`'s own
-    unique_academy_monthly_report constraint). Admin-only end to end; every
+    unique_academy_monthly_report constraint). Admin-only for writes, Team
+    Lead may read; every
     figure besides `comment` is always computed, never entered (see
     .services.academy_monthly_report)."""
 
     queryset = AcademyMonthlyReport.objects.all()
     serializer_class = AcademyMonthlyReportSerializer
-    permission_classes = [IsAuthenticated, IsAdmin]
+    # Team Lead reads (list / retrieve / pdf); creating and commenting stay Admin's.
+    permission_classes = [IsAuthenticated, IsAdminOrTeamLeadReadOnly]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ["year", "month"]
     ordering_fields = ["year", "month", "created_at"]

@@ -8,7 +8,10 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
+import { PeriodSelect, ReportExportButtons } from '@/features/analytics/reportUi'
 import { useAcademyReportsList, useCreateAcademyReport } from '@/hooks/useAcademyReports'
+import { useAuth } from '@/hooks/useAuth'
+import type { ReportPeriodKey } from '@/types/reports'
 import { extractErrorMessage } from '@/lib/apiError'
 import { getYearOptions, MONTH_OPTIONS } from '@/features/reports/months'
 
@@ -16,6 +19,26 @@ import { AcademyReportCard } from './AcademyReportCard'
 import { AcademyReportCardSkeleton } from './AcademyReportCardSkeleton'
 
 const YEAR_OPTIONS = getYearOptions()
+
+/** Отчёт по тренерам, группам, студентам и предметам + KPI, посещаемость и
+ * ДЗ за период — PDF/Excel from the Reports API (Admin and Team Lead). */
+function ReportsExportCard() {
+  const [period, setPeriod] = useState<ReportPeriodKey>('this_month')
+  return (
+    <div className="mb-6 card card-body flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <p className="font-medium text-ink">Сводный отчёт за период</p>
+        <p className="text-sm text-ink-secondary">Тренеры, группы, студенты, предметы, KPI, посещаемость и ДЗ</p>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="w-48">
+          <PeriodSelect value={period} onChange={setPeriod} />
+        </div>
+        <ReportExportButtons params={{ period }} />
+      </div>
+    </div>
+  )
+}
 
 export function AcademyReportsListPage() {
   const today = new Date()
@@ -26,6 +49,9 @@ export function AcademyReportsListPage() {
   const { showToast } = useToast()
   const { data, isPending, isError, refetch } = useAcademyReportsList()
   const mutation = useCreateAcademyReport()
+  const { user } = useAuth()
+  // Creating a month's report is an Admin write; a Team Lead reads existing ones.
+  const canCreate = user?.role === 'admin'
 
   async function handleOpenReport() {
     try {
@@ -40,6 +66,7 @@ export function AcademyReportsListPage() {
     <div>
       <PageHeader title="Отчёты академии" description="Ежемесячная статистика и результаты академии" />
 
+      {canCreate ? (
       <div className="mb-6 flex flex-wrap items-end gap-2 card card-body">
         <div>
           <label className="mb-1.5 block text-xs font-medium text-ink-secondary">Год</label>
@@ -53,6 +80,10 @@ export function AcademyReportsListPage() {
           Открыть отчёт
         </Button>
       </div>
+      ) : null}
+
+      {/* Full academy report (trainers, groups, students, subjects, KPI) for a period. */}
+      <ReportsExportCard />
 
       {isPending ? (
         <div className="space-y-3">
@@ -68,7 +99,11 @@ export function AcademyReportsListPage() {
         <EmptyState
           icon={School}
           title="Отчётов пока нет"
-          description="Выберите год и месяц выше, чтобы открыть первый отчёт академии."
+          description={
+            canCreate
+              ? 'Выберите год и месяц выше, чтобы открыть первый отчёт академии.'
+              : 'Ежемесячные отчёты появятся, когда их сформирует администратор. Сводный отчёт за период доступен выше.'
+          }
         />
       ) : null}
 

@@ -23,7 +23,7 @@ from .import_export.teachers import (
     preview_teachers_import,
 )
 from .models import Subject, User
-from .permissions import IsAdmin, IsTeacher
+from .permissions import IsAdmin, IsAdminOrTeamLeadReadOnly, IsTeacher, is_team_lead
 from .serializers import ImportFileRequestSerializer, ImportPreviewSerializer, ImportResultSerializer, SubjectSerializer
 
 from .models import Teacher
@@ -82,9 +82,16 @@ class TrainerViewSet(viewsets.ModelViewSet):
     ordering_fields = ["user__first_name", "user__last_name", "created_at"]
     ordering = ["-created_at"]
 
+    # Read-only actions a Team Lead may use: the trainer list and a trainer's
+    # profile. Create / deactivate / verify / import / export stay Admin-only
+    # (user management is never a Team Lead's).
+    TEAM_LEAD_ACTIONS = ("list", "retrieve")
+
     def get_permissions(self):
         if self.action == "me":
             return [IsAuthenticated(), IsTeacher()]
+        if self.action in self.TEAM_LEAD_ACTIONS:
+            return [IsAuthenticated(), IsAdminOrTeamLeadReadOnly()]
         return [IsAuthenticated(), IsAdmin()]
 
     def get_serializer_class(self):
@@ -234,6 +241,10 @@ class SubjectViewSet(viewsets.ReadOnlyModelViewSet):
 
         if getattr(user, "role", None) == User.Role.ADMIN:
             return [IsAdmin()]
+
+        if is_team_lead(user):
+            # Read-only viewset — the Team Lead sees the whole catalogue.
+            return [IsAdminOrTeamLeadReadOnly()]
 
         return [IsTeacher()]
 

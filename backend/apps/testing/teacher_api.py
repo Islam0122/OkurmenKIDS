@@ -8,7 +8,8 @@
 Scoping is done on the backend, in every queryset: a teacher only reaches
 sessions whose group is one of theirs (Group.objects.for_teacher — the same
 rule as the rest of the portal), so another group's session is a plain 404
-whatever its id. Admins see every session.
+whatever its id. Admins and the Team Lead see every session (every view here
+is a GET, so the Team Lead stays read-only).
 
 Monitoring shows progress, never answers: no answer content, correctness or
 score while a student is still taking the test. The detailed result opens
@@ -31,6 +32,7 @@ from rest_framework.views import APIView
 
 from apps.academy.models import Group
 from apps.users.models import User
+from apps.users.permissions import is_team_lead
 
 from .models import ParticipantStatus, SessionParticipant, SessionPhase, TestSession
 from .services.attempts import result_rows
@@ -49,17 +51,17 @@ def _is_admin(user) -> bool:
 
 
 class IsTeacherOrAdmin(BasePermission):
-    message = "Доступно только тренеру или администратору."
+    message = "Доступно только тренеру, руководителю тренеров или администратору."
 
     def has_permission(self, request, view) -> bool:
         user = request.user
-        return _is_admin(user) or getattr(user, "teacher_profile", None) is not None
+        return _is_admin(user) or is_team_lead(user) or getattr(user, "teacher_profile", None) is not None
 
 
 def sessions_for(user):
     """Every session the user may see — the single scoping rule."""
     sessions = TestSession.objects.select_related("test", "group").filter(group__isnull=False)
-    if _is_admin(user):
+    if _is_admin(user) or is_team_lead(user):
         return sessions
     teacher = getattr(user, "teacher_profile", None)
     if teacher is None:

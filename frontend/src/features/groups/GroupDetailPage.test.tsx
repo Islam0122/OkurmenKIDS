@@ -11,8 +11,16 @@ import {
   buildGroupScheduleSlot,
   buildGroupTeacherSummary,
   buildMetric,
+  buildUser,
 } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
+import type { UserRole } from '@/types/auth'
+
+const mockRole = vi.hoisted(() => ({ role: 'teacher' as UserRole }))
+
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ user: buildUser({ role: mockRole.role }), status: 'authenticated', login: vi.fn(), logout: vi.fn() }),
+}))
 
 vi.mock('@/api/groups', () => ({
   groupsApi: { get: vi.fn(), list: vi.fn(), schedule: vi.fn(), students: vi.fn() },

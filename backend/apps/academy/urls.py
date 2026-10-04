@@ -22,13 +22,14 @@ router.register("academy-reports", views.AcademyMonthlyReportViewSet, basename="
 urlpatterns = [
     path("analytics/dashboard/", views.AnalyticsDashboardView.as_view(), name="analytics-dashboard"),
     path("availability/", views.TeacherAvailabilityView.as_view(), name="teacher-availability"),
-    # Reports (admin-only) — see report_views.
+    # Reports (Admin + Team Lead, read-only) — see report_views.
     path("reports/overview/", report_views.ReportsOverviewView.as_view(), name="reports-overview"),
     path("reports/filters/", report_views.ReportsFilterOptionsView.as_view(), name="reports-filters"),
     path("reports/groups/", report_views.ReportsGroupsView.as_view(), name="reports-groups"),
     path("reports/groups/<int:pk>/", report_views.ReportsGroupDetailView.as_view(), name="reports-group-detail"),
     path("reports/subjects/", report_views.ReportsSubjectsView.as_view(), name="reports-subjects"),
     path("reports/subjects/<int:pk>/", report_views.ReportsSubjectDetailView.as_view(), name="reports-subject-detail"),
+    path("reports/students/", report_views.ReportsStudentsView.as_view(), name="reports-students"),
     path("reports/teachers/", report_views.ReportsTeachersView.as_view(), name="reports-teachers"),
     path("reports/teachers/<int:pk>/", report_views.ReportsTeacherDetailView.as_view(), name="reports-teacher-detail"),
     path("reports/export/pdf/", report_views.ReportsExportPdfView.as_view(), name="reports-export-pdf"),

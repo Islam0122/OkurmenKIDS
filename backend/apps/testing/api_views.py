@@ -1,4 +1,4 @@
-"""Test bank REST API (ADMIN role only).
+"""Test bank REST API (ADMIN role; TEAM_LEAD may only read).
 
     GET/POST              /api/v1/tests/
     GET/PATCH/DELETE      /api/v1/tests/{id}/
@@ -17,7 +17,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.users.permissions import IsAdmin
+from apps.users.permissions import IsAdminOrTeamLeadReadOnly
 
 from .models import Test, TestStatus
 from .serializers import QuestionSerializer, TestSerializer
@@ -26,7 +26,7 @@ from .services import questions as question_service
 
 class TestViewSet(viewsets.ModelViewSet):
     serializer_class = TestSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrTeamLeadReadOnly]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
@@ -48,7 +48,7 @@ class TestViewSet(viewsets.ModelViewSet):
 
 class TestQuestionViewSet(viewsets.ModelViewSet):
     serializer_class = QuestionSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrTeamLeadReadOnly]
     pagination_class = None  # a test's questions are always returned whole, in order
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     lookup_url_kwarg = "question_id"

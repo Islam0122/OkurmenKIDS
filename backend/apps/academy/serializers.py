@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.users.models import Subject, Teacher, User
+from apps.users.permissions import is_team_lead
 from apps.users.serializers import SubjectSerializer, TeacherSerializer
 
 from .constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL
@@ -820,7 +821,10 @@ class LessonSerializer(_RequestAwareSerializer):
     def get_attendance_editable(self, obj: Lesson) -> bool:
         """Mirrors views._assert_lesson_editable — never a second,
         frontend-only definition of "is this lesson locked" that could
-        drift from the backend's own enforcement."""
+        drift from the backend's own enforcement. Always False for a Team
+        Lead, who only reads (see IsAdminOrOwningTeacher)."""
+        if is_team_lead(self._request_user()):
+            return False
         return not lesson_lifecycle.lesson_editing_locked(obj)
 
     def validate(self, attrs):

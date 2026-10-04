@@ -1,4 +1,5 @@
-export type UserRole = 'admin' | 'teacher'
+/** `team_lead` — руководитель тренеров: читает всю академию, ничего не изменяет. */
+export type UserRole = 'admin' | 'teacher' | 'team_lead'
 
 /** `apps.users.serializers.UserSerializer` — read-only in full. */
 export interface User {

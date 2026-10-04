@@ -13,6 +13,11 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Tabs } from '@/components/ui/Tabs'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useAttendanceList } from '@/hooks/useAttendance'
+import { useAuth } from '@/hooks/useAuth'
+import { useReportGroup } from '@/hooks/useReports'
+import { seesWholeAcademy } from '@/lib/roles'
+import { KpiBadge, PeriodSelect, pct, periodCaption } from '@/features/analytics/reportUi'
+import type { ReportPeriodKey } from '@/types/reports'
 import { useGroup, useGroupSchedule } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
 import { useAnalyticsDashboard } from '@/hooks/useKPI'
@@ -39,6 +44,8 @@ const TABS = [
   { key: 'attendance', label: 'Посещаемость' },
   { key: 'homework', label: 'Домашние задания' },
   { key: 'kpi', label: 'KPI' },
+  // Admin / Team Lead only: every trainer of the group side by side (backend: /reports/groups/{id}/).
+  { key: 'analytics', label: 'Аналитика' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -47,6 +54,9 @@ export function GroupDetailPage() {
   const { id } = useParams<{ id: string }>()
   const groupId = Number(id)
   const [tab, setTab] = useState<TabKey>('overview')
+  const { user } = useAuth()
+  const academyView = seesWholeAcademy(user?.role)
+  const tabs = academyView ? TABS : TABS.filter((item) => item.key !== 'analytics')
 
   const { data: group, isPending, isError, refetch } = useGroup(groupId)
 
@@ -61,19 +71,20 @@ export function GroupDetailPage() {
         badge={<Badge tone={STATUS_TONE[group.status]}>{group.status_display}</Badge>}
       />
 
-      <Tabs aria-label="Разделы группы" items={TABS} value={tab} onChange={setTab} />
+      <Tabs aria-label="Разделы группы" items={tabs} value={tab} onChange={setTab} />
 
-      {tab === 'overview' ? <OverviewTab group={group} /> : null}
+      {tab === 'overview' ? <OverviewTab group={group} linkTrainers={academyView} /> : null}
       {tab === 'students' ? <StudentsTab groupId={groupId} /> : null}
       {tab === 'schedule' ? <ScheduleTab groupId={groupId} /> : null}
       {tab === 'attendance' ? <AttendanceTab groupId={groupId} /> : null}
       {tab === 'homework' ? <HomeworkTab groupId={groupId} /> : null}
       {tab === 'kpi' ? <KpiTab groupId={groupId} /> : null}
+      {tab === 'analytics' && academyView ? <AnalyticsTab groupId={groupId} /> : null}
     </div>
   )
 }
 
-function OverviewTab({ group }: { group: Group }) {
+function OverviewTab({ group, linkTrainers }: { group: Group; linkTrainers: boolean }) {
   return (
     <div className="space-y-6">
       <dl className="grid grid-cols-1 gap-4 card card-body sm:grid-cols-2">
@@ -96,7 +107,15 @@ function OverviewTab({ group }: { group: Group }) {
                 <div key={program.id} className="card card-body">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-medium text-ink">
-                      {program.teacher_detail.user.first_name} {program.teacher_detail.user.last_name}
+                      {linkTrainers ? (
+                        <Link to={`/app/trainers/${program.teacher}`} className="text-brand-700 hover:underline">
+                          {program.teacher_detail.user.first_name} {program.teacher_detail.user.last_name}
+                        </Link>
+                      ) : (
+                        <>
+                          {program.teacher_detail.user.first_name} {program.teacher_detail.user.last_name}
+                        </>
+                      )}
                       {program.subject_detail ? ` — ${program.subject_detail.name}` : ''}
                     </p>
                     <Badge tone={program.is_active ? 'success' : 'muted'}>{program.is_active ? 'Активна' : 'Неактивна'}</Badge>
@@ -317,6 +336,84 @@ function KpiTab({ groupId }: { groupId: number }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Group → Trainers / Students results / KPI for a period, read-only. */
+function AnalyticsTab({ groupId }: { groupId: number }) {
+  const navigate = useNavigate()
+  const [period, setPeriod] = useState<ReportPeriodKey>('this_month')
+  const { data, isPending, isError, refetch } = useReportGroup(groupId, { period, page_size: 200 })
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="text-sm text-ink-secondary">{periodCaption(data?.filters)}</p>
+        <div className="w-full sm:w-52">
+          <PeriodSelect value={period} onChange={setPeriod} />
+        </div>
+      </div>
+
+      {isPending ? <LoadingState label="Считаем показатели…" /> : null}
+      {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
+
+      {data ? (
+        <>
+          <dl className="grid grid-cols-2 gap-4 card card-body sm:grid-cols-5">
+            <Field label="Посещаемость" value={pct(data.metrics.attendance ?? null)} />
+            <Field label="ДЗ" value={pct(data.metrics.homework ?? null)} />
+            <Field label="Результаты" value={pct(data.metrics.progress ?? null)} />
+            <Field label="Активность" value={pct(data.metrics.lesson_completion ?? null)} />
+            <div>
+              <dt className="text-xs text-ink-secondary">KPI</dt>
+              <dd className="mt-1">
+                <KpiBadge value={data.kpi.total} level={data.kpi.status} />
+              </dd>
+            </div>
+          </dl>
+
+          <div>
+            <h3 className="section-title mb-3">Тренеры группы</h3>
+            {data.teacher_breakdown.length === 0 ? (
+              <EmptyState title="Нет занятий за период" />
+            ) : (
+              <DataTable
+                rows={data.teacher_breakdown}
+                getRowKey={(row) => row.id ?? 'none'}
+                onRowClick={(row) => (row.id ? navigate(`/app/trainers/${row.id}`) : undefined)}
+                columns={[
+                  { key: 'name', header: 'Тренер', render: (row) => row.name },
+                  { key: 'lessons', header: 'Занятий', render: (row) => `${row.lessons.held} / ${row.lessons.total}` },
+                  { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
+                  { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
+                  { key: 'kpi', header: 'KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
+                ]}
+              />
+            )}
+          </div>
+
+          <div>
+            <h3 className="section-title mb-3">Студенты</h3>
+            {data.students_list.results.length === 0 ? (
+              <EmptyState title="В группе нет студентов" />
+            ) : (
+              <DataTable
+                rows={data.students_list.results}
+                getRowKey={(row) => row.id}
+                onRowClick={(row) => navigate(`/app/students/${row.id}`)}
+                columns={[
+                  { key: 'name', header: 'Студент', render: (row) => row.name },
+                  { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
+                  { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
+                  { key: 'score', header: 'Средний балл', render: (row) => row.average_score ?? '—' },
+                  { key: 'progress', header: 'Прогресс', render: (row) => pct(row.progress_rate) },
+                ]}
+              />
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

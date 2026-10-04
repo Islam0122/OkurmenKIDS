@@ -13,6 +13,7 @@ import { StatGrid } from '@/components/ui/StatGrid'
 import { LiveExamsWidget } from '@/features/exams/LiveExamsWidget'
 import { NewsWidget } from '@/features/news/NewsWidget'
 import { useAuth } from '@/hooks/useAuth'
+import { isTeamLead } from '@/lib/roles'
 import { formatTimeRange } from '@/utils/format'
 
 import { useDashboardData } from './useDashboardData'
@@ -58,7 +59,7 @@ export function DashboardPage() {
 
           <LiveExamsWidget />
 
-          <NewsWidget />
+          {isTeamLead(user?.role) ? null : <NewsWidget />}
 
           <div className="card card-body">
             <h2 className="section-title mb-4">Сегодня</h2>

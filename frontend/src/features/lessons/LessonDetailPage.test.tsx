@@ -4,8 +4,15 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LessonDetailPage } from '@/features/lessons/LessonDetailPage'
-import { buildHomework, buildLesson, paginated } from '@/test/fixtures'
+import { buildHomework, buildLesson, buildUser, paginated } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
+import type { UserRole } from '@/types/auth'
+
+const mockRole = vi.hoisted(() => ({ role: 'teacher' as UserRole }))
+
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ user: buildUser({ role: mockRole.role }), status: 'authenticated', login: vi.fn(), logout: vi.fn() }),
+}))
 
 vi.mock('@/api/lessons', () => ({
   lessonsApi: {
@@ -39,6 +46,7 @@ function renderLessonDetail(id = 7) {
 
 describe('LessonDetailPage', () => {
   beforeEach(() => {
+    mockRole.role = 'teacher'
     vi.clearAllMocks()
   })
 
@@ -137,6 +145,22 @@ describe('LessonDetailPage', () => {
       expect(screen.getByRole('button', { name: 'Завершить занятие' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Отменить занятие' })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Дополнительные действия' })).toBeInTheDocument()
+    })
+
+    it('is read-only for a Team Lead — no workflow buttons, only view actions', async () => {
+      mockRole.role = 'team_lead'
+      vi.mocked(lessonsApi.get).mockResolvedValue(inProgressLesson({ can_complete: false, can_cancel: false }))
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+
+      renderLessonDetail(7)
+
+      await waitFor(() => expect(screen.getByText('Режим просмотра: занятие ведёт тренер.')).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: 'Посмотреть посещаемость' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Заполнить посещаемость' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Завершить занятие' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Домашнее задание' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Дополнительные действия' })).not.toBeInTheDocument()
     })
 
     it('navigates to the attendance screen when "Заполнить посещаемость" is clicked', async () => {
