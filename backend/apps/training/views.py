@@ -164,6 +164,9 @@ class LeaderboardView(PublicView):
             limit = max(1, min(int(request.query_params.get("limit", 50)), services.LEADERBOARD_MAX))
         except ValueError:
             limit = 50
+        sort = request.query_params.get("sort", "best")
+        if sort in ("average", "tests"):
+            return Response(services.leaderboard_by_name(session, limit, sort))
         return Response(services.leaderboard(session, limit))
 
 

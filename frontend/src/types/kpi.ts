@@ -149,6 +149,20 @@ export interface KPIMetrics {
   retention: number | null
   /** Shown alongside; not part of the total KPI. */
   teacher_workload: number | null
+  /** Average test result (0–100) — shown alongside; not part of the total KPI. */
+  test_score: number | null
+  /** Share of test results at/above the passing score — not part of the total. */
+  test_pass_rate: number | null
+}
+
+/** Test results of LMS students in the period (analytics.assessments). */
+export interface AnalyticsTestsSection {
+  attempts: ComparisonMetric
+  students_tested: ComparisonMetric
+  students_below_passing: ComparisonMetric
+  average_score: ComparisonMetric
+  pass_rate: ComparisonMetric
+  average_score_trend: AnalyticsTrendPoint[]
 }
 
 export type KPIStatus = 'good' | 'attention' | 'low' | 'no_data'
@@ -190,5 +204,6 @@ export interface AnalyticsDashboard {
   lessons: AnalyticsLessonsSection
   attendance: AnalyticsAttendanceSection
   homework: AnalyticsHomeworkSection
+  tests: AnalyticsTestsSection
   insights: AnalyticsInsight[]
 }

@@ -1270,6 +1270,9 @@ class KPIMetricsSerializer(serializers.Serializer):
     progress = serializers.FloatField(allow_null=True)
     retention = serializers.FloatField(allow_null=True)
     teacher_workload = serializers.FloatField(allow_null=True)
+    # Test results — reported alongside, not part of the total KPI.
+    test_score = serializers.FloatField(allow_null=True)
+    test_pass_rate = serializers.FloatField(allow_null=True)
 
 
 class KPIWeightSerializer(serializers.Serializer):
@@ -1295,6 +1298,17 @@ class AnalyticsInsightSerializer(serializers.Serializer):
     severity = serializers.ChoiceField(choices=["low", "medium", "high"])
 
 
+class AnalyticsTestsSectionSerializer(serializers.Serializer):
+    """Test results of LMS students in the period (analytics.assessments)."""
+
+    attempts = ComparisonMetricSerializer()
+    students_tested = ComparisonMetricSerializer()
+    students_below_passing = ComparisonMetricSerializer()
+    average_score = ComparisonMetricSerializer()
+    pass_rate = ComparisonMetricSerializer()
+    average_score_trend = AnalyticsTrendPointSerializer(many=True)
+
+
 class AnalyticsDashboardSerializer(serializers.Serializer):
     """The full payload of `GET /analytics/dashboard/` — exactly what
     `services.analytics.get_dashboard()` returns, computed fresh on every
@@ -1311,6 +1325,7 @@ class AnalyticsDashboardSerializer(serializers.Serializer):
     lessons = AnalyticsLessonsSectionSerializer()
     attendance = AnalyticsAttendanceSectionSerializer()
     homework = AnalyticsHomeworkSectionSerializer()
+    tests = AnalyticsTestsSectionSerializer()
     insights = AnalyticsInsightSerializer(many=True)
 
 

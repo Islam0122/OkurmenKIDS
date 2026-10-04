@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { CheckCircle2, CircleDashed, Clock, PlayCircle, ShieldAlert, Users } from 'lucide-react'
 import { useParams } from 'react-router-dom'
+import { percent } from '@/features/monitoring/monitoringUi'
+import { useResultsSummary } from '@/hooks/useResults'
 
 import { BackLink } from '@/components/ui/BackLink'
 import { Badge } from '@/components/ui/Badge'
@@ -215,6 +217,8 @@ export function ExamDetailPage() {
         <StatCard label="Не начали" value={counts.not_started} icon={CircleDashed} />
       </div>
 
+      <SessionResultsSummary sessionId={session.id} />
+
       <section className="card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
           <h2 className="section-title">{academyView ? `Результаты группы${session.group ? ` · ${session.group.name}` : ''}` : 'Студенты'}</h2>
@@ -291,6 +295,20 @@ export function ExamDetailPage() {
       </section>
 
       {id ? <ResultDrawer sessionId={id} participant={openResult} onClose={() => setOpenResult(null)} /> : null}
+    </div>
+  )
+}
+
+/** Results of the session's finished attempts: average, best, lowest, pass rate. */
+function SessionResultsSummary({ sessionId }: { sessionId: string }) {
+  const { data } = useResultsSummary({ session: sessionId })
+  if (!data || !data.attempts) return null
+  return (
+    <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <StatCard label="Средний результат" value={percent(data.average_score)} />
+      <StatCard label="Сдали" value={percent(data.pass_rate)} hint={`${data.passed} из ${data.attempts}`} />
+      <StatCard label="Лучший" value={percent(data.best_score)} />
+      <StatCard label="Минимальный" value={percent(data.lowest_score)} />
     </div>
   )
 }

@@ -8,6 +8,10 @@ import type {
   MonitoringFilterOptions,
   MonitoringFilters,
   MonitoringOverview,
+  ResultBreakdownBy,
+  ResultBreakdownRow,
+  ResultsSummary,
+  StudentResultRow,
   TeacherPerformance,
   TrainerDetail,
   TrainerStats,
@@ -34,4 +38,26 @@ export const monitoringApi = {
     apiClient.get<TrainerStats[]>('/monitoring/trainers/', { params: params(filters) }).then((r) => r.data),
   trainer: (id: string) => apiClient.get<TrainerDetail>(`/monitoring/trainers/${id}/`).then((r) => r.data),
   filters: () => apiClient.get<MonitoringFilterOptions>('/monitoring/filters/').then((r) => r.data),
+
+  // Test Results — finished attempts of LMS students, same scope and filters.
+  results: (filters: MonitoringFilters) =>
+    apiClient.get<Paginated<MonitoringAttempt>>('/monitoring/results/', { params: params(filters) }).then((r) => r.data),
+  resultsSummary: (filters: MonitoringFilters) =>
+    apiClient.get<ResultsSummary>('/monitoring/results/summary/', { params: params(filters) }).then((r) => r.data),
+  resultStudents: (filters: MonitoringFilters) =>
+    apiClient.get<StudentResultRow[]>('/monitoring/results/students/', { params: params(filters) }).then((r) => r.data),
+  resultBreakdown: (filters: MonitoringFilters, by: ResultBreakdownBy) =>
+    apiClient.get<ResultBreakdownRow[]>('/monitoring/results/breakdown/', { params: { ...params(filters), by } }).then((r) => r.data),
+  /** Excel of the filtered results — downloaded as a file. */
+  exportResults: async (filters: MonitoringFilters) => {
+    const response = await apiClient.get<Blob>('/monitoring/results/export/', { params: params(filters), responseType: 'blob' })
+    const disposition = String(response.headers['content-disposition'] ?? '')
+    const name = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? 'test-results.xlsx'
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
+  },
 }

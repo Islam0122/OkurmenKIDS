@@ -14,4 +14,9 @@ urlpatterns = [
     path("monitoring/trainers/<uuid:session_id>/", views.TrainerDetailView.as_view(), name="monitoring-trainer-detail"),
     path("monitoring/questions/", views.QuestionStatsView.as_view(), name="monitoring-questions"),
     path("monitoring/filters/", views.FilterOptionsView.as_view(), name="monitoring-filters"),
+    path("monitoring/results/", views.ResultListView.as_view(), name="results-list"),
+    path("monitoring/results/summary/", views.ResultSummaryView.as_view(), name="results-summary"),
+    path("monitoring/results/students/", views.ResultStudentsView.as_view(), name="results-students"),
+    path("monitoring/results/breakdown/", views.ResultBreakdownView.as_view(), name="results-breakdown"),
+    path("monitoring/results/export/", views.ResultExportView.as_view(), name="results-export"),
 ]

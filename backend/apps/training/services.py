@@ -501,5 +501,47 @@ def leaderboard(session: TestSession | None = None, limit: int = 50) -> list[dic
     ]
 
 
+LEADERBOARD_SORTS = ("best", "average", "tests")
+
+
+def leaderboard_by_name(session: TestSession | None = None, limit: int = 50, sort: str = "average") -> list[dict]:
+    """Rating per name over all finished results (or one test): average
+    score, completed / passed tests and best score — database aggregates,
+    real results only. `sort`: "average" (then tests) or "tests" (then
+    average)."""
+    from django.db.models import Avg, Count, F, Max, Q
+    from django.db.models.functions import Lower
+
+    attempts = _portal_attempts().filter(
+        status=AttemptStatus.FINISHED, finished_at__isnull=False, session__test__show_result=True,
+    )
+    if session is not None:
+        attempts = attempts.filter(session=session)
+    rows = (
+        attempts.annotate(key=Lower("student_name")).values("key")
+        .annotate(
+            name=Max("student_name"), average=Avg("score"), best=Max("score"),
+            tests=Count("session", distinct=True),
+            passed=Count("session", distinct=True, filter=Q(score__gte=F("session__test__passing_score"))),
+            last=Max("finished_at"),
+        )
+    )
+    order = ("-tests", "-average", "-best") if sort == "tests" else ("-average", "-tests", "-best")
+    rows = rows.order_by(*order)[: min(limit, LEADERBOARD_MAX)]
+    return [
+        {
+            "rank": index,
+            "student_name": row["name"],
+            "score": round(row["average"]),
+            "average_score": round(row["average"], 1),
+            "best_score": round(row["best"]),
+            "completed_tests": row["tests"],
+            "passed_tests": row["passed"],
+            "finished_at": row["last"],
+        }
+        for index, row in enumerate(rows, start=1)
+    ]
+
+
 def _rank_key(attempt: StudentAttempt):
     return (-attempt.score, attempt.duration_seconds or 0, attempt.finished_at)

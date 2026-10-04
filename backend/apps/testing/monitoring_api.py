@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from apps.academy.models import Group
 
 from .services import monitoring
+from .services import results as results_service
 from .teacher_api import IsTeacherOrAdmin
 
 
@@ -73,7 +74,7 @@ class AttemptDetailView(MonitoringView):
         visible = monitoring.visible_attempts(request.user)
         get_object_or_404(visible, pk=attempt_id)  # someone else's attempt: 404
         monitoring.close_overdue(visible.filter(pk=attempt_id))
-        return Response(monitoring.attempt_detail(monitoring.annotate_rows(visible).get(pk=attempt_id)))
+        return Response(monitoring.attempt_detail(results_service.annotate_results(visible).get(pk=attempt_id)))
 
 
 @extend_schema(tags=["Monitoring"])
@@ -155,3 +156,70 @@ class FilterOptionsView(MonitoringView):
             ],
             "team_view": monitoring.is_team_view(request.user),
         })
+
+
+# ---------------------------------------------------------------------------
+# Test Results — finished attempts of LMS students (services.results).
+# Same scope and filters as monitoring, plus student / result / score range.
+# ---------------------------------------------------------------------------
+
+class ResultsView(MonitoringView):
+    def results(self, request):
+        return results_service.filtered(request.user, request.query_params)
+
+
+@extend_schema(tags=["Test results"])
+class ResultListView(ResultsView):
+    def get(self, request):
+        rows = results_service.annotate_results(self.results(request)).order_by("-finished_at")
+        paginator = _Pages()
+        page = paginator.paginate_queryset(rows, request, view=self)
+        return paginator.get_paginated_response([monitoring.attempt_row(a) for a in page])
+
+
+@extend_schema(tags=["Test results"])
+class ResultSummaryView(ResultsView):
+    """Totals + best student / group + daily dynamics. With `group`, also
+    the group's roster size (students who could have taken a test)."""
+
+    def get(self, request):
+        results = self.results(request)
+        data = results_service.overview(results)
+        data["dynamics"] = results_service.dynamics(results)
+        group_id = monitoring._int(request.query_params.get("group"))
+        if group_id is not None:
+            from apps.academy.models import Student
+
+            data["students_total"] = Student.objects.filter(group_id=group_id, status=Student.Status.ACTIVE).count()
+        return Response(data)
+
+
+@extend_schema(tags=["Test results"])
+class ResultStudentsView(ResultsView):
+    def get(self, request):
+        return Response(results_service.students(self.results(request)))
+
+
+@extend_schema(tags=["Test results"])
+class ResultBreakdownView(ResultsView):
+    def get(self, request):
+        by = request.query_params.get("by", "group")
+        if by not in results_service.BREAKDOWNS:
+            return Response({"detail": "by: group, subject, teacher или test."}, status=400)
+        if by == "teacher" and not monitoring.is_team_view(request.user):
+            raise PermissionDenied("Доступно руководителю тренеров и администратору.")
+        return Response(results_service.breakdown(self.results(request), by))
+
+
+@extend_schema(tags=["Test results"])
+class ResultExportView(ResultsView):
+    def get(self, request):
+        from django.http import HttpResponse
+        from django.utils import timezone
+
+        response = HttpResponse(
+            results_service.export_xlsx(self.results(request)),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="test-results-{timezone.localdate():%Y-%m-%d}.xlsx"'
+        return response

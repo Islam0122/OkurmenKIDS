@@ -77,6 +77,8 @@ const METRIC_LABELS: Record<keyof KPIMetrics, string> = {
   progress: 'Прогресс',
   retention: 'Удержание студентов',
   teacher_workload: 'Нагрузка тренеров',
+  test_score: 'Средний результат тестов',
+  test_pass_rate: 'Сдали тесты',
 }
 
 const METRIC_ORDER: (keyof KPIMetrics)[] = [
@@ -86,6 +88,8 @@ const METRIC_ORDER: (keyof KPIMetrics)[] = [
   'progress',
   'retention',
   'teacher_workload',
+  'test_score',
+  'test_pass_rate',
 ]
 
 export function KPIPage() {
@@ -317,7 +321,28 @@ export function KPIPage() {
             </div>
           </Card>
 
-          {/* 6. Insights / Attention Required */}
+          {/* 6. Test results (Test KPI) — reported alongside, not part of the total */}
+          <Card as="section" title="Тесты" description="Результаты тестов студентов за период. Не входят в итоговый KPI.">
+            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+              <Metric label="Средний результат" metric={data.tests.average_score} suffix="%" />
+              <Metric label="Сдали" metric={data.tests.pass_rate} suffix="%" />
+              <Metric label="Протестировано" metric={data.tests.students_tested} />
+              <Metric label="Ниже порога" metric={data.tests.students_below_passing} goodDirection="down" />
+              <Metric label="Попыток" metric={data.tests.attempts} />
+            </div>
+            {data.tests.average_score_trend.length > 1 ? (
+              <div className="mt-4">
+                <TrendChart
+                  title="Средний результат тестов, %"
+                  max={100}
+                  valueSuffix="%"
+                  points={data.tests.average_score_trend.map((point) => ({ label: formatDateShort(point.date), value: point.percent }))}
+                />
+              </div>
+            ) : null}
+          </Card>
+
+          {/* 7. Insights / Attention Required */}
           <section>
             <h2 className="section-title mb-4 flex items-center gap-2">
               <ShieldAlert className="size-5 text-ink-secondary" aria-hidden /> Требует внимания

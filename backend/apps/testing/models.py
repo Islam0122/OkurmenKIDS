@@ -1010,6 +1010,23 @@ class StudentAttempt(models.Model):
     )
     # Historical snapshot — see the module docstring.
     student_name = models.CharField(max_length=255, verbose_name="Имя студента")
+    # Result snapshot, taken when the attempt starts (services.result_snapshot):
+    # the group / teacher / subject / test title the result belongs to. A
+    # student who later moves group, a teacher who is replaced or a test
+    # that is renamed or re-subjected does not rewrite old results.
+    group = models.ForeignKey(
+        "academy.Group", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="result_attempts", verbose_name="Группа (на момент попытки)",
+    )
+    teacher = models.ForeignKey(
+        "users.Teacher", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="result_attempts", verbose_name="Тренер (на момент попытки)",
+    )
+    subject = models.ForeignKey(
+        "users.Subject", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="result_attempts", verbose_name="Предмет (на момент попытки)",
+    )
+    test_title = models.CharField(max_length=255, blank=True, verbose_name="Тест (на момент попытки)")
     started_at = models.DateTimeField(auto_now_add=True, verbose_name="Начата")
     finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Завершена")
     score = models.FloatField(default=0.0, verbose_name="Балл (0–100)")
@@ -1053,12 +1070,18 @@ class StudentAttempt(models.Model):
             models.Index(fields=["status", "started_at"], name="attempt_status_started_idx"),
             # Student profile → «Результаты тестов», newest first.
             models.Index(fields=["student", "-started_at"], name="attempt_student_started_idx"),
+            models.Index(fields=["group", "status", "finished_at"], name="attempt_group_result_idx"),
+            models.Index(fields=["teacher", "status", "finished_at"], name="attempt_teacher_result_idx"),
         ]
 
     def __str__(self):
         return f"{self.student_name} → {self.session}"
 
     def save(self, *args, **kwargs):
+        if self._state.adding:
+            from .services.result_snapshot import fill_snapshot
+
+            fill_snapshot(self)
         # Keep the snapshot filled in for LMS-linked attempts too.
         if not self.student_name and self.student_id is not None:
             self.student_name = str(self.student)
@@ -1120,6 +1143,23 @@ class StudentAttempt(models.Model):
             return
         self.status = AttemptStatus.EXPIRED
         self.save(update_fields=["status"])
+
+
+class TestResultManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(status=AttemptStatus.FINISHED, student__isnull=False)
+
+
+class TestResult(StudentAttempt):
+    """«Результаты тестов» in the admin: finished attempts of LMS students.
+    A proxy — a result is the attempt itself, no separate table."""
+
+    objects = TestResultManager()
+
+    class Meta:
+        proxy = True
+        verbose_name = "Результат теста"
+        verbose_name_plural = "Результаты тестов"
 
 
 # A student in progress whose page hasn't reported for this long is shown

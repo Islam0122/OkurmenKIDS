@@ -30,6 +30,7 @@ from django.db.models import (
     Subquery,
     Sum,
 )
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.academy.models import Group, GroupTeacher, Subject
@@ -106,9 +107,12 @@ def visible_attempts(user) -> QuerySet:
     if groups is None:
         return attempts.none()
     # Forward FKs only — no row multiplication, so no distinct() needed.
+    # `group` / `teacher` are the result snapshot (the group and teacher the
+    # attempt belonged to when it was taken).
+    teacher = user.teacher_profile
     return attempts.filter(
-        Q(session__group__in=groups) | Q(student__group__in=groups)
-        | _public_trainer_q(user.teacher_profile, prefix="session__")
+        Q(group__in=groups) | Q(teacher=teacher) | Q(session__group__in=groups) | Q(student__group__in=groups)
+        | _public_trainer_q(teacher, prefix="session__")
     )
 
 
@@ -132,6 +136,14 @@ def _uuid(value):
         return None
 
 
+def _number(value) -> float | None:
+    try:
+        number = float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+    return number if number is not None and 0 <= number <= 100 else None
+
+
 def _date(value) -> date | None:
     try:
         return date.fromisoformat(value) if value else None
@@ -151,11 +163,21 @@ def status_filter(status: str) -> Q | None:
 def filter_attempts(attempts: QuerySet, params) -> QuerySet:
     """Query-string filters; unknown or malformed values are ignored."""
     if group := _int(params.get("group")):
-        attempts = attempts.filter(Q(session__group_id=group) | Q(student__group_id=group))
+        attempts = attempts.filter(Q(group_id=group) | Q(group__isnull=True, session__group_id=group))
     if teacher := _int(params.get("teacher")):
-        attempts = attempts.filter(session__teacher_id=teacher)
+        attempts = attempts.filter(Q(teacher_id=teacher) | Q(teacher__isnull=True, session__teacher_id=teacher))
     if subject := _int(params.get("subject")):
-        attempts = attempts.filter(session__test__subject_id=subject)
+        attempts = attempts.filter(Q(subject_id=subject) | Q(subject__isnull=True, session__test__subject_id=subject))
+    if student := _int(params.get("student")):
+        attempts = attempts.filter(student_id=student)
+    result = params.get("result")
+    if result in ("passed", "failed"):
+        passed = Q(status=AttemptStatus.FINISHED, score__gte=F("session__test__passing_score"))
+        attempts = attempts.filter(passed if result == "passed" else Q(status=AttemptStatus.FINISHED) & ~passed)
+    if (low := _number(params.get("score_min"))) is not None:
+        attempts = attempts.filter(status=AttemptStatus.FINISHED, score__gte=low)
+    if (high := _number(params.get("score_max"))) is not None:
+        attempts = attempts.filter(status=AttemptStatus.FINISHED, score__lte=high)
     if test := _uuid(params.get("test")):
         attempts = attempts.filter(session__test_id=test)
     if session := _uuid(params.get("session")):
@@ -176,6 +198,7 @@ def filter_attempts(attempts: QuerySet, params) -> QuerySet:
     if query := (params.get("q") or "").strip()[:100]:
         attempts = attempts.filter(
             Q(student_name__icontains=query) | Q(student__first_name__icontains=query) | Q(student__last_name__icontains=query)
+            | Q(test_title__icontains=query) | Q(session__test__title__icontains=query) | Q(group__name__icontains=query)
         )
     return attempts
 
@@ -205,7 +228,10 @@ def close_overdue(attempts: QuerySet) -> None:
 
 def annotate_rows(attempts: QuerySet) -> QuerySet:
     live = SessionParticipant.objects.filter(attempt=OuterRef("pk")).values("answered_count")[:1]
-    return attempts.select_related("session__test__subject", "session__group", "session__teacher__user", "student__group").annotate(
+    return attempts.select_related(
+        "session__test__subject", "session__group", "session__teacher__user", "student__group",
+        "group", "teacher__user", "subject",
+    ).annotate(
         answers_total=Count("answers", distinct=True),
         fullscreen_exits=Count("events", filter=Q(events__event_type=ExamEventType.FULLSCREEN_EXIT), distinct=True),
         live_answered=Subquery(live),
@@ -249,16 +275,20 @@ def attempt_row(attempt: StudentAttempt, now=None) -> dict:
     session = attempt.session
     test = session.test
     deadline = attempt_deadline(attempt)
-    group = session.group or (attempt.student.group if attempt.student_id else None)
+    # The result snapshot first (history), then the live relations.
+    group = attempt.group if attempt.group_id else (session.group or (attempt.student.group if attempt.student_id else None))
+    teacher = attempt.teacher if attempt.teacher_id else session.teacher
+    subject = attempt.subject if attempt.subject_id else test.subject
     finished = attempt.status == AttemptStatus.FINISHED
     return {
         "id": str(attempt.pk),
         "student_name": str(attempt.student) if attempt.student_id else attempt.student_name,
         "student_id": attempt.student_id,
         "group": {"id": group.pk, "name": group.name} if group else None,
-        "teacher": {"id": session.teacher_id, "name": str(session.teacher)} if session.teacher_id else None,
+        "teacher": {"id": teacher.pk, "name": str(teacher)} if teacher else None,
         "session": {"id": str(session.pk), "title": session.title or test.title},
-        "test": {"id": str(test.pk), "title": test.title, "subject": test.subject.name if test.subject_id else ""},
+        "test": {"id": str(test.pk), "title": attempt.test_title or test.title, "subject": subject.name if subject else ""},
+        "subject": {"id": subject.pk, "name": subject.name} if subject else None,
         "mode": "exam" if session.session_type == SessionType.EXAM else "training",
         "exam_mode": attempt.exam_mode,
         "started_at": attempt.started_at,
@@ -279,7 +309,19 @@ def attempt_row(attempt: StudentAttempt, now=None) -> dict:
         "max_tab_switches": test.max_tab_switches,
         "severity": severity(attempt),
         "finish_reason": attempt.finish_reason,
+        **_result_counts(attempt),
     }
+
+
+def _result_counts(attempt: StudentAttempt) -> dict:
+    """Correct / incorrect answers and the attempt number — present when the
+    queryset was annotated by services.results.annotate_results."""
+    extra = {}
+    for key in ("correct_count", "incorrect_count", "attempt_no"):
+        value = getattr(attempt, key, None)
+        if value is not None:
+            extra[key] = value
+    return extra
 
 
 def attempt_detail(attempt: StudentAttempt) -> dict:
@@ -299,7 +341,14 @@ def attempt_detail(attempt: StudentAttempt) -> dict:
         ]
     else:
         questions = [
-            {"number": r["number"], "question_id": str(r["question"].pk), "text": r["question"].text[:200], "status": r["status"]}
+            {
+                "number": r["number"], "question_id": str(r["question"].pk), "text": r["question"].text[:200],
+                "full_text": r["question"].text, "type": r["question"].question_type, "status": r["status"],
+                "selected": [o.text for o in r["selected"]],
+                "correct": [o.text for o in r["correct_options"]],
+                "answer_text": r["answer"].answer_text if r["answer"] else "",
+                "answered_at": r["answer"].answered_at if r["answer"] else None,
+            }
             for r in result_rows(attempt)
         ]
     return {
@@ -399,27 +448,33 @@ def _stat_row(row: dict) -> dict:
 def teacher_performance(attempts: QuerySet) -> list[dict]:
     from apps.users.models import Teacher
 
-    rows = attempts.exclude(session__teacher__isnull=True).values("session__teacher").annotate(**_aggregates())
-    teachers = {t.pk: t for t in Teacher.objects.select_related("user").filter(pk__in=[r["session__teacher"] for r in rows])}
+    rows = (
+        attempts.annotate(_teacher=Coalesce("teacher", "session__teacher")).exclude(_teacher__isnull=True)
+        .values("_teacher").annotate(**_aggregates())
+    )
+    teachers = {t.pk: t for t in Teacher.objects.select_related("user").filter(pk__in=[r["_teacher"] for r in rows])}
     result = [
-        {"teacher": {"id": r["session__teacher"], "name": str(teachers[r["session__teacher"]])}, **_stat_row(r)}
-        for r in rows if r["session__teacher"] in teachers
+        {"teacher": {"id": r["_teacher"], "name": str(teachers[r["_teacher"]])}, **_stat_row(r)}
+        for r in rows if r["_teacher"] in teachers
     ]
     return sorted(result, key=lambda r: r["teacher"]["name"])
 
 
 def group_stats(attempts: QuerySet) -> list[dict]:
-    rows = attempts.exclude(session__group__isnull=True).values("session__group").annotate(**_aggregates())
-    groups = {g.pk: g for g in Group.objects.filter(pk__in=[r["session__group"] for r in rows])}
+    rows = (
+        attempts.annotate(_group=Coalesce("group", "session__group")).exclude(_group__isnull=True)
+        .values("_group").annotate(**_aggregates())
+    )
+    groups = {g.pk: g for g in Group.objects.filter(pk__in=[r["_group"] for r in rows])}
     result = [
-        {"group": {"id": r["session__group"], "name": groups[r["session__group"]].name}, **_stat_row(r)}
-        for r in rows if r["session__group"] in groups
+        {"group": {"id": r["_group"], "name": groups[r["_group"]].name}, **_stat_row(r)}
+        for r in rows if r["_group"] in groups
     ]
     return sorted(result, key=lambda r: r["group"]["name"])
 
 
 def group_detail(group: Group, attempts: QuerySet, sessions: QuerySet) -> dict:
-    attempts = attempts.filter(Q(session__group=group) | Q(student__group=group))
+    attempts = attempts.filter(Q(group=group) | Q(group__isnull=True, session__group=group))
     totals = _stat_row(attempts.aggregate(**_aggregates()))
     students = []
     for row in attempts.values("student_name").annotate(**_aggregates()).order_by("student_name"):

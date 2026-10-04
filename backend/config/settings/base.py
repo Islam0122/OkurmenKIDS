@@ -375,6 +375,7 @@ JAZZMIN_SETTINGS = {
             # and hold the results. «Создать сессию» lives inside «Сессии».
             {"name": "Тесты", "model": "testing.test", "icon": "bi bi-clipboard2-check"},
             {"name": "Сессии", "model": "testing.testsession", "icon": "bi bi-broadcast"},
+            {"name": "Результаты тестов", "model": "testing.testresult", "icon": "bi bi-clipboard-data"},
             {"name": "Мониторинг экзаменов", "url": "admin:testing_exam_monitoring", "icon": "bi bi-shield-check"},
         ],
 
@@ -483,6 +484,7 @@ JAZZMIN_SETTINGS = {
         "scholarships.scholarshiprunlog": "bi bi-journal-text",
         "testing.test": "bi bi-clipboard2-check",
         "testing.testsession": "bi bi-broadcast",
+        "testing.testresult": "bi bi-clipboard-data",
         "testing.studentportalaccess": "bi bi-key",
         "training.portalsettings": "bi bi-sliders",
         "training.trainer": "bi bi-controller",

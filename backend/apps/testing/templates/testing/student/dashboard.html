@@ -33,4 +33,14 @@
       <p class="sp-muted">Сейчас нет доступных или запланированных экзаменов.</p>
     {% endif %}
   </section>
+
+  <section class="sp-card">
+    <h2 class="sp-h2">Акыркы жыйынтыктар</h2>
+    {% if recent_results %}
+      {% include "testing/student/_results_list.html" with results=recent_results %}
+      <a class="sp-btn sp-btn--ghost" href="{% url 'student_results' %}"><i class="bi bi-list-ul" aria-hidden="true"></i>Баардык жыйынтыктар</a>
+    {% else %}
+      <p class="sp-muted">Азырынча тесттин жыйынтыгы жок.</p>
+    {% endif %}
+  </section>
 {% endblock %}

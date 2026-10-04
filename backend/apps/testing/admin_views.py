@@ -19,7 +19,7 @@ import uuid
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Max, Min, Q
 from django.http import Http404, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -326,6 +326,10 @@ def test_stats_view(request, test_id):
         "active_total": attempts.filter(status=AttemptStatus.ACTIVE).count(),
         "average_score": finished.aggregate(avg=Avg("score"))["avg"],
         "pass_rate": round(passed / finished_total * 100) if finished_total else None,
+        **finished.filter(student__isnull=False).aggregate(
+            students_total=Count("student", distinct=True), best_score=Max("score"), lowest_score=Min("score"),
+        ),
+        "results_url": reverse("admin:testing_testresult_changelist") + f"?session__test__id__exact={test.pk}",
         "pending_total": Answer.objects.filter(
             attempt__session__test=test, grading_status__in=[GradingStatus.PENDING, GradingStatus.PROCESSING, GradingStatus.FAILED]
         ).count(),

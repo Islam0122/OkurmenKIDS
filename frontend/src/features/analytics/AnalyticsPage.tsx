@@ -32,15 +32,17 @@ import type {
   ReportTeacherRow,
 } from '@/types/reports'
 
+import { TestPerformanceReport } from '@/features/results/TestPerformanceReport'
 import { KPI_LEVEL_LABEL, KpiBadge, PeriodSelect, ReportExportButtons, ReportPagination, pct, periodCaption } from './reportUi'
 
-type Section = 'teachers' | 'groups' | 'students' | 'subjects'
+type Section = 'teachers' | 'groups' | 'students' | 'subjects' | 'tests'
 
 const TABS: { key: Section; label: string }[] = [
   { key: 'teachers', label: 'Тренеры' },
   { key: 'groups', label: 'Группы' },
   { key: 'students', label: 'Студенты' },
   { key: 'subjects', label: 'Предметы' },
+  { key: 'tests', label: 'Тесты' },
 ]
 
 function isSection(value: string | null): value is Section {
@@ -170,6 +172,7 @@ export function AnalyticsPage() {
       {section === 'groups' ? <GroupsSection params={tableParams} onPage={setPage} /> : null}
       {section === 'students' ? <StudentsSection params={tableParams} onPage={setPage} /> : null}
       {section === 'subjects' ? <SubjectsSection params={tableParams} onPage={setPage} /> : null}
+      {section === 'tests' ? <TestPerformanceReport /> : null}
     </div>
   )
 }
