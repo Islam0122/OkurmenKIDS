@@ -1,0 +1,46 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  {# same-origin: the pages' own POST/PATCH keep their Origin for CSRF. #}
+  <meta name="referrer" content="same-origin">
+  <meta name="color-scheme" content="only light">
+  <meta name="theme-color" content="{% block theme_color %}#FFFFFF{% endblock %}">
+  <title>{% block title %}Кабинет студента{% endblock %} · OkurmenKIDS</title>
+  <link rel="icon" href="{% static 'images/logo.png' %}">
+  <link rel="stylesheet" href="{% static 'okurmenkids/vendor/bootstrap-icons/bootstrap-icons.css' %}">
+  <link rel="stylesheet" href="{% static 'testing/css/student_portal.css' %}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {% block topbar %}
+    <header class="sp-topbar">
+      <div class="sp-topbar__inner">
+        <a class="sp-brand" href="{% url 'student_portal_dashboard' %}">
+          <img src="{% static 'images/logo.png' %}" alt="" width="34" height="34">
+          <span>Okurmen<strong>KIDS</strong> <small>· кабинет студента</small></span>
+        </a>
+        {% if student %}
+          <div class="sp-user">
+            <i class="bi bi-person" aria-hidden="true"></i>
+            <span class="sp-user__name">{{ student }}</span>
+            <form method="post" action="{% url 'student_portal_logout' %}">
+              {% csrf_token %}
+              <button type="submit" class="sp-btn sp-btn--link"><i class="bi bi-box-arrow-right" aria-hidden="true"></i>Выйти</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    </header>
+  {% endblock %}
+  {% block main %}
+    <main class="sp-main">
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="sp-footer">© OkurmenKIDS</footer>
+  {% endblock %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

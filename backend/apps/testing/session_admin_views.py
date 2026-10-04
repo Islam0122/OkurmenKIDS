@@ -31,14 +31,17 @@ from apps.users.models import Subject, Teacher
 from .admin_views import _require_admin
 from .forms import SessionForm
 from .models import (
+    AttemptStatus,
     ParticipantStatus,
     SessionPhase,
     SessionTransitionError,
     SessionType,
+    StudentAttempt,
     Test,
     TestSession,
 )
 from .services import analytics
+from .services.exam_portal import close_overdue_attempts
 from .services.participants import session_counts
 from .services.sessions import (
     display_title,
@@ -349,3 +352,48 @@ def session_action_view(request, session_id, action):
     if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         return redirect(next_url)
     return redirect(_session_url(session))
+
+
+# ---------------------------------------------------------------------------
+# Exam Mode attempts (student portal)
+# ---------------------------------------------------------------------------
+
+def exam_monitoring_view(request):
+    """«Мониторинг экзаменов»: every Exam Mode attempt with its violation
+    counters; an attempt opens on its page with the event log."""
+    _require_admin(request)
+    visible = analytics.visible_sessions(request.user)
+    attempts = StudentAttempt.objects.filter(exam_mode=True, session__in=visible)
+    close_overdue_attempts(attempts)
+
+    params = request.GET
+    query = (params.get("q") or "").strip()
+    filters = {
+        "status": params.get("status") if params.get("status") in AttemptStatus.values else "",
+        "group": params.get("group") if (params.get("group") or "").isdigit() else "",
+        "violations": "1" if params.get("violations") == "1" else "",
+    }
+    if query:
+        attempts = attempts.filter(
+            Q(student_name__icontains=query) | Q(session__title__icontains=query) | Q(session__test__title__icontains=query)
+        )
+    if filters["status"]:
+        attempts = attempts.filter(status=filters["status"])
+    if filters["group"]:
+        attempts = attempts.filter(session__group_id=filters["group"])
+    if filters["violations"]:
+        attempts = attempts.filter(Q(violation_count__gt=0) | Q(tab_switch_count__gt=0))
+    attempts = attempts.select_related("student", "session__test", "session__group").order_by("-started_at")
+
+    page = Paginator(attempts, 50).get_page(params.get("page"))
+    filter_query = {k: v for k, v in (("q", query), *filters.items()) if v}
+    return render(request, "admin/testing/sessions/monitoring.html", {
+        "title": "Мониторинг экзаменов",
+        "page": page,
+        "query": query,
+        "filters": filters,
+        "statuses": AttemptStatus.choices,
+        "groups": Group.objects.filter(pk__in=visible.values("group")).order_by("name"),
+        "filter_qs": urlencode(filter_query),
+        "has_filters": bool(filter_query),
+    })

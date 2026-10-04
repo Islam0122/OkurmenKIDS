@@ -49,6 +49,7 @@ SETTINGS_FIELDS = (
     "status", "time_limit_minutes", "max_attempts", "passing_score", "questions_per_attempt",
     "shuffle_questions", "shuffle_options", "show_result", "show_correct_answers", "allow_retry",
     "available_from", "available_until",
+    "require_fullscreen", "max_tab_switches", "auto_submit",
 )
 
 

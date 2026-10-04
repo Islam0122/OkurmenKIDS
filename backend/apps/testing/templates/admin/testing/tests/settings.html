@@ -48,6 +48,17 @@
       </div>
     </section>
 
+    <section class="ok-card okt-section">
+      <div class="ok-card-header">{% ticon "shield-check" 16 %}<span>Exam Mode (кабинет студента)</span></div>
+      <div class="ok-card-body okt-form-grid">
+        {% include "admin/testing/tests/_field.html" with field=form.max_tab_switches %}
+        <div class="okt-field"></div>
+        {% include "admin/testing/tests/_field.html" with field=form.require_fullscreen %}
+        {% include "admin/testing/tests/_field.html" with field=form.auto_submit %}
+        <p class="ok-help-text okt-field--wide">Действует для экзаменов, которые студент проходит в кабинете (/student/exams/). Время, попытки, проходной балл, перемешивание и показ результата/разбора берутся из блоков выше. Ограничения браузера (копирование, вкладки, полноэкранный режим) снижают случайные нарушения, но не являются полной защитой — все действия фиксируются в журнале попытки.</p>
+      </div>
+    </section>
+
     <div class="okt-form-actions">
       <button type="submit" class="ok-btn-primary okt-btn">{% ticon "save" 16 %}<span>Сохранить настройки</span></button>
     </div>

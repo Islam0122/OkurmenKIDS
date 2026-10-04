@@ -132,6 +132,24 @@ describe('ExamDetailPage', () => {
     expect(within(doneRow).getByText('47:13')).toBeInTheDocument()
   })
 
+  it('shows Exam Mode violations recorded for a student', async () => {
+    vi.mocked(examsApi.participants).mockResolvedValue({
+      session: buildExamSession(),
+      server_time: '2026-10-02T08:40:00Z',
+      participants: [
+        buildExamParticipant({ violation_count: 3, tab_switch_count: 2 }),
+        buildExamParticipant({ id: 'p2', student: { id: 2, name: 'Айбек Асанов' } }),
+      ],
+    })
+    renderDetail()
+
+    const table = await screen.findByRole('table')
+    const islamRow = within(table).getByText('Ислам Дуйшобаев').closest('tr') as HTMLElement
+    expect(within(islamRow).getByText('Нарушений: 3')).toHaveAttribute('title', 'Уходов со страницы: 2')
+    const cleanRow = within(table).getByText('Айбек Асанов').closest('tr') as HTMLElement
+    expect(within(cleanRow).queryByText(/Нарушений/)).not.toBeInTheDocument()
+  })
+
   it('opens a finished student’s detailed result', async () => {
     vi.mocked(examsApi.participants).mockResolvedValue({
       session: buildExamSession(),

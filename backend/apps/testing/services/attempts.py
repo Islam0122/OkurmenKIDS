@@ -133,7 +133,9 @@ def join(session: TestSession, student_name: str = "", student=None, user=None) 
     with transaction.atomic():
         attempt = StudentAttempt.objects.create(session=session, student=student, user=user, student_name=student_name)
         attempt.question_ids = pick_question_ids(test, seed=attempt.pk.int)
-        attempt.save(update_fields=["question_ids"])
+        limit = session.effective_time_limit_minutes
+        attempt.expires_at = attempt.started_at + timedelta(minutes=limit) if limit else None
+        attempt.save(update_fields=["question_ids", "expires_at"])
         participant_events.attempt_started(attempt)
     return attempt
 
@@ -159,10 +161,15 @@ def pick_question_ids(test, seed: int) -> list[str]:
 def attempt_deadline(attempt: StudentAttempt):
     """When the attempt must be submitted: the time limit (session override,
     else the test's) from the attempt start, capped by the session's own
-    deadline. None = no limit."""
+    deadline. None = no limit.
+
+    The time-limit part is stored in ``attempt.expires_at`` when the attempt
+    starts (legacy attempts: computed from ``started_at``); the session's
+    deadline is read live, so pausing or extending the session still counts."""
     deadlines = []
-    limit = attempt.session.effective_time_limit_minutes
-    if limit:
+    if attempt.expires_at:
+        deadlines.append(attempt.expires_at)  # stored when the attempt started
+    elif limit := attempt.session.effective_time_limit_minutes:
         deadlines.append(attempt.started_at + timedelta(minutes=limit))
     if attempt.session.expires_at and not attempt.session.is_training:
         deadlines.append(attempt.session.expires_at)
@@ -227,28 +234,35 @@ def submit(attempt: StudentAttempt, answers: dict[str, SubmittedAnswer], *, time
             raise AttemptError(f"Ответьте на обязательные вопросы: {', '.join(missing)}.")
 
     with transaction.atomic():
-        for question in questions:
-            given = answers.get(str(question.pk))
-            if given is None or given.is_empty:
-                continue
-            valid_ids = {str(o.pk) for o in question.display_options}
-            options = [o for o in given.options if o in valid_ids]
-            if question.question_type == QuestionType.SINGLE_CHOICE:
-                options = options[:1]
-            is_correct, grading_status = check_answer(question, given.text, options)
-            Answer.objects.update_or_create(
-                attempt=attempt,
-                question=question,
-                defaults={
-                    "answer_text": given.text if question.question_type in (QuestionType.TEXT, QuestionType.CODE) else "",
-                    "selected_options": options,
-                    "is_correct": is_correct,
-                    "grading_status": grading_status,
-                },
-            )
-        attempt.finish()
-        participant_events.attempt_finished(attempt)
+        grade_and_finish(attempt, answers, questions)
     return attempt_score(attempt)
+
+
+def grade_and_finish(attempt: StudentAttempt, answers: dict[str, SubmittedAnswer], questions=None) -> None:
+    """Grade and store ``answers`` (only valid options of the attempt's own
+    questions), then finish the attempt. The caller has checked that the
+    attempt may still be submitted and runs this inside a transaction."""
+    for question in questions if questions is not None else attempt_questions(attempt):
+        given = answers.get(str(question.pk))
+        if given is None or given.is_empty:
+            continue
+        valid_ids = {str(o.pk) for o in question.display_options}
+        options = [o for o in given.options if o in valid_ids]
+        if question.question_type == QuestionType.SINGLE_CHOICE:
+            options = options[:1]
+        is_correct, grading_status = check_answer(question, given.text, options)
+        Answer.objects.update_or_create(
+            attempt=attempt,
+            question=question,
+            defaults={
+                "answer_text": given.text if question.question_type in (QuestionType.TEXT, QuestionType.CODE) else "",
+                "selected_options": options,
+                "is_correct": is_correct,
+                "grading_status": grading_status,
+            },
+        )
+    attempt.finish()
+    participant_events.attempt_finished(attempt)
 
 
 def expire_attempt(attempt: StudentAttempt) -> None:

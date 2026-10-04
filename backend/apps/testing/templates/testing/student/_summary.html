@@ -1,0 +1,18 @@
+<section class="sp-summary" aria-label="Сводка по экзаменам">
+  <div class="sp-card sp-stat">
+    <div class="sp-stat__icon"><i class="bi bi-file-earmark-text" aria-hidden="true"></i></div>
+    <div><div class="sp-stat__label">Доступные экзамены</div><div class="sp-stat__value">{{ summary.available }}</div></div>
+  </div>
+  <div class="sp-card sp-stat">
+    <div class="sp-stat__icon sp-stat__icon--grey"><i class="bi bi-list-check" aria-hidden="true"></i></div>
+    <div><div class="sp-stat__label">Завершено</div><div class="sp-stat__value">{{ summary.completed }}</div></div>
+  </div>
+  <div class="sp-card sp-stat">
+    <div class="sp-stat__icon sp-stat__icon--blue"><i class="bi bi-check-circle" aria-hidden="true"></i></div>
+    <div><div class="sp-stat__label">Пройдено</div><div class="sp-stat__value">{{ summary.passed }}</div></div>
+  </div>
+  <div class="sp-card sp-stat">
+    <div class="sp-stat__icon sp-stat__icon--warn"><i class="bi bi-bar-chart" aria-hidden="true"></i></div>
+    <div><div class="sp-stat__label">Средний результат</div><div class="sp-stat__value">{% if summary.average_percent is not None %}{{ summary.average_percent }}%{% else %}—{% endif %}</div></div>
+  </div>
+</section>

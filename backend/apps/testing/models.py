@@ -123,6 +123,16 @@ class AttemptStatus(models.TextChoices):
     EXPIRED = "expired", "Просрочена"
 
 
+class FinishReason(models.TextChoices):
+    """Why an Exam Mode attempt ended (StudentAttempt.finish_reason)."""
+
+    NONE = "", "—"
+    SUBMITTED = "submitted", "Отправлено студентом"
+    TIME_EXPIRED = "time_expired", "Время истекло"
+    VIOLATIONS = "violations", "Превышен лимит нарушений"
+    SESSION_CLOSED = "session_closed", "Сессия завершена"
+
+
 class GradingStatus(models.TextChoices):
     PENDING = "pending", "На проверке"
     PROCESSING = "processing", "Обрабатывается"
@@ -227,6 +237,29 @@ class Test(models.Model):
     allow_retry = models.BooleanField(default=True, verbose_name="Разрешить повторную попытку")
     available_from = models.DateTimeField(null=True, blank=True, verbose_name="Дата начала")
     available_until = models.DateTimeField(null=True, blank=True, verbose_name="Дата окончания")
+
+    # -- Exam Mode (student portal, /student/exams/) -------------------------
+    # Only the portal's Exam Mode reads these; the /exam/ pages ignore them.
+    require_fullscreen = models.BooleanField(
+        default=False,
+        verbose_name="Требовать полноэкранный режим",
+        help_text="Выход из полноэкранного режима фиксируется как нарушение.",
+    )
+    max_tab_switches = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        default=3,
+        validators=[MaxValueValidator(100)],
+        verbose_name="Допустимо уходов со страницы",
+        help_text="Сколько раз можно переключиться на другую вкладку; следующий уход завершает экзамен. "
+        "Пусто — без лимита (уходы только фиксируются).",
+    )
+    auto_submit = models.BooleanField(
+        default=True,
+        verbose_name="Автоотправка по истечении времени",
+        help_text="Когда время вышло, сохранённые ответы отправляются на проверку. "
+        "Если выключено — попытка закрывается как просроченная, без оценки.",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлён")
@@ -957,6 +990,25 @@ class StudentAttempt(models.Model):
     # score formula — see _recalculate_score().
     question_ids = models.JSONField(default=list, blank=True, verbose_name="Вопросы попытки")
 
+    # -- Exam Mode (student portal) — see services/exam_portal.py ------------
+    exam_mode = models.BooleanField(
+        default=False, db_index=True, verbose_name="Exam Mode",
+        help_text="Попытка начата из кабинета студента; открывается только там.",
+    )
+    # The attempt's own time-limit deadline (started_at + limit), stored when
+    # it starts. The session's deadline still caps it — attempt_deadline().
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Истекает")
+    # Autosaved answers {question_id: {"text": str, "options": [id, ...]}},
+    # graded into Answer rows only when the attempt is finished.
+    draft_answers = models.JSONField(default=dict, blank=True, verbose_name="Черновик ответов")
+    draft_saved_at = models.DateTimeField(null=True, blank=True, verbose_name="Черновик сохранён")
+    tab_switch_count = models.PositiveIntegerField(default=0, verbose_name="Уходов со страницы")
+    violation_count = models.PositiveIntegerField(default=0, verbose_name="Нарушений")
+    finish_reason = models.CharField(
+        max_length=20, choices=FinishReason.choices, default=FinishReason.NONE, blank=True,
+        verbose_name="Причина завершения",
+    )
+
     class Meta:
         ordering = ["-started_at"]
         verbose_name = "Попытка прохождения"
@@ -1185,3 +1237,123 @@ class Answer(models.Model):
         self.is_correct = is_correct
         self.grading_status = GradingStatus.MANUAL
         self.save(update_fields=["is_correct", "grading_status"])
+
+
+# ---------------------------------------------------------------------------
+# Student portal: access codes and the Exam Mode event log
+# ---------------------------------------------------------------------------
+
+# Same unambiguous alphabet as session keys. 31**8 ≈ 8.5e11 codes; wrong
+# codes are rate-limited per IP (student_auth.py).
+PORTAL_CODE_LENGTH = 8
+
+
+def generate_portal_code() -> str:
+    return "".join(secrets.choice(SESSION_KEY_ALPHABET) for _ in range(PORTAL_CODE_LENGTH))
+
+
+def normalize_portal_code(raw: str) -> str:
+    return "".join(ch for ch in (raw or "").upper() if ch.isalnum())
+
+
+class StudentPortalAccess(models.Model):
+    """A student's personal sign-in code for the student portal (/student/).
+
+    Students have no LMS accounts (users.User is staff only); the portal
+    keeps the student in the Django session after they enter this code."""
+
+    student = models.OneToOneField(
+        "academy.Student", on_delete=models.CASCADE, related_name="portal_access", verbose_name="Студент",
+    )
+    code = models.CharField(max_length=16, unique=True, verbose_name="Код доступа")
+    is_active = models.BooleanField(default=True, verbose_name="Активен")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Выдан")
+    last_login_at = models.DateTimeField(null=True, blank=True, verbose_name="Последний вход")
+
+    class Meta:
+        ordering = ["student__last_name", "student__first_name"]
+        verbose_name = "Доступ студента"
+        verbose_name_plural = "Доступ студентов"
+
+    def __str__(self):
+        return f"{self.student} · {self.code}"
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.regenerate_code(save=False)
+        self.code = normalize_portal_code(self.code)
+        super().save(*args, **kwargs)
+
+    def regenerate_code(self, save: bool = True) -> str:
+        for _ in range(_KEY_GENERATION_ATTEMPTS):
+            code = generate_portal_code()
+            if not StudentPortalAccess.objects.filter(code=code).exists():
+                break
+        self.code = code
+        if save:
+            self.save(update_fields=["code"])
+        return code
+
+
+class ExamEventType(models.TextChoices):
+    EXAM_STARTED = "EXAM_STARTED", "Экзамен начат"
+    ANSWER_SAVED = "ANSWER_SAVED", "Ответ сохранён"
+    TAB_SWITCH = "TAB_SWITCH", "Уход со страницы"
+    FULLSCREEN_EXIT = "FULLSCREEN_EXIT", "Выход из полноэкранного режима"
+    COPY_ATTEMPT = "COPY_ATTEMPT", "Попытка копирования"
+    PASTE_ATTEMPT = "PASTE_ATTEMPT", "Попытка вставки"
+    CUT_ATTEMPT = "CUT_ATTEMPT", "Попытка вырезания"
+    CONTEXT_MENU_ATTEMPT = "CONTEXT_MENU_ATTEMPT", "Контекстное меню"
+    DEVTOOLS_ATTEMPT = "DEVTOOLS_ATTEMPT", "Горячие клавиши DevTools"
+    PAGE_LEAVE = "PAGE_LEAVE", "Страница закрыта"
+    EXAM_SUBMITTED = "EXAM_SUBMITTED", "Экзамен отправлен"
+    TIME_EXPIRED = "TIME_EXPIRED", "Время истекло"
+    EXAM_TERMINATED = "EXAM_TERMINATED", "Экзамен завершён из-за нарушений"
+
+
+# Reported by the Exam Mode page and counted as violations
+# (StudentAttempt.violation_count) — see services/exam_portal.py.
+EXAM_VIOLATION_EVENTS = frozenset({
+    ExamEventType.TAB_SWITCH,
+    ExamEventType.FULLSCREEN_EXIT,
+    ExamEventType.COPY_ATTEMPT,
+    ExamEventType.PASTE_ATTEMPT,
+    ExamEventType.CUT_ATTEMPT,
+    ExamEventType.CONTEXT_MENU_ATTEMPT,
+    ExamEventType.DEVTOOLS_ATTEMPT,
+})
+
+
+class ExamAttemptEvent(models.Model):
+    """Append-only audit log of an Exam Mode attempt. No answers and no
+    personal data beyond what the request itself carries (user agent and,
+    unless EXAM_EVENTS_STORE_IP is off, the IP address)."""
+
+    attempt = models.ForeignKey(
+        StudentAttempt, on_delete=models.CASCADE, related_name="events", verbose_name="Попытка",
+    )
+    event_type = models.CharField(max_length=24, choices=ExamEventType.choices, verbose_name="Событие")
+    timestamp = models.DateTimeField(default=timezone.now, verbose_name="Время")
+    metadata = models.JSONField(default=dict, blank=True, verbose_name="Детали")
+    user_agent = models.CharField(max_length=255, blank=True, verbose_name="Браузер")
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP-адрес")
+
+    class Meta:
+        ordering = ["timestamp", "id"]
+        verbose_name = "Событие экзамена"
+        verbose_name_plural = "События экзамена"
+        indexes = [
+            models.Index(fields=["attempt", "timestamp"], name="exam_event_attempt_time_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_event_type_display()} · {self.attempt_id}"
+
+    @property
+    def severity(self) -> str:
+        """danger / warning / info — how the admin event log colours it."""
+        if self.event_type in EXAM_VIOLATION_EVENTS or self.event_type == ExamEventType.EXAM_TERMINATED:
+            return "danger"
+        if self.event_type in (ExamEventType.PAGE_LEAVE, ExamEventType.TIME_EXPIRED):
+            return "warning"
+        return "info"

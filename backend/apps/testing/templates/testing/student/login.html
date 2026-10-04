@@ -1,0 +1,22 @@
+{% extends "testing/student/base.html" %}
+
+{% block title %}Вход{% endblock %}
+
+{% block content %}
+  <section class="sp-card sp-login">
+    <div class="sp-login__icon"><i class="bi bi-shield-lock" aria-hidden="true"></i></div>
+    <h1 class="sp-h1">Кабинет студента</h1>
+    <p class="sp-muted">Введите персональный код доступа. Его выдаёт администратор академии.</p>
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if error %}<div class="sp-alert sp-alert--danger" role="alert"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i><span>{{ error }}</span></div>{% endif %}
+      <div>
+        <label class="sp-label" for="code">Код доступа</label>
+        <input id="code" name="code" class="sp-input sp-input--code" autocomplete="one-time-code" autocapitalize="characters"
+               spellcheck="false" maxlength="24" required autofocus placeholder="XXXXXXXX">
+      </div>
+      <button type="submit" class="sp-btn sp-btn--primary sp-btn--lg sp-btn--block"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>Войти</button>
+    </form>
+  </section>
+{% endblock %}

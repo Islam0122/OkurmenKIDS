@@ -1,0 +1,43 @@
+{% extends "testing/student/base.html" %}
+{% load question_bank %}
+
+{% block title %}Разбор экзамена{% endblock %}
+
+{% block content %}
+  <div class="sp-result">
+    <a class="sp-back" href="{% url 'student_exam_result' attempt.session_id attempt.pk %}"><i class="bi bi-chevron-left" aria-hidden="true"></i>Результат</a>
+    <h1 class="sp-h1">Разбор экзамена</h1>
+    <div class="sp-meta"><span><i class="bi bi-file-earmark-text" aria-hidden="true"></i>{{ title }}</span></div>
+
+    {% for row in rows %}
+      {% with q=row.question answer=row.answer %}
+        <section class="sp-card sp-review-q sp-review-q--{{ row.status }}" style="margin-top:16px">
+          <div class="sp-exam__top">
+            <span class="sp-muted sp-small">Вопрос {{ row.number }} · {{ q.points|points_label }}</span>
+            {% if row.status == "correct" %}<span class="sp-badge sp-badge--passed">Верно</span>
+            {% elif row.status == "wrong" %}<span class="sp-badge sp-badge--failed">Неверно</span>
+            {% elif row.status == "pending" %}<span class="sp-badge sp-badge--upcoming">На проверке</span>
+            {% else %}<span class="sp-badge sp-badge--finished">Пропущен</span>{% endif %}
+          </div>
+          <h3>{{ q.text|linebreaksbr }}</h3>
+          <dl>
+            <div class="sp-review-row"><dt>Ваш ответ</dt><dd>
+              {% if row.selected %}{% for o in row.selected %}{{ o.text|default:"(изображение)" }}{% if not forloop.last %}; {% endif %}{% endfor %}
+              {% elif answer and answer.answer_text %}{% if q.question_type == "code" %}<pre>{{ answer.answer_text }}</pre>{% else %}{{ answer.answer_text|linebreaksbr }}{% endif %}
+              {% else %}<span class="sp-muted">нет ответа</span>{% endif %}
+            </dd></div>
+            <div class="sp-review-row"><dt>Правильный ответ</dt><dd>
+              {% if row.correct_options %}{% for o in row.correct_options %}{{ o.text|default:"(изображение)" }}{% if not forloop.last %}; {% endif %}{% endfor %}
+              {% elif q.correct_answers %}{{ q.correct_answers|first }}
+              {% else %}<span class="sp-muted">проверяет преподаватель</span>{% endif %}
+            </dd></div>
+          </dl>
+        </section>
+      {% endwith %}
+    {% endfor %}
+
+    <div class="sp-result__actions">
+      <a class="sp-btn sp-btn--ghost" href="{% url 'student_exams' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i>Вернуться к экзаменам</a>
+    </div>
+  </div>
+{% endblock %}

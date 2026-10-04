@@ -324,6 +324,8 @@ JAZZMIN_SETTINGS = {
                 "icon": "bi bi-person-dash",
                 "permissions": ["academy.view_studentstatusevent"],
             },
+            # Personal codes for the student portal (/student/, Exam Mode).
+            {"name": "Доступ студентов", "model": "testing.studentportalaccess", "icon": "bi bi-key"},
         ],
 
         # Reports for the academy's management — Admin/superuser only
@@ -367,6 +369,7 @@ JAZZMIN_SETTINGS = {
             # and hold the results. «Создать сессию» lives inside «Сессии».
             {"name": "Тесты", "model": "testing.test", "icon": "bi bi-clipboard2-check"},
             {"name": "Сессии", "model": "testing.testsession", "icon": "bi bi-broadcast"},
+            {"name": "Мониторинг экзаменов", "url": "admin:testing_exam_monitoring", "icon": "bi bi-shield-check"},
         ],
 
         "аналитика": [
@@ -463,6 +466,7 @@ JAZZMIN_SETTINGS = {
         "scholarships.scholarshiprunlog": "bi bi-journal-text",
         "testing.test": "bi bi-clipboard2-check",
         "testing.testsession": "bi bi-broadcast",
+        "testing.studentportalaccess": "bi bi-key",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

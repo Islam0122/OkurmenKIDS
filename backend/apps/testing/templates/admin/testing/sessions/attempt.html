@@ -31,6 +31,15 @@
     <div class="okt-kpi"><span class="okt-kpi__label">Начало · завершение</span><span class="okt-kpi__value oks-kpi__value--sm">{{ attempt.started_at|date:"H:i" }} – {{ attempt.finished_at|date:"H:i"|default:"…" }}</span></div>
   </div>
 
+  {% if attempt.exam_mode %}
+    <div class="okt-kpis">
+      <div class="okt-kpi"><span class="okt-kpi__label">Режим</span><span class="okt-kpi__value oks-kpi__value--sm">Exam Mode</span>{% if attempt.finish_reason %}<span class="okt-kpi__hint">{{ attempt.get_finish_reason_display }}</span>{% endif %}</div>
+      <div class="okt-kpi"><span class="okt-kpi__label">Уходов со страницы</span><span class="okt-kpi__value">{{ attempt.tab_switch_count }}</span>{% if session.test.max_tab_switches is not None %}<span class="okt-kpi__hint">допустимо: {{ session.test.max_tab_switches }}</span>{% endif %}</div>
+      <div class="okt-kpi"><span class="okt-kpi__label">Нарушений</span><span class="okt-kpi__value">{{ attempt.violation_count }}</span><span class="okt-kpi__hint">копирование, вставка, вкладки, меню…</span></div>
+      <div class="okt-kpi"><span class="okt-kpi__label">Дедлайн попытки</span><span class="okt-kpi__value oks-kpi__value--sm">{{ attempt.expires_at|date:"d.m.Y H:i"|default:"—" }}</span></div>
+    </div>
+  {% endif %}
+
   {% if others|length > 1 %}
     <nav class="okt-filters" aria-label="Попытки студента">
       {% for other in others %}
@@ -88,4 +97,35 @@
       {% endif %}
     </div>
   </section>
+
+  {% if events is not None %}
+    <section class="ok-card okt-section" id="events">
+      <div class="ok-card-header">{% ticon "activity" 16 %}<span>Журнал событий</span></div>
+      <div class="ok-card-body">
+        {% if events %}
+          <div class="okt-qtable-wrap">
+            <table class="okt-qtable">
+              <thead><tr><th>Время</th><th>Событие</th><th>Детали</th><th>Браузер</th><th>IP</th></tr></thead>
+              <tbody>
+                {% for e in events %}
+                  <tr>
+                    <td class="okt-nowrap">{{ e.timestamp|date:"d.m.Y H:i:s" }}</td>
+                    <td>
+                      <span class="ok-badge ok-badge-{% if e.severity == 'info' %}muted{% else %}{{ e.severity }}{% endif %}"><span class="ok-badge-dot"></span>{{ e.get_event_type_display }}</span>
+                      <div class="okt-qtable__meta">{{ e.event_type }}</div>
+                    </td>
+                    <td>{% if e.metadata.question %}Вопрос {{ e.metadata.question }}{% endif %}{% if e.metadata.detail %}{% if e.metadata.question %} · {% endif %}{{ e.metadata.detail }}{% endif %}{% if not e.metadata %}—{% endif %}</td>
+                    <td class="okt-qtable__meta">{{ e.user_agent|truncatechars:60|default:"—" }}</td>
+                    <td class="okt-nowrap">{{ e.ip_address|default:"—" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="okt-muted">Событий нет.</p>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
 {% endblock %}

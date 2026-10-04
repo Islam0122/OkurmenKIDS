@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle2, CircleDashed, Clock, PlayCircle, Users } from 'lucide-react'
+import { CheckCircle2, CircleDashed, Clock, PlayCircle, ShieldAlert, Users } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
 import { BackLink } from '@/components/ui/BackLink'
@@ -26,6 +26,20 @@ import {
   formatSessionTime,
 } from './examUi'
 import { MyResults, TakeTestButton } from './MyResults'
+
+/** Exam Mode violations (tab switches, copy/paste…) recorded for the attempt. */
+function Violations({ participant }: { participant: ExamParticipant }) {
+  if (!participant.violation_count) return null
+  return (
+    <div
+      className="mt-1 inline-flex items-center gap-1 text-xs text-danger"
+      title={`Уходов со страницы: ${participant.tab_switch_count}`}
+    >
+      <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
+      Нарушений: {participant.violation_count}
+    </div>
+  )
+}
 
 function Progress({ participant }: { participant: ExamParticipant }) {
   if (!participant.question_total) return <span className="text-ink-muted">0 / —</span>
@@ -234,6 +248,7 @@ export function ExamDetailPage() {
                       <td className="px-4 py-3 font-medium text-ink">{p.student.name}</td>
                       <td className="px-4 py-3">
                         <ParticipantStatusBadge status={p.status} />
+                        <Violations participant={p} />
                       </td>
                       <td className="px-4 py-3">
                         <Progress participant={p} />
@@ -258,6 +273,7 @@ export function ExamDetailPage() {
                     <ParticipantStatusBadge status={p.status} />
                   </div>
                   <Progress participant={p} />
+                  <Violations participant={p} />
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-secondary">
                     <span>Время: {formatDuration(p.duration_seconds)}</span>
                     <span>Активность: {formatClock(p.last_seen_at)}</span>

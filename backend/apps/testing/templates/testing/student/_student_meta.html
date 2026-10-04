@@ -1,0 +1,5 @@
+<div class="sp-meta">
+  <span><i class="bi bi-person" aria-hidden="true"></i>{{ student }}</span>
+  <span><i class="bi bi-people" aria-hidden="true"></i>{{ group.name|default:"Без группы" }}</span>
+  {% if course %}<span><i class="bi bi-book" aria-hidden="true"></i>{{ course.name }}</span>{% endif %}
+</div>

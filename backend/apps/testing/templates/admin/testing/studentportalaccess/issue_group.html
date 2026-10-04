@@ -1,0 +1,28 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'admin:testing_studentportalaccess_changelist' %}">Доступ студентов</a></li>
+    <li class="breadcrumb-item active">Выдать коды группе</li>
+  </ol>
+{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <div class="card-body">
+      <p>Каждый активный студент группы, у которого ещё нет кода, получит персональный код для входа в кабинет студента. Уже выданные коды не меняются.</p>
+      <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="form-group mb-3">
+          <label for="{{ form.group.id_for_label }}">{{ form.group.label }}</label>
+          {{ form.group }}
+          {{ form.group.errors }}
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-key"></i> Выдать коды</button>
+        <a class="btn btn-outline-secondary" href="{% url 'admin:testing_studentportalaccess_changelist' %}">Отмена</a>
+      </form>
+    </div>
+  </div>
+{% endblock %}
