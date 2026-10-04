@@ -246,7 +246,15 @@ class TeacherSessionListView(ListAPIView):
         except ValidationError as error:
             return Response({"detail": error.messages}, status=http.HTTP_400_BAD_REQUEST)
         session.created_by = request.user
-        session.save(update_fields=["created_by"])
+        fields = ["created_by"]
+        if session.teacher_id is None and session.group_id is not None:
+            # The group's trainer comes from the existing Group → Trainer link
+            # (its program for the test's subject) — never asked for twice.
+            from apps.academy.services.trainer_assignment import group_trainer
+
+            session.teacher = group_trainer(session.group, session.test.subject)
+            fields.append("teacher")
+        session.save(update_fields=fields)
         session = sessions_for(request.user).annotate(questions_total=Count("test__questions", distinct=True)).get(pk=session.pk)
         participants = list(session.participants.select_related("student"))
         return Response(

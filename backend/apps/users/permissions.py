@@ -118,3 +118,15 @@ class TeamLeadReadOnly(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return not is_team_lead(request.user)
+
+
+class CanAssignTrainerToGroup(BasePermission):
+    """The one academic write a Team Lead has: assigning / replacing a
+    group's trainer (GroupViewSet.assign_trainer). Admin may too. This is
+    not a «change Trainer» or «change Group» right — every other write on
+    trainers and groups stays Admin-only."""
+
+    message = "Назначать тренеров группам может только руководитель тренеров или администратор."
+
+    def has_permission(self, request, view) -> bool:
+        return is_admin_user(request.user) or is_team_lead(request.user)

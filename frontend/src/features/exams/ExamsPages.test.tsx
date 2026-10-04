@@ -7,7 +7,14 @@ import { ExamDetailPage } from '@/features/exams/ExamDetailPage'
 import { ExamsListPage } from '@/features/exams/ExamsListPage'
 import { LiveExamsWidget } from '@/features/exams/LiveExamsWidget'
 import { testPage } from '@/features/exams/MyResults'
-import { buildExamParticipant, buildExamSession, buildUser } from '@/test/fixtures'
+import {
+  buildExamParticipant,
+  buildExamSession,
+  buildGroup,
+  buildGroupTeacherSummary,
+  buildSubject,
+  buildUser,
+} from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
 import type { UserRole } from '@/types/auth'
 import type { MyAttempt } from '@/types/exams'
@@ -31,7 +38,7 @@ vi.mock('@/api/exams', () => ({
     tests: vi.fn(),
   },
 }))
-vi.mock('@/api/groups', () => ({ groupsApi: { list: vi.fn() } }))
+vi.mock('@/api/groups', () => ({ groupsApi: { list: vi.fn(), get: vi.fn() } }))
 
 import { examsApi } from '@/api/exams'
 import { groupsApi } from '@/api/groups'
@@ -221,6 +228,12 @@ describe('Team Lead — Сессии', () => {
     ]))
     vi.mocked(groupsApi.list).mockResolvedValue(page([{ id: 3, name: 'Python PRO — группа 3' }]) as never)
     vi.mocked(examsApi.create).mockResolvedValue(buildExamSession({ id: 'new-session' }))
+    vi.mocked(groupsApi.get).mockResolvedValue(
+      buildGroup({
+        id: 3,
+        teachers: [buildGroupTeacherSummary({ subject_detail: buildSubject({ name: 'Python' }) })],
+      }),
+    )
     const user = userEvent.setup()
     renderWithProviders(
       <Routes>
@@ -236,6 +249,8 @@ describe('Team Lead — Сессии', () => {
     expect(screen.getByTestId('session-subject')).toHaveTextContent('Python')
     await screen.findByRole('option', { name: 'Python PRO — группа 3' })
     await user.selectOptions(screen.getByLabelText('Группа *'), '3')
+    // The group's trainer comes from the Group → Trainer link — not chosen again.
+    await waitFor(() => expect(screen.getByTestId('session-trainer')).toHaveTextContent('👨‍🏫'))
     const date = screen.getByLabelText('Дата *')
     await user.clear(date)
     await user.type(date, '2026-10-04')

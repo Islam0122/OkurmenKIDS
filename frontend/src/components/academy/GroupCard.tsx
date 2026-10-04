@@ -16,6 +16,13 @@ export function GroupCard({ group }: { group: Group }) {
   const activeSlots = group.schedules.filter((slot) => slot.is_active)
   const activeDays = WEEKDAY_ORDER.filter((day) => activeSlots.some((slot) => slot.day_of_week === day))
   const activePrograms = group.teachers.filter((program) => program.is_active).length
+  const trainerNames = [
+    ...new Set(
+      group.teachers
+        .filter((program) => program.is_active)
+        .map((program) => `${program.teacher_detail.user.first_name} ${program.teacher_detail.user.last_name}`.trim()),
+    ),
+  ]
 
   return (
     <Link
@@ -35,6 +42,10 @@ export function GroupCard({ group }: { group: Group }) {
             {group.students_count}
             {group.max_students ? ` / ${group.max_students}` : ''}
           </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-ink-secondary">Тренер</dt>
+          <dd className="truncate text-right font-medium text-ink">{trainerNames.length ? trainerNames.join(', ') : 'Не назначен'}</dd>
         </div>
         <div className="flex justify-between">
           <dt className="text-ink-secondary">Учебные программы</dt>
