@@ -120,13 +120,19 @@ class TeamLeadReadOnly(BasePermission):
         return not is_team_lead(request.user)
 
 
-class CanAssignTrainerToGroup(BasePermission):
-    """The one academic write a Team Lead has: assigning / replacing a
-    group's trainer (GroupViewSet.assign_trainer). Admin may too. This is
-    not a «change Trainer» or «change Group» right — every other write on
-    trainers and groups stays Admin-only."""
+class CanManageGroupAcademicConfig(BasePermission):
+    """manage_group_academic_config — the Team Lead's academic writes on a
+    group, and only those: its trainer(s), subject(s), weekly schedule slots
+    (day, time, room) and generating its lessons from that schedule
+    (GroupViewSet.academic_config / assign_trainer / generate_lessons).
+    Admin may too. Not a «change Group / Trainer / Subject / Room / Student /
+    Test» right: deleting or editing those stays Admin-only."""
 
-    message = "Назначать тренеров группам может только руководитель тренеров или администратор."
+    message = "Учебную конфигурацию группы может менять только руководитель тренеров или администратор."
 
     def has_permission(self, request, view) -> bool:
         return is_admin_user(request.user) or is_team_lead(request.user)
+
+
+# The trainer assignment action is part of the same right.
+CanAssignTrainerToGroup = CanManageGroupAcademicConfig

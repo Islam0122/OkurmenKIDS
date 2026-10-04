@@ -21,6 +21,7 @@ from apps.users.import_export.formats import UnsupportedFileFormat
 from apps.users.models import Teacher, User
 from apps.users.permissions import (
     CanAssignTrainerToGroup,
+    CanManageGroupAcademicConfig,
     IsAdmin,
     IsAdminOrTeamLeadReadOnly,
     can_view_academy,
@@ -113,6 +114,7 @@ from .services.group_analytics import GroupAnalyticsFilters, get_group_analytics
 from .services.lesson_generator import generate_lessons_for_group_with_report, preview_generation
 from .services.lesson_reschedule import cancel_and_reschedule, reschedule_cancelled_lesson
 from .services.subject_assignments import subject_assignment_overview
+from .services.group_academic_config import config_overview, save_program_config
 from .services.trainer_assignment import assign_trainer, assignment_overview
 
 
@@ -491,7 +493,11 @@ class GroupViewSet(viewsets.ModelViewSet):
         request=None,
         responses=GenerateLessonsResponseSerializer,
     )
-    @action(detail=True, methods=["post"], url_path="generate-lessons", permission_classes=[IsAuthenticated, IsAdmin])
+    @action(
+        detail=True, methods=["post"], url_path="generate-lessons",
+        # Part of a group's academic configuration: Admin and Team Lead.
+        permission_classes=[IsAuthenticated, CanManageGroupAcademicConfig],
+    )
     def generate_lessons(self, request, pk=None):
         """Idempotent generate + sync: fills in the missing lessons of the
         group's plan(s) and re-syncs plain future lessons with the current
@@ -542,7 +548,7 @@ class GroupViewSet(viewsets.ModelViewSet):
     @extend_schema(tags=["Groups"], responses=GenerateLessonsPreviewSerializer)
     @action(
         detail=True, methods=["get"], url_path="generate-lessons/preview",
-        permission_classes=[IsAuthenticated, IsAdmin],
+        permission_classes=[IsAuthenticated, CanManageGroupAcademicConfig],
     )
     def generate_lessons_preview(self, request, pk=None):
         """What `POST generate-lessons/` would do right now — per program:
@@ -630,6 +636,80 @@ class GroupViewSet(viewsets.ModelViewSet):
             "lessons_reassigned": result.lessons_reassigned,
         }
         return Response(payload, status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK)
+
+    def _config_program_body(self, request):
+        """{teacher, subject, schedule|slots: [{id?, day|weekday, start|start_time,
+        end|end_time, room|room_id}]} → model objects (unknown ids → 400)."""
+        from apps.users.models import Subject
+
+        def pick(model, key, *aliases):
+            raw = request.data.get(key)
+            for alias in aliases:
+                raw = raw if raw not in (None, "") else request.data.get(alias)
+            if raw in (None, ""):
+                return None
+            if not str(raw).isdigit():
+                raise DRFValidationError({key: ["Неверное значение."]})
+            obj = model.objects.filter(pk=int(raw)).first()
+            if obj is None:
+                raise DRFValidationError({key: ["Не найдено."]})
+            return obj
+
+        teacher = pick(Teacher, "teacher", "trainer_id", "teacher_id")
+        if teacher is None:
+            raise DRFValidationError({"teacher": ["Выберите тренера."]})
+        slots = request.data.get("schedule", request.data.get("slots"))
+        if slots is None:
+            raise DRFValidationError({"schedule": ["Добавьте хотя бы один день расписания."]})
+        return teacher, pick(Subject, "subject", "subject_id"), slots
+
+    def _save_config(self, request, group, program=None):
+        teacher, subject, slots = self._config_program_body(request)
+        try:
+            saved = save_program_config(
+                group, user=request.user, teacher=teacher, subject=subject, slot_items=slots, program=program,
+            )
+        except DjangoValidationError as exc:
+            raise DRFValidationError(exc.message_dict if hasattr(exc, "error_dict") else {"schedule": exc.messages})
+        payload = config_overview(group)
+        payload["saved_program"] = saved.pk
+        return payload
+
+    @extend_schema(
+        tags=["Groups"],
+        description=(
+            "«Учебная конфигурация» (manage_group_academic_config — Admin and Team Lead): GET — the "
+            "group's programs (trainer + subject) with their weekly slots (day, time, room), plus the "
+            "subjects, active trainers and rooms to choose from. POST — a new program for a subject: "
+            "{teacher, subject, schedule: [{day, start, end, room}]}. Saved through the admin's own "
+            "services.program_editing.save_teaching_program, with trainer / room / group conflict checks."
+        ),
+    )
+    @action(
+        detail=True, methods=["get", "post"], url_path="academic-config",
+        permission_classes=[IsAuthenticated, CanManageGroupAcademicConfig],
+    )
+    def academic_config(self, request, pk=None):
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        if request.method == "GET":
+            return Response(config_overview(group))
+        return Response(self._save_config(request, group), status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        tags=["Groups"],
+        description=(
+            "Replace one program's trainer, subject and its whole slot list "
+            "({teacher, subject, schedule: [{id?, day, start, end, room}]}); slots left out are removed."
+        ),
+    )
+    @action(
+        detail=True, methods=["put", "patch"], url_path=r"academic-config/programs/(?P<program_id>\d+)",
+        permission_classes=[IsAuthenticated, CanManageGroupAcademicConfig],
+    )
+    def academic_config_program(self, request, pk=None, program_id=None):
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        program = get_object_or_404(GroupTeacher, pk=program_id, group=group)
+        return Response(self._save_config(request, group, program=program))
 
     @extend_schema(tags=["Groups"], responses=SubjectAssignmentSerializer(many=True))
     @action(detail=True, methods=["get"], url_path="subject-assignments")

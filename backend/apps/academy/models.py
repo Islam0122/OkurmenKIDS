@@ -911,7 +911,8 @@ class GroupSchedule(models.Model):
             )
             if conflict is not None:
                 errors["teacher"] = (
-                    f"Тренер «{self.teacher}» уже занят в это время в группе «{conflict.group.name}»."
+                    f"Тренер «{self.teacher}» уже занят в это время в группе «{conflict.group.name}»"
+                    f" ({conflict.when_label})."
                 )
 
         if self.room_id and self.day_of_week and self.start_time and self.end_time:
@@ -926,7 +927,8 @@ class GroupSchedule(models.Model):
             )
             if conflict is not None:
                 errors["room"] = (
-                    f"Аудитория «{self.room.name}» уже занята в это время в группе «{conflict.group.name}»."
+                    f"Аудитория «{self.room.name}» уже занята в это время в группе «{conflict.group.name}»"
+                    f" ({conflict.when_label})."
                 )
 
         if self.group_id and self.day_of_week and self.start_time and self.end_time:
@@ -945,11 +947,20 @@ class GroupSchedule(models.Model):
             )
             if conflict is not None:
                 errors["group"] = (
-                    f"Группа «{self.group.name}» уже занята в это время программой «{conflict.group_teacher}»."
+                    f"Группа «{self.group.name}» уже занята в это время программой «{conflict.group_teacher}»"
+                    f" ({conflict.when_label})."
                 )
 
         if errors:
             raise ValidationError(errors)
+
+    @property
+    def when_label(self) -> str:
+        """«Понедельник 13:00–14:00» — the slot's own day and time, for
+        conflict messages."""
+        from .constants import WEEKDAY_LABELS_FULL
+
+        return f"{WEEKDAY_LABELS_FULL.get(self.day_of_week, self.day_of_week)} {self.start_time:%H:%M}–{self.end_time:%H:%M}"
 
 
 # ---------------------------------------------------------------------------

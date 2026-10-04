@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
+import { AxiosError } from 'axios'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,7 +16,7 @@ import {
 } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
 import type { UserRole } from '@/types/auth'
-import type { TrainerAssignmentOverview } from '@/types/academy'
+import type { AcademicConfig } from '@/types/academy'
 
 const mockRole = vi.hoisted(() => ({ role: 'teacher' as UserRole }))
 
@@ -25,7 +26,8 @@ vi.mock('@/hooks/useAuth', () => ({
 
 vi.mock('@/api/groups', () => ({
   groupsApi: {
-    get: vi.fn(), list: vi.fn(), schedule: vi.fn(), students: vi.fn(), trainerAssignments: vi.fn(), assignTrainer: vi.fn(),
+    get: vi.fn(), list: vi.fn(), schedule: vi.fn(), students: vi.fn(),
+    academicConfig: vi.fn(), createProgram: vi.fn(), saveProgram: vi.fn(), generateLessons: vi.fn(),
   },
 }))
 
@@ -135,93 +137,177 @@ describe('GroupDetailPage', () => {
   })
 })
 
-function overview(overrides: Partial<TrainerAssignmentOverview> = {}): TrainerAssignmentOverview {
+function config(overrides: Partial<AcademicConfig> = {}): AcademicConfig {
   return {
-    group: { id: 1, name: 'Python PRO — группа 3', course: 'Python PRO' },
+    group: { id: 1, name: 'Python PRO — группа 3', course: 'Python PRO', status: 'active' },
     programs: [
-      { id: 10, subject: { id: 1, name: 'Python' }, teacher: { id: 7, name: 'Иванов Иван' }, is_active: true,
-        assigned_by: 'Нурлан (Team Lead)', assigned_at: '2026-10-04T04:30:00Z' },
+      {
+        id: 10,
+        subject: { id: 1, name: 'Python' },
+        teacher: { id: 7, name: 'Иванов Иван' },
+        is_active: true,
+        has_lessons: false,
+        assigned_by: 'Нурлан (Team Lead)',
+        assigned_at: '2026-10-04T04:30:00Z',
+        slots: [
+          { id: 100, day: 'mon', day_label: 'Понедельник', start: '13:00', end: '14:00', room: { id: 1, name: 'Кабинет 101' }, is_active: true },
+          { id: 101, day: 'sun', day_label: 'Воскресенье', start: '20:00', end: '21:00', room: { id: 2, name: 'Кабинет 205' }, is_active: true },
+        ],
+      },
     ],
     subjects: [{ id: 1, name: 'Python' }, { id: 2, name: 'English' }],
     trainers: [
       { id: 7, name: 'Иванов Иван', subjects: ['Python'] },
       { id: 8, name: 'Садыкова Айгуль', subjects: ['Python', 'English'] },
     ],
+    rooms: [{ id: 1, name: 'Кабинет 101', capacity: 12 }, { id: 2, name: 'Кабинет 205', capacity: 20 }],
+    weekdays: [
+      { code: 'mon', label: 'Понедельник' }, { code: 'tue', label: 'Вторник' }, { code: 'wed', label: 'Среда' },
+      { code: 'thu', label: 'Четверг' }, { code: 'fri', label: 'Пятница' }, { code: 'sat', label: 'Суббота' },
+      { code: 'sun', label: 'Воскресенье' },
+    ],
     ...overrides,
   }
 }
 
-describe('GroupDetailPage — Team Lead assigns trainers', () => {
+describe('GroupDetailPage — Team Lead academic configuration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRole.role = 'team_lead'
     vi.mocked(groupsApi.get).mockResolvedValue(buildGroup({ id: 1, name: 'Python PRO — группа 3' }))
+    vi.mocked(groupsApi.schedule).mockResolvedValue({ group: buildGroup({ id: 1 }), lessons: [] })
+    vi.mocked(groupsApi.academicConfig).mockResolvedValue(config())
   })
 
-  it('shows the group trainer, who assigned it and when', async () => {
-    vi.mocked(groupsApi.trainerAssignments).mockResolvedValue(overview())
+  async function openSchedule() {
+    const user = userEvent.setup()
     renderGroupDetail(1)
-    const row = await screen.findByTestId('trainer-program')
-    expect(row).toHaveTextContent('Предмет: Python')
-    expect(row).toHaveTextContent('Иванов Иван')
-    expect(row).toHaveTextContent('Назначил: Нурлан (Team Lead)')
-    expect(row).toHaveTextContent('Дата назначения: 04.10.2026')
-    expect(screen.getByRole('link', { name: 'Иванов Иван' })).toHaveAttribute('href', '/app/trainers/7')
-    expect(screen.getByRole('button', { name: 'Изменить тренера' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Назначить тренера' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('tab', { name: 'Расписание' }))
+    return user
+  }
+
+  it('shows the tabs and the configuration summary on «Общая информация»', async () => {
+    renderGroupDetail(1)
+    for (const name of ['Общая информация', 'Студенты', 'Расписание', 'Сессии', 'Аналитика']) {
+      expect(await screen.findByRole('tab', { name })).toBeInTheDocument()
+    }
+    const summary = await screen.findByTestId('config-summary')
+    expect(summary).toHaveTextContent('Иванов Иван')
+    expect(summary).toHaveTextContent('Python')
+    expect(summary).toHaveTextContent('Пн Вс')
+    expect(summary).toHaveTextContent('13:00–14:00, 20:00–21:00')
   })
 
-  it('replaces the trainer only after a confirmation', async () => {
-    vi.mocked(groupsApi.trainerAssignments).mockResolvedValue(overview())
-    vi.mocked(groupsApi.assignTrainer).mockResolvedValue(
-      overview({
-        programs: [{ ...overview().programs[0], teacher: { id: 8, name: 'Садыкова Айгуль' } }],
-        result: { program: 10, created: false, previous_teacher: 'Иванов Иван', teacher: 'Садыкова Айгуль', lessons_reassigned: 3 },
+  it('shows the existing per-day schedule: day, time, room, subject, trainer', async () => {
+    await openSchedule()
+    const view = await screen.findByTestId('program-view')
+    const rows = within(view).getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('Понедельник13:00–14:00Кабинет 101PythonИванов Иван')
+    expect(rows[2]).toHaveTextContent('Воскресенье20:00–21:00Кабинет 205PythonИванов Иван')
+  })
+
+  it('edits: trainer, subject, several weekdays at once with time and room, removes a day, saves', async () => {
+    vi.mocked(groupsApi.saveProgram).mockResolvedValue(config())
+    const user = await openSchedule()
+    await user.click(await screen.findByRole('button', { name: 'Изменить расписание' }))
+    const editor = screen.getByTestId('program-editor')
+
+    // Trainer and subject selectors.
+    await user.selectOptions(within(editor).getByLabelText('Тренер *'), '8')
+    expect(within(editor).getByLabelText('Предмет *')).toHaveValue('1')
+
+    // Remove Sunday, add Wed + Fri 15:00–16:30 in room 101.
+    await user.click(within(editor).getByRole('button', { name: 'Удалить Вс 20:00' }))
+    await user.click(within(editor).getByRole('button', { name: 'Добавить день' }))
+    const panel = within(editor).getByTestId('add-days')
+    await user.click(within(panel).getByRole('checkbox', { name: 'Ср' }))
+    await user.click(within(panel).getByRole('checkbox', { name: 'Пт' }))
+    await user.type(within(panel).getByLabelText('Начало новых дней'), '15:00')
+    await user.type(within(panel).getByLabelText('Окончание новых дней'), '16:30')
+    await user.selectOptions(within(panel).getByLabelText('Кабинет новых дней'), '1')
+    await user.click(within(panel).getByRole('button', { name: 'Добавить' }))
+    expect(within(editor).getAllByTestId('slot-row')).toHaveLength(3)
+
+    await user.click(within(editor).getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() =>
+      expect(groupsApi.saveProgram).toHaveBeenCalledWith(1, 10, {
+        teacher: 8,
+        subject: 1,
+        schedule: [
+          { id: 100, day: 'mon', start: '13:00', end: '14:00', room: 1 },
+          { day: 'wed', start: '15:00', end: '16:30', room: 1 },
+          { day: 'fri', start: '15:00', end: '16:30', room: 1 },
+        ],
       }),
     )
-    const user = userEvent.setup()
-    renderGroupDetail(1)
-    await user.click(await screen.findByRole('button', { name: 'Изменить тренера' }))
-    await user.selectOptions(screen.getByLabelText('Тренер *'), '8')
-    await user.click(screen.getByRole('button', { name: 'Изменить' }))
-
-    const confirm = await screen.findByTestId('confirm-change')
-    expect(confirm).toHaveTextContent('Сейчас: Иванов Иван')
-    expect(confirm).toHaveTextContent('Новый: Садыкова Айгуль')
-    expect(groupsApi.assignTrainer).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole('button', { name: 'Подтвердить' }))
-    await waitFor(() => expect(groupsApi.assignTrainer).toHaveBeenCalledWith(1, { teacher: 8, program: 10 }))
   })
 
-  it('assigns a trainer to a subject without one', async () => {
-    vi.mocked(groupsApi.trainerAssignments).mockResolvedValue(overview())
-    vi.mocked(groupsApi.assignTrainer).mockResolvedValue(overview())
-    const user = userEvent.setup()
-    renderGroupDetail(1)
-    await user.click(await screen.findByRole('button', { name: 'Назначить тренера' }))
-    await user.selectOptions(screen.getByLabelText('Предмет *'), '2')
-    await user.selectOptions(screen.getByLabelText('Тренер *'), '8')
-    await user.click(screen.getByRole('button', { name: 'Назначить' }))
-    await waitFor(() => expect(groupsApi.assignTrainer).toHaveBeenCalledWith(1, { teacher: 8, subject: 2 }))
+  it('validates time on the client and shows backend conflicts', async () => {
+    const user = await openSchedule()
+    await user.click(await screen.findByRole('button', { name: 'Изменить расписание' }))
+    const editor = screen.getByTestId('program-editor')
+    const [firstEnd] = within(editor).getAllByLabelText('Окончание')
+    await user.clear(firstEnd)
+    await user.type(firstEnd, '12:00')
+    await user.click(within(editor).getByRole('button', { name: 'Сохранить' }))
+    expect(within(editor).getByRole('alert')).toHaveTextContent('Пн: время окончания должно быть позже времени начала.')
+    expect(groupsApi.saveProgram).not.toHaveBeenCalled()
+
+    await user.clear(firstEnd)
+    await user.type(firstEnd, '14:00')
+    vi.mocked(groupsApi.saveProgram).mockRejectedValue(
+      new AxiosError('400', '400', undefined, undefined, {
+        status: 400, statusText: 'Bad Request', headers: {}, config: {} as never,
+        data: { schedule: ['Пн 13:00–14:00: Аудитория «Кабинет 101» уже занята в это время в группе «Frontend-1» (Понедельник 13:30–14:30).'] },
+      }),
+    )
+    await user.click(within(editor).getByRole('button', { name: 'Сохранить' }))
+    expect(await within(editor).findByRole('alert')).toHaveTextContent('Аудитория «Кабинет 101» уже занята')
   })
 
-  it('does not re-assign the same trainer', async () => {
-    vi.mocked(groupsApi.trainerAssignments).mockResolvedValue(overview())
-    const user = userEvent.setup()
-    renderGroupDetail(1)
-    await user.click(await screen.findByRole('button', { name: 'Изменить тренера' }))
-    await user.selectOptions(screen.getByLabelText('Тренер *'), '7')
-    await user.click(screen.getByRole('button', { name: 'Изменить' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Этот тренер уже назначен.')
-    expect(groupsApi.assignTrainer).not.toHaveBeenCalled()
+  it('creates the first program for a group without schedule', async () => {
+    vi.mocked(groupsApi.academicConfig).mockResolvedValue(config({ programs: [] }))
+    vi.mocked(groupsApi.createProgram).mockResolvedValue(config())
+    const user = await openSchedule()
+    await user.click(await screen.findByRole('button', { name: 'Настроить расписание' }))
+    const editor = screen.getByTestId('program-editor')
+    await user.selectOptions(within(editor).getByLabelText('Тренер *'), '7')
+    await user.selectOptions(within(editor).getByLabelText('Предмет *'), '1')
+    const panel = within(editor).getByTestId('add-days')
+    for (const day of ['Пн', 'Ср', 'Пт']) await user.click(within(panel).getByRole('checkbox', { name: day }))
+    await user.type(within(panel).getByLabelText('Начало новых дней'), '13:00')
+    await user.type(within(panel).getByLabelText('Окончание новых дней'), '14:00')
+    await user.click(within(panel).getByRole('button', { name: 'Добавить' }))
+    await user.click(within(editor).getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() =>
+      expect(groupsApi.createProgram).toHaveBeenCalledWith(1, {
+        teacher: 7,
+        subject: 1,
+        schedule: [
+          { day: 'mon', start: '13:00', end: '14:00', room: null },
+          { day: 'wed', start: '13:00', end: '14:00', room: null },
+          { day: 'fri', start: '13:00', end: '14:00', room: null },
+        ],
+      }),
+    )
   })
 
-  it('a Trainer sees the read-only program list, no assignment', async () => {
+  it('generates lessons with the existing generator', async () => {
+    vi.mocked(groupsApi.generateLessons).mockResolvedValue({
+      created_count: 8, updated_count: 0, already_existed: 0, expected_total: 8,
+      first_date: '2026-10-05', last_date: '2026-10-18', warnings: [], errors: [],
+    })
+    const user = await openSchedule()
+    await user.click(await screen.findByRole('button', { name: 'Сгенерировать занятия' }))
+    await waitFor(() => expect(groupsApi.generateLessons).toHaveBeenCalledWith(1))
+    expect(await screen.findByText(/Создано занятий: 8/)).toBeInTheDocument()
+  })
+
+  it('a Trainer sees the read-only program list, no configuration', async () => {
     mockRole.role = 'teacher'
     renderGroupDetail(1)
     await screen.findByText('Учебные программы')
-    expect(screen.queryByRole('button', { name: 'Назначить тренера' })).not.toBeInTheDocument()
-    expect(groupsApi.trainerAssignments).not.toHaveBeenCalled()
+    expect(screen.queryByRole('tab', { name: 'Сессии' })).not.toBeInTheDocument()
+    expect(groupsApi.academicConfig).not.toHaveBeenCalled()
   })
 })

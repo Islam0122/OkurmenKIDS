@@ -304,3 +304,12 @@ class TeamLeadResultPageTests(TeamLeadSessionFixture):
         session.finish()
         rows = self.api.get("/api/v1/teacher/my-attempts/").data
         self.assertEqual(rows[0]["status"], AttemptStatus.EXPIRED)
+
+
+class SessionListGroupFilterTests(TeamLeadSessionFixture):
+    def test_filter_by_group(self):
+        mine = self.created_and_started()
+        other = self.make_session(group=self.other_group, session_type=SessionType.TRAINING)
+        ids = {row["id"] for row in self.api.get("/api/v1/teacher/sessions/", {"group": self.group.pk}).data["results"]}
+        self.assertIn(str(mine.pk), ids)
+        self.assertNotIn(str(other.pk), ids)
