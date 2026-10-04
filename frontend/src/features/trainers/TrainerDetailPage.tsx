@@ -18,6 +18,7 @@ import { KPI_STATUS_CARD_TONE } from '@/features/kpi/kpiStatus'
 import { useReportTeacher } from '@/hooks/useReports'
 import type { ReportPeriodKey } from '@/types/reports'
 import { formatDate } from '@/utils/format'
+import { ResultsOverview, ResultsTable } from '@/features/results/resultsUi'
 
 /** Trainer → profile, KPI, workload, groups (→ Group → Students → results).
  * Read-only; backend: GET /reports/teachers/{id}/ (Admin / Team Lead). */
@@ -124,6 +125,9 @@ export function TrainerDetailPage() {
             <StatCard label="Средний балл ДЗ" value={data.homework.average_score ?? '—'} />
           </StatGrid>
         </section>
+
+        <ResultsOverview filters={{ teacher: String(teacherId) }} />
+        <ResultsTable filters={{ teacher: String(teacherId) }} columns={['student', 'group', 'test', 'subject']} title="Последние результаты учеников" />
       </div>
     </div>
   )

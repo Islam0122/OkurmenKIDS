@@ -68,6 +68,8 @@ describe('KPIPage', () => {
           progress: 91.1,
           retention: 95.3,
           teacher_workload: 60,
+          test_score: null,
+          test_pass_rate: null,
         },
         kpi: {
           total: 72.6,
@@ -88,7 +90,8 @@ describe('KPIPage', () => {
     // No frontend math: the value and status are the API's, verbatim.
     await waitFor(() => expect(screen.getByText('72,6%')).toBeInTheDocument())
     expect(screen.getByText('Низкий')).toBeInTheDocument()
-    expect(screen.getAllByText('не входит в KPI')).toHaveLength(2)
+    // retention, teacher workload, test score and test pass rate are shown alongside, not in the total
+    expect(screen.getAllByText('не входит в KPI')).toHaveLength(4)
   })
 
   it('shows "—" when the backend reports no KPI data', async () => {

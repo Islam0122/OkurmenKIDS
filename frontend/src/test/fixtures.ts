@@ -250,6 +250,8 @@ export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> =
       progress: 85,
       retention: 92,
       teacher_workload: 81,
+      test_score: 78.5,
+      test_pass_rate: 70,
     },
     kpi: {
       total: 89.3,
@@ -317,6 +319,14 @@ export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> =
       submission_rate: buildMetric(80),
       average_score: buildMetric(8.4),
       homework_completion_trend: [],
+    },
+    tests: {
+      attempts: buildMetric(12),
+      students_tested: buildMetric(8),
+      students_below_passing: buildMetric(2),
+      average_score: buildMetric(78.5),
+      pass_rate: buildMetric(70),
+      average_score_trend: [],
     },
     insights: [],
     ...overrides,

@@ -26,6 +26,7 @@ from . import student_auth
 from .models import AttemptStatus, FinishReason, QuestionType, StudentAttempt
 from .public_views import _answers_from_post
 from .services import exam_portal as portal
+from .services import results as results_service
 from .services.attempts import AttemptError, attempt_questions, result_rows
 from .services.sessions import format_duration
 from .student_auth import student_required
@@ -125,6 +126,46 @@ def dashboard_view(request):
         **_student_context(request),
         "summary": portal.summarize(cards),
         "next_exam": next((c for c in cards if c.status in (portal.ExamStatus.IN_PROGRESS, portal.ExamStatus.AVAILABLE, portal.ExamStatus.UPCOMING)), None),
+        "recent_results": results_service.student_results(request.student, limit=3),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Results — only the signed-in student's own (anyone else's is a 404)
+# ---------------------------------------------------------------------------
+
+@never_cache
+@student_required
+def results_view(request):
+    return render(request, "testing/student/results.html", {
+        **_student_context(request),
+        "results": results_service.student_results(request.student),
+    })
+
+
+@never_cache
+@student_required
+def my_result_view(request, attempt_id):
+    try:
+        attempt = StudentAttempt.objects.select_related("session__test__subject").get(
+            pk=attempt_id, student=request.student, status=AttemptStatus.FINISHED,
+        )
+    except StudentAttempt.DoesNotExist:
+        raise Http404("Результат не найден.")
+    if attempt.exam_mode:
+        return redirect(_result_url(attempt))
+    test = attempt.session.test
+    summary = portal.result_summary(attempt)
+    return render(request, "testing/student/result.html", {
+        **_student_context(request),
+        "attempt": attempt,
+        "test": test,
+        "title": attempt.test_title or attempt.session.title or test.title,
+        "graded": True,
+        "show_result": test.show_result,
+        "summary": summary,
+        "duration": format_duration(summary.duration_seconds),
+        "can_review": False,
     })
 
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react'
 
 import { Drawer } from '@/components/ui/Drawer'
@@ -5,7 +6,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { formatDuration } from '@/features/exams/examUi'
 import { useMonitoringAttempt } from '@/hooks/useMonitoring'
-import type { MonitoringEvent } from '@/types/monitoring'
+import type { MonitoringAttemptDetail, MonitoringEvent } from '@/types/monitoring'
 
 import { SeverityBadge, StatusBadge, VIOLATION_LABEL, formatSeconds, formatTime, percent } from './monitoringUi'
 
@@ -56,6 +57,20 @@ export function AttemptDrawer({ attemptId, onClose }: { attemptId: string | null
             <div className="rounded-lg bg-surface-hover p-3"><dt className="text-ink-muted">{data.status === 'in_progress' ? 'Осталось' : 'Время'}</dt><dd className="mt-1 font-mono font-medium text-ink">{formatDuration(data.status === 'in_progress' ? data.remaining_seconds : data.duration_seconds)}</dd></div>
           </dl>
 
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-2">
+            <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Тест</dt><dd className="truncate text-right text-ink" title={data.test.title}>{data.test.title}</dd></div>
+            <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Предмет</dt><dd className="truncate text-right text-ink">{data.test.subject || '—'}</dd></div>
+            <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Группа</dt><dd className="truncate text-right text-ink">{data.group?.name ?? '—'}</dd></div>
+            <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Тренер</dt><dd className="truncate text-right text-ink">{data.teacher?.name ?? '—'}</dd></div>
+            <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Завершён</dt><dd className="text-right text-ink">{formatTime(data.finished_at)}</dd></div>
+            {data.attempt_no ? <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Попытка №</dt><dd className="text-right text-ink">{data.attempt_no}</dd></div> : null}
+            {data.correct_count !== undefined ? (
+              <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Правильно / неправильно</dt>
+                <dd className="text-right"><span className="text-success">{data.correct_count}</span> / <span className="text-danger">{data.incorrect_count}</span> из {data.question_total}</dd></div>
+            ) : null}
+            <div className="flex min-w-0 justify-between gap-2"><dt className="text-ink-muted">Проходной балл</dt><dd className="text-right text-ink">{data.passing_score}%</dd></div>
+          </dl>
+
           <section>
             <h3 className="section-title mb-3">Нарушения</h3>
             <dl className="grid grid-cols-2 gap-2 text-sm">
@@ -73,7 +88,9 @@ export function AttemptDrawer({ attemptId, onClose }: { attemptId: string | null
             <Timeline events={data.events} />
           </section>
 
-          {data.questions.length ? (
+          {data.questions.some((q) => q.selected !== undefined) ? <AnswersReview questions={data.questions} /> : null}
+
+          {data.questions.length && !data.questions.some((q) => q.selected !== undefined) ? (
             <section>
               <h3 className="section-title mb-3">Вопросы</h3>
               <ul className="flex flex-wrap gap-1.5" aria-label="Вопросы">
@@ -92,5 +109,51 @@ export function AttemptDrawer({ attemptId, onClose }: { attemptId: string | null
         </div>
       )}
     </Drawer>
+  )
+}
+
+type ReviewQuestion = MonitoringAttemptDetail['questions'][number]
+const QUESTION_STATUS: Record<string, { label: string; className: string }> = {
+  correct: { label: 'Верно', className: 'text-success' },
+  wrong: { label: 'Ошибка', className: 'text-danger' },
+  skipped: { label: 'Без ответа', className: 'text-ink-muted' },
+  pending: { label: 'На проверке', className: 'text-warning' },
+}
+
+/** Every question of a finished attempt: the student's answer, the correct
+ * one and the status; «Только ошибки» narrows to the mistakes. */
+function AnswersReview({ questions }: { questions: ReviewQuestion[] }) {
+  const [mistakesOnly, setMistakesOnly] = useState(false)
+  const mistakes = questions.filter((q) => q.status === 'wrong').length
+  const shown = mistakesOnly ? questions.filter((q) => q.status === 'wrong') : questions
+  return (
+    <section>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="section-title">Ответы</h3>
+        <label className="flex items-center gap-2 text-sm text-ink-secondary">
+          <input type="checkbox" checked={mistakesOnly} onChange={(e) => setMistakesOnly(e.target.checked)} />
+          Только ошибки ({mistakes})
+        </label>
+      </div>
+      <ol className="space-y-3">
+        {shown.map((q) => {
+          const status = QUESTION_STATUS[q.status] ?? QUESTION_STATUS.skipped
+          const given = q.selected?.length ? q.selected.join(', ') : q.answer_text || '—'
+          return (
+            <li key={q.question_id} className="min-w-0 rounded-lg border border-border p-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 whitespace-pre-line font-medium text-ink [overflow-wrap:anywhere]">{q.number}. {q.full_text ?? q.text}</p>
+                <span className={`shrink-0 text-xs font-semibold ${status.className}`}>{status.label}</span>
+              </div>
+              <dl className="mt-2 space-y-1">
+                <div className="flex min-w-0 gap-2"><dt className="shrink-0 text-ink-muted">Ответ ученика:</dt><dd className={`min-w-0 [overflow-wrap:anywhere] ${q.status === 'wrong' ? 'text-danger' : 'text-ink'}`}>{given}</dd></div>
+                {q.correct?.length ? <div className="flex min-w-0 gap-2"><dt className="shrink-0 text-ink-muted">Правильный:</dt><dd className="min-w-0 text-success [overflow-wrap:anywhere]">{q.correct.join(', ')}</dd></div> : null}
+                {q.answered_at ? <div className="flex gap-2"><dt className="text-ink-muted">Время ответа:</dt><dd className="text-ink-secondary">{formatSeconds(q.answered_at)}</dd></div> : null}
+              </dl>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
   )
 }

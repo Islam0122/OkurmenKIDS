@@ -11,6 +11,9 @@ import { useStudent } from '@/hooks/useStudents'
 import { ATTENDANCE_STATUS_LABELS } from '@/types/attendance'
 import { formatDateShort } from '@/utils/format'
 
+import { ResultsSummaryCards, ResultsTable } from '@/features/results/resultsUi'
+import { useResultsSummary } from '@/hooks/useResults'
+
 import { useStudentHistory } from './useStudentHistory'
 
 export function StudentDetailPage() {
@@ -119,6 +122,21 @@ export function StudentDetailPage() {
           </div>
         </>
       ) : null}
+
+      <StudentTestResults studentId={student.id} />
+    </div>
+  )
+}
+
+/** «Результаты тестов» — the student's finished tests (backend-scoped: a
+ * trainer sees them only for students of their own groups). */
+function StudentTestResults({ studentId }: { studentId: number }) {
+  const filters = { student: String(studentId) }
+  const summary = useResultsSummary(filters)
+  return (
+    <div className="mt-8 space-y-4">
+      {summary.data && summary.data.attempts ? <ResultsSummaryCards summary={summary.data} variant="compact" /> : null}
+      <ResultsTable filters={filters} columns={['test', 'subject', 'group', 'teacher', 'attempt']} title="Результаты тестов" />
     </div>
   )
 }

@@ -28,6 +28,8 @@ import { useGroup, useGroupSchedule } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
 import { useAnalyticsDashboard } from '@/hooks/useKPI'
 import { useStudents } from '@/hooks/useStudents'
+import { useResultsSummary } from '@/hooks/useResults'
+import { NO_RESULTS, ResultsDynamics, ResultsSummaryCards, ResultsTable, StudentResultsTable } from '@/features/results/resultsUi'
 import { getKPIPeriods } from '@/features/kpi/periods'
 import type { KPIPeriodKey } from '@/types/kpi'
 import type { Group, GroupScheduleLesson } from '@/types/academy'
@@ -50,6 +52,8 @@ const TABS = [
   { key: 'attendance', label: 'Посещаемость' },
   { key: 'homework', label: 'Домашние задания' },
   { key: 'kpi', label: 'KPI' },
+  // Test results of the group (every role; the backend scopes trainers to their groups).
+  { key: 'tests', label: 'Тестирование' },
   // Admin / Team Lead only: the group's test sessions (create one for this group).
   { key: 'sessions', label: 'Сессии' },
   // Admin / Team Lead only: every trainer of the group side by side (backend: /reports/groups/{id}/).
@@ -106,6 +110,7 @@ export function GroupDetailPage() {
       {tab === 'attendance' ? <AttendanceTab groupId={groupId} /> : null}
       {tab === 'homework' ? <HomeworkTab groupId={groupId} /> : null}
       {tab === 'kpi' ? <KpiTab groupId={groupId} /> : null}
+      {tab === 'tests' ? <TestingTab groupId={groupId} /> : null}
       {tab === 'analytics' && academyView ? <AnalyticsTab groupId={groupId} /> : null}
     </div>
   )
@@ -472,6 +477,24 @@ function SessionsTab({ groupId }: { groupId: number }) {
         </div>
       ) : null}
       <CreateSessionModal isOpen={isCreateOpen} onClose={() => setCreateOpen(false)} initialGroup={groupId} />
+    </div>
+  )
+}
+
+/** «Тестирование»: the group's test results — summary, dynamics, one row per
+ * student (click → the student's page) and every result with «Подробнее». */
+function TestingTab({ groupId }: { groupId: number }) {
+  const filters = { group: String(groupId) }
+  const { data, isLoading, isError, refetch } = useResultsSummary(filters)
+  if (isLoading) return <LoadingState />
+  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />
+  if (!data.attempts) return <EmptyState icon={ClipboardList} title={NO_RESULTS} description="Здесь появятся результаты тестов студентов группы." />
+  return (
+    <div className="space-y-6">
+      <ResultsSummaryCards summary={data} variant="group" />
+      <ResultsDynamics summary={data} />
+      <StudentResultsTable filters={filters} />
+      <ResultsTable filters={filters} columns={['student', 'test', 'subject', 'attempt']} title="Все результаты" exportable />
     </div>
   )
 }

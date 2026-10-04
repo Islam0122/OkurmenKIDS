@@ -17,7 +17,7 @@ from django.urls import path, reverse
 
 from . import admin_views, analytics_admin_views, io_admin_views, session_admin_views
 from .admin_views import is_admin_user
-from .models import StudentPortalAccess, Test, TestSession
+from .models import StudentPortalAccess, Test, TestResult, TestSession
 
 
 @admin.register(Test)
@@ -241,3 +241,93 @@ def _get_urls_with_tests_shortcut():
 
 
 admin.site.get_urls = _get_urls_with_tests_shortcut
+
+
+# ---------------------------------------------------------------------------
+# «Результаты тестов» — finished attempts of LMS students (proxy TestResult).
+# Group / teacher / subject / test are the result's historical snapshot.
+# ---------------------------------------------------------------------------
+
+class ResultStatusFilter(admin.SimpleListFilter):
+    title = "статус"
+    parameter_name = "result"
+
+    def lookups(self, request, model_admin):
+        return (("passed", "Сдал"), ("failed", "Не сдал"))
+
+    def queryset(self, request, queryset):
+        from django.db.models import F
+
+        passed = queryset.filter(score__gte=F("session__test__passing_score"))
+        if self.value() == "passed":
+            return passed
+        if self.value() == "failed":
+            return queryset.exclude(pk__in=passed.values("pk"))
+        return queryset
+
+
+class ScoreRangeFilter(admin.SimpleListFilter):
+    title = "балл"
+    parameter_name = "score_range"
+    RANGES = {"0-49": (0, 49.999), "50-74": (50, 74.999), "75-89": (75, 89.999), "90-100": (90, 100)}
+
+    def lookups(self, request, model_admin):
+        return [(key, f"{key}%") for key in self.RANGES]
+
+    def queryset(self, request, queryset):
+        if self.value() in self.RANGES:
+            low, high = self.RANGES[self.value()]
+            return queryset.filter(score__gte=low, score__lte=high)
+        return queryset
+
+
+@admin.register(TestResult)
+class TestResultAdmin(AdminRoleOnly, admin.ModelAdmin):
+    list_display = ("student_column", "group", "teacher", "test_column", "subject", "score_column", "status_column",
+                    "finished_at", "open_link")
+    list_filter = (
+        ResultStatusFilter, ScoreRangeFilter,
+        ("group", admin.RelatedOnlyFieldListFilter), ("teacher", admin.RelatedOnlyFieldListFilter),
+        ("subject", admin.RelatedOnlyFieldListFilter), ("session__test", admin.RelatedOnlyFieldListFilter),
+        ("student", admin.RelatedOnlyFieldListFilter),
+    )
+    search_fields = ("student_name", "student__first_name", "student__last_name", "test_title", "session__test__title",
+                     "group__name")
+    date_hierarchy = "finished_at"
+    list_select_related = ("student", "group", "teacher__user", "subject", "session__test")
+    ordering = ("-finished_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Студент", ordering="student_name")
+    def student_column(self, obj):
+        return str(obj.student) if obj.student_id else obj.student_name
+
+    @admin.display(description="Тест", ordering="test_title")
+    def test_column(self, obj):
+        return obj.test_title or obj.session.test.title
+
+    @admin.display(description="Балл, %", ordering="score")
+    def score_column(self, obj):
+        return f"{round(obj.score)}%"
+
+    @admin.display(description="Статус")
+    def status_column(self, obj):
+        from django.utils.html import format_html
+
+        passed = obj.score >= obj.session.test.passing_score
+        return format_html('<span class="badge bg-{}">{}</span>', "success" if passed else "danger",
+                           "Сдал" if passed else "Не сдал")
+
+    @admin.display(description="")
+    def open_link(self, obj):
+        from django.utils.html import format_html
+
+        return format_html('<a href="{}">Подробнее</a>', reverse("admin:testing_attempt_detail", args=[obj.pk]))

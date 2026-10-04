@@ -11,6 +11,18 @@
   </div>
 
   <section class="ok-card okt-section">
+    <div class="ok-card-header">{% ticon "chart-column" 16 %}<span>Результаты</span>
+      <a class="ok-btn-secondary ok-btn-sm" style="margin-left:auto" href="{{ results_url }}">Посмотреть результаты</a></div>
+    <div class="ok-card-body">
+      <div class="okt-kpis" style="margin:0">
+        <div class="okt-kpi"><span class="okt-kpi__label">Студентов</span><span class="okt-kpi__value">{{ students_total }}</span><span class="okt-kpi__hint">студенты LMS с результатом</span></div>
+        <div class="okt-kpi"><span class="okt-kpi__label">Лучший результат</span><span class="okt-kpi__value">{% if best_score is not None %}{{ best_score|floatformat:0 }}%{% else %}—{% endif %}</span></div>
+        <div class="okt-kpi"><span class="okt-kpi__label">Худший результат</span><span class="okt-kpi__value">{% if lowest_score is not None %}{{ lowest_score|floatformat:0 }}%{% else %}—{% endif %}</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ok-card okt-section">
     <div class="ok-card-header">{% ticon "chart-column" 16 %}<span>Вопросы</span></div>
     <div class="ok-card-body">
       {% if question_rows %}

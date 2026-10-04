@@ -96,7 +96,8 @@ class KPIEngineUnitTests(ReportsTestBase):
         contract = KPIEngine.calculate(start=START, end=END, today=TODAY).as_contract()
         self.assertEqual(set(contract), {"metrics", "kpi"})
         self.assertEqual(set(contract["metrics"]),
-                         {"attendance", "homework", "lesson_completion", "progress", "retention", "teacher_workload"})
+                         {"attendance", "homework", "lesson_completion", "progress", "retention", "teacher_workload",
+                          "test_score", "test_pass_rate"})
         self.assertEqual({"total", "status", "status_label", "weights"}, set(contract["kpi"]))
 
 

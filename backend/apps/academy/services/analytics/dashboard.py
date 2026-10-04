@@ -21,7 +21,7 @@ from django.utils import timezone
 
 from apps.academy.services.kpi_engine import KPIEngine
 
-from . import attendance, groups, homework, insights, lessons, students, teachers
+from . import assessments, attendance, groups, homework, insights, lessons, students, teachers
 from .period import resolve_comparison, resolve_period
 from .scope import AnalyticsScope
 
@@ -57,6 +57,7 @@ def get_dashboard(
         "lessons": lessons.build(scope, compare_range, today=today),
         "attendance": attendance.build(scope, compare_range),
         "homework": homework.build(scope, compare_range),
+        "tests": assessments.build(scope, compare_range),
     }
 
     return {

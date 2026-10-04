@@ -15,12 +15,12 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
   return (
     <div className="podium">
       {entries.slice(0, 3).map((entry, i) => (
-        <div key={`${entry.test_id}-${entry.rank}`} className={`podium__item podium__item--${i + 1}`} style={{ animationDelay: `${i * 0.08}s` }}>
+        <div key={`${entry.test_id ?? "all"}-${entry.rank}`} className={`podium__item podium__item--${i + 1}`} style={{ animationDelay: `${i * 0.08}s` }}>
           {i === 0 ? <Icon name="trophy-fill" className="podium__trophy" /> : null}
           <div className="podium__rank">{pad2(entry.rank)}</div>
           <div className="podium__name">{entry.student_name}</div>
           <div className="podium__score">{entry.score}%</div>
-          <div className="podium__meta">{formatDuration(entry.duration_seconds)}</div>
+          <div className="podium__meta">{entry.completed_tests !== undefined ? t.leaderboard.tests(entry.completed_tests, entry.passed_tests ?? 0) : formatDuration(entry.duration_seconds ?? 0)}</div>
         </div>
       ))}
     </div>
@@ -33,6 +33,8 @@ export function LeaderboardTable({ entries, highlightName, showTest = false, com
   showTest?: boolean
   compact?: boolean
 }) {
+  // Rows per name (sort=average|tests) carry test counts instead of a time.
+  const perName = entries.some((entry) => entry.completed_tests !== undefined)
   const me = highlightName?.toLocaleLowerCase()
   return (
     <div className="board">
@@ -42,25 +44,29 @@ export function LeaderboardTable({ entries, highlightName, showTest = false, com
             <th scope="col">{t.leaderboard.rank}</th>
             <th scope="col">{t.leaderboard.name}</th>
             <th scope="col">{t.leaderboard.score}</th>
-            {!compact ? <th scope="col" className="hide-sm">{t.leaderboard.time}</th> : null}
+            {!compact ? <th scope="col" className="hide-sm">{perName ? t.leaderboard.progress : t.leaderboard.time}</th> : null}
             {!compact ? <th scope="col" className="hide-sm">{t.leaderboard.date}</th> : null}
           </tr>
         </thead>
         <tbody>
           {entries.map((entry) => (
-            <tr key={`${entry.test_id}-${entry.rank}`} className={[entry.rank <= 3 && 'is-top', me && entry.student_name.toLocaleLowerCase() === me && 'is-me'].filter(Boolean).join(' ')}>
+            <tr key={`${entry.test_id ?? 'all'}-${entry.rank}`} className={[entry.rank <= 3 && 'is-top', me && entry.student_name.toLocaleLowerCase() === me && 'is-me'].filter(Boolean).join(' ')}>
               <td><span className="rank">{pad2(entry.rank)}</span></td>
               <td>
                 <span className="board__name">
                   <span className="avatar" aria-hidden="true">{initials(entry.student_name)}</span>
                   <span>
                     {entry.student_name}
-                    {showTest ? <span className="board__test">{entry.test_title}</span> : null}
+                    {showTest && entry.test_title ? <span className="board__test">{entry.test_title}</span> : null}
                   </span>
                 </span>
               </td>
               <td><span className={`score-pill${entry.score >= 80 ? ' score-pill--high' : ''}`}>{entry.score}%</span></td>
-              {!compact ? <td className="hide-sm board__muted">{formatDuration(entry.duration_seconds)}</td> : null}
+              {!compact ? (
+                <td className="hide-sm board__muted">
+                  {perName ? t.leaderboard.tests(entry.completed_tests ?? 0, entry.passed_tests ?? 0) : formatDuration(entry.duration_seconds ?? 0)}
+                </td>
+              ) : null}
               {!compact ? <td className="hide-sm board__muted">{formatDate(entry.finished_at)}</td> : null}
             </tr>
           ))}

@@ -45,6 +45,11 @@ export interface MonitoringAttempt {
   max_tab_switches: number | null
   severity: Severity
   finish_reason: string
+  subject?: { id: number; name: string } | null
+  /** results only (monitoring/results/, attempts/:id) */
+  correct_count?: number
+  incorrect_count?: number
+  attempt_no?: number
 }
 
 export interface MonitoringEvent {
@@ -60,7 +65,19 @@ export interface MonitoringEvent {
 export interface MonitoringAttemptDetail extends MonitoringAttempt {
   events: MonitoringEvent[]
   violations: Record<string, number>
-  questions: { number: number; question_id: string; text?: string; status: string }[]
+  questions: {
+    number: number
+    question_id: string
+    text?: string
+    status: string
+    /** finished attempts: the student's answer and the correct one */
+    full_text?: string
+    type?: string
+    selected?: string[]
+    correct?: string[]
+    answer_text?: string
+    answered_at?: string | null
+  }[]
 }
 
 export interface StatRow {
@@ -124,6 +141,12 @@ export interface MonitoringFilterOptions {
 
 export interface MonitoringFilters {
   q?: string
+  student?: string
+  test?: string
+  result?: string
+  score_min?: string
+  score_max?: string
+  page_size?: number
   group?: string
   teacher?: string
   subject?: string
@@ -135,3 +158,46 @@ export interface MonitoringFilters {
   violations?: string
   page?: number
 }
+
+/** /monitoring/results/summary/ — services.results.overview + dynamics */
+export interface ResultsSummary {
+  attempts: number
+  students_tested: number
+  groups: number
+  tests: number
+  passed: number
+  failed: number
+  pass_rate: number | null
+  failed_rate: number | null
+  average_score: number | null
+  best_score: number | null
+  lowest_score: number | null
+  average_correct: number | null
+  average_questions: number | null
+  best_student: { id: number; name: string; average_score: number | null; attempts: number } | null
+  best_group: { id: number; name: string; average_score: number | null; attempts: number } | null
+  dynamics: { date: string; average_score: number | null; attempts: number; pass_rate: number | null }[]
+  /** only with a `group` filter: active students of the group */
+  students_total?: number
+}
+
+export interface StudentResultRow {
+  student: { id: number; name: string }
+  attempts: number
+  average_score: number | null
+  best_score: number | null
+  last_score: number | null
+  last_passed: boolean | null
+  last_at: string | null
+}
+
+export interface ResultBreakdownRow {
+  id: string
+  name: string
+  attempts: number
+  students: number
+  average_score: number | null
+  pass_rate: number | null
+}
+
+export type ResultBreakdownBy = 'group' | 'subject' | 'teacher' | 'test'

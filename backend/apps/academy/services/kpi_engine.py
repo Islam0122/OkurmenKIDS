@@ -22,6 +22,10 @@ Reported alongside, but NOT part of the total:
                        groups in scope
     teacher_workload   active teachers in scope who gave ≥1 lesson in the
                        period / active teachers in scope
+    test_score         average result (0–100) of LMS students' finished
+                       tests in the period (analytics.assessments)
+    test_pass_rate     share of those results at or above the test's
+                       passing score
 
 A metric with no underlying data is None ("no data", never a fabricated
 0%) and is left out of the total, the remaining weights renormalised. The
@@ -50,7 +54,7 @@ if TYPE_CHECKING:  # the analytics package imports this module — import lazily
     from apps.academy.services.analytics.scope import AnalyticsScope
 
 COMPONENTS = ("attendance", "homework", "lesson_completion", "progress")
-METRICS = COMPONENTS + ("retention", "teacher_workload")
+METRICS = COMPONENTS + ("retention", "teacher_workload", "test_score", "test_pass_rate")
 DEFAULT_WEIGHTS = {"attendance": 0.25, "homework": 0.25, "lesson_completion": 0.25, "progress": 0.25}
 
 METRIC_LABELS = {
@@ -60,6 +64,8 @@ METRIC_LABELS = {
     "progress": "Прогресс (средний балл ДЗ)",
     "retention": "Удержание студентов",
     "teacher_workload": "Нагрузка тренеров",
+    "test_score": "Средний результат тестов",
+    "test_pass_rate": "Сдали тесты",
 }
 
 # Status of a KPI value: >= 90 good, 75–89.9 attention, < 75 low.
@@ -136,6 +142,9 @@ class KPICounts:
     students_left: int | None = None
     teachers_active: int | None = None
     teachers_with_lessons: int | None = None
+    test_attempts: int = 0
+    test_passed: int = 0
+    test_avg_score: float | None = None
 
 
 @dataclasses.dataclass
@@ -190,6 +199,8 @@ def from_counts(counts: KPICounts, weights: dict[str, float] | None = None) -> K
             if counts.teachers_active is not None
             else None
         ),
+        "test_score": counts.test_avg_score,
+        "test_pass_rate": ratio(counts.test_passed, counts.test_attempts),
     }
     return KPIResult(counts=counts, metrics_exact=metrics, total_exact=total_kpi(metrics, weights), weights=weights)
 
@@ -258,6 +269,10 @@ class KPIEngine:
             .count()
         )
 
+        from apps.academy.services.analytics import assessments
+
+        tests = assessments.counts(scope, rng)
+
         active_teacher_ids = set(scope.teachers_qs().filter(is_active=True).values_list("id", flat=True))
         taught_ids = set(
             lessons.order_by().annotate(_t=_effective_teacher()).values_list("_t", flat=True).distinct()
@@ -275,4 +290,7 @@ class KPIEngine:
             students_left=students_left,
             teachers_active=len(active_teacher_ids),
             teachers_with_lessons=len(active_teacher_ids & taught_ids),
+            test_attempts=tests["attempts"],
+            test_passed=tests["passed"],
+            test_avg_score=tests["average"],
         )
