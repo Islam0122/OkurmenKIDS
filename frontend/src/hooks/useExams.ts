@@ -1,6 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { examsApi, type ExamListParams } from '@/api/exams'
+import { fetchAllPages } from '@/lib/fetchAllPages'
+import type { CreateExamSessionPayload } from '@/types/exams'
 
 /** How often live data is re-fetched. The backend has no WebSocket channel,
  * so live monitoring is polling — only while something is actually running
@@ -31,5 +33,38 @@ export function useExamParticipantResult(id: string | undefined, participantId: 
     queryKey: ['exams', 'detail', id, 'result', participantId],
     queryFn: () => examsApi.participantResult(id as string, participantId as string),
     enabled: id !== undefined && participantId !== null,
+  })
+}
+
+export function useCreateExamSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: CreateExamSessionPayload) => examsApi.create(payload),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['exams'] }),
+  })
+}
+
+export function useStartExamSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => examsApi.start(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['exams'] }),
+  })
+}
+
+export function useTakeExamSession() {
+  return useMutation({ mutationFn: (id: string) => examsApi.take(id) })
+}
+
+export function useMyAttempts(session?: string, enabled = true) {
+  return useQuery({ queryKey: ['exams', 'my-attempts', session ?? 'all'], queryFn: () => examsApi.myAttempts(session), enabled })
+}
+
+export function useSessionTests(enabled: boolean) {
+  return useQuery({
+    queryKey: ['exams', 'tests'],
+    queryFn: () => fetchAllPages((page) => examsApi.tests(page)),
+    enabled,
+    staleTime: 60_000,
   })
 }

@@ -67,15 +67,25 @@ def session_error(session: TestSession) -> str | None:
     return session.test.availability_error()
 
 
-def _attempts_used(test, student=None, student_name: str = "") -> int:
+def _attempts_used(test, student=None, student_name: str = "", user=None) -> int:
     attempts = StudentAttempt.objects.filter(session__test=test).exclude(status=AttemptStatus.EXPIRED)
+    if user is not None:
+        return attempts.filter(user=user).count()
     if student is not None:
         return attempts.filter(student=student).count()
     return attempts.filter(student__isnull=True, student_name=student_name).count()
 
 
-def join(session: TestSession, student_name: str = "", student=None) -> StudentAttempt:
-    """Start an attempt (or return the student's unfinished one)."""
+def join(session: TestSession, student_name: str = "", student=None, user=None) -> StudentAttempt:
+    """Start an attempt (or return the student's unfinished one).
+
+    ``user``: an LMS account taking the test itself (the Team Lead) — the
+    attempt is theirs (StudentAttempt.user), not a roster student's, so the
+    session's roster doesn't apply and their attempts are counted per account.
+    Same rules otherwise: session state, attempt limit, time limit, grading."""
+    if user is not None:
+        student = None
+        student_name = (student_name or "").strip() or user.get_full_name() or user.username
     student_name = (student_name or "").strip()
     if student is None and not student_name:
         raise AttemptError("Введите имя и фамилию.")
@@ -87,7 +97,12 @@ def join(session: TestSession, student_name: str = "", student=None) -> StudentA
         raise AttemptError("В тесте пока нет вопросов.")
 
     mine = session.attempts.filter(status=AttemptStatus.ACTIVE)
-    mine = mine.filter(student=student) if student is not None else mine.filter(student__isnull=True, student_name=student_name)
+    if user is not None:
+        mine = mine.filter(user=user)
+    elif student is not None:
+        mine = mine.filter(student=student)
+    else:
+        mine = mine.filter(student__isnull=True, user__isnull=True, student_name=student_name)
     current = mine.first()
     if current is not None:
         if attempt_deadline(current) and timezone.now() > attempt_deadline(current) + SUBMIT_GRACE:
@@ -96,22 +111,27 @@ def join(session: TestSession, student_name: str = "", student=None) -> StudentA
             participant_events.attempt_started(current)  # reconnected
             return current
 
-    if session.participants.exists() and (
+    if user is None and session.participants.exists() and (
         student is None or not session.participants.filter(student=student).exists()
     ):
         raise AttemptError("Вас нет в списке участников этой сессии.")
 
     # The session's own attempt limit overrides the test's.
     if session.max_attempts_per_student is not None:
-        if not session.can_student_attempt(student_name=student_name, student=student):
+        if user is not None:
+            used = session.attempts.exclude(status=AttemptStatus.EXPIRED).filter(user=user).count()
+            allowed = used < session.max_attempts_per_student
+        else:
+            allowed = session.can_student_attempt(student_name=student_name, student=student)
+        if not allowed:
             raise AttemptError("Лимит попыток в этой сессии исчерпан.")
     else:
         limit = test.effective_max_attempts
-        if limit is not None and _attempts_used(test, student, student_name) >= limit:
+        if limit is not None and _attempts_used(test, student, student_name, user) >= limit:
             raise AttemptError("Вы уже использовали все попытки для этого теста.")
 
     with transaction.atomic():
-        attempt = StudentAttempt.objects.create(session=session, student=student, student_name=student_name)
+        attempt = StudentAttempt.objects.create(session=session, student=student, user=user, student_name=student_name)
         attempt.question_ids = pick_question_ids(test, seed=attempt.pk.int)
         attempt.save(update_fields=["question_ids"])
         participant_events.attempt_started(attempt)

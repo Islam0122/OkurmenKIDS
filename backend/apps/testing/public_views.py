@@ -13,6 +13,7 @@ answer for someone else. All rules live in services/attempts.py.
 """
 from __future__ import annotations
 
+from django.conf import settings
 from django.core.cache import cache
 from django.http import Http404, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
@@ -32,6 +33,7 @@ from .services.attempts import (
     result_rows,
     submit,
 )
+from .services import handoff
 from .services.grading import attempt_score
 from .services.participants import attempt_progress, roster_students
 
@@ -69,6 +71,19 @@ def _record_failed_key(request) -> None:
 def _remember(request, attempt: StudentAttempt) -> None:
     ids = [i for i in request.session.get(_ATTEMPTS_SESSION_KEY, []) if i != str(attempt.pk)]
     request.session[_ATTEMPTS_SESSION_KEY] = [*ids[-19:], str(attempt.pk)]
+
+
+def _accept_handoff(request, attempt_id) -> bool:
+    """`?t=` from the LMS (services.handoff): remember the LMS user's own
+    attempt for this browser. True when the URL carried a token — the caller
+    then redirects to the clean URL, so the token never stays in history."""
+    token = request.GET.get("t")
+    if not token:
+        return False
+    if handoff.verified_attempt_id(token, attempt_id) is None:
+        raise Http404("Ссылка недействительна или устарела. Откройте тест заново из LMS.")
+    _remember(request, StudentAttempt(pk=attempt_id))
+    return True
 
 
 def _own_attempt(request, attempt_id) -> StudentAttempt:
@@ -134,6 +149,8 @@ def _answers_from_post(post, questions) -> dict[str, SubmittedAnswer]:
 @never_cache
 @csrf_protect
 def take_view(request, attempt_id):
+    if _accept_handoff(request, attempt_id):
+        return redirect("testing_public_take", attempt_id=attempt_id)
     attempt = _own_attempt(request, attempt_id)
     if attempt.status != AttemptStatus.ACTIVE:
         return redirect("testing_public_result", attempt_id=attempt.pk)
@@ -170,6 +187,8 @@ def take_view(request, attempt_id):
 
 @never_cache
 def result_view(request, attempt_id):
+    if _accept_handoff(request, attempt_id):
+        return redirect("testing_public_result", attempt_id=attempt_id)
     attempt = _own_attempt(request, attempt_id)
     if attempt.status == AttemptStatus.ACTIVE:
         return redirect("testing_public_take", attempt_id=attempt.pk)
@@ -182,7 +201,10 @@ def result_view(request, attempt_id):
         "passed": is_passed(attempt, score) if score else None,
         "rows": result_rows(attempt) if test.show_result else [],
         "show_correct": test.show_correct_answers,
-        "can_retry": test.allow_retry and attempt.session.effective_status == "running",
+        "can_retry": test.allow_retry and attempt.session.effective_status == "running" and attempt.user_id is None,
+        # An LMS account's own attempt (the Team Lead): back to the session in
+        # the LMS instead of the student join page (they aren't on the roster).
+        "lms_url": f"{settings.LMS_FRONTEND_URL}/app/exams/{attempt.session_id}" if attempt.user_id else None,
     })
 
 

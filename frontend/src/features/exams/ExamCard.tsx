@@ -24,6 +24,11 @@ export function ExamCard({ session }: { session: ExamSession }) {
         <div className="min-w-0">
           <h3 className="text-base font-semibold text-ink">{session.title}</h3>
           {session.title !== session.test.title ? <p className="text-sm text-ink-secondary">{session.test.title}</p> : null}
+          {session.subject || session.teacher_name ? (
+            <p className="text-xs text-ink-muted">
+              {[session.subject, session.teacher_name ? `Тренер: ${session.teacher_name}` : null].filter(Boolean).join(' · ')}
+            </p>
+          ) : null}
         </div>
         <PhaseBadge session={session} />
       </div>

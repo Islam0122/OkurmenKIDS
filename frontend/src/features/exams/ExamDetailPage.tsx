@@ -10,7 +10,11 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { StatCard } from '@/components/ui/StatCard'
-import { useExamParticipantResult, useExamParticipants } from '@/hooks/useExams'
+import { useToast } from '@/components/ui/Toast'
+import { useAuth } from '@/hooks/useAuth'
+import { useExamParticipantResult, useExamParticipants, useStartExamSession } from '@/hooks/useExams'
+import { extractErrorMessage } from '@/lib/apiError'
+import { seesWholeAcademy } from '@/lib/roles'
 import type { ExamParticipant, ExamSession } from '@/types/exams'
 
 import {
@@ -21,6 +25,7 @@ import {
   formatSessionDate,
   formatSessionTime,
 } from './examUi'
+import { MyResults, TakeTestButton } from './MyResults'
 
 function Progress({ participant }: { participant: ExamParticipant }) {
   if (!participant.question_total) return <span className="text-ink-muted">0 / —</span>
@@ -102,12 +107,31 @@ function ResultDrawer({ sessionId, participant, onClose }: { sessionId: string; 
   )
 }
 
-function SessionHeader({ session }: { session: ExamSession }) {
+function StartButton({ session }: { session: ExamSession }) {
+  const { showToast } = useToast()
+  const mutation = useStartExamSession()
+  async function handleStart() {
+    try {
+      await mutation.mutateAsync(session.id)
+      showToast('Сессия запущена', 'success')
+    } catch (error) {
+      showToast(extractErrorMessage(error, 'Не удалось запустить сессию'), 'error')
+    }
+  }
+  return (
+    <Button leftIcon={<PlayCircle className="size-4" aria-hidden />} onClick={() => void handleStart()} isLoading={mutation.isPending}>
+      Запустить
+    </Button>
+  )
+}
+
+function SessionHeader({ session, backLabel }: { session: ExamSession; backLabel: string }) {
   const date = formatSessionDate(session)
   const time = formatSessionTime(session)
+  const canTakeNow = session.can_take && session.is_live && !session.is_paused
   return (
     <div className="mb-6">
-      <BackLink to="/app/exams">Экзамены</BackLink>
+      <BackLink to="/app/exams">{backLabel}</BackLink>
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-ink">{session.title}</h1>
@@ -117,8 +141,19 @@ function SessionHeader({ session }: { session: ExamSession }) {
             {time ? ` · ${time}` : ''}
             {session.time_limit_minutes ? ` · ${session.time_limit_minutes} мин на прохождение` : ''}
           </p>
+          <p className="mt-0.5 text-sm text-ink-secondary">
+            Тест: {session.test.title}
+            {session.subject ? ` · Предмет: ${session.subject}` : ''}
+            {session.teacher_name ? ` · Тренер: ${session.teacher_name}` : ''}
+            {session.created_by_name ? ` · Создал: ${session.created_by_name}` : ''}
+            {` · Ключ: ${session.key}`}
+          </p>
         </div>
-        <PhaseBadge session={session} />
+        <div className="flex flex-wrap items-center gap-2">
+          <PhaseBadge session={session} />
+          {session.can_start ? <StartButton session={session} /> : null}
+          {canTakeNow ? <TakeTestButton sessionId={session.id} /> : null}
+        </div>
       </div>
     </div>
   )
@@ -126,6 +161,8 @@ function SessionHeader({ session }: { session: ExamSession }) {
 
 export function ExamDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
+  const academyView = seesWholeAcademy(user?.role)
   const { data, isPending, isError, refetch, dataUpdatedAt } = useExamParticipants(id)
   const [openResult, setOpenResult] = useState<ExamParticipant | null>(null)
 
@@ -137,7 +174,13 @@ export function ExamDetailPage() {
 
   return (
     <div>
-      <SessionHeader session={session} />
+      <SessionHeader session={session} backLabel={academyView ? 'Сессии' : 'Экзамены'} />
+
+      {session.can_take ? (
+        <div className="mb-6">
+          <MyResults sessionId={session.id} title="Мой результат" />
+        </div>
+      ) : null}
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <StatCard label="Всего студентов" value={counts.total} icon={Users} />
@@ -160,7 +203,7 @@ export function ExamDetailPage() {
 
       <section className="card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-          <h2 className="section-title">Студенты</h2>
+          <h2 className="section-title">{academyView ? `Результаты группы${session.group ? ` · ${session.group.name}` : ''}` : 'Студенты'}</h2>
           {session.is_live ? (
             <span className="text-xs text-ink-muted" aria-live="polite">
               Обновляется автоматически · {new Date(dataUpdatedAt).toLocaleTimeString('ru-RU')}

@@ -25,6 +25,7 @@ import secrets
 import uuid
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator, URLValidator
 from django.db import IntegrityError, models, transaction
@@ -511,6 +512,17 @@ class TestSession(models.Model):
         verbose_name="Тренер",
         help_text="Тренер, создавший сессию.",
     )
+    # The LMS account that created the session through the LMS (e.g. the Team
+    # Lead, who has no Teacher profile). A Team Lead may start only sessions
+    # they created — see apps.testing.teacher_api.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_test_sessions",
+        verbose_name="Создал",
+    )
 
     session_type = models.CharField(
         max_length=10,
@@ -916,6 +928,17 @@ class StudentAttempt(models.Model):
         related_name="test_attempts",
         verbose_name="Студент",
         help_text="Студент LMS. Пусто у попыток из старой системы, ещё не сопоставленных со студентом.",
+    )
+    # An LMS account taking the test itself (e.g. the Team Lead checking a
+    # test) — not a student. The attempt's owner: only this user may open,
+    # answer or see it through the LMS. Kept out of student statistics.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="test_attempts",
+        verbose_name="Аккаунт LMS",
     )
     # Historical snapshot — see the module docstring.
     student_name = models.CharField(max_length=255, verbose_name="Имя студента")
