@@ -49,7 +49,7 @@ export function LoginPage() {
         <div className="mb-6 flex flex-col items-center text-center">
           <img src={logo} alt="OkurmenKIDS" className="size-20 shrink-0 object-contain" />
           <h1 className="mt-4 text-lg font-semibold text-ink">OkurmenKIDS</h1>
-          <p className="mt-1 text-sm text-ink-secondary">Кабинет тренера</p>
+          <p className="mt-1 text-sm text-ink-secondary">Вход в LMS — тренеры и Team Lead</p>
         </div>
 
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} className="space-y-4" noValidate>

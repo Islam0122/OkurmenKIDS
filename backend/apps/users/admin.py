@@ -44,7 +44,8 @@ ROLE_ADMIN_LABELS = {
 ROLE_HELP_TEXT = (
     "Роль определяет доступ автоматически — отдельные права выдавать не нужно. "
     "Team Lead видит всю академию (тренеры, группы, студенты, KPI, аналитика, отчёты) "
-    "только для просмотра. Тренера с профилем удобнее создавать в разделе «Тренеры»."
+    "только для просмотра и входит в LMS (не в эту админ-панель) по логину и паролю. "
+    "Тренера с профилем удобнее создавать в разделе «Тренеры»."
 )
 
 
@@ -164,6 +165,20 @@ class UserAdmin(DjangoUserAdmin):
             "fields": ("is_staff", "is_superuser"),
         },
     )
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if obj.role == User.Role.TEAM_LEAD:
+            from .admin_site import lms_login_url
+
+            messages.info(
+                request,
+                format_html(
+                    "Team Lead входит в LMS, а не в эту админ-панель: "
+                    '<a href="{}" target="_blank" rel="noopener">{}</a> — логин «{}» и заданный пароль.',
+                    lms_login_url(), lms_login_url(), obj.username,
+                ),
+            )
 
     def get_fieldsets(self, request, obj=None):
         fieldsets = tuple(super().get_fieldsets(request, obj))

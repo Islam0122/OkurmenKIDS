@@ -225,6 +225,11 @@ SIMPLE_JWT = {
 # via request.build_absolute_uri — see apps/feedback/public.py.
 FEEDBACK_PUBLIC_BASE_URL = env("FEEDBACK_PUBLIC_BASE_URL", default="")
 
+# The LMS itself (React SPA): where trainers and the Team Lead sign in
+# (<LMS_FRONTEND_URL>/login). Shown on the Django admin login page and in the
+# user admin, so nobody tries to enter the LMS through /admin/.
+LMS_FRONTEND_URL = env("LMS_FRONTEND_URL", default="https://okurmen-kids-drab.vercel.app").rstrip("/")
+
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",
     default="http://localhost:8000",
