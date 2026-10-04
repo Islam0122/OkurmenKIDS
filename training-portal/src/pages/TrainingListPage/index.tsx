@@ -9,8 +9,8 @@ import { t } from '@/i18n'
 export function TrainingListPage() {
   const { data, loading, error, reload } = useAsync(getTests)
   return (
-    <div className="container" style={{ paddingBottom: 80 }}>
-      <header className="page-head">
+    <div className="training-page">
+      <header className="training-page__head">
         <h1 className="page-title">{t.home.testsTitle}</h1>
         <p className="section-subtitle">{t.home.testsSubtitle}</p>
       </header>
