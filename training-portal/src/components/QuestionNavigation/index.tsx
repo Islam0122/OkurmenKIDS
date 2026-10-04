@@ -13,10 +13,12 @@ const LABELS: Record<NavState, string> = {
   incorrect: t.training.legend.incorrect,
 }
 
-export function QuestionNavigation({ states, onSelect, showLegend = true }: {
+export function QuestionNavigation({ states, onSelect, showLegend = true, showOutcome = false }: {
   states: NavState[]
   onSelect: (index: number) => void
   showLegend?: boolean
+  /** «Туура / Туура эмес» exist only when answers are checked during the test */
+  showOutcome?: boolean
 }) {
   const list = useRef<HTMLDivElement>(null)
   const current = states.indexOf('current')
@@ -49,7 +51,7 @@ export function QuestionNavigation({ states, onSelect, showLegend = true }: {
       </div>
       {showLegend ? (
         <div className="qnav-legend" aria-hidden="true">
-          {(['current', 'answered', 'unanswered', 'correct', 'incorrect'] as NavState[]).map((state) => (
+          {(['current', 'answered', 'unanswered', ...(showOutcome ? ['correct', 'incorrect'] : [])] as NavState[]).map((state) => (
             <span key={state}><i className={`qnav__item--${state}`} />{LABELS[state]}</span>
           ))}
         </div>

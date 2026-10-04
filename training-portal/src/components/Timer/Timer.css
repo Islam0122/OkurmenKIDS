@@ -1,7 +1,6 @@
-.timer { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border); font-weight: 700; white-space: nowrap; }
-.timer .bi { font-size: 17px; color: var(--primary); }
-.timer__value { font-family: var(--font-mono); font-size: 18px; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
-.timer--low { background: var(--red-50); border-color: #fca5a5; color: var(--danger); animation: timerPulse 1.2s ease-in-out infinite; }
-.timer--low .bi { color: var(--danger); }
+.timer { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; border-radius: 10px; background: var(--surface); color: var(--primary); border: 1px solid var(--border); font-weight: 700; white-space: nowrap; box-sizing: border-box; }
+.timer .bi { font-size: 18px; }
+.timer__value { font-family: var(--font-mono); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.timer--warning { color: var(--warning); border-color: #fcd34d; background: #fffbeb; }
+.timer--low { color: var(--danger); border-color: #fca5a5; background: var(--red-50); }
 .timer--none { color: var(--text-2); font-size: 14px; }
-@keyframes timerPulse { 50% { box-shadow: 0 0 0 4px rgba(220, 38, 38, .15); } }
