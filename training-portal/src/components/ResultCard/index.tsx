@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import type { TrainingResult } from '@/types'
+import type { AttemptResult } from '@/types'
 
 import { t } from '@/i18n'
 import { formatDuration } from '@/lib/format'
@@ -36,12 +36,12 @@ function useCountUp(target: number, durationMs = 1200): number {
 const RADIUS = 52
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
-export function ResultCard({ result }: { result: TrainingResult }) {
-  const shown = useCountUp(result.percent)
+export function ResultCard({ result }: { result: AttemptResult }) {
+  const percent = result.percentage ?? 0
+  const shown = useCountUp(percent)
   const [drawn, setDrawn] = useState(false)
   useEffect(() => { const id = requestAnimationFrame(() => setDrawn(true)); return () => cancelAnimationFrame(id) }, [])
-  const graded = result.total - result.ungraded
-  const seconds = (result.finishedAt - result.startedAt) / 1000
+  const seconds = result.duration_seconds ?? 0
 
   return (
     <section className="result-card" aria-label={t.result.title}>
@@ -57,18 +57,23 @@ export function ResultCard({ result }: { result: TrainingResult }) {
           <circle
             className="score-ring__value" cx="60" cy="60" r={RADIUS} fill="none" strokeWidth="10"
             strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={drawn ? CIRCUMFERENCE * (1 - result.percent / 100) : CIRCUMFERENCE}
+            strokeDashoffset={drawn ? CIRCUMFERENCE * (1 - percent / 100) : CIRCUMFERENCE}
           />
         </svg>
         <div className="score-ring__label">
           <span className="score-ring__percent">{shown}%</span>
-          <span className="score-ring__fraction">{result.correct} / {graded}</span>
+          <span className="score-ring__fraction">{result.score} / {result.max_score}</span>
         </div>
       </div>
       <div>
-        <span className="result-card__name"><Icon name="person-fill" />{result.studentName}</span>
-        <h1 className="result-card__message">{resultMessage(result.percent)}</h1>
-        <p className="result-card__test">{result.testTitle}</p>
+        <span className="result-card__name"><Icon name="person-fill" />{result.student_name}</span>
+        <h1 className="result-card__message">{resultMessage(percent)}</h1>
+        <p className="result-card__test">
+          {result.test_title}
+          {result.passed === true ? <span className="verdict verdict--pass"><Icon name="check-circle-fill" />{t.result.passed}</span> : null}
+          {result.passed === false ? <span className="verdict verdict--fail"><Icon name="x-circle-fill" />{t.result.failed}</span> : null}
+          {result.passed === null ? <span className="verdict verdict--wait"><Icon name="hourglass-split" />{t.result.pending}</span> : null}
+        </p>
         <dl className="result-stats">
           <div className="result-stat result-stat--good"><dt className="result-stat__label"><Icon name="check-circle-fill" />{t.result.correct}</dt><dd className="result-stat__value" style={{ margin: 0 }}>{result.correct}</dd></div>
           <div className="result-stat result-stat--bad"><dt className="result-stat__label"><Icon name="x-circle-fill" />{t.result.incorrect}</dt><dd className="result-stat__value" style={{ margin: 0 }}>{result.incorrect}</dd></div>

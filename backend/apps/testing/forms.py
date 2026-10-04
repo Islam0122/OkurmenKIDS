@@ -123,6 +123,10 @@ class SessionForm(StyledFormMixin, forms.Form):
         label="Время на прохождение, мин", min_value=1, max_value=720, required=False,
         help_text="Переопределяет время из настроек теста. Пусто — как в тесте.",
     )
+    is_public = forms.BooleanField(
+        label="Публичная тренировка", required=False,
+        help_text="Тест появится в публичном тренировочном портале: студенты проходят его по имени, без ключа. Только для режима «Тренажёр».",
+    )
 
     def __init__(self, *args, session: TestSession | None = None, **kwargs):
         self.session = session
@@ -165,6 +169,7 @@ class SessionForm(StyledFormMixin, forms.Form):
             "max_attempts": session.max_attempts_per_student,
             "session_type": session.session_type,
             "time_limit_minutes": session.time_limit_minutes,
+            "is_public": session.is_public,
         }
 
     def clean(self):
@@ -185,8 +190,12 @@ class SessionForm(StyledFormMixin, forms.Form):
                 else:
                     data["scheduled_start"] = timezone.make_aware(datetime.combine(date, start))
                     data["scheduled_end"] = timezone.make_aware(datetime.combine(date, end))
+        if data.get("is_public") and (data.get("session_type") or SessionType.EXAM) != SessionType.TRAINING:
+            self.add_error("is_public", "Публичной может быть только сессия в режиме «Тренажёр».")
         group = data.get("group") or (self.session.group if self.session else None)
-        if group is not None:
+        if data.get("is_public"):
+            data["roster"] = []  # taken by name in the portal, not by the group's students
+        elif group is not None:
             students = list(self.group_students(group.pk))
             if data.get("all_students"):
                 data["roster"] = students
@@ -206,6 +215,7 @@ class SessionForm(StyledFormMixin, forms.Form):
         session.session_type = data.get("session_type") or session.session_type or SessionType.EXAM
         session.time_limit_minutes = data.get("time_limit_minutes")
         session.max_attempts_per_student = data.get("max_attempts")
+        session.is_public = bool(data.get("is_public")) and session.session_type == SessionType.TRAINING
         old_end = session.scheduled_end
         session.scheduled_start = data.get("scheduled_start")
         session.scheduled_end = data.get("scheduled_end")
@@ -246,6 +256,10 @@ class QuestionForm(StyledFormMixin, forms.Form):
     )
     answer_match = forms.ChoiceField(label="Проверка ответа", choices=AnswerMatch.choices, initial=AnswerMatch.IGNORE_CASE)
     starter_code = forms.CharField(label="Стартовый код", widget=forms.Textarea(attrs={"rows": 8}), required=False)
+    # Stored in Question.metadata["explanation"] — the same place the
+    # questions import writes it. Shown after the answer in the public
+    # training portal only (never during an exam).
+    explanation = forms.CharField(label="Пояснение к ответу", widget=forms.Textarea(attrs={"rows": 2}), required=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -253,11 +267,14 @@ class QuestionForm(StyledFormMixin, forms.Form):
 
     @classmethod
     def initial_for(cls, question: Question) -> dict:
-        return {name: getattr(question, name) for name in cls.base_fields}
+        initial = {name: getattr(question, name) for name in cls.base_fields if name != "explanation"}
+        initial["explanation"] = (question.metadata or {}).get("explanation", "")
+        return initial
 
     def extra_values(self) -> dict:
         data = self.cleaned_data
-        return {name: data[name] for name in ("hint", "points", "is_required", "answer_match", "starter_code", "difficulty")}
+        names = ("hint", "points", "is_required", "answer_match", "starter_code", "difficulty", "explanation")
+        return {name: data[name] for name in names}
 
 
 def question_data_from_post(post, question_type: str, text: str, language: str, image_url: str = "") -> QuestionData:

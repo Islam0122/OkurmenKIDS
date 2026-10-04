@@ -12,7 +12,7 @@ export function UsefulLinkCard({ link }: { link: UsefulLink }) {
   const host = external ? new URL(link.url).hostname.replace(/^www\./, '') : null
   return (
     <article className="link-card">
-      <span className="link-card__icon"><Icon name={link.icon ?? 'link-45deg'} /></span>
+      <span className="link-card__icon"><Icon name={link.icon || 'link-45deg'} /></span>
       {link.category ? <span className="link-card__cat">{link.category}</span> : null}
       <h3 className="link-card__title">{link.title}</h3>
       {link.description ? <p className="link-card__desc">{link.description}</p> : null}

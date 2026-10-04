@@ -1,5 +1,10 @@
+import os
+
 CORS_ALLOWED_ORIGINS = [
     "https://okurmen-kids-drab.vercel.app",
+    # The public training portal (training-portal/, React): its deployed
+    # origin(s), comma-separated, e.g. https://train.okurmen.kg
+    *[o.strip().rstrip("/") for o in os.getenv("TRAINING_PORTAL_ORIGINS", "").split(",") if o.strip()],
 ]
 
 CORS_ALLOW_METHODS = [
@@ -22,6 +27,8 @@ CORS_ALLOW_HEADERS = [
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
+    # Public training API: the signed token of the student's own attempt.
+    "x-attempt-token",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

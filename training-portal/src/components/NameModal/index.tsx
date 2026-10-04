@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 
 import { t } from '@/i18n'
-import { NAME_MAX, cleanName, validateName, type NameError } from '@/services/studentService'
+import { NAME_MAX, cleanName, validateName, type NameError } from '@/lib/name'
 
 import { Button } from '../Button'
 import { Icon } from '../Icon'
@@ -9,9 +9,12 @@ import { Modal } from '../Modal'
 import './NameModal.css'
 
 /** «Атыңызды жазыңыз» — the only thing a student enters. No account. */
-export function NameModal({ open, initialName, onSubmit, onClose }: {
+export function NameModal({ open, initialName, onSubmit, onClose, busy = false, serverError = null }: {
   open: boolean
   initialName: string
+  busy?: boolean
+  /** the backend's reason (it validates the name again) */
+  serverError?: string | null
   onSubmit: (name: string) => void
   onClose: () => void
 }) {
@@ -51,11 +54,13 @@ export function NameModal({ open, initialName, onSubmit, onClose }: {
         <div id="student-name-help">
           {touched && error
             ? <p className="field-error" role="alert"><Icon name="exclamation-circle" />{t.name.errors[error]}</p>
-            : <p className="field-hint"><Icon name="shield-lock" />{t.name.privacy}</p>}
+            : serverError
+              ? <p className="field-error" role="alert"><Icon name="exclamation-circle" />{serverError}</p>
+              : <p className="field-hint"><Icon name="shield-lock" />{t.name.privacy}</p>}
         </div>
         <div className="modal__actions">
           <Button variant="ghost" onClick={onClose}>{t.name.cancel}</Button>
-          <Button type="submit" icon="play-fill">{t.name.submit}</Button>
+          <Button type="submit" icon="play-fill" disabled={busy}>{t.name.submit}</Button>
         </div>
       </form>
     </Modal>

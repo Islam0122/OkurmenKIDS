@@ -52,6 +52,7 @@ LOCAL_APPS = [
     "apps.feedback.apps.FeedbackConfig",
     "apps.scholarships.apps.ScholarshipsConfig",
     "apps.testing.apps.TestingConfig",
+    "apps.training.apps.TrainingConfig",
     "apps.worklog.apps.WorklogConfig",
 
 ]
@@ -202,6 +203,11 @@ REST_FRAMEWORK = {
         # apps/feedback/public.py. Shared by the HTML page and the JSON API.
         "feedback_view": "300/hour",
         "feedback_submit": "30/hour",
+        # Public training portal (apps/training, per client IP, no login).
+        # A whole class often shares one school IP, hence the generous reads.
+        "training_read": "3000/hour",
+        "training_start": "120/hour",
+        "training_write": "3000/hour",
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -294,7 +300,7 @@ JAZZMIN_SETTINGS = {
     # Hide the raw Django app groups from the sidebar — every model in them
     # is exposed instead through the sections below, grouped the way an
     # academy admin actually thinks about them rather than by app label.
-    "hide_apps": ["users", "academy", "data_io", "news", "feedback", "scholarships", "testing"],
+    "hide_apps": ["users", "academy", "data_io", "news", "feedback", "scholarships", "testing", "training"],
 
     # Sidebar sections, in display order. Each key is one collapsible
     # section of the custom sidebar (templates/admin/base_site.html); the
@@ -370,6 +376,15 @@ JAZZMIN_SETTINGS = {
             {"name": "Тесты", "model": "testing.test", "icon": "bi bi-clipboard2-check"},
             {"name": "Сессии", "model": "testing.testsession", "icon": "bi bi-broadcast"},
             {"name": "Мониторинг экзаменов", "url": "admin:testing_exam_monitoring", "icon": "bi bi-shield-check"},
+        ],
+
+        # Public training portal (React app): tests come from training
+        # sessions marked «Публичная тренировка»; here — its texts, the real
+        # exam link, videos and useful links.
+        "тренировочный портал": [
+            {"name": "Настройки портала", "model": "training.portalsettings", "icon": "bi bi-sliders"},
+            {"name": "Видео", "model": "training.trainingvideo", "icon": "bi bi-camera-video"},
+            {"name": "Полезные ссылки", "model": "training.traininglink", "icon": "bi bi-link-45deg"},
         ],
 
         "аналитика": [
@@ -467,6 +482,9 @@ JAZZMIN_SETTINGS = {
         "testing.test": "bi bi-clipboard2-check",
         "testing.testsession": "bi bi-broadcast",
         "testing.studentportalaccess": "bi bi-key",
+        "training.portalsettings": "bi bi-sliders",
+        "training.trainingvideo": "bi bi-camera-video",
+        "training.traininglink": "bi bi-link-45deg",
     },
     "default_icon_parents": "bi bi-folder2",
     "default_icon_children": "bi bi-circle",

@@ -1,16 +1,19 @@
 /*
- * The only place that touches localStorage. Used for the student's name,
- * the attempt in progress, finished results and the local leaderboard —
- * never for passwords, tokens or other sensitive data. Every call survives
- * a browser that blocks storage (private mode, disabled cookies).
+ * Temporary UI state only — never test data, questions, results or the
+ * leaderboard (the backend owns those):
+ *   okurmen_student_name     the name typed last, to prefill the form
+ *   okurmen_active_attempts  {testId: {attemptId, token}} to resume after a reload
+ * Every call survives a browser that blocks storage.
  */
-
-export const STORAGE_KEYS = {
+const KEYS = {
   studentName: 'okurmen_student_name',
-  trainingProgress: 'okurmen_training_progress',
-  trainingResults: 'okurmen_training_results',
-  leaderboard: 'okurmen_leaderboard',
+  activeAttempts: 'okurmen_active_attempts',
 } as const
+
+export interface AttemptRef {
+  attemptId: string
+  token: string
+}
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -25,16 +28,22 @@ function write(key: string, value: unknown): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value))
   } catch {
-    /* storage full or blocked — the app keeps working in memory */
+    /* storage blocked — the app still works, only resuming is lost */
   }
 }
 
-function remove(key: string): void {
-  try {
-    window.localStorage.removeItem(key)
-  } catch {
-    /* ignore */
-  }
-}
+export const storageService = {
+  getStudentName: (): string => read<string>(KEYS.studentName, ''),
+  setStudentName: (name: string) => write(KEYS.studentName, name),
 
-export const storageService = { read, write, remove }
+  getActiveAttempt: (testId: string): AttemptRef | null =>
+    read<Record<string, AttemptRef>>(KEYS.activeAttempts, {})[testId] ?? null,
+  setActiveAttempt(testId: string, ref: AttemptRef) {
+    write(KEYS.activeAttempts, { ...read<Record<string, AttemptRef>>(KEYS.activeAttempts, {}), [testId]: ref })
+  },
+  clearActiveAttempt(testId: string) {
+    const all = read<Record<string, AttemptRef>>(KEYS.activeAttempts, {})
+    delete all[testId]
+    write(KEYS.activeAttempts, all)
+  },
+}

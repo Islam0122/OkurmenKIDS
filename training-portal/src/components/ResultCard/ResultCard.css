@@ -22,3 +22,8 @@
   .result-card { grid-template-columns: 1fr; text-align: center; justify-items: center; }
   .result-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; text-align: left; }
 }
+
+.verdict { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 800; vertical-align: middle; }
+.verdict--pass { background: rgba(74, 222, 128, .18); color: #86efac; }
+.verdict--fail { background: rgba(248, 113, 113, .18); color: #fca5a5; }
+.verdict--wait { background: rgba(251, 191, 36, .18); color: #fcd34d; }

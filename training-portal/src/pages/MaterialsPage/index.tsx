@@ -1,14 +1,15 @@
 import { useState } from 'react'
 
+import { getMaterials } from '@/api/materials'
+import { ErrorState } from '@/components/ErrorState'
 import { Icon } from '@/components/Icon'
 import { Loader } from '@/components/Loader'
 import { UsefulLinkCard } from '@/components/UsefulLinkCard'
 import { useAsync } from '@/hooks/useAsync'
 import { t } from '@/i18n'
-import { contentService } from '@/services/contentService'
 
 export function MaterialsPage() {
-  const { data, loading } = useAsync(() => contentService.getLinks())
+  const { data, loading, error, reload } = useAsync(getMaterials)
   const [category, setCategory] = useState<string | null>(null)
   const links = data ?? []
   const categories = [...new Set(links.map((l) => l.category).filter(Boolean))] as string[]
@@ -29,7 +30,7 @@ export function MaterialsPage() {
           ))}
         </div>
       ) : null}
-      {loading ? <Loader /> : shown.length ? (
+      {loading ? <Loader /> : error ? <ErrorState error={error} onRetry={reload} /> : shown.length ? (
         <div className="grid-cards">{shown.map((link) => <UsefulLinkCard key={link.id} link={link} />)}</div>
       ) : (
         <div className="empty"><Icon name="journal-x" /><p>{t.materials.empty}</p></div>

@@ -38,3 +38,5 @@
   .train__controls-right { flex: 1 1 100%; }
   .train__controls-right > .btn { flex: 1 1 0; }
 }
+.train__save { min-height: 22px; margin-top: 12px; display: flex; justify-content: flex-end; }
+.train__notice--error { background: var(--red-50); border-color: #fca5a5; color: var(--red-600); }

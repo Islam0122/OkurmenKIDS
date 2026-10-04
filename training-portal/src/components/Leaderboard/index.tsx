@@ -15,12 +15,12 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
   return (
     <div className="podium">
       {entries.slice(0, 3).map((entry, i) => (
-        <div key={entry.id} className={`podium__item podium__item--${i + 1}`} style={{ animationDelay: `${i * 0.08}s` }}>
+        <div key={`${entry.test_id}-${entry.rank}`} className={`podium__item podium__item--${i + 1}`} style={{ animationDelay: `${i * 0.08}s` }}>
           {i === 0 ? <Icon name="trophy-fill" className="podium__trophy" /> : null}
-          <div className="podium__rank">{pad2(i + 1)}</div>
-          <div className="podium__name">{entry.name}</div>
-          <div className="podium__score">{entry.percent}%</div>
-          <div className="podium__meta">{formatDuration(entry.durationSeconds)}</div>
+          <div className="podium__rank">{pad2(entry.rank)}</div>
+          <div className="podium__name">{entry.student_name}</div>
+          <div className="podium__score">{entry.score}%</div>
+          <div className="podium__meta">{formatDuration(entry.duration_seconds)}</div>
         </div>
       ))}
     </div>
@@ -47,21 +47,21 @@ export function LeaderboardTable({ entries, highlightName, showTest = false, com
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry, i) => (
-            <tr key={entry.id} className={[i < 3 && 'is-top', me && entry.name.toLocaleLowerCase() === me && 'is-me'].filter(Boolean).join(' ')}>
-              <td><span className="rank">{pad2(i + 1)}</span></td>
+          {entries.map((entry) => (
+            <tr key={`${entry.test_id}-${entry.rank}`} className={[entry.rank <= 3 && 'is-top', me && entry.student_name.toLocaleLowerCase() === me && 'is-me'].filter(Boolean).join(' ')}>
+              <td><span className="rank">{pad2(entry.rank)}</span></td>
               <td>
                 <span className="board__name">
-                  <span className="avatar" aria-hidden="true">{initials(entry.name)}</span>
+                  <span className="avatar" aria-hidden="true">{initials(entry.student_name)}</span>
                   <span>
-                    {entry.name}
-                    {showTest ? <span className="board__test">{entry.testTitle}</span> : null}
+                    {entry.student_name}
+                    {showTest ? <span className="board__test">{entry.test_title}</span> : null}
                   </span>
                 </span>
               </td>
-              <td><span className={`score-pill${entry.percent >= 80 ? ' score-pill--high' : ''}`}>{entry.percent}%</span></td>
-              {!compact ? <td className="hide-sm board__muted">{formatDuration(entry.durationSeconds)}</td> : null}
-              {!compact ? <td className="hide-sm board__muted">{formatDate(entry.finishedAt)}</td> : null}
+              <td><span className={`score-pill${entry.score >= 80 ? ' score-pill--high' : ''}`}>{entry.score}%</span></td>
+              {!compact ? <td className="hide-sm board__muted">{formatDuration(entry.duration_seconds)}</td> : null}
+              {!compact ? <td className="hide-sm board__muted">{formatDate(entry.finished_at)}</td> : null}
             </tr>
           ))}
         </tbody>

@@ -46,3 +46,6 @@
 .feedback__row { margin-top: 10px; color: var(--text); }
 .feedback__row strong { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); margin-bottom: 2px; }
 .feedback pre { margin: 6px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--navy-950); color: #e6e6ff; font: 14px/1.6 var(--font-mono); overflow-x: auto; }
+.qcard__hint { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--amber-50); border: 1px solid #fcd68b; color: var(--navy-900); font-size: 15px; }
+.qcard__hint .bi { color: var(--amber-600); font-size: 18px; margin-top: 2px; }
+.option__img { max-height: 160px; border-radius: 10px; margin-bottom: 6px; background: #fff; }

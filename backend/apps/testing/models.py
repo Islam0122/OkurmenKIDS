@@ -622,6 +622,15 @@ class TestSession(models.Model):
         help_text="Пусто — как в настройках теста.",
     )
 
+    # Public training portal (apps.training): a running training session
+    # marked public is listed there and taken by name, without the key.
+    is_public = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="Публичная тренировка",
+        help_text="Только для тренажёра: тест доступен в публичном тренировочном портале по имени, без ключа.",
+    )
+
     # None = без ограничений (training); exam defaults to 1 at creation time.
     max_attempts_per_student = models.PositiveSmallIntegerField(
         null=True,

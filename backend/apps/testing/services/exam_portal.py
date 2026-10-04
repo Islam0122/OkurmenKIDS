@@ -451,6 +451,12 @@ def _is_answered(value) -> bool:
     return isinstance(value, dict) and (bool((value.get("text") or "").strip()) or bool(value.get("options")))
 
 
+# Shared with the public training portal (apps.training), which keeps its
+# answers in the same draft format and validates them the same way.
+clean_answers = _clean_answers
+is_answered = _is_answered
+
+
 def save_drafts(attempt: StudentAttempt, raw_answers, *, current: int | None = None, request=None) -> StudentAttempt:
     """Autosave: merge validated answers into the attempt's draft."""
     attempt = _open_attempt(attempt, request)

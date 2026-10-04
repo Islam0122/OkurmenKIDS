@@ -1,62 +1,53 @@
 # Okurmen Kids — Training Portal
 
-Публичная платформа подготовки к экзамену (React + TypeScript + Vite).
-Без регистрации: студент вводит только имя, проходит тренировочный тест,
-получает результат, видит лидерборд, видео и материалы и может перейти к
-настоящему экзамену в LMS.
+Публичный портал подготовки к экзамену (React + TypeScript + Vite).
+Все данные — тесты, вопросы, проверка ответов, результаты, лидерборд,
+видео, полезные ссылки, тексты главной и ссылка на экзамен — приходят
+из Django backend (`/api/v1/training/`). Во фронтенде нет ни одного теста,
+вопроса, видео или результата.
 
 ```bash
+cp .env.example .env.local   # VITE_API_URL=https://okurmenkids.up.railway.app
 npm install
-npm run dev        # http://localhost:5173
-npm run build      # production → dist/
-npm test           # vitest
-npm run lint       # oxlint
+npm run dev                  # http://localhost:5173
+npm run build                # production → dist/
+npm test                     # vitest
+npm run lint                 # oxlint
 ```
 
-## Что меняет администратор
-
-| Что | Где |
-|---|---|
-| URL настоящего экзамена, открытие в новой вкладке | `src/config/site.ts` или переменные `VITE_EXAM_URL`, `VITE_EXAM_OPEN_IN_NEW_TAB=true` |
-| Тренировочные тесты (вопросы, время, объяснения, `showExplanation`) | `src/data/tests.ts` |
-| Полезные видео (YouTube / Vimeo / прямая ссылка на файл) | `src/data/videos.ts` |
-| Полезные материалы / ссылки | `src/data/links.ts` |
-| Тексты интерфейса (кыргызский; структура под ru/en) | `src/i18n/` |
+`VITE_API_URL` обязателен: без него портал показывает ошибку настройки.
+На Vercel: Root Directory — `training-portal`, переменная `VITE_API_URL`.
+На backend (Railway) добавьте адрес портала в `TRAINING_PORTAL_ORIGINS`
+(CORS), например `https://train.okurmen.kg`.
 
 ## Архитектура
 
 ```
 src/
-  config/      site.ts — настройки сайта (examUrl, …)
-  data/        tests / videos / links — статичные данные
-  types/       Test, Question, Video, UsefulLink, TrainingResult, …
-  services/    contentService — источник контента (сейчас static, позже Django API)
-               leaderboardService — интерфейс LeaderboardService + LocalLeaderboardService
-               trainingService — попытка в процессе и результаты (localStorage)
-               studentService, storageService — имя и единая работа с localStorage
-  lib/         grading (правила проверки как в LMS), format, video, id
-  hooks/       useTraining (движок тренировки), useTimer, useAsync
+  api/         client.ts (fetch, VITE_API_URL, ошибки) + tests, attempts, videos,
+               materials, leaderboard, portal — по одному файлу на ресурс
+  types/       ровно то, что возвращает backend (portal, test, question, attempt, …)
+  context/     PortalContext — настройки портала (тексты, exam_url)
+  hooks/       useTraining (попытка через API: автосохранение, проверка, отправка),
+               useTimer, useAsync
+  services/    storageService — только временное UI-состояние (см. ниже)
   components/  Header, Hero, TestCard, QuestionCard, QuestionNavigation, ProgressBar,
-               Timer, ResultCard, Leaderboard, VideoCard, UsefulLinkCard, Modal, Button, …
-  pages/       Home, TrainingList, Training, Result, Leaderboard, Videos, Materials, Exam, NotFound
+               Timer, SaveIndicator, ResultCard, Leaderboard, VideoCard, UsefulLinkCard,
+               Modal, Button/ExamButton, ErrorState, …
+  pages/       Home, TrainingList, Training, Result, Leaderboard, Videos, Materials, Exam
 ```
 
-UI, данные, бизнес-логика и хранение разделены: чтобы подключить Django API,
-достаточно заменить реализацию `contentService` и добавить
-`ApiLeaderboardService` — компоненты не меняются.
+Компоненты не вызывают `fetch` — только функции из `src/api/`.
 
 ## localStorage
 
-Только `okurmen_student_name`, `okurmen_training_progress`,
-`okurmen_training_results`, `okurmen_leaderboard`. Никаких паролей и токенов.
-Имя никуда не отправляется.
+Только `okurmen_student_name` (подставить имя в форму) и
+`okurmen_active_attempts` (`{testId: {attemptId, token}}` — продолжить
+тренировку после перезагрузки). Тесты, ответы, результаты и лидерборд не
+хранятся — источник истины backend.
 
 ## Тренировка ≠ экзамен
 
-Тренировка работает полностью во фронтенде и не связана с LMS. Кнопка
-«Экзаменге өтүү» только открывает `examUrl` — настоящий экзамен проходит в LMS
-(Exam Mode, серверный таймер, журнал нарушений).
-
-Проверка ответов повторяет правила LMS: single/multiple — точное совпадение
-набора, text — без учёта регистра и лишних пробелов, code — не проверяется
-автоматически (показывается эталонное решение, в процент не входит).
+Кнопка «Экзаменге өтүү» открывает `exam_url` из настроек портала (Django
+Admin → «Тренировочный портал» → «Настройки портала»); без ссылки кнопка
+скрыта. Настоящий экзамен проходит в LMS (Exam Mode).

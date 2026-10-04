@@ -1,139 +1,209 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { Answer, Test, TrainingProgress, TrainingResult } from '@/types'
+import type { AnswerFeedback, AnswerValue, AttemptState, Question } from '@/types'
 
-import { gradeQuestion, isAnswered, scoreTest } from '@/lib/grading'
-import { newId } from '@/lib/id'
-import { leaderboardService } from '@/services/leaderboardService'
-import { trainingService } from '@/services/trainingService'
+import * as attemptsApi from '@/api/attempts'
+import { ApiError, NETWORK_ERROR } from '@/api/client'
+import { storageService, type AttemptRef } from '@/services/storageService'
 
 /*
- * The training engine for one test: start / resume an attempt, answers,
- * «Текшерүү» (check, then the answer is locked), navigation, finish. UI-free
- * — pages render what it returns. The attempt is mirrored to localStorage so
- * a reload continues where the student was.
+ * The training runner for one test, driven by the backend: it starts or
+ * resumes the attempt, saves every answer (debounced, retried when the
+ * connection is back), asks the backend to check an answer, and submits.
+ * Correctness, the score and the deadline are the backend's — nothing is
+ * graded here. Only {attemptId, token} is remembered locally, to resume.
  */
 
+export type Phase = 'loading' | 'intro' | 'running' | 'error'
+export type SaveState = 'idle' | 'saving' | 'saved' | 'offline'
 export type NavState = 'current' | 'answered' | 'unanswered' | 'correct' | 'incorrect'
 
-export function createProgress(test: Test, studentName: string, now = Date.now()): TrainingProgress {
-  return {
-    attemptId: newId(),
-    testId: test.id,
-    studentName,
-    startedAt: now,
-    deadline: test.duration > 0 ? now + test.duration * 60_000 : null,
-    currentIndex: 0,
-    answers: {},
-    checked: {},
-    visited: {},
-  }
+const SAVE_DELAY_MS = 600
+
+export function isAnswered(value: AnswerValue | null | undefined): boolean {
+  return Boolean(value && (value.options.length || value.text.trim()))
 }
 
-export function buildResult(test: Test, progress: TrainingProgress, timedOut: boolean, now = Date.now()): TrainingResult {
-  const score = scoreTest(test, progress.answers)
-  const finishedAt = timedOut && progress.deadline ? Math.min(now, progress.deadline) : now
-  return {
-    attemptId: progress.attemptId,
-    testId: test.id,
-    testTitle: test.title,
-    studentName: progress.studentName,
-    startedAt: progress.startedAt,
-    finishedAt,
-    timedOut,
-    total: score.total,
-    correct: score.correct,
-    incorrect: score.incorrect,
-    skipped: score.skipped,
-    ungraded: score.ungraded,
-    percent: score.percent,
-    answers: progress.answers,
-    outcomes: score.outcomes,
-  }
-}
+export function useTraining(testId: string, onFinished: (attemptId: string) => void) {
+  const [phase, setPhase] = useState<Phase>('loading')
+  const [error, setError] = useState<ApiError | null>(null)
+  const [attempt, setAttempt] = useState<AttemptState | null>(null)
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({})
+  const [feedback, setFeedback] = useState<Record<string, AnswerFeedback | true>>({})
+  const [index, setIndex] = useState(0)
+  const [visited, setVisited] = useState<Record<number, true>>({})
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [deadline, setDeadline] = useState<number | null>(null)
+  const [resumed, setResumed] = useState(false)
+  const [busy, setBusy] = useState(false)
 
-export function useTraining(test: Test | null) {
-  const [progress, setProgress] = useState<TrainingProgress | null>(() =>
-    test ? trainingService.getProgress(test.id) : null,
-  )
-  const [resumed, setResumed] = useState(() => Boolean(test && trainingService.getProgress(test.id)))
-
-  useEffect(() => {
-    if (!test) return
-    const saved = trainingService.getProgress(test.id)
-    setProgress(saved)
-    setResumed(Boolean(saved))
-  }, [test])
-
-  // A finished attempt must not be written back as «in progress».
+  const ref = useRef<AttemptRef | null>(null)
+  const pending = useRef<Record<string, AnswerValue>>({})
+  const timers = useRef<Record<string, number>>({})
   const finished = useRef(false)
-  useEffect(() => {
-    if (progress && !finished.current) trainingService.saveProgress(progress)
-  }, [progress])
+  const finishedCallback = useRef(onFinished)
+  finishedCallback.current = onFinished
 
-  const start = useCallback((studentName: string) => {
-    if (!test) return
-    finished.current = false
-    setResumed(false)
-    setProgress(createProgress(test, studentName))
-  }, [test])
+  const syncDeadline = (seconds: number | null | undefined) => {
+    if (seconds === undefined) return
+    setDeadline(seconds === null ? null : Date.now() + seconds * 1000)
+  }
 
-  const restart = useCallback(() => {
-    if (!test) return
-    trainingService.clearProgress(test.id)
-    setResumed(false)
-    setProgress(null)
-  }, [test])
-
-  const update = useCallback((change: (p: TrainingProgress) => TrainingProgress) => {
-    setProgress((p) => (p ? change(p) : p))
-  }, [])
-
-  const setAnswer = useCallback((questionId: string, answer: Answer) => {
-    update((p) => (p.checked[questionId] ? p : { ...p, answers: { ...p.answers, [questionId]: answer } }))
-  }, [update])
-
-  const check = useCallback((questionId: string) => {
-    update((p) => (isAnswered(p.answers[questionId]) ? { ...p, checked: { ...p.checked, [questionId]: true } } : p))
-  }, [update])
-
-  const goTo = useCallback((index: number) => {
-    if (!test) return
-    update((p) => {
-      const target = Math.max(0, Math.min(index, test.questions.length - 1))
-      const leaving = test.questions[p.currentIndex]?.id
-      return { ...p, currentIndex: target, visited: leaving ? { ...p.visited, [leaving]: true } : p.visited }
-    })
-  }, [test, update])
-
-  /** Finishes the attempt: result saved, leaderboard updated, progress cleared. */
-  const finish = useCallback((timedOut = false): TrainingResult | null => {
-    if (!test || !progress) return null
-    if (finished.current) return null
+  const finish = useCallback((attemptId: string) => {
+    if (finished.current) return
     finished.current = true
-    const result = buildResult(test, progress, timedOut)
-    trainingService.saveResult(result)
-    trainingService.clearProgress(test.id)
-    void leaderboardService.submitResult(result)
-    return result
-  }, [test, progress])
+    storageService.clearActiveAttempt(testId)
+    finishedCallback.current(attemptId)
+  }, [testId])
 
-  const navStates = useMemo<NavState[]>(() => {
-    if (!test || !progress) return []
-    return test.questions.map((question, i) => {
-      if (i === progress.currentIndex) return 'current'
-      const answer = progress.answers[question.id]
-      if (progress.checked[question.id] && question.type !== 'code') {
-        return gradeQuestion(question, answer) === 'correct' ? 'correct' : 'incorrect'
-      }
-      return isAnswered(answer) ? 'answered' : 'unanswered'
+  const handleError = useCallback((err: unknown) => {
+    const apiError = err instanceof ApiError ? err : new ApiError(String(err), 0)
+    if (apiError.code === NETWORK_ERROR) { setSaveState('offline'); return }
+    if (apiError.status === 409 && apiError.code === 'closed' && ref.current) { finish(ref.current.attemptId); return }
+    setError(apiError)
+  }, [finish])
+
+  const load = useCallback(async (attemptRef: AttemptRef, isResume: boolean) => {
+    const state = await attemptsApi.getAttempt(attemptRef.attemptId, attemptRef.token)
+    ref.current = attemptRef
+    if (state.status !== 'active') { finish(state.attempt_id); return }
+    setAttempt(state)
+    setAnswers(Object.fromEntries(state.questions.filter((q) => q.answer).map((q) => [q.id, q.answer as AnswerValue])))
+    setFeedback(Object.fromEntries(state.questions.filter((q) => q.checked).map((q) => [q.id, q.feedback ?? true])))
+    const firstOpen = state.questions.findIndex((q) => !q.answer)
+    setIndex(isResume && firstOpen > 0 ? firstOpen : 0)
+    syncDeadline(state.remaining_seconds)
+    setResumed(isResume)
+    setPhase('running')
+  }, [finish])
+
+  // Resume this test's attempt after a reload, else show the intro.
+  useEffect(() => {
+    finished.current = false
+    const saved = storageService.getActiveAttempt(testId)
+    if (!saved) { setPhase('intro'); return }
+    load(saved, true).catch((err) => {
+      if (err instanceof ApiError && err.code === NETWORK_ERROR) { setError(err); setPhase('error'); return }
+      storageService.clearActiveAttempt(testId)  // expired token / unknown attempt: start afresh
+      setPhase('intro')
     })
-  }, [test, progress])
+  }, [testId, load])
+
+  const start = useCallback(async (studentName: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const started = await attemptsApi.startAttempt(testId, studentName)
+      const attemptRef = { attemptId: started.attempt_id, token: started.token }
+      storageService.setActiveAttempt(testId, attemptRef)
+      storageService.setStudentName(started.student_name)
+      finished.current = false
+      await load(attemptRef, false)
+    } catch (err) {
+      setError(err instanceof ApiError ? err : new ApiError(String(err), 0))
+    } finally {
+      setBusy(false)
+    }
+  }, [testId, load])
+
+  const flushOne = useCallback(async (questionId: string) => {
+    const value = pending.current[questionId]
+    const attemptRef = ref.current
+    if (!value || !attemptRef) return
+    window.clearTimeout(timers.current[questionId])
+    setSaveState('saving')
+    try {
+      const saved = await attemptsApi.saveAnswer(attemptRef.attemptId, attemptRef.token, questionId, value)
+      if (pending.current[questionId] === value) delete pending.current[questionId]
+      syncDeadline(saved.remaining_seconds)
+      setSaveState(Object.keys(pending.current).length ? 'saving' : 'saved')
+    } catch (err) {
+      handleError(err)
+      throw err
+    }
+  }, [handleError])
+
+  const flushAll = useCallback(async () => {
+    for (const questionId of Object.keys(pending.current)) await flushOne(questionId)
+  }, [flushOne])
+
+  // Answers typed offline go out when the connection is back.
+  useEffect(() => {
+    const retry = () => { flushAll().catch(() => {}) }
+    window.addEventListener('online', retry)
+    return () => window.removeEventListener('online', retry)
+  }, [flushAll])
+
+  const setAnswer = useCallback((questionId: string, value: AnswerValue) => {
+    if (feedback[questionId]) return  // checked answers are locked (the backend refuses them too)
+    setAnswers((all) => ({ ...all, [questionId]: value }))
+    pending.current[questionId] = value
+    setSaveState('saving')
+    window.clearTimeout(timers.current[questionId])
+    timers.current[questionId] = window.setTimeout(() => { flushOne(questionId).catch(() => {}) }, SAVE_DELAY_MS)
+  }, [feedback, flushOne])
+
+  const check = useCallback(async (questionId: string) => {
+    const attemptRef = ref.current
+    if (!attemptRef) return
+    setBusy(true)
+    try {
+      await flushOne(questionId)
+      const result = await attemptsApi.checkAnswer(attemptRef.attemptId, attemptRef.token, questionId)
+      setFeedback((all) => ({ ...all, [questionId]: result }))
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setBusy(false)
+    }
+  }, [flushOne, handleError])
+
+  const submit = useCallback(async () => {
+    const attemptRef = ref.current
+    if (!attemptRef) return
+    setBusy(true)
+    try {
+      await flushAll().catch(() => {})  // what can't be saved is lost; the backend grades what it has
+      const result = await attemptsApi.submitAttempt(attemptRef.attemptId, attemptRef.token)
+      finish(result.attempt_id)
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setBusy(false)
+    }
+  }, [flushAll, finish, handleError])
+
+  const goTo = useCallback((target: number) => {
+    if (!attempt) return
+    setVisited((v) => ({ ...v, [index]: true }))
+    setIndex(Math.max(0, Math.min(target, attempt.questions.length - 1)))
+  }, [attempt, index])
+
+  const navStates = useMemo<NavState[]>(() => (attempt?.questions ?? []).map((q: Question, i) => {
+    if (i === index) return 'current'
+    const fb = feedback[q.id]
+    if (fb && fb !== true && fb.status !== 'pending') return fb.status === 'correct' ? 'correct' : 'incorrect'
+    return isAnswered(answers[q.id]) ? 'answered' : 'unanswered'
+  }), [attempt, index, feedback, answers])
 
   const answeredCount = useMemo(
-    () => (test && progress ? test.questions.filter((q) => isAnswered(progress.answers[q.id])).length : 0),
-    [test, progress],
+    () => (attempt?.questions ?? []).filter((q) => isAnswered(answers[q.id])).length,
+    [attempt, answers],
   )
 
-  return { progress, resumed, start, restart, setAnswer, check, goTo, finish, navStates, answeredCount }
+  const restart = useCallback(() => {
+    storageService.clearActiveAttempt(testId)
+    ref.current = null
+    pending.current = {}
+    setAttempt(null)
+    setAnswers({})
+    setFeedback({})
+    setResumed(false)
+    setPhase('intro')
+  }, [testId])
+
+  return {
+    phase, error, attempt, answers, feedback, index, visited, saveState, deadline, resumed, busy,
+    navStates, answeredCount, start, setAnswer, check, submit, goTo, restart, clearError: () => setError(null),
+  }
 }

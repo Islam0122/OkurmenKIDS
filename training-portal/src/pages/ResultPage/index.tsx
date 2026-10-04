@@ -1,104 +1,107 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import type { Answer, Question, QuestionOutcome } from '@/types'
+import type { ReviewRow } from '@/types'
 
+import { getResult } from '@/api/attempts'
+import { getLeaderboard } from '@/api/leaderboard'
 import { Button } from '@/components/Button'
 import { ExamButton } from '@/components/Button/ExamButton'
+import { ErrorState } from '@/components/ErrorState'
 import { Icon } from '@/components/Icon'
+import { Loader } from '@/components/Loader'
 import { ResultCard } from '@/components/ResultCard'
 import { useAsync } from '@/hooks/useAsync'
 import { t } from '@/i18n'
-import { correctAnswerText } from '@/lib/grading'
-import { contentService } from '@/services/contentService'
-import { leaderboardService } from '@/services/leaderboardService'
-import { trainingService } from '@/services/trainingService'
 import './ResultPage.css'
 
-const OUTCOME: Record<QuestionOutcome, { label: string; icon: string }> = {
-  correct: { label: t.result.correct, icon: 'check-circle-fill' },
-  incorrect: { label: t.result.incorrect, icon: 'x-circle-fill' },
-  skipped: { label: t.result.skipped, icon: 'dash-circle-fill' },
-  ungraded: { label: t.result.ungraded, icon: 'eye' },
-}
-
-function answerText(question: Question, answer: Answer | undefined): string {
-  if (!answer) return ''
-  if (question.type === 'single' || question.type === 'multiple') {
-    return (question.options ?? []).filter((o) => answer.options?.includes(o.id)).map((o) => o.text).join(', ')
-  }
-  return answer.text ?? ''
+const OUTCOME: Record<ReviewRow['status'], { label: string; icon: string; css: string }> = {
+  correct: { label: t.result.correct, icon: 'check-circle-fill', css: 'correct' },
+  wrong: { label: t.result.incorrect, icon: 'x-circle-fill', css: 'incorrect' },
+  skipped: { label: t.result.skipped, icon: 'dash-circle-fill', css: 'skipped' },
+  pending: { label: t.result.pending, icon: 'hourglass-split', css: 'ungraded' },
 }
 
 export function ResultPage() {
   const { attemptId = '' } = useParams()
   const navigate = useNavigate()
-  const result = useMemo(() => trainingService.getResult(attemptId), [attemptId])
-  const test = useAsync(() => (result ? contentService.getTest(result.testId) : Promise.resolve(null)), [result?.testId])
-  const board = useAsync(() => (result ? leaderboardService.getLeaderboard(result.testId) : Promise.resolve([])), [result?.testId])
+  const result = useAsync(() => getResult(attemptId), [attemptId])
+  const board = useAsync(
+    () => (result.data ? getLeaderboard(result.data.test_id) : Promise.resolve([])),
+    [result.data?.test_id],
+  )
   const [showReview, setShowReview] = useState(false)
 
-  if (!result) {
+  if (result.loading) return <Loader />
+  if (result.error || !result.data) {
     return (
       <div className="container result-page">
-        <div className="empty">
-          <Icon name="clipboard-x" />
-          <h1 className="section-title" style={{ marginBottom: 8 }}>{t.result.notFound}</h1>
-          <p>{t.result.notFoundText}</p>
-          <div style={{ marginTop: 20 }}><Button to="/training" icon="play-circle">{t.test.start}</Button></div>
-        </div>
+        {result.error?.status === 404 ? (
+          <div className="empty">
+            <Icon name="clipboard-x" />
+            <h1 className="section-title" style={{ marginBottom: 8 }}>{t.result.notFound}</h1>
+            <p>{t.result.notFoundText}</p>
+            <div style={{ marginTop: 20 }}><Button to="/training" icon="play-circle">{t.test.start}</Button></div>
+          </div>
+        ) : <ErrorState error={result.error} onRetry={result.reload} />}
       </div>
     )
   }
 
-  const rank = (board.data ?? []).findIndex((e) => e.name.toLocaleLowerCase() === result.studentName.toLocaleLowerCase())
+  const data = result.data
+  const rank = (board.data ?? []).find((e) => e.student_name.toLocaleLowerCase() === data.student_name.toLocaleLowerCase())?.rank
+  const review = data.review ?? []
 
   return (
     <div className="container result-page">
-      <ResultCard result={result} />
-      {result.timedOut ? <p className="result-note"><Icon name="alarm" />{t.result.timedOut}</p> : null}
+      {data.show_result && data.percentage !== undefined ? (
+        <ResultCard result={data} />
+      ) : (
+        <div className="empty"><Icon name="send-check" /><h1 className="section-title" style={{ marginBottom: 8 }}>{t.result.title}</h1><p>{t.result.hidden}</p></div>
+      )}
+      {data.finish_reason === 'time_expired' ? <p className="result-note"><Icon name="alarm" />{t.result.timedOut}</p> : null}
+      {data.pending ? <p className="result-note result-note--wait"><Icon name="hourglass-split" />{t.result.pendingNote(data.pending)}</p> : null}
 
       <div className="result-actions">
-        <Button icon="arrow-repeat" onClick={() => navigate(`/training/${result.testId}`, { state: { retake: true } })}>{t.result.retake}</Button>
-        <Button variant="outline" icon={showReview ? 'eye-slash' : 'list-check'} onClick={() => setShowReview((v) => !v)}>
-          {showReview ? t.result.hideReview : t.result.review}
-        </Button>
+        <Button icon="arrow-repeat" onClick={() => navigate(`/training/${data.test_id}`, { state: { retake: true } })}>{t.result.retake}</Button>
+        {review.length ? (
+          <Button variant="outline" icon={showReview ? 'eye-slash' : 'list-check'} onClick={() => setShowReview((v) => !v)}>
+            {showReview ? t.result.hideReview : t.result.review}
+          </Button>
+        ) : null}
         <Button variant="outline" to="/leaderboard" icon="trophy">{t.result.leaders}</Button>
         <Button variant="outline" to="/materials" icon="journal-bookmark">{t.result.materials}</Button>
-        <ExamButton label={t.result.exam} />
+        <ExamButton />
       </div>
 
-      {rank >= 0 ? (
+      {rank ? (
         <div className="result-rank">
           <span className="result-rank__icon"><Icon name="trophy-fill" /></span>
-          <p><strong>{String(rank + 1).padStart(2, '0')}</strong> — {t.leaderboard.title.toLowerCase()} тизмесиндеги ордуңуз ({result.testTitle}).</p>
+          <p><strong>{String(rank).padStart(2, '0')}</strong> — {t.result.rankText(data.test_title)}</p>
         </div>
       ) : null}
 
-      {showReview && test.data ? (
+      {showReview ? (
         <section className="review" aria-label={t.result.reviewTitle}>
           <h2 className="section-title">{t.result.reviewTitle}</h2>
-          {test.data.questions.map((question, i) => {
-            const outcome = result.outcomes[question.id] ?? 'skipped'
-            const given = answerText(question, result.answers[question.id])
+          {review.map((row) => {
+            const outcome = OUTCOME[row.status]
+            const given = row.selected.length ? row.selected.join(', ') : row.answer_text
             return (
-              <article key={question.id} className={`review__item review__item--${outcome}`}>
+              <article key={row.question_id} className={`review__item review__item--${outcome.css}`}>
                 <div className="review__head">
-                  <span className="review__num">{t.training.question} {i + 1}</span>
-                  <span className={`review__badge review__badge--${outcome}`}><Icon name={OUTCOME[outcome].icon} />{OUTCOME[outcome].label}</span>
+                  <span className="review__num">{t.training.question} {row.number}</span>
+                  <span className={`review__badge review__badge--${outcome.css}`}><Icon name={outcome.icon} />{outcome.label}</span>
                 </div>
-                <p className="review__q">{question.question}</p>
+                <p className="review__q">{row.text}</p>
                 <div className="review__row">
                   <strong>{t.result.yourAnswer}</strong>
-                  {given ? (question.type === 'code' ? <pre>{given}</pre> : given) : <span className="muted">{t.result.noAnswer}</span>}
+                  {given ? (row.type === 'code' ? <pre>{given}</pre> : given) : <span className="muted">{t.result.noAnswer}</span>}
                 </div>
-                {outcome !== 'correct' && question.correctAnswer ? (
-                  <div className="review__row">
-                    <strong>{question.type === 'code' ? t.training.sample : t.training.correctAnswer}</strong>
-                    {question.type === 'code' ? <pre>{correctAnswerText(question)}</pre> : correctAnswerText(question)}
-                  </div>
+                {row.status !== 'correct' && row.correct.length && row.type !== 'code' ? (
+                  <div className="review__row"><strong>{t.training.correctAnswer}</strong>{row.correct.join(', ')}</div>
                 ) : null}
-                {question.explanation ? <div className="review__row"><strong>{t.training.explanation}</strong>{question.explanation}</div> : null}
+                {row.explanation ? <div className="review__row"><strong>{t.training.explanation}</strong>{row.explanation}</div> : null}
               </article>
             )
           })}

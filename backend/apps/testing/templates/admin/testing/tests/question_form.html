@@ -67,6 +67,11 @@
             {{ form.hint }}
             <p class="ok-help-text">Необязательно. Студент увидит её под вопросом.</p>
           </div>
+          <div class="okt-field okt-field--wide">
+            <label class="ok-label" for="id_explanation">{% ticon "info" 14 %} Пояснение к ответу</label>
+            {{ form.explanation }}
+            <p class="ok-help-text">Необязательно. Показывается после ответа только в публичном тренировочном портале — не во время экзамена.</p>
+          </div>
         </div>
       </div>
     </section>
