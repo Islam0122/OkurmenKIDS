@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Users } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 
 import { GroupCard } from '@/components/academy/GroupCard'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -22,7 +23,11 @@ const STATUS_OPTIONS: { value: GroupStatus; label: string }[] = [
 
 export function GroupsListPage() {
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
+  // The status filter lives in the URL (?status=active) so a menu link
+  // («Активные группы», «Архив») can open the list already filtered.
+  const [params, setParams] = useSearchParams()
+  const status = STATUS_OPTIONS.some((o) => o.value === params.get('status')) ? (params.get('status') as string) : ''
+  const setStatus = (value: string) => setParams(value ? { status: value } : {}, { replace: true })
   const [page, setPage] = useState(1)
 
   const { data, isPending, isError, refetch } = useGroups({

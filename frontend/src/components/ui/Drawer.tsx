@@ -12,7 +12,7 @@ export interface DrawerProps {
   title: string
   children: ReactNode
   /** `bottom` reads naturally as a mobile sheet; `right` as a desktop side panel. */
-  side?: 'bottom' | 'right'
+  side?: 'bottom' | 'right' | 'left'
   /** `lg` widens a `right` panel for detail views with tables/lists. */
   size?: 'md' | 'lg'
 }
@@ -34,6 +34,7 @@ export function Drawer({ isOpen, onClose, title, children, side = 'bottom', size
           'relative z-10 flex min-w-0 flex-col overflow-hidden bg-surface shadow-xl',
           side === 'bottom' && 'mt-auto max-h-[85dvh] w-full rounded-t-2xl pb-[env(safe-area-inset-bottom)]',
           side === 'right' && 'ml-auto h-dvh w-full',
+          side === 'left' && 'mr-auto h-dvh w-full max-w-[280px]',
           side === 'right' && (size === 'lg' ? 'max-w-xl' : 'max-w-sm'),
         )}
       >

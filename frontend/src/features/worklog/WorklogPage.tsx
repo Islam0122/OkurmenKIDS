@@ -213,7 +213,11 @@ function EntriesTab({ kind, options, onEdit }: { kind: EntryKind; options: Workl
 function ReportsTab({ options }: { options: WorklogOptions }) {
   const navigate = useNavigate()
   const [scope, setScope] = useState<Scope>('mine')
-  const [kind, setKind] = useState('')
+  // The report kind lives in the URL (?tab=reports&kind=daily) so the menu's
+  // «Ежедневные / Еженедельные / Ежемесячные» open the list already filtered.
+  const [params, setParams] = useSearchParams()
+  const kind = options.report_kinds.some((k) => k.kind === params.get('kind')) ? (params.get('kind') as string) : ''
+  const setKind = (value: string) => setParams(value ? { tab: 'reports', kind: value } : { tab: 'reports' }, { replace: true })
   const [newKind, setNewKind] = useState('daily')
   const [page, setPage] = useState(1)
   const { data, isPending, isError, refetch } = useWorklogReports({
