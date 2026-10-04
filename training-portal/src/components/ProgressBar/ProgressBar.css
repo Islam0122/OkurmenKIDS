@@ -1,5 +1,5 @@
-.progress { display: grid; gap: 8px; }
+.progress { display: grid; gap: 8px; width: 100%; min-width: 0; }
 .progress__labels { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; font-weight: 800; color: var(--text-2); }
-.progress__labels strong { color: var(--navy-800); }
-.progress__track { height: 10px; border-radius: 99px; background: var(--navy-50); overflow: hidden; }
-.progress__fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--navy-500), var(--amber-500)); transition: width .6s var(--ease); }
+.progress__labels strong { color: var(--text); }
+.progress__track { height: 8px; border-radius: 99px; background: var(--navy-50); overflow: hidden; }
+.progress__fill { height: 100%; border-radius: inherit; background: var(--primary); transition: width .6s var(--ease); }

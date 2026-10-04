@@ -2,16 +2,27 @@
  * Palette from the logo: amber ring (#F5A524) and navy lettering (#2B2A86). */
 
 :root {
-  --navy-950: #12113a;
-  --navy-900: #1b1a52;
-  --navy-800: #23226d;
-  --navy-700: #2b2a86;
-  --navy-600: #3a38a8;
-  --navy-500: #4f4cc9;
-  --navy-100: #e8e8fb;
-  --navy-50: #f3f3fe;
+  /* Main colour: blue. The navy-* names are kept so existing components keep
+   * working; they now hold the blue scale. Amber stays as the brand CTA. */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --background: #f7f8fa;
+  --text-primary: #111827;
+  --text-secondary: #64748b;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
 
-  --amber-600: #e08e0b;
+  --navy-950: #0f172a;
+  --navy-900: #111827;
+  --navy-800: #1e3a8a;
+  --navy-700: #1d4ed8;
+  --navy-600: #2563eb;
+  --navy-500: #3b82f6;
+  --navy-100: #dbeafe;
+  --navy-50: #eff6ff;
+
+  --amber-600: #d97706;
   --amber-500: #f5a524;
   --amber-400: #fbbf4a;
   --amber-100: #fff1d6;
@@ -28,14 +39,14 @@
   --sky-500: #0ea5e9;
   --sky-100: #e0f2fe;
 
-  --bg: #f6f7fb;
+  --bg: var(--background);
   --surface: #ffffff;
-  --surface-2: #f8f8fd;
-  --border: #e6e6f2;
-  --border-strong: #d4d4ea;
-  --text: #17163a;
-  --text-2: #55557a;
-  --text-3: #8a8aa8;
+  --surface-2: #f9fafb;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --text: var(--text-primary);
+  --text-2: var(--text-secondary);
+  --text-3: #94a3b8;
 
   --font-display: 'Unbounded', 'Manrope', system-ui, sans-serif;
   --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
@@ -45,10 +56,10 @@
   --radius: 16px;
   --radius-lg: 24px;
   --radius-xl: 32px;
-  --shadow-sm: 0 1px 2px rgba(23, 22, 58, 0.06);
-  --shadow: 0 6px 24px -8px rgba(23, 22, 58, 0.14), 0 2px 6px rgba(23, 22, 58, 0.05);
-  --shadow-lg: 0 24px 60px -20px rgba(27, 26, 82, 0.35);
-  --ring: 0 0 0 4px rgba(79, 76, 201, 0.22);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 16px 40px -16px rgba(15, 23, 42, 0.22);
+  --ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
   --container: 1200px;
   --header-h: 72px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -64,7 +75,11 @@ h1, h2, h3, h4 { margin: 0; font-family: var(--font-display); line-height: 1.2; 
 p { margin: 0; }
 a { color: inherit; text-decoration: none; }
 button, input, textarea { font: inherit; color: inherit; }
-img { max-width: 100%; display: block; }
+img { max-width: 100%; height: auto; display: block; }
+pre { max-width: 100%; overflow-x: auto; }
+/* Long unbroken words (names, identifiers) wrap instead of widening the page. */
+h1, h2, h3, h4 { overflow-wrap: break-word; }
+.text-wrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
 :focus-visible { outline: none; box-shadow: var(--ring); border-radius: 8px; }
 ::selection { background: var(--amber-100); color: var(--navy-900); }
 .bi { line-height: 1; display: inline-flex; }
@@ -73,17 +88,20 @@ img { max-width: 100%; display: block; }
 .section { padding: clamp(48px, 8vw, 96px) 0; }
 .section-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: clamp(24px, 4vw, 40px); }
 .section-title { font-size: clamp(24px, 3.2vw, 36px); font-weight: 700; }
-.section-subtitle { color: var(--text-2); margin-top: 8px; max-width: 620px; }
+.section-subtitle { color: var(--text-2); margin-top: 8px; max-width: min(620px, 100%); overflow-wrap: anywhere; }
 .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; color: var(--navy-600); background: var(--navy-50); border: 1px solid var(--navy-100); padding: 6px 12px; border-radius: 999px; }
 .muted { color: var(--text-2); }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .link-arrow { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--navy-600); transition: gap .2s var(--ease); }
 .link-arrow:hover { gap: 10px; }
 .grid-cards { display: grid; gap: clamp(16px, 2vw, 24px); grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.training-page { width: 100%; max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; box-sizing: border-box; }
+.training-page__head { margin-bottom: 24px; min-width: 0; }
+@media (max-width: 640px) { .training-page { padding: 24px 16px 64px; } }
 .page-head { padding: clamp(32px, 6vw, 64px) 0 clamp(20px, 3vw, 32px); }
 .page-title { font-size: clamp(28px, 4.5vw, 44px); font-weight: 800; }
-.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
-.chip { border: 1px solid var(--border); background: var(--surface); color: var(--text-2); padding: 8px 16px; border-radius: 999px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all .2s var(--ease); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; min-width: 0; }
+.chip { max-width: 100%; overflow-wrap: anywhere; text-align: left; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); padding: 8px 16px; border-radius: 999px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all .2s var(--ease); }
 .chip:hover { border-color: var(--navy-500); color: var(--navy-700); }
 .chip.is-active { background: var(--navy-700); border-color: var(--navy-700); color: #fff; }
 .empty { text-align: center; padding: 56px 24px; color: var(--text-2); background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }

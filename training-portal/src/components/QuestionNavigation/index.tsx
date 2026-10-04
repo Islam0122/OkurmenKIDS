@@ -23,8 +23,12 @@ export function QuestionNavigation({ states, onSelect, showLegend = true }: {
 
   useEffect(() => {
     // Keep the current question in view on phones (the row scrolls sideways).
-    const item = list.current?.children[current] as HTMLElement | undefined
-    item?.scrollIntoView?.({ block: 'nearest', inline: 'center', behavior: 'smooth' })
+    // Only the row itself scrolls — scrollIntoView would also move the page.
+    const row = list.current
+    const item = row?.children[current] as HTMLElement | undefined
+    if (!row || !item || row.scrollWidth <= row.clientWidth) return
+    const left = item.offsetLeft - row.offsetLeft - (row.clientWidth - item.offsetWidth) / 2
+    row.scrollTo?.({ left: Math.max(0, left), behavior: 'smooth' })
   }, [current])
 
   return (

@@ -168,6 +168,20 @@ describe('exam layout guard', () => {
     delete document.documentElement.requestFullscreen
   })
 
+  it('«Артка» asks first, then returns to the list; the attempt stays resumable', async () => {
+    const user = userEvent.setup()
+    backend()
+    await startTraining(user)
+    await user.click(screen.getByRole('button', { name: 'Артка' }))
+    const dialog = screen.getByRole('dialog', { name: 'Тесттен чыгасызбы?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Тестте калуу' }))
+    expect(screen.getByText('Backend?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Артка' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Тесттен чыгасызбы?' })).getByRole('button', { name: 'Чыгуу' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Тренировкалык тесттер' })).toBeInTheDocument()
+    expect(localStorage.getItem('okurmen_active_attempts')).toContain('a1')
+  })
+
   it('stays an ordinary page when the trainer does not require fullscreen', async () => {
     const user = userEvent.setup()
     const request = vi.fn().mockResolvedValue(undefined)

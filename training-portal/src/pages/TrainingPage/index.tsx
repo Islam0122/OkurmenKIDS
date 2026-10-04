@@ -86,6 +86,7 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
   const training = useTraining(test.id, onFinished)
   const [nameOpen, setNameOpen] = useState(false)
   const [confirmFinish, setConfirmFinish] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
 
   // From «Тренировка баштоо» straight to the name; «Кайра тапшыруу» starts
   // again under the same name.
@@ -152,20 +153,23 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
 
   return (
     <div className="train">
-      <div className="train__bar">
-        <div className="container train__layout">
-          <div className="train__bar-row">
-            <div className="train__title">
-              <strong>{attempt.test_title}</strong>
-              <span className="train__student"><Icon name="person" />{attempt.student_name}</span>
-            </div>
-            <Timer secondsLeft={secondsLeft} />
+      <header className="train__bar">
+        <div className="train__bar-inner">
+          <button type="button" className="train__back" aria-label={t.training.leave} onClick={() => setConfirmLeave(true)}>
+            <Icon name="chevron-left" /><span>{t.training.leave}</span>
+          </button>
+          <div className="train__title">
+            <strong title={attempt.test_title}>{attempt.test_title}</strong>
+            <span className="train__student"><Icon name="person" /><span>{attempt.student_name}</span></span>
           </div>
+          <Timer secondsLeft={secondsLeft} />
+        </div>
+      </header>
+
+      <div className="train__layout">
+        <div className="train__progress">
           <ProgressBar value={index + 1} max={total} label={t.training.progress(index + 1, total)} />
         </div>
-      </div>
-
-      <div className="container train__layout">
         {training.resumed ? (
           <div className="train__notice">
             <span><Icon name="arrow-clockwise" />{t.training.resumed}</span>
@@ -181,7 +185,7 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
 
         <QuestionNavigation states={training.navStates} onSelect={training.goTo} />
 
-        <div style={{ marginTop: 16 }}>
+        <div className="train__question">
           <QuestionCard
             key={question.id}
             question={question}
@@ -197,7 +201,7 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
         <div className="train__save"><SaveIndicator state={training.saveState} /></div>
 
         <div className="train__controls">
-          <Button variant="outline" icon="arrow-left" disabled={index === 0} onClick={() => training.goTo(index - 1)}>{t.training.prev}</Button>
+          <Button className="train__prev" variant="outline" icon="arrow-left" disabled={index === 0} onClick={() => training.goTo(index - 1)}>{t.training.prev}</Button>
           <div className="train__controls-right">
             {canCheck ? <Button variant="navy" icon="check2-circle" disabled={training.busy} onClick={() => { void training.check(question.id) }}>{t.training.check}</Button> : null}
             {last
@@ -238,6 +242,20 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
       </Modal>
 
       {blocked ? <div className="exam-toast" role="status"><Icon name="lock" />{t.guard.blocked[blocked]}</div> : null}
+
+      <Modal
+        open={confirmLeave}
+        onClose={() => setConfirmLeave(false)}
+        title={t.training.leaveTitle}
+        icon="box-arrow-left"
+        tone="amber"
+        actions={<>
+          <Button variant="ghost" onClick={() => setConfirmLeave(false)}>{t.training.leaveStay}</Button>
+          <Button variant="outline" icon="box-arrow-left" onClick={() => navigate('/training')}>{t.training.leaveConfirm}</Button>
+        </>}
+      >
+        <p className="modal__text">{t.training.leaveText}</p>
+      </Modal>
 
       <Modal
         open={confirmFinish}

@@ -1,8 +1,7 @@
-.timer { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 14px; background: var(--navy-800); color: #fff; font-weight: 700; box-shadow: 0 8px 20px -10px rgba(27, 26, 82, .9); }
-.timer .bi { font-size: 18px; color: var(--amber-400); }
-.timer__value { font-family: var(--font-mono); font-size: 20px; letter-spacing: .02em; min-width: 62px; }
-.timer--low { background: var(--red-600); animation: timerPulse 1.2s ease-in-out infinite; }
-.timer--low .bi { color: #fff; }
-.timer--none { background: var(--surface); color: var(--text-2); border: 1px solid var(--border); box-shadow: none; }
-.timer--none .bi { color: var(--navy-500); }
-@keyframes timerPulse { 50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, .2); } }
+.timer { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border); font-weight: 700; white-space: nowrap; }
+.timer .bi { font-size: 17px; color: var(--primary); }
+.timer__value { font-family: var(--font-mono); font-size: 18px; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.timer--low { background: var(--red-50); border-color: #fca5a5; color: var(--danger); animation: timerPulse 1.2s ease-in-out infinite; }
+.timer--low .bi { color: var(--danger); }
+.timer--none { color: var(--text-2); font-size: 14px; }
+@keyframes timerPulse { 50% { box-shadow: 0 0 0 4px rgba(220, 38, 38, .15); } }
