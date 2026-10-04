@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Bot, Copy, MessageSquare, PenLine, RotateCcw, Save, TriangleAlert, UserRound, type LucideIcon } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Bot, ClipboardCheck, Copy, MessageSquare, PenLine, RotateCcw, Save, TriangleAlert, UserRound, type LucideIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -8,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Textarea } from '@/components/ui/Textarea'
 import { useToast } from '@/components/ui/Toast'
 import { useParentReport } from '@/hooks/useLessons'
+import { homeworkUrlFor } from '@/lib/returnTo'
 import type { ParentLessonReport, ParentReportType } from '@/types/academy'
 import { cn } from '@/utils/cn'
 import { formatDate } from '@/utils/format'
@@ -70,6 +72,8 @@ const AUTHORS: { value: ParentReportType; label: string; hint: string; icon: Luc
 
 function ReportEditor({ report }: { report: ParentLessonReport }) {
   const { showToast } = useToast()
+  const navigate = useNavigate()
+  const checkedHomework = report.previous_homework
   const [author, setAuthor] = useState<ParentReportType>('system')
   // «Свой вариант»: a copy of an automatic text, created on first use.
   const [customText, setCustomText] = useState<string | null>(null)
@@ -167,6 +171,26 @@ function ReportEditor({ report }: { report: ParentLessonReport }) {
         {report.group} · {formatDate(report.lesson_date)}
       </p>
 
+
+      {checkedHomework ? (
+        // «❌ не выполнили» is built from the *previous* lesson's homework (lesson N
+        // checks homework N-1), not from this lesson's own — the one the lesson page
+        // opens. Say which, and open exactly that one for grading.
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+          <span className="text-ink-secondary">
+            Список «не выполнили» — по ДЗ прошлого занятия:{' '}
+            <span className="font-medium text-ink">«{checkedHomework.title}»</span>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<ClipboardCheck className="size-4" aria-hidden />}
+            onClick={() => navigate(homeworkUrlFor(checkedHomework.id, `/app/lessons/${report.lesson_id}`))}
+          >
+            Проверить ДЗ прошлого занятия
+          </Button>
+        </div>
+      ) : null}
       {isEditing ? (
         <div className="space-y-1.5">
           <Textarea

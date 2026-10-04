@@ -158,6 +158,36 @@ describe('Мини-отчёт родителям', () => {
     expect(screen.getByRole('radio', { name: /Система/ })).toHaveAttribute('aria-checked', 'true')
   })
 
+  it('names the previous lesson\'s homework the «не выполнили» list uses and opens it for grading', async () => {
+    vi.mocked(lessonsApi.parentReport).mockResolvedValue(
+      buildReport({ previous_homework: { id: 41, title: 'Оформить страницу', description: '' } }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/lessons/:id" element={<LessonDetailPage />} />
+        <Route path="/app/homework/:id" element={<p>homework page</p>} />
+      </Routes>,
+      { route: '/app/lessons/7' },
+    )
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status: 'completed' }))
+    vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+    vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+    await user.click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
+
+    expect(await screen.findByText('«Оформить страницу»')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Проверить ДЗ прошлого занятия' }))
+    expect(await screen.findByText('homework page')).toBeInTheDocument()
+  })
+
+  it('shows no previous-homework hint when the previous lesson gave none', async () => {
+    vi.mocked(lessonsApi.parentReport).mockResolvedValue(buildReport())
+    renderLesson('completed')
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Сформировать отчёт родителям' }))
+    await screen.findByTestId('parent-report-preview')
+    expect(screen.queryByRole('button', { name: 'Проверить ДЗ прошлого занятия' })).not.toBeInTheDocument()
+  })
+
   async function openReport(status: 'in_progress' | 'completed' = 'completed') {
     const user = userEvent.setup()
     renderLesson(status)

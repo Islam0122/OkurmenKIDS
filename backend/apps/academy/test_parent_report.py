@@ -430,3 +430,24 @@ class ParentReportLiveResultsTests(TestCase):
         report = self.report()
         self.assertEqual(report["previous_homework"]["id"], self.old.pk)
         self.assertEqual(report["homework_not_completed"], [])
+
+    def test_user_scenario_three_of_twelve_and_the_wrong_homework_trap(self):
+        """Lesson 5's own homework (the one the lesson page opens) is not the one its
+        report checks: grading it leaves the list as is; grading lesson 4's updates it."""
+        own = Homework.objects.create(lesson=self.today, title="Сверстать блоки карточек")
+        graded = [
+            {"student": s.pk, "status": "submitted", "score": score}
+            for s, score in zip(self.roster[:3], (10, 9, 8))
+        ]
+        self.assertEqual(len(self.report()["homework_not_completed"]), 12)
+
+        response = self.client.post(f"/api/v1/homework/{own.pk}/results/", graded, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(self.report()["homework_not_completed"]), 12)
+
+        self.save(*graded)
+        self.assertEqual(
+            sorted(HomeworkResult.objects.filter(homework=self.old, status="submitted").values_list("score", flat=True)),
+            [8, 9, 10],
+        )
+        self.assertEqual(len(self.report()["homework_not_completed"]), 9)

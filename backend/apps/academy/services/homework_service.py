@@ -1,11 +1,16 @@
 """Bulk homework-result upserts — the React "grade the group" screen."""
 from __future__ import annotations
 
+import logging
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
 from ..models import Homework, HomeworkResult
+
+# TEMP DEBUG («Мини-отчёт родителям» shows old results): remove once diagnosed.
+debug_log = logging.getLogger("okurmen.mini_report_debug")
 
 
 @transaction.atomic
@@ -25,6 +30,10 @@ def bulk_upsert_homework_results(homework: Homework, entries: list[dict]) -> lis
             )
 
     now = timezone.now()
+    before = {
+        r.student_id: (r.status, r.score)
+        for r in HomeworkResult.objects.filter(homework=homework, student__in=[e["student"] for e in entries])
+    }
     records = []
     for entry in entries:
         status = entry["status"]
@@ -44,4 +53,23 @@ def bulk_upsert_homework_results(homework: Homework, entries: list[dict]) -> lis
             defaults=defaults,
         )
         records.append(record)
+
+    lesson = homework.lesson
+    debug_log.warning(
+        "[MINI-REPORT DEBUG] HOMEWORK RESULT SAVE homework_id=%s title=%r lesson_id=%s lesson_number=%s "
+        "lesson_date=%s group_teacher_id=%s rows=%s",
+        homework.pk, homework.title, lesson.pk, lesson.lesson_number, lesson.date, lesson.group_teacher_id, len(entries),
+    )
+    for entry in entries:
+        old_status, old_score = before.get(entry["student"].id, (None, None))
+        debug_log.warning(
+            "[MINI-REPORT DEBUG]   student_id=%s old_status=%s new_status=%s old_score=%s new_score=%s",
+            entry["student"].id, old_status, entry["status"], old_score, entry.get("score"),
+        )
+
+    def _after_commit():
+        saved = HomeworkResult.objects.filter(homework=homework).values_list("student_id", "status", "score")
+        debug_log.warning("[MINI-REPORT DEBUG] AFTER COMMIT homework_id=%s rows=%s", homework.pk, sorted(saved))
+
+    transaction.on_commit(_after_commit)
     return records
