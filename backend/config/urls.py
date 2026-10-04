@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/v1/", include("apps.feedback.urls")),
     path("api/v1/", include("apps.scholarships.urls")),
     path("api/v1/", include("apps.testing.urls")),
+    path("api/v1/", include("apps.worklog.urls")),
 
     # Public feedback survey links (no login) — /feedback/s/<token>/
     path("feedback/", include("apps.feedback.public_urls")),
