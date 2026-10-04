@@ -7,7 +7,7 @@ Everything comes from existing rows; nothing is invented:
 - topic — ``Lesson.topic``;
 - attended — Attendance PRESENT / LATE, absent — ABSENT / EXCUSED;
 - homework checked today — the Homework of this program's previous
-  (not cancelled) lesson: in this project a Homework belongs to the lesson
+  (not cancelled, by lesson_number: Lesson N checks Homework N-1) lesson: in this project a Homework belongs to the lesson
   it was *given* at, and is graded afterwards. «Не выполнили» = its
   HomeworkResult rows with NOT_SUBMITTED (LATE counts as done). There is
   no «partial» status, so ``homework_partial`` is always empty;
@@ -82,12 +82,23 @@ def _bullets(names: list[str]) -> list[str]:
 
 
 def previous_lesson(lesson: Lesson) -> Lesson | None:
-    """The same program's (GroupTeacher's — or, without one, the group's)
-    last not-cancelled lesson before this one."""
-    scope = Lesson.objects.filter(group_teacher_id=lesson.group_teacher_id) if lesson.group_teacher_id \
-        else Lesson.objects.filter(group_id=lesson.group_id)
+    """The lesson whose homework is checked at `lesson`: Lesson N checks
+    Homework N-1. Within a program (GroupTeacher) that is the not-cancelled
+    lesson with the highest lesson_number below this one — by number, not by
+    date, so a moved/edited date or a make-up lesson can never make the report
+    read another lesson's results. A lesson without a program falls back to
+    the group's last not-cancelled lesson before it in time."""
+    if lesson.group_teacher_id:
+        return (
+            Lesson.objects.filter(group_teacher_id=lesson.group_teacher_id, lesson_number__lt=lesson.lesson_number)
+            .exclude(pk=lesson.pk)
+            .exclude(status=Lesson.Status.CANCELLED)
+            .order_by("-lesson_number", "-date", "-start_time")
+            .first()
+        )
     return (
-        scope.exclude(pk=lesson.pk)
+        Lesson.objects.filter(group_id=lesson.group_id)
+        .exclude(pk=lesson.pk)
         .exclude(status=Lesson.Status.CANCELLED)
         .filter(Q(date__lt=lesson.date) | Q(date=lesson.date, start_time__lt=lesson.start_time))
         .order_by("-date", "-start_time")

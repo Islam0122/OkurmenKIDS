@@ -302,3 +302,59 @@ class ParentReportTests(TestCase):
         # A student who left the group is not reported as «не выполнил».
         Student.objects.filter(pk=self.students["Эрбол"].pk).update(is_active=False)
         self.assertEqual(ParentLessonReportService.generate(self.today.pk)["homework_not_completed"], [])
+
+    def test_previous_lesson_is_by_number_not_by_date(self):
+        """Lesson N checks Homework N-1 even when a later topic's date was moved
+        before it — the report must read the homework the trainer actually grades."""
+        self.full_example()
+        moved = self.lesson(3, dt.date(2025, 3, 4), status=Lesson.Status.SCHEDULED)  # №3, dated before №2
+        Homework.objects.create(lesson=moved, title="Чужая тема")
+        report = ParentLessonReportService.generate(self.today.pk)
+        self.assertEqual(report["homework_checked"]["lesson_id"], self.prev.pk)
+        self.assertEqual(report["previous_homework"]["title"], "Безопасный браузер")
+
+    def test_scenarios_from_the_spec(self):
+        """12 students, 11 «Не сдано»: grading through the API moves the count and
+        the names at once; a historical lesson's report is unaffected by later lessons."""
+        for i in range(7):
+            Student.objects.create(first_name=f"Окуучу{i}", last_name="Тест", group=self.group)
+        active = list(self.group.students.filter(is_active=True))
+        self.assertEqual(len(active), 12)
+        Lesson.objects.filter(pk=self.today.pk).update(status=Lesson.Status.COMPLETED)
+        old = Homework.objects.create(lesson=self.prev, title="Оформить страницу")
+        self.grade(old, Бекнур="checked")
+        for s in active:
+            HomeworkResult.objects.get_or_create(homework=old, student=s)  # default «Не сдано»
+        client = APIClient()
+        client.force_authenticate(self.teacher.user)
+        url = f"/api/v1/lessons/{self.today.pk}/parent-report/"
+        response = client.get(url)
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(len(response.json()["homework_not_completed"]), 11)
+
+        # Scenario 1: one student «Не сдано» → «Сдано».
+        save = lambda items: client.post(f"/api/v1/homework/{old.pk}/results/", items, format="json")
+        self.assertEqual(save([{"student": self.students["Талант"].pk, "status": "submitted", "score": 7}]).status_code, 200)
+        report = client.get(url).json()
+        self.assertEqual(len(report["homework_not_completed"]), 10)
+        self.assertNotIn("Талант Аманжолов", report["homework_not_completed"])
+
+        # Scenarios 2–4: five students at once, statuses and scores.
+        save([
+            {"student": self.students["Эрбол"].pk, "status": "checked", "score": 8},
+            {"student": self.students["Айжамал"].pk, "status": "checked", "score": 10},
+            {"student": self.students["Йасин"].pk, "status": "late", "score": 9},
+            {"student": self.students["Талант"].pk, "status": "checked", "score": 9},
+            {"student": self.students["Бекнур"].pk, "status": "checked", "score": 10},
+        ])
+        report = client.get(url).json()
+        self.assertEqual(len(report["homework_not_completed"]), 7)
+        for name in ("Эрбол Зулпукаров", "Айжамал Мурзабекова", "Йасин Ибрахимов"):
+            self.assertNotIn(name, report["homework_not_completed"])
+            self.assertNotIn(name, report["message"].split("❌", 1)[1])
+
+        # Scenario 6: the previous lesson's own report never looks at later lessons.
+        Lesson.objects.filter(pk=self.prev.pk).update(status=Lesson.Status.COMPLETED)
+        earlier = client.get(f"/api/v1/lessons/{self.prev.pk}/parent-report/").json()
+        self.assertIsNone(earlier["homework_checked"])
+        self.assertEqual(earlier["next_homework"], "Оформить страницу")
