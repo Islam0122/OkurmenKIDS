@@ -23,6 +23,7 @@ from django.utils import timezone
 
 from apps.testing.models import (
     AttemptStatus,
+    ExamEventType,
     FinishReason,
     SessionStatus,
     SessionType,
@@ -39,7 +40,16 @@ from apps.testing.services.attempts import (
     result_rows,
     session_error,
 )
-from apps.testing.services.exam_portal import ANSWER_GRACE, clean_answers, drafts_as_answers, is_answered
+from apps.testing.services.exam_portal import (
+    ANSWER_GRACE,
+    CLIENT_EVENTS,
+    VIOLATION_EVENTS,
+    _clean_metadata,
+    clean_answers,
+    drafts_as_answers,
+    is_answered,
+    log_event,
+)
 from apps.testing.services.grading import attempt_score, check_answer
 from apps.testing.services.sessions import sync_due_sessions
 
@@ -110,7 +120,7 @@ def clean_student_name(raw) -> str:
     return name
 
 
-def start_attempt(session: TestSession, student_name: str) -> StudentAttempt:
+def start_attempt(session: TestSession, student_name: str, request=None) -> StudentAttempt:
     name = clean_student_name(student_name)
     error = session_error(session)
     if error:
@@ -126,6 +136,7 @@ def start_attempt(session: TestSession, student_name: str) -> StudentAttempt:
         limit = session.effective_time_limit_minutes
         attempt.expires_at = attempt.started_at + timedelta(minutes=limit) if limit else None
         attempt.save(update_fields=["question_ids", "expires_at"])
+        log_event(attempt, ExamEventType.TRAINING_STARTED, request, {"detail": f"{len(attempt.question_ids)} суроо"})
     return attempt
 
 
@@ -159,7 +170,7 @@ def get_owned_attempt(attempt_id, token: str | None) -> StudentAttempt:
     return ensure_current(get_attempt(attempt_id))
 
 
-def finish_attempt(attempt: StudentAttempt, reason: str = FinishReason.SUBMITTED) -> StudentAttempt:
+def finish_attempt(attempt: StudentAttempt, reason: str = FinishReason.SUBMITTED, request=None) -> StudentAttempt:
     """Grade the saved answers and finish. Locked and idempotent."""
     with transaction.atomic():
         locked = StudentAttempt.objects.select_for_update().select_related("session__test").get(pk=attempt.pk)
@@ -172,6 +183,11 @@ def finish_attempt(attempt: StudentAttempt, reason: str = FinishReason.SUBMITTED
         if reason == FinishReason.TIME_EXPIRED and deadline and locked.finished_at > deadline:
             locked.finished_at = deadline  # time spent ends at the deadline
             locked.save(update_fields=["finished_at"])
+        event = {
+            FinishReason.TIME_EXPIRED: ExamEventType.TIME_EXPIRED,
+            FinishReason.VIOLATIONS: ExamEventType.EXAM_TERMINATED,
+        }.get(reason, ExamEventType.TRAINING_SUBMITTED)
+        log_event(locked, event, request, {"detail": FinishReason(reason).label})
     return locked
 
 
@@ -196,7 +212,7 @@ def _open(attempt: StudentAttempt) -> StudentAttempt:
     return attempt
 
 
-def save_answer(attempt: StudentAttempt, question_id: str, payload) -> StudentAttempt:
+def save_answer(attempt: StudentAttempt, question_id: str, payload, request=None) -> StudentAttempt:
     _open(attempt)
     if not isinstance(payload, dict):
         raise TrainingError("Жооптун форматы туура эмес.")
@@ -215,6 +231,8 @@ def save_answer(attempt: StudentAttempt, question_id: str, payload) -> StudentAt
         locked.draft_answers = drafts
         locked.draft_saved_at = timezone.now()
         locked.save(update_fields=["draft_answers", "draft_saved_at"])
+        number = (locked.question_ids.index(str(question_id)) + 1) if str(question_id) in locked.question_ids else None
+        log_event(locked, ExamEventType.ANSWER_SAVED, request, {"question": number} if number else {})
     return locked
 
 
@@ -260,6 +278,56 @@ def check_question(attempt: StudentAttempt, question_id: str) -> dict:
     return feedback(question, draft)
 
 
+def record_event(attempt: StudentAttempt, event_type: str, metadata=None, request=None) -> tuple[StudentAttempt, bool]:
+    """An event reported by the portal's exam layout (tab switch, fullscreen
+    exit, copy attempt, …). Counted on the attempt per the test's security
+    settings; tab switches past Test.max_tab_switches end the attempt.
+    Returns (attempt, terminated)."""
+    if event_type not in CLIENT_EVENTS:
+        raise TrainingError("Белгисиз окуя.", code="unknown_event")
+    _open(attempt)
+    test = attempt.session.test
+    with transaction.atomic():
+        locked = StudentAttempt.objects.select_for_update().get(pk=attempt.pk)
+        _open(locked)
+        fields = []
+        tracked_tab = event_type == ExamEventType.TAB_SWITCH and test.track_tab_switches
+        if tracked_tab:
+            locked.tab_switch_count += 1
+            fields.append("tab_switch_count")
+        counted = event_type in VIOLATION_EVENTS and not (
+            (event_type == ExamEventType.FULLSCREEN_EXIT and not test.require_fullscreen)
+            or (event_type == ExamEventType.TAB_SWITCH and not test.track_tab_switches)
+        )
+        if counted:
+            locked.violation_count += 1
+            fields.append("violation_count")
+        if fields:
+            locked.save(update_fields=fields)
+        log_event(locked, event_type, request, _clean_metadata(metadata))
+    limit = test.max_tab_switches
+    if tracked_tab and limit is not None and locked.tab_switch_count > limit:
+        return finish_attempt(locked, FinishReason.VIOLATIONS, request), True
+    return locked, False
+
+
+def security_settings(session: TestSession) -> dict:
+    test = session.test
+    return {
+        "require_fullscreen": test.require_fullscreen,
+        "track_tab_switches": test.track_tab_switches,
+        "max_tab_switches": test.max_tab_switches,
+        "block_copy_paste": test.block_copy_paste,
+    }
+
+
+def exam_url_for(session: TestSession) -> str:
+    """The trainer's own exam link, else the portal's."""
+    from .models import PortalSettings
+
+    return session.exam_url or PortalSettings.load().exam_url
+
+
 # ---------------------------------------------------------------------------
 # What the API returns
 # ---------------------------------------------------------------------------
@@ -301,6 +369,9 @@ def attempt_state(attempt: StudentAttempt) -> dict:
         "status": attempt.status,
         "remaining_seconds": remaining_seconds(attempt),
         "show_explanation": show_feedback,
+        "security": security_settings(attempt.session),
+        "tab_switch_count": attempt.tab_switch_count,
+        "violation_count": attempt.violation_count,
         "questions": questions,
     }
 

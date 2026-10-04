@@ -63,7 +63,9 @@ MAX_CODE_ANSWER = 20_000
 MAX_EVENTS_PER_ATTEMPT = 2_000
 
 VIOLATION_EVENTS = EXAM_VIOLATION_EVENTS
-CLIENT_EVENTS = VIOLATION_EVENTS | {ExamEventType.PAGE_LEAVE}
+# Logged for the timeline (back on the page, fullscreen restored) — never violations.
+INFO_EVENTS = frozenset({ExamEventType.TAB_RETURN, ExamEventType.FULLSCREEN_ENTER})
+CLIENT_EVENTS = VIOLATION_EVENTS | INFO_EVENTS | {ExamEventType.PAGE_LEAVE}
 
 
 class ExamStatus(models.TextChoices):
@@ -498,11 +500,13 @@ def record_event(attempt: StudentAttempt, event_type: str, metadata=None, reques
         if locked.status != AttemptStatus.ACTIVE:
             raise AttemptClosed(locked)
         fields = []
-        if event_type == ExamEventType.TAB_SWITCH:
+        tracked_tab = event_type == ExamEventType.TAB_SWITCH and test.track_tab_switches
+        if tracked_tab:
             locked.tab_switch_count += 1
             fields.append("tab_switch_count")
         counted = event_type in VIOLATION_EVENTS and not (
-            event_type == ExamEventType.FULLSCREEN_EXIT and not test.require_fullscreen
+            (event_type == ExamEventType.FULLSCREEN_EXIT and not test.require_fullscreen)
+            or (event_type == ExamEventType.TAB_SWITCH and not test.track_tab_switches)
         )
         if counted:
             locked.violation_count += 1
@@ -513,7 +517,7 @@ def record_event(attempt: StudentAttempt, event_type: str, metadata=None, reques
     if event_type == ExamEventType.PAGE_LEAVE:
         participant_events.attempt_progress(locked, left=True)
     limit = test.max_tab_switches
-    if event_type == ExamEventType.TAB_SWITCH and limit is not None and locked.tab_switch_count > limit:
+    if tracked_tab and limit is not None and locked.tab_switch_count > limit:
         return EventResult(close_attempt(locked, FinishReason.VIOLATIONS, request=request), terminated=True)
     return EventResult(locked, terminated=False)
 

@@ -5,6 +5,7 @@ import type { TrainingTest } from '@/types'
 
 import { getTest } from '@/api/tests'
 import { Button } from '@/components/Button'
+import { Brand } from '@/components/Header'
 import { ErrorState, errorText } from '@/components/ErrorState'
 import { Icon } from '@/components/Icon'
 import { Loader } from '@/components/Loader'
@@ -16,6 +17,8 @@ import { QuestionNavigation } from '@/components/QuestionNavigation'
 import { SaveIndicator } from '@/components/SaveIndicator'
 import { Timer } from '@/components/Timer'
 import { useAsync } from '@/hooks/useAsync'
+import { useExamGuard, type BlockedAction } from '@/hooks/useExamGuard'
+import { requestFullscreen } from '@/hooks/useFullscreen'
 import { useTimer } from '@/hooks/useTimer'
 import { isAnswered, useTraining } from '@/hooks/useTraining'
 import { t } from '@/i18n'
@@ -35,6 +38,11 @@ export function TrainingPage() {
 
 function TrainingIntro({ test, onStart, busy }: { test: TrainingTest; onStart: () => void; busy: boolean }) {
   return (
+    <>
+    <div className="container exam-topline">
+      <Brand />
+      <Link className="link-arrow" to="/training"><Icon name="chevron-left" />{t.home.testsTitle}</Link>
+    </div>
     <div className="container intro">
       <div>
         <span className="eyebrow"><Icon name="mortarboard" />{t.test.title}{test.subject ? ` · ${test.subject}` : ''}</span>
@@ -45,6 +53,8 @@ function TrainingIntro({ test, onStart, busy }: { test: TrainingTest; onStart: (
           <li><Icon name="clock" />{test.duration ? t.training.introTime(test.duration) : t.test.noLimit}</li>
           <li><Icon name="arrow-repeat" />{test.max_attempts === null ? t.training.introRetake : `${t.test.attempts}: ${test.max_attempts}`}</li>
           <li><Icon name="shield-lock" />{t.name.privacy}</li>
+          {test.security.track_tab_switches ? <li><Icon name="window-stack" />{t.guard.introTabs}</li> : null}
+          {test.security.block_copy_paste ? <li><Icon name="clipboard-x" />{t.guard.introCopy}</li> : null}
         </ul>
       </div>
       <aside className="intro__card">
@@ -55,9 +65,11 @@ function TrainingIntro({ test, onStart, busy }: { test: TrainingTest; onStart: (
           <div><dt><Icon name="trophy" />{t.test.facts.passing}</dt><dd style={{ margin: 0 }}>{test.passing_score}%</dd></div>
         </dl>
         <Button size="lg" block icon="play-circle" onClick={onStart} disabled={busy}>{t.test.start}</Button>
+        {test.security.require_fullscreen ? <p className="intro__note"><Icon name="fullscreen" />{t.guard.introFullscreen}</p> : null}
         <p className="intro__note"><Icon name="info-circle" />{t.common.trainingOnly}</p>
       </aside>
     </div>
+    </>
   )
 }
 
@@ -87,6 +99,19 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
     else setNameOpen(true)
   }, [training.phase, training, location.state])
 
+  const [blocked, setBlocked] = useState<BlockedAction | null>(null)
+  useEffect(() => {
+    if (!blocked) return
+    const id = window.setTimeout(() => setBlocked(null), 2200)
+    return () => window.clearTimeout(id)
+  }, [blocked])
+  const guard = useExamGuard({
+    active: training.phase === 'running' && !timeUp,
+    security: training.attempt?.security ?? test.security,
+    onEvent: training.reportEvent,
+    onBlocked: setBlocked,
+  })
+
   const onExpire = useCallback(() => {
     timeUpRef.current = true
     void training.submit()  // the backend closes it as «time expired» and grades the saved answers
@@ -105,7 +130,7 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
           busy={training.busy}
           serverError={training.error ? errorText(training.error) : null}
           initialName={storageService.getStudentName()}
-          onSubmit={(name) => { void training.start(name) }}
+          onSubmit={(name) => { requestFullscreen(); void training.start(name) }}
           onClose={() => setNameOpen(false)}
         />
       </>
@@ -178,10 +203,37 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
         </div>
 
         <div className="train__exit">
-          <Link className="link-arrow" to="/training"><Icon name="box-arrow-left" />{t.training.exit}</Link>
-          {!last ? <> · <button type="button" className="link-arrow" style={{ border: 0, background: 'none', cursor: 'pointer' }} onClick={() => setConfirmFinish(true)}><Icon name="flag" />{t.training.finish}</button></> : null}
+          {!last ? <><button type="button" className="link-arrow" style={{ border: 0, background: 'none', cursor: 'pointer' }} onClick={() => setConfirmFinish(true)}><Icon name="flag" />{t.training.finish}</button></> : null}
         </div>
       </div>
+
+      {guard.locked ? (
+        <div className="lock-overlay" role="alertdialog" aria-modal="true" aria-labelledby="lock-title">
+          <div className="lock-overlay__box">
+            <span className="lock-overlay__icon"><Icon name="fullscreen" /></span>
+            <h2 id="lock-title">{t.guard.lockTitle}</h2>
+            <p>{t.guard.lockText}</p>
+            <Button size="lg" icon="fullscreen" onClick={guard.requestFullscreen}>{t.guard.lockButton}</Button>
+            <p className="lock-overlay__note">{t.guard.lockNote}</p>
+          </div>
+        </div>
+      ) : null}
+
+      <Modal
+        open={guard.leftPage && !guard.locked && !timeUp}
+        onClose={guard.dismissLeftPage}
+        title={t.guard.leftTitle}
+        icon="exclamation-triangle"
+        tone="amber"
+        actions={<Button onClick={guard.dismissLeftPage}>{t.guard.continue}</Button>}
+      >
+        <p className="modal__text">{t.guard.leftText}</p>
+        {attempt.security.max_tab_switches !== null ? (
+          <p className="modal__text"><strong>{t.guard.leftCount(training.tabSwitches, attempt.security.max_tab_switches)}</strong></p>
+        ) : null}
+      </Modal>
+
+      {blocked ? <div className="exam-toast" role="status"><Icon name="lock" />{t.guard.blocked[blocked]}</div> : null}
 
       <Modal
         open={confirmFinish}

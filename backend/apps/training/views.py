@@ -7,6 +7,7 @@
     GET   attempts/<id>/                             questions, saved answers   (X-Attempt-Token)
     PUT   attempts/<id>/answers/<question_id>/       save an answer             (X-Attempt-Token)
     POST  attempts/<id>/answers/<question_id>/check/ lock + feedback            (X-Attempt-Token)
+    POST  attempts/<id>/events/                      tab switch, fullscreen exit… (X-Attempt-Token)
     POST  attempts/<id>/submit/                      finish → result            (X-Attempt-Token)
     GET   attempts/<id>/result/                      result (by the random attempt id)
     GET   leaderboard/?test=<id>                     best result per name
@@ -26,6 +27,7 @@ from rest_framework.views import APIView
 from .models import PortalSettings, TrainingLink, TrainingVideo
 from .serializers import (
     AnswerSerializer,
+    EventSerializer,
     PortalSettingsSerializer,
     StartAttemptSerializer,
     TrainingLinkSerializer,
@@ -83,7 +85,7 @@ class AttemptStartView(PublicView):
         if not body.is_valid():
             return Response({"detail": "Маалымат туура эмес.", "errors": body.errors}, status=status.HTTP_400_BAD_REQUEST)
         session = services.get_public_session(body.validated_data["test_id"])
-        attempt = services.start_attempt(session, body.validated_data["student_name"])
+        attempt = services.start_attempt(session, body.validated_data["student_name"], request)
         return Response(
             {**services.attempt_summary(attempt), "token": services.attempt_token(attempt)},
             status=status.HTTP_201_CREATED,
@@ -104,7 +106,7 @@ class AnswerView(PublicView):
         body = AnswerSerializer(data=request.data)
         if not body.is_valid():
             return Response({"detail": "Жооптун форматы туура эмес.", "errors": body.errors}, status=status.HTTP_400_BAD_REQUEST)
-        attempt = services.save_answer(self.owned_attempt(request, attempt_id), str(question_id), body.validated_data)
+        attempt = services.save_answer(self.owned_attempt(request, attempt_id), str(question_id), body.validated_data, request)
         return Response({"saved": True, "remaining_seconds": services.remaining_seconds(attempt)})
 
 
@@ -116,12 +118,33 @@ class AnswerCheckView(PublicView):
         return Response(services.check_question(self.owned_attempt(request, attempt_id), str(question_id)))
 
 
+@extend_schema(tags=["Training portal"], request=EventSerializer)
+class AttemptEventView(PublicView):
+    throttle_classes = [TrainingWriteThrottle]
+
+    def post(self, request, attempt_id):
+        body = EventSerializer(data=request.data)
+        if not body.is_valid():
+            return Response({"detail": "Окуянын форматы туура эмес.", "errors": body.errors}, status=status.HTTP_400_BAD_REQUEST)
+        attempt, terminated = services.record_event(
+            self.owned_attempt(request, attempt_id), body.validated_data["event_type"],
+            body.validated_data.get("metadata"), request,
+        )
+        if terminated:
+            return Response({"detail": "Тренировка эрежелерди бузуу себебинен аяктады.", "code": "terminated"}, status=status.HTTP_409_CONFLICT)
+        return Response({
+            "tab_switch_count": attempt.tab_switch_count,
+            "violation_count": attempt.violation_count,
+            "max_tab_switches": attempt.session.test.max_tab_switches,
+        })
+
+
 @extend_schema(tags=["Training portal"])
 class AttemptSubmitView(PublicView):
     throttle_classes = [TrainingWriteThrottle]
 
     def post(self, request, attempt_id):
-        attempt = services.finish_attempt(self.owned_attempt(request, attempt_id))
+        attempt = services.finish_attempt(self.owned_attempt(request, attempt_id), request=request)
         return Response(services.result_payload(attempt))
 
 

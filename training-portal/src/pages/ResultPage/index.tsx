@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import type { ReviewRow } from '@/types'
 
 import { getResult } from '@/api/attempts'
+import { getTest } from '@/api/tests'
 import { getLeaderboard } from '@/api/leaderboard'
 import { Button } from '@/components/Button'
 import { ExamButton } from '@/components/Button/ExamButton'
@@ -30,6 +31,7 @@ export function ResultPage() {
     () => (result.data ? getLeaderboard(result.data.test_id) : Promise.resolve([])),
     [result.data?.test_id],
   )
+  const trainer = useAsync(() => (result.data ? getTest(result.data.test_id) : Promise.resolve(null)), [result.data?.test_id])
   const [showReview, setShowReview] = useState(false)
 
   if (result.loading) return <Loader />
@@ -60,6 +62,7 @@ export function ResultPage() {
         <div className="empty"><Icon name="send-check" /><h1 className="section-title" style={{ marginBottom: 8 }}>{t.result.title}</h1><p>{t.result.hidden}</p></div>
       )}
       {data.finish_reason === 'time_expired' ? <p className="result-note"><Icon name="alarm" />{t.result.timedOut}</p> : null}
+      {data.finish_reason === 'violations' ? <p className="result-note"><Icon name="shield-exclamation" />{t.guard.terminated}</p> : null}
       {data.pending ? <p className="result-note result-note--wait"><Icon name="hourglass-split" />{t.result.pendingNote(data.pending)}</p> : null}
 
       <div className="result-actions">
@@ -71,7 +74,7 @@ export function ResultPage() {
         ) : null}
         <Button variant="outline" to="/leaderboard" icon="trophy">{t.result.leaders}</Button>
         <Button variant="outline" to="/materials" icon="journal-bookmark">{t.result.materials}</Button>
-        <ExamButton />
+        <ExamButton url={trainer.data?.exam_url} />
       </div>
 
       {rank ? (

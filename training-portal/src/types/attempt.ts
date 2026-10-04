@@ -1,4 +1,5 @@
 import type { Question } from './question'
+import type { SecuritySettings } from './test'
 
 /** POST /api/v1/training/attempts/ (+ token) and the summary part of others */
 export interface AttemptSummary {
@@ -20,6 +21,9 @@ export interface AttemptState extends AttemptSummary {
   status: 'active' | 'finished' | 'expired'
   remaining_seconds: number | null
   show_explanation: boolean
+  security: SecuritySettings
+  tab_switch_count: number
+  violation_count: number
   questions: Question[]
 }
 

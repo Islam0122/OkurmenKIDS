@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
-import { Layout } from '@/components/Layout'
+import { ExamLayout } from '@/layouts/ExamLayout'
+import { MainLayout } from '@/layouts/MainLayout'
 import { PortalProvider } from '@/context/PortalContext'
 import { ExamPage } from '@/pages/ExamPage'
 import { HomePage } from '@/pages/HomePage'
@@ -16,10 +17,13 @@ export function AppRoutes() {
   return (
     <PortalProvider>
     <Routes>
-      <Route element={<Layout />}>
+      {/* The test itself: ExamLayout — no site navigation. */}
+      <Route element={<ExamLayout />}>
+        <Route path="training/:testId" element={<TrainingPage />} />
+      </Route>
+      <Route element={<MainLayout />}>
         <Route index element={<HomePage />} />
         <Route path="training" element={<TrainingListPage />} />
-        <Route path="training/:testId" element={<TrainingPage />} />
         <Route path="result/:attemptId" element={<ResultPage />} />
         <Route path="leaderboard" element={<LeaderboardPage />} />
         <Route path="videos" element={<VideosPage />} />

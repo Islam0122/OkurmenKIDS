@@ -10,6 +10,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator, URLValidator
 from django.db import models
 
+from apps.testing.models import SessionStatus, SessionType, StudentAttempt, TestSession, TestStatus
+
 validate_http_url = URLValidator(schemes=["http", "https"], message="Укажите ссылку, начинающуюся с http:// или https://.")
 
 
@@ -28,6 +30,10 @@ class PortalSettings(models.Model):
         help_text="Куда ведёт кнопка «Экзаменге өтүү» (например, кабинет студента LMS). Пусто — кнопка скрыта.",
     )
     exam_open_in_new_tab = models.BooleanField("Открывать экзамен в новой вкладке", default=False)
+    portal_url = models.URLField(
+        "Адрес портала", max_length=300, blank=True, validators=[validate_http_url],
+        help_text="Публичный адрес React-портала, например https://train.okurmen.kg — для кнопки «Открыть тренажёр».",
+    )
     updated_at = models.DateTimeField("Обновлено", auto_now=True)
 
     class Meta:
@@ -110,3 +116,88 @@ class TrainingLink(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class TrainerStatus(models.TextChoices):
+    DRAFT = "draft", "Черновик"
+    PUBLISHED = "published", "Опубликован"
+    ARCHIVED = "archived", "Архив"
+
+
+class TrainerManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(session_type=SessionType.TRAINING)
+
+
+class Trainer(TestSession):
+    """«Тренажёр» — a training session of a test, as the admin manages it.
+
+    No table of its own: a proxy of testing.TestSession (session_type =
+    training). Its questions are the test's questions (testing.Question,
+    edited in the test's question editor); publishing makes it public and
+    running, which is exactly what the portal API lists.
+    """
+
+    objects = TrainerManager()
+
+    class Meta:
+        proxy = True
+        verbose_name = "Тренажёр"
+        verbose_name_plural = "Тренажёры"
+
+    def save(self, *args, **kwargs):
+        self.session_type = SessionType.TRAINING
+        self.duration = None
+        super().save(*args, **kwargs)
+
+    @property
+    def trainer_status(self) -> str:
+        if self.status in self.ENDED_STATUSES:
+            return TrainerStatus.ARCHIVED
+        if self.is_public and self.status == SessionStatus.RUNNING and self.test.status == TestStatus.ACTIVE:
+            return TrainerStatus.PUBLISHED
+        return TrainerStatus.DRAFT
+
+    def publish(self) -> None:
+        """Public + running + its test active. Raises if the test has no questions."""
+        if not self.test.questions.exists():
+            raise ValidationError("Добавьте вопросы перед публикацией.")
+        if self.test.status != TestStatus.ACTIVE:
+            self.test.status = TestStatus.ACTIVE
+            self.test.save(update_fields=["status", "is_active", "updated_at"])
+        if self.status == SessionStatus.CREATED:
+            self.start()
+        elif self.status == SessionStatus.PAUSED:
+            self.resume()
+        elif self.status in self.ENDED_STATUSES:
+            raise ValidationError("Архивный тренажёр нельзя опубликовать — создайте новый.")
+        self.is_public = True
+        TestSession.objects.filter(pk=self.pk).update(is_public=True)
+
+    def unpublish(self) -> None:
+        self.is_public = False
+        TestSession.objects.filter(pk=self.pk).update(is_public=False)
+
+    def archive(self) -> None:
+        if self.status not in self.ENDED_STATUSES:
+            if self.status == SessionStatus.CREATED:
+                self.cancel()
+            else:
+                self.finish()
+        self.unpublish()
+
+
+class TrainingAttemptManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(session__session_type=SessionType.TRAINING, session__is_public=True)
+
+
+class TrainingAttempt(StudentAttempt):
+    """Attempts taken in the public portal (by name) — a read-only admin list."""
+
+    objects = TrainingAttemptManager()
+
+    class Meta:
+        proxy = True
+        verbose_name = "Попытка тренажёра"
+        verbose_name_plural = "Попытки тренажёров"

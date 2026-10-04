@@ -146,7 +146,7 @@ def attempt_detail_view(request, attempt_id):
         "others": others,
         "graded": detail["total"] - detail["pending"],
         # Exam Mode (student portal): violation counters and the event log.
-        "events": attempt.events.all() if attempt.exam_mode else None,
+        "events": attempt.events.all() if attempt.exam_mode or attempt.events.exists() else None,
     })
 
 

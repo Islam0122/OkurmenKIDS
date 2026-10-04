@@ -13,6 +13,7 @@ urlpatterns = [
     path(attempt, views.AttemptView.as_view(), name="training-attempt"),
     path(attempt + "answers/<uuid:question_id>/", views.AnswerView.as_view(), name="training-answer"),
     path(attempt + "answers/<uuid:question_id>/check/", views.AnswerCheckView.as_view(), name="training-answer-check"),
+    path(attempt + "events/", views.AttemptEventView.as_view(), name="training-attempt-events"),
     path(attempt + "submit/", views.AttemptSubmitView.as_view(), name="training-attempt-submit"),
     path(attempt + "result/", views.AttemptResultView.as_view(), name="training-attempt-result"),
     path("training/leaderboard/", views.LeaderboardView.as_view(), name="training-leaderboard"),

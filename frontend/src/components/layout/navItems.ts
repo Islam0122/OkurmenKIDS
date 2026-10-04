@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   ListChecks,
   Megaphone,
+  MonitorCheck,
   NotebookPen,
   School,
   ScrollText,
@@ -64,6 +65,8 @@ export const NAV_ITEMS: NavItem[] = [
   // Test sessions: a Trainer's own groups, monitored live (backend-scoped);
   // Admin / Team Lead — every session, plus create / start / take one.
   { to: '/app/exams', label: 'Экзамены', icon: ListChecks, roleLabels: { team_lead: 'Сессии' } },
+  // Live attempts, violations and analytics of exams and trainers (backend-scoped).
+  { to: '/app/monitoring', label: 'Мониторинг', icon: MonitorCheck },
   // The test bank, view only.
   { to: '/app/tests', label: 'Тесты', icon: FileQuestion, roles: ['team_lead'] },
   { to: '/app/kpi', label: 'KPI', icon: BarChart3 },

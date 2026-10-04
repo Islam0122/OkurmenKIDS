@@ -29,7 +29,8 @@ src/
   types/       ровно то, что возвращает backend (portal, test, question, attempt, …)
   context/     PortalContext — настройки портала (тексты, exam_url)
   hooks/       useTraining (попытка через API: автосохранение, проверка, отправка),
-               useTimer, useAsync
+               useTimer, useAsync, useFullscreen, useExamGuard
+  layouts/     MainLayout (шапка/подвал сайта), ExamLayout (режим теста без навигации)
   services/    storageService — только временное UI-состояние (см. ниже)
   components/  Header, Hero, TestCard, QuestionCard, QuestionNavigation, ProgressBar,
                Timer, SaveIndicator, ResultCard, Leaderboard, VideoCard, UsefulLinkCard,
@@ -38,6 +39,18 @@ src/
 ```
 
 Компоненты не вызывают `fetch` — только функции из `src/api/`.
+
+## Режим экзамена (ExamLayout)
+
+`/training/:testId` открывается в `ExamLayout` без шапки и подвала. Настройки
+безопасности приходят с backend (`security` теста): после «Баштоо» вызывается
+настоящий Fullscreen API; уход со вкладки, выход из полноэкранного режима,
+копирование/вставка/контекстное меню отправляются на
+`POST /api/v1/training/attempts/<id>/events/` и видны тренеру в «Мониторинге».
+Если полноэкранный режим обязателен, тест закрыт оверлеем, пока ученик не
+вернётся в него. Браузер не позволяет физически запретить другую вкладку —
+портал предотвращает то, что можно, фиксирует и сообщает. Слушатели
+снимаются при выходе из `ExamLayout`.
 
 ## localStorage
 
@@ -48,6 +61,6 @@ src/
 
 ## Тренировка ≠ экзамен
 
-Кнопка «Экзаменге өтүү» открывает `exam_url` из настроек портала (Django
+Кнопка «Экзаменге өтүү» открывает `exam_url` тренажёра или, если его нет, из настроек портала (Django
 Admin → «Тренировочный портал» → «Настройки портала»); без ссылки кнопка
 скрыта. Настоящий экзамен проходит в LMS (Exam Mode).

@@ -43,6 +43,7 @@ and portal settings got their own small models here.
 | GET | `attempts/<id>/result/` | result (+ review if the test shows correct answers) |
 | GET | `leaderboard/?test=<id>&limit=` | best finished result per name: `rank, student_name, score, duration_seconds, …` |
 | GET | `videos/` · `links/` | published only, by `order` |
+| POST | `attempts/<id>/events/` | `{event_type, metadata}` — client security event (see below), needs token; 409 `terminated` when the limit ends the attempt |
 
 ## Security
 
@@ -57,11 +58,59 @@ and portal settings got their own small models here.
 * CORS: `TRAINING_PORTAL_ORIGINS` (comma-separated) + header `x-attempt-token`.
 * Leaderboard exposes only name, score, time, date and test.
 
-## Admin flow
+## Exam lock mode (portal `ExamLayout`)
 
-1. «Тесты» → create the test, add questions (with «Пояснение к ответу»), publish.
-2. «Сессии» → create a session for it → «Настройки»: «Режим: Тренажёр»,
-   tick «Публичная тренировка» → «Начать сейчас».
-3. «Тренировочный портал» → «Настройки портала» (exam URL, texts),
-   «Видео», «Полезные ссылки» → publish. The portal shows them at once.
-4. Results: the session's analytics in «Сессии», like any other attempt.
+The attempt page runs in `ExamLayout` (no site header/footer). Security comes
+from the test settings and is returned as `security` in the test/attempt payload:
+`require_fullscreen`, `track_tab_switches`, `max_tab_switches`, `block_copy_paste`.
+
+* Start → real Fullscreen API (`requestFullscreen`) inside the click.
+* `visibilitychange` → `TAB_SWITCH` / `TAB_RETURN` + modal «Сиз тесттен чыгып кеттиңиз».
+* `fullscreenchange` → `FULLSCREEN_EXIT` / `FULLSCREEN_ENTER`; when fullscreen
+  is required a blocking overlay stays until the student returns to fullscreen.
+* Copy/cut/paste/drop/context menu blocked inside the layout only →
+  `COPY_ATTEMPT`, `CUT_ATTEMPT`, `PASTE_ATTEMPT`, `CONTEXT_MENU_ATTEMPT`.
+  Typing in answer fields is not affected. `beforeunload` warns, `pagehide` → `PAGE_LEAVE`.
+* All listeners are removed when the layout unmounts.
+* The backend counts violations and ends the attempt (`EXAM_TERMINATED`) when
+  `max_tab_switches` is exceeded. The server also logs `TRAINING_STARTED`,
+  `ANSWER_SAVED`, `TIME_EXPIRED`, `TRAINING_SUBMITTED`.
+
+A browser cannot physically stop a student from opening another tab or
+device: the system prevents what the browser allows, detects, logs and
+notifies — it does not promise more.
+
+## Admin flow — «Тренажёры»
+
+`Trainer` is a proxy of `TestSession` (training type); its questions are the
+ordinary `Test`/`Question` rows — nothing is duplicated.
+
+1. «Тренировочный портал» → «Тренажёры» → «Добавить»: title, description,
+   subject, program, cover, question count, time, explanation/retry/shuffle,
+   security (fullscreen, tab tracking, max exits, copy/paste), real exam URL.
+2. «Вопросы» opens the existing question editor of the test.
+3. Action «Опубликовать» (needs questions) → public + running; «Снять с
+   публикации», «В архив». Status: Черновик / Опубликован / Архив.
+4. «Открыть тренажёр» → `{PortalSettings.portal_url}/training/{id}` — set
+   «Портал» in «Настройки портала».
+5. «Попытки тренажёров» — read-only list; results also in session analytics.
+6. «Настройки портала» (exam URL, texts), «Видео», «Полезные ссылки».
+
+## Monitoring API (`/api/v1/monitoring/`, JWT, Teacher / Team Lead / Admin)
+
+Scope is enforced on the backend: a Teacher sees attempts of their own groups
+only; Team Lead and Admin see the whole academy. Staff self-attempts are excluded.
+Read-only (GET). The LMS page «Мониторинг» polls every 15 s (no WebSocket yet).
+
+| Path | |
+|---|---|
+| `overview/` | active exams/trainers/students, completed, passed/failed, terminated, violations, average score |
+| `attempts/` | live attempts table, filters: `group, teacher, subject, session, mode, status (in_progress/completed/expired/terminated), date_from, date_to, violations=1, q`; paginated (25) |
+| `attempts/<id>/` | details: event timeline, violation counts, questions |
+| `teachers/` | teacher performance (Team Lead / Admin only, 403 for teachers) |
+| `groups/` · `groups/<id>/` | group analytics, failed students |
+| `trainers/` · `trainers/<id>/` | per trainer/exam stats + difficult questions |
+| `questions/?session=` | difficult questions |
+| `filters/` | options for the filter selects visible to the user |
+
+Overdue attempts are closed lazily when monitoring reads them.

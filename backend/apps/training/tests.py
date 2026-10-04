@@ -257,3 +257,120 @@ class SecurityTests(TrainingFixture):
         self.assertFalse(form.is_valid())
         self.assertIn("is_public", form.errors)
         self.assertIsNotNone(timezone.now())
+
+
+class EventTests(TrainingFixture):
+    def post_event(self, attempt, event_type, **extra):
+        return self.api.post(reverse("training-attempt-events", args=[attempt["attempt_id"]]),
+                             {"event_type": event_type, "metadata": {"question": 1}}, format="json", **extra)
+
+    def test_events_are_logged_counted_and_need_the_token(self):
+        attempt = self.start()
+        self.assertEqual(self.post_event(attempt, "TAB_SWITCH").status_code, 403)
+        response = self.post_event(attempt, "TAB_SWITCH", **self.auth(attempt))
+        self.assertEqual(response.json()["tab_switch_count"], 1)
+        self.post_event(attempt, "TAB_RETURN", **self.auth(attempt))
+        self.post_event(attempt, "COPY_ATTEMPT", **self.auth(attempt))
+        self.assertEqual(self.post_event(attempt, "EXAM_SUBMITTED", **self.auth(attempt)).status_code, 400)
+        db = StudentAttempt.objects.get(pk=attempt["attempt_id"])
+        self.assertEqual((db.tab_switch_count, db.violation_count), (1, 2))
+        types = list(db.events.values_list("event_type", flat=True))
+        self.assertEqual(types, ["TRAINING_STARTED", "TAB_SWITCH", "TAB_RETURN", "COPY_ATTEMPT"])
+
+    def test_server_events_and_termination(self):
+        self.test.max_tab_switches = 1
+        self.test.save()
+        attempt = self.start()
+        self.put(attempt, self.q1, {"options": [self.right_option(self.q1)]})
+        self.post_event(attempt, "TAB_SWITCH", **self.auth(attempt))
+        response = self.post_event(attempt, "TAB_SWITCH", **self.auth(attempt))
+        self.assertEqual((response.status_code, response.json()["code"]), (409, "terminated"))
+        db = StudentAttempt.objects.get(pk=attempt["attempt_id"])
+        self.assertEqual((db.status, db.finish_reason), (AttemptStatus.FINISHED, FinishReason.VIOLATIONS))
+        self.assertIn("ANSWER_SAVED", db.events.values_list("event_type", flat=True))
+        self.assertIn("EXAM_TERMINATED", db.events.values_list("event_type", flat=True))
+        self.assertEqual(db.score, 40.0)  # saved answers still graded
+
+    def test_untracked_tab_switches_and_optional_fullscreen_are_not_violations(self):
+        self.test.track_tab_switches = False
+        self.test.max_tab_switches = 0
+        self.test.save()
+        attempt = self.start()
+        self.assertEqual(self.post_event(attempt, "TAB_SWITCH", **self.auth(attempt)).status_code, 200)
+        self.post_event(attempt, "FULLSCREEN_EXIT", **self.auth(attempt))
+        db = StudentAttempt.objects.get(pk=attempt["attempt_id"])
+        self.assertEqual((db.tab_switch_count, db.violation_count, db.status), (0, 0, AttemptStatus.ACTIVE))
+
+    def test_security_settings_and_trainer_exam_url_in_the_api(self):
+        self.test.require_fullscreen = True
+        self.test.save()
+        PortalSettings.objects.update_or_create(pk=1, defaults={"exam_url": "https://lms.example.com/"})
+        data = self.api.get(reverse("training-test-detail", args=[self.session.pk])).json()
+        self.assertEqual(data["security"], {"require_fullscreen": True, "track_tab_switches": True,
+                                            "max_tab_switches": 3, "block_copy_paste": True})
+        self.assertEqual(data["exam_url"], "https://lms.example.com/")
+        self.session.exam_url = "https://lms.example.com/exam/7/"
+        self.session.save()
+        self.assertEqual(self.api.get(reverse("training-test-detail", args=[self.session.pk])).json()["exam_url"],
+                         "https://lms.example.com/exam/7/")
+
+
+class TrainerAdminTests(TestCase):
+    def setUp(self):
+        from apps.users.models import User
+
+        self.admin = User.objects.create_superuser(username="root", email="root@okurmen.kg", password="x")
+        self.client.force_login(self.admin)
+        self.subject = Subject.objects.get_or_create(name="Python")[0]
+
+    def form_data(self, **overrides):
+        data = {
+            "title": "Python тренажёр", "test": "", "description": "Негиздер", "subject": self.subject.pk, "course": "", "group": "",
+            "image_url": "", "questions_per_attempt": "", "time_limit_minutes": "20", "passing_score": "60",
+            "show_correct_answers": "on", "show_result": "on", "allow_retry": "on", "max_attempts_per_student": "",
+            "shuffle_questions": "on", "require_fullscreen": "on", "track_tab_switches": "on", "max_tab_switches": "2",
+            "block_copy_paste": "on", "exam_url": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_create_edit_publish_and_archive(self):
+        from apps.training.models import Trainer, TrainerStatus
+
+        response = self.client.post(reverse("admin:training_trainer_add"), self.form_data())
+        self.assertEqual(response.status_code, 302, getattr(response, "context_data", {}).get("adminform") and response.context_data["adminform"].form.errors)
+        trainer = Trainer.objects.get()
+        test = trainer.test
+        self.assertEqual((trainer.session_type, test.title, test.require_fullscreen, test.max_tab_switches), ("training", "Python тренажёр", True, 2))
+        self.assertEqual(trainer.trainer_status, TrainerStatus.DRAFT)
+        self.assertEqual(self.client.get(reverse("training-test-list")).json(), [])
+
+        # Publishing needs questions.
+        changelist = reverse("admin:training_trainer_changelist")
+        self.client.post(changelist, {"action": "publish", "_selected_action": [trainer.pk]})
+        trainer.refresh_from_db()
+        self.assertEqual(trainer.trainer_status, TrainerStatus.DRAFT)
+        svc.save_question(test, QuestionData(QuestionType.SINGLE_CHOICE, "Q?", options=[OptionData("a", True), OptionData("b", False)]))
+        self.client.post(changelist, {"action": "publish", "_selected_action": [trainer.pk]})
+        trainer.refresh_from_db()
+        self.assertEqual(trainer.trainer_status, TrainerStatus.PUBLISHED)
+        self.assertEqual([t["id"] for t in self.client.get(reverse("training-test-list")).json()], [str(trainer.pk)])
+
+        page = self.client.get(reverse("admin:training_trainer_change", args=[trainer.pk]))
+        self.assertContains(page, "Вопросы")
+        PortalSettings.objects.update_or_create(pk=1, defaults={"portal_url": "https://train.example.com"})
+        page = self.client.get(changelist)
+        self.assertContains(page, f"https://train.example.com/training/{trainer.pk}")
+
+        self.client.post(reverse("admin:training_trainer_change", args=[trainer.pk]), self.form_data(test=test.pk, max_tab_switches="5"))
+        test.refresh_from_db()
+        self.assertEqual(test.max_tab_switches, 5)
+
+        self.client.post(changelist, {"action": "archive", "_selected_action": [trainer.pk]})
+        trainer.refresh_from_db()
+        self.assertEqual(trainer.trainer_status, TrainerStatus.ARCHIVED)
+        self.assertEqual(self.client.get(reverse("training-test-list")).json(), [])
+
+    def test_attempts_list_and_monitoring_pages_open(self):
+        self.assertEqual(self.client.get(reverse("admin:training_trainingattempt_changelist")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("admin:training_trainer_changelist")).status_code, 200)

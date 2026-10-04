@@ -357,8 +357,9 @@
       switchReport = report("TAB_SWITCH", true);
       return;
     }
-    // Back on the page: tell the student, with the count from the server
-    // (or the last known one if the report hasn't come back yet).
+    // Back on the page: log it, tell the student, with the count from the
+    // server (or the last known one if the report hasn't come back yet).
+    report("TAB_RETURN", true);
     var reported = switchReport || Promise.resolve(null);
     switchReport = null;
     var done = false;
@@ -371,8 +372,8 @@
         limitText = " Уходов: " + count + " из " + maxSwitches + " допустимых" +
           (count >= maxSwitches ? " — следующий уход завершит экзамен." : ".");
       }
-      showWarning("Вы покинули страницу экзамена", "Возвращайтесь к экзамену. Ваше действие было зафиксировано системой." + limitText,
-        requireFullscreen && !document.fullscreenElement);
+      showWarning("Сиз тесттен чыгып кеттиңиз", "Бул аракет системада катталды. Вы покинули страницу экзамена — действие зафиксировано." + limitText,
+        false);
       syncState();
     };
     reported.then(shown);
@@ -395,21 +396,40 @@
     try { document.documentElement.requestFullscreen().catch(function () {}); } catch (e) { /* refused */ }
   }
   function syncFullscreenButton() { fsTopBtn.hidden = !fsSupported || !!document.fullscreenElement || !examActive; }
+  // With «require_fullscreen» the questions stay covered by a lock overlay
+  // until the browser is really in fullscreen (the Fullscreen API, not a
+  // stretched <div>). A browser can always leave fullscreen — so the exit
+  // is logged and the exam waits; it can't be made impossible.
+  function lockForFullscreen() {
+    $("#xm-fs-title").textContent = "Экзамен режими активдүү";
+    $("[data-xm-fs-text]").textContent = "Тестти улантуу үчүн толук экран режимине кайтыңыз. (Вернитесь в полноэкранный режим, чтобы продолжить.)";
+    $("[data-xm-fs-enter]").lastChild.textContent = "Толук экранга кайтуу";
+    $("[data-xm-fs-skip]").hidden = true;
+    fsModal.hidden = false;
+  }
   if (fsSupported) {
     fsTopBtn.addEventListener("click", enterFullscreen);
     document.addEventListener("fullscreenchange", function () {
       syncFullscreenButton();
-      if (!examActive || document.fullscreenElement || !requireFullscreen) return;
+      if (!examActive) return;
+      if (document.fullscreenElement) {
+        report("FULLSCREEN_ENTER", true);
+        fsModal.hidden = true;
+        return;
+      }
+      if (!requireFullscreen) return;
       report("FULLSCREEN_EXIT", true);
-      showWarning("Вы вышли из полноэкранного режима", "Экзамен проходит в полноэкранном режиме. Ваше действие было зафиксировано системой.", true);
+      lockForFullscreen();
     });
     syncFullscreenButton();
     // Offer fullscreen at the start (a browser only allows it from a click).
-    if (requireFullscreen) $("[data-xm-fs-text]").textContent = "Этот экзамен проходит в полноэкранном режиме. Выход из него фиксируется системой.";
-    $("[data-xm-fs-skip]").hidden = requireFullscreen;
-    $("[data-xm-fs-skip]").addEventListener("click", function () { fsModal.hidden = true; });
-    $("[data-xm-fs-enter]").addEventListener("click", function () { fsModal.hidden = true; enterFullscreen(); });
-    fsModal.hidden = false;
+    $("[data-xm-fs-skip]").addEventListener("click", function () { if (!requireFullscreen) fsModal.hidden = true; });
+    $("[data-xm-fs-enter]").addEventListener("click", function () {
+      if (!requireFullscreen) fsModal.hidden = true;  // required: the overlay goes away on «fullscreenchange» only
+      enterFullscreen();
+    });
+    if (requireFullscreen) lockForFullscreen();
+    else fsModal.hidden = false;
   }
 
   // Leaving the page: the browser's own confirmation, and a beacon if they go.
