@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { CheckCircle2, CircleDashed, Clock, PlayCircle, ShieldAlert, Users } from 'lucide-react'
-import { useParams } from 'react-router-dom'
+import { BarChart3, CheckCircle2, CircleDashed, Clock, Eye, PlayCircle, ShieldAlert, Users } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
 import { percent } from '@/features/monitoring/monitoringUi'
 import { useResultsSummary } from '@/hooks/useResults'
 
@@ -28,6 +28,7 @@ import {
   formatSessionTime,
 } from './examUi'
 import { MyResults, TakeTestButton } from './MyResults'
+import { SessionConnection } from './SessionConnection'
 
 /** Exam Mode violations (tab switches, copy/paste…) recorded for the attempt. */
 function Violations({ participant }: { participant: ExamParticipant }) {
@@ -141,34 +142,82 @@ function StartButton({ session }: { session: ExamSession }) {
   )
 }
 
-function SessionHeader({ session, backLabel }: { session: ExamSession; backLabel: string }) {
+/** Where a session's results open: the Test Performance report filtered by
+ * this session (Admin / Team Lead); a trainer reads them in the table below. */
+function resultsLink(session: ExamSession, academyView: boolean): string {
+  return academyView ? `/app/analytics?tab=tests&session=${session.id}` : '#participants'
+}
+
+/**
+ * The action this user has on the session, by its phase. This page itself is
+ * the live monitoring (participants, progress, time, last activity, results),
+ * so there is no separate monitoring page to send anyone to:
+ *   draft / scheduled → «Запустить» (whoever may start it)
+ *   active / paused   → «Результаты»
+ *   finished          → «Посмотреть результаты»
+ *   cancelled         → read only
+ * Taking the test is never a Team Lead's action — the backend answers 403.
+ */
+function SessionAction({ session, academyView }: { session: ExamSession; academyView: boolean }) {
+  const results = resultsLink(session, academyView)
+  const ResultsButton = ({ primary }: { primary: boolean }) => (
+    <Link
+      to={results}
+      className={primary
+        ? 'inline-flex h-9 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600'
+        : 'inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-medium text-ink hover:bg-surface-hover'}
+    >
+      <BarChart3 className="size-4" aria-hidden />
+      {primary ? 'Посмотреть результаты' : 'Результаты'}
+    </Link>
+  )
+  if (session.phase === 'cancelled') {
+    return <span className="inline-flex items-center gap-1.5 text-sm text-ink-muted"><Eye className="size-4" aria-hidden />Только просмотр</span>
+  }
+  if (session.phase === 'finished') return <ResultsButton primary />
+  if (session.is_live) {
+    return (
+      <>
+        {session.can_take && !session.is_paused ? <TakeTestButton sessionId={session.id} /> : null}
+        <ResultsButton primary={false} />
+      </>
+    )
+  }
+  return session.can_start
+    ? <StartButton session={session} />
+    : <span className="inline-flex items-center gap-1.5 text-sm text-ink-muted"><Clock className="size-4" aria-hidden />Ожидает начала</span>
+}
+
+function SessionHeader({ session, academyView }: { session: ExamSession; academyView: boolean }) {
   const date = formatSessionDate(session)
   const time = formatSessionTime(session)
-  const canTakeNow = session.can_take && session.is_live && !session.is_paused
+  const facts: [string, string | null][] = [
+    ['Группа', session.group?.name ?? null],
+    ['Тест', session.test.title],
+    ['Предмет', session.subject],
+    ['Тренер', session.teacher_name],
+    ['Дата', [date, time].filter(Boolean).join(' · ') || null],
+    ['Продолжительность', session.time_limit_minutes ? `${session.time_limit_minutes} мин` : null],
+    ['Создал', session.created_by_name],
+  ]
   return (
     <div className="mb-6">
-      <BackLink to="/app/exams">{backLabel}</BackLink>
+      <BackLink to="/app/exams">{academyView ? 'Сессии' : 'Экзамены'}</BackLink>
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-ink">{session.title}</h1>
-          <p className="mt-1 text-sm text-ink-secondary">
-            Группа: {session.group?.name ?? '—'}
-            {date ? ` · ${date}` : ''}
-            {time ? ` · ${time}` : ''}
-            {session.time_limit_minutes ? ` · ${session.time_limit_minutes} мин на прохождение` : ''}
-          </p>
-          <p className="mt-0.5 text-sm text-ink-secondary">
-            Тест: {session.test.title}
-            {session.subject ? ` · Предмет: ${session.subject}` : ''}
-            {session.teacher_name ? ` · Тренер: ${session.teacher_name}` : ''}
-            {session.created_by_name ? ` · Создал: ${session.created_by_name}` : ''}
-            {` · Ключ: ${session.key}`}
-          </p>
+          <h1 className="text-2xl font-semibold text-ink [overflow-wrap:anywhere]">{session.title}</h1>
+          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            {facts.filter(([, value]) => value).map(([label, value]) => (
+              <div key={label} className="flex min-w-0 gap-1.5">
+                <dt className="shrink-0 text-ink-muted">{label}:</dt>
+                <dd className="min-w-0 text-ink [overflow-wrap:anywhere]">{value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PhaseBadge session={session} />
-          {session.can_start ? <StartButton session={session} /> : null}
-          {canTakeNow ? <TakeTestButton sessionId={session.id} /> : null}
+          <SessionAction session={session} academyView={academyView} />
         </div>
       </div>
     </div>
@@ -190,7 +239,8 @@ export function ExamDetailPage() {
 
   return (
     <div>
-      <SessionHeader session={session} backLabel={academyView ? 'Сессии' : 'Экзамены'} />
+      <SessionHeader session={session} academyView={academyView} />
+      <SessionConnection session={session} />
 
       {session.can_take ? (
         <div className="mb-6">
@@ -219,7 +269,7 @@ export function ExamDetailPage() {
 
       <SessionResultsSummary sessionId={session.id} />
 
-      <section className="card">
+      <section className="card" id="participants">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
           <h2 className="section-title">{academyView ? `Результаты группы${session.group ? ` · ${session.group.name}` : ''}` : 'Студенты'}</h2>
           {session.is_live ? (

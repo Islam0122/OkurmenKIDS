@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { BarChart3, CheckCircle2, ClipboardList, TrendingDown, TrendingUp, Users, XCircle } from 'lucide-react'
 
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -21,7 +22,12 @@ import { NO_RESULTS, ResultsBreakdown, ResultsDynamics, ResultsTable } from './r
  * student search), totals, progress, breakdowns and the results table with
  * Excel export. Every number comes from /monitoring/results/* (backend scope). */
 export function TestPerformanceReport() {
-  const [filters, setFilters] = useState<MonitoringFilters>({})
+  // ?session=<id> (a session's «Посмотреть результаты») opens the report on it.
+  const [searchParams] = useSearchParams()
+  const [filters, setFilters] = useState<MonitoringFilters>(() => {
+    const session = searchParams.get('session')
+    return session ? { session } : {}
+  })
   const options = useMonitoringFilterOptions()
   const summary = useResultsSummary(filters)
   const set = (patch: MonitoringFilters) => setFilters((current) => ({ ...current, ...patch }))

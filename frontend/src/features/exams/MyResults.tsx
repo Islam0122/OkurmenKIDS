@@ -37,7 +37,7 @@ export function TakeTestButton({ sessionId }: { sessionId: string }) {
 
   return (
     <Button leftIcon={<PenLine className="size-4" aria-hidden />} onClick={() => void handleTake()} isLoading={mutation.isPending}>
-      Пройти тест
+      Пройти как студент
     </Button>
   )
 }

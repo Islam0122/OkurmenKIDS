@@ -62,7 +62,7 @@ describe('ExamsListPage', () => {
     expect(within(card).getByText(/14 завершили/)).toBeInTheDocument()
     expect(within(card).getByText(/2 проходят/)).toBeInTheDocument()
     expect(within(card).getByText(/2 не начали/)).toBeInTheDocument()
-    expect(within(card).getByRole('link', { name: 'Открыть' })).toHaveAttribute('href', '/app/exams/session-1')
+    expect(within(card).getByRole('link', { name: 'Мониторинг' })).toHaveAttribute('href', '/app/exams/session-1')
   })
 
   it('filters by status through the API', async () => {
@@ -309,10 +309,52 @@ describe('Team Lead — Сессии', () => {
     await user.click(await screen.findByRole('button', { name: 'Запустить' }))
     await waitFor(() => expect(examsApi.start).toHaveBeenCalledWith('session-1'))
     // Not live yet → nothing to take.
-    expect(screen.queryByRole('button', { name: 'Пройти тест' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Пройти/ })).not.toBeInTheDocument()
   })
 
-  it('opens the test on the student test page — its own attempt', async () => {
+  it('never offers a Team Lead «Пройти тест»; the action follows the phase', async () => {
+    const cases = [
+      { phase: 'scheduled', is_live: false, can_start: false, expect: null },
+      { phase: 'active', is_live: true, can_start: false, expect: 'Результаты' },
+      { phase: 'finished', is_live: false, can_start: false, expect: 'Посмотреть результаты' },
+      { phase: 'cancelled', is_live: false, can_start: false, expect: 'Только просмотр' },
+    ] as const
+    for (const c of cases) {
+      vi.mocked(examsApi.participants).mockResolvedValue({
+        session: buildExamSession({ phase: c.phase, is_live: c.is_live, can_start: c.can_start, can_take: false }),
+        server_time: '2026-10-02T08:40:00Z',
+        participants: [],
+      })
+      const { unmount } = renderDetail()
+      await screen.findByRole('heading', { name: 'Данные для подключения' })
+      expect(screen.queryByRole('button', { name: /Пройти/ })).not.toBeInTheDocument()
+      if (c.expect === 'Только просмотр') expect(screen.getByText('Только просмотр')).toBeInTheDocument()
+      else if (c.expect) {
+        const link = screen.getByRole('link', { name: c.expect })
+        expect(link).toHaveAttribute('href', '/app/analytics?tab=tests&session=session-1')
+      }
+      unmount()
+    }
+  })
+
+  it('shows the real session code and join link with copy / open', async () => {
+    vi.mocked(examsApi.participants).mockResolvedValue({ session: buildExamSession(), server_time: '2026-10-02T08:40:00Z', participants: [] })
+    const user = userEvent.setup()  // installs its own clipboard stub — replace it after
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderDetail()
+    const card = (await screen.findByRole('heading', { name: 'Данные для подключения' })).closest('section') as HTMLElement
+    expect(within(card).getByText('PY-82X91')).toBeInTheDocument()
+    const link = within(card).getByRole('link', { name: 'http://api.test/exam/?key=PY-82X91' })
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(within(card).getByRole('link', { name: 'Открыть' })).toHaveAttribute('href', 'http://api.test/exam/?key=PY-82X91')
+    await user.click(within(card).getByRole('button', { name: 'Копировать ссылку на тест' }))
+    expect(writeText).toHaveBeenCalledWith('http://api.test/exam/?key=PY-82X91')
+    expect(await within(card).findByText('Скопировано')).toBeInTheDocument()
+  })
+
+  it('an Admin may still check the test as a student — its own attempt', async () => {
+    mockRole.role = 'admin'
     const open = vi.spyOn(testPage, 'open').mockImplementation(() => {})
     vi.mocked(examsApi.participants).mockResolvedValue({
       session: buildExamSession({ can_take: true }),
@@ -324,7 +366,7 @@ describe('Team Lead — Сессии', () => {
     )
     const user = userEvent.setup()
     renderDetail()
-    await user.click(await screen.findByRole('button', { name: 'Пройти тест' }))
+    await user.click(await screen.findByRole('button', { name: 'Пройти как студент' }))
     await waitFor(() => expect(examsApi.take).toHaveBeenCalledWith('session-1'))
     expect(open).toHaveBeenCalledWith('https://api.example/exam/a/attempt-1/?t=signed')
     open.mockRestore()

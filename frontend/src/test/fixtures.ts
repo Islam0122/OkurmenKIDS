@@ -361,6 +361,7 @@ export function buildExamSession(overrides: Partial<ExamSession> = {}): ExamSess
     created_by_name: null,
     can_start: false,
     can_take: false,
+    join_url: "http://api.test/exam/?key=PY-82X91",
     max_attempts: 1,
     session_type: 'exam',
     phase: 'active',
