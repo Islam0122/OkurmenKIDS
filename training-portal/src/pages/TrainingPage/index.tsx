@@ -130,7 +130,11 @@ function TrainingRunner({ test }: { test: TrainingTest }) {
           busy={training.busy}
           serverError={training.error ? errorText(training.error) : null}
           initialName={storageService.getStudentName()}
-          onSubmit={(name) => { requestFullscreen(); void training.start(name) }}
+          onSubmit={(name) => {
+            // Fullscreen is a per-trainer setting; it must be requested inside the click.
+            if (test.security.require_fullscreen) requestFullscreen()
+            void training.start(name)
+          }}
           onClose={() => setNameOpen(false)}
         />
       </>

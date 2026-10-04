@@ -66,7 +66,9 @@ export function ResultPage() {
       {data.pending ? <p className="result-note result-note--wait"><Icon name="hourglass-split" />{t.result.pendingNote(data.pending)}</p> : null}
 
       <div className="result-actions">
-        <Button icon="arrow-repeat" onClick={() => navigate(`/training/${data.test_id}`, { state: { retake: true } })}>{t.result.retake}</Button>
+        {trainer.data?.allow_retry === false ? null : (
+          <Button icon="arrow-repeat" onClick={() => navigate(`/training/${data.test_id}`, { state: { retake: true } })}>{t.result.retake}</Button>
+        )}
         {review.length ? (
           <Button variant="outline" icon={showReview ? 'eye-slash' : 'list-check'} onClick={() => setShowReview((v) => !v)}>
             {showReview ? t.result.hideReview : t.result.review}

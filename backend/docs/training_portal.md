@@ -80,6 +80,31 @@ A browser cannot physically stop a student from opening another tab or
 device: the system prevents what the browser allows, detects, logs and
 notifies — it does not promise more.
 
+## Access model
+
+A trainer is a public product, not an LMS feature of a particular student.
+
+```
+Trainer → Published? → no: hidden (404, not in the list)
+                     → yes: anyone → name → attempt → result → leaderboard
+```
+
+* No login, registration, JWT, Student, group, teacher or team-lead
+  assignment is needed to train. Only «Опубликован» trainers are listed.
+* An attempt is a `StudentAttempt` with `student_name` only
+  (`student = user = NULL`); no `User`/`Student` is ever created.
+* Stored for a participant: name, answers, score, times, security events.
+  No email, phone, password; events of public attempts keep **no IP address
+  and no user agent** (IP is used only in memory for rate limiting).
+* The public list never returns draft/archived trainers, groups, teachers,
+  session keys or internal status.
+* `allow_retry = False` → a name that already finished gets 409
+  `retry_disabled`; the portal hides «Кайра тапшыруу».
+* `require_fullscreen` is per trainer: off → an ordinary page, on →
+  fullscreen is requested after «Баштоо» and the lock overlay applies.
+* «Экзаменге өтүү» only opens the real exam URL from the backend; the real
+  exam (authorised student → LMS → Exam Mode) is a separate system.
+
 ## Admin flow — «Тренажёры»
 
 `Trainer` is a proxy of `TestSession` (training type); its questions are the
@@ -89,8 +114,10 @@ ordinary `Test`/`Question` rows — nothing is duplicated.
    subject, program, cover, question count, time, explanation/retry/shuffle,
    security (fullscreen, tab tracking, max exits, copy/paste), real exam URL.
 2. «Вопросы» opens the existing question editor of the test.
-3. Action «Опубликовать» (needs questions) → public + running; «Снять с
-   публикации», «В архив». Status: Черновик / Опубликован / Архив.
+3. Field «Статус» in the form (or list actions): Черновик / Опубликован /
+   Архив. «Опубликован» needs questions and makes the trainer visible to
+   every visitor at once; an archived trainer cannot be republished.
+   «Ответственный тренер» is optional (monitoring only).
 4. «Открыть тренажёр» → `{PortalSettings.portal_url}/training/{id}` — set
    «Портал» in «Настройки портала».
 5. «Попытки тренажёров» — read-only list; results also in session analytics.
@@ -98,8 +125,11 @@ ordinary `Test`/`Question` rows — nothing is duplicated.
 
 ## Monitoring API (`/api/v1/monitoring/`, JWT, Teacher / Team Lead / Admin)
 
-Scope is enforced on the backend: a Teacher sees attempts of their own groups
-only; Team Lead and Admin see the whole academy. Staff self-attempts are excluded.
+Scope is enforced on the backend: a Teacher sees attempts of their own groups,
+plus public trainers of the subjects they teach (`Teacher.subjects` or their
+group programs) and the trainers they are responsible for; Team Lead and Admin
+see the whole academy. Portal visitors have no access (401). Staff
+self-attempts are excluded.
 Read-only (GET). The LMS page «Мониторинг» polls every 15 s (no WebSocket yet).
 
 | Path | |

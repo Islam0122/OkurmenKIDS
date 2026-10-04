@@ -14,6 +14,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.testing.models import (
+    ExamAttemptEvent,
     Answer,
     AttemptStatus,
     FinishReason,
@@ -315,6 +316,43 @@ class EventTests(TrainingFixture):
                          "https://lms.example.com/exam/7/")
 
 
+class PublicAccessTests(TrainingFixture):
+    """The trainer is a public product: a name is all it takes."""
+
+    def test_anyone_trains_with_a_name_only(self):
+        from apps.users.models import User
+
+        users_before = User.objects.count()
+        attempt = self.start("Islam")
+        self.assertEqual(self.api.post(reverse("training-attempt-submit", args=[attempt["attempt_id"]]), **self.auth(attempt)).status_code, 200)
+        db = StudentAttempt.objects.get(pk=attempt["attempt_id"])
+        self.assertEqual((db.student_id, db.user_id, db.student_name), (None, None, "Islam"))
+        self.assertEqual(User.objects.count(), users_before)
+        board = self.api.get(reverse("training-leaderboard"), {"test": str(self.session.pk)}).json()
+        self.assertEqual(board[0]["student_name"], "Islam")
+
+    def test_events_keep_no_ip_or_browser_string(self):
+        attempt = self.start()
+        self.api.post(reverse("training-attempt-events", args=[attempt["attempt_id"]]), {"event_type": "TAB_SWITCH"},
+                      format="json", HTTP_USER_AGENT="Mozilla/5.0", REMOTE_ADDR="10.1.2.3", **self.auth(attempt))
+        events = ExamAttemptEvent.objects.filter(attempt_id=attempt["attempt_id"])
+        self.assertTrue(events.exists())
+        self.assertFalse(events.exclude(ip_address=None).exists())
+        self.assertFalse(events.exclude(user_agent="").exists())
+
+    def test_retry_follows_the_trainer_setting(self):
+        attempt = self.start("Aizada")
+        self.api.post(reverse("training-attempt-submit", args=[attempt["attempt_id"]]), **self.auth(attempt))
+        self.start("Aizada")  # retry allowed by default
+        self.test.allow_retry = False
+        self.test.save()
+        self.assertTrue(self.api.get(reverse("training-test-detail", args=[self.session.pk])).json()["allow_retry"] is False)
+        other = self.start("Bek")
+        self.api.post(reverse("training-attempt-submit", args=[other["attempt_id"]]), **self.auth(other))
+        response = self.api.post(reverse("training-attempt-start"), {"test_id": str(self.session.pk), "student_name": "bek"}, format="json")
+        self.assertEqual((response.status_code, response.json()["code"]), (409, "retry_disabled"))
+
+
 class TrainerAdminTests(TestCase):
     def setUp(self):
         from apps.users.models import User
@@ -325,7 +363,7 @@ class TrainerAdminTests(TestCase):
 
     def form_data(self, **overrides):
         data = {
-            "title": "Python тренажёр", "test": "", "description": "Негиздер", "subject": self.subject.pk, "course": "", "group": "",
+            "title": "Python тренажёр", "test": "", "description": "Негиздер", "subject": self.subject.pk, "course": "", "teacher": "", "publication": "draft",
             "image_url": "", "questions_per_attempt": "", "time_limit_minutes": "20", "passing_score": "60",
             "show_correct_answers": "on", "show_result": "on", "allow_retry": "on", "max_attempts_per_student": "",
             "shuffle_questions": "on", "require_fullscreen": "on", "track_tab_switches": "on", "max_tab_switches": "2",
@@ -362,14 +400,48 @@ class TrainerAdminTests(TestCase):
         page = self.client.get(changelist)
         self.assertContains(page, f"https://train.example.com/training/{trainer.pk}")
 
-        self.client.post(reverse("admin:training_trainer_change", args=[trainer.pk]), self.form_data(test=test.pk, max_tab_switches="5"))
+        self.client.post(reverse("admin:training_trainer_change", args=[trainer.pk]), self.form_data(test=test.pk, max_tab_switches="5", publication="published"))
         test.refresh_from_db()
-        self.assertEqual(test.max_tab_switches, 5)
+        trainer.refresh_from_db()
+        self.assertEqual((test.max_tab_switches, trainer.trainer_status), (5, TrainerStatus.PUBLISHED))
 
         self.client.post(changelist, {"action": "archive", "_selected_action": [trainer.pk]})
         trainer.refresh_from_db()
         self.assertEqual(trainer.trainer_status, TrainerStatus.ARCHIVED)
         self.assertEqual(self.client.get(reverse("training-test-list")).json(), [])
+
+    def test_status_field_publishes_for_everyone(self):
+        from apps.training.models import Trainer, TrainerStatus
+
+        # A new trainer has no questions yet: «Опубликован» is refused, nothing saved.
+        response = self.client.post(reverse("admin:training_trainer_add"), self.form_data(publication="published"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("publication", response.context_data["adminform"].form.errors)
+        self.assertFalse(Trainer.objects.exists())
+
+        self.client.post(reverse("admin:training_trainer_add"), self.form_data())
+        trainer = Trainer.objects.get()
+        svc.save_question(trainer.test, QuestionData(QuestionType.SINGLE_CHOICE, "Q?", options=[OptionData("a", True), OptionData("b", False)]))
+        change = reverse("admin:training_trainer_change", args=[trainer.pk])
+        self.client.post(change, self.form_data(test=trainer.test.pk, publication="published"))
+        trainer.refresh_from_db()
+        self.assertEqual((trainer.trainer_status, trainer.group_id, trainer.teacher_id), (TrainerStatus.PUBLISHED, None, None))
+        self.client.logout()  # anyone, no account
+        listed = self.client.get(reverse("training-test-list")).json()
+        self.assertEqual([t["id"] for t in listed], [str(trainer.pk)])
+        for private in ("group", "teacher", "key", "status", "is_public"):
+            self.assertNotIn(private, listed[0])
+
+        self.client.force_login(self.admin)
+        self.client.post(change, self.form_data(test=trainer.test.pk, publication="draft"))
+        trainer.refresh_from_db()
+        self.assertEqual(trainer.trainer_status, TrainerStatus.DRAFT)
+        self.assertEqual(self.client.get(reverse("training-test-list")).json(), [])
+        self.client.post(change, self.form_data(test=trainer.test.pk, publication="archived"))
+        trainer.refresh_from_db()
+        self.assertEqual(trainer.trainer_status, TrainerStatus.ARCHIVED)
+        response = self.client.post(change, self.form_data(test=trainer.test.pk, publication="published"))
+        self.assertIn("publication", response.context_data["adminform"].form.errors)
 
     def test_attempts_list_and_monitoring_pages_open(self):
         self.assertEqual(self.client.get(reverse("admin:training_trainingattempt_changelist")).status_code, 200)

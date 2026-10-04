@@ -169,3 +169,37 @@ class DataTests(MonitoringFixture):
         hardest = data["difficult_questions"][0]
         self.assertEqual((hardest["text"], hardest["correct_rate"], hardest["incorrect_rate"]), ("B?", 0, 100))
         self.assertEqual(self.get(self.teacher.user, "questions/", session=str(self.mine.pk)).status_code, 200)
+
+
+class PublicTrainerScopeTests(MonitoringFixture):
+    """Public trainers have no group: teachers see those of their subjects
+    (or the ones they own); Team Leads see all; anonymous visitors none."""
+
+    def setUp(self):
+        super().setUp()
+        self.test.subject = self.subject
+        self.test.save(update_fields=["subject"])
+        self.public = TestSession.objects.create(test=self.test, session_type=SessionType.TRAINING, is_public=True, title="Public")
+        self.public.start()
+        self.visitor = self.attempt(self.public, None, name="Islam", status=AttemptStatus.FINISHED, score=98.0)
+
+    def ids(self, user):
+        return {r["id"] for r in self.get(user, "attempts/").data["results"]}
+
+    def test_subject_teacher_sees_public_trainer_attempts(self):
+        self.assertIn(str(self.visitor.pk), self.ids(self.teacher.user))
+        self.assertEqual(self.get(self.teacher.user, f"trainers/{self.public.pk}/").status_code, 200)
+        self.assertIn(str(self.visitor.pk), self.ids(self.lead))
+
+    def test_other_teachers_see_it_only_by_subject_or_ownership(self):
+        self.assertNotIn(str(self.visitor.pk), self.ids(self.other_teacher.user))
+        self.other_teacher.subjects.add(self.subject)
+        self.assertIn(str(self.visitor.pk), self.ids(self.other_teacher.user))
+        self.other_teacher.subjects.clear()
+        self.public.teacher = self.other_teacher
+        self.public.save(update_fields=["teacher"])
+        self.assertIn(str(self.visitor.pk), self.ids(self.other_teacher.user))
+
+    def test_visitors_get_no_monitoring(self):
+        self.api.force_authenticate(None)
+        self.assertEqual(self.api.get("/api/v1/monitoring/attempts/").status_code, 401)

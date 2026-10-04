@@ -48,8 +48,8 @@ from apps.testing.services.exam_portal import (
     clean_answers,
     drafts_as_answers,
     is_answered,
-    log_event,
 )
+from apps.testing.services.exam_portal import log_event as _log_exam_event
 from apps.testing.services.grading import attempt_score, check_answer
 from apps.testing.services.sessions import sync_due_sessions
 
@@ -130,6 +130,10 @@ def start_attempt(session: TestSession, student_name: str, request=None) -> Stud
         raise TrainingError("Бул тестте азырынча суроолор жок.", status=409, code="no_questions")
     if not session.can_student_attempt(student_name=name):
         raise TrainingError("Бул тест үчүн аракеттердин саны бүттү.", status=409, code="attempt_limit")
+    if not test.allow_retry and session.attempts.filter(
+        student_name__iexact=name, status=AttemptStatus.FINISHED,
+    ).exists():
+        raise TrainingError("Бул тренажёрду кайра өтүүгө болбойт.", status=409, code="retry_disabled")
     with transaction.atomic():
         attempt = StudentAttempt.objects.create(session=session, student_name=name)
         attempt.question_ids = pick_question_ids(test, seed=attempt.pk.int)
@@ -138,6 +142,12 @@ def start_attempt(session: TestSession, student_name: str, request=None) -> Stud
         attempt.save(update_fields=["question_ids", "expires_at"])
         log_event(attempt, ExamEventType.TRAINING_STARTED, request, {"detail": f"{len(attempt.question_ids)} суроо"})
     return attempt
+
+
+def log_event(attempt: StudentAttempt, event_type: str, request=None, metadata: dict | None = None) -> None:
+    """Participants of the public trainer are anonymous visitors: only the
+    event itself is kept — no IP address, no browser string."""
+    _log_exam_event(attempt, event_type, None, metadata)
 
 
 def attempt_token(attempt: StudentAttempt) -> str:

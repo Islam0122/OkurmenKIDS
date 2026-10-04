@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, vi } from 'vitest'
@@ -15,7 +15,7 @@ const PORTAL = {
 const TEST = {
   id: 't1', title: 'Python Training', description: '', subject: 'Python', level: 'medium', level_display: 'Средний',
   image_url: null, duration: 30, questions_count: 2, max_attempts: null, passing_score: 50,
-  show_explanation: true, show_result: true, published: true, course: '', exam_url: 'https://lms.example.com/student/exams/',
+  show_explanation: true, show_result: true, allow_retry: true, published: true, course: '', exam_url: 'https://lms.example.com/student/exams/',
   security: { require_fullscreen: false, track_tab_switches: true, max_tab_switches: 3, block_copy_paste: true },
 }
 const QUESTIONS = [
@@ -166,6 +166,32 @@ describe('exam layout guard', () => {
     expect(request).toHaveBeenCalledTimes(2)
     // @ts-expect-error cleanup of the test stub
     delete document.documentElement.requestFullscreen
+  })
+
+  it('stays an ordinary page when the trainer does not require fullscreen', async () => {
+    const user = userEvent.setup()
+    const request = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document.documentElement, 'requestFullscreen', { value: request, configurable: true })
+    Object.defineProperty(document, 'fullscreenEnabled', { value: true, configurable: true })
+    backend()
+    await startTraining(user)
+    expect(request).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog', { name: 'Экзамен режими активдүү' })).not.toBeInTheDocument()
+    // @ts-expect-error cleanup of the test stub
+    delete document.documentElement.requestFullscreen
+  })
+
+  it('hides «retake» when the trainer does not allow a retry', async () => {
+    const { calls } = routeFetch({
+      'GET /portal/': () => ({ body: PORTAL }),
+      'GET /tests/t1/': () => ({ body: { ...TEST, allow_retry: false } }),
+      'GET /attempts/a1/result/': () => ({ body: { ...SUMMARY, status: 'completed', finish_reason: 'submitted', finished_at: '2026-10-04T10:05:00Z', duration_seconds: 300, show_result: true, passing_score: 50, score: 2, max_score: 2, percentage: 100, total: 2, correct: 2, incorrect: 0, skipped: 0, pending: 0, passed: true, review: [] } }),
+    })
+    renderAt('/result/a1')
+    await screen.findByRole('link', { name: 'Лидерлерди көрүү' })
+    await waitFor(() => expect(calls.some((c) => c.path === '/tests/t1/')).toBe(true))
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: 'Кайра тапшыруу' })).not.toBeInTheDocument()
   })
 })
 

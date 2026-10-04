@@ -6,7 +6,9 @@ portal) and classic /exam/ sessions.
 Who sees what (the project's RBAC, apps.users.permissions):
     Admin, Team Lead  everything (can_view_academy)
     Teacher           attempts of sessions held for their groups, and of
-                      students of their groups (Group.objects.for_teacher)
+                      students of their groups (Group.objects.for_teacher);
+                      public trainers (open to anyone, no group) of the
+                      subjects they teach or that they own (session.teacher)
 Attempts LMS staff take themselves (StudentAttempt.user) are never
 counted. Nothing here writes, except closing attempts whose time is up.
 """
@@ -30,7 +32,7 @@ from django.db.models import (
 )
 from django.utils import timezone
 
-from apps.academy.models import Group
+from apps.academy.models import Group, GroupTeacher, Subject
 from apps.users.permissions import can_view_academy
 
 from ..models import (
@@ -70,12 +72,30 @@ def _teacher_groups(user):
     return Group.objects.for_teacher(teacher) if teacher is not None else None
 
 
+def _teacher_subjects(teacher):
+    """Subjects a teacher teaches: their profile plus their group programs."""
+    return Subject.objects.filter(
+        Q(pk__in=teacher.subjects.values("pk"))
+        | Q(pk__in=GroupTeacher.objects.filter(teacher=teacher, subject__isnull=False).values("subject"))
+    )
+
+
+def _public_trainer_q(teacher, prefix: str = "") -> Q:
+    """Public trainers belong to nobody's group: a teacher sees those of
+    their subjects («направления») and the ones they own."""
+    public = Q(**{f"{prefix}is_public": True, f"{prefix}session_type": SessionType.TRAINING})
+    mine = Q(**{f"{prefix}test__subject__in": _teacher_subjects(teacher)}) | Q(**{f"{prefix}teacher": teacher})
+    return public & mine
+
+
 def visible_sessions(user) -> QuerySet:
     sessions = TestSession.objects.all()
     if can_view_academy(user):
         return sessions
     groups = _teacher_groups(user)
-    return sessions.filter(group__in=groups) if groups is not None else sessions.none()
+    if groups is None:
+        return sessions.none()
+    return sessions.filter(Q(group__in=groups) | _public_trainer_q(user.teacher_profile))
 
 
 def visible_attempts(user) -> QuerySet:
@@ -86,7 +106,10 @@ def visible_attempts(user) -> QuerySet:
     if groups is None:
         return attempts.none()
     # Forward FKs only — no row multiplication, so no distinct() needed.
-    return attempts.filter(Q(session__group__in=groups) | Q(student__group__in=groups))
+    return attempts.filter(
+        Q(session__group__in=groups) | Q(student__group__in=groups)
+        | _public_trainer_q(user.teacher_profile, prefix="session__")
+    )
 
 
 def is_team_view(user) -> bool:
