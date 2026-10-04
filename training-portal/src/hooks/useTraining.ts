@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AnswerFeedback, AnswerValue, AttemptState, Question } from '@/types'
 
 import * as attemptsApi from '@/api/attempts'
+import { postEvent } from '@/api/events'
 import { ApiError, NETWORK_ERROR } from '@/api/client'
 import { storageService, type AttemptRef } from '@/services/storageService'
 
@@ -36,6 +37,7 @@ export function useTraining(testId: string, onFinished: (attemptId: string) => v
   const [deadline, setDeadline] = useState<number | null>(null)
   const [resumed, setResumed] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [tabSwitches, setTabSwitches] = useState(0)
 
   const ref = useRef<AttemptRef | null>(null)
   const pending = useRef<Record<string, AnswerValue>>({})
@@ -73,6 +75,7 @@ export function useTraining(testId: string, onFinished: (attemptId: string) => v
     const firstOpen = state.questions.findIndex((q) => !q.answer)
     setIndex(isResume && firstOpen > 0 ? firstOpen : 0)
     syncDeadline(state.remaining_seconds)
+    setTabSwitches(state.tab_switch_count)
     setResumed(isResume)
     setPhase('running')
   }, [finish])
@@ -173,6 +176,19 @@ export function useTraining(testId: string, onFinished: (attemptId: string) => v
     }
   }, [flushAll, finish, handleError])
 
+  /** An Exam Mode event → the backend; it may end the attempt (too many tab switches). */
+  const reportEvent = useCallback((eventType: string, beacon = false) => {
+    const attemptRef = ref.current
+    if (!attemptRef || finished.current) return
+    postEvent(attemptRef.attemptId, attemptRef.token, eventType, index + 1, beacon)
+      .then((data) => setTabSwitches(data.tab_switch_count))
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 409 && (err.code === 'terminated' || err.code === 'closed')) {
+          finish(attemptRef.attemptId)
+        }
+      })
+  }, [finish, index])
+
   const goTo = useCallback((target: number) => {
     if (!attempt) return
     setVisited((v) => ({ ...v, [index]: true }))
@@ -203,7 +219,7 @@ export function useTraining(testId: string, onFinished: (attemptId: string) => v
   }, [testId])
 
   return {
-    phase, error, attempt, answers, feedback, index, visited, saveState, deadline, resumed, busy,
-    navStates, answeredCount, start, setAnswer, check, submit, goTo, restart, clearError: () => setError(null),
+    phase, error, attempt, answers, feedback, index, visited, saveState, deadline, resumed, busy, tabSwitches,
+    navStates, answeredCount, start, setAnswer, check, submit, goTo, restart, reportEvent, clearError: () => setError(null),
   }
 }

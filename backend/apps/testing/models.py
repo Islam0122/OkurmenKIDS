@@ -254,6 +254,16 @@ class Test(models.Model):
         help_text="Сколько раз можно переключиться на другую вкладку; следующий уход завершает экзамен. "
         "Пусто — без лимита (уходы только фиксируются).",
     )
+    track_tab_switches = models.BooleanField(
+        default=True,
+        verbose_name="Отслеживать уход со страницы",
+        help_text="Переключение на другую вкладку фиксируется и считается нарушением.",
+    )
+    block_copy_paste = models.BooleanField(
+        default=True,
+        verbose_name="Запрет копирования и вставки",
+        help_text="Copy / Paste / Cut и контекстное меню блокируются; попытки фиксируются.",
+    )
     auto_submit = models.BooleanField(
         default=True,
         verbose_name="Автоотправка по истечении времени",
@@ -629,6 +639,22 @@ class TestSession(models.Model):
         db_index=True,
         verbose_name="Публичная тренировка",
         help_text="Только для тренажёра: тест доступен в публичном тренировочном портале по имени, без ключа.",
+    )
+
+    # Trainer (public training) extras — see apps.training.models.Trainer.
+    course = models.ForeignKey(
+        "academy.Course",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="test_sessions",
+        verbose_name="Программа",
+    )
+    exam_url = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name="Ссылка на экзамен",
+        help_text="Куда ведёт «Экзаменге өтүү» с этого тренажёра. Пусто — ссылка из настроек портала.",
     )
 
     # None = без ограничений (training); exam defaults to 1 at creation time.
@@ -1318,6 +1344,10 @@ class ExamEventType(models.TextChoices):
     EXAM_SUBMITTED = "EXAM_SUBMITTED", "Экзамен отправлен"
     TIME_EXPIRED = "TIME_EXPIRED", "Время истекло"
     EXAM_TERMINATED = "EXAM_TERMINATED", "Экзамен завершён из-за нарушений"
+    TRAINING_STARTED = "TRAINING_STARTED", "Тренировка начата"
+    TRAINING_SUBMITTED = "TRAINING_SUBMITTED", "Тренировка отправлена"
+    TAB_RETURN = "TAB_RETURN", "Возврат на страницу"
+    FULLSCREEN_ENTER = "FULLSCREEN_ENTER", "Вход в полноэкранный режим"
 
 
 # Reported by the Exam Mode page and counted as violations

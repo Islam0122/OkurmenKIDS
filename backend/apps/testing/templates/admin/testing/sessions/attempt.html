@@ -31,9 +31,9 @@
     <div class="okt-kpi"><span class="okt-kpi__label">Начало · завершение</span><span class="okt-kpi__value oks-kpi__value--sm">{{ attempt.started_at|date:"H:i" }} – {{ attempt.finished_at|date:"H:i"|default:"…" }}</span></div>
   </div>
 
-  {% if attempt.exam_mode %}
+  {% if events is not None %}
     <div class="okt-kpis">
-      <div class="okt-kpi"><span class="okt-kpi__label">Режим</span><span class="okt-kpi__value oks-kpi__value--sm">Exam Mode</span>{% if attempt.finish_reason %}<span class="okt-kpi__hint">{{ attempt.get_finish_reason_display }}</span>{% endif %}</div>
+      <div class="okt-kpi"><span class="okt-kpi__label">Режим</span><span class="okt-kpi__value oks-kpi__value--sm">{% if attempt.exam_mode %}Exam Mode{% else %}Тренажёр{% endif %}</span>{% if attempt.finish_reason %}<span class="okt-kpi__hint">{{ attempt.get_finish_reason_display }}</span>{% endif %}</div>
       <div class="okt-kpi"><span class="okt-kpi__label">Уходов со страницы</span><span class="okt-kpi__value">{{ attempt.tab_switch_count }}</span>{% if session.test.max_tab_switches is not None %}<span class="okt-kpi__hint">допустимо: {{ session.test.max_tab_switches }}</span>{% endif %}</div>
       <div class="okt-kpi"><span class="okt-kpi__label">Нарушений</span><span class="okt-kpi__value">{{ attempt.violation_count }}</span><span class="okt-kpi__hint">копирование, вставка, вкладки, меню…</span></div>
       <div class="okt-kpi"><span class="okt-kpi__label">Дедлайн попытки</span><span class="okt-kpi__value oks-kpi__value--sm">{{ attempt.expires_at|date:"d.m.Y H:i"|default:"—" }}</span></div>

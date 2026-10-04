@@ -15,6 +15,7 @@ describe('navigation by role', () => {
       'Посещаемость',
       'ДЗ',
       'Сессии',
+      'Мониторинг',
       'Тесты',
       'KPI',
       'Контроль',
@@ -35,12 +36,13 @@ describe('navigation by role', () => {
     expect(canOpen('teacher', '/app/worklog')).toBe(false)
   })
 
-  it('keeps the Trainer menu unchanged', () => {
+  it('gives a Trainer the teaching sections and monitoring', () => {
     expect(labels('teacher')).toEqual([
       'Сегодня',
       'Расписание',
       'Мои группы',
       'Экзамены',
+      'Мониторинг',
       'KPI',
       'Контроль',
       'Мои отчёты',

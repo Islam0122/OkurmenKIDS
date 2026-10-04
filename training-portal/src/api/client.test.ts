@@ -10,7 +10,8 @@ describe('apiClient', () => {
     await apiClient.get('/leaderboard/', { query: { test: 'abc', limit: undefined }, token: 'tok' })
     const [url, init] = spy.mock.calls[0]
     expect(String(url)).toBe('http://api.test/api/v1/training/leaderboard/?test=abc')
-    expect((init?.headers as Record<string, string>)['X-Attempt-Token']).toBe('tok')
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    expect(headers['X-Attempt-Token']).toBe('tok')
     expect(init?.body).toBeUndefined()
   })
 

@@ -31,9 +31,11 @@ interface RequestOptions {
   token?: string
   query?: Record<string, string | number | undefined>
   signal?: AbortSignal
+  /** survives the page being closed (page-leave events) */
+  keepalive?: boolean
 }
 
-async function request<T>(path: string, { method = 'GET', body, token, query, signal }: RequestOptions = {}): Promise<T> {
+async function request<T>(path: string, { method = 'GET', body, token, query, signal, keepalive }: RequestOptions = {}): Promise<T> {
   const base = apiBaseUrl()
   if (!base) throw new ApiError('VITE_API_URL орнотулган эмес.', 0, CONFIG_ERROR)
   const url = new URL(`${base}${API_PREFIX}${path}`)
@@ -46,7 +48,7 @@ async function request<T>(path: string, { method = 'GET', body, token, query, si
 
   let response: Response
   try {
-    const init: RequestInit = { method, headers, signal }
+    const init: RequestInit = { method, headers, signal, keepalive }
     if (method !== 'GET' && body !== undefined) init.body = JSON.stringify(body)
     response = await fetch(url, init)
   } catch (error) {

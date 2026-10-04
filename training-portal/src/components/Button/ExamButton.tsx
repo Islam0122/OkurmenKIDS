@@ -7,17 +7,20 @@ import { Button, type ButtonVariant } from '.'
  * the backend (portal settings). Hidden while it isn't set. It never starts
  * a training attempt: training and the exam are separate systems.
  */
-export function ExamButton({ variant = 'navy', size, block, label }: {
+export function ExamButton({ variant = 'navy', size, block, label, url }: {
   variant?: ButtonVariant
   size?: 'sm' | 'md' | 'lg'
   block?: boolean
   label?: string
+  /** a trainer's own exam link (from the API); else the portal's */
+  url?: string
 }) {
   const { data: portal } = usePortal()
-  if (!portal?.exam_url) return null
+  const href = url || portal?.exam_url
+  if (!portal || !href) return null
   return (
     <Button
-      href={portal.exam_url}
+      href={href}
       newTab={portal.exam_open_in_new_tab}
       variant={variant}
       size={size}

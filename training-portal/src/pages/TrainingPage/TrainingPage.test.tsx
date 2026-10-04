@@ -15,7 +15,8 @@ const PORTAL = {
 const TEST = {
   id: 't1', title: 'Python Training', description: '', subject: 'Python', level: 'medium', level_display: 'Средний',
   image_url: null, duration: 30, questions_count: 2, max_attempts: null, passing_score: 50,
-  show_explanation: true, show_result: true, published: true,
+  show_explanation: true, show_result: true, published: true, course: '', exam_url: 'https://lms.example.com/student/exams/',
+  security: { require_fullscreen: false, track_tab_switches: true, max_tab_switches: 3, block_copy_paste: true },
 }
 const QUESTIONS = [
   { id: 'q1', type: 'single_choice', text: 'Backend?', image_url: null, hint: '', language: null, starter_code: '', points: 1,
@@ -37,7 +38,8 @@ function backend() {
     'POST /attempts/': ({ body }) => (body as { student_name: string }).student_name.length < 2
       ? { status: 400, body: { detail: 'Аты кеминде 2 белгиден турушу керек.', code: 'name_too_short' } }
       : { status: 201, body: { ...SUMMARY, token: 'signed-token' } },
-    'GET /attempts/a1/': () => ({ body: { ...SUMMARY, status: 'active', remaining_seconds: 1800, show_explanation: true, questions: QUESTIONS } }),
+    'GET /attempts/a1/': () => ({ body: { ...SUMMARY, status: 'active', remaining_seconds: 1800, show_explanation: true, security: TEST.security, tab_switch_count: 0, violation_count: 0, questions: QUESTIONS } }),
+    'POST /attempts/a1/events/': () => ({ body: { tab_switch_count: 1, violation_count: 1, max_tab_switches: 3 } }),
     'PUT /attempts/a1/answers/q1/': () => ({ body: { saved: true, remaining_seconds: 1790 } }),
     'POST /attempts/a1/answers/q1/check/': () => ({ body: { status: 'incorrect', correct_option_ids: ['o1'], correct_answers: [], code_examples: [], explanation: 'Python — backend тил.' } }),
     'POST /attempts/a1/submit/': () => ({ body: { ...SUMMARY, status: 'completed', finish_reason: 'submitted', finished_at: '2026-10-04T10:05:00Z', duration_seconds: 300, show_result: true, passing_score: 50, score: 0, max_score: 2, percentage: 0, total: 2, correct: 0, incorrect: 1, skipped: 1, pending: 0, passed: false, review: [] } }),
@@ -96,6 +98,74 @@ describe('training flow (through the API layer)', () => {
     backend()
     renderAt('/training/t1')
     expect(await screen.findByText(/Мурунку тренировкаңды улантып жатасың/)).toBeInTheDocument()
+  })
+})
+
+describe('exam layout guard', () => {
+  async function startTraining(user: ReturnType<typeof userEvent.setup>) {
+    renderAt('/training/t1')
+    const dialog = await screen.findByRole('dialog', { name: 'Атыңызды жазыңыз' })
+    await user.type(within(dialog).getByLabelText('Атыңыз'), 'Islam')
+    await user.click(within(dialog).getByRole('button', { name: 'Баштоо' }))
+    await screen.findAllByText('Суроо 1 / 2')
+  }
+
+  it('renders without the site header and footer', async () => {
+    const user = userEvent.setup()
+    backend()
+    await startTraining(user)
+    expect(screen.queryByRole('navigation', { name: 'Негизги меню' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+  })
+
+  it('reports tab switches to the backend and warns the student', async () => {
+    const user = userEvent.setup()
+    const { calls } = backend()
+    await startTraining(user)
+    const visibility = vi.spyOn(document, 'visibilityState', 'get')
+    visibility.mockReturnValue('hidden')
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    visibility.mockReturnValue('visible')
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(await screen.findByRole('dialog', { name: 'Сиз тесттен чыгып кеттиңиз' })).toBeInTheDocument()
+    const events = calls.filter((c) => c.path === '/attempts/a1/events/').map((c) => (c.body as { event_type: string }).event_type)
+    expect(events).toEqual(['TAB_SWITCH', 'TAB_RETURN'])
+  })
+
+  it('blocks copy / paste / context menu and logs the attempt', async () => {
+    const user = userEvent.setup()
+    const { calls } = backend()
+    await startTraining(user)
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    await act(async () => { document.body.dispatchEvent(paste) })
+    expect(paste.defaultPrevented).toBe(true)
+    expect(await screen.findByText('Коюу тест учурунда жабык')).toBeInTheDocument()
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    await act(async () => { document.body.dispatchEvent(menu) })
+    expect(menu.defaultPrevented).toBe(true)
+    const events = calls.filter((c) => c.path === '/attempts/a1/events/').map((c) => (c.body as { event_type: string }).event_type)
+    expect(events).toEqual(['PASTE_ATTEMPT', 'CONTEXT_MENU_ATTEMPT'])
+  })
+
+  it('requests real fullscreen on start and locks the test until fullscreen when required', async () => {
+    const user = userEvent.setup()
+    const request = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document.documentElement, 'requestFullscreen', { value: request, configurable: true })
+    Object.defineProperty(document, 'fullscreenEnabled', { value: true, configurable: true })
+    const secured = { ...TEST.security, require_fullscreen: true }
+    routeFetch({
+      'GET /portal/': () => ({ body: PORTAL }),
+      'GET /tests/t1/': () => ({ body: { ...TEST, security: secured } }),
+      'POST /attempts/': () => ({ status: 201, body: { ...SUMMARY, token: 'signed-token' } }),
+      'GET /attempts/a1/': () => ({ body: { ...SUMMARY, status: 'active', remaining_seconds: 1800, show_explanation: true, security: secured, tab_switch_count: 0, violation_count: 0, questions: QUESTIONS } }),
+    })
+    await startTraining(user)
+    expect(request).toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog', { name: 'Экзамен режими активдүү' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Толук экранга кайтуу' }))
+    expect(request).toHaveBeenCalledTimes(2)
+    // @ts-expect-error cleanup of the test stub
+    delete document.documentElement.requestFullscreen
   })
 })
 

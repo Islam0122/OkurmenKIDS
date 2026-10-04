@@ -4,13 +4,18 @@ from rest_framework import serializers
 from apps.testing.models import TestSession
 
 from .models import PortalSettings, TrainingLink, TrainingVideo
-from .services import question_count
+from .services import exam_url_for, question_count, security_settings
 
 
 class PortalSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortalSettings
         fields = ("hero_title", "hero_subtitle", "start_button_label", "exam_button_label", "exam_url", "exam_open_in_new_tab")
+
+
+class EventSerializer(serializers.Serializer):
+    event_type = serializers.CharField(max_length=32)
+    metadata = serializers.DictField(required=False)
 
 
 class TrainingTestSerializer(serializers.Serializer):
@@ -32,6 +37,9 @@ class TrainingTestSerializer(serializers.Serializer):
             "passing_score": test.passing_score,
             "show_explanation": test.show_correct_answers,
             "show_result": test.show_result,
+            "course": session.course.name if session.course_id else "",
+            "exam_url": exam_url_for(session),
+            "security": security_settings(session),
             "published": True,
         }
 

@@ -382,6 +382,8 @@ JAZZMIN_SETTINGS = {
         # sessions marked «Публичная тренировка»; here — its texts, the real
         # exam link, videos and useful links.
         "тренировочный портал": [
+            {"name": "Тренажёры", "model": "training.trainer", "icon": "bi bi-controller"},
+            {"name": "Попытки тренажёров", "model": "training.trainingattempt", "icon": "bi bi-person-lines-fill"},
             {"name": "Настройки портала", "model": "training.portalsettings", "icon": "bi bi-sliders"},
             {"name": "Видео", "model": "training.trainingvideo", "icon": "bi bi-camera-video"},
             {"name": "Полезные ссылки", "model": "training.traininglink", "icon": "bi bi-link-45deg"},
@@ -483,6 +485,8 @@ JAZZMIN_SETTINGS = {
         "testing.testsession": "bi bi-broadcast",
         "testing.studentportalaccess": "bi bi-key",
         "training.portalsettings": "bi bi-sliders",
+        "training.trainer": "bi bi-controller",
+        "training.trainingattempt": "bi bi-person-lines-fill",
         "training.trainingvideo": "bi bi-camera-video",
         "training.traininglink": "bi bi-link-45deg",
     },
