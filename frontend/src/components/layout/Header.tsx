@@ -10,11 +10,13 @@ import { cn } from '@/utils/cn'
 
 import { getMobileMoreNav } from './navItems'
 import { NewsBell } from './NewsBell'
+import { TeamLeadNav } from './TeamLeadNav'
 
 export function Header() {
   const { user, logout } = useAuth()
   const [isMoreOpen, setIsMoreOpen] = useState(false)
   const moreNavItems = getMobileMoreNav(user?.role)
+  const teamLead = isTeamLead(user?.role)
 
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
 
@@ -34,7 +36,7 @@ export function Header() {
           className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-hover lg:hidden"
         >
           <Menu className="size-5" aria-hidden />
-          Ещё
+          {teamLead ? 'Меню' : 'Ещё'}
         </button>
 
         {/* News is the Trainer feed (backend: IsTeacher) — not a Team Lead's. */}
@@ -62,7 +64,23 @@ export function Header() {
         </button>
       </div>
 
-      <Drawer isOpen={isMoreOpen} onClose={() => setIsMoreOpen(false)} title="Другие разделы" side="bottom">
+      {/* Team Lead: the same sectioned sidebar, as a drawer on tablet / phone. */}
+      <Drawer isOpen={teamLead && isMoreOpen} onClose={() => setIsMoreOpen(false)} title="Меню" side="left">
+        <div className="-m-4 flex h-[calc(100%+2rem)] flex-col sm:-m-5 sm:h-[calc(100%+2.5rem)]">
+          <div className="min-h-0 flex-1">
+            <TeamLeadNav onNavigate={() => setIsMoreOpen(false)} />
+          </div>
+          <div className="border-t border-border px-3 py-3">
+            <button type="button" onClick={logout}
+              className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-ink-secondary hover:bg-surface-hover hover:text-danger">
+              <LogOut className="size-[18px] shrink-0" aria-hidden />
+              Выйти
+            </button>
+          </div>
+        </div>
+      </Drawer>
+
+      <Drawer isOpen={!teamLead && isMoreOpen} onClose={() => setIsMoreOpen(false)} title="Другие разделы" side="bottom">
         <nav className="grid grid-cols-2 gap-2">
           {moreNavItems.map((item) => (
             <NavLink
