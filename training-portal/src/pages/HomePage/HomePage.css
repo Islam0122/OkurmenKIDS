@@ -1,0 +1,20 @@
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; counter-reset: step; }
+.step { position: relative; padding: 24px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+.step__num { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; margin-bottom: 16px; font-family: var(--font-display); font-weight: 800; color: var(--navy-700); background: var(--amber-100); }
+.step__icon { position: absolute; top: 24px; right: 24px; font-size: 22px; color: var(--navy-100); }
+.step h3 { font-size: 17px; margin-bottom: 6px; }
+.step p { color: var(--text-2); font-size: 15px; }
+.home-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.home-leaders__empty { padding: 32px; }
+.exam-band { position: relative; overflow: hidden; border-radius: var(--radius-xl); padding: clamp(28px, 5vw, 56px); color: #fff; background: radial-gradient(circle at 90% 20%, rgba(245, 165, 36, .4), transparent 40%), linear-gradient(130deg, var(--navy-700), var(--navy-950)); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; box-shadow: var(--shadow-lg); }
+.exam-band::after { content: ''; position: absolute; width: 300px; height: 300px; border-radius: 50%; border: 20px solid rgba(245, 165, 36, .14); right: -90px; bottom: -150px; }
+.exam-band h2 { color: #fff; font-size: clamp(24px, 3.4vw, 36px); }
+.exam-band p { color: rgba(255, 255, 255, .78); margin-top: 10px; max-width: 620px; }
+.exam-band__actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 12px; }
+.alt-bg { background: linear-gradient(180deg, transparent, rgba(232, 232, 251, .55) 30%, rgba(232, 232, 251, .55) 70%, transparent); }
+@media (max-width: 960px) {
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-split { grid-template-columns: 1fr; }
+  .exam-band { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) { .steps { grid-template-columns: 1fr; } .exam-band__actions > * { flex: 1 1 100%; } }

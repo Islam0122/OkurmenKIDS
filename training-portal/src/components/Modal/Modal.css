@@ -1,0 +1,11 @@
+.modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: rgba(18, 17, 58, .55); backdrop-filter: blur(6px); animation: fadeIn .2s ease both; }
+.modal { position: relative; width: min(var(--modal-w, 480px), 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: clamp(22px, 4vw, 32px); animation: popIn .3s var(--ease) both; }
+.modal__close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 12px; background: var(--surface-2); color: var(--text-2); cursor: pointer; font-size: 18px; transition: background .2s; }
+.modal__close:hover { background: var(--navy-50); color: var(--navy-700); }
+.modal__icon { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; font-size: 26px; margin-bottom: 16px; background: var(--navy-50); color: var(--navy-600); }
+.modal__icon--amber { background: var(--amber-100); color: var(--amber-600); }
+.modal__icon--red { background: var(--red-100); color: var(--red-600); }
+.modal__title { font-size: 22px; font-weight: 700; padding-right: 40px; }
+.modal__text { color: var(--text-2); margin-top: 8px; }
+.modal__actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+@media (max-width: 480px) { .modal__actions > * { flex: 1 1 100%; } }

@@ -1,0 +1,18 @@
+.test-card { position: relative; display: flex; flex-direction: column; gap: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 26px; box-shadow: var(--shadow-sm); overflow: hidden; transition: transform .3s var(--ease), box-shadow .3s var(--ease), border-color .3s; }
+.test-card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--navy-600), var(--amber-500)); }
+.test-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--navy-100); }
+.test-card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.test-card__icon { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; font-size: 26px; color: #fff; background: linear-gradient(135deg, var(--navy-500), var(--navy-800)); box-shadow: 0 10px 20px -10px rgba(43, 42, 134, .9); }
+.test-card__kicker { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--amber-600); }
+.test-card__title { font-size: 21px; font-weight: 700; margin-top: 4px; }
+.test-card__desc { color: var(--text-2); font-size: 15px; }
+.level { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.level--easy { background: var(--green-100); color: var(--green-600); }
+.level--medium { background: var(--amber-100); color: var(--amber-600); }
+.level--hard { background: var(--red-100); color: var(--red-600); }
+.test-card__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.test-card__facts div { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-2); border-radius: 12px; font-weight: 700; font-size: 14px; }
+.test-card__facts .bi { color: var(--navy-500); font-size: 17px; }
+.test-card__facts dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.test-card__facts dd { margin: 0; }
+.test-card__foot { margin-top: auto; }
