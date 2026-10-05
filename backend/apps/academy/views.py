@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Count, ProtectedError, Q, RestrictedError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -117,6 +118,7 @@ from .services.lesson_reschedule import cancel_and_reschedule, reschedule_cancel
 from .services.subject_assignments import subject_assignment_overview
 from .services.group_academic_config import config_overview, save_program_config
 from .services.trainer_assignment import assign_trainer, assignment_overview
+from .services.schedule_lesson_sync import snapshot as schedule_snapshot, sync_schedule_lessons
 
 
 def _teacher_profile(request):
@@ -825,6 +827,18 @@ class GroupScheduleViewSet(viewsets.ModelViewSet):
         # models.GroupTeacher) belong to other teachers, even within the
         # same Group.
         return qs.filter(teacher=teacher)
+
+    def perform_update(self, serializer):
+        """Save the slot and move its open future lessons along with it
+        (services.schedule_lesson_sync) — one transaction: a lesson that
+        can't move (a clash) rolls the slot change back too."""
+        before = schedule_snapshot(serializer.instance)
+        with transaction.atomic():
+            slot = serializer.save()
+            try:
+                sync_schedule_lessons(slot, before)
+            except DjangoValidationError as exc:
+                raise _as_drf_validation_error(exc)
 
 
 @extend_schema_view(

@@ -45,6 +45,7 @@ from django.utils import timezone
 from ..constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
 from ..models import GroupSchedule, GroupTeacher, Lesson, Room
 from .group_schedule_conflicts import find_schedule_teacher_conflict
+from .schedule_lesson_sync import SlotSnapshot, snapshot, sync_schedule_lessons
 
 # How many clashing lessons one validation error lists before "…".
 _MAX_LISTED = 5
@@ -250,6 +251,9 @@ class ScheduleChange:
     created: int = 0
     updated: int = 0
     deleted: int = 0
+    # Future lessons moved with their changed slots / left as history.
+    lessons_synced: int = 0
+    lessons_kept: int = 0
 
     @property
     def changed(self) -> bool:
@@ -324,11 +328,14 @@ def parse_schedule_specs(group_teacher: GroupTeacher, items) -> list[SlotSpec]:
 
 
 def _apply_schedule(group_teacher: GroupTeacher, specs: list[SlotSpec], removed_ids: set[int],
-                    changed: list[SlotSpec], was_active: dict[int, bool]) -> ScheduleChange:
+                    changed: list[SlotSpec], was_active: dict[int, bool],
+                    before: dict[int, SlotSnapshot] | None = None, today: dt.date | None = None) -> ScheduleChange:
     """Write the created/changed slots (the removed ones are already gone
     and the changed ones parked inactive by the caller). Every slot is
     fully validated — teacher, room and group conflicts — and every
-    problem is collected before raising, so the admin sees all of them."""
+    problem is collected before raising, so the admin sees all of them.
+    A changed slot's open future lessons follow its new day / time / room
+    (services.schedule_lesson_sync) in the same transaction."""
     change = ScheduleChange(deleted=len(removed_ids))
     slots_by_id = {slot.pk: slot for slot in group_teacher.schedules.filter(pk__in=[s.id for s in changed])}
     problems = []
@@ -356,6 +363,14 @@ def _apply_schedule(group_teacher: GroupTeacher, specs: list[SlotSpec], removed_
             change.created += 1
         else:
             change.updated += 1
+            if before and spec.id in before:
+                try:
+                    synced = sync_schedule_lessons(slot, before[spec.id], today=today)
+                except ValidationError as exc:
+                    problems.extend(f"{spec.label}: {message}" for message in exc.messages)
+                    continue
+                change.lessons_synced += synced.updated
+                change.lessons_kept += synced.kept
     if problems:
         raise ValidationError({"schedule": list(dict.fromkeys(problems))})
     return change
@@ -391,6 +406,7 @@ def save_teaching_program(group_teacher: GroupTeacher, *, teacher, subject, is_a
             ) != (spec.day_of_week, spec.start_time, spec.end_time, spec.room_id)
         ]
         was_active = {spec.id: current[spec.id].is_active for spec in changed}
+        before = {spec.id: snapshot(current[spec.id]) for spec in changed}
         if removed_ids:
             GroupSchedule.objects.filter(pk__in=removed_ids).delete()
         if changed:
@@ -403,5 +419,5 @@ def save_teaching_program(group_teacher: GroupTeacher, *, teacher, subject, is_a
 
     if slots is not None:
         group_teacher.refresh_from_db()
-        result.schedule = _apply_schedule(group_teacher, slots, removed_ids, changed, was_active)
+        result.schedule = _apply_schedule(group_teacher, slots, removed_ids, changed, was_active, before, today)
     return result
