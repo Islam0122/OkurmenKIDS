@@ -243,5 +243,41 @@ export const router = createBrowserRouter([
       },
     ],
   },
+  {
+    // Assistant Workspace — daily academy operations (backend: apps.assistant,
+    // IsAdminOrAssistant). Its own layout; never the Team Lead / Trainer pages.
+    path: '/assistant',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['assistant', 'admin']} />,
+        children: [
+          {
+            lazy: async () => {
+              const { AssistantLayout } = await import('@/features/assistant/layout/AssistantLayout')
+              return { Component: AssistantLayout }
+            },
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/assistant/pages/DashboardPage')).AssistantDashboardPage }) },
+              { path: 'groups', lazy: async () => ({ Component: (await import('@/features/assistant/pages/GroupsPage')).AssistantGroupsPage }) },
+              { path: 'groups/create', lazy: async () => ({ Component: (await import('@/features/assistant/pages/GroupCreatePage')).AssistantGroupCreatePage }) },
+              { path: 'groups/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/GroupDetailPage')).AssistantGroupDetailPage }) },
+              { path: 'students', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentsPage')).AssistantStudentsPage }) },
+              { path: 'students/create', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentCreatePage')).AssistantStudentCreatePage }) },
+              { path: 'students/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentDetailPage')).AssistantStudentDetailPage }) },
+              { path: 'schedule', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SchedulePage')).AssistantSchedulePage }) },
+              { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/assistant/pages/AttendancePage')).AssistantAttendancePage }) },
+              { path: 'scholarships', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ScholarshipsPage')).AssistantScholarshipsPage }) },
+              { path: 'surveys', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveysPage')).AssistantSurveysPage }) },
+              { path: 'surveys/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveyDetailPage')).AssistantSurveyDetailPage }) },
+              { path: 'profile', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ProfilePage')).AssistantProfilePage }) },
+              { path: '*', lazy: async () => ({ Component: (await import('@/features/assistant/pages/NotFoundPage')).AssistantNotFoundPage }) },
+            ],
+          },
+        ],
+      },
+    ],
+  },
   { path: '*', element: <NotFoundPage /> },
 ])

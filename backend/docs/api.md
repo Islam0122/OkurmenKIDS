@@ -25,6 +25,7 @@ implementation detail, never part of its URL.
 | `/api/v1/rooms/` | Rooms (`available` action) | academy |
 | `/api/v1/analytics/dashboard/` | KPI dashboard (period/compare/teacher/group/course/subject filters) | academy |
 | `/api/v1/availability/` | Which teachers are free for a given date + time window | academy |
+| `/api/v1/assistant/` | Assistant Workspace — daily operations (see `docs/assistant.md`) | assistant |
 
 `GroupTeacher` is the "Teaching Program" concept described in the domain
 architecture — deliberately named `programs` in the URL (not

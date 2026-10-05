@@ -1,10 +1,12 @@
 import { Suspense } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Navigate, Outlet } from 'react-router-dom'
 
 import { Header } from '@/components/layout/Header'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { MobileNavigation } from '@/components/layout/MobileNavigation'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { useAuth } from '@/hooks/useAuth'
+import { isAssistant } from '@/lib/roles'
 
 /**
  * The one page shell every /app route renders in:
@@ -17,6 +19,11 @@ import { Sidebar } from '@/components/layout/Sidebar'
  * max-width — so every page gets the same gutters at every breakpoint.
  */
 export function AppLayout() {
+  const { user } = useAuth()
+  // The Assistant works only in its own workspace — /app (trainer, Team Lead
+  // and Admin pages) always sends it to /assistant.
+  if (isAssistant(user?.role)) return <Navigate to="/assistant" replace />
+
   return (
     <div className="flex min-h-dvh bg-surface-muted">
       <Sidebar />
