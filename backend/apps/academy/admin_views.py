@@ -1210,6 +1210,8 @@ def group_workspace_program_edit_view(request, group_id, group_teacher_id):
                             if count
                         ]
                         parts.append("слоты расписания — " + ", ".join(counts))
+                        if schedule.lessons_synced:
+                            parts.append(f"перенесено будущих занятий: {schedule.lessons_synced}")
                     message = "Изменения сохранены: " + "; ".join(parts) + "."
                     if schedule.created or schedule.updated:
                         message += " Когда расписание будет готово, нажмите «Сгенерировать занятия»."
