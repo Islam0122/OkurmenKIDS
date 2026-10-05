@@ -1,19 +1,17 @@
-.exam-layout { width: 100%; min-height: 100vh; min-height: 100dvh; background: var(--background); }
-.exam-layout .train__bar { top: 0; }
+/* The test layout (Training and Exam): the page is only the test. */
+.exam-layout { width: 100%; min-height: 100vh; min-height: 100dvh; background: var(--color-background); }
 .exam-layout .train { padding-top: 0; }
 :fullscreen .exam-layout, .exam-layout:fullscreen { overflow-y: auto; }
 .exam-protected .qcard__text, .exam-protected .qcard__code, .exam-protected .option, .exam-protected .feedback { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .exam-protected textarea { -webkit-user-select: text; user-select: text; }
 
-.exam-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 14px; min-width: 0; }
-.exam-topline .brand__logo { width: 36px; height: 36px; }
-
-.lock-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .94); color: #fff; text-align: center; }
+/* «Return to fullscreen» — the inverse surface, the primary action. */
+.lock-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: var(--color-overlay-strong); color: var(--color-on-primary); text-align: center; }
 .lock-overlay__box { width: 100%; max-width: 460px; display: grid; justify-items: center; gap: 14px; }
-.lock-overlay__icon { width: 76px; height: 76px; border-radius: 24px; display: grid; place-items: center; font-size: 34px; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .2); color: var(--amber-400); }
-.lock-overlay h2 { color: #fff; font-size: clamp(22px, 4vw, 30px); }
-.lock-overlay p { color: rgba(255, 255, 255, .8); }
-.lock-overlay__note { font-size: 13px; color: rgba(255, 255, 255, .55) !important; }
+.lock-overlay__icon { width: 72px; height: 72px; border-radius: var(--radius-xl); display: grid; place-items: center; font-size: 32px; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .2); color: var(--color-primary-border); }
+.lock-overlay h2 { color: var(--color-on-primary); font-size: clamp(22px, 4vw, 30px); }
+.lock-overlay p { color: var(--color-text-on-inverse); }
+.lock-overlay__note { font-size: 13px; opacity: .75; }
 
-.exam-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1500; display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 14px; background: var(--navy-900); color: #fff; font-weight: 700; font-size: 14px; box-shadow: var(--shadow-lg); animation: popIn .25s var(--ease) both; max-width: calc(100% - 32px); overflow-wrap: anywhere; }
-.exam-toast .bi { color: var(--amber-400); }
+.exam-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1500; display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: var(--radius-md); background: var(--color-surface-inverse); color: var(--color-on-primary); font-weight: 700; font-size: 14px; box-shadow: var(--shadow-lg); animation: popIn .25s var(--ease) both; max-width: calc(100% - 32px); overflow-wrap: anywhere; }
+.exam-toast .bi { color: var(--color-primary-border); }

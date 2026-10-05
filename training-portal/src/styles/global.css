@@ -1,69 +1,126 @@
-/* Okurmen Kids Training Portal — design tokens and base styles.
- * Palette from the logo: amber ring (#F5A524) and navy lettering (#2B2A86). */
+/* Okurmen Kids test platform — ONE design system for Training and Exam.
+ *
+ * Semantic tokens (--color-*) are the only colours components should use:
+ *   primary  — every main action, the current item, progress, focus (one blue)
+ *   success  — saved / correct / passed
+ *   warning  — approaching deadline, attention needed
+ *   danger   — error / wrong / time critical
+ *   neutral  — background, surfaces, borders, text
+ * No mode has its own colour: Training and Exam differ in rules, a small
+ * badge and the actions, never in the theme. The amber of the logo stays in
+ * the brand mark only. The older names below (navy-*, amber-*, green-*,
+ * red-*, cta, …) are aliases kept for the site pages. */
 
 :root {
-  /* Main colour: blue. The navy-* names are kept so existing components keep
-   * working; they now hold the blue scale. Amber stays as the brand CTA. */
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --background: #f8fafc;
-  --text-primary: #172033;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --blue-light: #eff6ff;
-  --cta: #f5b400;
-  --cta-hover: #e5a500;
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
+  /* Primary — blue */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-active: #1e40af;
+  --color-primary-soft: #eff6ff;
+  --color-primary-border: #bfdbfe;
+  --color-on-primary: #ffffff;
 
-  --navy-950: #0f172a;
-  --navy-900: #111827;
-  --navy-800: #1e3a8a;
-  --navy-700: #1d4ed8;
-  --navy-600: #2563eb;
-  --navy-500: #3b82f6;
-  --navy-100: #dbeafe;
-  --navy-50: #eff6ff;
+  /* Neutral */
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-secondary: #f8fafc;
+  --color-surface-inverse: #0f172a;
+  --color-text: #172033;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-text-on-inverse: #e2e8f0;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-overlay: rgba(15, 23, 42, 0.55);
+  --color-overlay-strong: rgba(15, 23, 42, 0.94);
 
-  --amber-600: #d97706;
-  --amber-500: #f5a524;
-  --amber-400: #fbbf4a;
-  --amber-100: #fff1d6;
-  --amber-50: #fff8eb;
+  /* Semantic states */
+  --color-success: #16a34a;
+  --color-success-text: #15803d;
+  --color-success-soft: #f0fdf4;
+  --color-success-border: #86efac;
+  --color-warning: #d97706;
+  --color-warning-text: #b45309;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fcd34d;
+  --color-danger: #dc2626;
+  --color-danger-text: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-danger-border: #fca5a5;
 
-  --green-600: #15803d;
-  --green-500: #16a34a;
-  --green-100: #dcfce7;
-  --green-50: #f0fdf4;
-  --red-600: #dc2626;
-  --red-500: #ef4444;
-  --red-100: #fee2e2;
-  --red-50: #fef2f2;
-  --sky-500: #0ea5e9;
-  --sky-100: #e0f2fe;
+  /* Brand mark (logo ring) — not a UI colour */
+  --color-brand-accent: #f5a524;
 
-  --bg: var(--background);
-  --surface: #ffffff;
-  --surface-2: #f8fafc;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --text: var(--text-primary);
-  --text-2: var(--text-secondary);
-  --text-3: var(--text-muted);
+  /* Shape, depth, rhythm */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 12px -4px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 16px 40px -16px rgba(15, 23, 42, 0.22);
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.35);
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+  --test-header-h: 64px;
+  --test-column: 960px;
+  --touch: 44px;
 
   --font-display: 'Unbounded', 'Manrope', system-ui, sans-serif;
   --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --radius-sm: 10px;
-  --radius: 16px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
-  --shadow-lg: 0 16px 40px -16px rgba(15, 23, 42, 0.22);
-  --ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
+  /* ---- Aliases (older names → the tokens above) ---- */
+  --primary: var(--color-primary);
+  --primary-hover: var(--color-primary-hover);
+  --background: var(--color-background);
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-secondary);
+  --text-muted: var(--color-text-muted);
+  --blue-light: var(--color-primary-soft);
+  --cta: var(--color-primary);
+  --cta-hover: var(--color-primary-hover);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+
+  --navy-950: var(--color-surface-inverse);
+  --navy-900: #111827;
+  --navy-800: var(--color-primary-active);
+  --navy-700: var(--color-primary-hover);
+  --navy-600: var(--color-primary);
+  --navy-500: #3b82f6;
+  --navy-100: #dbeafe;
+  --navy-50: var(--color-primary-soft);
+
+  --amber-600: var(--color-warning);
+  --amber-500: var(--color-brand-accent);
+  --amber-400: #fbbf4a;
+  --amber-100: #fef3c7;
+  --amber-50: var(--color-warning-soft);
+  --green-600: var(--color-success-text);
+  --green-500: var(--color-success);
+  --green-100: #dcfce7;
+  --green-50: var(--color-success-soft);
+  --red-600: var(--color-danger);
+  --red-500: #ef4444;
+  --red-100: #fee2e2;
+  --red-50: var(--color-danger-soft);
+  --sky-500: #0ea5e9;
+  --sky-100: #e0f2fe;
+
+  --bg: var(--color-background);
+  --surface: var(--color-surface);
+  --surface-2: var(--color-surface-secondary);
+  --border: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --text: var(--color-text);
+  --text-2: var(--color-text-secondary);
+  --text-3: var(--color-text-muted);
+
+  --radius: var(--radius-lg);
+  --shadow: var(--shadow-md);
+  --ring: var(--focus-ring);
   --container: 1200px;
   --header-h: 72px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -85,7 +142,7 @@ pre { max-width: 100%; overflow-x: auto; }
 h1, h2, h3, h4 { overflow-wrap: break-word; }
 .text-wrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
 :focus-visible { outline: none; box-shadow: var(--ring); border-radius: 8px; }
-::selection { background: var(--amber-100); color: var(--navy-900); }
+::selection { background: var(--color-primary-border); color: var(--color-text); }
 .bi { line-height: 1; display: inline-flex; }
 
 .container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 clamp(16px, 4vw, 32px); }

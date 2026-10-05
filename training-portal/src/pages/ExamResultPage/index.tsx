@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { getExamResult } from '@/api/exam'
 import { ApiError } from '@/api/client'
 import { ErrorState } from '@/components/ErrorState'
+import { TestHeader } from '@/components/TestHeader'
+import { EXAM_MODE } from '@/components/TestScreen/modes'
 import { Icon } from '@/components/Icon'
 import { Loader } from '@/components/Loader'
 import { useAsync } from '@/hooks/useAsync'
@@ -32,13 +34,17 @@ export function ExamResultPage() {
   }
   const data = result.data
   return (
+    <>
+    {/* The same header as the exam itself (no timer): the result is part of it. */}
+    <TestHeader config={EXAM_MODE} title={data.test_title} student={data.student_name} />
     <div className="container result-page">
-      <span className="eyebrow" style={{ marginBottom: 16 }}><Icon name="clipboard-check" />{t.examMode.doneTitle}</span>
+      <p className="visually-hidden" role="status">{t.examMode.doneTitle}</p>
       <ResultView
         data={data}
         hiddenText={t.examMode.hiddenResult}
       />
       <p className="result-final"><Icon name="check2-circle" />{t.examMode.closePage}</p>
     </div>
+    </>
   )
 }

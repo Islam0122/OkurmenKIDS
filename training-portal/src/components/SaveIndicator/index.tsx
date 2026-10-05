@@ -4,9 +4,9 @@ import { t } from '@/i18n'
 import { Icon } from '../Icon'
 
 const VIEW: Record<Exclude<SaveState, 'idle'>, { icon: string; text: string; color: string }> = {
-  saving: { icon: 'arrow-repeat', text: t.save.saving, color: 'var(--text-3)' },
-  saved: { icon: 'cloud-check', text: t.save.saved, color: 'var(--green-600)' },
-  offline: { icon: 'wifi-off', text: t.save.offline, color: 'var(--red-600)' },
+  saving: { icon: 'arrow-repeat', text: t.save.saving, color: 'var(--color-text-muted)' },
+  saved: { icon: 'cloud-check', text: t.save.saved, color: 'var(--color-success-text)' },
+  offline: { icon: 'wifi-off', text: t.save.offline, color: 'var(--color-danger-text)' },
 }
 
 /** «Сакталууда… / Сакталды / Байланыш жок» */

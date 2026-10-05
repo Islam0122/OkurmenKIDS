@@ -4,19 +4,19 @@ import { useNavigate } from 'react-router-dom'
 import type { SecuritySettings } from '@/types'
 
 import { Button } from '@/components/Button'
+import { ConfirmSubmitModal } from '@/components/ConfirmSubmitModal'
 import { errorText } from '@/components/ErrorState'
 import { Icon } from '@/components/Icon'
 import { Modal } from '@/components/Modal'
-import { ProgressBar } from '@/components/ProgressBar'
 import { QuestionCard } from '@/components/QuestionCard'
 import { QuestionNavigation } from '@/components/QuestionNavigation'
 import { SaveIndicator } from '@/components/SaveIndicator'
-import { Timer } from '@/components/Timer'
+import { TestHeader } from '@/components/TestHeader'
+import { TestProgress } from '@/components/TestProgress'
 import { isAnswered, type AttemptRunner } from '@/hooks/useAttemptRunner'
 import { useExamGuard, type BlockedAction } from '@/hooks/useExamGuard'
 import { useTimer } from '@/hooks/useTimer'
 import { t } from '@/i18n'
-import { formatClock } from '@/lib/format'
 import '@/pages/TrainingPage/TrainingPage.css'
 
 import { TEST_MODES, type TestMode, type TestModeConfig } from './modes'
@@ -101,34 +101,21 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
   const last = index === total - 1
   const showOutcome = config.allowCheck && attempt.show_explanation
   const canCheck = showOutcome && !locked && isAnswered(answer)
-  const unanswered = total - runner.answeredCount
 
   return (
     <div className="train">
-      <header className="train__bar">
-        <div className="train__bar-inner">
-          {config.header.kind === 'badge' ? (
-            <span className="train__badge"><Icon name="clipboard-check" /><span>{config.header.label}</span></span>
-          ) : (
-            <button type="button" className="train__back" aria-label={t.training.leave} onClick={() => setConfirmLeave(true)}>
-              <Icon name="chevron-left" /><span>{t.training.leave}</span>
-            </button>
-          )}
-          <div className="train__title">
-            <strong title={attempt.test_title}>{attempt.test_title}</strong>
-            <span className="train__student"><Icon name="person" /><span>{attempt.student_name}</span></span>
-          </div>
-          <Timer secondsLeft={secondsLeft} warnAt={config.timer.warnAt} dangerAt={config.timer.dangerAt} />
-        </div>
-      </header>
+      <TestHeader
+        config={config}
+        title={attempt.test_title}
+        student={attempt.student_name}
+        secondsLeft={secondsLeft}
+        onLeave={onLeave ? () => setConfirmLeave(true) : undefined}
+      />
 
       <div className="train__layout">
-        <div className="train__progress">
-          <ProgressBar value={index + 1} max={total} label={t.training.progress(index + 1, total)} />
-          {config.counts ? <p className="train__counts">{config.counts(runner.answeredCount, unanswered)}</p> : null}
-        </div>
+        <TestProgress index={index} total={total} answered={runner.answeredCount} counts={config.counts} />
         {runner.resumed ? (
-          <div className="train__notice">
+          <div className="train__notice" role="status">
             <span><Icon name="arrow-clockwise" />{text.resumed}</span>
             {config.allowRestart && onRestart ? <Button variant="ghost" size="sm" onClick={onRestart}>{t.training.restart}</Button> : null}
           </div>
@@ -168,7 +155,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
 
         <div className="train__exit">
           {!last ? (
-            <button type="button" className="link-arrow" style={{ border: 0, background: 'none', cursor: 'pointer' }} onClick={() => setConfirmFinish(true)}>
+            <button type="button" className="link-arrow train__finish-link" onClick={() => setConfirmFinish(true)}>
               <Icon name="flag" />{text.finish}
             </button>
           ) : null}
@@ -192,7 +179,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
         onClose={guard.dismissLeftPage}
         title={t.guard.leftTitle}
         icon="exclamation-triangle"
-        tone="amber"
+        tone="warning"
         actions={<Button onClick={guard.dismissLeftPage}>{t.guard.continue}</Button>}
       >
         <p className="modal__text">{t.guard.leftText}</p>
@@ -209,9 +196,8 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
           onClose={() => setConfirmLeave(false)}
           title={t.training.leaveTitle}
           icon="box-arrow-left"
-          tone="amber"
           actions={<>
-            <Button variant="ghost" onClick={() => setConfirmLeave(false)}>{t.training.leaveStay}</Button>
+            <Button variant="outline" onClick={() => setConfirmLeave(false)}>{t.training.leaveStay}</Button>
             <Button variant="outline" icon="box-arrow-left" onClick={onLeave}>{t.training.leaveConfirm}</Button>
           </>}
         >
@@ -219,33 +205,23 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
         </Modal>
       ) : null}
 
-      <Modal
+      <ConfirmSubmitModal
         open={confirmFinish}
-        onClose={() => setConfirmFinish(false)}
-        title={text.finishTitle}
-        icon="flag"
-        tone="amber"
-        actions={<>
-          <Button variant="ghost" onClick={() => setConfirmFinish(false)}>{text.keepGoing}</Button>
-          <Button icon="flag-fill" disabled={runner.busy} onClick={() => { setConfirmFinish(false); void runner.submit() }}>{text.finish}</Button>
-        </>}
-      >
-        <p className="modal__text">{text.finishText}</p>
-        {config.unansweredWarn && unanswered > 0 ? <p className="modal__text"><strong>{config.unansweredWarn(unanswered)}</strong></p> : null}
-        <dl className="finish-stats">
-          <div><dt>{t.training.total}</dt><dd>{total}</dd></div>
-          <div><dt>{t.training.answered}</dt><dd>{runner.answeredCount}</dd></div>
-          <div><dt>{t.training.unanswered}</dt><dd>{unanswered}</dd></div>
-          <div><dt>{t.training.timeLeft}</dt><dd>{secondsLeft === null ? '—' : formatClock(secondsLeft)}</dd></div>
-        </dl>
-      </Modal>
+        config={config}
+        total={total}
+        answered={runner.answeredCount}
+        secondsLeft={secondsLeft}
+        busy={runner.busy}
+        onCancel={() => setConfirmFinish(false)}
+        onConfirm={() => { setConfirmFinish(false); void runner.submit() }}
+      />
 
       <Modal
         open={timeUp}
         dismissible={false}
         title={text.timeUpTitle}
         icon="alarm"
-        tone="red"
+        tone="warning"
         actions={<Button icon="bar-chart" onClick={flow.openResult}>{text.seeResult}</Button>}
       >
         <p className="modal__text">{text.timeUpText}</p>

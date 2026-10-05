@@ -7,9 +7,13 @@
   {# same-origin (not no-referrer): the page's own POST must keep its Origin for CSRF. #}
   <meta name="referrer" content="same-origin">
   <meta name="color-scheme" content="only light">
-  <meta name="theme-color" content="#F6F9F7">
+  <meta name="theme-color" content="#ffffff">
   <title>{% block title %}Тест{% endblock %} · OkurmenKIDS</title>
   <link rel="icon" href="{% static 'images/logo.png' %}">
+  {# Same typefaces as the test portal (display=swap: the system font shows until they load). #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&family=Manrope:wght@500;600;700;800&display=swap">
   <link rel="stylesheet" href="{% static 'testing/css/public.css' %}">
   <link rel="stylesheet" href="{% static 'testing/css/code_editor.css' %}">
   <script>document.documentElement.classList.add("ex-js");</script>
@@ -17,8 +21,11 @@
 <body class="{% block body_class %}{% endblock %}">
   {% block banner %}{% endblock %}
   <header class="ex-brand">
-    <img src="{% static 'images/logo.png' %}" alt="" width="34" height="34">
-    <span>Okurmen<strong>KIDS</strong></span>
+    <div class="ex-brand__inner">
+      <img src="{% static 'images/logo.png' %}" alt="" width="32" height="32">
+      <span class="ex-brand__name">Okurmen Kids</span>
+      <span class="ex-badge">{% block mode_badge %}Экзамен{% endblock %}</span>
+    </div>
   </header>
   <main class="ex-main">
     {% block content %}{% endblock %}

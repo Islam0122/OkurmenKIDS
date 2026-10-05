@@ -156,7 +156,9 @@ export function useAttemptRunner(adapter: AttemptAdapter, onFinished: (attemptId
     const saved = stashed >= 0 ? stashed : indexOf(state.current_question_id)
     position.current = stashed >= 0 ? stash.position : undefined
     positionSent.current = saved >= 0 && stashed < 0 ? state.questions[saved].id : null
-    const resume = isResume === 'auto' ? state.questions.some((q) => restored[q.id]) || saved >= 0 : isResume
+    // A resume: answers already given, or a saved position past the first
+    // question (standing on question 1 with nothing answered is a fresh start).
+    const resume = isResume === 'auto' ? state.questions.some((q) => restored[q.id]) || saved > 0 : isResume
     const firstOpen = state.questions.findIndex((q) => !isAnswered(restored[q.id]))
     // The question the student was on; if it is gone, the first unanswered one.
     setIndex(saved >= 0 ? saved : resume && firstOpen > 0 ? firstOpen : 0)

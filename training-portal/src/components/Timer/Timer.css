@@ -1,6 +1,11 @@
-.timer { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; border-radius: 10px; background: var(--surface); color: var(--primary); border: 1px solid var(--border); font-weight: 700; white-space: nowrap; box-sizing: border-box; }
-.timer .bi { font-size: 18px; }
-.timer__value { font-family: var(--font-mono); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.timer--warning { color: var(--warning); border-color: #fcd34d; background: #fffbeb; }
-.timer--low { color: var(--danger); border-color: #fca5a5; background: var(--red-50); }
-.timer--none { color: var(--text-2); font-size: 14px; }
+/* A compact header chip. Neutral by default; warning near the end; danger
+ * when critical — only the chip changes, never the page. */
+.timer { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); font-weight: 700; white-space: nowrap; box-sizing: border-box; transition: color .2s, background .2s, border-color .2s; }
+.timer .bi { font-size: 17px; color: var(--color-primary); }
+.timer__value { font-family: var(--font-mono); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.timer--warning { color: var(--color-warning-text); border-color: var(--color-warning-border); background: var(--color-warning-soft); }
+.timer--warning .bi { color: var(--color-warning); }
+.timer--low { color: var(--color-danger-text); border-color: var(--color-danger-border); background: var(--color-danger-soft); }
+.timer--low .bi { color: var(--color-danger); }
+.timer--none { color: var(--color-text-secondary); font-size: 14px; }
+@media (max-width: 640px) { .timer { height: 36px; padding: 0 10px; gap: 6px; } .timer__value { font-size: 15px; } }

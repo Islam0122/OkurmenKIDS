@@ -7,19 +7,20 @@ import './Timer.css'
 /** The countdown chip. `secondsLeft` null = no time limit. */
 export function Timer({ secondsLeft, warnAt = 300, dangerAt = 60 }: {
   secondsLeft: number | null
-  /** amber at or below this many seconds */
+  /** warning at or below this many seconds */
   warnAt?: number
-  /** red at or below this many seconds */
+  /** danger at or below this many seconds */
   dangerAt?: number
 }) {
   if (secondsLeft === null) {
     return <span className="timer timer--none"><Icon name="infinity" /><span>{t.test.noLimit}</span></span>
   }
-  // Calm by default; amber in the last 5 minutes, red in the last minute.
+  // The icon changes with the colour, so the state never depends on colour alone.
   const tone = secondsLeft <= dangerAt ? ' timer--low' : secondsLeft <= warnAt ? ' timer--warning' : ''
+  const icon = secondsLeft <= dangerAt ? 'alarm' : secondsLeft <= warnAt ? 'hourglass-split' : 'clock'
   return (
     <span className={`timer${tone}`} role="timer" aria-label={t.training.timer}>
-      <Icon name="clock" />
+      <Icon name={icon} />
       <span className="timer__value">{formatClock(secondsLeft)}</span>
     </span>
   )

@@ -11,8 +11,9 @@ import { t } from '@/i18n'
  */
 export interface TestModeConfig {
   id: string
-  /** Bar, left side: a «back» button (the attempt stays resumable) or a fixed badge. */
-  header: { kind: 'leave' } | { kind: 'badge'; label: string }
+  /** The test header (one component for every mode): the mode badge, and
+   * whether the student may leave to the site (the attempt stays resumable). */
+  header: { label: string; icon: string; canLeave: boolean }
   /** Timer colours: warning / danger under this many seconds. */
   timer: { warnAt: number; dangerAt: number }
   /** «Текшерүү» during the attempt (still only when the test shows explanations). */
@@ -38,7 +39,7 @@ export interface TestModeConfig {
 
 export const TRAINING_MODE: TestModeConfig = {
   id: 'training',
-  header: { kind: 'leave' },
+  header: { label: t.training.badge, icon: 'mortarboard', canLeave: true },
   timer: { warnAt: 300, dangerAt: 60 },
   allowCheck: true,
   allowRestart: true,
@@ -58,7 +59,7 @@ export const TRAINING_MODE: TestModeConfig = {
 /** Exam: no answer checking, no way back to the site, a stricter timer (10 / 5 minutes). */
 export const EXAM_MODE: TestModeConfig = {
   id: 'exam',
-  header: { kind: 'badge', label: t.examMode.badge },
+  header: { label: t.examMode.badge, icon: 'clipboard-check', canLeave: false },
   timer: { warnAt: 600, dangerAt: 300 },
   allowCheck: false,
   counts: t.examMode.answeredLeft,
