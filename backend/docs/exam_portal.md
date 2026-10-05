@@ -162,10 +162,14 @@ Mode's rules on the backend (`services/exam_portal.py`):
    from the address bar and talks to `/api/v1/training/exam-attempts/<id>/…`
    (same shapes as the training API): state, autosave per answer, events,
    submit (`timed_out`), result.
-4. A reload restores the same attempt: saved answers, the first unanswered
-   question, the timer from the server's remaining time (re-synced on every
-   save). `ensure_current` closes an overdue attempt on the server;
-   auto-submit at 00:00 sends `timed_out`.
+4. A reload restores the same attempt: saved answers, the question the
+   student was on (`StudentAttempt.current_question_id`, `PATCH …/<id>/`
+   debounced by the page; the first unanswered question when it is gone),
+   the timer from the server's remaining time (re-synced on every save).
+   Answers / moves the backend hasn't confirmed yet are kept for the tab
+   (sessionStorage `okurmen_pending_<id>`) and re-sent after the reload.
+   `ensure_current` closes an overdue attempt on the server; auto-submit at
+   00:00 sends `timed_out`.
 5. Tab switches follow `Test.max_tab_switches` (warning «n / max», the
    attempt ends past it); fullscreen follows `Test.require_fullscreen`.
 
@@ -174,6 +178,38 @@ answer checking, «answered / left» counts, timer amber under 10 min and red
 under 5, «Экзаменди аяктоо» confirmation with the unanswered count, the
 result page with «Кабинетке кайтуу» and no retake / leaderboard.
 
-Roles: only the student gets a token (from the student portal). A Team
-Lead / Trainer cannot take a test (403); an Admin may check a test on the
-legacy student page.
+Roles: only the student gets a token (from the student portal, or from the
+session-key page for the browser that started the attempt). A Team Lead /
+Trainer cannot take a test (403); an Admin may check a test on the legacy
+student page.
+
+### Session key entry (`/exam/?key=…`)
+
+The link the LMS shows on a session page. The key and the roster choice are
+validated on the server (`public_views._start_in_shared_ui`); for an exam
+session with a roster student and a configured portal it calls
+`start_exam` and redirects to the same React page with a token. Refreshing
+`/exam/?key` in the same browser returns the same attempt; another browser
+(or an exam already started in the student cabinet) gets «уже начат» and no
+token. Name-only sessions and a missing portal address keep the old page.
+
+### Integrity
+
+| Case | Protection |
+|---|---|
+| Token | `TimestampSigner("exam.attempt")` over `attempt:student:session`, 24 h; every request re-checks it against the stored row. Bad / expired / altered / foreign token → 403 `forbidden` before the attempt is looked up (no id enumeration). |
+| Finished / expired attempt | result readable; PUT / PATCH / events → 409 `closed`; submit returns the stored result (idempotent). |
+| Two autosaves of one question out of order, two tabs | the page sends `seq` (its clock); `save_drafts` keeps the newer one per question (stored in the draft) under `select_for_update`. |
+| Two position moves out of order | `save_position`: one conditional `UPDATE … WHERE position_seq < seq`. |
+| Double submit | `close_attempt` locks the row; the second call sees it closed. |
+| Autosave committed during submit | `submit_exam` passes only the posted answers; `close_attempt` merges the drafts as stored under its lock. |
+| Deadline | the server's (`ensure_current`, 5 s grace); the page's `timed_out` counts only within 15 s of it. |
+| Attempts | no exam start endpoint in the API; `start_exam` → `join` resumes the active attempt and applies the limit. |
+
+### Test modes (frontend)
+
+`TestScreen` reads a `TestModeConfig` (`components/TestScreen/modes.ts`:
+`TRAINING_MODE`, `EXAM_MODE`) — header (back button / badge), timer
+thresholds, answer checking, counts, unanswered warning, restart, texts.
+A new kind of test is a new config; the lifecycle stays in
+`useAttemptRunner`, the endpoints in the adapters (`useTraining`, `useExam`).

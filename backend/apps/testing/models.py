@@ -1054,6 +1054,11 @@ class StudentAttempt(models.Model):
     # graded into Answer rows only when the attempt is finished.
     draft_answers = models.JSONField(default=dict, blank=True, verbose_name="Черновик ответов")
     draft_saved_at = models.DateTimeField(null=True, blank=True, verbose_name="Черновик сохранён")
+    # Where the student is in the attempt (the shared test UI restores it
+    # after a reload). position_seq is the page's clock at the move: an older
+    # request arriving late never overwrites a newer position.
+    current_question_id = models.UUIDField(null=True, blank=True, verbose_name="Текущий вопрос")
+    position_seq = models.PositiveBigIntegerField(default=0, editable=False)
     tab_switch_count = models.PositiveIntegerField(default=0, verbose_name="Уходов со страницы")
     violation_count = models.PositiveIntegerField(default=0, verbose_name="Нарушений")
     finish_reason = models.CharField(

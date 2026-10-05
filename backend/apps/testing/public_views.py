@@ -10,6 +10,11 @@ adds one-question-at-a-time navigation, the timer and the code editor.
 An attempt page only opens in the browser that started the attempt (its id
 is remembered in the Django session), so a shared link can't be used to
 answer for someone else. All rules live in services/attempts.py.
+
+An exam session joined from its roster opens in the shared test UI (the
+React portal, Exam Mode rules) when the portal address is configured — see
+_start_in_shared_ui; the form here remains for name-only sessions and as
+the fallback.
 """
 from __future__ import annotations
 
@@ -125,6 +130,9 @@ def join_view(request):
                     context["error"] = "Выберите себя из списка."
                     return render(request, "testing/public/join.html", context)
             try:
+                exam_url = _start_in_shared_ui(request, session, student)
+                if exam_url:
+                    return redirect(exam_url)
                 attempt = join(session, student_name=name, student=student)
             except AttemptError as error:
                 context["error"] = error.messages[0]
@@ -133,6 +141,35 @@ def join_view(request):
             _remember(request, attempt)
             return redirect("testing_public_take", attempt_id=attempt.pk)
     return render(request, "testing/public/join.html", context)
+
+
+def _start_in_shared_ui(request, session, student) -> str | None:
+    """An exam session, a student from its roster, the portal configured →
+    the attempt runs in the shared test UI (Exam Mode rules: server timer,
+    autosave, one attempt). Returns where to go; None keeps this page's own
+    test form (no roster, or no portal address).
+
+    The key and the roster choice are validated here, on the server; the
+    page only receives a signed token for the attempt. An exam the student
+    already started elsewhere (their cabinet, another device) is not handed
+    to this browser — only the browser that started it gets it back after a
+    refresh, so picking someone else's name can't take over their exam."""
+    from apps.training.exam_api import portal_exam_url
+    from apps.training.models import PortalSettings
+
+    from .models import SessionType
+    from .services import exam_portal
+
+    if student is None or session.session_type != SessionType.EXAM or not PortalSettings.load().portal_url:
+        return None
+    mine = request.session.get(_ATTEMPTS_SESSION_KEY, [])
+    for active in session.attempts.filter(student=student, status=AttemptStatus.ACTIVE):
+        active.session = session
+        if exam_portal.ensure_current(active, request).status == AttemptStatus.ACTIVE and str(active.pk) not in mine:
+            raise AttemptError("Этот экзамен уже начат в другом браузере или в кабинете студента. Продолжите его там.")
+    attempt = exam_portal.start_exam(session, student, request)
+    _remember(request, attempt)
+    return portal_exam_url(attempt)
 
 
 def _answers_from_post(post, questions) -> dict[str, SubmittedAnswer]:

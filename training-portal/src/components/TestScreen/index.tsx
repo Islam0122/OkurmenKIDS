@@ -19,7 +19,9 @@ import { t } from '@/i18n'
 import { formatClock } from '@/lib/format'
 import '@/pages/TrainingPage/TrainingPage.css'
 
-export type TestMode = 'training' | 'exam'
+import { TEST_MODES, type TestMode, type TestModeConfig } from './modes'
+
+export { EXAM_MODE, TEST_MODES, TRAINING_MODE, type TestMode, type TestModeConfig } from './modes'
 
 /**
  * What happens when an attempt ends: straight to the result, or — when the
@@ -45,21 +47,16 @@ export function useFinishFlow(resultPath: (attemptId: string) => string) {
 
 export type FinishFlow = ReturnType<typeof useFinishFlow>
 
-/** Exam timer: warning under 10 minutes, danger under 5; training: 5 / 1. */
-const TIMER_LIMITS: Record<TestMode, { warnAt: number; dangerAt: number }> = {
-  training: { warnAt: 300, dangerAt: 60 },
-  exam: { warnAt: 600, dangerAt: 300 },
-}
-
 /**
  * The one test screen of the portal — Training and Exam alike: the bar
  * (title, timer), progress, question numbers, the question card, navigation,
- * the guard (fullscreen / tab switches / copy) and the finish dialogs. An
- * exam differs only in its rules: no answer checking, no leaving to the
- * site, a stricter timer, a final «Экзаменди аяктоо» confirmation.
+ * the guard (fullscreen / tab switches / copy) and the finish dialogs. What
+ * differs between kinds of test comes from their TestModeConfig (./modes) —
+ * no mode checks here.
  */
 export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }: {
-  mode: TestMode
+  /** a known mode, or a config of a new kind of test */
+  mode: TestMode | TestModeConfig
   runner: AttemptRunner
   flow: FinishFlow
   security: SecuritySettings
@@ -68,7 +65,8 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
   /** Training: «Башынан баштоо» after a resume. */
   onRestart?: () => void
 }) {
-  const exam = mode === 'exam'
+  const config = typeof mode === 'string' ? TEST_MODES[mode] : mode
+  const { text } = config
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [blocked, setBlocked] = useState<BlockedAction | null>(null)
@@ -101,16 +99,16 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
   const fb = runner.feedback[question.id]
   const locked = Boolean(fb)
   const last = index === total - 1
-  const canCheck = !exam && attempt.show_explanation && !locked && isAnswered(answer)
+  const showOutcome = config.allowCheck && attempt.show_explanation
+  const canCheck = showOutcome && !locked && isAnswered(answer)
   const unanswered = total - runner.answeredCount
-  const limits = TIMER_LIMITS[mode]
 
   return (
     <div className="train">
       <header className="train__bar">
         <div className="train__bar-inner">
-          {exam ? (
-            <span className="train__badge"><Icon name="clipboard-check" /><span>{t.examMode.badge}</span></span>
+          {config.header.kind === 'badge' ? (
+            <span className="train__badge"><Icon name="clipboard-check" /><span>{config.header.label}</span></span>
           ) : (
             <button type="button" className="train__back" aria-label={t.training.leave} onClick={() => setConfirmLeave(true)}>
               <Icon name="chevron-left" /><span>{t.training.leave}</span>
@@ -120,19 +118,19 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
             <strong title={attempt.test_title}>{attempt.test_title}</strong>
             <span className="train__student"><Icon name="person" /><span>{attempt.student_name}</span></span>
           </div>
-          <Timer secondsLeft={secondsLeft} warnAt={limits.warnAt} dangerAt={limits.dangerAt} />
+          <Timer secondsLeft={secondsLeft} warnAt={config.timer.warnAt} dangerAt={config.timer.dangerAt} />
         </div>
       </header>
 
       <div className="train__layout">
         <div className="train__progress">
           <ProgressBar value={index + 1} max={total} label={t.training.progress(index + 1, total)} />
-          {exam ? <p className="train__counts">{t.examMode.answeredLeft(runner.answeredCount, unanswered)}</p> : null}
+          {config.counts ? <p className="train__counts">{config.counts(runner.answeredCount, unanswered)}</p> : null}
         </div>
         {runner.resumed ? (
           <div className="train__notice">
-            <span><Icon name="arrow-clockwise" />{exam ? t.examMode.resumed : t.training.resumed}</span>
-            {!exam && onRestart ? <Button variant="ghost" size="sm" onClick={onRestart}>{t.training.restart}</Button> : null}
+            <span><Icon name="arrow-clockwise" />{text.resumed}</span>
+            {config.allowRestart && onRestart ? <Button variant="ghost" size="sm" onClick={onRestart}>{t.training.restart}</Button> : null}
           </div>
         ) : null}
         {runner.error ? (
@@ -142,7 +140,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
           </div>
         ) : null}
 
-        <QuestionNavigation states={runner.navStates} onSelect={runner.goTo} showOutcome={!exam && attempt.show_explanation} />
+        <QuestionNavigation states={runner.navStates} onSelect={runner.goTo} showOutcome={showOutcome} />
 
         <div className="train__question">
           <QuestionCard
@@ -163,7 +161,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
           <div className="train__controls-right">
             {canCheck ? <Button variant="navy" icon="check2-circle" disabled={runner.busy} onClick={() => { void runner.check(question.id) }}>{t.training.check}</Button> : null}
             {last
-              ? <Button variant="primary" icon="flag" onClick={() => setConfirmFinish(true)}>{exam ? t.examMode.finish : t.training.finish}</Button>
+              ? <Button variant="primary" icon="flag" onClick={() => setConfirmFinish(true)}>{text.finish}</Button>
               : <Button variant={canCheck ? 'outline' : 'primary'} iconEnd="arrow-right" onClick={() => runner.goTo(index + 1)}>{t.training.next}</Button>}
           </div>
         </div>
@@ -171,7 +169,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
         <div className="train__exit">
           {!last ? (
             <button type="button" className="link-arrow" style={{ border: 0, background: 'none', cursor: 'pointer' }} onClick={() => setConfirmFinish(true)}>
-              <Icon name="flag" />{exam ? t.examMode.finish : t.training.finish}
+              <Icon name="flag" />{text.finish}
             </button>
           ) : null}
         </div>
@@ -199,7 +197,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
       >
         <p className="modal__text">{t.guard.leftText}</p>
         {attempt.security.max_tab_switches !== null ? (
-          <p className="modal__text"><strong>{(exam ? t.examMode.leftCount : t.guard.leftCount)(runner.tabSwitches, attempt.security.max_tab_switches)}</strong></p>
+          <p className="modal__text"><strong>{text.leftCount(runner.tabSwitches, attempt.security.max_tab_switches)}</strong></p>
         ) : null}
       </Modal>
 
@@ -224,16 +222,16 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
       <Modal
         open={confirmFinish}
         onClose={() => setConfirmFinish(false)}
-        title={exam ? t.examMode.finishTitle : t.training.finishTitle}
+        title={text.finishTitle}
         icon="flag"
         tone="amber"
         actions={<>
-          <Button variant="ghost" onClick={() => setConfirmFinish(false)}>{exam ? t.examMode.keepGoing : t.training.keepGoing}</Button>
-          <Button icon="flag-fill" disabled={runner.busy} onClick={() => { setConfirmFinish(false); void runner.submit() }}>{exam ? t.examMode.finish : t.training.finish}</Button>
+          <Button variant="ghost" onClick={() => setConfirmFinish(false)}>{text.keepGoing}</Button>
+          <Button icon="flag-fill" disabled={runner.busy} onClick={() => { setConfirmFinish(false); void runner.submit() }}>{text.finish}</Button>
         </>}
       >
-        <p className="modal__text">{exam ? t.examMode.finishText : t.training.finishText}</p>
-        {exam && unanswered > 0 ? <p className="modal__text"><strong>{t.examMode.unansweredWarn(unanswered)}</strong></p> : null}
+        <p className="modal__text">{text.finishText}</p>
+        {config.unansweredWarn && unanswered > 0 ? <p className="modal__text"><strong>{config.unansweredWarn(unanswered)}</strong></p> : null}
         <dl className="finish-stats">
           <div><dt>{t.training.total}</dt><dd>{total}</dd></div>
           <div><dt>{t.training.answered}</dt><dd>{runner.answeredCount}</dd></div>
@@ -245,12 +243,12 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
       <Modal
         open={timeUp}
         dismissible={false}
-        title={exam ? t.examMode.timeUpTitle : t.training.timeUpTitle}
+        title={text.timeUpTitle}
         icon="alarm"
         tone="red"
-        actions={<Button icon="bar-chart" onClick={flow.openResult}>{exam ? t.examMode.seeResult : t.training.seeResult}</Button>}
+        actions={<Button icon="bar-chart" onClick={flow.openResult}>{text.seeResult}</Button>}
       >
-        <p className="modal__text">{exam ? t.examMode.timeUpText : t.training.timeUpText}</p>
+        <p className="modal__text">{text.timeUpText}</p>
       </Modal>
     </div>
   )
