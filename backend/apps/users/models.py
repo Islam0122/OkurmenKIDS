@@ -26,6 +26,12 @@ class User(AbstractUser):
         # студенты, занятия, KPI, аналитика, отчёты), но только читает —
         # см. apps.users.permissions.can_view_academy / IsTeamLeadReadOnly.
         TEAM_LEAD = "team_lead", "Team Lead"
+        # Операционная роль академии: группы, студенты (добавление, перевод,
+        # деактивация/активация), расписание, посещаемость, стипендии,
+        # опросы — только через Assistant Workspace (/assistant/ во фронтенде,
+        # /api/v1/assistant/ в API). Никаких KPI, HR, ролей и Django admin —
+        # см. apps.users.permissions.is_assistant / IsAdminOrAssistant.
+        ASSISTANT = "assistant", "Ассистент"
 
     username = models.CharField(
         max_length=150,
@@ -94,8 +100,10 @@ class User(AbstractUser):
         # Team Lead works only through the LMS (frontend/API), read-only: it
         # is never a Django superuser nor a Django admin (staff) account,
         # whatever form or script saved it. Access itself comes from the role
-        # (apps.users.permissions), never from Django permissions.
-        if self.role == self.Role.TEAM_LEAD:
+        # (apps.users.permissions), never from Django permissions. The same
+        # holds for an Assistant: it works only through the Assistant
+        # Workspace, never through Django admin.
+        if self.role in (self.Role.TEAM_LEAD, self.Role.ASSISTANT):
             self.is_superuser = False
             self.is_staff = False
             update_fields = kwargs.get("update_fields")
@@ -114,6 +122,10 @@ class User(AbstractUser):
     @property
     def is_team_lead(self):
         return self.role == self.Role.TEAM_LEAD
+
+    @property
+    def is_assistant(self):
+        return self.role == self.Role.ASSISTANT
 
 
 class Subject(models.Model):

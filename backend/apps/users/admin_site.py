@@ -37,14 +37,16 @@ def lms_login_url() -> str:
 
 
 class LmsAwareAdminAuthenticationForm(AdminAuthenticationForm):
-    """Django admin is for administrators only. A Team Lead or a Trainer who
+    """Django admin is for administrators only. A Team Lead, an Assistant or a Trainer who
     types their (correct) LMS credentials here would otherwise get Django's
     «enter a correct username and password for a staff account» — which
     reads like a wrong password. Tell them where they actually sign in."""
 
     def confirm_login_allowed(self, user):
         role = getattr(user, "role", None)
-        lms_only = role == User.Role.TEAM_LEAD or (role == User.Role.TEACHER and not user.is_staff)
+        lms_only = role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT) or (
+            role == User.Role.TEACHER and not user.is_staff
+        )
         if user.is_active and lms_only and not user.is_superuser:
             raise ValidationError(
                 "Это вход в панель администратора. %(role)s входит в LMS: %(url)s "
@@ -67,10 +69,11 @@ class OkurmenKidsAdminSite(AdminSite):
     login_form = LmsAwareAdminAuthenticationForm
 
     def has_permission(self, request):
-        """Django admin is system management — never a Team Lead's, even if
-        the account was given is_staff by mistake."""
+        """Django admin is system management — never a Team Lead's nor an
+        Assistant's (who works through the Assistant Workspace), even if the
+        account was given is_staff by mistake."""
         user = request.user
-        if getattr(user, "role", None) == User.Role.TEAM_LEAD and not user.is_superuser:
+        if getattr(user, "role", None) in (User.Role.TEAM_LEAD, User.Role.ASSISTANT) and not user.is_superuser:
             return False
         return super().has_permission(request)
 

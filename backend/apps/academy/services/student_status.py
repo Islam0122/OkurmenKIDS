@@ -35,6 +35,17 @@ from ..models import Group, Student, StudentStatusEvent
 _REASON_REQUIRED_TYPES = StudentStatusEvent.REASON_REQUIRED_TYPES
 
 
+def _resolve_event_date(event_date: dt.date | None) -> dt.date:
+    """A leaving event (deactivation / pause) happens today unless the
+    caller names the real day it happened — never a day in the future."""
+    today = dt.date.today()
+    if event_date is None:
+        return today
+    if event_date > today:
+        raise ValidationError({"event_date": "Дата не может быть в будущем."})
+    return event_date
+
+
 def _validate_reason(event_type: str, reason: str, comment: str) -> None:
     if event_type not in _REASON_REQUIRED_TYPES:
         return
@@ -50,11 +61,13 @@ def deactivate_student(
     reason: str,
     comment: str = "",
     performed_by=None,
+    event_date: dt.date | None = None,
 ) -> StudentStatusEvent:
     """ACTIVE -> WITHDRAWN. Only ever from ACTIVE — a paused or completed
     student has to go through their own explicit action first, never a
     silent side door via "deactivate"."""
     _validate_reason(StudentStatusEvent.EventType.DEACTIVATED, reason, comment)
+    event_date = _resolve_event_date(event_date)
 
     with transaction.atomic():
         locked = Student.objects.select_for_update().get(pk=student.pk)
@@ -69,7 +82,7 @@ def deactivate_student(
             reason=reason,
             comment=comment,
             group=locked.group,
-            event_date=dt.date.today(),
+            event_date=event_date,
             performed_by=performed_by,
             previous_status=locked.status,
         )
@@ -138,12 +151,14 @@ def pause_student(
     expected_return_date: dt.date | None = None,
     comment: str = "",
     performed_by=None,
+    event_date: dt.date | None = None,
 ) -> StudentStatusEvent:
     """ACTIVE -> PAUSED. Refused for an already-paused student (no double
     pause) and for a completed one ("нельзя поставить паузу завершённому
     студенту без специального разрешения" — no override mechanism exists
     in this project, so it is refused outright rather than fabricated)."""
     _validate_reason(StudentStatusEvent.EventType.PAUSED, reason, comment)
+    event_date = _resolve_event_date(event_date)
 
     with transaction.atomic():
         locked = Student.objects.select_for_update().get(pk=student.pk)
@@ -158,7 +173,7 @@ def pause_student(
             reason=reason,
             comment=comment,
             group=locked.group,
-            event_date=dt.date.today(),
+            event_date=event_date,
             expected_return_date=expected_return_date,
             performed_by=performed_by,
             previous_status=locked.status,
