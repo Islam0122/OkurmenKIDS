@@ -13,16 +13,24 @@ Which lessons move — all of:
     elsewhere, is left alone);
   * open: status SCHEDULED, never started, no attendance and no homework
     results (the same «history» rule as the generator's sync —
-    lesson_generator._lesson_is_locked), dated today or later.
-COMPLETED / CANCELLED / IN_PROGRESS, past and data-carrying lessons are
-never touched.
+    lesson_generator._lesson_is_locked);
+  * still ahead: a later date, or today with its start still to come —
+    in the project's time zone (settings.TIME_ZONE via timezone.localtime(),
+    never the server clock). Today's lesson that already began or ended
+    (running now, or forgotten without «Начать») is not moved, and neither
+    is one whose new time today would already be past.
+COMPLETED / CANCELLED / IN_PROGRESS, past, running and data-carrying lessons
+are never touched.
 
 What changes:
   * time — start_time / end_time become the slot's, the date stays;
-  * weekday — each lesson moves forward to the next new weekday on or after
-    its own date (Sun 19.10 → Sat 25.10): every lesson shifts by the same
-    0–6 days, so their order is kept, none lands in the past and no two
-    collide;
+  * weekday — each lesson moves to the new weekday *of its own week*
+    (Monday–Sunday; Sun 19.10 → Sat 18.10, Sat 18.10 → Mon 13.10): a slot
+    gives one lesson per week, so lessons keep their week, their order and
+    never share a date — the same «one lesson per slot per week» the
+    generator relies on (lesson_generator._Occupancy). A lesson whose new day
+    in its week is already past stays where it is (reported as kept) rather
+    than moving into the past or into another lesson's week;
   * room / teacher — only where the lesson still had the slot's old room /
     teacher (a lesson with its own room or substitute keeps it).
 The subject is not synced: a program's subject can only change while it has
@@ -32,7 +40,12 @@ Every moved lesson is checked against the lessons it would overlap — the
 same group, the same teacher, the same room — and the group's end date;
 any problem raises ValidationError and, inside the caller's transaction,
 rolls back the slot change too: never «slot at 12:00, half its lessons at
-10:00». Real times only (TimeField / DateField) — no timezone arithmetic.
+10:00». Callers take the «before» snapshot from the slot row locked FOR
+UPDATE in the same transaction, so two concurrent edits of one slot run one
+after the other, each moving the lessons from where the previous one left
+them. Real times only (TimeField / DateField) — no timezone arithmetic.
+Repeating the same save is a no-op (the slot no longer differs from its
+snapshot).
 """
 from __future__ import annotations
 
@@ -65,6 +78,25 @@ def snapshot(slot: GroupSchedule) -> SlotSnapshot:
     return SlotSnapshot(slot.day_of_week, slot.start_time, slot.end_time, slot.room_id, slot.teacher_id)
 
 
+def local_now(*, now: dt.datetime | None = None, today: dt.date | None = None) -> dt.datetime:
+    """«Now» in the project's time zone. `today` (tests, callers that only
+    know a date) means the very start of that day."""
+    if now is not None:
+        return timezone.localtime(now)
+    if today is not None:
+        return timezone.make_aware(dt.datetime.combine(today, dt.time.min))
+    return timezone.localtime()
+
+
+def is_ahead(date: dt.date, start: dt.time, now_local: dt.datetime) -> bool:
+    return date > now_local.date() or (date == now_local.date() and start > now_local.time())
+
+
+def ahead_q(now_local: dt.datetime) -> Q:
+    """Lessons whose start is still to come (see is_ahead)."""
+    return Q(date__gt=now_local.date()) | Q(date=now_local.date(), start_time__gt=now_local.time())
+
+
 @dataclass
 class LessonSyncResult:
     updated: int = 0
@@ -81,7 +113,8 @@ def _fmt(lesson: Lesson, date: dt.date, start: dt.time) -> str:
     return f"№{lesson.lesson_number} {date:%d.%m.%Y} {start:%H:%M}"
 
 
-def sync_schedule_lessons(slot: GroupSchedule, before: SlotSnapshot, *, today: dt.date | None = None) -> LessonSyncResult:
+def sync_schedule_lessons(slot: GroupSchedule, before: SlotSnapshot, *, today: dt.date | None = None,
+                          now: dt.datetime | None = None) -> LessonSyncResult:
     """Bring `slot`'s open future lessons in line with the slot as saved now
     (`before` — its values before the edit). Call inside the transaction
     that saved the slot; raises ValidationError on any clash."""
@@ -89,14 +122,18 @@ def sync_schedule_lessons(slot: GroupSchedule, before: SlotSnapshot, *, today: d
     after = snapshot(slot)
     if after == before:
         return result
-    today = today or timezone.localdate()
+    now_local = local_now(now=now, today=today)
     old_weekday = WEEKDAY_CODES.index(before.day_of_week)
-    shift = dt.timedelta(days=(WEEKDAY_CODES.index(after.day_of_week) - old_weekday) % 7)
+    new_weekday = WEEKDAY_CODES.index(after.day_of_week)
+
+    def target_date(date: dt.date) -> dt.date:
+        return date + dt.timedelta(days=new_weekday - date.weekday())
 
     with transaction.atomic():
         future = list(
             Lesson.objects.select_for_update()
-            .filter(schedule=slot, date__gte=today)
+            .filter(schedule=slot)
+            .filter(ahead_q(now_local))
             .exclude(status=Lesson.Status.CANCELLED)
             .order_by("date", "start_time", "pk")
         )
@@ -114,7 +151,8 @@ def sync_schedule_lessons(slot: GroupSchedule, before: SlotSnapshot, *, today: d
                 and lesson.end_time == before.end_time
             )
             open_ = lesson.status == Lesson.Status.SCHEDULED and lesson.started_at is None and lesson.pk not in with_data
-            if following and open_:
+            lands_ahead = is_ahead(target_date(lesson.date), after.start_time, now_local)
+            if following and open_ and lands_ahead:
                 movable.append(lesson)
             else:
                 result.kept += 1
@@ -126,7 +164,7 @@ def sync_schedule_lessons(slot: GroupSchedule, before: SlotSnapshot, *, today: d
         for lesson in movable:
             planned.append((
                 lesson,
-                lesson.date + shift,
+                target_date(lesson.date),
                 after.room_id if lesson.room_id == before.room_id else lesson.room_id,
                 after.teacher_id if lesson.teacher_id == before.teacher_id else lesson.teacher_id,
             ))

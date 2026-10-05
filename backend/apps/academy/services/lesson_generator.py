@@ -42,8 +42,14 @@ action, or `POST /groups/{id}/generate-lessons/`) — never triggered by
 saving a single schedule slot. See signals.py.
 
 Idempotent: only missing lesson_numbers are filled in, into slot
-occurrences no existing lesson of the group already occupies; existing
-Lesson rows are never duplicated.
+occurrences no existing lesson of the group already occupies (nor a week in
+which the slot already gave a lesson — see _Occupancy); existing Lesson
+rows are never duplicated.
+
+Time / day / room of existing lessons follow their slot when the slot is
+edited (services.schedule_lesson_sync, run by every slot save); the
+generator itself never moves a lesson — it places *new* lessons at the
+slots' current day and time. One rule set, two entry points.
 
 Generate = create + sync. Before filling in missing lessons, every existing
 lesson generated from a plan row is compared with the *current* plan (see
@@ -304,6 +310,15 @@ class _Occupancy:
     room on a specific date — including against lessons that were moved by
     hand away from their recurring slot, which the slot-level checks in
     `_without_conflicting_slots` can't see.
+
+    A slot is weekly: it gives the group at most one lesson per ISO week. A
+    week in which the group already has a lesson *of that slot*
+    (Lesson.schedule, any status) is taken, whatever that lesson's day or
+    time — after the slot was moved (10:00 → 12:00, or Sunday → Saturday;
+    see services.schedule_lesson_sync) the lessons that stayed behind as
+    history (completed at 10:00, or on last Sunday) still use up their week,
+    so a missing plan row is never put next to them on the same date or
+    back-filled into a past week.
     """
 
     def __init__(self, *, group: Group, teacher_ids: set[int], room_ids: set[int]):
@@ -311,6 +326,7 @@ class _Occupancy:
         self._teacher: dict[tuple[int, dt.date], list[tuple]] = defaultdict(list)
         self._room: dict[tuple[int, dt.date], list[tuple]] = defaultdict(list)
         self._recurring: dict[tuple[int, int], GroupSchedule | None] = {}
+        self._slot_weeks: set[tuple[int, int, int]] = set()
         self._group_id = group.pk
 
         busy_elsewhere = Q(teacher_id__in=teacher_ids) | Q(teacher__isnull=True, group_teacher__teacher_id__in=teacher_ids)
@@ -324,10 +340,13 @@ class _Occupancy:
 
         for row in qs.values(
             "group_id", "date", "start_time", "end_time", "teacher_id", "group_teacher__teacher_id", "room_id", "status",
+            "schedule_id",
         ):
             span = (row["start_time"], row["end_time"])
             if row["group_id"] == self._group_id:
                 self._group[row["date"]].append(span)
+                if row["schedule_id"]:
+                    self._slot_weeks.add(self._week_key(row["schedule_id"], row["date"]))
             if row["status"] == Lesson.Status.CANCELLED:
                 continue
             teacher_id = row["teacher_id"] or row["group_teacher__teacher_id"]
@@ -340,8 +359,17 @@ class _Occupancy:
     def _overlaps(spans: list[tuple], start, end) -> bool:
         return any(start < other_end and other_start < end for other_start, other_end in spans)
 
+    @staticmethod
+    def _week_key(schedule_id: int, date: dt.date) -> tuple[int, int, int]:
+        year, week, _day = date.isocalendar()
+        return (schedule_id, year, week)
+
     def group_busy(self, date: dt.date, start, end) -> bool:
         return self._overlaps(self._group.get(date, []), start, end)
+
+    def slot_week_taken(self, slot: GroupSchedule, date: dt.date) -> bool:
+        """The group already has a lesson of `slot` in `date`'s week."""
+        return self._week_key(slot.pk, date) in self._slot_weeks
 
     def teacher_busy(self, teacher_id: int, date: dt.date, start, end) -> bool:
         return self._overlaps(self._teacher.get((teacher_id, date), []), start, end)
@@ -364,6 +392,8 @@ class _Occupancy:
     def add(self, lesson: Lesson) -> None:
         span = (lesson.start_time, lesson.end_time)
         self._group[lesson.date].append(span)
+        if lesson.schedule_id:
+            self._slot_weeks.add(self._week_key(lesson.schedule_id, lesson.date))
         if lesson.teacher_id:
             self._teacher[(lesson.teacher_id, lesson.date)].append(span)
         if lesson.room_id:
@@ -573,7 +603,7 @@ def _walk_and_generate(*, group: Group, slots_by_weekday, take_next, remaining, 
             break
 
         for slot in slots_by_weekday.get(current_date.weekday(), []):
-            if occupancy.group_busy(current_date, slot.start_time, slot.end_time):
+            if occupancy.group_busy(current_date, slot.start_time, slot.end_time) or occupancy.slot_week_taken(slot, current_date):
                 continue
             plan = take_next(slot)
             if plan is None:

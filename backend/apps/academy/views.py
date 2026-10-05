@@ -832,8 +832,12 @@ class GroupScheduleViewSet(viewsets.ModelViewSet):
         """Save the slot and move its open future lessons along with it
         (services.schedule_lesson_sync) — one transaction: a lesson that
         can't move (a clash) rolls the slot change back too."""
-        before = schedule_snapshot(serializer.instance)
         with transaction.atomic():
+            # The «before» comes from the row locked here, not from the copy
+            # read at request start: a concurrent edit of the same slot waits
+            # and then moves the lessons from where this one left them.
+            serializer.instance = GroupSchedule.objects.select_for_update().get(pk=serializer.instance.pk)
+            before = schedule_snapshot(serializer.instance)
             slot = serializer.save()
             try:
                 sync_schedule_lessons(slot, before)
