@@ -23,4 +23,6 @@
 .review__row strong { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
 .review__row pre { max-width: 100%; overflow-wrap: normal; margin: 4px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--navy-950); color: #e6e6ff; font: 14px/1.6 var(--font-mono); overflow-x: auto; }
 .result-actions .btn { white-space: normal; text-align: center; }
+.result-final { display: flex; align-items: center; gap: 10px; margin-top: 24px; padding: 16px 20px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.result-final .bi { color: var(--green-500); font-size: 20px; flex-shrink: 0; }
 .result-note--wait { background: var(--amber-50); border-color: #fcd68b; color: var(--amber-600); }

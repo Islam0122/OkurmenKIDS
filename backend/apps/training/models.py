@@ -27,7 +27,7 @@ class PortalSettings(models.Model):
     exam_button_label = models.CharField("Текст кнопки экзамена", max_length=60, default="Экзаменге өтүү")
     exam_url = models.URLField(
         "Ссылка на настоящий экзамен", max_length=500, blank=True, validators=[validate_http_url],
-        help_text="Куда ведёт кнопка «Экзаменге өтүү» (например, кабинет студента LMS). Пусто — кнопка скрыта.",
+        help_text="Куда ведёт кнопка «Экзаменге өтүү» — страница входа в экзамен по коду сессии (https://<сервер>/exam/). Пусто — кнопка скрыта.",
     )
     exam_open_in_new_tab = models.BooleanField("Открывать экзамен в новой вкладке", default=False)
     portal_url = models.URLField(

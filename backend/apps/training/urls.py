@@ -17,7 +17,7 @@ urlpatterns = [
     path(attempt + "events/", views.AttemptEventView.as_view(), name="training-attempt-events"),
     path(attempt + "submit/", views.AttemptSubmitView.as_view(), name="training-attempt-submit"),
     path(attempt + "result/", views.AttemptResultView.as_view(), name="training-attempt-result"),
-    # Exam attempts in the same test UI (token from the student portal).
+    # Exam attempts in the same test UI (token from /exam/?key=…).
     path(exam, exam_api.ExamAttemptView.as_view(), name="exam-attempt"),
     path(exam + "answers/<uuid:question_id>/", exam_api.ExamAnswerView.as_view(), name="exam-answer"),
     path(exam + "events/", exam_api.ExamEventView.as_view(), name="exam-events"),

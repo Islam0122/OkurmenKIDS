@@ -10,12 +10,12 @@ afterEach(() => vi.restoreAllMocks())
 
 const PORTAL = {
   hero_title: 'Экзаменге даярдан', hero_subtitle: 'Билимиңди текшер.', start_button_label: 'Тренировка баштоо',
-  exam_button_label: 'Экзаменге өтүү', exam_url: 'https://lms.example.com/student/exams/', exam_open_in_new_tab: false,
+  exam_button_label: 'Экзаменге өтүү', exam_url: 'https://lms.example.com/exam/', exam_open_in_new_tab: false,
 }
 const TEST = {
   id: 't1', title: 'Python Training', description: '', subject: 'Python', category: { id: 1, name: 'Python', slug: 'python' }, level: 'medium', level_display: 'Средний',
   image_url: null, duration: 30, questions_count: 2, max_attempts: null, passing_score: 50,
-  show_explanation: true, show_result: true, allow_retry: true, published: true, course: '', exam_url: 'https://lms.example.com/student/exams/',
+  show_explanation: true, show_result: true, allow_retry: true, published: true, course: '', exam_url: 'https://lms.example.com/exam/',
   security: { require_fullscreen: false, track_tab_switches: true, max_tab_switches: 3, block_copy_paste: true },
 }
 const QUESTIONS = [
@@ -219,7 +219,7 @@ describe('content comes from the backend', () => {
     expect(screen.getByText('Билимиңди текшер.')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Python Training' })).toBeInTheDocument()
     const examLinks = await screen.findAllByRole('link', { name: /Экзаменге өтүү/ })
-    expect(examLinks[0]).toHaveAttribute('href', 'https://lms.example.com/student/exams/')
+    expect(examLinks[0]).toHaveAttribute('href', 'https://lms.example.com/exam/')
     expect((await screen.findAllByText('Islam')).length).toBeGreaterThan(0)
   })
 

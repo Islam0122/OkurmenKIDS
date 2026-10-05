@@ -330,8 +330,6 @@ JAZZMIN_SETTINGS = {
                 "icon": "bi bi-person-dash",
                 "permissions": ["academy.view_studentstatusevent"],
             },
-            # Personal codes for the student portal (/student/, Exam Mode).
-            {"name": "Доступ студентов", "model": "testing.studentportalaccess", "icon": "bi bi-key"},
         ],
 
         # Reports for the academy's management — Admin/superuser only
@@ -485,7 +483,6 @@ JAZZMIN_SETTINGS = {
         "testing.test": "bi bi-clipboard2-check",
         "testing.testsession": "bi bi-broadcast",
         "testing.testresult": "bi bi-clipboard-data",
-        "testing.studentportalaccess": "bi bi-key",
         "training.portalsettings": "bi bi-sliders",
         "training.trainer": "bi bi-controller",
         "training.trainingattempt": "bi bi-person-lines-fill",

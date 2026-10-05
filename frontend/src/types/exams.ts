@@ -70,7 +70,7 @@ export interface ExamParticipant {
   /** Only once the student has finished — never while the exam is running. */
   score: number | null
   result_available: boolean
-  /** Exam Mode (student portal): tab switches / all violations of the attempt. */
+  /** Exam Mode (exam portal): tab switches / all violations of the attempt. */
   tab_switch_count: number
   violation_count: number
 }

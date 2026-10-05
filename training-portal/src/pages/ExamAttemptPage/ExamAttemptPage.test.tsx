@@ -20,7 +20,7 @@ const QUESTIONS = [
 const STATE = {
   attempt_id: 'e1', test_id: 's1', test_title: 'IT — Month 1', student_name: 'Айбек Асанов', started_at: '2026-10-05T09:00:00Z',
   expires_at: '2026-10-05T09:45:00Z', status: 'active', remaining_seconds: 2538, show_explanation: false, mode: 'exam', paused: false,
-  subject: 'IT', back_url: 'https://api.example/student/',
+  subject: 'IT',
   security: { require_fullscreen: false, track_tab_switches: true, max_tab_switches: 3, block_copy_paste: true },
   tab_switch_count: 0, violation_count: 0, questions: QUESTIONS,
 }
@@ -48,7 +48,7 @@ function renderAt(path: string) {
 }
 
 describe('exam on the shared test screen', () => {
-  it('opens from the portal link, autosaves, asks before finishing and shows the exam result', async () => {
+  it('opens from the exam link, autosaves, asks before finishing and shows the exam result', async () => {
     const { calls } = backend()
     window.history.replaceState(null, '', '/exam/e1#t=tok')
     const user = userEvent.setup()
@@ -76,7 +76,10 @@ describe('exam on the shared test screen', () => {
 
     expect(await screen.findByText('Экзамен аяктады')).toBeInTheDocument()
     expect(document.querySelector('.result-card')).not.toBeNull()  // the training result card
-    expect(screen.getByRole('link', { name: 'Кабинетке кайтуу' })).toHaveAttribute('href', 'https://api.example/student/')
+    // The result is the last screen: no way back to a cabinet, no retake.
+    expect(screen.getByText('Экзамен аяктады. Бул баракты жаап койсоңуз болот.')).toBeInTheDocument()
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
+    expect(document.body.textContent).not.toMatch(/кабинет/i)
     expect(screen.queryByRole('button', { name: 'Кайра тапшыруу' })).not.toBeInTheDocument()
   })
 
@@ -161,7 +164,7 @@ describe('exam on the shared test screen', () => {
     expect(document.body.textContent).not.toMatch(/тренировк|Текшерүү|Башынан баштоо/i)
   })
 
-  it('without the student portal token there is no exam', async () => {
+  it('without the token from the exam link there is no exam', async () => {
     backend()
     renderAt('/exam/e1')
     expect(await screen.findByText(/шилтеме жараксыз/)).toBeInTheDocument()

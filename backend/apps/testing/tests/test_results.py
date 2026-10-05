@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from apps.academy.models import Group, Student
 from apps.academy.services.kpi_engine import KPIEngine
-from apps.testing.models import AttemptStatus, StudentPortalAccess
+from apps.testing.models import AttemptStatus
 from apps.users.models import Subject, User
 
 from .test_monitoring import MonitoringFixture
@@ -116,30 +116,6 @@ class KpiTests(ResultsFixture):
         self.assertEqual(dashboard["tests"]["average_score"]["value"], 60.0)
         self.assertEqual(dashboard["tests"]["students_below_passing"]["value"], 1)
         self.assertEqual(dashboard["metrics"]["test_pass_rate"], 50.0)
-
-
-class StudentPortalTests(ResultsFixture):
-    def login(self, student):
-        client = Client()
-        access = StudentPortalAccess.objects.create(student=student)
-        client.post(reverse("student_portal_login"), {"code": access.code})
-        return client
-
-    def test_own_results_only(self):
-        client = self.login(self.student)
-        page = client.get(reverse("student_results"))
-        self.assertContains(page, "Python Basics")
-        self.assertContains(page, "100%")
-        self.assertContains(client.get(reverse("student_portal_dashboard")), "Акыркы жыйынтыктар")
-        self.assertEqual(client.get(reverse("student_result", args=[self.foreign.pk])).status_code, 404)
-        self.assertEqual(client.get(reverse("student_result", args=[self.passed.pk])).status_code, 200)
-
-    def test_hidden_result_stays_hidden(self):
-        self.test.show_result = False
-        self.test.save()
-        page = self.login(self.student).get(reverse("student_results"))
-        self.assertNotContains(page, "100%")
-        self.assertContains(page, "Жыйынтык жабык")
 
 
 class AdminTests(ResultsFixture):

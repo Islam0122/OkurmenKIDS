@@ -1,8 +1,8 @@
-"""Exam attempts in the shared test UI — integrity: the current question
+"""Exam attempts in the exam portal — integrity: the current question
 survives a reload, concurrent requests never lose or roll back an answer,
-and nobody but the attempt's own student (through the token the server
-issued) can read or change it. Also the session-key entry (/exam/?key=…)
-into the same UI.
+and nobody but the browser that started the attempt (through the token the
+server issued) can read or change it. Also the session-key entry
+(/exam/?key=…), the only way into an exam.
 
 Absolute imports only (see apps/academy/tests.py)."""
 from __future__ import annotations
@@ -20,15 +20,13 @@ from apps.academy.models import Student
 from apps.testing.models import (
     AttemptStatus,
     ExamEventType,
-    SessionParticipant,
     SessionType,
     StudentAttempt,
-    StudentPortalAccess,
     TestSession,
 )
 from apps.testing.services import exam_portal as portal
 from apps.training.exam_api import EXAM_TOKEN_MAX_AGE, EXAM_TOKEN_SALT, exam_token
-from apps.training.tests_exam import ExamApiFixture
+from apps.training.tests_exam import ExamApiFixture, roster_student
 
 
 class IntegrityFixture(ExamApiFixture):
@@ -55,14 +53,11 @@ class IntegrityFixture(ExamApiFixture):
         self.answer(attempt, self.q_multi, multi)
 
     def second_student(self):
-        """Student B — same group, own portal access, own browser."""
-        other = Student.objects.create(first_name="Bakyt", last_name="Bekov", group=self.group)
-        SessionParticipant.objects.get_or_create(session=self.session, student=other)  # on the roster
-        client = self.login(Client(), StudentPortalAccess.objects.create(student=other))
-        response = client.post(reverse("student_exam_prepare", args=[self.session.pk]), {"rules_accepted": "1"})
+        """Student B — same roster, own browser, own exam link."""
+        other = roster_student(self)
+        response = self.join(Client(), other)
         attempt = StudentAttempt.objects.get(session=self.session, student=other)
-        token = client.get(response["Location"])["Location"].split("#t=", 1)[1]
-        return attempt, token
+        return attempt, response["Location"].split("#t=", 1)[1]
 
 
 class CurrentQuestionTests(IntegrityFixture):
@@ -121,7 +116,7 @@ class RaceConditionTests(IntegrityFixture):
     def test_two_tabs_share_one_attempt(self):
         attempt = self.begin()
         first_token = self.token
-        # The cabinet opened again in a second tab: same attempt, a fresh token, no new attempt.
+        # The key page opened again in a second tab: same attempt, a fresh token, no new attempt.
         second = self.begin()
         self.assertEqual(second.pk, attempt.pk)
         self.assertEqual(StudentAttempt.objects.filter(session=self.session, student=self.student).count(), 1)
@@ -265,12 +260,13 @@ class ExamSecurityTests(IntegrityFixture):
     def test_10_no_unlimited_attempts(self):
         self.session.max_attempts_per_student = 1
         self.session.save()
-        for _ in range(3):  # «Начать» again and again while the attempt runs
-            self.client.post(reverse("student_exam_prepare", args=[self.session.pk]), {"rules_accepted": "1"})
+        for _ in range(3):  # the key page again and again while the attempt runs
+            self.join()
         self.assertEqual(StudentAttempt.objects.filter(session=self.session, student=self.student).count(), 1)
         self.finish_required(self.mine)
         self.call("post", self.mine, "submit/")
-        self.client.post(reverse("student_exam_prepare", args=[self.session.pk]), {"rules_accepted": "1"})
+        refused = self.join()  # the limit is used up
+        self.assertContains(refused, "Лимит попыток")
         self.assertEqual(StudentAttempt.objects.filter(session=self.session, student=self.student).count(), 1)
         # The API itself never creates attempts: there is no start endpoint for exams.
         self.assertEqual(self.api.post("/api/v1/training/exam-attempts/", {}, format="json").status_code, 404)
@@ -283,9 +279,8 @@ class SessionKeyEntryTests(IntegrityFixture):
         super().setUp()
         self.browser = Client()
 
-    def join(self, browser=None, student=None):
-        return (browser or self.browser).post(reverse("testing_public_join"), {
-            "key": self.session.key, "start": "1", "student": str((student or self.student).pk)})
+    def join(self, browser=None, student=None, **extra):
+        return super().join(browser or self.browser, student, **extra)
 
     def test_a_roster_student_lands_in_the_shared_test_ui(self):
         response = self.join()
@@ -309,10 +304,7 @@ class SessionKeyEntryTests(IntegrityFixture):
         self.assertEqual(intruder.status_code, 200)
         self.assertNotIn("Location", intruder)
         self.assertContains(intruder, "уже начат")
-        # The same for an exam the student started in their cabinet.
-        StudentAttempt.objects.all().delete()
-        self.begin()
-        self.assertContains(self.join(Client()), "уже начат")
+        self.assertEqual(StudentAttempt.objects.filter(session=self.session).count(), 1)
 
     def test_a_wrong_key_or_name_gives_no_token(self):
         wrong = self.browser.post(reverse("testing_public_join"), {"key": "NOPE-0000", "start": "1", "student": str(self.student.pk)})
@@ -321,14 +313,26 @@ class SessionKeyEntryTests(IntegrityFixture):
         self.assertEqual(self.join(student=outsider).status_code, 200)
         self.assertFalse(StudentAttempt.objects.filter(session=self.session).exists())
 
-    def test_without_a_portal_address_the_old_page_is_the_fallback(self):
-        from apps.training.models import PortalSettings
+    def test_a_key_of_an_ended_or_cancelled_session_gives_no_attempt(self):
+        for close in ("finish", "cancel"):
+            session = TestSession.objects.create(test=self.test, group=self.group, session_type=SessionType.EXAM,
+                                                 duration=timedelta(hours=1), title=close)
+            session.start()
+            getattr(session, close)()
+            response = self.browser.post(reverse("testing_public_join"), {"key": session.key, "start": "1", "student": str(self.student.pk)})
+            self.assertEqual(response.status_code, 200, close)
+            self.assertNotIn("Location", response)
+            self.assertFalse(StudentAttempt.objects.filter(session=session).exists())
 
-        PortalSettings.objects.filter(pk=1).update(portal_url="")
+    def test_an_expired_session_key_gives_no_attempt(self):
+        TestSession.objects.filter(pk=self.session.pk).update(expires_at=timezone.now() - timedelta(minutes=1))
         response = self.join()
-        attempt = StudentAttempt.objects.get(session=self.session, student=self.student)
-        self.assertEqual(response["Location"], reverse("testing_public_take", args=[attempt.pk]))
-        self.assertFalse(attempt.exam_mode)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(StudentAttempt.objects.filter(session=self.session).exists())
+
+    def test_the_student_cabinet_is_gone(self):
+        for path in ("/student/", "/student/login/", "/student/exams/", "/student/results/"):
+            self.assertEqual(self.browser.get(path).status_code, 404, path)
 
 
 class TokenFormatTests(IntegrityFixture):

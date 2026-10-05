@@ -22,7 +22,7 @@ export function AppRoutes() {
       {/* The test itself: ExamLayout — no site navigation. */}
       <Route element={<ExamLayout />}>
         <Route path="training/:testId" element={<TrainingPage />} />
-        {/* The exam runs on the same test screen (attempt from the student portal). */}
+        {/* The exam runs on the same test screen (attempt from /exam/?key=… on the backend). */}
         <Route path="exam/:attemptId" element={<ExamAttemptPage />} />
         <Route path="exam/:attemptId/result" element={<ExamResultPage />} />
       </Route>

@@ -1,12 +1,12 @@
-"""Student portal (/student/exams/): which exams a student sees and the
-Exam Mode attempt lifecycle — start, autosave, violation events, submit,
-expiry — plus the numbers the pages show.
+"""Exam Mode: the attempt lifecycle of the exam portal (/exam/?key=… → the
+React exam, apps.training.exam_api) — start, autosave, the current
+question, violation events, submit, expiry.
 
 Built on services/attempts.py (join, grading, deadlines) and the existing
 models; nothing here trusts the browser. Every action re-reads the attempt,
-checks its owner (the views), status and deadline, and an attempt whose
-time is up is closed here with the answers saved so far — whatever the
-page's own timer says.
+its status and deadline (ownership is the token's, checked by exam_api),
+and an attempt whose time is up is closed here with the answers saved so
+far — whatever the page's own timer says.
 """
 from __future__ import annotations
 
@@ -16,8 +16,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_ipv46_address
-from django.db import models, transaction
-from django.db.models import Q, Sum
+from django.db import transaction
 from django.utils import timezone
 
 from ..models import (
@@ -27,9 +26,7 @@ from ..models import (
     ExamEventType,
     FinishReason,
     QuestionType,
-    SessionPhase,
     SessionStatus,
-    SessionType,
     StudentAttempt,
     TestSession,
 )
@@ -37,16 +34,12 @@ from . import participants as participant_events
 from .attempts import (
     AttemptError,
     SubmittedAnswer,
-    _attempts_used,
     attempt_deadline,
     attempt_questions,
     expire_attempt,
     grade_and_finish,
-    is_passed,
     join,
-    session_error,
 )
-from .grading import AttemptScore, attempt_score
 
 # Network tolerance for an autosave or the auto-submit sent at 00:00: the
 # request may arrive a moment after the deadline. Past it the attempt is
@@ -68,207 +61,12 @@ INFO_EVENTS = frozenset({ExamEventType.TAB_RETURN, ExamEventType.FULLSCREEN_ENTE
 CLIENT_EVENTS = VIOLATION_EVENTS | INFO_EVENTS | {ExamEventType.PAGE_LEAVE}
 
 
-class ExamStatus(models.TextChoices):
-    AVAILABLE = "available", "Доступен"
-    UPCOMING = "upcoming", "Скоро начнётся"
-    IN_PROGRESS = "in_progress", "В процессе"
-    PASSED = "passed", "Пройден"
-    FAILED = "failed", "Не пройден"
-    FINISHED = "finished", "Завершён"
-
-
 class AttemptClosed(Exception):
     """The attempt no longer takes answers (submitted, expired, terminated)."""
 
     def __init__(self, attempt: StudentAttempt):
         super().__init__("Экзамен уже завершён.")
         self.attempt = attempt
-
-
-# ---------------------------------------------------------------------------
-# Which exams a student sees
-# ---------------------------------------------------------------------------
-
-def exam_sessions_for(student):
-    """Exam sessions the student is invited to: on the session's roster, or —
-    a group session without a roster — in its group (same rule as
-    participants.roster_students). Drafts (no date, not started) and
-    cancelled sessions are not shown."""
-    invited = Q(participants__student=student)
-    if student.group_id:
-        invited |= Q(group_id=student.group_id, participants__isnull=True)
-    return (
-        TestSession.objects.filter(invited, session_type=SessionType.EXAM)
-        .exclude(status=SessionStatus.CANCELLED)
-        .exclude(status=SessionStatus.CREATED, scheduled_start__isnull=True)
-        .select_related("test__subject", "group")
-        .distinct()
-    )
-
-
-def question_count(test) -> int:
-    total = test.questions.count()
-    if test.questions_per_attempt and test.questions_per_attempt < total:
-        return test.questions_per_attempt
-    return total
-
-
-def max_points(test) -> int | None:
-    """Points of a full attempt; None when each attempt draws a random subset
-    (the total then depends on the draw — the result shows the real one)."""
-    if test.questions_per_attempt and test.questions_per_attempt < test.questions.count():
-        return None
-    return test.questions.aggregate(total=Sum("points"))["total"] or 0
-
-
-def attempt_allowance(session: TestSession, student) -> tuple[int, int | None]:
-    """(attempts used, attempts allowed or None) — the same counting join()
-    enforces: the session's own limit, else the test's."""
-    if session.max_attempts_per_student is not None:
-        used = session.attempts.exclude(status=AttemptStatus.EXPIRED).filter(student=student).count()
-        return used, session.max_attempts_per_student
-    return _attempts_used(session.test, student), session.test.effective_max_attempts
-
-
-@dataclass
-class ExamCard:
-    session: TestSession
-    status: str
-    question_count: int
-    duration_minutes: int | None
-    max_points: int | None
-    starts_at: object
-    ends_at: object
-    attempts_used: int
-    attempts_limit: int | None
-    active_attempt: StudentAttempt | None
-    last_attempt: StudentAttempt | None
-    best_score: float | None
-    start_error: str | None
-
-    @property
-    def test(self):
-        return self.session.test
-
-    @property
-    def title(self) -> str:
-        return self.session.title or self.session.test.title
-
-    @property
-    def status_label(self) -> str:
-        return ExamStatus(self.status).label
-
-    @property
-    def attempts_left(self) -> int | None:
-        if self.attempts_limit is None:
-            return None
-        return max(self.attempts_limit - self.attempts_used, 0)
-
-    @property
-    def can_start(self) -> bool:
-        return self.active_attempt is None and self.start_error is None
-
-
-def _start_error(session: TestSession, used: int, limit: int | None) -> str | None:
-    error = session_error(session)
-    if error:
-        return error
-    if not session.test.questions.exists():
-        return "В экзамене пока нет вопросов."
-    if limit is not None and used >= limit:
-        return "Все попытки использованы."
-    return None
-
-
-def exam_card(session: TestSession, student, now=None) -> ExamCard:
-    now = now or timezone.now()
-    session.sync_schedule(now)
-    test = session.test
-    for attempt in session.attempts.filter(student=student, status=AttemptStatus.ACTIVE, exam_mode=True):
-        attempt.session = session
-        ensure_current(attempt)
-    mine = list(session.attempts.filter(student=student).order_by("-started_at"))
-    active = next((a for a in mine if a.status == AttemptStatus.ACTIVE), None)
-    finished = [a for a in mine if a.status == AttemptStatus.FINISHED]
-    used, limit = attempt_allowance(session, student)
-    start_error = None if active else _start_error(session, used, limit)
-    phase = session.phase_at(now)
-
-    best_score = None
-    if active:
-        status = ExamStatus.IN_PROGRESS
-    elif phase == SessionPhase.SCHEDULED:
-        status = ExamStatus.UPCOMING
-    elif finished:
-        verdicts = [is_passed(a) for a in finished]
-        if test.show_result:
-            best_score = max(a.score for a in finished)
-        if not test.show_result or (None in verdicts and True not in verdicts):
-            status = ExamStatus.FINISHED  # result hidden or still being reviewed
-        elif True in verdicts:
-            status = ExamStatus.PASSED
-        elif start_error is None:
-            status = ExamStatus.AVAILABLE  # failed, but may try again
-        else:
-            status = ExamStatus.FAILED
-    elif phase == SessionPhase.ACTIVE:
-        status = ExamStatus.AVAILABLE
-    else:
-        status = ExamStatus.FINISHED
-
-    return ExamCard(
-        session=session,
-        status=status,
-        question_count=question_count(test),
-        duration_minutes=session.effective_time_limit_minutes or (
-            int(session.duration.total_seconds() // 60) if session.duration else None
-        ),
-        max_points=max_points(test),
-        starts_at=session.scheduled_start or session.started_at,
-        ends_at=session.scheduled_end or session.expires_at,
-        attempts_used=used,
-        attempts_limit=limit,
-        active_attempt=active,
-        last_attempt=finished[0] if finished else None,
-        best_score=best_score,
-        start_error=start_error,
-    )
-
-
-_STATUS_ORDER = {
-    ExamStatus.IN_PROGRESS: 0, ExamStatus.AVAILABLE: 1, ExamStatus.UPCOMING: 2,
-    ExamStatus.FAILED: 3, ExamStatus.PASSED: 3, ExamStatus.FINISHED: 3,
-}
-
-
-def student_exam_cards(student, now=None) -> list[ExamCard]:
-    now = now or timezone.now()
-    cards = [exam_card(session, student, now) for session in exam_sessions_for(student)]
-    far_future = now + timedelta(days=36500)
-    cards.sort(key=lambda c: (
-        _STATUS_ORDER[c.status],
-        # Upcoming: soonest first; finished: newest first.
-        (c.starts_at or far_future).timestamp() * (-1 if _STATUS_ORDER[c.status] == 3 else 1),
-    ))
-    return cards
-
-
-@dataclass
-class ExamSummary:
-    available: int
-    completed: int
-    passed: int
-    average_percent: float | None
-
-
-def summarize(cards: list[ExamCard]) -> ExamSummary:
-    scores = [c.best_score for c in cards if c.best_score is not None]
-    return ExamSummary(
-        available=sum(1 for c in cards if c.status in (ExamStatus.AVAILABLE, ExamStatus.IN_PROGRESS)),
-        completed=sum(1 for c in cards if c.last_attempt is not None),
-        passed=sum(1 for c in cards if c.status == ExamStatus.PASSED),
-        average_percent=round(sum(scores) / len(scores)) if scores else None,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -318,15 +116,25 @@ def log_event(attempt: StudentAttempt, event_type: str, request=None, metadata: 
 # Attempt lifecycle
 # ---------------------------------------------------------------------------
 
-def start_exam(session: TestSession, student, request=None) -> StudentAttempt:
-    """Start (or resume) the student's Exam Mode attempt. join() applies the
-    session state, the test's availability, the roster and the attempt
-    limit; an overdue attempt is closed first."""
-    for current in session.attempts.filter(student=student, status=AttemptStatus.ACTIVE):
+def active_attempts(session: TestSession, student=None, student_name: str = ""):
+    """The unfinished attempts join() would resume: a roster student's, or —
+    a session without a roster — those under the same name."""
+    attempts = session.attempts.filter(status=AttemptStatus.ACTIVE)
+    if student is not None:
+        return attempts.filter(student=student)
+    return attempts.filter(student__isnull=True, user__isnull=True, student_name=(student_name or "").strip())
+
+
+def start_exam(session: TestSession, student=None, request=None, *, student_name: str = "") -> StudentAttempt:
+    """Start (or resume) an Exam Mode attempt — a roster student's, or by
+    name in a session without a roster. join() applies the session state,
+    the test's availability, the roster and the attempt limit; an overdue
+    attempt is closed first (graded with what was saved)."""
+    for current in active_attempts(session, student, student_name):
         ensure_current(current, request)
-    attempt = join(session, student=student)
+    attempt = join(session, student_name=student_name, student=student)
     if not attempt.exam_mode:
-        # A new attempt, or one the student opened on /exam/ before.
+        # A new attempt, or one opened on the legacy /exam/ form before.
         attempt.exam_mode = True
         fields = ["exam_mode"]
         if attempt.expires_at is None and (limit := session.effective_time_limit_minutes):
@@ -599,57 +407,8 @@ def submit_exam(attempt: StudentAttempt, posted: dict[str, SubmittedAnswer], *, 
     return close_attempt(attempt, reason, answers=posted_clean, request=request)
 
 
-# ---------------------------------------------------------------------------
-# What the pages show
-# ---------------------------------------------------------------------------
-
 def remaining_seconds(attempt: StudentAttempt, now=None) -> int | None:
     deadline = attempt_deadline(attempt)
     if deadline is None:
         return None
     return max(int((deadline - (now or timezone.now())).total_seconds()), 0)
-
-
-def attempt_state(attempt: StudentAttempt) -> dict:
-    test = attempt.session.test
-    return {
-        "status": attempt.status,
-        "active": attempt.status == AttemptStatus.ACTIVE,
-        "paused": attempt.session.effective_status == SessionStatus.PAUSED,
-        "remaining_seconds": remaining_seconds(attempt) if attempt.status == AttemptStatus.ACTIVE else 0,
-        "server_time": timezone.now().isoformat(),
-        "tab_switch_count": attempt.tab_switch_count,
-        "max_tab_switches": test.max_tab_switches,
-        "violation_count": attempt.violation_count,
-        "finish_reason": attempt.finish_reason,
-        "draft_saved_at": attempt.draft_saved_at.isoformat() if attempt.draft_saved_at else None,
-    }
-
-
-@dataclass
-class ResultSummary:
-    score: AttemptScore
-    passed: bool | None
-    correct: int
-    wrong: int
-    skipped: int
-    pending: int
-    duration_seconds: int | None
-
-    @property
-    def percent(self) -> float:
-        return self.score.percent
-
-
-def result_summary(attempt: StudentAttempt) -> ResultSummary:
-    score = attempt_score(attempt)
-    duration = attempt.duration_seconds
-    return ResultSummary(
-        score=score,
-        passed=is_passed(attempt, score),
-        correct=score.correct,
-        wrong=score.answered - score.correct - score.pending,
-        skipped=score.total_questions - score.answered,
-        pending=score.pending,
-        duration_seconds=int(duration) if duration is not None else None,
-    )

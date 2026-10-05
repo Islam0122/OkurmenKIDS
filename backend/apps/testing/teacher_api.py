@@ -212,7 +212,7 @@ class ParticipantSerializer(serializers.Serializer):
             # Only once the student has finished — never mid-exam.
             "score": participant.score if finished else None,
             "result_available": finished,
-            # Exam Mode (student portal) violations of the current attempt.
+            # Exam Mode (exam portal) violations of the current attempt.
             "tab_switch_count": attempt.tab_switch_count if attempt else 0,
             "violation_count": attempt.violation_count if attempt else 0,
         }

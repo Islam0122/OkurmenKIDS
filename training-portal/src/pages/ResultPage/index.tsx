@@ -101,7 +101,7 @@ export function ResultView({ data, actions, moreActions, hiddenText = t.result.h
       {data.finish_reason === 'violations' ? <p className="result-note"><Icon name="shield-exclamation" />{t.guard.terminated}</p> : null}
       {data.pending ? <p className="result-note result-note--wait"><Icon name="hourglass-split" />{t.result.pendingNote(data.pending)}</p> : null}
 
-      <div className="result-actions">
+      {actions || moreActions || review.length ? <div className="result-actions">
         {actions}
         {review.length ? (
           <Button variant="outline" icon={showReview ? 'eye-slash' : 'list-check'} onClick={() => setShowReview((v) => !v)}>
@@ -109,7 +109,7 @@ export function ResultView({ data, actions, moreActions, hiddenText = t.result.h
           </Button>
         ) : null}
         {moreActions}
-      </div>
+      </div> : null}
 
       {showReview ? (
         <section className="review" aria-label={t.result.reviewTitle}>

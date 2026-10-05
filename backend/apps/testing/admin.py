@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import uuid
 
-from django import forms
-from django.contrib import admin, messages
+from django.contrib import admin
 from django.http import Http404
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.urls import path, reverse
 
 from . import admin_views, analytics_admin_views, io_admin_views, session_admin_views
 from .admin_views import is_admin_user
-from .models import StudentPortalAccess, Test, TestResult, TestSession
+from .models import Test, TestResult, TestSession
 
 
 @admin.register(Test)
@@ -139,89 +138,6 @@ class TestSessionAdmin(AdminRoleOnly, admin.ModelAdmin):
             path("group-students/<int:group_id>/", view(session_admin_views.group_students_view), name="testing_session_group_students"),
         ]
         return urls + super().get_urls()
-
-
-class IssueGroupCodesForm(forms.Form):
-    group = forms.ModelChoiceField(label="Группа", queryset=None, empty_label="— Выберите группу —")
-
-    def __init__(self, *args, **kwargs):
-        from apps.academy.models import Group
-
-        super().__init__(*args, **kwargs)
-        self.fields["group"].queryset = Group.objects.order_by("name")
-        self.fields["group"].widget.attrs["class"] = "form-control"
-
-
-@admin.register(StudentPortalAccess)
-class StudentPortalAccessAdmin(AdminRoleOnly, admin.ModelAdmin):
-    """«Доступ студентов» — personal codes for the student portal (/student/).
-    A code is generated on save; give it to the student. Regenerating or
-    deactivating a code signs the student out on their next request."""
-
-    list_display = ("student", "group_column", "code", "is_active", "last_login_at", "created_at")
-    list_filter = ("is_active", "student__group")
-    search_fields = ("student__first_name", "student__last_name", "code")
-    autocomplete_fields = ("student",)
-    readonly_fields = ("code", "created_at", "last_login_at")
-    fields = ("student", "code", "is_active", "created_at", "last_login_at")
-    actions = ["regenerate_codes", "activate", "deactivate"]
-    change_list_template = "admin/testing/studentportalaccess/change_list.html"
-    list_select_related = ("student__group",)
-
-    @admin.display(description="Группа", ordering="student__group__name")
-    def group_column(self, obj):
-        return obj.student.group.name if obj.student.group_id else "—"
-
-    def get_readonly_fields(self, request, obj=None):
-        # The student is chosen once; a code belongs to that student only.
-        return (*self.readonly_fields, "student") if obj else self.readonly_fields
-
-    @admin.action(description="Перевыпустить коды (старые перестанут работать)")
-    def regenerate_codes(self, request, queryset):
-        for access in queryset:
-            access.regenerate_code()
-        messages.success(request, f"Новые коды выданы: {queryset.count()}.")
-
-    @admin.action(description="Включить доступ")
-    def activate(self, request, queryset):
-        messages.success(request, f"Доступ включён: {queryset.update(is_active=True)}.")
-
-    @admin.action(description="Отключить доступ")
-    def deactivate(self, request, queryset):
-        messages.success(request, f"Доступ отключён: {queryset.update(is_active=False)}.")
-
-    def get_urls(self):
-        urls = [
-            path(
-                "issue-group/",
-                self.admin_site.admin_view(self.issue_group_view),
-                name="testing_studentportalaccess_issue_group",
-            ),
-        ]
-        return urls + super().get_urls()
-
-    def issue_group_view(self, request):
-        """Codes for every active student of a group who has none yet."""
-        if not self.has_add_permission(request):
-            raise Http404
-        from apps.academy.models import Student
-
-        form = IssueGroupCodesForm(request.POST or None)
-        if request.method == "POST" and form.is_valid():
-            group = form.cleaned_data["group"]
-            students = Student.objects.filter(group=group, is_active=True, portal_access__isnull=True)
-            created = 0
-            for student in students:
-                StudentPortalAccess.objects.create(student=student)
-                created += 1
-            messages.success(request, f"Группа «{group.name}»: выдано новых кодов — {created}.")
-            return redirect(f"{reverse('admin:testing_studentportalaccess_changelist')}?student__group__id__exact={group.pk}")
-        return render(request, "admin/testing/studentportalaccess/issue_group.html", {
-            **self.admin_site.each_context(request),
-            "title": "Выдать коды группе",
-            "form": form,
-            "opts": self.model._meta,
-        })
 
 
 # /admin/tests/ and /admin/sessions/ — the sections' short addresses.

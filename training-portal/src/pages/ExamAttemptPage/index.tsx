@@ -11,7 +11,7 @@ const NO_SECURITY = { require_fullscreen: false, track_tab_switches: true, max_t
 
 /**
  * The exam — the same test screen as a training, with Exam Mode's rules:
- * the attempt comes from the student portal (never started here), a reload
+ * the attempt comes from the session-key page (never started here), a reload
  * restores it (answers, timer from the server), no answer checking, no way
  * back to the site until it is finished.
  */
