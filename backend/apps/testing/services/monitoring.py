@@ -5,10 +5,14 @@ portal) and classic /exam/ sessions.
 
 Who sees what (the project's RBAC, apps.users.permissions):
     Admin, Team Lead  everything (can_view_academy)
-    Teacher           attempts of sessions held for their groups, and of
-                      students of their groups (Group.objects.for_teacher);
-                      public trainers (open to anyone, no group) of the
-                      subjects they teach or that they own (session.teacher)
+    Teacher           sessions that belong to them and their attempts
+                      (TestSession.objects.for_teacher: session.teacher, or
+                      the group's program for the test's subject), attempts
+                      recorded under them (StudentAttempt.teacher); public
+                      trainers (open to anyone, no group) of the subjects
+                      they teach or that they own (session.teacher). Never
+                      another trainer's exam just because it is held in a
+                      group they also teach.
 Attempts LMS staff take themselves (StudentAttempt.user) are never
 counted. Nothing here writes, except closing attempts whose time is up.
 """
@@ -45,6 +49,7 @@ from ..models import (
     SessionType,
     StudentAttempt,
     TestSession,
+    teacher_session_q,
 )
 from .analytics import question_stats
 from .attempts import attempt_deadline, result_rows
@@ -69,6 +74,9 @@ STATUSES = ("in_progress", "completed", "expired", "terminated")
 # ---------------------------------------------------------------------------
 
 def _teacher_groups(user):
+    """Groups a teacher may open a group page for (any program in it). Only
+    the *group* — the sessions and attempts shown inside stay the teacher's
+    own (visible_sessions / visible_attempts)."""
     teacher = getattr(user, "teacher_profile", None)
     return Group.objects.for_teacher(teacher) if teacher is not None else None
 
@@ -93,25 +101,25 @@ def visible_sessions(user) -> QuerySet:
     sessions = TestSession.objects.all()
     if can_view_academy(user):
         return sessions
-    groups = _teacher_groups(user)
-    if groups is None:
+    teacher = getattr(user, "teacher_profile", None)
+    if teacher is None:
         return sessions.none()
-    return sessions.filter(Q(group__in=groups) | _public_trainer_q(user.teacher_profile))
+    return sessions.filter(teacher_session_q(teacher) | _public_trainer_q(teacher))
 
 
 def visible_attempts(user) -> QuerySet:
     attempts = StudentAttempt.objects.filter(user__isnull=True)
     if can_view_academy(user):
         return attempts
-    groups = _teacher_groups(user)
-    if groups is None:
+    teacher = getattr(user, "teacher_profile", None)
+    if teacher is None:
         return attempts.none()
     # Forward FKs only — no row multiplication, so no distinct() needed.
-    # `group` / `teacher` are the result snapshot (the group and teacher the
-    # attempt belonged to when it was taken).
-    teacher = user.teacher_profile
+    # `teacher` is the result snapshot (the trainer the attempt belonged to
+    # when it was taken). Not «any attempt in / of a student of a group they
+    # teach in»: that is every other trainer's exam in the same group.
     return attempts.filter(
-        Q(group__in=groups) | Q(teacher=teacher) | Q(session__group__in=groups) | Q(student__group__in=groups)
+        Q(teacher=teacher) | teacher_session_q(teacher, prefix="session__")
         | _public_trainer_q(teacher, prefix="session__")
     )
 

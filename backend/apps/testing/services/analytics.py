@@ -74,17 +74,15 @@ SUCCESS_BLOCK_SIZE = 5
 
 def visible_sessions(user) -> QuerySet:
     """Sessions whose analytics ``user`` may see. Admins: all. Teachers (if
-    ever given admin access): only sessions of their own groups — the same
-    rule as the teacher portal (Group.objects.for_teacher)."""
-    from apps.academy.models import Group
-
+    ever given admin access): only their own sessions — the same rule as the
+    teacher portal (TestSession.objects.for_teacher)."""
     sessions = TestSession.objects.all()
     if user.is_superuser or getattr(user, "role", None) == User.Role.ADMIN:
         return sessions
     teacher = getattr(user, "teacher_profile", None)
     if teacher is None:
         return sessions.none()
-    return sessions.filter(group__in=Group.objects.for_teacher(teacher))
+    return sessions.for_teacher(teacher)
 
 
 def with_list_stats(sessions: QuerySet) -> QuerySet:

@@ -268,10 +268,15 @@ class ScoreFilterTests(SimpleTestCase):
 
 
 class VisibilityTests(AnalyticsFixture):
-    def test_teacher_sees_only_their_groups(self):
+    def test_teacher_sees_only_their_own_sessions(self):
+        # self.session was created by self.teacher (session.teacher) — theirs.
         other = TestSession.objects.create(test=self.test, group=self.other_group, title="Other")
-        self.assertEqual(set(analytics.visible_sessions(self.teacher.user)), set())
-        GroupTeacher.objects.create(group=self.group, teacher=self.teacher, subject=self.subject)
         self.assertEqual(set(analytics.visible_sessions(self.teacher.user)), {self.session})
+        # A program in `other`'s group for another subject gives no access to it…
+        GroupTeacher.objects.create(group=self.other_group, teacher=self.teacher, subject=None)
+        self.assertEqual(set(analytics.visible_sessions(self.teacher.user)), {self.session})
+        # …the group's program for the test's subject does (no teacher recorded).
+        GroupTeacher.objects.create(group=self.other_group, teacher=self.teacher, subject=self.subject)
+        self.assertEqual(set(analytics.visible_sessions(self.teacher.user)), {self.session, other})
         admin = User.objects.create_superuser(username="root", email="root@okurmen.kg", password="x")
         self.assertEqual(set(analytics.visible_sessions(admin)), {self.session, other})
