@@ -45,7 +45,10 @@ export function useSaveAcademicProgram(id: number) {
       queryClient.setQueryData(['groups', 'detail', id, 'academic-config'], data)
       void queryClient.invalidateQueries({ queryKey: ['groups'] })
       void queryClient.invalidateQueries({ queryKey: ['reports'] })
+      // The slot's future lessons moved on the server (schedule_lesson_sync):
+      // every lesson view refetches — lesson lists and the «Расписание» week.
       void queryClient.invalidateQueries({ queryKey: ['lessons'] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule'] })
     },
   })
 }
@@ -57,6 +60,7 @@ export function useGenerateLessons(id: number) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['groups'] })
       void queryClient.invalidateQueries({ queryKey: ['lessons'] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule'] })
     },
   })
 }

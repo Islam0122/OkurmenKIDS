@@ -8309,7 +8309,8 @@ class ProgramEditingServiceTests(WorkspaceProgramFixture):
     def test_api_patch_uses_the_same_rules(self):
         client = APIClient()
         client.force_authenticate(self.admin)
-        with mock.patch("apps.academy.services.program_editing.timezone.localdate", return_value=WS_TODAY):
+        ws_now = timezone.make_aware(dt.datetime.combine(WS_TODAY, dt.time.min))
+        with mock.patch("apps.academy.services.program_editing.local_now", return_value=ws_now):
             response = client.patch(f"/api/v1/programs/{self.python_program.pk}/", {"teacher": self.teacher3.pk},
                                     format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)

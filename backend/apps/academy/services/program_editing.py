@@ -14,10 +14,12 @@ one transaction:
 
 * **Teacher** — the program's slots move to the new teacher (their
   recurring slots must not clash with the new teacher's other slots), and,
-  if asked, so do its future *scheduled* lessons (never started, dated
-  today or later; each must not clash with a lesson the new teacher
-  already gives). Conducted/cancelled/past lessons keep their trainer:
-  they are history, and the old trainer's KPI.
+  if asked, so do its future *scheduled* lessons that still follow its
+  slots (never started, no attendance / homework results, start still
+  ahead — see future_lessons; each must not clash with a lesson the new
+  teacher already gives). Conducted/cancelled/past/running lessons keep
+  their trainer: they are history, and the old trainer's KPI; so does a
+  lesson moved by hand away from its slot (an individual arrangement).
 * **Subject** — only while the program has no lessons at all: a lesson's
   subject is copied from the plan row it was generated from, so renaming
   the subject of a program that already has lessons would split the
@@ -40,12 +42,13 @@ from dataclasses import dataclass, field
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.utils import timezone
 
 from ..constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
-from ..models import GroupSchedule, GroupTeacher, Lesson, Room
+from django.db.models import Q
+
+from ..models import Attendance, GroupSchedule, GroupTeacher, HomeworkResult, Lesson, Room
 from .group_schedule_conflicts import find_schedule_teacher_conflict
-from .schedule_lesson_sync import SlotSnapshot, snapshot, sync_schedule_lessons
+from .schedule_lesson_sync import SlotSnapshot, ahead_q, local_now, snapshot, sync_schedule_lessons
 
 # How many clashing lessons one validation error lists before "…".
 _MAX_LISTED = 5
@@ -63,15 +66,30 @@ class ProgramChange:
         return self.teacher_changed or self.subject_changed or self.status_changed
 
 
-def future_lessons(group_teacher: GroupTeacher, *, today: dt.date | None = None):
-    """The program's lessons a teacher change may move to the new teacher:
-    still scheduled, never started, today or later."""
-    today = today or timezone.localdate()
-    return Lesson.objects.filter(
-        group_teacher=group_teacher,
-        status=Lesson.Status.SCHEDULED,
-        started_at__isnull=True,
-        date__gte=today,
+def _django_week_day(day_of_week: str) -> int:
+    """GroupSchedule's "mon".."sun" → Django's __week_day (1 = Sunday … 7 = Saturday)."""
+    return (WEEKDAY_CODES.index(day_of_week) + 1) % 7 + 1
+
+
+def future_lessons(group_teacher: GroupTeacher, *, today: dt.date | None = None, now: dt.datetime | None = None):
+    """The program's lessons a teacher change may move to the new teacher —
+    the same «open future lesson» rule as schedule_lesson_sync: still
+    scheduled, never started, no attendance / homework results, start still
+    ahead (project time zone), and still following one of the program's
+    slots (its weekday and start/end; a lesson moved by hand keeps its
+    trainer)."""
+    now_local = local_now(now=now, today=today)
+    following = Q(pk__in=[])
+    for slot in group_teacher.schedules.all():
+        following |= (Q(schedule=slot) | Q(schedule__isnull=True)) & Q(
+            start_time=slot.start_time, end_time=slot.end_time, date__week_day=_django_week_day(slot.day_of_week),
+        )
+    return (
+        Lesson.objects.filter(group_teacher=group_teacher, status=Lesson.Status.SCHEDULED, started_at__isnull=True)
+        .filter(ahead_q(now_local))
+        .filter(following)
+        .exclude(pk__in=Attendance.objects.values("lesson_id"))
+        .exclude(pk__in=HomeworkResult.objects.values("homework__lesson_id"))
     )
 
 
@@ -394,8 +412,12 @@ def save_teaching_program(group_teacher: GroupTeacher, *, teacher, subject, is_a
     the created/changed slots are validated last, already under the new
     teacher."""
     result = ProgramSaveResult()
+    # One editor of this program at a time: the program row and its slots
+    # are locked before anything is read, so a concurrent save waits and
+    # then starts from what this one committed (no stale «before»).
+    group_teacher = GroupTeacher.objects.select_for_update().get(pk=group_teacher.pk)
     if slots is not None:
-        current = {slot.pk: slot for slot in group_teacher.schedules.all()}
+        current = {slot.pk: slot for slot in GroupSchedule.objects.select_for_update().filter(group_teacher=group_teacher)}
         wanted_ids = {spec.id for spec in slots if spec.id is not None}
         removed_ids = set(current) - wanted_ids
         changed = [
