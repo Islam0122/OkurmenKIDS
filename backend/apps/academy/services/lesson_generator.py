@@ -101,7 +101,7 @@ from .group_schedule_conflicts import (
     find_schedule_room_conflict,
     find_schedule_teacher_conflict,
 )
-from .schedule_lesson_sync import align_schedule_lessons
+from .schedule_lesson_sync import align_schedule_lessons, attach_detached_lessons
 
 logger = logging.getLogger(__name__)
 
@@ -598,6 +598,13 @@ def _align_with_schedule(group: Group, group_teachers: list[GroupTeacher], run: 
         .filter(start_time__lt=F("end_time"))
         .order_by("pk")
     )
+    for group_teacher in group_teachers:
+        # Lessons whose slot was deleted (Lesson.schedule NULL) first get one
+        # of their program's current slots back.
+        group_teacher.group = group
+        result = attach_detached_lessons(group_teacher)
+        run.rescheduled.extend(result.moved)
+        run.sync_warnings.extend(result.problems)
     for slot in slots:
         slot.group = group
         result = align_schedule_lessons(slot)

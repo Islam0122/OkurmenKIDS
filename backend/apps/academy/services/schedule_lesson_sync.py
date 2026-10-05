@@ -52,6 +52,10 @@ Two entry points, one rule set (lesson_is_open, follows_slot, target_date,
 _find_problems, _move):
   * sync_schedule_lessons — a slot save: moves the lessons that followed
     the slot's *old* values; any clash rolls the save back.
+  * attach_detached_lessons — a slot was *deleted* (Lesson.schedule set
+    to NULL) and replaced by another one: the program's open future
+    lessons left without a slot take its current slots, week by week. Run
+    by every schedule save (strict) and by «Сгенерировать занятия».
   * align_schedule_lessons — «Сгенерировать занятия» (and its preview):
     no «before» exists, so it moves every open future lesson of the slot
     that is *not* on the slot's current day/time — whatever a slot edit
@@ -291,24 +295,119 @@ def align_schedule_lessons(slot: GroupSchedule, *, today: dt.date | None = None,
     return result
 
 
+def attach_detached_lessons(group_teacher, *, strict: bool = False, today: dt.date | None = None,
+                            now: dt.datetime | None = None) -> ScheduleAlignResult:
+    """Give back a slot to the program's lessons that lost theirs.
+
+    Deleting a slot (the trash icon / removing a day in the editor and
+    adding another one instead of editing it) sets Lesson.schedule to NULL
+    (SET_NULL): such a lesson belongs to no slot any more, so neither a
+    slot save nor align_schedule_lessons would ever move it — it stayed at
+    the deleted slot's old day/time forever. Here every open future lesson
+    of `group_teacher` without a slot (same lesson_is_open rule, never a
+    hand-moved one) is put into one of the program's current active slots
+    *in its own week*: a week's detached lessons, in date order, take the
+    week's still-free slots in weekday/time order (a slot gives one lesson
+    per week — one already used by another lesson of that week, any status,
+    is skipped), moving to that slot's day, time and room. A lesson with no
+    free slot in its week, or whose new time would already be past, stays
+    where it is (counted as kept).
+
+    `strict` (a schedule save): a clash raises ValidationError so the save
+    rolls back, like sync_schedule_lessons. Otherwise (generation) a
+    clashing lesson just stays detached and is reported in `problems`."""
+    result = ScheduleAlignResult()
+    if not group_teacher.is_active:
+        return result
+    now_local = local_now(now=now, today=today)
+    with transaction.atomic():
+        detached = list(
+            Lesson.objects.select_for_update()
+            .filter(group_teacher=group_teacher, schedule__isnull=True)
+            .filter(ahead_q(now_local))
+            .exclude(status=Lesson.Status.CANCELLED)
+            .order_by("date", "start_time", "pk")
+        )
+        if not detached:
+            return result
+        slots = sorted(
+            (slot for slot in group_teacher.schedules.filter(is_active=True) if slot.start_time < slot.end_time),
+            key=lambda slot: (WEEKDAY_CODES.index(slot.day_of_week), slot.start_time),
+        )
+        with_data = lessons_with_data([lesson.pk for lesson in detached])
+        weeks = {lesson.date.isocalendar()[:2] for lesson in detached}
+        used = {
+            (schedule_id, *date.isocalendar()[:2])
+            for schedule_id, date in Lesson.objects.filter(schedule__in=slots).values_list("schedule_id", "date")
+            if date.isocalendar()[:2] in weeks
+        }
+        moves = []
+        for lesson in detached:
+            if not lesson_is_open(lesson, with_data):
+                result.kept += 1
+                continue
+            week = lesson.date.isocalendar()[:2]
+            for slot in slots:
+                date = target_date(lesson.date, WEEKDAY_CODES.index(slot.day_of_week))
+                if (slot.pk, *week) not in used and is_ahead(date, slot.start_time, now_local):
+                    used.add((slot.pk, *week))
+                    moves.append((
+                        lesson, date, slot.start_time, slot.end_time, slot.room_id,
+                        lesson.teacher_id or group_teacher.teacher_id, slot,
+                    ))
+                    break
+            else:
+                result.kept += 1
+        if not moves:
+            return result
+
+        group = group_teacher.group
+        problems = _find_move_problems(group, [move[:6] for move in moves])
+        if problems:
+            if strict:
+                raise ValidationError(_problem_messages(problems, group))
+            blocked = {lesson.pk for lesson, _kind, _message in problems}
+            moves = [move for move in moves if move[0].pk not in blocked]
+            result.kept += len(blocked)
+            result.problems = _problem_messages(problems, group)
+        stamp = timezone.now()
+        for lesson, date, start, end, room_id, _teacher, slot in moves:
+            lesson.date, lesson.start_time, lesson.end_time = date, start, end
+            lesson.room_id, lesson.schedule, lesson.updated_at = room_id, slot, stamp
+        if moves:
+            Lesson.objects.bulk_update(
+                [move[0] for move in moves], ["date", "start_time", "end_time", "room", "schedule", "updated_at"],
+            )
+            result.moved = [move[0] for move in moves]
+    return result
+
+
 _KIND_LATE = "late"
 
 
 def _find_problems(group, planned, start: dt.time, end: dt.time) -> list[tuple[Lesson, str, str]]:
-    """(lesson, kind, message) for every planned move that doesn't fit:
-    past the group's end date, or overlapping the group's, the teacher's or
-    the room's other (non-cancelled, not moving) lessons on its new date."""
+    """_find_move_problems for moves that all take the same start/end time."""
+    return _find_move_problems(
+        group, [(lesson, date, start, end, room_id, teacher_id) for lesson, date, room_id, teacher_id in planned],
+    )
+
+
+def _find_move_problems(group, moves) -> list[tuple[Lesson, str, str]]:
+    """(lesson, kind, message) for every planned move — (lesson, date,
+    start, end, room_id, teacher_id) — that doesn't fit: past the group's
+    end date, or overlapping the group's, the teacher's or the room's other
+    (non-cancelled, not moving) lessons on its new date."""
     problems: list[tuple[Lesson, str, str]] = []
     if group.end_date:
         problems += [
             (lesson, _KIND_LATE, _fmt(lesson, lesson.date, lesson.start_time))
-            for lesson, date, _room, _teacher in planned if date > group.end_date
+            for lesson, date, *_rest in moves if date > group.end_date
         ]
 
-    moving_ids = {lesson.pk for lesson, *_rest in planned}
-    dates = {date for _lesson, date, _room, _teacher in planned}
-    teacher_ids = {teacher for *_rest, teacher in planned if teacher}
-    room_ids = {room for _lesson, _date, room, _teacher in planned if room}
+    moving_ids = {lesson.pk for lesson, *_rest in moves}
+    dates = {date for _lesson, date, *_rest in moves}
+    teacher_ids = {teacher for *_rest, teacher in moves if teacher}
+    room_ids = {room for *_rest, room, _teacher in moves if room}
     others = list(
         Lesson.objects.filter(date__in=dates)
         .exclude(pk__in=moving_ids)
@@ -325,7 +424,7 @@ def _find_problems(group, planned, start: dt.time, end: dt.time) -> list[tuple[L
     for other in others:
         by_date.setdefault(other.date, []).append(other)
 
-    for lesson, date, room_id, teacher_id in planned:
+    for lesson, date, start, end, room_id, teacher_id in moves:
         for other in by_date.get(date, []):
             if not _overlaps(start, end, other.start_time, other.end_time):
                 continue
