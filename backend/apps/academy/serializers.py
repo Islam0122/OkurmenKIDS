@@ -3,6 +3,8 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
+from apps.users.permissions import can_view_academy
+
 from apps.users.models import Subject, Teacher, User
 from apps.users.permissions import is_team_lead
 from apps.users.serializers import SubjectSerializer, TeacherSerializer
@@ -535,6 +537,30 @@ class GroupSerializer(serializers.ModelSerializer):
     def get_students_count(self, obj: Group) -> int:
         annotated = getattr(obj, "active_students_count", None)
         return annotated if annotated is not None else obj.students_count
+
+    def _own_teacher_id(self) -> int | None:
+        """The requesting trainer's id when their view of the group must be
+        narrowed to their own Teaching Programs; None for Admin / Team Lead
+        (academy-wide read) and for internal use without a request."""
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False) or can_view_academy(user):
+            return None
+        teacher = getattr(user, "teacher_profile", None)
+        return teacher.id if teacher is not None else 0
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # A trainer has access to a shared group (its roster), but another
+        # trainer's programs and weekly slots stay theirs — the same rule as
+        # GroupTeacherViewSet / GroupScheduleViewSet (own rows only) and
+        # LessonQuerySet.for_teacher. Without this the nested lists would
+        # hand a colleague's schedule to any trainer of the same group.
+        own = self._own_teacher_id()
+        if own is not None:
+            data["schedules"] = [slot for slot in data["schedules"] if slot.get("teacher") == own]
+            data["teachers"] = [program for program in data["teachers"] if program.get("teacher") == own]
+        return data
 
     def validate(self, attrs):
         start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
