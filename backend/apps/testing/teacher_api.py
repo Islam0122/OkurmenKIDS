@@ -5,10 +5,12 @@
     GET /api/v1/teacher/sessions/{id}/participants/
     GET /api/v1/teacher/sessions/{id}/participants/{participant_id}/result/
 
-Scoping is done on the backend, in every queryset: a teacher only reaches
-sessions whose group is one of theirs (Group.objects.for_teacher — the same
-rule as the rest of the portal), so another group's session is a plain 404
-whatever its id. Admins and the Team Lead see every session (every view here
+Scoping is done on the backend, in every queryset (sessions_for): a trainer
+only reaches the sessions that belong to them (TestSession.objects.for_teacher
+— session.teacher, or for older sessions without one the group's program for
+the test's subject), so another trainer's session — even in a group they
+also teach, even of a subject they also teach — is a plain 404 whatever its
+id. Admins and the Team Lead see every session (every view here
 is a GET, so the Team Lead stays read-only).
 
 Monitoring shows progress, never answers: no answer content, correctness or
@@ -44,7 +46,6 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.academy.models import Group
 from apps.users.models import User
 from apps.users.permissions import is_team_lead
 
@@ -113,7 +114,9 @@ def sessions_for(user):
     teacher = getattr(user, "teacher_profile", None)
     if teacher is None:
         return sessions.none()
-    return sessions.filter(group__in=Group.objects.for_teacher(teacher))
+    # Only the trainer's own sessions — never every session of a group they
+    # have *some* program in (TestSessionQuerySet.for_teacher).
+    return sessions.for_teacher(teacher)
 
 
 # ---------------------------------------------------------------------------

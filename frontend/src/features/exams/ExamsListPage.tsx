@@ -31,7 +31,8 @@ const EMPTY_TEXT: Record<ExamListFilter, string> = {
   finished: 'Завершённых экзаменов пока нет.',
 }
 
-/** Exam sessions — a Trainer's own groups (backend-scoped); Admin and Team
+/** Exam sessions — a Trainer's own sessions only (backend-scoped: the
+ * session's trainer, never every session of a group they teach in); Admin and Team
  * Lead see every session of the academy and may create one («Сессии»). */
 export function ExamsListPage() {
   const { user } = useAuth()
@@ -54,7 +55,7 @@ export function ExamsListPage() {
           }
         />
       ) : (
-        <PageHeader title="Экзамены" description="Тестовые сессии ваших групп: кто начал, кто проходит, кто завершил." />
+        <PageHeader title="Экзамены" description="Ваши тестовые сессии: кто начал, кто проходит, кто завершил." />
       )}
 
       {academyView ? (

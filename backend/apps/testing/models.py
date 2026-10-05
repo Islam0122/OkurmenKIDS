@@ -476,6 +476,41 @@ class SessionTransitionError(ValidationError):
     """A session state change that the state machine does not allow."""
 
 
+def teacher_session_q(teacher, prefix: str = "") -> models.Q:
+    """The test sessions (exams, trainers) that belong to `teacher` — the one
+    ownership rule for every trainer-facing exam list, page and result.
+    `prefix` applies it through a relation (``"session__"`` for attempts).
+
+    A session belongs to the trainer who runs it:
+      * ``TestSession.teacher`` — set when the session is created (the
+        creating trainer, or the group's program for the test's subject:
+        apps.academy.services.trainer_assignment.group_trainer); or
+      * with no ``teacher`` recorded (older sessions): the trainer of the
+        group's active program (GroupTeacher) for the test's subject.
+
+    Never «any session of a group the trainer teaches in» — a group has
+    several programs and trainers (English — Aizhan, Soft Skills — Nurisa),
+    and never «any session of a subject the trainer teaches» — two trainers
+    can teach the same subject in different groups."""
+    from apps.academy.models import GroupTeacher
+
+    program = GroupTeacher.objects.filter(
+        group=models.OuterRef(f"{prefix}group"),
+        subject=models.OuterRef(f"{prefix}test__subject"),
+        teacher=teacher,
+        is_active=True,
+    )
+    return models.Q(**{f"{prefix}teacher": teacher}) | (
+        models.Q(**{f"{prefix}teacher__isnull": True}) & models.Exists(program)
+    )
+
+
+class TestSessionQuerySet(models.QuerySet):
+    def for_teacher(self, teacher):
+        """Sessions that belong to `teacher` (see teacher_session_q)."""
+        return self.filter(teacher_session_q(teacher))
+
+
 class TestSession(models.Model):
     """One run of a Test for a Group.
 
@@ -514,6 +549,8 @@ class TestSession(models.Model):
         "cancel": ({SessionStatus.CREATED, SessionStatus.RUNNING, SessionStatus.PAUSED}, SessionStatus.CANCELLED),
     }
     ENDED_STATUSES = frozenset({SessionStatus.FINISHED, SessionStatus.EXPIRED, SessionStatus.CANCELLED})
+
+    objects = TestSessionQuerySet.as_manager()
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test = models.ForeignKey(

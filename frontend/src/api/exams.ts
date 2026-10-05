@@ -19,7 +19,8 @@ export interface ExamListParams {
   group?: number
 }
 
-/** A Trainer only ever gets sessions of their own groups; Admin / Team Lead
+/** A Trainer only ever gets their own sessions (backend-scoped:
+ * TestSession.objects.for_teacher); Admin / Team Lead
  * get every session and may also create, start and take one (backend-checked). */
 export const examsApi = {
   list: ({ status, today, page, group }: ExamListParams = {}): Promise<Paginated<ExamSession>> =>
