@@ -1,7 +1,7 @@
 .link-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); transition: transform .3s var(--ease), box-shadow .3s var(--ease), border-color .3s; }
 .link-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--navy-100); }
-.link-card__icon { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; font-size: 24px; color: var(--navy-700); background: linear-gradient(135deg, var(--navy-50), var(--amber-50)); border: 1px solid var(--border); }
-.link-card__cat { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--amber-600); }
+.link-card__icon { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; font-size: 24px; color: var(--navy-700); background: var(--color-primary-soft); border: 1px solid var(--border); }
+.link-card__cat { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--color-primary-hover); }
 .link-card__title { font-size: 18px; font-weight: 700; }
 .link-card__desc { color: var(--text-2); font-size: 15px; }
 .link-card__foot { margin-top: auto; padding-top: 6px; }

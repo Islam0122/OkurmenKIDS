@@ -9,7 +9,8 @@ interface ModalProps {
   onClose?: () => void
   title: string
   icon?: string
-  tone?: 'navy' | 'amber' | 'red'
+  /** primary — a question or information; warning — attention needed; danger — an error */
+  tone?: 'primary' | 'warning' | 'danger'
   width?: number
   children?: ReactNode
   actions?: ReactNode
@@ -17,7 +18,7 @@ interface ModalProps {
   dismissible?: boolean
 }
 
-export function Modal({ open, onClose, title, icon, tone = 'navy', width, children, actions, dismissible = true }: ModalProps) {
+export function Modal({ open, onClose, title, icon, tone = 'primary', width, children, actions, dismissible = true }: ModalProps) {
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

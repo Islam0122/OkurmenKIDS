@@ -100,6 +100,14 @@ describe('exam on the shared test screen', () => {
     expect(screen.getByText(/Экзамен калыбына келтирилди/)).toBeInTheDocument()
   })
 
+  it('a fresh exam on question 1 is not announced as restored', async () => {
+    backend({ current_question_id: 'q1' })
+    window.sessionStorage.setItem('okurmen_exam_e1', 'tok')
+    renderAt('/exam/e1')
+    expect((await screen.findAllByText('Суроо 1 / 2')).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/калыбына келтирилди/)).not.toBeInTheDocument()
+  })
+
   it('a saved position that no longer exists falls back to the first unanswered question', async () => {
     backend({ current_question_id: 'gone', questions: [{ ...QUESTIONS[0], answer: { options: ['o1'], text: '' } }, QUESTIONS[1]] })
     window.sessionStorage.setItem('okurmen_exam_e1', 'tok')

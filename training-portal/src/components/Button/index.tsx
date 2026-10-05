@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Icon } from '../Icon'
 import './Button.css'
 
-export type ButtonVariant = 'primary' | 'navy' | 'outline' | 'ghost' | 'glass' | 'success'
+export type ButtonVariant = 'primary' | 'navy' | 'outline' | 'ghost' | 'danger' | 'glass' | 'success'
 type Size = 'sm' | 'md' | 'lg'
 
 interface Common {

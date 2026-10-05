@@ -9,7 +9,7 @@
 .video-card:hover .video-card__play { transform: scale(1.1); }
 .video-card__duration { position: absolute; z-index: 1; right: 12px; bottom: 12px; padding: 3px 8px; border-radius: 8px; background: rgba(18, 17, 58, .85); color: #fff; font: 700 12px/1.4 var(--font-mono); }
 .video-card__body { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px 20px; flex: 1; }
-.video-card__cat { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--amber-600); }
+.video-card__cat { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--color-primary-hover); }
 .video-card__title { font-size: 18px; font-weight: 700; }
 .video-card__desc { color: var(--text-2); font-size: 15px; }
 .video-card__foot { margin-top: auto; padding-top: 8px; }

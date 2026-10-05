@@ -33,7 +33,7 @@ export function NameModal({ open, initialName, onSubmit, onClose, busy = false, 
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={t.name.title} icon="person-badge" tone="amber" width={460}>
+    <Modal open={open} onClose={onClose} title={t.name.title} icon="person-badge" tone="primary" width={460}>
       <p className="modal__text">{t.name.subtitle}</p>
       <form className="name-form" onSubmit={submit} noValidate>
         <label className="field-label" htmlFor="student-name">{t.name.label}</label>

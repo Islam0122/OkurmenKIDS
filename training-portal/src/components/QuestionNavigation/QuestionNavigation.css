@@ -1,16 +1,28 @@
-/* Desktop: the numbers wrap onto lines; phones: one row that scrolls inside itself. */
-.qnav { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
-@media (max-width: 640px) { .qnav { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; } }
-.qnav__item { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-weight: 600; font-size: 14px; color: var(--text-2); cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
-.qnav__item:hover { border-color: var(--primary); color: var(--primary); }
-.qnav__item--answered { background: var(--navy-100); border-color: var(--navy-100); color: var(--navy-800); }
-.qnav__item--correct { background: var(--green-100); border-color: var(--green-100); color: var(--green-600); }
-.qnav__item--incorrect { background: var(--red-100); border-color: var(--red-100); color: var(--red-600); }
-.qnav__item--current { background: var(--primary); border-color: var(--primary); color: #fff; }
-.qnav-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 13px; font-weight: 500; color: var(--text-muted); }
+/* One question-number design for every mode. States are told apart by more
+ * than colour: current — filled + ring; answered — a dot; correct / wrong
+ * (training with checking) — a ✓ / ✕ mark; unanswered — plain. */
+.qnav { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 4px 4px; }
+@media (max-width: 640px) { .qnav { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 6px; } }
+.qnav__item { position: relative; flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--radius-sm); border: 1px solid var(--color-border-strong); background: var(--color-surface); font-weight: 700; font-size: 14px; color: var(--color-text-secondary); cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.qnav__item:hover { border-color: var(--color-primary); color: var(--color-primary-hover); }
+.qnav__item:focus-visible { box-shadow: var(--focus-ring); }
+.qnav__item::after { position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 800; line-height: 1; color: var(--color-on-primary); border: 2px solid var(--color-surface); }
+.qnav__item--answered { background: var(--color-primary-soft); border-color: var(--color-primary-border); color: var(--color-primary-active); }
+.qnav__item--answered::after { content: ''; width: 10px; height: 10px; top: -3px; right: -3px; background: var(--color-primary); }
+.qnav__item--correct { background: var(--color-success-soft); border-color: var(--color-success-border); color: var(--color-success-text); }
+.qnav__item--correct::after { content: '✓'; background: var(--color-success); }
+.qnav__item--incorrect { background: var(--color-danger-soft); border-color: var(--color-danger-border); color: var(--color-danger-text); }
+.qnav__item--incorrect::after { content: '✕'; background: var(--color-danger); }
+.qnav__item--current { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); box-shadow: 0 0 0 3px var(--color-primary-border); }
+.qnav__item--current:hover { color: var(--color-on-primary); }
+.qnav__item:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 640px) { .qnav__item { width: var(--touch); height: var(--touch); } }
+
+.qnav-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font-size: 13px; font-weight: 500; color: var(--color-text-muted); }
 .qnav-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.qnav-legend i { width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--border-strong); background: var(--surface); }
-.qnav-legend .qnav__item--current { background: var(--primary); border-color: var(--primary); }
-.qnav-legend .qnav__item--answered { background: var(--navy-100); border-color: #bfdbfe; }
-.qnav-legend .qnav__item--correct { background: var(--green-100); border-color: #bbf7d0; }
-.qnav-legend .qnav__item--incorrect { background: var(--red-100); border-color: #fecaca; }
+.qnav-legend i { position: relative; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--color-border-strong); background: var(--color-surface); }
+.qnav-legend i::after { display: none; }
+.qnav-legend .qnav__item--current { background: var(--color-primary); border-color: var(--color-primary); box-shadow: none; }
+.qnav-legend .qnav__item--answered { background: var(--color-primary-soft); border-color: var(--color-primary); }
+.qnav-legend .qnav__item--correct { background: var(--color-success-soft); border-color: var(--color-success); }
+.qnav-legend .qnav__item--incorrect { background: var(--color-danger-soft); border-color: var(--color-danger); }

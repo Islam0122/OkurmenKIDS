@@ -36,6 +36,8 @@ function useCountUp(target: number, durationMs = 1200): number {
 const RADIUS = 52
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
+/** The result card of every mode (Training and Exam): the same surface,
+ * ring and stats; only semantic colours (passed / failed / pending). */
 export function ResultCard({ result }: { result: AttemptResult }) {
   const percent = result.percentage ?? 0
   const shown = useCountUp(percent)
@@ -47,12 +49,6 @@ export function ResultCard({ result }: { result: AttemptResult }) {
     <section className="result-card" aria-label={t.result.title}>
       <div className="score-ring">
         <svg viewBox="0 0 120 120" aria-hidden="true">
-          <defs>
-            <linearGradient id="scoreGradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#fbbf4a" />
-              <stop offset="100%" stopColor="#f5a524" />
-            </linearGradient>
-          </defs>
           <circle className="score-ring__track" cx="60" cy="60" r={RADIUS} fill="none" strokeWidth="10" />
           <circle
             className="score-ring__value" cx="60" cy="60" r={RADIUS} fill="none" strokeWidth="10"
@@ -75,10 +71,10 @@ export function ResultCard({ result }: { result: AttemptResult }) {
           {result.passed === null ? <span className="verdict verdict--wait"><Icon name="hourglass-split" />{t.result.pending}</span> : null}
         </p>
         <dl className="result-stats">
-          <div className="result-stat result-stat--good"><dt className="result-stat__label"><Icon name="check-circle-fill" />{t.result.correct}</dt><dd className="result-stat__value" style={{ margin: 0 }}>{result.correct}</dd></div>
-          <div className="result-stat result-stat--bad"><dt className="result-stat__label"><Icon name="x-circle-fill" />{t.result.incorrect}</dt><dd className="result-stat__value" style={{ margin: 0 }}>{result.incorrect}</dd></div>
-          <div className="result-stat result-stat--skip"><dt className="result-stat__label"><Icon name="dash-circle-fill" />{t.result.skipped}</dt><dd className="result-stat__value" style={{ margin: 0 }}>{result.skipped}</dd></div>
-          <div className="result-stat result-stat--time"><dt className="result-stat__label"><Icon name="stopwatch-fill" />{t.result.time}</dt><dd className="result-stat__value" style={{ margin: 0 }}>{formatDuration(seconds)}</dd></div>
+          <div className="result-stat result-stat--good"><dt className="result-stat__label"><Icon name="check-circle-fill" />{t.result.correct}</dt><dd className="result-stat__value">{result.correct}</dd></div>
+          <div className="result-stat result-stat--bad"><dt className="result-stat__label"><Icon name="x-circle-fill" />{t.result.incorrect}</dt><dd className="result-stat__value">{result.incorrect}</dd></div>
+          <div className="result-stat result-stat--skip"><dt className="result-stat__label"><Icon name="dash-circle-fill" />{t.result.skipped}</dt><dd className="result-stat__value">{result.skipped}</dd></div>
+          <div className="result-stat result-stat--time"><dt className="result-stat__label"><Icon name="stopwatch-fill" />{t.result.time}</dt><dd className="result-stat__value">{formatDuration(seconds)}</dd></div>
         </dl>
       </div>
     </section>

@@ -1,6 +1,6 @@
 .podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: end; margin-bottom: 24px; }
 .podium__item { position: relative; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px 16px 20px; box-shadow: var(--shadow); animation: fadeUp .5s var(--ease) both; }
-.podium__item--1 { order: 2; padding-top: 34px; border-color: #fcd68b; background: linear-gradient(180deg, var(--amber-50), var(--surface)); }
+.podium__item--1 { order: 2; padding-top: 34px; border-color: var(--color-warning-border); background: linear-gradient(180deg, var(--amber-50), var(--surface)); }
 .podium__item--2 { order: 1; }
 .podium__item--3 { order: 3; }
 .podium__rank { width: 52px; height: 52px; margin: 0 auto 10px; border-radius: 16px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 18px; color: #fff; }
