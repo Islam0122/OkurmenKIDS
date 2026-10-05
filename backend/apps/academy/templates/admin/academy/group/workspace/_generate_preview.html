@@ -17,6 +17,7 @@
       <div class="ok-preview-kpis">
         <div><span class="ok-preview-kpi-value">{{ p.to_create }}</span><span class="ok-preview-kpi-label">будет создано</span></div>
         <div><span class="ok-preview-kpi-value">{{ p.to_update }}</span><span class="ok-preview-kpi-label">будет обновлено по плану</span></div>
+        <div><span class="ok-preview-kpi-value">{{ p.to_reschedule }}</span><span class="ok-preview-kpi-label">будет перенесено по расписанию</span></div>
         <div><span class="ok-preview-kpi-value">{{ p.locked }}</span><span class="ok-preview-kpi-label">завершённых — не изменятся</span></div>
         <div><span class="ok-preview-kpi-value">{{ p.manually_edited }}</span><span class="ok-preview-kpi-label">изменённых вручную — не изменятся</span></div>
         <div><span class="ok-preview-kpi-value">{{ p.existing }}</span><span class="ok-preview-kpi-label">уже существует</span></div>
@@ -27,8 +28,10 @@
       <p class="ok-help-text">
         Генерация добавляет недостающие занятия во всех активных программах группы и обновляет
         будущие запланированные занятия по актуальному плану (тема, описание, материалы, ДЗ).
-        Проведённые, начатые и отменённые занятия, занятия с посещаемостью или оценками, а также
-        занятия, изменённые тренером вручную, не изменяются. Даты и время не меняются.
+        Будущие запланированные занятия, которые стоят не на актуальных дне и времени своего слота
+        расписания, переносятся на них (в пределах своей недели).
+        Проведённые, начатые и отменённые занятия, занятия с посещаемостью или оценками, прошедшие
+        занятия, а также занятия, изменённые или перенесённые вручную, не изменяются.
       </p>
 
       {% for error in p.errors %}
@@ -38,7 +41,7 @@
       <div class="ok-prog-table-wrap">
         <table class="ok-prog-table ok-prog-table-compact">
           <thead>
-            <tr><th>Предмет</th><th>Преподаватель</th><th>Расписание</th><th class="ok-num">План</th><th class="ok-num">Есть</th><th class="ok-num">Будет создано</th><th class="ok-num">Будет обновлено</th></tr>
+            <tr><th>Предмет</th><th>Преподаватель</th><th>Расписание</th><th class="ok-num">План</th><th class="ok-num">Есть</th><th class="ok-num">Будет создано</th><th class="ok-num">Будет обновлено</th><th class="ok-num">Будет перенесено</th></tr>
           </thead>
           <tbody>
             {% for row in p.programs %}
@@ -53,9 +56,10 @@
                   {% if row.first_date %}<div class="ok-prog-meta">{{ row.first_date|date:"d.m.Y" }}{% if row.last_date != row.first_date %} – {{ row.last_date|date:"d.m.Y" }}{% endif %}</div>{% endif %}
                 </td>
                 <td data-label="Будет обновлено" class="ok-num">{{ row.to_update }}</td>
+                <td data-label="Будет перенесено" class="ok-num">{{ row.to_reschedule }}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="7" class="ok-prog-meta">У группы нет учебных программ.</td></tr>
+              <tr><td colspan="8" class="ok-prog-meta">У группы нет учебных программ.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -87,9 +91,9 @@
     <div class="ok-modal-footer">
       <button type="button" class="ok-btn-secondary" data-ok-close>Отмена</button>
       {% if p.has_changes %}
-        <button type="submit" class="ok-btn-primary"><i class="bi bi-magic"></i> Синхронизировать (создать {{ p.to_create }}, обновить {{ p.to_update }})</button>
+        <button type="submit" class="ok-btn-primary"><i class="bi bi-magic"></i> Синхронизировать (создать {{ p.to_create }}, обновить {{ p.to_update }}, перенести {{ p.to_reschedule }})</button>
       {% else %}
-        <button type="submit" class="ok-btn-primary" disabled title="Всё уже совпадает с планом">Изменений нет</button>
+        <button type="submit" class="ok-btn-primary" disabled title="Всё уже совпадает с планом и расписанием">Изменений нет</button>
       {% endif %}
     </div>
   </form>

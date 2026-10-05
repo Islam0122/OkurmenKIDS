@@ -1152,6 +1152,16 @@ class Lesson(models.Model):
         ),
     )
 
+    schedule_overridden = models.BooleanField(
+        default=False,
+        verbose_name="Перенесено вручную",
+        help_text=(
+            "Дату или время именно этого занятия изменили вручную. Такое занятие больше не "
+            "следует за своим слотом расписания: ни сохранение слота, ни «Сгенерировать "
+            "занятия» не переносят его (см. services.schedule_lesson_sync)."
+        ),
+    )
+
     homework_not_required = models.BooleanField(
         default=False,
         verbose_name="ДЗ не требуется",
@@ -1226,6 +1236,11 @@ class Lesson(models.Model):
     # one (see services.lesson_generator._sync_existing_lessons). A manual
     # edit of any of them sets `manually_edited`.
     PLAN_CONTENT_FIELDS = ("topic", "description", "youtube_url", "presentation_urls")
+
+    # When the lesson takes place — set from its GroupSchedule slot and kept
+    # in line with it (services.schedule_lesson_sync). A manual edit of any
+    # of them sets `schedule_overridden`.
+    SCHEDULE_FIELDS = ("date", "start_time", "end_time")
 
     def __str__(self):
         return f"{self.group.name} — занятие {self.lesson_number} ({self.date})"

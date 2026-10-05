@@ -294,7 +294,7 @@ describe('GroupDetailPage — Team Lead academic configuration', () => {
 
   it('generates lessons with the existing generator', async () => {
     vi.mocked(groupsApi.generateLessons).mockResolvedValue({
-      created_count: 8, updated_count: 0, already_existed: 0, expected_total: 8,
+      created_count: 8, updated_count: 0, rescheduled_count: 0, already_existed: 0, expected_total: 8,
       first_date: '2026-10-05', last_date: '2026-10-18', warnings: [], errors: [],
     })
     const user = await openSchedule()

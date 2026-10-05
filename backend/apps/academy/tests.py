@@ -8591,7 +8591,7 @@ class GenerationPreviewTests(WorkspaceProgramFixture):
         response = self.web.get(self.url("_generate_preview"), {"program": self.python_program.pk})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["preview"]["focus_program_id"], self.python_program.pk)
-        self.assertContains(response, "Синхронизировать (создать 4, обновить 0)")
+        self.assertContains(response, "Синхронизировать (создать 4, обновить 0, перенести 0)")
         self.assertEqual(Lesson.objects.filter(group=self.group).count(), 0)
         self.assertEqual(self.web.get(self.url("_generate_lessons")).status_code, 405)
 
