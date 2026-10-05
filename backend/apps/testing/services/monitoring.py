@@ -1,6 +1,6 @@
 """Monitoring for Teachers, Team Leads and Admins: live attempts, results,
 violations and analytics over every kind of attempt the testing module
-holds — Exam Mode exams (student portal), public trainers (training
+holds — Exam Mode exams (exam portal, /exam/?key=…), public trainers (training
 portal) and classic /exam/ sessions.
 
 Who sees what (the project's RBAC, apps.users.permissions):

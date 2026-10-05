@@ -16,7 +16,8 @@ const EXAM_API: AttemptAdapter = {
 const tokenKey = (attemptId: string) => `okurmen_exam_${attemptId}`
 
 /**
- * The attempt's token: from the student portal's link (`#t=…`, read once and
+ * The attempt's token: from the link the session-key page (/exam/?key=…)
+ * redirects to (`#t=…`, read once and
  * removed from the address bar), then kept for this browser tab only
  * (sessionStorage) so a reload restores the same attempt.
  */
@@ -35,7 +36,7 @@ export function examToken(attemptId: string): string | null {
 }
 
 /** Exam on top of the shared test engine: the attempt already exists (started
- * in the student portal) — it is only restored, never started here. */
+ * by the backend's session-key page) — it is only restored, never started here. */
 export function useExam(attemptId: string, onFinished: (attemptId: string) => void) {
   const runner = useAttemptRunner(EXAM_API, onFinished)
   const { load, setPhase, setError } = runner

@@ -248,34 +248,3 @@ def export_xlsx(results: QuerySet) -> bytes:
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()
-
-
-def student_results(student, limit: int | None = None) -> list[dict]:
-    """The student's own finished results (student portal). The score is
-    hidden when the test does not show results to students."""
-    rows = annotate_results(
-        StudentAttempt.objects.filter(student=student, status=AttemptStatus.FINISHED, user__isnull=True)
-    ).order_by("-finished_at")
-    if limit:
-        rows = rows[:limit]
-    result = []
-    for attempt in rows:
-        row = monitoring.attempt_row(attempt)
-        visible = attempt.session.test.show_result
-        result.append({
-            "attempt": attempt,
-            "title": row["test"]["title"],
-            "subject": row["test"]["subject"],
-            "group": (row["group"] or {}).get("name", ""),
-            "teacher": (row["teacher"] or {}).get("name", ""),
-            "finished_at": attempt.finished_at,
-            "score": row["score"] if visible else None,
-            "passed": row["passed"] if visible else None,
-            "correct": row.get("correct_count") if visible else None,
-            "incorrect": row.get("incorrect_count") if visible else None,
-            "question_total": row["question_total"],
-            "duration_seconds": row["duration_seconds"],
-            "attempt_no": row.get("attempt_no"),
-            "visible": visible,
-        })
-    return result

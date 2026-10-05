@@ -238,8 +238,8 @@ class Test(models.Model):
     available_from = models.DateTimeField(null=True, blank=True, verbose_name="Дата начала")
     available_until = models.DateTimeField(null=True, blank=True, verbose_name="Дата окончания")
 
-    # -- Exam Mode (student portal, /student/exams/) -------------------------
-    # Only the portal's Exam Mode reads these; the /exam/ pages ignore them.
+    # -- Exam Mode (the exam portal: /exam/?key=… → the React exam) ----------
+    # Only Exam Mode attempts read these; the legacy /exam/ form ignores them.
     require_fullscreen = models.BooleanField(
         default=False,
         verbose_name="Требовать полноэкранный режим",
@@ -1042,10 +1042,10 @@ class StudentAttempt(models.Model):
     # score formula — see _recalculate_score().
     question_ids = models.JSONField(default=list, blank=True, verbose_name="Вопросы попытки")
 
-    # -- Exam Mode (student portal) — see services/exam_portal.py ------------
+    # -- Exam Mode (the exam portal) — see services/exam_portal.py ----------
     exam_mode = models.BooleanField(
         default=False, db_index=True, verbose_name="Exam Mode",
-        help_text="Попытка начата из кабинета студента; открывается только там.",
+        help_text="Попытка идёт в экзаменационном портале (таймер сервера, автосохранение, нарушения).",
     )
     # The attempt's own time-limit deadline (started_at + limit), stored when
     # it starts. The session's deadline still caps it — attempt_deadline().
@@ -1320,60 +1320,8 @@ class Answer(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# Student portal: access codes and the Exam Mode event log
+# Exam Mode event log
 # ---------------------------------------------------------------------------
-
-# Same unambiguous alphabet as session keys. 31**8 ≈ 8.5e11 codes; wrong
-# codes are rate-limited per IP (student_auth.py).
-PORTAL_CODE_LENGTH = 8
-
-
-def generate_portal_code() -> str:
-    return "".join(secrets.choice(SESSION_KEY_ALPHABET) for _ in range(PORTAL_CODE_LENGTH))
-
-
-def normalize_portal_code(raw: str) -> str:
-    return "".join(ch for ch in (raw or "").upper() if ch.isalnum())
-
-
-class StudentPortalAccess(models.Model):
-    """A student's personal sign-in code for the student portal (/student/).
-
-    Students have no LMS accounts (users.User is staff only); the portal
-    keeps the student in the Django session after they enter this code."""
-
-    student = models.OneToOneField(
-        "academy.Student", on_delete=models.CASCADE, related_name="portal_access", verbose_name="Студент",
-    )
-    code = models.CharField(max_length=16, unique=True, verbose_name="Код доступа")
-    is_active = models.BooleanField(default=True, verbose_name="Активен")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Выдан")
-    last_login_at = models.DateTimeField(null=True, blank=True, verbose_name="Последний вход")
-
-    class Meta:
-        ordering = ["student__last_name", "student__first_name"]
-        verbose_name = "Доступ студента"
-        verbose_name_plural = "Доступ студентов"
-
-    def __str__(self):
-        return f"{self.student} · {self.code}"
-
-    def save(self, *args, **kwargs):
-        if not self.code:
-            self.regenerate_code(save=False)
-        self.code = normalize_portal_code(self.code)
-        super().save(*args, **kwargs)
-
-    def regenerate_code(self, save: bool = True) -> str:
-        for _ in range(_KEY_GENERATION_ATTEMPTS):
-            code = generate_portal_code()
-            if not StudentPortalAccess.objects.filter(code=code).exists():
-                break
-        self.code = code
-        if save:
-            self.save(update_fields=["code"])
-        return code
-
 
 class ExamEventType(models.TextChoices):
     EXAM_STARTED = "EXAM_STARTED", "Экзамен начат"

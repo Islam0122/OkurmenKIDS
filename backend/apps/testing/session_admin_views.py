@@ -355,7 +355,7 @@ def session_action_view(request, session_id, action):
 
 
 # ---------------------------------------------------------------------------
-# Exam Mode attempts (student portal)
+# Exam Mode attempts (exam portal)
 # ---------------------------------------------------------------------------
 
 def exam_monitoring_view(request):

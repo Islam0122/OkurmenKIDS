@@ -25,7 +25,7 @@ current session / student.
 | LMS student page, group «Тестирование», trainer page, dashboard, exam page, Analytics → «Тесты» | `/api/v1/monitoring/results/…` |
 | KPI page «Тесты», KPI metrics `test_score`, `test_pass_rate` | `KPIEngine` + `analytics/assessments.py` (reported alongside, **not** in the total KPI) |
 | Admin «Результаты тестов», test → «Статистика» → «Посмотреть результаты» | proxy `TestResult` |
-| Student portal «Акыркы жыйынтыктар», `/student/results/` | `services.results.student_results` |
+| Exam portal result screen (`/exam/<attempt>/result`) | `training.services.result_payload` |
 | Training portal leaderboard `?sort=average|tests` | `training.services.leaderboard_by_name` |
 
 ## API (`/api/v1/monitoring/`, JWT, Teacher / Team Lead / Admin)
@@ -44,8 +44,8 @@ result=passed|failed, score_min, score_max, date_from, date_to, q`.
 
 Scope is the monitoring scope: a Teacher sees results of their groups
 (snapshot or current group) and of attempts they own; Team Lead / Admin see
-the academy. Other results are 404 (no IDOR). Students see only their own
-results in the student portal; a test that hides results hides the score.
+the academy. Other results are 404 (no IDOR). Students see only the result of
+their own attempt (the exam token); a test that hides results hides the score.
 
 All statistics are database aggregates (`Count / Avg / Min / Max`,
 subqueries for per-row counts) — no rows are loaded to compute numbers.

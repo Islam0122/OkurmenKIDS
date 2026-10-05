@@ -2,7 +2,6 @@ import { useParams } from 'react-router-dom'
 
 import { getExamResult } from '@/api/exam'
 import { ApiError } from '@/api/client'
-import { Button } from '@/components/Button'
 import { ErrorState } from '@/components/ErrorState'
 import { Icon } from '@/components/Icon'
 import { Loader } from '@/components/Loader'
@@ -12,8 +11,8 @@ import { t } from '@/i18n'
 import { ResultView } from '../ResultPage'
 import '../ResultPage/ResultPage.css'
 
-/** The exam result — the training result view, with the exam's heading and
- * the way back to the student's cabinet (no retake, no leaderboard). */
+/** The exam result — the training result view with the exam's heading. The
+ * last screen of an exam: no retake, no leaderboard, nowhere else to go. */
 export function ExamResultPage() {
   const { attemptId = '' } = useParams()
   const result = useAsync(() => {
@@ -38,8 +37,8 @@ export function ExamResultPage() {
       <ResultView
         data={data}
         hiddenText={t.examMode.hiddenResult}
-        actions={<Button href={data.back_url} icon="house">{t.examMode.backToCabinet}</Button>}
       />
+      <p className="result-final"><Icon name="check2-circle" />{t.examMode.closePage}</p>
     </div>
   )
 }

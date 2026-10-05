@@ -36,8 +36,6 @@ urlpatterns = [
     # Student test pages (no login: session key + name) — /exam/
     path("exam/", include("apps.testing.public_urls")),
 
-    # Student portal (personal access code): exams, Exam Mode — /student/
-    path("student/", include("apps.testing.student_urls")),
 
     # API documentation
     path("schema/", SpectacularAPIView.as_view(), name="schema"),

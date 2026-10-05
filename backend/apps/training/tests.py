@@ -73,7 +73,7 @@ class TrainingFixture(TestCase):
 class ContentTests(TrainingFixture):
     def test_portal_settings_and_published_content_only(self):
         settings = PortalSettings.load()
-        settings.exam_url = "https://lms.example.com/student/exams/"
+        settings.exam_url = "https://lms.example.com/exam/"
         settings.save()
         TrainingVideo.objects.create(title="Shown", video_url="https://youtu.be/abcdefghijk", published=True, order=2)
         TrainingVideo.objects.create(title="Draft", video_url="https://youtu.be/abcdefghijk", published=False)
@@ -81,7 +81,7 @@ class ContentTests(TrainingFixture):
         TrainingLink.objects.create(title="Hidden", url="https://example.com/", published=False)
 
         portal = self.api.get(reverse("training-portal")).json()
-        self.assertEqual(portal["exam_url"], "https://lms.example.com/student/exams/")
+        self.assertEqual(portal["exam_url"], "https://lms.example.com/exam/")
         self.assertEqual(portal["hero_title"], "Экзаменге даярдан")
         self.assertEqual([v["title"] for v in self.api.get(reverse("training-videos")).json()], ["Shown"])
         self.assertEqual([l["title"] for l in self.api.get(reverse("training-links")).json()], ["Docs"])

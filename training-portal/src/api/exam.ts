@@ -3,21 +3,19 @@ import type { AnswerValue, AttemptResult, AttemptState } from '@/types'
 import { apiClient } from './client'
 import type { EventResponse } from './events'
 
-/** Exam attempts in the shared test UI — same shapes as the training API;
- * every call carries the attempt's token issued by the student portal. */
+/** Exam attempts in the exam portal — same shapes as the training API;
+ * every call carries the attempt's token, issued by the backend's
+ * session-key page (/exam/?key=…) to the browser that started the attempt. */
 const path = (attemptId: string) => `/exam-attempts/${encodeURIComponent(attemptId)}`
 
 export interface ExamState extends AttemptState {
   mode: 'exam'
   paused: boolean
   subject: string
-  /** the student portal (cabinet) — where to go after the exam */
-  back_url: string
 }
 
 export interface ExamResult extends AttemptResult {
   mode: 'exam'
-  back_url: string
 }
 
 export const getExamAttempt = (attemptId: string, token: string) =>

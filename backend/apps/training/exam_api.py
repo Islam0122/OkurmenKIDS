@@ -9,10 +9,13 @@ the violation policy (Test.max_tab_switches), the server deadline
 (ensure_current closes an overdue attempt; auto-submit), required questions
 on submit.
 
-Access: a signed token bound to the attempt, its student and its session
-(`exam_token`), issued only by the student portal to the signed-in student
-or by the session-key page to the browser that started the attempt; the
-React page gets it in the URL fragment. Every request re-checks it against
+Entry: /exam/?key=… (testing.public_views) validates the session key and
+the student on the server, starts or resumes the attempt (start_exam) and
+redirects to the React page with a signed token in the URL fragment.
+
+Access: the token is bound to the attempt, its student (or none, in a
+name-only session) and its session (`exam_token`), and issued only to the
+browser that started the attempt. Every request re-checks it against
 the stored attempt (owner, session, exam mode) — the browser's copy
 (sessionStorage) is never trusted on its own. A bad, expired, altered or
 foreign token is 403 before the attempt is even looked up, so attempt ids
@@ -30,7 +33,6 @@ from __future__ import annotations
 
 from django.core import signing
 from django.core.exceptions import ValidationError
-from django.urls import reverse
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -56,7 +58,7 @@ MAX_SEQ = 2 ** 53
 
 
 def _token_subject(attempt: StudentAttempt) -> str:
-    return f"{attempt.pk}:{attempt.student_id}:{attempt.session_id}"
+    return f"{attempt.pk}:{attempt.student_id or ''}:{attempt.session_id}"
 
 
 def exam_token(attempt: StudentAttempt) -> str:
@@ -64,8 +66,8 @@ def exam_token(attempt: StudentAttempt) -> str:
 
 
 def portal_exam_url(attempt: StudentAttempt) -> str | None:
-    """Where the shared test UI runs this attempt — None when the portal
-    address isn't configured (the student portal's own page is used then)."""
+    """Where the exam portal runs this attempt — None when the portal
+    address isn't configured (the legacy /exam/ form is used then)."""
     from .models import PortalSettings
 
     base = (PortalSettings.load().portal_url or "").rstrip("/")
@@ -97,7 +99,7 @@ def _owned(attempt_id, token: str | None) -> StudentAttempt:
         raise _forbidden()  # a valid token, for another attempt id
     attempt = (
         StudentAttempt.objects.select_related("session__test__subject", "student")
-        .filter(pk=attempt_id, exam_mode=True, student__isnull=False, session__session_type=SessionType.EXAM).first()
+        .filter(pk=attempt_id, exam_mode=True, user__isnull=True, session__session_type=SessionType.EXAM).first()
     )
     if attempt is None or _token_subject(attempt) != subject:
         raise _forbidden()  # same answer as a bad token: nothing to learn about other attempts
@@ -132,10 +134,6 @@ def exam_state(attempt: StudentAttempt) -> dict:
     return state
 
 
-def _back_url(request) -> str:
-    return request.build_absolute_uri(reverse("student_portal_dashboard"))
-
-
 class ExamView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
@@ -160,7 +158,7 @@ class ExamView(APIView):
 class ExamAttemptView(ExamView):
     def get(self, request, attempt_id):
         attempt = self.attempt(request, attempt_id)
-        return Response({**exam_state(attempt), "back_url": _back_url(request)})
+        return Response(exam_state(attempt))
 
     def get_throttles(self):
         return [TrainingWriteThrottle()] if self.request.method == "PATCH" else super().get_throttles()
@@ -220,12 +218,12 @@ class ExamSubmitView(ExamView):
     def post(self, request, attempt_id):
         attempt = self.attempt(request, attempt_id)
         attempt = portal.submit_exam(attempt, {}, timed_out=bool(request.data.get("timed_out")), request=request)
-        return Response({**services.result_payload(attempt), "mode": "exam", "back_url": _back_url(request)})
+        return Response({**services.result_payload(attempt), "mode": "exam"})
 
 
 @extend_schema(tags=["Exam (shared test UI)"])
 class ExamResultView(ExamView):
     def get(self, request, attempt_id):
         attempt = self.attempt(request, attempt_id)
-        return Response({**services.result_payload(attempt), "mode": "exam", "back_url": _back_url(request)})
+        return Response({**services.result_payload(attempt), "mode": "exam"})
 
