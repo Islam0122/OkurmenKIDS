@@ -740,3 +740,93 @@ class GenerateSyncsStaleLessonsTests(QAFixture):
         self.assertEqual((result["created_count"], result["rescheduled_count"]), (preview["to_create"], preview["to_reschedule"]))
         again = self.preview()
         self.assertEqual((again["to_create"], again["to_reschedule"]), (0, 0))
+
+
+class DeletedSlotTests(QAFixture):
+    """The editor's other way to change a day/time: delete the row and add a
+    new one. The old slot is deleted (Lesson.schedule → NULL) and a new slot
+    created — the lessons must still follow, both on save and on Generate."""
+
+    def setUp(self):
+        super().setUp()
+        self.api = APIClient()
+        self.api.force_authenticate(self.admin)
+        self.lesson_ids = [lesson.pk for lesson in self.english_lessons()]
+
+    def put_english(self, *slots):
+        return self.api.put(
+            f"/api/v1/groups/{self.group.pk}/academic-config/programs/{self.english_program.pk}/",
+            {"teacher": self.aizhan.pk, "subject": self.english.pk, "schedule": list(slots)}, format="json",
+        )
+
+    def rows(self):
+        return [(lesson.date, lesson.start_time, lesson.end_time, lesson.schedule_id)
+                for lesson in Lesson.objects.filter(pk__in=self.lesson_ids).order_by("date")]
+
+    def test_row_replaced_with_new_time_moves_lessons_on_save(self):
+        dates = [row[0] for row in self.rows()]
+        response = self.put_english({"day": "sun", "start": "12:00", "end": "13:00", "room": self.room1.pk})
+        self.assertEqual(response.status_code, 200, response.content)
+        new_slot = GroupSchedule.objects.get(group_teacher=self.english_program)
+        self.assertNotEqual(new_slot.pk, self.english_slot.pk)  # really a new slot
+        self.assertEqual(self.rows(), [(date, T(12, 0), T(13, 0), new_slot.pk) for date in dates])
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), 8)  # nothing created
+
+    def test_row_replaced_with_new_day_moves_lessons_within_their_week(self):
+        dates = [row[0] for row in self.rows()]
+        self.put_english({"day": "sat", "start": "12:00", "end": "13:00", "room": self.room1.pk})
+        new_slot = GroupSchedule.objects.get(group_teacher=self.english_program)
+        self.assertEqual(self.rows(), [(date - dt.timedelta(days=1), T(12, 0), T(13, 0), new_slot.pk) for date in dates])
+
+    def test_one_slot_replaced_by_two_fills_each_week_in_order(self):
+        dates = [row[0] for row in self.rows()]
+        self.put_english(
+            {"day": "fri", "start": "12:00", "end": "13:00", "room": self.room1.pk},
+            {"day": "sat", "start": "12:00", "end": "13:00", "room": self.room1.pk},
+        )
+        fri = GroupSchedule.objects.get(group_teacher=self.english_program, day_of_week="fri")
+        # One lesson per week existed — it takes the week's first slot.
+        self.assertEqual(self.rows(), [(date - dt.timedelta(days=2), T(12, 0), T(13, 0), fri.pk) for date in dates])
+
+    def test_history_without_a_slot_stays(self):
+        first, second, *_ = self.english_lessons()
+        Lesson.objects.filter(pk=first.pk).update(status=Lesson.Status.COMPLETED, started_at=timezone.now())
+        Attendance.objects.create(student=self.student, lesson=second, status=Attendance.Status.PRESENT)
+        self.put_english({"day": "sun", "start": "12:00", "end": "13:00", "room": self.room1.pk})
+        rows = self.rows()
+        self.assertEqual(rows[0][1:], (T(10, 0), T(11, 0), None))
+        self.assertEqual(rows[1][1:], (T(10, 0), T(11, 0), None))
+        self.assertTrue(all(row[1] == T(12, 0) for row in rows[2:]))
+
+    def test_lessons_already_left_without_a_slot_are_fixed_by_generate(self):
+        """Data from before this fix: the slot was deleted and another one added
+        separately — the lessons sit at 10:00 with no slot."""
+        dates = [row[0] for row in self.rows()]
+        self.english_slot.delete()
+        new_slot = GroupSchedule.objects.create(
+            group=self.group, teacher=self.aizhan, subject=self.english, day_of_week="sun",
+            start_time=T(12, 0), end_time=T(13, 0), room=self.room1)
+        self.assertTrue(all(row[1:] == (T(10, 0), T(11, 0), None) for row in self.rows()))
+
+        preview = self.api.get(f"/api/v1/groups/{self.group.pk}/generate-lessons/preview/").json()
+        self.assertEqual((preview["to_create"], preview["to_reschedule"]), (0, 4))
+        result = self.api.post(f"/api/v1/groups/{self.group.pk}/generate-lessons/").json()
+        self.assertEqual((result["created_count"], result["rescheduled_count"]), (0, 4))
+        self.assertEqual(self.rows(), [(date, T(12, 0), T(13, 0), new_slot.pk) for date in dates])
+        again = self.api.post(f"/api/v1/groups/{self.group.pk}/generate-lessons/").json()
+        self.assertEqual((again["created_count"], again["rescheduled_count"]), (0, 0))
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), 8)
+
+    def test_a_clash_on_save_rolls_everything_back(self):
+        it_first = Lesson.objects.filter(schedule=self.it_slot).order_by("date").first()
+        english_first = self.english_lessons()[0]
+        # Something of the group already sits on English's first Saturday at 12:00.
+        Lesson.objects.filter(pk=it_first.pk).update(
+            date=english_first.date - dt.timedelta(days=1), start_time=T(12, 0), end_time=T(13, 0),
+            schedule_overridden=True,
+        )
+        before = self.rows()
+        response = self.put_english({"day": "sat", "start": "12:00", "end": "13:00", "room": self.room1.pk})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.rows(), before)
+        self.assertTrue(GroupSchedule.objects.filter(pk=self.english_slot.pk, day_of_week="sun").exists())

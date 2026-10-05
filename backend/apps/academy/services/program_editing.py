@@ -48,7 +48,14 @@ from django.db.models import Q
 
 from ..models import Attendance, GroupSchedule, GroupTeacher, HomeworkResult, Lesson, Room
 from .group_schedule_conflicts import find_schedule_teacher_conflict
-from .schedule_lesson_sync import SlotSnapshot, ahead_q, local_now, snapshot, sync_schedule_lessons
+from .schedule_lesson_sync import (
+    SlotSnapshot,
+    ahead_q,
+    attach_detached_lessons,
+    local_now,
+    snapshot,
+    sync_schedule_lessons,
+)
 
 # How many clashing lessons one validation error lists before "…".
 _MAX_LISTED = 5
@@ -389,6 +396,22 @@ def _apply_schedule(group_teacher: GroupTeacher, specs: list[SlotSpec], removed_
                     continue
                 change.lessons_synced += synced.updated
                 change.lessons_kept += synced.kept
+    if not problems:
+        # A deleted slot left its lessons without one (Lesson.schedule is
+        # SET_NULL): they take the program's current slots, week by week —
+        # removing a day and adding another moves the lessons like editing
+        # the day would have. Strict (a clash rolls the save back) when this
+        # save itself replaced slots; otherwise it only picks up lessons an
+        # earlier deletion left behind, and a clash just leaves them be.
+        try:
+            attached = attach_detached_lessons(
+                group_teacher, strict=bool(removed_ids or change.created), today=today,
+            )
+        except ValidationError as exc:
+            problems.extend(exc.messages)
+        else:
+            change.lessons_synced += len(attached.moved)
+            change.lessons_kept += attached.kept
     if problems:
         raise ValidationError({"schedule": list(dict.fromkeys(problems))})
     return change
