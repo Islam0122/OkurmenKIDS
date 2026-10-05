@@ -24,9 +24,10 @@ export function ConfirmSubmitModal({ open, config, total, answered, secondsLeft,
       onClose={onCancel}
       title={text.finishTitle}
       icon="flag"
+      tone="test"
       actions={<>
         <Button variant="outline" onClick={onCancel}>{text.keepGoing}</Button>
-        <Button icon="flag-fill" disabled={busy} onClick={onConfirm}>{text.finish}</Button>
+        <Button variant="test" icon="flag-fill" disabled={busy} onClick={onConfirm}>{text.finish}</Button>
       </>}
     >
       <p className="modal__text">{text.finishText}</p>

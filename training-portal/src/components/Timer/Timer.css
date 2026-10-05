@@ -1,7 +1,8 @@
-/* A compact header chip. Neutral by default; warning near the end; danger
- * when critical — only the chip changes, never the page. */
-.timer { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); font-weight: 700; white-space: nowrap; box-sizing: border-box; transition: color .2s, background .2s, border-color .2s; }
-.timer .bi { font-size: 17px; color: var(--color-primary); }
+/* A compact header chip: neutral with the test-gold accent; warning
+ * (orange) near the end, danger (red) when critical — only the chip and
+ * its icon change, never the page, and never because it is an exam. */
+.timer { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--test-primary-border); font-weight: 700; white-space: nowrap; box-sizing: border-box; transition: color .2s, background .2s, border-color .2s; }
+.timer .bi { font-size: 17px; color: var(--test-primary-hover); }
 .timer__value { font-family: var(--font-mono); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .timer--warning { color: var(--color-warning-text); border-color: var(--color-warning-border); background: var(--color-warning-soft); }
 .timer--warning .bi { color: var(--color-warning); }

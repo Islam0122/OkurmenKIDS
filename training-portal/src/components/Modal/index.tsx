@@ -9,8 +9,8 @@ interface ModalProps {
   onClose?: () => void
   title: string
   icon?: string
-  /** primary — a question or information; warning — attention needed; danger — an error */
-  tone?: 'primary' | 'warning' | 'danger'
+  /** primary — general; test — a test dialog (gold); warning — attention; danger — an error */
+  tone?: 'primary' | 'test' | 'warning' | 'danger'
   width?: number
   children?: ReactNode
   actions?: ReactNode

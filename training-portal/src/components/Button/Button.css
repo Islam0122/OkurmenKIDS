@@ -1,6 +1,7 @@
-/* One button system for the whole platform (Training and Exam alike):
- * primary — the main action of a screen; outline — secondary; ghost — quiet;
- * danger — destructive. The mode never changes a button's colour. */
+/* One button system. primary — a general (LMS, blue) action; test — every
+ * test action (start, next, check, finish, retake: gold, dark text for
+ * contrast); outline / test-outline — secondary; ghost — quiet; danger —
+ * destructive. Training and Exam use the same test buttons. */
 .btn {
   --btn-bg: var(--color-primary); --btn-fg: var(--color-on-primary); --btn-border: transparent;
   position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
@@ -20,6 +21,11 @@
 .btn--outline:hover { --btn-border: var(--color-primary); --btn-fg: var(--color-primary-hover); }
 .btn--ghost { --btn-bg: transparent; --btn-fg: var(--color-text-secondary); }
 .btn--ghost:hover { --btn-bg: var(--color-primary-soft); --btn-fg: var(--color-primary-hover); }
+.btn--test { --btn-bg: var(--test-primary); --btn-fg: var(--test-on-primary); }
+.btn--test:hover { --btn-bg: var(--test-primary-hover); }
+.btn--test:focus-visible, .btn--test-outline:focus-visible { box-shadow: var(--test-focus-ring); }
+.btn--test-outline { --btn-bg: var(--color-surface); --btn-fg: var(--test-primary-dark); --btn-border: var(--test-primary-border); }
+.btn--test-outline:hover { --btn-bg: var(--test-primary-soft); --btn-border: var(--test-primary); }
 .btn--danger { --btn-bg: var(--color-danger); --btn-fg: var(--color-on-primary); }
 .btn--danger:hover { --btn-bg: var(--color-danger-text); }
 .btn--success { --btn-bg: var(--color-success); }

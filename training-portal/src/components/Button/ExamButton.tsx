@@ -7,7 +7,7 @@ import { Button, type ButtonVariant } from '.'
  * the backend (portal settings). Hidden while it isn't set. It never starts
  * a training attempt: training and the exam are separate systems.
  */
-export function ExamButton({ variant = 'navy', size, block, label, url }: {
+export function ExamButton({ variant = 'test', size, block, label, url }: {
   variant?: ButtonVariant
   size?: 'sm' | 'md' | 'lg'
   block?: boolean

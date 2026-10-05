@@ -125,8 +125,8 @@ export function HomePage() {
                 <p>{t.home.examText}</p>
               </div>
               <div className="exam-band__actions">
-                <Button onClick={handleStartTraining} variant="glass" size="lg" icon="play-circle">{portal.data.start_button_label}</Button>
-                <ExamButton variant="primary" size="lg" />
+                <Button onClick={handleStartTraining} variant="test" size="lg" icon="play-circle">{portal.data.start_button_label}</Button>
+                <ExamButton variant="test" size="lg" />
               </div>
             </div>
           </div>

@@ -1,10 +1,12 @@
 /* The question card never grows past its column: long text wraps, code and
  * images stay inside (code scrolls sideways within its own box). */
 .qcard { position: relative; width: 100%; max-width: 960px; height: auto; min-height: 0; min-width: 0; box-sizing: border-box; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 32px 40px; }
+/* The test identity: a thin gold line on top of the white card. */
+.qcard::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: var(--test-primary); }
 .qcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
 /* The number is already in the progress bar above; kept for screen readers. */
 .qcard__num { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.qcard__tag { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--color-surface-secondary); border: 1px solid var(--color-border); font-size: 13px; font-weight: 600; line-height: 1; color: var(--color-text-secondary); }
+.qcard__tag { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--test-primary-soft); border: 1px solid var(--test-primary-border); font-size: 13px; font-weight: 700; line-height: 1; color: var(--test-primary-dark); }
 .qcard__text { font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.35; color: var(--color-text); white-space: pre-line; overflow-wrap: anywhere; word-break: break-word; }
 .qcard__code { width: 100%; max-width: 100%; box-sizing: border-box; margin: 16px 0 0; padding: 16px; border-radius: 12px; background: var(--color-surface-inverse); color: var(--color-text-on-inverse); font: 15px/1.6 var(--font-mono); overflow-x: auto; white-space: pre; }
 .qcard__image { max-width: 100%; height: auto; margin-top: 16px; border-radius: 14px; border: 1px solid var(--color-border); max-height: 360px; object-fit: contain; background: var(--color-surface); }
@@ -13,16 +15,16 @@
 
 .options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .option { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 100%; box-sizing: border-box; min-width: 0; white-space: normal; text-align: left; padding: 12px 16px; min-height: 64px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface); cursor: pointer; font-weight: 500; font-size: 16px; line-height: 1.45; color: var(--color-text); transition: border-color .15s, background .15s, box-shadow .15s; }
-.option:hover:not(:disabled) { border-color: var(--color-border-strong); background: var(--color-surface-secondary); }
+.option:hover:not(:disabled) { border-color: var(--test-primary-border); background: var(--color-surface-secondary); }
 .option:disabled { cursor: default; }
 .option__letter { flex-shrink: 0; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 9px; background: var(--color-surface-secondary); border: 1px solid var(--color-border-strong); font-family: var(--font-body); font-weight: 700; font-size: 15px; color: var(--color-text-secondary); transition: background .15s, border-color .15s, color .15s; }
 .option--multi .option__letter { border-radius: 9px; }
 .option__text { flex: 1; min-width: 0; font-family: var(--font-body); overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
 .option__state { flex-shrink: 0; font-size: 20px; opacity: 0; transition: opacity .15s; }
-.option:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius-md); }
-.option.is-selected { border-color: var(--color-primary); box-shadow: inset 0 0 0 1px var(--color-primary); background: var(--color-primary-soft); }
-.option.is-selected .option__letter { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
-.option.is-selected .option__state { opacity: 1; color: var(--color-primary); }
+.option:focus-visible { box-shadow: var(--test-focus-ring); border-radius: var(--radius-md); }
+.option.is-selected { border-color: var(--test-primary); box-shadow: inset 0 0 0 1px var(--test-primary); background: var(--test-primary-soft); }
+.option.is-selected .option__letter { background: var(--test-primary); border-color: var(--test-primary-hover); color: var(--test-on-primary); }
+.option.is-selected .option__state { opacity: 1; color: var(--test-primary-dark); }
 .option.is-correct { border-color: var(--color-success); box-shadow: inset 0 0 0 1px var(--color-success); background: var(--color-success-soft); }
 .option.is-correct .option__letter { background: var(--color-success); border-color: var(--color-success); color: var(--color-on-primary); }
 .option.is-correct .option__state { opacity: 1; color: var(--color-success); }
@@ -32,7 +34,7 @@
 .options__hint { font-size: 14px; font-weight: 500; color: var(--color-text-secondary); margin-bottom: 16px; }
 
 .answer-input { width: 100%; max-width: 100%; box-sizing: border-box; display: block; min-height: 120px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--color-border-strong); background: var(--color-surface); font-size: 16px; font-weight: 500; resize: vertical; transition: border-color .15s, box-shadow .15s; }
-.answer-input:focus { outline: none; border-color: var(--color-primary); background: var(--color-surface); box-shadow: var(--focus-ring); }
+.answer-input:focus { outline: none; border-color: var(--test-primary); background: var(--color-surface); box-shadow: var(--test-focus-ring); }
 .answer-input:disabled { opacity: .85; }
 .answer-input--code { min-height: 220px; background: var(--color-surface-inverse); color: var(--color-text-on-inverse); border-color: var(--color-surface-inverse); font: 15px/1.6 var(--font-mono); tab-size: 4; white-space: pre; }
 .answer-input--code:focus { background: var(--color-surface-inverse); }
@@ -42,17 +44,17 @@
 .feedback { min-width: 0; overflow-wrap: anywhere; margin-top: 16px; padding: 16px 20px; border-radius: 12px; border: 1px solid; }
 .feedback--correct { background: var(--color-success-soft); border-color: var(--color-success-border); }
 .feedback--incorrect { background: var(--color-danger-soft); border-color: var(--color-danger-border); }
-.feedback--self { background: var(--color-primary-soft); border-color: var(--color-primary-border); }
+.feedback--self { background: var(--test-primary-soft); border-color: var(--test-primary-border); }
 .feedback__title { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-weight: 700; font-size: 16px; }
 .feedback--correct .feedback__title { color: var(--color-success-text); }
 .feedback--incorrect .feedback__title { color: var(--color-danger-text); }
-.feedback--self .feedback__title { color: var(--color-primary-hover); }
+.feedback--self .feedback__title { color: var(--test-primary-dark); }
 .feedback__title .bi { font-size: 20px; }
 .feedback__row { margin-top: 10px; color: var(--color-text); }
 .feedback__row strong { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--color-text-secondary); margin-bottom: 2px; }
 .feedback pre { max-width: 100%; white-space: pre; overflow-wrap: normal; margin: 6px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--color-surface-inverse); color: var(--color-text-on-inverse); font: 14px/1.6 var(--font-mono); overflow-x: auto; }
-.qcard__hint { min-width: 0; overflow-wrap: anywhere; display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--color-primary-soft); border: 1px solid var(--color-primary-border); color: var(--color-text); font-size: 15px; }
-.qcard__hint .bi { color: var(--color-primary); font-size: 18px; margin-top: 2px; }
+.qcard__hint { min-width: 0; overflow-wrap: anywhere; display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--test-primary-soft); border: 1px solid var(--test-primary-border); color: var(--color-text); font-size: 15px; }
+.qcard__hint .bi { color: var(--test-primary-dark); font-size: 18px; margin-top: 2px; }
 .option__img { max-width: 100%; height: auto; max-height: 160px; border-radius: 10px; margin-bottom: 6px; background: var(--color-surface); }
 @media (max-width: 1024px) { .qcard__text { font-size: 24px; } }
 @media (max-width: 640px) {

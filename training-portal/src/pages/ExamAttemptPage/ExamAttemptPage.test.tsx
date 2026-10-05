@@ -61,6 +61,9 @@ describe('exam on the shared test screen', () => {
     expect(screen.getByRole('timer')).toHaveTextContent('42:18')
     expect(screen.queryByRole('button', { name: 'Текшерүү' })).not.toBeInTheDocument()  // no answer checking in an exam
     expect(screen.queryByRole('button', { name: 'Артка' })).not.toBeInTheDocument()     // no leaving to the site
+    // Test actions wear the test gold (the same in Training), not a mode colour.
+    expect(screen.getByRole('button', { name: /Кийинки/ })).toHaveClass('btn--test')
+    expect(document.querySelector('.test-header__badge')?.textContent).toBe('Экзамен')
     expect(window.location.hash).toBe('')                                                // token taken out of the address bar
     expect(window.sessionStorage.getItem('okurmen_exam_e1')).toBe('tok')
 

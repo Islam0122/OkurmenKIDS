@@ -13,7 +13,7 @@ export function TestCard({ test, inProgress = false }: { test: TrainingTest; inP
     <article className="test-card">
       <div className="test-card__top">
         <span className="test-card__icon" aria-hidden="true"><Icon name="journal-code" /></span>
-        <span className={`level level--${test.level}`}>{t.test.level[test.level] ?? test.level_display}</span>
+        <span className={`test-badge level level--${test.level}`}><span className="level__bars" aria-hidden="true"><i /><i /><i /></span>{t.test.level[test.level] ?? test.level_display}</span>
       </div>
       <div className="test-card__heading">
         <div className="test-card__kicker">{t.test.title}</div>
@@ -25,7 +25,7 @@ export function TestCard({ test, inProgress = false }: { test: TrainingTest; inP
         <div><dt><Icon name="arrow-repeat" /><span className="visually-hidden">{t.test.attempts}</span></dt><dd>{t.test.attempts}: {test.max_attempts ?? t.test.unlimited}</dd></div>
         <div><dt><Icon name="trophy" /><span className="visually-hidden">{t.test.facts.passing}</span></dt><dd>{t.test.passing(test.passing_score)}</dd></div>
       </dl>
-      <Button className="test-card__cta" to={`/training/${test.id}`} block variant={inProgress ? 'outline' : 'primary'}
+      <Button className="test-card__cta" to={`/training/${test.id}`} block variant={inProgress ? 'test-outline' : 'test'}
         icon={inProgress ? 'arrow-clockwise' : 'play-fill'}>
         {inProgress ? t.test.continue : t.test.start}
       </Button>

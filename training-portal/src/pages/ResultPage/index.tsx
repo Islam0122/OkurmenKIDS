@@ -42,7 +42,7 @@ export function ResultPage() {
             <Icon name="clipboard-x" />
             <h1 className="section-title" style={{ marginBottom: 8 }}>{t.result.notFound}</h1>
             <p>{t.result.notFoundText}</p>
-            <div style={{ marginTop: 20 }}><Button to="/training" icon="play-circle">{t.test.start}</Button></div>
+            <div style={{ marginTop: 20 }}><Button variant="test" to="/training" icon="play-circle">{t.test.start}</Button></div>
           </div>
         ) : <ErrorState error={result.error} onRetry={result.reload} />}
       </div>
@@ -58,13 +58,13 @@ export function ResultPage() {
         data={data}
         actions={<>
           {trainer.data?.allow_retry === false ? null : (
-            <Button icon="arrow-repeat" onClick={() => navigate(`/training/${data.test_id}`, { state: { retake: true } })}>{t.result.retake}</Button>
+            <Button variant="test" icon="arrow-repeat" onClick={() => navigate(`/training/${data.test_id}`, { state: { retake: true } })}>{t.result.retake}</Button>
           )}
         </>}
         moreActions={<>
           <Button variant="outline" to="/leaderboard" icon="trophy">{t.result.leaders}</Button>
           <Button variant="outline" to="/materials" icon="journal-bookmark">{t.result.materials}</Button>
-          <ExamButton url={trainer.data?.exam_url} />
+          <ExamButton variant="test-outline" url={trainer.data?.exam_url} />
         </>}
       />
       {rank ? (
