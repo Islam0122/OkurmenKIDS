@@ -81,6 +81,8 @@ describe('training flow (through the API layer)', () => {
     expect(screen.getByText('0 / 2')).toBeInTheDocument()
     expect(calls.some((c) => c.method === 'POST' && c.path === '/attempts/a1/submit/')).toBe(true)
     expect(window.localStorage.getItem('okurmen_active_attempts')).toBe('{}')
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)  // training keeps its own API: no position saving
+    expect(window.sessionStorage.getItem('okurmen_pending_a1')).toBeNull()  // nothing left unsent
   })
 
   it('shows the backend’s reason when it rejects the name', async () => {

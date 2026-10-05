@@ -25,7 +25,7 @@ export function apiBaseUrl(): string {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH'
   body?: unknown
   /** the attempt's token (X-Attempt-Token) */
   token?: string
@@ -69,4 +69,6 @@ export const apiClient = {
     request<T>(path, { ...options, method: 'POST', body: body ?? {} }),
   put: <T>(path: string, body: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...options, method: 'PUT', body }),
+  patch: <T>(path: string, body: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
+    request<T>(path, { ...options, method: 'PATCH', body }),
 }

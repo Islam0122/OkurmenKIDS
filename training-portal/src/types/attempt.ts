@@ -25,6 +25,8 @@ export interface AttemptState extends AttemptSummary {
   tab_switch_count: number
   violation_count: number
   questions: Question[]
+  /** Exam: the question the student was on (restored after a reload). */
+  current_question_id?: string | null
 }
 
 export interface ReviewRow {

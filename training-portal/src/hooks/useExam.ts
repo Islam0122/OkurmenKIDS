@@ -8,6 +8,7 @@ import { useAttemptRunner, type AttemptAdapter } from './useAttemptRunner'
 const EXAM_API: AttemptAdapter = {
   get: examApi.getExamAttempt,
   save: examApi.saveExamAnswer,
+  position: examApi.saveExamPosition,
   submit: (attemptId, token, { timedOut }) => examApi.submitExam(attemptId, token, timedOut),
   event: (attemptId, token, eventType, question, beacon) => examApi.postExamEvent(attemptId, token, eventType, question, beacon),
 }

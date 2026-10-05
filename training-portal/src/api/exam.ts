@@ -23,9 +23,17 @@ export interface ExamResult extends AttemptResult {
 export const getExamAttempt = (attemptId: string, token: string) =>
   apiClient.get<ExamState>(`${path(attemptId)}/`, { token })
 
-export const saveExamAnswer = (attemptId: string, token: string, questionId: string, answer: AnswerValue) =>
+/** `seq` — the page's clock when the answer was given: the backend never
+ * lets an older save (arriving late, or from another tab) overwrite a newer one. */
+export const saveExamAnswer = (attemptId: string, token: string, questionId: string, answer: AnswerValue, seq?: number) =>
   apiClient.put<{ saved: boolean; remaining_seconds: number | null }>(
-    `${path(attemptId)}/answers/${encodeURIComponent(questionId)}/`, answer, { token },
+    `${path(attemptId)}/answers/${encodeURIComponent(questionId)}/`, { ...answer, seq }, { token },
+  )
+
+/** The question the student is on — restored after a reload. */
+export const saveExamPosition = (attemptId: string, token: string, questionId: string, seq: number) =>
+  apiClient.patch<{ saved: boolean; remaining_seconds: number | null }>(
+    `${path(attemptId)}/`, { current_question_id: questionId, seq }, { token },
   )
 
 export const postExamEvent = (attemptId: string, token: string, eventType: string, question?: number, keepalive = false) =>

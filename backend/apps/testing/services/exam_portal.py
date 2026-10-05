@@ -459,8 +459,15 @@ clean_answers = _clean_answers
 is_answered = _is_answered
 
 
-def save_drafts(attempt: StudentAttempt, raw_answers, *, current: int | None = None, request=None) -> StudentAttempt:
-    """Autosave: merge validated answers into the attempt's draft."""
+def save_drafts(attempt: StudentAttempt, raw_answers, *, current: int | None = None, seqs: dict[str, int] | None = None,
+                request=None) -> StudentAttempt:
+    """Autosave: merge validated answers into the attempt's draft.
+
+    ``seqs``: the page's clock when each answer was given (the shared test
+    UI). Two saves of one question may arrive out of order (or from two
+    tabs); a save older than the stored one is ignored, never written over
+    the newer answer. Without a seq (the server-rendered page) the save is
+    applied as before."""
     attempt = _open_attempt(attempt, request)
     clean = _clean_answers(attempt, raw_answers)
     with transaction.atomic():
@@ -468,6 +475,14 @@ def save_drafts(attempt: StudentAttempt, raw_answers, *, current: int | None = N
         if locked.status != AttemptStatus.ACTIVE:
             raise AttemptClosed(locked)
         drafts = dict(locked.draft_answers or {})
+        for question_id, seq in (seqs or {}).items():
+            if question_id not in clean:
+                continue
+            stored = drafts.get(question_id)
+            if isinstance(stored, dict) and isinstance(stored.get("seq"), int) and stored["seq"] > seq:
+                del clean[question_id]  # stale: a newer answer is already saved
+            else:
+                clean[question_id] = {**clean[question_id], "seq": seq}
         drafts.update(clean)
         locked.draft_answers = drafts
         locked.draft_saved_at = timezone.now()
@@ -479,6 +494,23 @@ def save_drafts(attempt: StudentAttempt, raw_answers, *, current: int | None = N
     answered = sum(1 for value in drafts.values() if _is_answered(value))
     participant_events.attempt_progress(locked, current=current, answered=answered)
     return locked
+
+
+def save_position(attempt: StudentAttempt, question_id: str, seq: int, request=None) -> bool:
+    """The question the student is on (restored after a reload). One
+    conditional UPDATE: only an active attempt, only a newer position —
+    a late request from before can't move the student back. Returns whether
+    it was stored."""
+    attempt = _open_attempt(attempt, request)
+    order = {qid: n for n, qid in enumerate(attempt.question_ids or [], start=1)}
+    if str(question_id) not in order:
+        raise ValidationError("Вопрос не относится к этой попытке.")
+    stored = StudentAttempt.objects.filter(
+        pk=attempt.pk, status=AttemptStatus.ACTIVE, position_seq__lt=seq,
+    ).update(current_question_id=question_id, position_seq=seq)
+    if stored:
+        participant_events.attempt_progress(attempt, current=order[str(question_id)])
+    return bool(stored)
 
 
 @dataclass
@@ -550,8 +582,9 @@ def submit_exam(attempt: StudentAttempt, posted: dict[str, SubmittedAnswer], *, 
         raise AttemptError("Сессия на паузе — экзамен можно завершить после продолжения.")
     deadline = attempt_deadline(attempt)
     near_deadline = bool(timed_out and deadline and timezone.now() >= deadline - TIMED_OUT_WINDOW)
+    posted_clean = _posted_answers(attempt, posted)
     answers = drafts_as_answers(attempt)
-    answers.update(_posted_answers(attempt, posted))
+    answers.update(posted_clean)
     if not near_deadline:
         missing = [
             str(number) for number, q in enumerate(attempt_questions(attempt), start=1)
@@ -560,7 +593,10 @@ def submit_exam(attempt: StudentAttempt, posted: dict[str, SubmittedAnswer], *, 
         if missing:
             raise AttemptError(f"Ответьте на обязательные вопросы: {', '.join(missing)}.")
     reason = FinishReason.TIME_EXPIRED if near_deadline else FinishReason.SUBMITTED
-    return close_attempt(attempt, reason, answers=answers, request=request)
+    # Only the posted answers: close_attempt() merges the drafts as stored
+    # under its row lock — the copy read above may be older than an
+    # autosave that committed meanwhile, and must not overwrite it.
+    return close_attempt(attempt, reason, answers=posted_clean, request=request)
 
 
 # ---------------------------------------------------------------------------

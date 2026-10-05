@@ -35,6 +35,8 @@ function backend(stateOverride = {}) {
     'GET /exam-attempts/e1/': ({ headers }) => headers['X-Attempt-Token'] === 'tok'
       ? { body: { ...STATE, ...stateOverride } } : { status: 403, body: { detail: 'no', code: 'forbidden' } },
     'PUT /exam-attempts/e1/answers/q1/': () => ({ body: { saved: true, remaining_seconds: 2500 } }),
+    'PUT /exam-attempts/e1/answers/q2/': () => ({ body: { saved: true, remaining_seconds: 2500 } }),
+    'PATCH /exam-attempts/e1/': () => ({ body: { saved: true, remaining_seconds: 2500 } }),
     'POST /exam-attempts/e1/submit/': () => ({ body: RESULT }),
     'GET /exam-attempts/e1/result/': () => ({ body: RESULT }),
     'POST /exam-attempts/e1/events/': () => ({ body: { tab_switch_count: 1, violation_count: 1, max_tab_switches: 3 } }),
@@ -85,6 +87,78 @@ describe('exam on the shared test screen', () => {
     expect(await screen.findByText(/Экзамен калыбына келтирилди/)).toBeInTheDocument()
     expect(screen.getAllByText('Суроо 2 / 2').length).toBeGreaterThan(0)  // first unanswered question
     expect(screen.getByText('Жооп берилди: 1 · Калды: 1')).toBeInTheDocument()
+  })
+
+  it('a reload opens the question the student was on (server position), not the first unanswered', async () => {
+    backend({ current_question_id: 'q2' })
+    window.sessionStorage.setItem('okurmen_exam_e1', 'tok')
+    renderAt('/exam/e1')
+    expect((await screen.findAllByText('Суроо 2 / 2')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Экзамен калыбына келтирилди/)).toBeInTheDocument()
+  })
+
+  it('a saved position that no longer exists falls back to the first unanswered question', async () => {
+    backend({ current_question_id: 'gone', questions: [{ ...QUESTIONS[0], answer: { options: ['o1'], text: '' } }, QUESTIONS[1]] })
+    window.sessionStorage.setItem('okurmen_exam_e1', 'tok')
+    renderAt('/exam/e1')
+    expect((await screen.findAllByText('Суроо 2 / 2')).length).toBeGreaterThan(0)
+  })
+
+  it('moving between questions saves the position once (debounced, ordered by seq)', async () => {
+    const { calls } = backend()
+    window.sessionStorage.setItem('okurmen_exam_e1', 'tok')
+    const user = userEvent.setup()
+    renderAt('/exam/e1')
+    await screen.findByText('Экзамен')
+    await user.click(screen.getByRole('button', { name: 'Кийинки' }))
+    await user.click(screen.getByRole('button', { name: /Мурунку/ }))
+    await user.click(screen.getByRole('button', { name: 'Кийинки' }))
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PATCH').length).toBe(1))
+    const patch = calls.find((c) => c.method === 'PATCH')!
+    expect(patch.body).toMatchObject({ current_question_id: 'q2' })
+    expect(typeof (patch.body as { seq: number }).seq).toBe('number')
+    expect(patch.headers['X-Attempt-Token']).toBe('tok')
+    await waitFor(() => expect(window.sessionStorage.getItem('okurmen_pending_e1')).toBeNull())
+  })
+
+  it('every autosave carries a growing seq', async () => {
+    const { calls } = backend()
+    window.sessionStorage.setItem('okurmen_exam_e1', 'tok')
+    const user = userEvent.setup()
+    renderAt('/exam/e1')
+    await user.click(await screen.findByText('Python'))
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT').length).toBe(1))
+    await user.click(screen.getByText('HTML'))
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT').length).toBe(2))
+    const [first, second] = calls.filter((c) => c.method === 'PUT').map((c) => c.body as { seq: number; options: string[] })
+    expect(first.options).toEqual(['o1'])
+    expect(second.options).toEqual(['o2'])
+    expect(second.seq).toBeGreaterThan(first.seq)
+  })
+
+  it('an answer not yet saved when the page reloaded is shown and sent again', async () => {
+    const { calls } = backend()
+    window.sessionStorage.setItem('okurmen_exam_e1', 'tok')
+    window.sessionStorage.setItem('okurmen_pending_e1', JSON.stringify({
+      answers: { q2: { value: { options: ['o3'], text: '' }, seq: 1234 } },
+      position: { questionId: 'q2', seq: 1235 },
+    }))
+    renderAt('/exam/e1')
+    expect((await screen.findAllByText('Суроо 2 / 2')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('radio', { name: /CSS/ })).toBeChecked()
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({ options: ['o3'], text: '', seq: 1234 }))
+    await waitFor(() => expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ current_question_id: 'q2', seq: 1235 }))
+    await waitFor(() => expect(window.sessionStorage.getItem('okurmen_pending_e1')).toBeNull())
+  })
+
+  it('shows no training wording inside the exam', async () => {
+    backend()
+    window.sessionStorage.setItem('okurmen_exam_e1', 'tok')
+    const user = userEvent.setup()
+    renderAt('/exam/e1')
+    await screen.findByText('Экзамен')
+    await user.click(screen.getByRole('button', { name: /Экзаменди аяктоо/ }))
+    expect(document.body.textContent).not.toMatch(/тренировк|Текшерүү|Башынан баштоо/i)
   })
 
   it('without the student portal token there is no exam', async () => {
