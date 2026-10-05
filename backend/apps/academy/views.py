@@ -300,17 +300,29 @@ class RoomViewSet(viewsets.ModelViewSet):
             .select_related("room", "group")
         )
 
+        # A trainer sees *that* a room is busy (room + time) for everyone,
+        # but which group occupies it only for their own lessons; Admin and
+        # Team Lead see every group (academy-wide read).
+        own_lesson_ids = None
+        if not _sees_academy(request.user):
+            teacher = _teacher_profile(request)
+            own_lesson_ids = (
+                set(Lesson.objects.for_teacher(teacher).filter(date=date_).values_list("id", flat=True))
+                if teacher is not None else set()
+            )
+
         occupied_room_ids = set()
         occupied = []
         for lesson in overlapping_lessons:
             occupied_room_ids.add(lesson.room_id)
+            visible = own_lesson_ids is None or lesson.id in own_lesson_ids
             occupied.append(
                 {
                     "room": lesson.room_id,
                     "room_name": lesson.room.name,
                     "lesson": lesson.id,
-                    "group": lesson.group_id,
-                    "group_name": lesson.group.name,
+                    "group": lesson.group_id if visible else None,
+                    "group_name": lesson.group.name if visible else None,
                     "start_time": lesson.start_time,
                     "end_time": lesson.end_time,
                 }
@@ -1350,7 +1362,11 @@ class HomeworkResultViewSet(viewsets.ModelViewSet):
 # ---------------------------------------------------------------------------
 
 class TeacherAvailabilityView(APIView):
-    permission_classes = [IsAuthenticated]
+    # Who is busy where (teacher, group, lesson) across the academy — the
+    # academy-wide read scope (Admin / Team Lead). A trainer has no use for
+    # it and must not be able to sweep time windows to rebuild colleagues'
+    # schedules.
+    permission_classes = [IsAuthenticated, IsAdminOrTeamLeadReadOnly]
 
     @extend_schema(
         tags=["Teachers"],
