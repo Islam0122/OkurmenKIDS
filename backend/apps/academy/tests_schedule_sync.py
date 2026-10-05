@@ -7,12 +7,14 @@ from __future__ import annotations
 import datetime as dt
 
 from django.core.exceptions import ValidationError
+from django.db.models import Count
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.academy.models import (
-    Attendance, Course, CourseLessonPlan, Group, GroupSchedule, GroupTeacher, Lesson, Room, Student,
+    Attendance, Course, CourseLessonPlan, Group, GroupSchedule, GroupTeacher, Homework, HomeworkResult, Lesson, Room,
+    Student,
 )
 from apps.academy.services.lesson_generator import generate_lessons_for_group
 from apps.academy.services.program_editing import parse_schedule_specs, save_teaching_program
@@ -531,7 +533,7 @@ class GenerateLessonsTests(QAFixture):
     def test_overrides_and_completed_survive_generation(self):
         first, second, third, fourth = self.english_lessons()
         Lesson.objects.filter(pk=first.pk).update(status=Lesson.Status.COMPLETED, started_at=timezone.now())
-        Lesson.objects.filter(pk=second.pk).update(start_time=T(14, 0), end_time=T(15, 0))
+        Lesson.objects.filter(pk=second.pk).update(start_time=T(14, 0), end_time=T(15, 0), schedule_overridden=True)
         self.save_english()
         self.generate()
         rows = {lesson.pk: (lesson.start_time, lesson.status) for lesson in self.english_lessons()}
@@ -562,3 +564,179 @@ class GenerateLessonsTests(QAFixture):
         self.assertEqual((new.date.weekday(), new.start_time), (5, T(12, 0)))  # current slot: Saturday 12:00
         weeks = [lesson.date.isocalendar()[:2] for lesson in lessons]
         self.assertEqual(len(set(weeks)), len(weeks))  # one lesson of the slot per week
+
+
+class GenerateSyncsStaleLessonsTests(QAFixture):
+    """The «Сгенерировать занятия» bug: a slot changed, its lessons did *not*
+    follow (here: a plain slot .save(), the path without sync — as if the
+    sync never ran), and Generate used to skip every existing lesson. Now
+    Generate is create + sync: the open future lessons of *that* slot
+    (Lesson.schedule) move onto its current day/time, nothing is
+    duplicated, history and hand moves stay."""
+
+    def setUp(self):
+        super().setUp()
+        self.api = APIClient()
+        self.api.force_authenticate(self.admin)
+
+    def change_slot_without_sync(self, **values):
+        for name, value in values.items():
+            setattr(self.english_slot, name, value)
+        self.english_slot.save()
+
+    def generate(self):
+        response = self.api.post(f"/api/v1/groups/{self.group.pk}/generate-lessons/")
+        self.assertIn(response.status_code, (200, 201), response.content)
+        return response.json()
+
+    def preview(self):
+        response = self.api.get(f"/api/v1/groups/{self.group.pk}/generate-lessons/preview/")
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
+    def per_slot_and_date(self):
+        return list(
+            Lesson.objects.filter(group=self.group).exclude(status=Lesson.Status.CANCELLED)
+            .values("schedule_id", "date").annotate(n=Count("id")).filter(n__gt=1)
+        )
+
+    # A — existing future lesson's time changes
+    def test_a_existing_future_lessons_take_the_slots_new_time(self):
+        before = self.english_rows()
+        self.assertTrue(all((s, e) == (T(10, 0), T(11, 0)) for _d, s, e in before))
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+        self.assertEqual(self.english_rows(), before)  # the bug: still 10:00
+
+        result = self.generate()
+        self.assertEqual(result["created_count"], 0)
+        self.assertEqual(result["rescheduled_count"], 4)
+        after = self.english_rows()
+        self.assertEqual([d for d, _s, _e in after], [d for d, _s, _e in before])  # same dates
+        self.assertTrue(all((s, e) == (T(12, 0), T(13, 0)) for _d, s, e in after))
+
+    # B — idempotent
+    def test_b_generate_three_times_is_idempotent(self):
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+        first = self.generate()
+        state = list(Lesson.objects.filter(group=self.group).order_by("pk").values_list(
+            "pk", "date", "start_time", "end_time", "updated_at"))
+        second, third = self.generate(), self.generate()
+        self.assertEqual(first["rescheduled_count"], 4)
+        for again in (second, third):
+            self.assertEqual((again["created_count"], again["rescheduled_count"]), (0, 0))
+        self.assertEqual(list(Lesson.objects.filter(group=self.group).order_by("pk").values_list(
+            "pk", "date", "start_time", "end_time", "updated_at")), state)
+        self.assertEqual(len(self.english_lessons()), 4)
+
+    # C — completed (and every other kind of history) unchanged
+    def test_c_history_is_never_moved(self):
+        first, second, third, fourth = self.english_lessons()
+        Lesson.objects.filter(pk=first.pk).update(status=Lesson.Status.COMPLETED, started_at=timezone.now())
+        Attendance.objects.create(student=self.student, lesson=second, status=Attendance.Status.PRESENT)
+        homework = Homework.objects.create(lesson=third, title="ДЗ")
+        HomeworkResult.objects.create(homework=homework, student=self.student, status=HomeworkResult.Status.SUBMITTED)
+        Lesson.objects.filter(pk=fourth.pk).update(status=Lesson.Status.CANCELLED)
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+
+        result = self.generate()
+        self.assertEqual(result["rescheduled_count"], 0)
+        rows = {lesson.pk: (lesson.start_time, lesson.status) for lesson in self.english_lessons()}
+        self.assertEqual(rows[first.pk], (T(10, 0), Lesson.Status.COMPLETED))
+        self.assertEqual(rows[second.pk][0], T(10, 0))
+        self.assertEqual(rows[third.pk][0], T(10, 0))
+        self.assertEqual(rows[fourth.pk], (T(10, 0), Lesson.Status.CANCELLED))
+
+    def test_c_past_lesson_keeps_its_history(self):
+        first = self.english_lessons()[0]
+        last_sunday = timezone.localdate() - dt.timedelta(days=timezone.localdate().weekday() + 1)
+        Lesson.objects.filter(pk=first.pk).update(date=last_sunday)
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+        self.generate()
+        first.refresh_from_db()
+        self.assertEqual((first.date, first.start_time), (last_sunday, T(10, 0)))
+
+    # D — a manual reschedule wins
+    def test_d_lesson_moved_by_hand_stays_at_its_own_time(self):
+        moved = self.english_lessons()[1]
+        response = self.api.patch(f"/api/v1/lessons/{moved.pk}/", {"start_time": "14:00", "end_time": "15:00"}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        moved.refresh_from_db()
+        self.assertTrue(moved.schedule_overridden)
+        self.assertFalse(moved.manually_edited)  # content untouched — the plan still syncs it
+
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+        self.generate()
+        rows = {lesson.pk: (lesson.start_time, lesson.end_time) for lesson in self.english_lessons()}
+        self.assertEqual(rows.pop(moved.pk), (T(14, 0), T(15, 0)))
+        self.assertTrue(all(value == (T(12, 0), T(13, 0)) for value in rows.values()))
+
+    def test_d_slot_save_also_respects_a_hand_move(self):
+        moved = self.english_lessons()[1]
+        # Moved to another week but still «Sunday 10:00»: only the flag tells it apart.
+        self.api.patch(f"/api/v1/lessons/{moved.pk}/", {"date": str(moved.date + dt.timedelta(days=28))}, format="json")
+        self.save_english()  # Sunday 12:00 via the program drawer (synced save)
+        moved.refresh_from_db()
+        self.assertEqual(moved.start_time, T(10, 0))
+
+    # E — another schedule of the same group is untouched
+    def test_e_other_schedule_unchanged(self):
+        it_before = self.it_rows()
+        it_lessons = list(Lesson.objects.filter(schedule=self.it_slot).values_list("pk", "updated_at"))
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+        self.generate()
+        self.assertEqual(self.it_rows(), it_before)
+        self.assertEqual(list(Lesson.objects.filter(schedule=self.it_slot).values_list("pk", "updated_at")), it_lessons)
+        self.assertTrue(all(start == T(8, 0) for _d, start, _e, _r in self.it_rows()))
+
+    # F — exactly one lesson per date + schedule
+    def test_f_no_duplicates(self):
+        count = Lesson.objects.filter(group=self.group).count()
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+        for _ in range(3):
+            self.generate()
+        self.assertEqual(Lesson.objects.filter(group=self.group).count(), count)
+        self.assertEqual(self.per_slot_and_date(), [])
+        dates = [d for d, _s, _e in self.english_rows()]
+        self.assertEqual(len(dates), len(set(dates)))
+
+    # G — changed weekday
+    def test_g_changed_weekday_moves_within_the_week_without_duplicates(self):
+        before = [d for d, _s, _e in self.english_rows()]
+        self.change_slot_without_sync(day_of_week="sat", start_time=T(12, 0), end_time=T(13, 0))
+        result = self.generate()
+        self.assertEqual((result["created_count"], result["rescheduled_count"]), (0, 4))
+        after = self.english_rows()
+        self.assertEqual([d for d, _s, _e in after], [d - dt.timedelta(days=1) for d in before])  # Sun → Sat, same week
+        self.assertTrue(all(d.weekday() == 5 and (s, e) == (T(12, 0), T(13, 0)) for d, s, e in after))
+        self.assertEqual(len(after), 4)
+        self.assertEqual(self.per_slot_and_date(), [])
+        self.assertEqual(self.generate()["rescheduled_count"], 0)
+
+    def test_g_a_clash_keeps_that_lesson_and_reports_it(self):
+        it_first = Lesson.objects.filter(schedule=self.it_slot).order_by("date").first()
+        english_first = self.english_lessons()[0]
+        # IT's first lesson sits on the Wednesday of English's first week, 12:00 — by hand.
+        Lesson.objects.filter(pk=it_first.pk).update(
+            date=english_first.date - dt.timedelta(days=4), start_time=T(12, 0), end_time=T(13, 0), schedule_overridden=True,
+        )
+        self.change_slot_without_sync(day_of_week="wed", start_time=T(12, 0), end_time=T(13, 0))
+        result = self.generate()
+        self.assertEqual(result["rescheduled_count"], 3)
+        self.assertTrue(any("у группы уже есть занятие" in warning for warning in result["warnings"]))
+        english_first.refresh_from_db()
+        self.assertEqual((english_first.date.weekday(), english_first.start_time), (6, T(10, 0)))  # kept
+        self.assertEqual(self.per_slot_and_date(), [])
+
+    # Preview == Generate
+    def test_preview_shows_the_current_schedule_and_matches_generate(self):
+        self.change_slot_without_sync(start_time=T(12, 0), end_time=T(13, 0))
+        preview = self.preview()
+        english = next(row for row in preview["programs"] if row["program"] == self.english_program.pk)
+        self.assertEqual(english["schedule"], ["Вс 12:00–13:00"])
+        self.assertEqual((preview["to_create"], preview["to_reschedule"], english["to_reschedule"]), (0, 4, 4))
+        self.assertTrue(all(start == T(10, 0) for _d, start, _e in self.english_rows()))  # preview wrote nothing
+
+        result = self.generate()
+        self.assertEqual((result["created_count"], result["rescheduled_count"]), (preview["to_create"], preview["to_reschedule"]))
+        again = self.preview()
+        self.assertEqual((again["to_create"], again["to_reschedule"]), (0, 0))

@@ -352,6 +352,8 @@ export interface AcademicProgramInput {
 export interface GenerateLessonsResult {
   created_count: number
   updated_count: number
+  /** Future lessons moved onto their schedule slot's current day/time. */
+  rescheduled_count: number
   already_existed: number
   expected_total: number
   first_date: string | null

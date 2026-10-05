@@ -441,12 +441,12 @@ function GenerateLessonsButton({ groupId, disabled }: { groupId: number; disable
     try {
       const result = await mutation.mutateAsync()
       setWarnings(result.warnings)
-      showToast(
-        result.created_count
-          ? `Создано занятий: ${result.created_count}${result.first_date ? ` (с ${new Date(result.first_date).toLocaleDateString('ru-RU')})` : ''}`
-          : 'Новых занятий нет — расписание уже сгенерировано',
-        'success',
-      )
+      const parts = []
+      if (result.created_count) {
+        parts.push(`Создано занятий: ${result.created_count}${result.first_date ? ` (с ${new Date(result.first_date).toLocaleDateString('ru-RU')})` : ''}`)
+      }
+      if (result.rescheduled_count) parts.push(`Перенесено по расписанию: ${result.rescheduled_count}`)
+      showToast(parts.length ? parts.join(' · ') : 'Новых занятий нет — расписание уже сгенерировано', 'success')
     } catch (error) {
       showToast(extractErrorMessage(error, 'Не удалось сгенерировать занятия'), 'error')
     }

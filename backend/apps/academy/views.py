@@ -515,9 +515,11 @@ class GroupViewSet(viewsets.ModelViewSet):
     )
     def generate_lessons(self, request, pk=None):
         """Idempotent generate + sync: fills in the missing lessons of the
-        group's plan(s) and re-syncs plain future lessons with the current
-        plan — completed/started/cancelled and manually edited lessons are
-        never changed (see services.lesson_generator). 201 when something was
+        group's plan(s), re-syncs plain future lessons with the current
+        plan and moves open future lessons onto their slot's current day/time
+        (`rescheduled_count`) — completed/started/cancelled, data-carrying,
+        manually edited and hand-moved lessons are never changed (see
+        services.lesson_generator). 201 when something was
         created, 200 otherwise, 400 when nothing could be generated or synced
         because of an error. `warnings`
         lists every plan lesson that was deliberately *not* created (no
@@ -529,7 +531,7 @@ class GroupViewSet(viewsets.ModelViewSet):
         find_orphan_lessons)."""
         group = self.get_object()
         report = generate_lessons_for_group_with_report(group)
-        if report.errors and not report.created and not report.updated:
+        if report.errors and not report.created and not report.updated and not report.rescheduled:
             raise DRFValidationError(" ".join(report.errors))
 
         if report.created_lessons:
@@ -556,6 +558,7 @@ class GroupViewSet(viewsets.ModelViewSet):
             "unchanged_count": report.unchanged,
             "locked_count": report.locked,
             "manually_edited_count": report.manually_edited,
+            "rescheduled_count": report.rescheduled,
         }
         response_status = status.HTTP_201_CREATED if report.created else status.HTTP_200_OK
         return Response(GenerateLessonsResponseSerializer(payload).data, status=response_status)
@@ -963,12 +966,23 @@ class LessonViewSet(
         # A hand edit of plan-controlled content makes this lesson the
         # trainer's: «Сгенерировать занятия» no longer re-syncs it from the
         # plan (see services.lesson_generator._sync_existing_lessons).
+        # Likewise a hand move of its date/time detaches it from its slot:
+        # neither a slot edit nor «Сгенерировать занятия» moves it back (see
+        # services.schedule_lesson_sync).
         lesson = serializer.instance
-        edited = any(
-            name in serializer.validated_data and serializer.validated_data[name] != getattr(lesson, name)
-            for name in Lesson.PLAN_CONTENT_FIELDS
-        )
-        serializer.save(**({"manually_edited": True} if edited else {}))
+
+        def changed(names) -> bool:
+            return any(
+                name in serializer.validated_data and serializer.validated_data[name] != getattr(lesson, name)
+                for name in names
+            )
+
+        flags = {}
+        if changed(Lesson.PLAN_CONTENT_FIELDS):
+            flags["manually_edited"] = True
+        if changed(Lesson.SCHEDULE_FIELDS):
+            flags["schedule_overridden"] = True
+        serializer.save(**flags)
 
     @extend_schema(
         tags=["Attendance"],

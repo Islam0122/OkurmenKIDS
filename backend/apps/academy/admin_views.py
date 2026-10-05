@@ -305,6 +305,7 @@ def add_generation_messages(request, report: LessonGenerationReport, *, prefix: 
     summary_parts = [
         f"Создано: {report.created}",
         f"Обновлено: {report.updated}",
+        f"Перенесено по расписанию: {report.rescheduled}",
         f"Без изменений: {report.unchanged}",
         f"Пропущено завершённых: {report.locked}",
         f"Пропущено вручную изменённых: {report.manually_edited}",
@@ -321,11 +322,11 @@ def add_generation_messages(request, report: LessonGenerationReport, *, prefix: 
         summary_parts.append(f"Конфликтов: {report.conflicts}")
     summary_parts.append(f"Ошибок: {len(report.errors)}")
 
-    if report.errors and not report.created and not report.updated:
+    if report.errors and not report.created and not report.updated and not report.rescheduled:
         level = messages.ERROR
     elif report.warnings or report.errors:
         level = messages.WARNING
-    elif report.created or report.updated:
+    elif report.created or report.updated or report.rescheduled:
         level = messages.SUCCESS
     else:
         level = messages.INFO

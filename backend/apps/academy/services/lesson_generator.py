@@ -47,9 +47,17 @@ which the slot already gave a lesson — see _Occupancy); existing Lesson
 rows are never duplicated.
 
 Time / day / room of existing lessons follow their slot when the slot is
-edited (services.schedule_lesson_sync, run by every slot save); the
-generator itself never moves a lesson — it places *new* lessons at the
-slots' current day and time. One rule set, two entry points.
+edited (services.schedule_lesson_sync.sync_schedule_lessons, run by every
+slot save). Generation finishes that job (_align_with_schedule →
+schedule_lesson_sync.align_schedule_lessons): every open future lesson of a
+slot (Lesson.schedule) that is still not on the slot's current weekday and
+start/end time — the slot was edited today, by a path without sync, or a
+clash blocked the move back then — is moved onto the slot within its own
+week, *before* missing lessons are filled in, so a changed slot never gets
+a second lesson in a week it already has one. Completed / started /
+cancelled lessons, lessons with attendance or graded homework, past ones and
+lessons moved by hand (Lesson.schedule_overridden) stay where they are. One
+rule set, two entry points; the preview runs the very same code.
 
 Generate = create + sync. Before filling in missing lessons, every existing
 lesson generated from a plan row is compared with the *current* plan (see
@@ -61,7 +69,8 @@ _sync_existing_lessons):
 * SCHEDULED with ``manually_edited`` — skipped, the trainer's edit wins.
 * any other SCHEDULED lesson — its content (Lesson.PLAN_CONTENT_FIELDS) and
   its plan homework are updated from the plan row with the same
-  lesson_number. Date, time, room, trainer, subject and number never change.
+  lesson_number. The plan sync never changes room, trainer, subject or
+  number; date and time only ever follow the lesson's own slot (above).
 """
 from __future__ import annotations
 
@@ -72,7 +81,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 
 from ..constants import WEEKDAY_CODES, WEEKDAY_LABELS_SHORT
@@ -92,6 +101,7 @@ from .group_schedule_conflicts import (
     find_schedule_room_conflict,
     find_schedule_teacher_conflict,
 )
+from .schedule_lesson_sync import align_schedule_lessons
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +140,8 @@ class _GenerationRun:
     created: list[Lesson] = field(default_factory=list)
     # Existing lessons re-synced from the current plan (see _sync_existing_lessons)
     updated: list[Lesson] = field(default_factory=list)
+    # Existing future lessons moved onto their slot's current day/time (see _align_with_schedule)
+    rescheduled: list[Lesson] = field(default_factory=list)
     unchanged: int = 0
     # Lessons that are history (completed/in progress/cancelled, or already carrying data)
     locked: int = 0
@@ -571,6 +583,26 @@ def _sync_existing_lessons(group: Group, run: _GenerationRun) -> None:
             run.updated.append(lesson)
         else:
             run.unchanged += 1
+
+
+def _align_with_schedule(group: Group, group_teachers: list[GroupTeacher], run: _GenerationRun) -> None:
+    """Put the open future lessons of every active slot of the group's
+    active programs onto the slot's current weekday and time (see
+    schedule_lesson_sync.align_schedule_lessons — the same rules a slot
+    save applies). Identity is Lesson.schedule, never group/date/subject: a
+    group's other programs have their own slots. A lesson that would clash
+    stays where it is and is reported. Runs inside _run_generation's
+    transaction, under its group lock, before any lesson is created."""
+    slots = (
+        GroupSchedule.objects.filter(group_teacher__in=group_teachers, is_active=True)
+        .filter(start_time__lt=F("end_time"))
+        .order_by("pk")
+    )
+    for slot in slots:
+        slot.group = group
+        result = align_schedule_lessons(slot)
+        run.rescheduled.extend(result.moved)
+        run.sync_warnings.extend(result.problems)
 
 
 def _walk_and_generate(*, group: Group, slots_by_weekday, take_next, remaining, lesson_kwargs_for,
@@ -1129,6 +1161,7 @@ def _run_generation(group: Group, not_before: dt.date | None = None, *, cleanup_
     run = _GenerationRun()
     _remove_orphan_lessons(group, run, not_before, cleanup=cleanup_orphans)
     _sync_existing_lessons(group, run)
+    _align_with_schedule(group, group_teachers, run)
 
     if shared_group_teachers:
         try:
@@ -1156,6 +1189,7 @@ def _run_generation(group: Group, not_before: dt.date | None = None, *, cleanup_
             # The rollback undid this run's sync as well.
             run.unchanged += len(run.updated)
             run.updated = []
+            run.rescheduled = []
     elif run.errors:
         logger.warning(
             "[lesson_generator] Group id=%s: %s lesson(s) created, but %s program(s) failed: %s",
@@ -1167,6 +1201,11 @@ def _run_generation(group: Group, not_before: dt.date | None = None, *, cleanup_
         logger.info(
             "[lesson_generator] Group id=%s: %s lesson(s) created across %s active program(s).",
             group.pk, len(run.created), len(group_teachers),
+        )
+    if run.rescheduled:
+        logger.info(
+            "[lesson_generator] Group id=%s: %s future lesson(s) moved onto their schedule slot's current day/time.",
+            group.pk, len(run.rescheduled),
         )
     if run.updated:
         logger.info(
@@ -1193,7 +1232,7 @@ def generate_lessons_for_group(group: Group) -> list[Lesson]:
     see them.
     """
     run = _run_generation(group)
-    if run.errors and not run.created and not run.updated:
+    if run.errors and not run.created and not run.updated and not run.rescheduled:
         raise LessonGenerationError(" ".join(run.errors))
     return run.created
 
@@ -1226,6 +1265,8 @@ class LessonGenerationReport:
     unchanged: int = 0
     locked: int = 0
     manually_edited: int = 0
+    # Future lessons moved onto their slot's current day/time (see _align_with_schedule)
+    rescheduled: int = 0
 
 
 def _expected_lesson_count(group: Group) -> int:
@@ -1288,6 +1329,7 @@ def generate_lessons_for_group_with_report(group: Group, *, not_before: dt.date 
         unchanged=run.unchanged,
         locked=run.locked,
         manually_edited=run.manually_edited,
+        rescheduled=len(run.rescheduled),
     )
 
 
@@ -1310,6 +1352,7 @@ class ProgramGenerationPreview:
     first_date: dt.date | None = None
     last_date: dt.date | None = None
     to_update: int = 0
+    to_reschedule: int = 0
 
 
 @dataclass
@@ -1332,10 +1375,11 @@ class GenerationPreview:
     to_update: int = 0
     locked: int = 0
     manually_edited: int = 0
+    to_reschedule: int = 0
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.to_create or self.to_update or self.orphans_to_delete)
+        return bool(self.to_create or self.to_update or self.to_reschedule or self.orphans_to_delete)
 
 
 def preview_generation(group: Group) -> GenerationPreview:
@@ -1374,6 +1418,9 @@ def preview_generation(group: Group) -> GenerationPreview:
     updated_by_program: dict[int | None, int] = defaultdict(int)
     for lesson in (run.updated if run else []):
         updated_by_program[lesson.group_teacher_id] += 1
+    rescheduled_by_program: dict[int | None, int] = defaultdict(int)
+    for lesson in (run.rescheduled if run else []):
+        rescheduled_by_program[lesson.group_teacher_id] += 1
 
     programs = []
     for gt in group_teachers:
@@ -1397,6 +1444,7 @@ def preview_generation(group: Group) -> GenerationPreview:
                 first_date=new[0].date if new else None,
                 last_date=new[-1].date if new else None,
                 to_update=updated_by_program.get(gt.pk, 0),
+                to_reschedule=rescheduled_by_program.get(gt.pk, 0),
             )
         )
 
@@ -1415,4 +1463,5 @@ def preview_generation(group: Group) -> GenerationPreview:
         to_update=len(run.updated) if run else 0,
         locked=run.locked if run else 0,
         manually_edited=run.manually_edited if run else 0,
+        to_reschedule=len(run.rescheduled) if run else 0,
     )

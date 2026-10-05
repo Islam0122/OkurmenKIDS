@@ -617,6 +617,9 @@ class GenerateLessonsResponseSerializer(serializers.Serializer):
     manually_edited_count = serializers.IntegerField(
         help_text="Будущих занятий, изменённых тренером вручную, — не перезаписывались."
     )
+    rescheduled_count = serializers.IntegerField(
+        help_text="Будущих занятий, перенесённых на актуальные день и время своего слота расписания."
+    )
 
 
 class ProgramGenerationPreviewSerializer(serializers.Serializer):
@@ -627,6 +630,9 @@ class ProgramGenerationPreviewSerializer(serializers.Serializer):
     planned = serializers.IntegerField(help_text="Занятий программы по плану.")
     existing = serializers.IntegerField(help_text="Уже созданных занятий программы.")
     to_update = serializers.IntegerField(help_text="Будущих занятий, которые будут обновлены по плану.")
+    to_reschedule = serializers.IntegerField(
+        help_text="Будущих занятий, которые будут перенесены на актуальные день и время слота."
+    )
     to_create = serializers.IntegerField(help_text="Сколько занятий будет создано.")
     first_date = serializers.DateField(allow_null=True)
     last_date = serializers.DateField(allow_null=True)
@@ -637,6 +643,9 @@ class GenerateLessonsPreviewSerializer(serializers.Serializer):
 
     to_create = serializers.IntegerField()
     to_update = serializers.IntegerField()
+    to_reschedule = serializers.IntegerField(
+        help_text="Будущих занятий, которые будут перенесены на актуальные день и время своего слота."
+    )
     locked = serializers.IntegerField()
     manually_edited = serializers.IntegerField()
     existing = serializers.IntegerField()
@@ -755,6 +764,7 @@ class LessonSerializer(_RequestAwareSerializer):
             "cancellation_reason",
             "homework_not_required",
             "manually_edited",
+            "schedule_overridden",
             "started_at",
             "completed_at",
             "completed_by",
@@ -784,7 +794,7 @@ class LessonSerializer(_RequestAwareSerializer):
         read_only_fields = [
             "id", "group", "group_teacher", "plan", "individual_plan", "lesson_number", "teacher",
             "status", "cancellation_reason", "homework_not_required", "manually_edited",
-            "started_at", "completed_at", "completed_by", "rescheduled_from",
+            "schedule_overridden", "started_at", "completed_at", "completed_by", "rescheduled_from",
             "created_at", "updated_at",
         ]
 
