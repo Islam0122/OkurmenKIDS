@@ -54,6 +54,7 @@ LOCAL_APPS = [
     "apps.testing.apps.TestingConfig",
     "apps.training.apps.TrainingConfig",
     "apps.worklog.apps.WorklogConfig",
+    "apps.assistant.apps.AssistantConfig",
 
 ]
 

@@ -29,6 +29,8 @@ urlpatterns = [
     path("api/v1/", include("apps.training.urls")),
     path("api/v1/", include("apps.testing.monitoring_urls")),
     path("api/v1/", include("apps.worklog.urls")),
+    # Assistant Workspace — the Assistant's operational API (see apps.assistant).
+    path("api/v1/assistant/", include("apps.assistant.urls")),
 
     # Public feedback survey links (no login) — /feedback/s/<token>/
     path("feedback/", include("apps.feedback.public_urls")),

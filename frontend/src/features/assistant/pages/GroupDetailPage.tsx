@@ -1,0 +1,289 @@
+import { useState } from 'react'
+import { ArrowRightLeft, CalendarDays, CalendarPlus, Pencil, RefreshCw, UserCheck, UserPlus, Users, UserX } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+
+import { assistantApi } from '@/api/assistant'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { BackLink } from '@/components/ui/BackLink'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Input } from '@/components/ui/Input'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { Menu } from '@/components/ui/Menu'
+import { Modal } from '@/components/ui/Modal'
+import { Select } from '@/components/ui/Select'
+import { Tabs } from '@/components/ui/Tabs'
+import { Textarea } from '@/components/ui/Textarea'
+import { useAssistantGroup, useAssistantFormMutation, useAssistantMutation, useAssistantOptions } from '@/hooks/useAssistant'
+import { extractErrorMessage, isNotFound } from '@/lib/apiError'
+import type { GroupDetail, StudentRow } from '@/types/assistant'
+import { formatDate, formatDateShort, pluralize } from '@/utils/format'
+
+import { useAssistantActions } from '../actions/AssistantActions'
+import { HistoryList, LessonList } from '../shared'
+import { Field, FormError, GroupStatusBadge, InfoRow, ModalActions, StudentStatusBadge } from '../ui'
+
+const TABS = [
+  { key: 'overview', label: 'Обзор' },
+  { key: 'students', label: 'Студенты' },
+  { key: 'schedule', label: 'Расписание' },
+  { key: 'attendance', label: 'Посещаемость' },
+  { key: 'lessons', label: 'Занятия' },
+  { key: 'exams', label: 'Экзамены' },
+  { key: 'surveys', label: 'Опросы' },
+  { key: 'history', label: 'История' },
+] as const
+type TabKey = (typeof TABS)[number]['key']
+
+function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () => void }) {
+  const { data: options } = useAssistantOptions()
+  const [form, setForm] = useState({
+    name: group.name,
+    start_date: group.start_date,
+    end_date: group.end_date ?? '',
+    max_students: group.max_students ? String(group.max_students) : '',
+    status: group.status,
+    description: group.description,
+  })
+  const mutation = useAssistantFormMutation(
+    () => assistantApi.updateGroup(group.id, {
+      ...form,
+      end_date: form.end_date || null,
+      max_students: form.max_students ? Number(form.max_students) : null,
+    }),
+    'Группа сохранена',
+  )
+  const set = (key: keyof typeof form) => (event: { target: { value: string } }) => setForm({ ...form, [key]: event.target.value })
+
+  return (
+    <Modal isOpen onClose={onClose} title="Изменить группу" icon={<Pencil className="size-5 text-brand-600" aria-hidden />}>
+      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); mutation.mutate(undefined, { onSuccess: onClose }) }}>
+        <Field label="Название" htmlFor="edit-name" required>
+          <Input id="edit-name" value={form.name} onChange={set('name')} required />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Дата начала" htmlFor="edit-start" required>
+            <DatePicker id="edit-start" value={form.start_date} onChange={set('start_date')} required />
+          </Field>
+          <Field label="Дата окончания" htmlFor="edit-end">
+            <DatePicker id="edit-end" value={form.end_date} onChange={set('end_date')} />
+          </Field>
+          <Field label="Максимум студентов" htmlFor="edit-max">
+            <Input id="edit-max" type="number" min={1} value={form.max_students} onChange={set('max_students')} />
+          </Field>
+          <Field label="Статус" htmlFor="edit-status">
+            <Select id="edit-status" value={form.status} onChange={set('status')} options={(options?.group_statuses ?? []).map((s) => ({ value: s.value, label: s.label }))} />
+          </Field>
+        </div>
+        <Field label="Описание" htmlFor="edit-description">
+          <Textarea id="edit-description" rows={3} value={form.description} onChange={set('description')} />
+        </Field>
+        <FormError message={mutation.error ? extractErrorMessage(mutation.error) : null} />
+        <ModalActions>
+          <Button type="button" variant="secondary" onClick={onClose}>Отмена</Button>
+          <Button type="submit" disabled={mutation.isPending || !form.name.trim()} isLoading={mutation.isPending}>Сохранить</Button>
+        </ModalActions>
+      </form>
+    </Modal>
+  )
+}
+
+function StudentsTable({ students }: { students: StudentRow[] }) {
+  const { open } = useAssistantActions()
+  if (students.length === 0) return <EmptyState icon={Users} title="В группе нет студентов" className="py-6" />
+  return (
+    <div className="-mx-4 overflow-x-auto sm:-mx-5">
+      <table className="data-table min-w-[640px]">
+        <thead>
+          <tr><th>Студент</th><th>Телефон</th><th>Статус</th><th>Посещаемость</th><th className="text-right">Действия</th></tr>
+        </thead>
+        <tbody>
+          {students.map((student) => (
+            <tr key={student.id}>
+              <td><Link to={`/assistant/students/${student.id}`} className="font-medium text-ink hover:text-brand-700">{student.full_name}</Link></td>
+              <td className="text-ink-secondary">{student.phone || student.parent_phone || '—'}</td>
+              <td><StudentStatusBadge status={student.status} label={student.status_display} /></td>
+              <td>{student.attendance_percent !== null ? `${student.attendance_percent}%` : '—'}</td>
+              <td className="text-right">
+                <Menu
+                  label={`Действия: ${student.full_name}`}
+                  items={[
+                    { key: 'transfer', label: 'Перевести', icon: <ArrowRightLeft className="size-4" aria-hidden />, onClick: () => open({ type: 'transfer', student }), disabled: !['active', 'paused'].includes(student.status) },
+                    student.status === 'active'
+                      ? { key: 'deactivate', label: 'Деактивировать', tone: 'danger' as const, icon: <UserX className="size-4" aria-hidden />, onClick: () => open({ type: 'deactivate', student }) }
+                      : { key: 'activate', label: 'Активировать', icon: <UserCheck className="size-4" aria-hidden />, onClick: () => open({ type: 'activate', student }), disabled: student.status === 'completed' },
+                  ]}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function AssistantGroupDetailPage() {
+  const { id } = useParams()
+  const groupId = Number(id)
+  const [params, setParams] = useSearchParams()
+  const tab = (TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'overview') as TabKey
+  const { data: group, isPending, isError, error, refetch } = useAssistantGroup(Number.isFinite(groupId) ? groupId : undefined)
+  const { open } = useAssistantActions()
+  const navigate = useNavigate()
+  const [editing, setEditing] = useState(false)
+  const generate = useAssistantMutation(() => assistantApi.generateLessons(groupId), (report) =>
+    report.created ? `Создано занятий: ${report.created}` : 'Занятия уже актуальны')
+
+  if (isPending) return <LoadingState label="Загружаем группу…" />
+  if (isError || !group) {
+    return isNotFound(error)
+      ? <EmptyState icon={Users} title="Группа не найдена" action={<Link to="/assistant/groups" className="text-sm font-medium text-brand-700">К списку групп</Link>} />
+      : <ErrorState onRetry={() => void refetch()} />
+  }
+
+  const ref = { id: group.id, name: group.name }
+  return (
+    <div>
+      <BackLink to="/assistant/groups">Все группы</BackLink>
+      <PageHeader
+        title={group.name}
+        badge={<GroupStatusBadge status={group.status} label={group.status_display} />}
+        description={
+          <>
+            {group.course.name} · Тренер: {group.teachers.length ? group.teachers.join(', ') : 'не назначен'} · {group.students_count}{' '}
+            {pluralize(group.students_count, 'активный студент', 'активных студента', 'активных студентов')}
+          </>
+        }
+        actions={
+          <>
+            <Button leftIcon={<UserPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'bulk', action: 'add_to_group', group: ref })}>Студент</Button>
+            <Button variant="secondary" leftIcon={<CalendarPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'schedule', group: ref })}>Расписание</Button>
+            <Button variant="secondary" leftIcon={<Pencil className="size-4" aria-hidden />} onClick={() => setEditing(true)}>Изменить</Button>
+            <Menu
+              items={[
+                { key: 'new-student', label: 'Новый студент в группу', icon: <UserPlus className="size-4" aria-hidden />, onClick: () => navigate(`/assistant/students/create?group=${group.id}`) },
+                { key: 'generate', label: 'Сгенерировать занятия', icon: <RefreshCw className="size-4" aria-hidden />, onClick: () => generate.mutate(undefined), disabled: generate.isPending || group.programs.length === 0 },
+              ]}
+            />
+          </>
+        }
+      />
+      <Tabs aria-label="Разделы группы" items={TABS} value={tab} onChange={(key) => setParams(key === 'overview' ? {} : { tab: key }, { replace: true })} />
+
+      {tab === 'overview' ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card title="Группа">
+            <dl className="divide-y divide-border">
+              <InfoRow label="Программа">{group.course.name}</InfoRow>
+              <InfoRow label="Тренер">{group.teachers.join(', ')}</InfoRow>
+              <InfoRow label="Студенты">{`${group.students_count}${group.max_students ? ` из ${group.max_students}` : ''}`}</InfoRow>
+              <InfoRow label="Расписание">{group.schedule}</InfoRow>
+              <InfoRow label="Дата начала">{formatDate(group.start_date)}</InfoRow>
+              <InfoRow label="Дата окончания">{group.end_date ? formatDate(group.end_date) : ''}</InfoRow>
+              <InfoRow label="Статус">{group.status_display}</InfoRow>
+              <InfoRow label="Занятий в плане">{String(group.lessons_total)}</InfoRow>
+            </dl>
+            {group.description ? <p className="mt-3 text-sm text-ink-secondary">{group.description}</p> : null}
+          </Card>
+          <Card title="Ближайшие занятия">
+            <LessonList lessons={group.upcoming_lessons.slice(0, 5)} empty="Запланированных занятий нет. Добавьте расписание и сгенерируйте занятия." />
+          </Card>
+        </div>
+      ) : null}
+
+      {tab === 'students' ? (
+        <Card title={`Студенты (${group.students.length})`} actions={
+          <Button size="sm" leftIcon={<UserPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'bulk', action: 'add_to_group', group: ref })}>Добавить</Button>
+        }>
+          <StudentsTable students={group.students} />
+        </Card>
+      ) : null}
+
+      {tab === 'schedule' ? (
+        group.programs.length === 0 ? (
+          <EmptyState icon={CalendarDays} title="Расписания пока нет" description="Назначьте тренера и дни занятий."
+            action={<Button leftIcon={<CalendarPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'schedule', group: ref })}>Добавить расписание</Button>} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {group.programs.map((program) => (
+              <Card key={program.id} title={program.subject?.name ?? 'Без предмета'} description={`Тренер: ${program.teacher.name}`}
+                actions={<Button size="sm" variant="secondary" onClick={() => open({ type: 'schedule', group: ref, programId: program.id })}>Изменить</Button>}>
+                {!program.is_active ? <Badge tone="muted">Неактивна</Badge> : null}
+                {program.slots.length === 0 ? <p className="text-sm text-ink-secondary">Дни не назначены.</p> : (
+                  <ul className="divide-y divide-border text-sm">
+                    {program.slots.map((slot) => (
+                      <li key={slot.id} className="flex justify-between gap-3 py-2">
+                        <span className="font-medium text-ink">{slot.day_label}</span>
+                        <span className="text-ink-secondary">{slot.start}–{slot.end}{slot.room ? ` · ${slot.room.name}` : ''}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            ))}
+          </div>
+        )
+      ) : null}
+
+      {tab === 'attendance' ? (
+        <Card title="Посещаемость группы" actions={<Link to={`/assistant/attendance?group=${group.id}`} className="text-sm font-medium text-brand-700 hover:underline">Отметить</Link>}>
+          {group.attendance.marked === 0 ? <p className="text-sm text-ink-secondary">Посещаемость ещё не отмечалась.</p> : (
+            <p className="text-sm text-ink">
+              Присутствовали <b>{group.attendance.attended}</b> из <b>{group.attendance.marked}</b> отметок — <b>{group.attendance.percent}%</b>.
+            </p>
+          )}
+          <h3 className="section-title mt-6 mb-2">Прошедшие занятия</h3>
+          <LessonList lessons={group.recent_lessons} empty="Прошедших занятий нет." />
+        </Card>
+      ) : null}
+
+      {tab === 'lessons' ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card title="Предстоящие"><LessonList lessons={group.upcoming_lessons} empty="Нет запланированных занятий." /></Card>
+          <Card title="Прошедшие"><LessonList lessons={group.recent_lessons} empty="Прошедших занятий нет." /></Card>
+        </div>
+      ) : null}
+
+      {tab === 'exams' ? (
+        <Card title="Экзамены и тесты">
+          {group.exams.length === 0 ? <p className="text-sm text-ink-secondary">Тестовых сессий у группы не было.</p> : (
+            <ul className="divide-y divide-border text-sm">
+              {group.exams.map((exam) => (
+                <li key={exam.id} className="flex justify-between gap-3 py-2.5">
+                  <span className="font-medium text-ink">{exam.title || 'Тест'}</span>
+                  <span className="text-ink-secondary">{exam.status_display} · {formatDateShort(exam.created_at.slice(0, 10))}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      ) : null}
+
+      {tab === 'surveys' ? (
+        <Card title="Опросы" actions={<Link to={`/assistant/surveys?create=1&group=${group.id}`} className="text-sm font-medium text-brand-700 hover:underline">Создать опрос</Link>}>
+          {group.surveys.length === 0 ? <p className="text-sm text-ink-secondary">Опросов для группы нет.</p> : (
+            <ul className="divide-y divide-border text-sm">
+              {group.surveys.map((survey) => (
+                <li key={survey.id}>
+                  <Link to={`/assistant/surveys/${survey.id}`} className="flex justify-between gap-3 py-2.5 hover:text-brand-700">
+                    <span className="font-medium">{survey.title}</span>
+                    <span className="text-ink-secondary">{survey.status_display}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      ) : null}
+
+      {tab === 'history' ? <Card title="История"><HistoryList rows={group.history} /></Card> : null}
+
+      {editing ? <EditGroupModal group={group} onClose={() => setEditing(false)} /> : null}
+    </div>
+  )
+}

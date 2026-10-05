@@ -294,6 +294,9 @@ class StudentStatusEvent(models.Model):
         COMPLETED = "completed", "Завершение обучения"
         PAUSED = "paused", "Приостановка обучения"
         CONTINUED = "continued", "Продолжение обучения"
+        # Перевод в другую группу: статус не меняется (до и после — ACTIVE),
+        # меняется только Student.group; `from_group` — откуда, `group` — куда.
+        TRANSFERRED = "transferred", "Перевод в другую группу"
 
     class Reason(models.TextChoices):
         NO_INTEREST = "no_interest", "Нет интереса"
@@ -362,6 +365,16 @@ class StudentStatusEvent(models.Model):
         related_name="student_status_events",
         verbose_name="Группа",
         help_text="Группа студента на момент события (уход — прежняя группа, возврат — новая группа).",
+    )
+
+    from_group = models.ForeignKey(
+        "Group",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="student_transfers_out",
+        verbose_name="Из группы",
+        help_text="Только для перевода — группа, из которой студента перевели (в «Группа» — новая).",
     )
 
     event_date = models.DateField(

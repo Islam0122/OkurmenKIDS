@@ -1,8 +1,8 @@
 """Role-based permissions for the users app.
 
 These permissions rely on ``request.user.role`` (see ``apps.users.models.User``)
-rather than Django's group/permission system. Roles: ADMIN, TEACHER and
-TEAM_LEAD.
+rather than Django's group/permission system. Roles: ADMIN, TEACHER,
+TEAM_LEAD and ASSISTANT.
 
 TEAM_LEAD (руководитель тренеров) sees the whole academy — every trainer,
 group, student, lesson, KPI and report — but only *reads*: every write stays
@@ -10,6 +10,13 @@ with ADMIN (or with the owning TEACHER, for their own lessons). Views reuse
 ``can_view_academy`` for read scoping and keep ``is_admin_user`` for writes,
 so a Team Lead can never reach a write path through the academy-wide scope.
 User management, roles, permissions and Django admin stay ADMIN-only.
+
+ASSISTANT (ассистент) runs the academy's day-to-day operations — groups,
+students (add / transfer / deactivate / activate), schedule, attendance,
+scholarships, surveys — through its own API (apps.assistant, gated by
+``IsAdminOrAssistant``). It is deliberately *not* folded into
+``can_view_academy``: a Team Lead-only read (KPI, analytics, trainer control,
+reports) must never open up to an Assistant by accident.
 """
 from __future__ import annotations
 
@@ -30,6 +37,18 @@ def is_team_lead(user) -> bool:
     if not getattr(user, "is_authenticated", False):
         return False
     return bool(user.is_active and getattr(user, "role", None) == User.Role.TEAM_LEAD)
+
+
+def is_assistant(user) -> bool:
+    """An active Assistant account. Safe for AnonymousUser."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(user.is_active and getattr(user, "role", None) == User.Role.ASSISTANT)
+
+
+def can_run_operations(user) -> bool:
+    """May use the Assistant Workspace (academy operations): Admin or Assistant."""
+    return is_admin_user(user) or is_assistant(user)
 
 
 def can_view_academy(user) -> bool:
@@ -93,6 +112,15 @@ class IsTeamLead(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         return is_team_lead(request.user)
+
+
+class IsAdminOrAssistant(BasePermission):
+    """The Assistant Workspace API: an active Assistant, or Admin."""
+
+    message = "Доступ разрешён только ассистенту или администратору."
+
+    def has_permission(self, request, view) -> bool:
+        return can_run_operations(request.user)
 
 
 class IsAdminOrTeamLeadReadOnly(BasePermission):

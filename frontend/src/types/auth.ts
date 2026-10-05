@@ -1,5 +1,6 @@
-/** `team_lead` — руководитель тренеров: читает всю академию, ничего не изменяет. */
-export type UserRole = 'admin' | 'teacher' | 'team_lead'
+/** `team_lead` — руководитель тренеров: читает всю академию, ничего не изменяет.
+ * `assistant` — ежедневные операции академии, только через Assistant Workspace (/assistant). */
+export type UserRole = 'admin' | 'teacher' | 'team_lead' | 'assistant'
 
 /** `apps.users.serializers.UserSerializer` — read-only in full. */
 export interface User {

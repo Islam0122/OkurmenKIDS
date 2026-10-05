@@ -7,6 +7,12 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   admin: 'Администратор',
   teacher: 'Тренер',
   team_lead: 'Team Lead',
+  assistant: 'Ассистент',
+}
+
+/** The Assistant works only in the Assistant Workspace (/assistant), never in /app. */
+export function isAssistant(role: UserRole | undefined): boolean {
+  return role === 'assistant'
 }
 
 export function isTeamLead(role: UserRole | undefined): boolean {

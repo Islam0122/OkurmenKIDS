@@ -22,7 +22,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.users.permissions import IsAdmin
+from apps.users.permissions import IsAdmin, IsAdminOrAssistant
 
 from .models import Survey, SurveyAnswer, SurveyQuestion
 from .public import (
@@ -62,9 +62,12 @@ def _run(fn, *args, **kwargs):
 
 @extend_schema(tags=["Feedback"])
 class SurveyAdminViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, IsAdmin]
+    # Surveys are part of the Assistant's daily operations (Assistant
+    # Workspace «Опросы»): Admin and Assistant manage them. The academy-wide
+    # feedback analytics (FeedbackOverviewView) stays Admin-only.
+    permission_classes = [IsAuthenticated, IsAdminOrAssistant]
     search_fields = ["title"]
-    filterset_fields = ["audience", "status", "visibility_mode"]
+    filterset_fields = ["audience", "status", "visibility_mode", "group"]
     ordering_fields = ["created_at", "title"]
 
     def get_queryset(self):
@@ -177,7 +180,7 @@ class SurveyAdminViewSet(viewsets.ModelViewSet):
 class SurveyQuestionAdminViewSet(
     mixins.RetrieveModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet
 ):
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, IsAdminOrAssistant]
     serializer_class = SurveyQuestionSerializer
     queryset = SurveyQuestion.objects.select_related("survey").prefetch_related("options")
 

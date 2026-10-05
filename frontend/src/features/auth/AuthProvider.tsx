@@ -13,12 +13,12 @@ import { AuthContext, type AuthStatus } from './AuthContext'
 /** Mirrors the backend's own login gate (see `LoginSerializer.validate`) so
  * the UI never shows an "authenticated" screen the API would reject anyway.
  * Verification gating applies to Teacher accounts only — an Admin account
- * (created via `createsuperuser`) and a Team Lead account (created by an
- * Admin) are trusted from the start, same rule the backend itself applies. */
+ * (created via `createsuperuser`), a Team Lead and an Assistant account (created
+ * by an Admin) are trusted from the start, same rule the backend itself applies. */
 function isEligibleUser(user: User): boolean {
   if (!user.is_active) return false
   if (user.role === 'teacher') return user.is_verified
-  return user.role === 'admin' || user.role === 'team_lead'
+  return user.role === 'admin' || user.role === 'team_lead' || user.role === 'assistant'
 }
 
 function describeIneligibility(user: User): string {

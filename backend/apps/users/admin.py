@@ -38,6 +38,7 @@ admin.site.unregister(Group)
 ROLE_ADMIN_LABELS = {
     User.Role.ADMIN: "👑 Администратор",
     User.Role.TEAM_LEAD: "👨‍🏫 Team Lead — руководитель тренеров",
+    User.Role.ASSISTANT: "🗂 Ассистент — ежедневные операции академии",
     User.Role.TEACHER: "👨‍💻 Тренер",
 }
 
@@ -45,6 +46,8 @@ ROLE_HELP_TEXT = (
     "Роль определяет доступ автоматически — отдельные права выдавать не нужно. "
     "Team Lead видит всю академию (тренеры, группы, студенты, KPI, аналитика, отчёты) "
     "только для просмотра и входит в LMS (не в эту админ-панель) по логину и паролю. "
+    "Ассистент ведёт группы, студентов, расписание, посещаемость, стипендии и опросы "
+    "в Assistant Workspace LMS (/assistant/) — тоже не в этой админ-панели. "
     "Тренера с профилем удобнее создавать в разделе «Тренеры»."
 )
 
@@ -78,11 +81,13 @@ class RoleFormMixin:
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("role") == User.Role.TEAM_LEAD:
+        role = cleaned.get("role")
+        if role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT):
+            label = "Team Lead" if role == User.Role.TEAM_LEAD else "Ассистент"
             if cleaned.get("is_superuser"):
-                self.add_error("is_superuser", "Team Lead не может быть суперпользователем.")
+                self.add_error("is_superuser", f"{label} не может быть суперпользователем.")
             if cleaned.get("is_staff"):
-                self.add_error("is_staff", "Team Lead работает в LMS и не получает доступ в Django admin.")
+                self.add_error("is_staff", f"{label} работает в LMS и не получает доступ в Django admin.")
         return cleaned
 
 
@@ -168,15 +173,15 @@ class UserAdmin(DjangoUserAdmin):
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
-        if obj.role == User.Role.TEAM_LEAD:
+        if obj.role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT):
             from .admin_site import lms_login_url
 
             messages.info(
                 request,
                 format_html(
-                    "Team Lead входит в LMS, а не в эту админ-панель: "
+                    "{} входит в LMS, а не в эту админ-панель: "
                     '<a href="{}" target="_blank" rel="noopener">{}</a> — логин «{}» и заданный пароль.',
-                    lms_login_url(), lms_login_url(), obj.username,
+                    obj.get_role_display(), lms_login_url(), lms_login_url(), obj.username,
                 ),
             )
 
