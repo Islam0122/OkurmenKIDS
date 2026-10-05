@@ -60,7 +60,7 @@ export function LeaderboardPage() {
         <div className="empty">
           <Icon name="trophy" />
           <p>{t.leaderboard.empty}</p>
-          <div style={{ marginTop: 20 }}><Button to={testId ? `/training/${testId}` : '/training'} icon="play-circle">{t.test.start}</Button></div>
+          <div style={{ marginTop: 20 }}><Button variant="test" to={testId ? `/training/${testId}` : '/training'} icon="play-circle">{t.test.start}</Button></div>
         </div>
       )}
     </div>

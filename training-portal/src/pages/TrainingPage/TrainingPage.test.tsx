@@ -82,6 +82,7 @@ describe('training flow (through the API layer)', () => {
     expect(calls.some((c) => c.method === 'POST' && c.path === '/attempts/a1/submit/')).toBe(true)
     expect(window.localStorage.getItem('okurmen_active_attempts')).toBe('{}')
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false)  // training keeps its own API: no position saving
+    expect(document.querySelector('.btn--primary')).toBeNull()  // no blue/LMS buttons on the result's test actions
     expect(window.sessionStorage.getItem('okurmen_pending_a1')).toBeNull()  // nothing left unsent
   })
 

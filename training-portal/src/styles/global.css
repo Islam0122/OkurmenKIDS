@@ -1,19 +1,41 @@
-/* Okurmen Kids test platform — ONE design system for Training and Exam.
+/* Okurmen Kids — one design system, four colour roles:
  *
- * Semantic tokens (--color-*) are the only colours components should use:
- *   primary  — every main action, the current item, progress, focus (one blue)
- *   success  — saved / correct / passed
- *   warning  — approaching deadline, attention needed
- *   danger   — error / wrong / time critical
- *   neutral  — background, surfaces, borders, text
- * No mode has its own colour: Training and Exam differ in rules, a small
- * badge and the actions, never in the theme. The amber of the logo stays in
- * the brand mark only. The older names below (navy-*, amber-*, green-*,
- * red-*, cta, …) are aliases kept for the site pages. */
+ *   BLUE    (--brand-*, --color-primary*)  the LMS / site: navigation, links,
+ *                                          general actions, focus
+ *   GOLD    (--test-*)                     everything that is a TEST: test
+ *                                          cards, test & exam badges, start /
+ *                                          next / finish, progress, the current
+ *                                          question, the timer, results
+ *   GREEN   (--color-success*)             success / correct / saved / passed
+ *   RED     (--color-danger*)              error / wrong / expired / critical
+ *   ORANGE  (--color-warning*)             a warning (e.g. < 10 min left) —
+ *                                          deliberately not yellow, so it can
+ *                                          never be mistaken for test gold
+ *   NEUTRAL                                background, surfaces, borders, text
+ *
+ * Gold is an accent, never a page theme: test pages keep the neutral
+ * background and white cards. Training and Exam use the same gold; they
+ * differ in rules, a badge and the actions. Gold is taken from the logo
+ * ring (≈ #E9A221). Text on gold is dark (--test-on-primary, 8:1) — white
+ * on gold would be 2:1. Older names (navy-*, amber-*, cta, …) are aliases. */
 
 :root {
-  /* Primary — blue */
-  --color-primary: #2563eb;
+  /* LMS brand — blue */
+  --brand-primary: #2563eb;
+  --brand-primary-hover: #1d4ed8;
+
+  /* Test system — gold (from the logo) */
+  --test-primary: #efaa2b;
+  --test-primary-hover: #d9931a;
+  --test-primary-soft: #fff7e3;
+  --test-primary-light: #ffe6a8;
+  --test-primary-border: #f5cf7a;
+  --test-primary-dark: #8a5a00;
+  --test-on-primary: #2b1d00;
+  --test-focus-ring: 0 0 0 3px rgba(239, 170, 43, 0.45);
+
+  /* Primary — blue (= the LMS brand) */
+  --color-primary: var(--brand-primary);
   --color-primary-hover: #1d4ed8;
   --color-primary-active: #1e40af;
   --color-primary-soft: #eff6ff;
@@ -39,17 +61,17 @@
   --color-success-text: #15803d;
   --color-success-soft: #f0fdf4;
   --color-success-border: #86efac;
-  --color-warning: #d97706;
-  --color-warning-text: #b45309;
-  --color-warning-soft: #fffbeb;
-  --color-warning-border: #fcd34d;
+  --color-warning: #ea580c;
+  --color-warning-text: #c2410c;
+  --color-warning-soft: #fff7ed;
+  --color-warning-border: #fdba74;
   --color-danger: #dc2626;
   --color-danger-text: #b91c1c;
   --color-danger-soft: #fef2f2;
   --color-danger-border: #fca5a5;
 
-  /* Brand mark (logo ring) — not a UI colour */
-  --color-brand-accent: #f5a524;
+  /* Brand mark (logo ring) */
+  --color-brand-accent: var(--test-primary);
 
   /* Shape, depth, rhythm */
   --radius-sm: 8px;
@@ -83,6 +105,7 @@
   --success: var(--color-success);
   --warning: var(--color-warning);
   --danger: var(--color-danger);
+  /* SEMANTIC (short names) — see --color-success / -warning / -danger */
 
   --navy-950: var(--color-surface-inverse);
   --navy-900: #111827;
@@ -93,11 +116,11 @@
   --navy-100: #dbeafe;
   --navy-50: var(--color-primary-soft);
 
-  --amber-600: var(--color-warning);
-  --amber-500: var(--color-brand-accent);
-  --amber-400: #fbbf4a;
-  --amber-100: #fef3c7;
-  --amber-50: var(--color-warning-soft);
+  --amber-600: var(--test-primary-hover);
+  --amber-500: var(--test-primary);
+  --amber-400: #f6c35a;
+  --amber-100: var(--test-primary-light);
+  --amber-50: var(--test-primary-soft);
   --green-600: var(--color-success-text);
   --green-500: var(--color-success);
   --green-100: #dcfce7;
@@ -167,6 +190,11 @@ h1, h2, h3, h4 { overflow-wrap: break-word; }
 .chip.is-active { background: var(--navy-700); border-color: var(--navy-700); color: #fff; }
 .empty { text-align: center; padding: 56px 24px; color: var(--text-2); background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
 .empty .bi { font-size: 36px; color: var(--navy-500); margin-bottom: 12px; justify-content: center; }
+
+/* The one test badge: «Тест», «Экзамен», «20 суроо», «Аракет 1», difficulty… */
+.test-badge { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--test-primary-soft); border: 1px solid var(--test-primary-border); color: var(--test-primary-dark); font-size: 12px; font-weight: 800; line-height: 1.4; white-space: nowrap; }
+.test-badge .bi { color: var(--test-primary-dark); }
+.test-badge--lg { padding: 6px 12px; font-size: 13px; letter-spacing: .02em; }
 
 /* Motion — moderate; off for people who ask for less. */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }

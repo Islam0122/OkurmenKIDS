@@ -19,8 +19,8 @@ export function Hero({ portal, onStart }: { portal: PortalSettings | undefined; 
           <h1 className="hero__title">{first ? <><em>{first}</em> {rest.join(' ')}</> : <span className="hero__title-skeleton" />}</h1>
           {portal?.hero_subtitle ? <p className="hero__subtitle">{portal.hero_subtitle}</p> : null}
           <div className="hero__actions">
-            <Button onClick={onStart} size="lg" icon="play-circle">{portal?.start_button_label ?? t.hero.start}</Button>
-            <ExamButton variant="outline" size="lg" />
+            <Button variant="test" onClick={onStart} size="lg" icon="play-circle">{portal?.start_button_label ?? t.hero.start}</Button>
+            <ExamButton variant="test-outline" size="lg" />
           </div>
           <ul className="hero__perks">
             {t.hero.perks.map((perk) => <li key={perk}><Icon name="check-circle-fill" />{perk}</li>)}

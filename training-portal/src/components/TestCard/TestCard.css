@@ -1,17 +1,22 @@
-/* Card fills its grid cell (equal height per row); nothing inside may widen it. */
-.test-card { display: flex; flex-direction: column; gap: 14px; width: 100%; height: 100%; min-width: 0; box-sizing: border-box; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; transition: border-color .2s var(--ease), box-shadow .2s var(--ease); }
-.test-card:hover { border-color: var(--navy-100); box-shadow: var(--shadow); }
+/* A test card: white surface with the test identity in gold — the accent
+ * line, the icon, the badges, the hover and the CTA. Never a yellow card.
+ * The card fills its grid cell; nothing inside may widen it. */
+.test-card { position: relative; display: flex; flex-direction: column; gap: 14px; width: 100%; height: 100%; min-width: 0; box-sizing: border-box; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 22px 20px 20px; transition: border-color .2s var(--ease), box-shadow .2s var(--ease); }
+.test-card::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: var(--test-primary); }
+.test-card:hover { border-color: var(--test-primary-border); box-shadow: var(--shadow-md); }
 .test-card__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
-.test-card__icon { flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 18px; color: var(--primary); background: var(--navy-50); }
+.test-card__icon { flex-shrink: 0; width: 40px; height: 40px; border-radius: var(--radius-md); display: grid; place-items: center; font-size: 18px; color: var(--test-primary-dark); background: var(--test-primary-soft); border: 1px solid var(--test-primary-border); }
 .test-card__heading { min-width: 0; }
-.test-card__kicker { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.test-card__kicker { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--test-primary-dark); }
 .test-card__title { margin-top: 4px; font-size: 17px; font-weight: 700; line-height: 1.3; min-height: calc(2 * 1.3em); overflow-wrap: anywhere; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .test-card__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 0; }
-.test-card__facts div { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text-2); }
-.test-card__facts dt { flex-shrink: 0; display: inline-flex; color: var(--primary); font-size: 15px; }
+.test-card__facts div { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--color-text-secondary); }
+.test-card__facts dt { flex-shrink: 0; display: inline-flex; color: var(--test-primary-dark); font-size: 15px; }
 .test-card__facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .test-card__cta { margin-top: auto; width: 100%; }
-.level { flex-shrink: 0; display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
-.level--easy { background: var(--green-100); color: var(--green-600); }
-.level--medium { background: var(--amber-100); color: var(--amber-600); }
-.level--hard { background: var(--red-100); color: var(--red-600); }
+/* Difficulty — the test badge; the level is in the text (and the bars), not a colour. */
+.level { flex-shrink: 0; }
+.level__bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; }
+.level__bars i { width: 3px; border-radius: 1px; background: var(--test-primary-border); }
+.level__bars i:nth-child(1) { height: 4px; } .level__bars i:nth-child(2) { height: 7px; } .level__bars i:nth-child(3) { height: 10px; }
+.level--easy .level__bars i:nth-child(-n+1), .level--medium .level__bars i:nth-child(-n+2), .level--hard .level__bars i { background: var(--test-primary-dark); }

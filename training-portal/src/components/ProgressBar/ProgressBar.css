@@ -1,5 +1,6 @@
+/* The test progress (only tests use it): gold. */
 .progress { display: grid; gap: 8px; width: 100%; min-width: 0; }
 .progress__labels { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; font-weight: 600; color: var(--color-text-secondary); }
 .progress__labels strong { color: var(--color-text); font-weight: 700; }
-.progress__track { height: 6px; border-radius: var(--radius-pill); background: var(--color-border); overflow: hidden; }
-.progress__fill { height: 100%; border-radius: inherit; background: var(--color-primary); transition: width .6s var(--ease); }
+.progress__track { height: 8px; border-radius: var(--radius-pill); background: var(--test-primary-soft); border: 1px solid var(--test-primary-light); box-sizing: border-box; overflow: hidden; }
+.progress__fill { height: 100%; border-radius: inherit; background: var(--test-primary); transition: width .6s var(--ease); }

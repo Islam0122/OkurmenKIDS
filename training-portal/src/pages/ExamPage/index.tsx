@@ -25,7 +25,7 @@ export function ExamPage() {
         <p>{portal?.exam_url ? t.exam.text : t.exam.unavailableText}</p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginTop: 24 }}>
           {portal?.exam_url ? (
-            <Button href={portal.exam_url} newTab={portal.exam_open_in_new_tab} variant="navy" iconEnd="box-arrow-up-right">{t.exam.open}</Button>
+            <Button href={portal.exam_url} newTab={portal.exam_open_in_new_tab} variant="test" iconEnd="box-arrow-up-right">{t.exam.open}</Button>
           ) : null}
           <Button to="/" variant="outline" icon="house">{t.exam.back}</Button>
         </div>

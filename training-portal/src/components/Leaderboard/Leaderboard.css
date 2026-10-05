@@ -9,7 +9,7 @@
 .podium__item--3 .podium__rank { background: linear-gradient(135deg, #e0a37a, #b5703f); }
 .podium__trophy { position: absolute; top: 12px; right: 14px; font-size: 20px; color: var(--amber-500); }
 .podium__name { font-weight: 800; font-size: 16px; overflow-wrap: anywhere; }
-.podium__score { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--navy-700); margin-top: 4px; }
+.podium__score { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--test-primary-dark); margin-top: 4px; }
 .podium__meta { font-size: 13px; color: var(--text-3); font-weight: 600; }
 
 .board { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
@@ -19,13 +19,13 @@
 .board tr:last-child td { border-bottom: 0; }
 .board tbody tr { transition: background .15s; }
 .board tbody tr:hover { background: var(--navy-50); }
-.board tr.is-top td:first-child .rank { background: var(--navy-700); color: #fff; }
+.board tr.is-top td:first-child .rank { background: var(--test-primary); color: var(--test-on-primary); }
 .board tr.is-me { background: var(--amber-50); }
 .rank { display: inline-grid; place-items: center; min-width: 38px; height: 32px; padding: 0 8px; border-radius: 10px; background: var(--surface-2); font-family: var(--font-display); font-weight: 700; font-size: 13px; color: var(--text-2); }
 .board__name { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
 .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; font-weight: 800; font-size: 14px; color: var(--navy-700); background: var(--navy-100); }
 .board__test { display: block; overflow-wrap: anywhere; font-size: 12px; color: var(--text-3); font-weight: 600; }
-.score-pill { display: inline-flex; padding: 4px 10px; border-radius: 999px; font-weight: 800; font-size: 14px; background: var(--navy-50); color: var(--navy-700); }
+.score-pill { display: inline-flex; padding: 4px 10px; border-radius: 999px; font-weight: 800; font-size: 14px; background: var(--test-primary-soft); color: var(--test-primary-dark); }
 .score-pill--high { background: var(--green-100); color: var(--green-600); }
 .board__muted { color: var(--text-3); font-size: 14px; }
 @media (max-width: 640px) {

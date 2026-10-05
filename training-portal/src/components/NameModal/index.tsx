@@ -33,7 +33,7 @@ export function NameModal({ open, initialName, onSubmit, onClose, busy = false, 
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={t.name.title} icon="person-badge" tone="primary" width={460}>
+    <Modal open={open} onClose={onClose} title={t.name.title} icon="person-badge" tone="test" width={460}>
       <p className="modal__text">{t.name.subtitle}</p>
       <form className="name-form" onSubmit={submit} noValidate>
         <label className="field-label" htmlFor="student-name">{t.name.label}</label>
@@ -60,7 +60,7 @@ export function NameModal({ open, initialName, onSubmit, onClose, busy = false, 
         </div>
         <div className="modal__actions">
           <Button variant="ghost" onClick={onClose}>{t.name.cancel}</Button>
-          <Button type="submit" icon="play-fill" disabled={busy}>{t.name.submit}</Button>
+          <Button type="submit" variant="test" icon="play-fill" disabled={busy}>{t.name.submit}</Button>
         </div>
       </form>
     </Modal>

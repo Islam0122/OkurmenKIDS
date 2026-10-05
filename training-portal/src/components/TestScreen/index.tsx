@@ -146,10 +146,10 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
           <Button className="train__prev" variant="outline" icon="arrow-left" disabled={index === 0} onClick={() => runner.goTo(index - 1)}>{t.training.prev}</Button>
           <div className="train__save"><SaveIndicator state={runner.saveState} /></div>
           <div className="train__controls-right">
-            {canCheck ? <Button variant="navy" icon="check2-circle" disabled={runner.busy} onClick={() => { void runner.check(question.id) }}>{t.training.check}</Button> : null}
+            {canCheck ? <Button variant="test" icon="check2-circle" disabled={runner.busy} onClick={() => { void runner.check(question.id) }}>{t.training.check}</Button> : null}
             {last
-              ? <Button variant="primary" icon="flag" onClick={() => setConfirmFinish(true)}>{text.finish}</Button>
-              : <Button variant={canCheck ? 'outline' : 'primary'} iconEnd="arrow-right" onClick={() => runner.goTo(index + 1)}>{t.training.next}</Button>}
+              ? <Button variant="test" icon="flag" onClick={() => setConfirmFinish(true)}>{text.finish}</Button>
+              : <Button variant={canCheck ? 'test-outline' : 'test'} iconEnd="arrow-right" onClick={() => runner.goTo(index + 1)}>{t.training.next}</Button>}
           </div>
         </div>
 
@@ -168,7 +168,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
             <span className="lock-overlay__icon"><Icon name="fullscreen" /></span>
             <h2 id="lock-title">{t.guard.lockTitle}</h2>
             <p>{t.guard.lockText}</p>
-            <Button size="lg" icon="fullscreen" onClick={guard.requestFullscreen}>{t.guard.lockButton}</Button>
+            <Button variant="test" size="lg" icon="fullscreen" onClick={guard.requestFullscreen}>{t.guard.lockButton}</Button>
             <p className="lock-overlay__note">{t.guard.lockNote}</p>
           </div>
         </div>
@@ -180,7 +180,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
         title={t.guard.leftTitle}
         icon="exclamation-triangle"
         tone="warning"
-        actions={<Button onClick={guard.dismissLeftPage}>{t.guard.continue}</Button>}
+        actions={<Button variant="test" onClick={guard.dismissLeftPage}>{t.guard.continue}</Button>}
       >
         <p className="modal__text">{t.guard.leftText}</p>
         {attempt.security.max_tab_switches !== null ? (
@@ -196,6 +196,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
           onClose={() => setConfirmLeave(false)}
           title={t.training.leaveTitle}
           icon="box-arrow-left"
+          tone="test"
           actions={<>
             <Button variant="outline" onClick={() => setConfirmLeave(false)}>{t.training.leaveStay}</Button>
             <Button variant="outline" icon="box-arrow-left" onClick={onLeave}>{t.training.leaveConfirm}</Button>
@@ -222,7 +223,7 @@ export function TestScreen({ mode, runner, flow, security, onLeave, onRestart }:
         title={text.timeUpTitle}
         icon="alarm"
         tone="warning"
-        actions={<Button icon="bar-chart" onClick={flow.openResult}>{text.seeResult}</Button>}
+        actions={<Button variant="test" icon="bar-chart" onClick={flow.openResult}>{text.seeResult}</Button>}
       >
         <p className="modal__text">{text.timeUpText}</p>
       </Modal>

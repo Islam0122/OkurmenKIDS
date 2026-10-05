@@ -1,20 +1,21 @@
-/* One question-number design for every mode. States are told apart by more
- * than colour: current — filled + ring; answered — a dot; correct / wrong
- * (training with checking) — a ✓ / ✕ mark; unanswered — plain. */
+/* One question-number design for every mode, in test gold. States are told
+ * apart by more than colour: current — strong gold + ring; answered — soft
+ * gold + a dot; correct / wrong (training with checking) — green ✓ / red ✕
+ * (semantic); unanswered — plain. */
 .qnav { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 4px 4px; }
 @media (max-width: 640px) { .qnav { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 6px; } }
 .qnav__item { position: relative; flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--radius-sm); border: 1px solid var(--color-border-strong); background: var(--color-surface); font-weight: 700; font-size: 14px; color: var(--color-text-secondary); cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
-.qnav__item:hover { border-color: var(--color-primary); color: var(--color-primary-hover); }
-.qnav__item:focus-visible { box-shadow: var(--focus-ring); }
+.qnav__item:hover { border-color: var(--test-primary); color: var(--test-primary-dark); }
+.qnav__item:focus-visible { box-shadow: var(--test-focus-ring); }
 .qnav__item::after { position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 800; line-height: 1; color: var(--color-on-primary); border: 2px solid var(--color-surface); }
-.qnav__item--answered { background: var(--color-primary-soft); border-color: var(--color-primary-border); color: var(--color-primary-active); }
-.qnav__item--answered::after { content: ''; width: 10px; height: 10px; top: -3px; right: -3px; background: var(--color-primary); }
+.qnav__item--answered { background: var(--test-primary-soft); border-color: var(--test-primary-border); color: var(--test-primary-dark); }
+.qnav__item--answered::after { content: ''; width: 10px; height: 10px; top: -3px; right: -3px; background: var(--test-primary-dark); }
 .qnav__item--correct { background: var(--color-success-soft); border-color: var(--color-success-border); color: var(--color-success-text); }
 .qnav__item--correct::after { content: '✓'; background: var(--color-success); }
 .qnav__item--incorrect { background: var(--color-danger-soft); border-color: var(--color-danger-border); color: var(--color-danger-text); }
 .qnav__item--incorrect::after { content: '✕'; background: var(--color-danger); }
-.qnav__item--current { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); box-shadow: 0 0 0 3px var(--color-primary-border); }
-.qnav__item--current:hover { color: var(--color-on-primary); }
+.qnav__item--current { background: var(--test-primary); border-color: var(--test-primary-hover); color: var(--test-on-primary); box-shadow: 0 0 0 3px var(--test-primary-light); }
+.qnav__item--current:hover { color: var(--test-on-primary); }
 .qnav__item:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 640px) { .qnav__item { width: var(--touch); height: var(--touch); } }
 
@@ -22,7 +23,7 @@
 .qnav-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .qnav-legend i { position: relative; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--color-border-strong); background: var(--color-surface); }
 .qnav-legend i::after { display: none; }
-.qnav-legend .qnav__item--current { background: var(--color-primary); border-color: var(--color-primary); box-shadow: none; }
-.qnav-legend .qnav__item--answered { background: var(--color-primary-soft); border-color: var(--color-primary); }
+.qnav-legend .qnav__item--current { background: var(--test-primary); border-color: var(--test-primary-hover); box-shadow: none; }
+.qnav-legend .qnav__item--answered { background: var(--test-primary-soft); border-color: var(--test-primary-dark); }
 .qnav-legend .qnav__item--correct { background: var(--color-success-soft); border-color: var(--color-success); }
 .qnav-legend .qnav__item--incorrect { background: var(--color-danger-soft); border-color: var(--color-danger); }

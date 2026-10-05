@@ -37,7 +37,7 @@ function TrainingIntro({ test, onStart, busy }: { test: TrainingTest; onStart: (
     </div>
     <div className="container intro">
       <div>
-        <span className="eyebrow"><Icon name="mortarboard" />{t.test.title}{test.subject ? ` · ${test.subject}` : ''}</span>
+        <span className="test-badge test-badge--lg"><Icon name="mortarboard" />{t.test.title}{test.subject ? ` · ${test.subject}` : ''}</span>
         <h1 className="intro__title">{test.title}</h1>
         {test.description ? <p className="section-subtitle">{test.description}</p> : null}
         <ul className="intro__rules">
@@ -56,7 +56,7 @@ function TrainingIntro({ test, onStart, busy }: { test: TrainingTest; onStart: (
           <div><dt><Icon name="reception-3" />{t.test.facts.level}</dt><dd style={{ margin: 0 }}>{test.level_display}</dd></div>
           <div><dt><Icon name="trophy" />{t.test.facts.passing}</dt><dd style={{ margin: 0 }}>{test.passing_score}%</dd></div>
         </dl>
-        <Button size="lg" block icon="play-circle" onClick={onStart} disabled={busy}>{t.test.start}</Button>
+        <Button variant="test" size="lg" block icon="play-circle" onClick={onStart} disabled={busy}>{t.test.start}</Button>
         {test.security.require_fullscreen ? <p className="intro__note"><Icon name="fullscreen" />{t.guard.introFullscreen}</p> : null}
         <p className="intro__note"><Icon name="info-circle" />{t.common.trainingOnly}</p>
       </aside>
