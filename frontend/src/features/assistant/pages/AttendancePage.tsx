@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
 import { addDays, format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Clock, ShieldCheck, X } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Eye } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 
-import { assistantApi } from '@/api/assistant'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -14,59 +12,32 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
-import { useAssistantAttendance, useAssistantMutation, useAssistantOptions } from '@/hooks/useAssistant'
-import type { AttendanceLesson, AttendanceStatus } from '@/types/assistant'
+import { useAssistantAttendance, useAssistantOptions } from '@/hooks/useAssistant'
+import type { AttendanceLesson } from '@/types/assistant'
 import { cn } from '@/utils/cn'
 
+import { useAssistantActions } from '../actions/AssistantActions'
+import { AttendanceBadge } from '../records/badges'
 import { todayIso } from '../ui'
 
-const MARKS: { value: AttendanceStatus; label: string; icon: LucideIcon; active: string }[] = [
-  { value: 'present', label: 'Был', icon: Check, active: 'border-brand-500 bg-brand-500 text-white' },
-  { value: 'late', label: 'Опоздал', icon: Clock, active: 'border-warning bg-warning text-white' },
-  { value: 'absent', label: 'Не был', icon: X, active: 'border-danger bg-danger text-white' },
-  { value: 'excused', label: 'Уважительная', icon: ShieldCheck, active: 'border-info bg-info text-white' },
-]
-
-/** The roster of one lesson: mark or correct, save only what changed. */
+/** The roster of one lesson — read only: who came, as badges. Marks are
+ * the trainer's record; the Assistant only looks. */
 function Roster({ lesson }: { lesson: AttendanceLesson }) {
-  const [marks, setMarks] = useState<Record<number, AttendanceStatus | null>>({})
-  useEffect(() => {
-    setMarks(Object.fromEntries(lesson.records.map((r) => [r.student.id, r.status])))
-  }, [lesson])
-  const changed = lesson.records.filter((r) => marks[r.student.id] && marks[r.student.id] !== r.status)
-  const save = useAssistantMutation(
-    () => assistantApi.markAttendance(lesson.id, changed.map((r) => ({ student: r.student.id, status: marks[r.student.id] as AttendanceStatus }))),
-    `${lesson.group.name}: посещаемость сохранена`,
-  )
-  const allPresent = () => setMarks(Object.fromEntries(lesson.records.map((r) => [r.student.id, marks[r.student.id] ?? 'present'])))
-
-  if (lesson.records.length === 0) return <p className="px-4 pb-3 text-sm text-ink-secondary">В группе нет активных студентов.</p>
+  const { open } = useAssistantActions()
+  if (lesson.records.length === 0) return <p className="border-t border-border px-4 py-3 text-sm text-ink-secondary">В группе нет активных студентов.</p>
   return (
     <div className="border-t border-border bg-surface-muted/40">
-      <ul className="divide-y divide-border">
+      <ul className="grid divide-y divide-border sm:grid-cols-2 sm:divide-y-0">
         {lesson.records.map((record) => (
-          <li key={record.student.id} className="flex items-center justify-between gap-3 px-4 py-1.5">
+          <li key={record.student.id} className="flex items-center justify-between gap-3 border-border px-4 py-1.5 sm:border-b">
             <span className="min-w-0 truncate text-sm text-ink">{record.student.name}</span>
-            <div className="flex shrink-0 gap-1" role="radiogroup" aria-label={`Отметка: ${record.student.name}`}>
-              {MARKS.map((mark) => {
-                const active = marks[record.student.id] === mark.value
-                return (
-                  <button key={mark.value} type="button" role="radio" aria-checked={active} title={mark.label} aria-label={mark.label}
-                    onClick={() => setMarks((m) => ({ ...m, [record.student.id]: mark.value }))}
-                    className={cn('flex size-8 items-center justify-center rounded-md border transition-colors', active ? mark.active : 'border-border bg-surface text-ink-muted hover:bg-surface-hover')}>
-                    <mark.icon className="size-4" aria-hidden />
-                  </button>
-                )
-              })}
-            </div>
+            <AttendanceBadge status={record.status} />
           </li>
         ))}
       </ul>
-      <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-2.5 sm:flex-row sm:justify-end">
-        <Button size="sm" variant="secondary" onClick={allPresent}>Остальные — «был»</Button>
-        <Button size="sm" disabled={changed.length === 0 || save.isPending} isLoading={save.isPending} onClick={() => save.mutate(undefined)}>
-          Сохранить{changed.length ? ` (${changed.length})` : ''}
-        </Button>
+      <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2">
+        <span className="flex items-center gap-1.5 text-xs text-ink-muted"><Eye className="size-3.5" aria-hidden />Только просмотр — отмечает тренер.</span>
+        <Button size="sm" variant="ghost" onClick={() => open({ type: 'lesson-detail', lessonId: lesson.id })}>Подробнее</Button>
       </div>
     </div>
   )
@@ -99,7 +70,7 @@ function LessonRow({ lesson, expanded, onToggle, showDate }: { lesson: Attendanc
   )
 }
 
-/** Operational attendance: today's lessons as compact rows; open one to mark or correct. No KPI. */
+/** Operational attendance, read only: the day's lessons as compact rows; open one to see who came. No KPI. */
 export function AssistantAttendancePage() {
   const [params, setParams] = useSearchParams()
   const [date, setDate] = useState(params.get('date') ?? todayIso())

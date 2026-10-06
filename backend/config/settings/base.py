@@ -238,6 +238,12 @@ FEEDBACK_PUBLIC_BASE_URL = env("FEEDBACK_PUBLIC_BASE_URL", default="")
 # user admin, so nobody tries to enter the LMS through /admin/.
 LMS_FRONTEND_URL = env("LMS_FRONTEND_URL", default="https://okurmen-kids-drab.vercel.app").rstrip("/")
 
+# Assistant «Контроль активности»: thresholds of the student statuses
+# (Норма / Требует внимания / Низкая активность / В зоне риска) and of the
+# categories. Any key set here overrides its default in
+# apps.assistant.activity.DEFAULT_THRESHOLDS, e.g. {"risk_attendance": 45}.
+ASSISTANT_CONTROL_THRESHOLDS: dict = {}
+
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",
     default="http://localhost:8000",

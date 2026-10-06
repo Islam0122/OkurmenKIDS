@@ -5,6 +5,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   MessageSquareText,
+  ShieldAlert,
   User,
   Users,
 } from 'lucide-react'
@@ -43,6 +44,7 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
   {
     title: 'Операции',
     items: [
+      { to: '/assistant/control', label: 'Контроль', icon: ShieldAlert },
       { to: '/assistant/attendance', label: 'Посещаемость', icon: ClipboardCheck },
       { to: '/assistant/scholarships', label: 'Стипендии', icon: Award },
       { to: '/assistant/surveys', label: 'Опросы', icon: MessageSquareText },

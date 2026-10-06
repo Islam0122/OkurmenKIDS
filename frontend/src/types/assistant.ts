@@ -331,3 +331,135 @@ export interface SurveyAnalytics {
     texts?: { text: string; submitted_at: string }[]
   }[]
 }
+
+// Read-only records (attendance / homework of a group) and «Контроль».
+export interface LessonHead {
+  id: number
+  date: string
+  start: string
+  end: string
+  lesson_number: number
+  topic: string
+  subject: Ref | null
+  teacher: Ref | null
+  status: LessonStatus
+  status_display: string
+  group: Ref
+}
+
+export interface AttendanceLessonRow extends LessonHead {
+  present: number
+  absent: number
+  late: number
+  excused: number
+  attended: number
+  marked: number
+  unmarked: number
+  percent: number | null
+  student_status: AttendanceStatus | null
+}
+
+export interface GroupAttendance {
+  summary: { present: number; absent: number; late: number; excused: number; marked: number; unmarked: number; attended: number; percent: number | null; lessons: number }
+  lessons: AttendanceLessonRow[]
+  students: { id: number; name: string; attended: number; absent: number; late: number; marked: number; percent: number | null; consecutive_absences: number }[]
+}
+
+export type HomeworkState = 'open' | 'review' | 'complete' | 'missing'
+
+export interface HomeworkRow {
+  id: number
+  title: string
+  lesson: { id: number; number: number; topic: string; date: string }
+  teacher?: Ref | null
+  deadline: string | null
+  issued: string
+  done: number
+  pending: number
+  checked: number
+  expected: number
+  not_done: number
+  percent: number | null
+  due: boolean
+  status: HomeworkState
+  status_display: string
+}
+
+export interface GroupHomework {
+  summary: { total: number; complete: number; missing: number; review: number; open: number; average_percent: number | null }
+  homeworks: HomeworkRow[]
+}
+
+export interface HomeworkDetail extends HomeworkRow {
+  description: string
+  lesson: HomeworkRow['lesson'] & LessonHead
+  teacher: Ref | null
+  students: {
+    student: Ref
+    state: 'done' | 'review' | 'not_done' | 'waiting'
+    status_display: string
+    submitted_at: string | null
+    checked_at: string | null
+    score: number | null
+    comment: string
+  }[]
+}
+
+export interface LessonDetail extends LessonHead {
+  description: string
+  cancellation_reason: string
+  attendance: { attended: number; marked: number; total: number; percent: number | null }
+  records: { student: Ref; status: AttendanceStatus | null; status_display: string; comment: string }[]
+  homeworks: HomeworkRow[]
+}
+
+export type ControlStatus = 'normal' | 'attention' | 'low' | 'risk' | 'no_data'
+export type ControlCategory = 'not_attending' | 'no_homework' | 'both' | 'frequent_absence' | 'stale_homework' | 'low_activity' | 'risk'
+export type ControlPeriod = '7d' | '14d' | '30d' | 'month' | 'all'
+
+export interface StudentActivity {
+  student_id: number
+  name: string
+  group: Ref | null
+  attendance: number | null
+  attended: number
+  absent: number
+  late: number
+  excused: number
+  marked: number
+  lessons: number
+  consecutive_absences: number
+  homework: number | null
+  homework_done: number
+  homework_due: number
+  homework_missed: number
+  homework_pending: number
+  consecutive_missed_homework: number
+  last_attended: string | null
+  last_lesson: string | null
+  last_teacher: string
+  last_homework_done: string | null
+  last_homework_done_title: string
+  last_homework_given: string | null
+  last_activity: string | null
+  status: ControlStatus
+  status_label: string
+  categories: ControlCategory[]
+}
+
+export interface ControlOverview {
+  period: ControlPeriod
+  thresholds: Record<string, number>
+  kpis: Record<ControlCategory, number>
+  categories: { key: ControlCategory; label: string; count: number }[]
+  students: StudentActivity[]
+  total: number
+}
+
+export interface ControlProfile {
+  student: { id: number; name: string; status?: StudentStatus; status_display?: string }
+  period?: ControlPeriod
+  activity: StudentActivity | null
+  timeline: { date: string; kind: 'attendance' | 'homework'; ok: boolean; neutral: boolean; text: string; detail: string }[]
+  note: string
+}

@@ -315,27 +315,28 @@ class ScheduleTests(AssistantTestBase):
 
 
 class AttendanceTests(AssistantTestBase):
-    def test_mark_and_correct(self):
-        lesson = Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
-                                       lesson_number=1, date=TODAY, start_time=dt.time(16), end_time=dt.time(17))
-        url = self.url("attendance-lesson", lesson.pk)
-        response = self.client.post(url, [
+    def _lesson(self, number=1, date=TODAY):
+        return Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
+                                     lesson_number=number, date=date, start_time=dt.time(16), end_time=dt.time(17))
+
+    def test_assistant_cannot_mark_attendance(self):
+        lesson = self._lesson()
+        response = self.client.post(self.url("attendance-lesson", lesson.pk),
+                                    [{"student": self.s1.pk, "status": "present"}], format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Attendance.objects.filter(lesson=lesson).exists())
+
+    def test_admin_still_marks_and_assistant_reads(self):
+        lesson = self._lesson()
+        admin_user = User.objects.create_superuser(username="root", email="r@o.kg", password=PASSWORD)
+        admin_client = APIClient()
+        admin_client.force_authenticate(admin_user)
+        response = admin_client.post(self.url("attendance-lesson", lesson.pk), [
             {"student": self.s1.pk, "status": "present"}, {"student": self.s2.pk, "status": "absent"},
         ], format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual((response.data["present"], response.data["absent"]), (1, 1))
-        self.client.post(url, [{"student": self.s2.pk, "status": "late"}], format="json")
-        self.assertEqual(Attendance.objects.get(lesson=lesson, student=self.s2).status, "late")
         day = self.client.get(self.url("attendance")).data
-        self.assertEqual(day["lessons"][0]["present"], 2)
-
-    def test_foreign_student_refused(self):
-        lesson = Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
-                                       lesson_number=1, date=TODAY, start_time=dt.time(16), end_time=dt.time(17))
-        other = Student.objects.create(first_name="Other", group=self.g2)
-        response = self.client.post(self.url("attendance-lesson", lesson.pk), [{"student": other.pk, "status": "present"}],
-                                    format="json")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual((day["lessons"][0]["present"], day["lessons"][0]["absent"]), (1, 1))
 
 
 class SurveyAccessTests(AssistantTestBase):
@@ -406,3 +407,160 @@ class SearchAndActivityTests(AssistantTestBase):
         data = self.client.get(self.url("group-detail", self.g1.pk)).data
         self.assertEqual(data["today_lesson"]["lesson_number"], 1)
         self.assertEqual(data["next_lesson"]["lesson_number"], 2)
+
+
+class ReadOnlyRecordsTests(AssistantTestBase):
+    """Attendance / homework are read-only for the Assistant — in the
+    workspace API and in the trainers' academy API alike."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.academy.models import Homework, HomeworkResult
+
+        self.Homework, self.HomeworkResult = Homework, HomeworkResult
+        self.lessons = []
+        for n, days_ago in ((1, 6), (2, 4), (3, 2)):
+            lesson = Lesson.objects.create(
+                group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam, lesson_number=n,
+                date=TODAY - dt.timedelta(days=days_ago), start_time=dt.time(16), end_time=dt.time(17),
+                status=Lesson.Status.COMPLETED, topic=f"Тема {n}",
+            )
+            self.lessons.append(lesson)
+        # s1 came every time; s2 came once, then missed twice.
+        for lesson, s2_status in zip(self.lessons, ("present", "absent", "absent")):
+            Attendance.objects.create(lesson=lesson, student=self.s1, status="present")
+            Attendance.objects.create(lesson=lesson, student=self.s2, status=s2_status)
+        self.hw = Homework.objects.create(lesson=self.lessons[1], title="DNS", deadline=TODAY - dt.timedelta(days=3))
+        self.open_hw = Homework.objects.create(lesson=self.lessons[2], title="HTTP", deadline=TODAY + dt.timedelta(days=2))
+        HomeworkResult.objects.create(homework=self.hw, student=self.s1, status="submitted")
+        # a future lesson is not «held»
+        Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
+                              lesson_number=4, date=TODAY + dt.timedelta(days=1), start_time=dt.time(16), end_time=dt.time(17))
+
+    def test_group_attendance_summary_lessons_and_students(self):
+        data = self.client.get(self.url("group-attendance", self.g1.pk)).data
+        self.assertEqual(data["summary"]["lessons"], 3)
+        self.assertEqual((data["summary"]["attended"], data["summary"]["absent"], data["summary"]["marked"]), (4, 2, 6))
+        self.assertEqual(data["summary"]["percent"], 67)
+        aida = next(s for s in data["students"] if s["id"] == self.s2.pk)
+        self.assertEqual((aida["percent"], aida["consecutive_absences"]), (33, 2))
+        self.assertEqual(data["students"][0]["id"], self.s2.pk)  # who misses most first
+
+    def test_group_attendance_filters(self):
+        absent = self.client.get(self.url("group-attendance", self.g1.pk), {"status": "absent"}).data
+        self.assertEqual([l["lesson_number"] for l in absent["lessons"]], [3, 2])
+        one = self.client.get(self.url("group-attendance", self.g1.pk), {"student": self.s2.pk}).data
+        self.assertEqual([l["student_status"] for l in one["lessons"]], ["absent", "absent", "present"])
+        today = self.client.get(self.url("group-attendance", self.g1.pk), {"period": "today"}).data
+        self.assertEqual(today["summary"]["lessons"], 0)
+
+    def test_lesson_detail_links_homework(self):
+        data = self.client.get(self.url("lesson-detail", self.lessons[1].pk)).data
+        self.assertEqual(data["attendance"]["attended"], 1)
+        self.assertEqual(data["homeworks"][0]["title"], "DNS")
+        self.assertEqual((data["homeworks"][0]["done"], data["homeworks"][0]["expected"]), (1, 2))
+
+    def test_group_homework_and_detail(self):
+        data = self.client.get(self.url("group-homework", self.g1.pk)).data
+        statuses = {h["title"]: h["status"] for h in data["homeworks"]}
+        # Past the deadline with a student who did not hand in: missing outranks review.
+        self.assertEqual(statuses, {"DNS": "missing", "HTTP": "open"})
+        self.assertEqual((data["summary"]["total"], data["summary"]["missing"], data["summary"]["review"]), (2, 1, 1))
+        detail = self.client.get(self.url("homework-detail", self.hw.pk)).data
+        states = {row["student"]["id"]: row["state"] for row in detail["students"]}
+        self.assertEqual(states, {self.s1.pk: "review", self.s2.pk: "not_done"})
+
+    def test_assistant_cannot_write_through_academy_api(self):
+        lesson = self.lessons[0]
+        attempts = [
+            ("post", f"/api/v1/lessons/{lesson.pk}/attendance/", [{"student": self.s1.pk, "status": "absent"}]),
+            ("post", "/api/v1/attendance/", {"lesson": lesson.pk, "student": self.s1.pk, "status": "absent"}),
+            ("post", "/api/v1/homework/", {"lesson": lesson.pk, "title": "X"}),
+            ("patch", f"/api/v1/homework/{self.hw.pk}/", {"title": "Y"}),
+            ("delete", f"/api/v1/homework/{self.hw.pk}/", None),
+            ("post", f"/api/v1/homework/{self.hw.pk}/results/", [{"student": self.s2.pk, "status": "checked"}]),
+            ("post", f"/api/v1/lessons/{lesson.pk}/complete/", None),
+        ]
+        for method, url, body in attempts:
+            with self.subTest(url=url, method=method):
+                response = getattr(self.client, method)(url, body, format="json")
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.content)
+        self.assertEqual(Attendance.objects.get(lesson=lesson, student=self.s1).status, "present")
+        self.assertTrue(self.Homework.objects.filter(pk=self.hw.pk, title="DNS").exists())
+
+    def test_trainer_keeps_write_access(self):
+        lesson = Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
+                                       lesson_number=9, date=TODAY, start_time=dt.time(9), end_time=dt.time(10))
+        trainer = APIClient()
+        trainer.force_authenticate(self.islam.user)
+        response = trainer.post(f"/api/v1/lessons/{lesson.pk}/attendance/",
+                                [{"student": self.s2.pk, "status": "late"}], format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        self.assertEqual(Attendance.objects.get(lesson=lesson, student=self.s2).status, "late")
+
+    def test_read_endpoints_refuse_writes(self):
+        for name, arg in (("group-attendance", self.g1.pk), ("group-homework", self.g1.pk),
+                          ("lesson-detail", self.lessons[0].pk), ("homework-detail", self.hw.pk)):
+            with self.subTest(name=name):
+                self.assertEqual(self.client.post(self.url(name, arg), {}).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+class ControlTests(AssistantTestBase):
+    def setUp(self):
+        super().setUp()
+        from apps.academy.models import Homework, HomeworkResult
+
+        self.s1.enrollment_date = self.s2.enrollment_date = TODAY - dt.timedelta(days=60)
+        self.s1.save()
+        self.s2.save()
+        for n in range(1, 6):
+            lesson = Lesson.objects.create(
+                group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam, lesson_number=n,
+                date=TODAY - dt.timedelta(days=12 - 2 * n), start_time=dt.time(16), end_time=dt.time(17),
+                status=Lesson.Status.COMPLETED,
+            )
+            Attendance.objects.create(lesson=lesson, student=self.s1, status="present")
+            Attendance.objects.create(lesson=lesson, student=self.s2, status="present" if n == 1 else "absent")
+            hw = Homework.objects.create(lesson=lesson, title=f"HW {n}", deadline=lesson.date)
+            HomeworkResult.objects.create(homework=hw, student=self.s1, status="checked", score=9)
+        # A brand-new student: no lessons since they joined — never a problem.
+        self.newcomer = Student.objects.create(first_name="New", group=self.g1, enrollment_date=TODAY)
+        # A withdrawn student is not analysed at all.
+        Student.objects.create(first_name="Gone", group=self.g1, status=Student.Status.WITHDRAWN, is_active=False)
+
+    def test_statuses_categories_and_streaks(self):
+        data = self.client.get(self.url("control")).data
+        rows = {r["student_id"]: r for r in data["students"]}
+        self.assertNotIn("Gone", [r["name"] for r in data["students"]])
+        self.assertEqual(rows[self.s1.pk]["status"], "normal")
+        aida = rows[self.s2.pk]
+        self.assertEqual((aida["attendance"], aida["homework"]), (20, 0))
+        self.assertEqual(aida["status"], "risk")
+        self.assertEqual((aida["consecutive_absences"], aida["consecutive_missed_homework"]), (4, 5))
+        self.assertTrue({"not_attending", "no_homework", "both", "risk", "frequent_absence"} <= set(aida["categories"]))
+        self.assertEqual(rows[self.newcomer.pk]["status"], "no_data")
+        self.assertEqual(data["students"][0]["student_id"], self.s2.pk)  # risk first
+        self.assertEqual(data["kpis"]["risk"], 1)
+
+    def test_category_filter_and_profile_timeline(self):
+        data = self.client.get(self.url("control"), {"category": "both"}).data
+        self.assertEqual([r["student_id"] for r in data["students"]], [self.s2.pk])
+        profile = self.client.get(self.url("control-student", self.s2.pk)).data
+        self.assertEqual(profile["activity"]["status"], "risk")
+        self.assertEqual(profile["timeline"][0]["text"], "Не пришёл")
+
+    def test_transfer_starts_a_fresh_stint(self):
+        self.client.post(self.url("student-transfer", self.s2.pk), {"group": self.g2.pk})
+        rows = {r["student_id"]: r for r in self.client.get(self.url("control")).data["students"]}
+        self.assertEqual(rows[self.s2.pk]["status"], "no_data")
+
+    def test_thresholds_come_from_settings(self):
+        with self.settings(ASSISTANT_CONTROL_THRESHOLDS={"risk_attendance": 10}):
+            rows = {r["student_id"]: r for r in self.client.get(self.url("control")).data["students"]}
+        self.assertEqual(rows[self.s2.pk]["status"], "low")
+
+    def test_control_is_read_only_and_assistant_only(self):
+        self.assertEqual(self.client.post(self.url("control"), {}).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        trainer = APIClient()
+        trainer.force_authenticate(self.islam.user)
+        self.assertEqual(trainer.get(self.url("control")).status_code, status.HTTP_403_FORBIDDEN)

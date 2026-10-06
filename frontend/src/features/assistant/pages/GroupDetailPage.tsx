@@ -25,6 +25,7 @@ import type { GroupDetail, StudentRow } from '@/types/assistant'
 import { formatDate, formatDateShort, pluralize } from '@/utils/format'
 
 import { useAssistantActions } from '../actions/AssistantActions'
+import { GroupAttendanceTab, GroupHomeworkTab } from '../records/GroupRecordTabs'
 import { HistoryList, LessonList } from '../shared'
 import { Field, FormError, GroupStatusBadge, InfoRow, ModalActions, StudentStatusBadge } from '../ui'
 
@@ -33,6 +34,7 @@ const TABS = [
   { key: 'students', label: 'Студенты' },
   { key: 'schedule', label: 'Расписание' },
   { key: 'attendance', label: 'Посещаемость' },
+  { key: 'homework', label: 'ДЗ' },
   { key: 'lessons', label: 'Занятия' },
   { key: 'exams', label: 'Экзамены' },
   { key: 'surveys', label: 'Опросы' },
@@ -229,11 +231,11 @@ export function AssistantGroupDetailPage() {
             <p className="field-label mt-3 mb-1">Далее</p>
             <LessonList lessons={group.upcoming_lessons.filter((l) => l.id !== group.today_lesson?.id && l.id !== group.next_lesson?.id).slice(0, 4)} empty="Больше запланированных занятий нет." />
           </Card>
-          <Card title="Недавняя посещаемость" actions={<Link to={`/assistant/attendance?group=${group.id}`} className="text-sm font-medium text-brand-700 hover:underline">Отметить</Link>}>
+          <Card title="Недавняя посещаемость" actions={<button type="button" onClick={() => setParams({ tab: 'attendance' }, { replace: true })} className="text-sm font-medium text-brand-700 hover:underline">Подробнее</button>}>
             {group.recent_attendance.length === 0 ? <p className="text-sm text-ink-secondary">Прошедших занятий нет.</p> : (
               <ul className="divide-y divide-border text-sm">
                 {group.recent_attendance.map((lesson) => (
-                  <li key={lesson.id} className="flex items-center justify-between gap-3 py-2">
+                  <li key={lesson.id} onClick={() => open({ type: 'lesson-detail', lessonId: lesson.id })} className="flex cursor-pointer items-center justify-between gap-3 py-2 hover:bg-surface-hover">
                     <span className="min-w-0 truncate"><span className="font-medium text-ink">{formatDateShort(lesson.date)}</span><span className="text-ink-secondary"> · {lesson.subject?.name ?? ''}</span></span>
                     {lesson.marked ? (
                       <span className="shrink-0 tabular-nums text-ink">{lesson.attended}/{lesson.marked}
@@ -276,22 +278,13 @@ export function AssistantGroupDetailPage() {
         )
       ) : null}
 
-      {tab === 'attendance' ? (
-        <Card title="Посещаемость группы" actions={<Link to={`/assistant/attendance?group=${group.id}`} className="text-sm font-medium text-brand-700 hover:underline">Отметить</Link>}>
-          {group.attendance.marked === 0 ? <p className="text-sm text-ink-secondary">Посещаемость ещё не отмечалась.</p> : (
-            <p className="text-sm text-ink">
-              Присутствовали <b>{group.attendance.attended}</b> из <b>{group.attendance.marked}</b> отметок — <b>{group.attendance.percent}%</b>.
-            </p>
-          )}
-          <h3 className="section-title mt-6 mb-2">Прошедшие занятия</h3>
-          <LessonList lessons={group.recent_lessons} empty="Прошедших занятий нет." />
-        </Card>
-      ) : null}
+      {tab === 'attendance' ? <GroupAttendanceTab group={group} /> : null}
+      {tab === 'homework' ? <GroupHomeworkTab group={group} /> : null}
 
       {tab === 'lessons' ? (
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card title="Предстоящие"><LessonList lessons={group.upcoming_lessons} empty="Нет запланированных занятий." /></Card>
-          <Card title="Прошедшие"><LessonList lessons={group.recent_lessons} empty="Прошедших занятий нет." /></Card>
+          <Card title="Прошедшие"><LessonList lessons={group.recent_lessons} empty="Прошедших занятий нет." onOpen={(id) => open({ type: 'lesson-detail', lessonId: id })} /></Card>
+          <Card title="Предстоящие"><LessonList lessons={group.upcoming_lessons} empty="Нет запланированных занятий." onOpen={(id) => open({ type: 'lesson-detail', lessonId: id })} /></Card>
         </div>
       ) : null}
 

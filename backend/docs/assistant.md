@@ -41,8 +41,48 @@ Team Lead workspace already uses:
 | Generate lessons | `lesson_generator.generate_lessons_for_group_with_report` |
 | Move a lesson | `academy.services.lesson_move.move_lesson` (trainer / group / room conflict check, `schedule_overridden`) |
 | Cancel a lesson | `lesson_reschedule.cancel_and_reschedule` |
-| Attendance | `attendance_service.bulk_mark_attendance` |
 | Scholarships | `scholarships.services.generation.generate_period` / `add_award` (approval and payment stay Admin's) |
+
+## Attendance and homework are read only
+
+Marks and homework are the trainer's record. For an Assistant both are
+strictly read only, enforced on the server, not just hidden in the UI:
+
+* `academy.permissions.IsAdminOrOwningTeacher` (attendance, homework,
+  homework results, lesson complete / edit actions of `/api/v1/`) refuses
+  every unsafe method for an Assistant — Admin and the owning trainer keep
+  their rights unchanged.
+* `assistant/attendance/lessons/<id>/` is Admin only.
+* The new record endpoints (`groups/<id>/attendance|homework/`,
+  `lessons/<id>/`, `homework/<id>/`, `control/…`) are GET only.
+
+The numbers reuse the existing definitions: a held lesson is
+`lesson_status.held_q` without cancelled ones; attended = present + late,
+an absence = absent, excused is neutral; homework done = submitted /
+checked / late, waiting for a check = submitted / late; a homework counts
+once its deadline has passed (no deadline: once the lesson is held).
+`apps/assistant/records.py` (group tabs, details) and
+`apps/assistant/activity.py` (Контроль) only read.
+
+## Контроль активности
+
+`activity.py` judges every active student of an active, started group over
+the chosen period — only their current stint in the group (since enrolment,
+or since the latest transfer / reactivation into it). Unmarked lessons and
+homework before its deadline are not counted as misses; a student with too
+little data (`min_marked_lessons`, `min_due_homework`) is «Нет данных», never
+flagged. Status: «Норма» (attendance ≥ 80 and homework ≥ 70), «Требует
+внимания», «Низкая активность» (attendance < 60 or homework < 40), «В зоне
+риска» (attendance < 50 and homework < 30). Categories: не ходят, не делают
+ДЗ, не ходят + не делают ДЗ, часто пропускают (absence streak), давно не
+сдавали ДЗ, низкая активность, в зоне риска.
+
+All thresholds live in `activity.DEFAULT_THRESHOLDS`; override any of them
+in settings without code changes:
+
+```python
+ASSISTANT_CONTROL_THRESHOLDS = {"normal_attendance": 85, "consecutive_absences": 2}
+```
 
 ## History / audit
 
@@ -50,7 +90,7 @@ Team Lead workspace already uses:
   `from_group` → `group` (new nullable field); the student row is never
   re-created, the status does not change.
 * Group creation and edits, student creation and edits, transfers, lesson
-  moves, schedule changes and attendance corrections are also written to
+  moves and schedule changes are also written to
   Django's admin history (`LogEntry`), shown on the group / student pages.
 
 ## Endpoints
@@ -72,7 +112,13 @@ Team Lead workspace already uses:
 | GET | `schedule/?start=&end=` | lessons (≤ 62 days; `group`, `teacher`, `course`, `day`) + weekly slot conflicts |
 | POST | `lessons/<id>/move/`, `lessons/<id>/cancel/` | |
 | GET | `attendance/?date=` | the day's lessons with rosters and marks (`unmarked=1`: last 3 days' lessons nobody marked) |
-| POST | `attendance/lessons/<id>/` | mark / correct |
+| POST | `attendance/lessons/<id>/` | mark / correct — **Admin only** (Assistant: 403) |
+| GET | `groups/<id>/attendance/` | summary, held lessons with counts, students' % and absence streaks (`period=today\|week\|month\|all\|custom` + `start`/`end`, `student`, `teacher`, `status=present\|absent\|late\|unmarked`) |
+| GET | `groups/<id>/homework/` | KPIs + homework rows (same period / `teacher` filters, `status=open\|review\|complete\|missing`) |
+| GET | `lessons/<id>/` | lesson details: roster with marks + the lesson's homework |
+| GET | `homework/<id>/` | homework details: every student's result (status, submitted / checked, score, comment) |
+| GET | `control/` | «Контроль активности» (`period=7d\|14d\|30d\|month\|all`, default `30d`; `group`, `category`, `sort`) |
+| GET | `control/students/<id>/` | one student's risk profile and timeline (`period`) |
 | GET | `scholarships/` | periods with awards |
 | POST | `scholarships/generate/` | form the latest cycle's period |
 | GET, POST | `scholarships/periods/<id>/awards/` | eligible candidates / add an award (draft period) |
