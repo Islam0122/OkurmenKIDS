@@ -7,7 +7,6 @@ from io import StringIO
 from unittest import mock, skipUnless
 
 from django.contrib import admin
-from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
