@@ -36,11 +36,37 @@ export interface AssistantLesson {
   schedule_overridden: boolean
 }
 
+export interface ActivityRow {
+  id: string
+  kind: 'group' | 'student' | 'schedule' | 'lesson' | 'status'
+  title: string
+  detail: string
+  at: string
+  by: string
+  link: string | null
+}
+
 export interface Dashboard {
   date: string
-  cards: { active_groups: number; active_students: number; todays_lessons: number; new_students: number }
+  cards: {
+    active_groups: number
+    groups_new_this_month: number
+    students_total: number
+    active_students: number
+    todays_lessons: number
+    todays_completed: number
+    new_students: number
+  }
   today: AssistantLesson[]
   attention: AttentionItem[]
+  activity: ActivityRow[]
+}
+
+export interface SearchResults {
+  students: { id: number; name: string; group: string | null; status: StudentStatus; status_display: string }[]
+  groups: { id: number; name: string; course: string; status: GroupStatus; status_display: string }[]
+  teachers: Ref[]
+  lessons: AssistantLesson[]
 }
 
 export interface GroupCardData {
@@ -108,6 +134,9 @@ export interface GroupDetail extends GroupCardData {
   upcoming_lessons: AssistantLesson[]
   recent_lessons: AssistantLesson[]
   lessons_total: number
+  today_lesson: AssistantLesson | null
+  next_lesson: AssistantLesson | null
+  recent_attendance: (AssistantLesson & { attended: number; marked: number })[]
   attendance: { attended: number; marked: number; percent: number | null }
   exams: { id: string; title: string; status: string; status_display: string; created_at: string }[]
   surveys: { id: number; title: string; status: string; status_display: string; created_at: string }[]
@@ -192,6 +221,7 @@ export interface ScholarshipAwardRow {
   student: Ref
   group: string
   rank: number
+  score: string | null
   amount: string
   status: string
   status_display: string

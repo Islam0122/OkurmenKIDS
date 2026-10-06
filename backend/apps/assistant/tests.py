@@ -357,3 +357,52 @@ class LessonCancelTests(AssistantTestBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         lesson.refresh_from_db()
         self.assertEqual(lesson.status, Lesson.Status.CANCELLED)
+
+
+class SearchAndActivityTests(AssistantTestBase):
+    def test_search_finds_students_groups_teachers_and_lessons(self):
+        Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
+                              lesson_number=1, date=TODAY, start_time=dt.time(16), end_time=dt.time(17))
+        data = self.client.get(self.url("search"), {"q": "islam"}).data
+        self.assertEqual([s["id"] for s in data["students"]], [self.s1.pk])
+        self.assertEqual([t["name"] for t in data["teachers"]], ["Islam"])
+        self.assertEqual(data["lessons"][0]["group"]["name"], "PRO-01")
+        data = self.client.get(self.url("search"), {"q": "PRO-0"}).data
+        self.assertEqual([g["name"] for g in data["groups"]], ["PRO-01", "PRO-02"])
+
+    def test_short_query_returns_nothing(self):
+        self.assertEqual(self.client.get(self.url("search"), {"q": "a"}).data["students"], [])
+
+    def test_search_is_assistant_only(self):
+        client = APIClient()
+        client.force_authenticate(self.islam.user)
+        self.assertEqual(client.get(self.url("search"), {"q": "islam"}).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_dashboard_activity_shows_transfers_and_deactivations(self):
+        self.client.post(self.url("student-transfer", self.s1.pk), {"group": self.g2.pk})
+        self.client.post(self.url("student-deactivate", self.s2.pk), {"reason": "relocation"})
+        activity = self.client.get(self.url("dashboard")).data["activity"]
+        details = [row["detail"] for row in activity]
+        self.assertTrue(any("PRO-01 → PRO-02" in d for d in details), details)
+        self.assertTrue(any(d.startswith("Деактивация") for d in details), details)
+
+    def test_unmarked_past_lesson_needs_attention(self):
+        Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
+                              lesson_number=1, date=TODAY - dt.timedelta(days=1), start_time=dt.time(16), end_time=dt.time(17))
+        keys = [item["key"] for item in self.client.get(self.url("dashboard")).data["attention"]]
+        self.assertIn("unmarked", keys)
+        day = self.client.get(self.url("attendance"), {"unmarked": "1"}).data
+        self.assertEqual(len(day["lessons"]), 1)
+
+    def test_group_filter_by_weekday(self):
+        data = self.client.get(self.url("groups"), {"day": "mon"}).data
+        self.assertEqual([g["name"] for g in data["results"]], ["PRO-01"])
+        self.assertEqual(self.client.get(self.url("groups"), {"day": "tue"}).data["count"], 0)
+
+    def test_group_detail_today_and_next_lesson(self):
+        for n, delta in ((1, 0), (2, 2)):
+            Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
+                                  lesson_number=n, date=TODAY + dt.timedelta(days=delta), start_time=dt.time(16), end_time=dt.time(17))
+        data = self.client.get(self.url("group-detail", self.g1.pk)).data
+        self.assertEqual(data["today_lesson"]["lesson_number"], 1)
+        self.assertEqual(data["next_lesson"]["lesson_number"], 2)

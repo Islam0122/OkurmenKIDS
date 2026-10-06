@@ -1,11 +1,18 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import type { BulkAction, Ref } from '@/types/assistant'
+import { UserPlus } from 'lucide-react'
+
+import { Modal } from '@/components/ui/Modal'
+import type { AssistantLesson, BulkAction, Ref } from '@/types/assistant'
+
+import { LessonModal } from './LessonModal'
+import { QuickGroupModal } from './QuickGroupModal'
 
 import { ScheduleModal } from './ScheduleModal'
 import { ActivateModal, BulkActionModal, DeactivateModal, TransferModal } from './StudentActionModals'
 import type { StudentLite } from './StudentActionModals'
+import { StudentForm } from './StudentForm'
 import { StudentPickerModal } from './StudentPickerModal'
 
 /**
@@ -19,6 +26,9 @@ export type AssistantAction =
   | { type: 'deactivate' | 'activate' | 'transfer'; student?: StudentLite }
   | { type: 'bulk'; action: BulkAction; students?: StudentLite[]; group?: Ref; onDone?: () => void }
   | { type: 'schedule'; group?: Ref; programId?: number }
+  | { type: 'lesson'; lesson: AssistantLesson }
+  | { type: 'create-group' }
+  | { type: 'create-student'; group?: Ref }
 
 interface ActionsContextValue {
   open: (action: AssistantAction) => void
@@ -73,6 +83,16 @@ export function AssistantActionsProvider({ children }: { children: ReactNode }) 
     )
   } else if (action?.type === 'schedule') {
     modal = <ScheduleModal group={action.group} programId={action.programId} onClose={close} />
+  } else if (action?.type === 'lesson') {
+    modal = <LessonModal lesson={action.lesson} onClose={close} />
+  } else if (action?.type === 'create-group') {
+    modal = <QuickGroupModal onClose={close} />
+  } else if (action?.type === 'create-student') {
+    modal = (
+      <Modal isOpen onClose={close} title="Новый студент" size="lg" icon={<UserPlus className="size-5 text-brand-600" aria-hidden />}>
+        <StudentForm presetGroup={action.group ? String(action.group.id) : ''} onCancel={close} onOpen={close} />
+      </Modal>
+    )
   }
 
   return (

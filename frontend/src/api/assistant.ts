@@ -10,6 +10,7 @@ import type {
   GroupCreateInput,
   GroupDetail,
   Options,
+  SearchResults,
   ProgramInput,
   ScheduleData,
   ScholarshipCandidate,
@@ -30,7 +31,9 @@ export interface GroupListParams {
   status?: 'active' | 'archived' | 'all'
   course?: number
   teacher?: number
+  day?: string
   page?: number
+  page_size?: number
 }
 
 export interface StudentListParams {
@@ -79,6 +82,7 @@ const patch = <T>(url: string, body?: unknown) => apiClient.patch<T>(`${BASE}${u
 export const assistantApi = {
   dashboard: () => get<Dashboard>('/dashboard/'),
   options: () => get<Options>('/options/'),
+  search: (q: string) => get<SearchResults>('/search/', { q }),
 
   groups: (params: GroupListParams) => get<Paginated<GroupCardData>>('/groups/', params),
   group: (id: number) => get<GroupDetail>(`/groups/${id}/`),
@@ -100,7 +104,7 @@ export const assistantApi = {
   bulk: (body: { action: BulkAction; students: number[]; group?: number | null; reason?: string; event_date?: string | null; comment?: string }) =>
     post<BulkResult>('/students/bulk/', body),
 
-  schedule: (params: { start: string; end: string; group?: number; teacher?: number }) => get<ScheduleData>('/schedule/', params),
+  schedule: (params: { start: string; end: string; group?: number; teacher?: number; course?: number; day?: string }) => get<ScheduleData>('/schedule/', params),
   moveLesson: (id: number, body: { date: string; start_time: string; end_time: string }) => post(`/lessons/${id}/move/`, body),
   cancelLesson: (id: number, body: { reason: string; reschedule: boolean }) =>
     post<{ id: number; status: string; rescheduled_to: { id: number; date: string; start: string } | null; warning: string }>(
@@ -108,7 +112,7 @@ export const assistantApi = {
       body,
     ),
 
-  attendance: (params: { date: string; group?: number }) => get<{ date: string; lessons: AttendanceLesson[] }>('/attendance/', params),
+  attendance: (params: { date: string; group?: number; unmarked?: boolean }) => get<{ date: string; lessons: AttendanceLesson[] }>('/attendance/', params),
   markAttendance: (lessonId: number, entries: { student: number; status: AttendanceStatus; comment?: string }[]) =>
     post<AttendanceLesson>(`/attendance/lessons/${lessonId}/`, entries),
 

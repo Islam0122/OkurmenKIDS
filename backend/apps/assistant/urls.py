@@ -7,6 +7,7 @@ app_name = "assistant"
 urlpatterns = [
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
     path("options/", views.OptionsView.as_view(), name="options"),
+    path("search/", views.SearchView.as_view(), name="search"),
     path("groups/", views.GroupListView.as_view(), name="groups"),
     path("groups/<int:pk>/", views.GroupDetailView.as_view(), name="group-detail"),
     path("groups/<int:pk>/students/", views.GroupStudentsView.as_view(), name="group-students"),

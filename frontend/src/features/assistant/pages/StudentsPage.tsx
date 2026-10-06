@@ -18,7 +18,7 @@ import { useAssistantOptions, useAssistantStudents } from '@/hooks/useAssistant'
 import type { BulkAction, StudentRow } from '@/types/assistant'
 
 import { useAssistantActions } from '../actions/AssistantActions'
-import { ButtonLink, StudentStatusBadge } from '../ui'
+import { StudentStatusBadge } from '../ui'
 
 type StatusTab = NonNullable<StudentListParams['status']>
 const TABS: { value: StatusTab; label: string }[] = [
@@ -113,7 +113,7 @@ export function AssistantStudentsPage() {
       <PageHeader
         title="Студенты"
         description="Поиск, статусы, переводы и групповые действия."
-        actions={<ButtonLink to="/assistant/students/create" icon={<Plus className="size-4" aria-hidden />}>Добавить студента</ButtonLink>}
+        actions={<Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => open({ type: 'create-student' })}>Студент</Button>}
       />
       <div className="mb-4">
         <SegmentedControl aria-label="Статус студентов" options={TABS} value={status} onChange={setStatus} />
@@ -161,7 +161,7 @@ export function AssistantStudentsPage() {
       {data && rows.length === 0 ? (
         <EmptyState icon={GraduationCap} title={filtered ? 'Студенты не найдены' : 'Студентов пока нет'}
           description={filtered ? 'Измените поиск или фильтры.' : undefined}
-          action={<ButtonLink to="/assistant/students/create" icon={<Plus className="size-4" aria-hidden />}>Добавить студента</ButtonLink>} />
+          action={<Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => open({ type: 'create-student' })}>Студент</Button>} />
       ) : null}
       {data && rows.length > 0 ? (
         <>

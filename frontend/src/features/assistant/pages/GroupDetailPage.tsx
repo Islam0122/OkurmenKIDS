@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowRightLeft, CalendarDays, CalendarPlus, Pencil, RefreshCw, UserCheck, UserPlus, Users, UserX } from 'lucide-react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { assistantApi } from '@/api/assistant'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/Input'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Menu } from '@/components/ui/Menu'
 import { Modal } from '@/components/ui/Modal'
+import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
 import { Tabs } from '@/components/ui/Tabs'
 import { Textarea } from '@/components/ui/Textarea'
@@ -92,6 +93,25 @@ function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () =>
   )
 }
 
+function GroupStudents({ group }: { group: GroupDetail }) {
+  const { open } = useAssistantActions()
+  const [search, setSearch] = useState('')
+  const ref = { id: group.id, name: group.name }
+  const q = search.trim().toLowerCase()
+  const students = q ? group.students.filter((s) => s.full_name.toLowerCase().includes(q) || s.phone.includes(q)) : group.students
+  return (
+    <Card title={`Студенты (${group.students.length})`} actions={
+      <div className="flex gap-2">
+        <Button size="sm" variant="secondary" onClick={() => open({ type: 'bulk', action: 'add_to_group', group: ref })}>Добавить существующих</Button>
+        <Button size="sm" leftIcon={<UserPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'create-student', group: ref })}>Новый</Button>
+      </div>
+    }>
+      {group.students.length > 5 ? <div className="mb-3 max-w-xs"><SearchInput value={search} onChange={setSearch} placeholder="Поиск в группе…" /></div> : null}
+      <StudentsTable students={students} />
+    </Card>
+  )
+}
+
 function StudentsTable({ students }: { students: StudentRow[] }) {
   const { open } = useAssistantActions()
   if (students.length === 0) return <EmptyState icon={Users} title="В группе нет студентов" className="py-6" />
@@ -134,7 +154,6 @@ export function AssistantGroupDetailPage() {
   const tab = (TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'overview') as TabKey
   const { data: group, isPending, isError, error, refetch } = useAssistantGroup(Number.isFinite(groupId) ? groupId : undefined)
   const { open } = useAssistantActions()
-  const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
   const generate = useAssistantMutation(() => assistantApi.generateLessons(groupId), (report) =>
     report.created ? `Создано занятий: ${report.created}` : 'Занятия уже актуальны')
@@ -157,16 +176,17 @@ export function AssistantGroupDetailPage() {
           <>
             {group.course.name} · Тренер: {group.teachers.length ? group.teachers.join(', ') : 'не назначен'} · {group.students_count}{' '}
             {pluralize(group.students_count, 'активный студент', 'активных студента', 'активных студентов')}
+            {group.schedule ? <span className="block">{group.schedule}</span> : null}
           </>
         }
         actions={
           <>
-            <Button leftIcon={<UserPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'bulk', action: 'add_to_group', group: ref })}>Студент</Button>
+            <Button leftIcon={<UserPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'create-student', group: ref })}>Студент</Button>
             <Button variant="secondary" leftIcon={<CalendarPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'schedule', group: ref })}>Расписание</Button>
             <Button variant="secondary" leftIcon={<Pencil className="size-4" aria-hidden />} onClick={() => setEditing(true)}>Изменить</Button>
             <Menu
               items={[
-                { key: 'new-student', label: 'Новый студент в группу', icon: <UserPlus className="size-4" aria-hidden />, onClick: () => navigate(`/assistant/students/create?group=${group.id}`) },
+                { key: 'existing', label: 'Добавить существующих студентов', icon: <UserPlus className="size-4" aria-hidden />, onClick: () => open({ type: 'bulk', action: 'add_to_group', group: ref }) },
                 { key: 'generate', label: 'Сгенерировать занятия', icon: <RefreshCw className="size-4" aria-hidden />, onClick: () => generate.mutate(undefined), disabled: generate.isPending || group.programs.length === 0 },
               ]}
             />
@@ -176,33 +196,59 @@ export function AssistantGroupDetailPage() {
       <Tabs aria-label="Разделы группы" items={TABS} value={tab} onChange={(key) => setParams(key === 'overview' ? {} : { tab: key }, { replace: true })} />
 
       {tab === 'overview' ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card title="Группа">
-            <dl className="divide-y divide-border">
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <Card title="Информация о группе">
+            <dl className="-my-2 divide-y divide-border">
               <InfoRow label="Программа">{group.course.name}</InfoRow>
               <InfoRow label="Тренер">{group.teachers.join(', ')}</InfoRow>
+              <InfoRow label="Начало">{formatDateShort(group.start_date)}</InfoRow>
+              {group.end_date ? <InfoRow label="Окончание">{formatDateShort(group.end_date)}</InfoRow> : null}
               <InfoRow label="Студенты">{`${group.students_count}${group.max_students ? ` из ${group.max_students}` : ''}`}</InfoRow>
               <InfoRow label="Расписание">{group.schedule}</InfoRow>
-              <InfoRow label="Дата начала">{formatDate(group.start_date)}</InfoRow>
-              <InfoRow label="Дата окончания">{group.end_date ? formatDate(group.end_date) : ''}</InfoRow>
               <InfoRow label="Статус">{group.status_display}</InfoRow>
-              <InfoRow label="Занятий в плане">{String(group.lessons_total)}</InfoRow>
+              <InfoRow label="Занятий">{String(group.lessons_total)}</InfoRow>
             </dl>
             {group.description ? <p className="mt-3 text-sm text-ink-secondary">{group.description}</p> : null}
           </Card>
-          <Card title="Ближайшие занятия">
-            <LessonList lessons={group.upcoming_lessons.slice(0, 5)} empty="Запланированных занятий нет. Добавьте расписание и сгенерируйте занятия." />
+          <Card title="Занятия">
+            {[['Сегодня', group.today_lesson], ['Следующее', group.next_lesson]].map(([label, lesson]) => (
+              <div key={label as string} className="mb-2 last:mb-0">
+                <p className="field-label mb-1">{label as string}</p>
+                {lesson && typeof lesson === 'object' ? (
+                  <button type="button" onClick={() => open({ type: 'lesson', lesson })}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-left text-sm hover:border-brand-200 hover:bg-brand-50/40">
+                    <span className="min-w-0">
+                      <span className="block font-medium text-ink">{formatDate(lesson.date, false)} · {lesson.start}–{lesson.end}</span>
+                      <span className="block truncate text-ink-secondary">№{lesson.lesson_number} {lesson.topic || lesson.subject?.name} · {lesson.teacher?.name ?? '—'}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-ink-muted">{lesson.status_display}</span>
+                  </button>
+                ) : <p className="text-sm text-ink-secondary">—</p>}
+              </div>
+            ))}
+            <p className="field-label mt-3 mb-1">Далее</p>
+            <LessonList lessons={group.upcoming_lessons.filter((l) => l.id !== group.today_lesson?.id && l.id !== group.next_lesson?.id).slice(0, 4)} empty="Больше запланированных занятий нет." />
+          </Card>
+          <Card title="Недавняя посещаемость" actions={<Link to={`/assistant/attendance?group=${group.id}`} className="text-sm font-medium text-brand-700 hover:underline">Отметить</Link>}>
+            {group.recent_attendance.length === 0 ? <p className="text-sm text-ink-secondary">Прошедших занятий нет.</p> : (
+              <ul className="divide-y divide-border text-sm">
+                {group.recent_attendance.map((lesson) => (
+                  <li key={lesson.id} className="flex items-center justify-between gap-3 py-2">
+                    <span className="min-w-0 truncate"><span className="font-medium text-ink">{formatDateShort(lesson.date)}</span><span className="text-ink-secondary"> · {lesson.subject?.name ?? ''}</span></span>
+                    {lesson.marked ? (
+                      <span className="shrink-0 tabular-nums text-ink">{lesson.attended}/{lesson.marked}
+                        <span className="ml-1.5 text-ink-secondary">{Math.round((lesson.attended / lesson.marked) * 100)}%</span></span>
+                    ) : <span className="shrink-0 text-warning">не отмечено</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {group.attendance.percent !== null ? <p className="mt-3 text-xs text-ink-secondary">За всё время: {group.attendance.percent}% ({group.attendance.attended}/{group.attendance.marked})</p> : null}
           </Card>
         </div>
       ) : null}
 
-      {tab === 'students' ? (
-        <Card title={`Студенты (${group.students.length})`} actions={
-          <Button size="sm" leftIcon={<UserPlus className="size-4" aria-hidden />} onClick={() => open({ type: 'bulk', action: 'add_to_group', group: ref })}>Добавить</Button>
-        }>
-          <StudentsTable students={group.students} />
-        </Card>
-      ) : null}
+      {tab === 'students' ? <GroupStudents group={group} /> : null}
 
       {tab === 'schedule' ? (
         group.programs.length === 0 ? (

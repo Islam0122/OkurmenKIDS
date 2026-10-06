@@ -135,6 +135,8 @@ def filter_groups(qs, params):
             Q(schedules__teacher_id=teacher, schedules__is_active=True)
             | Q(teachers__teacher_id=teacher, teachers__is_active=True)
         ).distinct()
+    if (day := params.get("day")) in WEEKDAY_CODES:
+        qs = qs.filter(schedules__day_of_week=day, schedules__is_active=True).distinct()
     return qs.order_by("name")
 
 
@@ -315,6 +317,14 @@ def group_detail(group: Group) -> dict:
     upcoming = list(lessons.filter(date__gte=today).exclude(status=Lesson.Status.CANCELLED).order_by("date", "start_time")[:10])
     recent = list(lessons.filter(date__lt=today).order_by("-date", "-start_time")[:10])
     active_count = sum(1 for s in students if s.status == Student.Status.ACTIVE)
+    today_lesson = next((l for l in upcoming if l.date == today), None)
+    next_lesson = next((l for l in upcoming if l.date > today or (l.date == today and l is not today_lesson)), None)
+    marks = {
+        row["lesson_id"]: row
+        for row in Attendance.objects.filter(lesson__in=recent[:5]).values("lesson_id").annotate(
+            marked=Count("id"), attended=Count("id", filter=Q(status__in=ATTENDED)),
+        )
+    }
 
     group_events = StudentStatusEvent.objects.filter(Q(group=group) | Q(from_group=group)).select_related(
         "student", "group", "from_group", "performed_by"
@@ -343,6 +353,13 @@ def group_detail(group: Group) -> dict:
         "students": [student_row(s) for s in students],
         "upcoming_lessons": [_lesson_row(l, active_count) for l in upcoming],
         "recent_lessons": [_lesson_row(l, active_count) for l in recent],
+        "today_lesson": _lesson_row(today_lesson, active_count) if today_lesson else None,
+        "next_lesson": _lesson_row(next_lesson, active_count) if next_lesson else None,
+        "recent_attendance": [
+            {**_lesson_row(l, active_count), "attended": marks.get(l.pk, {}).get("attended", 0),
+             "marked": marks.get(l.pk, {}).get("marked", 0)}
+            for l in recent[:5]
+        ],
         "lessons_total": lessons.count(),
         "attendance": {
             "attended": attended,
@@ -498,6 +515,11 @@ def lessons_between(start: dt.date, end: dt.date, params) -> list[dict]:
         qs = qs.filter(group_id=group)
     if (teacher := params.get("teacher")) and str(teacher).isdigit():
         qs = qs.filter(Q(teacher_id=teacher) | Q(teacher__isnull=True, group_teacher__teacher_id=teacher))
+    if (course := params.get("course")) and str(course).isdigit():
+        qs = qs.filter(group__course_id=course)
+    if (day := params.get("day")) in WEEKDAY_CODES:
+        # Django's week_day: 1 = Sunday … 7 = Saturday.
+        qs = qs.filter(date__week_day=(WEEKDAY_CODES.index(day) + 1) % 7 + 1)
     if params.get("include_cancelled") not in ("1", "true"):
         qs = qs.exclude(status=Lesson.Status.CANCELLED)
     lessons = list(qs.order_by("date", "start_time", "group__name"))
@@ -547,10 +569,15 @@ def schedule_conflicts() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def attendance_for_day(day: dt.date, params) -> list[dict]:
-    qs = Lesson.objects.filter(date=day).exclude(status=Lesson.Status.CANCELLED).select_related(*LESSON_RELATED)
+    if params.get("unmarked") in ("1", "true"):
+        # Lessons of the last 3 days that took place but nobody marked.
+        qs = Lesson.objects.filter(date__gte=day - dt.timedelta(days=3), date__lt=day, attendance_records__isnull=True).distinct()
+    else:
+        qs = Lesson.objects.filter(date=day)
+    qs = qs.exclude(status=Lesson.Status.CANCELLED).select_related(*LESSON_RELATED)
     if (group := params.get("group")) and str(group).isdigit():
         qs = qs.filter(group_id=group)
-    lessons = list(qs.order_by("start_time", "group__name"))
+    lessons = list(qs.order_by("date", "start_time", "group__name"))
     if not lessons:
         return []
     roster: dict[int, list[Student]] = defaultdict(list)
@@ -594,9 +621,55 @@ def attendance_for_day(day: dt.date, params) -> list[dict]:
 # Dashboard & options
 # ---------------------------------------------------------------------------
 
+# What the activity feed shows: the academy's own audit trail (Django admin
+# history, written by the admin, the Team Lead workspace and the assistant
+# services alike) for these models, plus the students' status events.
+ACTIVITY_MODELS = (Group, Student, GroupTeacher, Lesson)
+ACTIVITY_KIND = {Group: "group", Student: "student", GroupTeacher: "schedule", Lesson: "lesson"}
+
+
+def recent_activity(limit: int = 12) -> list[dict]:
+    types = ContentType.objects.get_for_models(*ACTIVITY_MODELS)
+    by_type = {ct.pk: model for model, ct in types.items()}
+    rows = []
+    for entry in (
+        LogEntry.objects.filter(content_type__in=types.values()).select_related("user").order_by("-action_time")[:limit]
+    ):
+        model = by_type[entry.content_type_id]
+        message = entry.get_change_message() or ""
+        rows.append({
+            "id": f"log-{entry.pk}",
+            "kind": ACTIVITY_KIND[model],
+            "title": entry.object_repr,
+            "detail": message if message != "Добавлено." else "Создано",
+            "at": entry.action_time,
+            "by": _name(entry.user),
+            "link": (f"/assistant/groups/{entry.object_id}" if model is Group
+                     else f"/assistant/students/{entry.object_id}" if model is Student else None),
+        })
+    for event in (
+        StudentStatusEvent.objects.exclude(event_type=StudentStatusEvent.EventType.TRANSFERRED)
+        .select_related("student", "group", "performed_by").order_by("-created_at")[:limit]
+    ):
+        # Transfers are already in the admin history (services.student_enrollment).
+        rows.append({
+            "id": f"event-{event.pk}",
+            "kind": "status",
+            "title": str(event.student),
+            "detail": event.get_event_type_display() + (f" — {event.get_reason_display()}" if event.reason else ""),
+            "at": event.created_at,
+            "by": _name(event.performed_by),
+            "link": f"/assistant/students/{event.student_id}",
+        })
+    return sorted(rows, key=lambda row: row["at"], reverse=True)[:limit]
+
+
 def dashboard() -> dict:
+    from apps.feedback.models import Survey
+
     today = timezone.localdate()
     month_ago = today - dt.timedelta(days=30)
+    month_start = today.replace(day=1)
     todays = lessons_between(today, today, {})
     conflicts = schedule_conflicts()
 
@@ -607,30 +680,95 @@ def dashboard() -> dict:
     paused = Student.objects.filter(status=Student.Status.PAUSED).count()
     without_group = Student.objects.filter(status=Student.Status.ACTIVE, group__isnull=True).count()
     pending_awards = ScholarshipAward.objects.filter(status=ScholarshipAward.Status.PENDING).count()
+    # Lessons of the last 3 days that already happened but nobody marked.
+    unmarked = (
+        Lesson.objects.filter(date__gte=today - dt.timedelta(days=3), date__lt=today)
+        .exclude(status=Lesson.Status.CANCELLED)
+        .filter(attendance_records__isnull=True).distinct().count()
+    )
+    silent_surveys = Survey.objects.filter(status=Survey.Status.PUBLISHED).annotate(n=Count("responses")).filter(n=0).count()
 
     attention = [
-        {"key": "inactive", "count": withdrawn_recent, "label": "деактивированы за 30 дней",
-         "to": "/assistant/students?status=inactive", "tone": "warning"},
-        {"key": "paused", "count": paused, "label": "студентов на паузе",
-         "to": "/assistant/students?status=paused", "tone": "info"},
-        {"key": "conflicts", "count": len(conflicts), "label": "конфликтов в расписании",
-         "to": "/assistant/schedule?conflicts=1", "tone": "danger"},
-        {"key": "without_group", "count": without_group, "label": "активных студентов без группы",
+        {"key": "without_group", "count": without_group, "label": "Активные студенты без группы",
          "to": "/assistant/students?status=active&no_group=1", "tone": "warning"},
-        {"key": "pending_scholarships", "count": pending_awards, "label": "стипендий ждут утверждения",
+        {"key": "conflicts", "count": len(conflicts), "label": "Конфликты в расписании",
+         "to": "/assistant/schedule?conflicts=1", "tone": "danger"},
+        {"key": "unmarked", "count": unmarked, "label": "Занятия без отметки посещаемости",
+         "to": "/assistant/attendance?unmarked=1", "tone": "warning"},
+        {"key": "inactive", "count": withdrawn_recent, "label": "Деактивированы за 30 дней",
+         "to": "/assistant/students?status=inactive", "tone": "info"},
+        {"key": "paused", "count": paused, "label": "Студенты на паузе",
+         "to": "/assistant/students?status=paused", "tone": "info"},
+        {"key": "surveys", "count": silent_surveys, "label": "Опросы без ответов",
+         "to": "/assistant/surveys?status=published", "tone": "info"},
+        {"key": "pending_scholarships", "count": pending_awards, "label": "Стипендии ждут утверждения",
          "to": "/assistant/scholarships", "tone": "info"},
     ]
 
+    open_groups = Group.objects.filter(status__in=OPEN_GROUP_STATUSES)
+    students = Student.objects.aggregate(
+        total=Count("id", filter=~Q(status=Student.Status.COMPLETED)),
+        active=Count("id", filter=Q(status=Student.Status.ACTIVE)),
+    )
     return {
         "date": today,
         "cards": {
-            "active_groups": Group.objects.filter(status=Group.Status.ACTIVE).count(),
-            "active_students": Student.objects.filter(status=Student.Status.ACTIVE).count(),
+            "active_groups": open_groups.filter(status=Group.Status.ACTIVE).count(),
+            "groups_new_this_month": open_groups.filter(created_at__date__gte=month_start).count(),
+            "students_total": students["total"],
+            "active_students": students["active"],
             "todays_lessons": len(todays),
+            "todays_completed": sum(1 for l in todays if l["status"] == Lesson.Status.COMPLETED),
             "new_students": Student.objects.filter(enrollment_date__gte=month_ago, enrollment_date__lte=today).count(),
         },
         "today": todays,
         "attention": [item for item in attention if item["count"]],
+        "activity": recent_activity(),
+    }
+
+
+def search(query: str) -> dict:
+    """Global search of the workspace (header / Ctrl+K): students, groups,
+    trainers and the coming week's lessons of what matched."""
+    query = query.strip()
+    if len(query) < 2:
+        return {"students": [], "groups": [], "teachers": [], "lessons": []}
+    words = query.split()
+
+    students = Student.objects.select_related("group")
+    for word in words:
+        students = students.filter(
+            Q(first_name__icontains=word) | Q(last_name__icontains=word) | Q(phone__icontains=word)
+            | Q(parent_phone__icontains=word)
+        )
+    groups = Group.objects.select_related("course").filter(Q(name__icontains=query) | Q(course__name__icontains=query))
+    teachers = available_trainers()
+    for word in words:
+        teachers = teachers.filter(Q(user__first_name__icontains=word) | Q(user__last_name__icontains=word))
+    teachers = list(teachers[:5])
+
+    group_ids = [g.pk for g in groups[:6]]
+    teacher_ids = [t.pk for t in teachers]
+    today = timezone.localdate()
+    lessons = (
+        Lesson.objects.filter(date__gte=today, date__lte=today + dt.timedelta(days=7))
+        .exclude(status=Lesson.Status.CANCELLED)
+        .filter(Q(group_id__in=group_ids) | Q(teacher_id__in=teacher_ids)
+                | Q(teacher__isnull=True, group_teacher__teacher_id__in=teacher_ids))
+        .select_related(*LESSON_RELATED).order_by("date", "start_time")[:6]
+    )
+    return {
+        "students": [
+            {"id": s.pk, "name": str(s), "group": s.group.name if s.group_id else None,
+             "status": s.status, "status_display": s.get_status_display()}
+            for s in students.order_by("last_name", "first_name")[:8]
+        ],
+        "groups": [
+            {"id": g.pk, "name": g.name, "course": g.course.name, "status": g.status, "status_display": g.get_status_display()}
+            for g in groups.order_by("name")[:6]
+        ],
+        "teachers": [{"id": t.pk, "name": str(t)} for t in teachers],
+        "lessons": [_lesson_row(l) for l in lessons],
     }
 
 
