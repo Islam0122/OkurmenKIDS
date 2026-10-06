@@ -564,3 +564,132 @@ class ControlTests(AssistantTestBase):
         trainer = APIClient()
         trainer.force_authenticate(self.islam.user)
         self.assertEqual(trainer.get(self.url("control")).status_code, status.HTTP_403_FORBIDDEN)
+
+
+class MonthlyReportTests(AssistantTestBase):
+    """«Месячный отчёт» over the previous (closed) month."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+
+        from apps.academy.models import Attendance, Homework, HomeworkResult
+        from apps.feedback.models import QuestionOption, SurveyAnswer, SurveyAnswerOption, SurveyQuestion, SurveyResponse
+        from apps.scholarships.models import (
+            EligibilityStatus, ScholarshipAward, ScholarshipConfiguration, ScholarshipEvaluation, ScholarshipPeriod,
+        )
+        from django.utils import timezone
+
+        self.end = TODAY.replace(day=1) - dt.timedelta(days=1)
+        self.start = self.end.replace(day=1)
+        early = self.start - dt.timedelta(days=40)
+        Group.objects.filter(pk=self.g1.pk).update(start_date=early)
+        Student.objects.filter(pk__in=[self.s1.pk, self.s2.pk]).update(enrollment_date=early)
+
+        def lesson(day, number, **extra):
+            return Lesson.objects.create(group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.islam,
+                                         lesson_number=number, date=day, start_time=dt.time(16), end_time=dt.time(17, 30),
+                                         **{"status": Lesson.Status.COMPLETED, **extra})
+        days = [self.start + dt.timedelta(days=n) for n in (1, 4, 8, 12)]
+        lessons = [lesson(day, i + 1) for i, day in enumerate(days)]
+        lesson(self.start + dt.timedelta(days=14), 9, status=Lesson.Status.CANCELLED)
+        lesson(self.start - dt.timedelta(days=3), 10)  # previous month: not counted
+        for item in lessons:
+            Attendance.objects.create(lesson=item, student=self.s1, status=Attendance.Status.ABSENT)
+            Attendance.objects.create(lesson=item, student=self.s2, status=Attendance.Status.PRESENT)
+        for i, item in enumerate(lessons[:3]):
+            hw = Homework.objects.create(lesson=item, title=f"ДЗ {i + 1}", deadline=item.date + dt.timedelta(days=2))
+            HomeworkResult.objects.create(homework=hw, student=self.s1, status=HomeworkResult.Status.NOT_SUBMITTED)
+            HomeworkResult.objects.create(homework=hw, student=self.s2, status=(
+                HomeworkResult.Status.SUBMITTED if i == 0 else HomeworkResult.Status.CHECKED))
+
+        survey = Survey.objects.create(title="Качество обучения", audience=Survey.Audience.STUDENT, group=self.g1,
+                                       status=Survey.Status.PUBLISHED)
+        rating = SurveyQuestion.objects.create(survey=survey, text="Оценка", order=1,
+                                               question_type=SurveyQuestion.QuestionType.SINGLE_CHOICE)
+        options = {n: QuestionOption.objects.create(question=rating, text=str(n), order=n) for n in range(1, 6)}
+        text = SurveyQuestion.objects.create(survey=survey, text="Что улучшить?", order=2, is_required=False,
+                                             question_type=SurveyQuestion.QuestionType.TEXT)
+
+        def respond(day, score, comment):
+            response = SurveyResponse.objects.create(
+                survey=survey, visibility=SurveyResponse.Visibility.ANONYMOUS,
+                submitted_at=timezone.make_aware(dt.datetime.combine(day, dt.time(12))),
+            )
+            answer = SurveyAnswer.objects.create(response=response, question=rating)
+            SurveyAnswerOption.objects.create(answer=answer, option=options[score])
+            SurveyAnswer.objects.create(response=response, question=text, text_value=comment)
+        respond(self.start + dt.timedelta(days=5), 5, "Больше практики!")
+        respond(self.start + dt.timedelta(days=6), 1, "больше практики")
+        respond(self.end + dt.timedelta(days=1), 5, "Другой месяц")
+
+        config = ScholarshipConfiguration(name="Test")
+        period = ScholarshipPeriod.objects.create(
+            period_start=self.start - dt.timedelta(days=30), period_end=self.start - dt.timedelta(days=1),
+            evaluation_date=self.end,
+            **{f: getattr(config, f) for f in (
+                "attendance_weight", "homework_weight", "feedback_weight", "subject_aggregation",
+                "late_homework_credit", "min_overall_score", "min_marked_lessons", "require_complete_feedback",
+            )},
+        )
+        evaluation = ScholarshipEvaluation.objects.create(
+            period=period, student=self.s2, student_name="Aida K", group_name="PRO-01",
+            eligibility_status=EligibilityStatus.ELIGIBLE, overall_score=Decimal("92.50"),
+        )
+        ScholarshipAward.objects.create(period=period, student=self.s2, evaluation=evaluation, rank=1,
+                                        award_date=self.end, amount=Decimal("4000"))
+
+    def report(self, **params):
+        return self.client.get(self.url("monthly-report"), {"year": self.start.year, "month": self.start.month, **params})
+
+    def test_sections_from_real_data(self):
+        response = self.report()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertTrue(data["is_complete"])
+        att = data["attendance"]
+        self.assertEqual((att["lessons"], att["marked"], att["attended"], att["absent"], att["percent"]), (4, 8, 4, 4, 50))
+        self.assertEqual(att["groups"][0]["group"]["name"], "PRO-01")
+        hw = data["homework"]
+        self.assertEqual((hw["given"], hw["expected"], hw["done"], hw["not_done"], hw["pending"], hw["percent"]),
+                         (3, 6, 3, 3, 1, 50))
+
+        students = data["students"]
+        absent = students["attendance_attention"][0]
+        self.assertEqual((absent["student_id"], absent["attendance"], absent["consecutive_absences"]), (self.s1.pk, 0, 4))
+        self.assertEqual([r["student_id"] for r in students["homework_attention"]], [self.s1.pk])
+        self.assertEqual([r["student_id"] for r in students["risk"]], [self.s1.pk])
+        self.assertEqual(students["activity"]["normal"], 1)
+        self.assertEqual(data["overview"]["students_at_risk"], 1)
+
+        surveys = data["surveys"]
+        self.assertEqual((surveys["surveys"], surveys["participants"], surveys["participation"]), (1, 2, 100))
+        self.assertEqual((surveys["average"], surveys["low_ratings"]), (3.0, 1))
+        self.assertEqual(surveys["quotes"][0]["text"].lower().strip("!"), "больше практики")
+        self.assertEqual(surveys["quotes"][0]["count"], 2)
+        self.assertNotIn("Другой месяц", [q["text"] for q in surveys["quotes"]])
+
+        sch = data["scholarships"]
+        self.assertEqual((sch["awards"], sch["recipients"], sch["total_amount"]), (1, 1, 4000))
+        self.assertIn("1 место", sch["rows"][0]["reason"])
+        self.assertIn("В зоне риска: 1 студент.", data["conclusions"]["attention"])
+
+    def test_nothing_about_trainers(self):
+        body = self.report().content.decode()
+        for word in ("teacher", "trainer", "kpi"):
+            self.assertNotIn(word, body.lower())
+
+    def test_period_validation(self):
+        future = TODAY.replace(day=28) + dt.timedelta(days=10)
+        self.assertEqual(self.report(year=future.year, month=future.month).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.report(month=13).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.report(year="x").status_code, status.HTTP_400_BAD_REQUEST)
+        current = self.client.get(self.url("monthly-report"))
+        self.assertEqual((current.data["year"], current.data["month"]), (TODAY.year, TODAY.month))
+        self.assertFalse(current.data["is_complete"])
+
+    def test_read_only_and_assistant_only(self):
+        self.assertEqual(self.client.post(self.url("monthly-report"), {}).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        client = APIClient()
+        client.force_authenticate(self.islam.user)
+        self.assertEqual(client.get(self.url("monthly-report")).status_code, status.HTTP_403_FORBIDDEN)

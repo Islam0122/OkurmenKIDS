@@ -20,6 +20,7 @@ vi.mock('@/api/assistant', () => ({
     createGroup: vi.fn(),
     control: vi.fn(),
     groupHomework: vi.fn(),
+    monthlyReport: vi.fn(),
   },
   surveysApi: {},
 }))
@@ -34,6 +35,7 @@ import { AssistantActionsProvider } from './actions/AssistantActions'
 import { QuickGroupModal } from './actions/QuickGroupModal'
 import { CommandPalette } from './layout/CommandPalette'
 import { AssistantControlPage } from './pages/ControlPage'
+import { AssistantMonthlyReportPage } from './pages/MonthlyReportPage'
 import { GroupHomeworkTab } from './records/GroupRecordTabs'
 import { AssistantStudentDetailPage } from './pages/StudentDetailPage'
 import { AssistantStudentsPage } from './pages/StudentsPage'
@@ -249,5 +251,49 @@ describe('Assistant Workspace', () => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
     }
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('Месячный отчёт: one page, sections in order, no trainer report; «Сформировать» picks the month', async () => {
+    const student = {
+      student_id: 7, name: 'Islam Duishobaev', group: { id: 1, name: 'PRO-01' }, attendance: 30, attended: 3, marked: 10, absent: 7,
+      consecutive_absences: 4, homework: 20, homework_done: 1, homework_due: 5, homework_missed: 4, consecutive_missed_homework: 4,
+      last_activity: '2026-09-18', status: 'risk' as const, status_label: 'В зоне риска',
+    }
+    vi.mocked(assistantApi.monthlyReport).mockResolvedValue({
+      year: 2026, month: 9, title: 'Сентябрь 2026', start: '2026-09-01', end: '2026-09-30', until: '2026-09-30', is_complete: true,
+      generated_at: '2026-10-06T07:00:00Z',
+      overview: { groups_total: 3, groups_active: 3, groups_inactive: 0, students_total: 32, students_active: 30, students_new: 4,
+        students_deactivated: 1, attendance_percent: 87, homework_percent: 81, students_at_risk: 1 },
+      attendance: { lessons: 33, marked: 968, attended: 842, absent: 126, excused: 0, percent: 87,
+        groups: [{ group: { id: 1, name: 'PRO-01' }, students: 10, lessons: 12, attended: 100, absent: 6, marked: 106, percent: 94 }] },
+      homework: { given: 12, due: 12, done: 39, not_done: 6, pending: 3, expected: 48, percent: 81,
+        groups: [{ group: { id: 1, name: 'PRO-01' }, homeworks: 12, due: 12, done: 39, not_done: 6, pending: 3, expected: 48, percent: 81 }] },
+      students: { attendance_attention: [student], homework_attention: [student], risk: [student], no_activity: [],
+        activity: { analysed: 30, normal: 25, attention: 3, low: 2, risk: 1, no_data: 0, not_attending: 1, no_homework: 1, no_activity: 0 } },
+      surveys: { surveys: 1, participants: 9, participation: 90, average: 4.7, low_ratings: 0, texts_total: 1,
+        rows: [{ id: 1, title: 'Качество обучения', group: { id: 1, name: 'PRO-01' }, audience_display: 'Студенты', status_display: 'Опубликован',
+          participants: 9, expected: 10, participation: 90, average: 4.7, ratings: 9, low_ratings: 0 }],
+        quotes: [{ text: 'Больше практики', count: 2, survey: 'Качество обучения', question: 'Что улучшить?', date: '2026-09-10' }] },
+      scholarships: { awards: 1, recipients: 1, total_amount: 4000, paid: 0, paid_amount: 0, groups: ['PRO-01'],
+        rows: [{ id: 1, student: { id: 8, name: 'Aida K' }, group: 'PRO-01', title: 'Стипендия', amount: 4000, reason: '1 место в рейтинге',
+          status: 'approved', status_display: 'Утверждена', payment_status: 'unpaid', payment_display: 'Не выдано', award_date: '2026-09-30' }] },
+      conclusions: { good: ['Средняя посещаемость 87% — выше 85%.'], attention: ['В зоне риска: 1 студент.'] },
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<AssistantActionsProvider><AssistantMonthlyReportPage /></AssistantActionsProvider>, { route: '/assistant/reports?year=2026&month=9' })
+    expect(await screen.findByRole('heading', { name: 'Сентябрь 2026' })).toBeInTheDocument()
+    expect(assistantApi.monthlyReport).toHaveBeenCalledWith(2026, 9)
+    const titles = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+    expect(titles.slice(1)).toEqual([
+      '1.Общая статистика', '2.Посещаемость', '3.Требуют внимания — посещаемость', '4.Домашние задания', '5.Требуют внимания — ДЗ',
+      '6.В зоне риска', '7.Опросы', '8.Стипендии', '9.Активность студентов', '10.Итоги месяца',
+    ])
+    expect(screen.getByText('«Больше практики»')).toBeInTheDocument()
+    expect(screen.getByText('Aida K')).toBeInTheDocument()
+    expect(screen.queryByText(/KPI|Рейтинг тренеров|Эффективность/)).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Месяц'), '8')
+    await user.click(screen.getByRole('button', { name: /Сформировать отчёт/ }))
+    await waitFor(() => expect(assistantApi.monthlyReport).toHaveBeenCalledWith(2026, 8))
   })
 })

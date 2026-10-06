@@ -463,3 +463,126 @@ export interface ControlProfile {
   timeline: { date: string; kind: 'attendance' | 'homework'; ok: boolean; neutral: boolean; text: string; detail: string }[]
   note: string
 }
+
+/** «Месячный отчёт» — one month of students and groups (no trainers). */
+export interface ReportStudent {
+  student_id: number
+  name: string
+  group: Ref | null
+  attendance: number | null
+  attended: number
+  marked: number
+  absent: number
+  consecutive_absences: number
+  homework: number | null
+  homework_done: number
+  homework_due: number
+  homework_missed: number
+  consecutive_missed_homework: number
+  last_activity: string | null
+  status: ControlStatus
+  status_label: string
+}
+
+export interface MonthlyReport {
+  year: number
+  month: number
+  title: string
+  start: string
+  end: string
+  until: string
+  is_complete: boolean
+  generated_at: string
+  overview: {
+    groups_total: number
+    groups_active: number
+    groups_inactive: number
+    students_total: number
+    students_active: number
+    students_new: number
+    students_deactivated: number
+    attendance_percent: number | null
+    homework_percent: number | null
+    students_at_risk: number
+  }
+  attendance: {
+    lessons: number
+    marked: number
+    attended: number
+    absent: number
+    excused: number
+    percent: number | null
+    groups: { group: Ref; students: number; lessons: number; attended: number; absent: number; marked: number; percent: number | null }[]
+  }
+  homework: {
+    given: number
+    due: number
+    done: number
+    not_done: number
+    pending: number
+    expected: number
+    percent: number | null
+    groups: { group: Ref; homeworks: number; due: number; done: number; not_done: number; pending: number; expected: number; percent: number | null }[]
+  }
+  students: {
+    attendance_attention: ReportStudent[]
+    homework_attention: ReportStudent[]
+    risk: ReportStudent[]
+    no_activity: ReportStudent[]
+    activity: {
+      analysed: number
+      normal: number
+      attention: number
+      low: number
+      risk: number
+      no_data: number
+      not_attending: number
+      no_homework: number
+      no_activity: number
+    }
+  }
+  surveys: {
+    surveys: number
+    participants: number
+    participation: number | null
+    average: number | null
+    low_ratings: number
+    texts_total: number
+    rows: {
+      id: number
+      title: string
+      group: Ref | null
+      audience_display: string
+      status_display: string
+      participants: number
+      expected: number | null
+      participation: number | null
+      average: number | null
+      ratings: number
+      low_ratings: number
+    }[]
+    quotes: { text: string; count: number; survey: string; question: string; date: string }[]
+  }
+  scholarships: {
+    awards: number
+    recipients: number
+    total_amount: number
+    paid: number
+    paid_amount: number
+    groups: string[]
+    rows: {
+      id: number
+      student: Ref
+      group: string
+      title: string
+      amount: number
+      reason: string
+      status: string
+      status_display: string
+      payment_status: string
+      payment_display: string
+      award_date: string
+    }[]
+  }
+  conclusions: { good: string[]; attention: string[] }
+}

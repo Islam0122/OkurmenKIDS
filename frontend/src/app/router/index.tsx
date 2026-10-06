@@ -268,6 +268,7 @@ export const router = createBrowserRouter([
               { path: 'students/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentDetailPage')).AssistantStudentDetailPage }) },
               { path: 'schedule', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SchedulePage')).AssistantSchedulePage }) },
               { path: 'control', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ControlPage')).AssistantControlPage }) },
+              { path: 'reports', lazy: async () => ({ Component: (await import('@/features/assistant/pages/MonthlyReportPage')).AssistantMonthlyReportPage }) },
               { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/assistant/pages/AttendancePage')).AssistantAttendancePage }) },
               { path: 'scholarships', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ScholarshipsPage')).AssistantScholarshipsPage }) },
               { path: 'surveys', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveysPage')).AssistantSurveysPage }) },

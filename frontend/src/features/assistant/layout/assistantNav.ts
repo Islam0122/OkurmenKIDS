@@ -2,6 +2,7 @@ import {
   Award,
   CalendarDays,
   ClipboardCheck,
+  FileBarChart,
   GraduationCap,
   LayoutDashboard,
   MessageSquareText,
@@ -26,8 +27,9 @@ export interface AssistantNavSection {
 
 /**
  * The Assistant Workspace sidebar — operations only. No KPI, analytics,
- * trainer control or reports: those are the Team Lead's (/app), never the
- * Assistant's. «Мероприятия» and «Уведомления» are not listed because the
+ * trainer control or trainer reports: those are the Team Lead's (/app),
+ * never the Assistant's; «Отчёты» is the monthly report on students and
+ * groups only. «Мероприятия» and «Уведомления» are not listed because the
  * academy has no event or notification module yet; they appear here once
  * the backend has one.
  */
@@ -49,6 +51,10 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
       { to: '/assistant/scholarships', label: 'Стипендии', icon: Award },
       { to: '/assistant/surveys', label: 'Опросы', icon: MessageSquareText },
     ],
+  },
+  {
+    title: 'Отчёты',
+    items: [{ to: '/assistant/reports', label: 'Месячный отчёт', icon: FileBarChart }],
   },
 ]
 

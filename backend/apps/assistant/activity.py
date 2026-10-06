@@ -218,10 +218,12 @@ def _judge(row: StudentActivity, t: dict, today: dt.date) -> None:
 
 
 def analyse_students(students: list[Student], *, start: dt.date | None, today: dt.date | None = None,
-                     with_timeline: bool = False) -> tuple[list[StudentActivity], dict[int, list[dict]]]:
+                     with_timeline: bool = False, until: dt.date | None = None,
+                     ) -> tuple[list[StudentActivity], dict[int, list[dict]]]:
     """Activity of `students` (each in their current group) from `start`
-    (None — all time) to today. Returns the rows and, when asked, each
-    student's timeline (newest first)."""
+    (None — all time) to today — or only lessons up to `until` (a closed
+    month); a homework still counts once its deadline passed before today.
+    Returns the rows and, when asked, each student's timeline (newest first)."""
     today = today or timezone.localdate()
     t = thresholds()
     students = [s for s in students if s.group_id]
@@ -236,6 +238,8 @@ def analyse_students(students: list[Student], *, start: dt.date | None, today: d
     )
     if start is not None:
         lessons_qs = lessons_qs.filter(date__gte=start)
+    if until is not None:
+        lessons_qs = lessons_qs.filter(date__lte=until)
     lessons = list(lessons_qs)
     lessons_by_group: dict[int, list[Lesson]] = defaultdict(list)
     for lesson in lessons:

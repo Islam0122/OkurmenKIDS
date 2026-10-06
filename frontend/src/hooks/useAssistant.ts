@@ -134,3 +134,8 @@ export function useAssistantFormMutation<TVars, TResult>(
 ) {
   return useAssistantMutation(fn, successMessage, { silentError: true })
 }
+
+/** Computed on demand by the server — `refetch` is «Обновить». */
+export function useMonthlyReport(year: number, month: number) {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'monthly-report', year, month], queryFn: () => assistantApi.monthlyReport(year, month), placeholderData: keepPreviousData })
+}
