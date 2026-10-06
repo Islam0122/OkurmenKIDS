@@ -7,7 +7,6 @@ from io import StringIO
 from unittest import mock, skipUnless
 
 from django.contrib import admin
-from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
@@ -1985,33 +1984,8 @@ class StudentAdminUXTests(AcademyTestBase):
         response = self.admin_web.get(reverse("admin:academy_student_detail", args=[student.pk]))
         self.assertContains(response, "Без группы")
 
-    # -- no hard delete, ever ------------------------------------------------
-
-    def test_delete_view_is_forbidden(self):
-        url = reverse("admin:academy_student_delete", args=[self.student1.pk])
-        response = self.admin_web.get(url)
-        self.assertEqual(response.status_code, 403)
-        self.assertTrue(Student.objects.filter(pk=self.student1.pk).exists())
-
-    def test_delete_selected_action_is_not_offered(self):
-        response = self.admin_web.get(reverse("admin:academy_student_changelist"))
-        self.assertNotContains(response, "delete_selected")
-
-    def test_change_form_has_no_delete_link_for_student_itself(self):
-        response = self.admin_web.get(reverse("admin:academy_student_change", args=[self.student1.pk]))
-        # The only "deletelink" icon on the page belongs to the unrelated
-        # `group` FK's related-widget-wrapper (Django's standard "delete the
-        # related object" affordance) — Student's own object-tools row must
-        # not contain a delete link/button of its own.
-        self.assertNotContains(response, 'class="deletelink"')
-
-    def test_delete_model_and_delete_queryset_refuse_directly(self):
-        admin_instance = admin.site._registry[Student]
-        with self.assertRaises(DjangoPermissionDenied):
-            admin_instance.delete_model(None, self.student1)
-        with self.assertRaises(DjangoPermissionDenied):
-            admin_instance.delete_queryset(None, Student.objects.filter(pk=self.student1.pk))
-        self.assertTrue(Student.objects.filter(pk=self.student1.pk).exists())
+    # Deleting students through the admin is superuser-only — see
+    # apps/academy/test_admin_delete.py for the full rule.
 
     # -- activate / deactivate ------------------------------------------------
 

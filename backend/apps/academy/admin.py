@@ -432,8 +432,42 @@ class StudentCompleteForm(forms.Form):
     )
 
 
+class SuperuserOnlyDeleteMixin:
+    """Deleting a record through Django admin is a superuser-only operation.
+
+    Everyone else — a staff/Admin-role account, and (if they ever reach the
+    admin) Assistant, Team Lead or Trainer — keeps exactly the view / add /
+    change rights they already had, but never deletes: no "Delete" button
+    on the change form, no /delete/ confirmation page (Django's delete_view
+    answers 403 off has_delete_permission, whatever is POSTed to it), no
+    "delete_selected" bulk action. delete_model / delete_queryset re-check
+    it, in case anything ever calls them directly.
+    """
+
+    delete_denied_message = "Удалять может только суперпользователь."
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(request is not None and request.user.is_superuser)
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            actions.pop("delete_selected", None)
+        return actions
+
+    def delete_model(self, request, obj):
+        if not self.has_delete_permission(request, obj):
+            raise PermissionDenied(self.delete_denied_message)
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        if not self.has_delete_permission(request):
+            raise PermissionDenied(self.delete_denied_message)
+        super().delete_queryset(request, queryset)
+
+
 @admin.register(Student)
-class StudentAdmin(admin.ModelAdmin):
+class StudentAdmin(SuperuserOnlyDeleteMixin, admin.ModelAdmin):
     list_display = ("student_column", "group_column", "phone", "active_badge", "created_at", "row_actions")
     list_filter = ("group", "status")
     search_fields = ("first_name", "last_name", "phone", "parent_phone")
@@ -450,24 +484,13 @@ class StudentAdmin(admin.ModelAdmin):
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
-    # -- students are never hard-deleted from the Admin UI ---------------
-    # Attendance/Homework/history must survive forever — see models.Student
-    # docstring context in the task spec. Deactivation (is_active=False) is
-    # the only supported removal path; has_delete_permission=False alone
-    # already makes Django hide every delete surface it renders (the
-    # "Delete" object-tool, the delete_selected bulk action, and the
-    # /delete/ confirmation route itself all gate on this one check) — the
-    # two method overrides below are pure defense in depth in case anything
-    # ever calls them directly.
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
-    def delete_model(self, request, obj):
-        raise PermissionDenied("Удаление студентов запрещено. Используйте деактивацию.")
-
-    def delete_queryset(self, request, queryset):
-        raise PermissionDenied("Удаление студентов запрещено. Используйте деактивацию.")
+    # -- deleting a student: superuser only -------------------------------
+    # Everyday removal is deactivation (attendance, homework and history
+    # stay). A hard delete is left to a superuser (SuperuserOnlyDeleteMixin);
+    # a student with scholarship history still can't be deleted — the
+    # database refuses it (ScholarshipAward.student is RESTRICT) and the
+    # delete page lists what blocks it.
+    delete_denied_message = "Удалять студентов может только суперпользователь. Используйте деактивацию."
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("group")
@@ -1112,7 +1135,7 @@ class GroupTeacherAdmin(admin.ModelAdmin):
 
 
 @admin.register(Group)
-class GroupAdmin(admin.ModelAdmin):
+class GroupAdmin(SuperuserOnlyDeleteMixin, admin.ModelAdmin):
     """A Group is only a container for identity, course, status and general
     period — see module docstring above GroupTeacher in models.py. This
     admin form covers *only* that: students, Teaching Programs and Schedule
@@ -1138,13 +1161,10 @@ class GroupAdmin(admin.ModelAdmin):
     actions = ["generate_lessons_action", "pause_groups", "activate_groups"]
     list_per_page = 25
 
-    def has_delete_permission(self, request, obj=None):
-        # A Group is never deleted — Completed/Cancelled status is the only
-        # way to retire one, so its history (Lessons, Attendance, Homework)
-        # always stays intact. This alone also drops "delete_selected" from
-        # the bulk actions dropdown and the Delete button from the change
-        # form (Django checks has_delete_permission for both).
-        return False
+    # Retiring a group is its Completed/Cancelled status, which keeps its
+    # history (Lessons, Attendance, Homework). A hard delete — which takes
+    # that history with it — is a superuser's only (SuperuserOnlyDeleteMixin).
+    delete_denied_message = "Удалять группы может только суперпользователь. Используйте статус «Завершена» / «Отменена»."
 
     def get_fieldsets(self, request, obj=None):
         # These "ok-admin-group-tab-*" classes carry no visual meaning to
