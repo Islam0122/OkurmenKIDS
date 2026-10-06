@@ -25,12 +25,13 @@ export function HistoryList({ rows }: { rows: HistoryRow[] }) {
   )
 }
 
-export function LessonList({ lessons, empty }: { lessons: AssistantLesson[]; empty: string }) {
+export function LessonList({ lessons, empty, onOpen }: { lessons: AssistantLesson[]; empty: string; onOpen?: (id: number) => void }) {
   if (lessons.length === 0) return <p className="text-sm text-ink-secondary">{empty}</p>
   return (
     <ul className="divide-y divide-border">
       {lessons.map((lesson) => (
-        <li key={lesson.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+        <li key={lesson.id} onClick={onOpen ? () => onOpen(lesson.id) : undefined}
+          className={`flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm${onOpen ? ' -mx-2 cursor-pointer rounded-lg px-2 hover:bg-surface-hover' : ''}`}>
           <div className="min-w-0">
             <p className="font-medium text-ink">{formatDate(lesson.date, false)} · {lesson.start}–{lesson.end}</p>
             <p className="truncate text-ink-secondary">

@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { assistantApi, surveysApi, type GroupListParams, type StudentListParams } from '@/api/assistant'
+import { assistantApi, surveysApi, type GroupListParams, type RecordFilters, type StudentListParams } from '@/api/assistant'
 import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 
@@ -54,6 +54,30 @@ export function useAssistantSearch(q: string) {
     placeholderData: keepPreviousData,
     staleTime: 10_000,
   })
+}
+
+export function useGroupAttendance(id: number, params: RecordFilters, enabled = true) {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'group-attendance', id, params], queryFn: () => assistantApi.groupAttendance(id, params), placeholderData: keepPreviousData, enabled })
+}
+
+export function useGroupHomework(id: number, params: RecordFilters) {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'group-homework', id, params], queryFn: () => assistantApi.groupHomework(id, params), placeholderData: keepPreviousData })
+}
+
+export function useLessonDetail(id: number | undefined) {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'lesson', id], queryFn: () => assistantApi.lesson(id as number), enabled: id !== undefined })
+}
+
+export function useHomeworkDetail(id: number | undefined) {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'homework', id], queryFn: () => assistantApi.homework(id as number), enabled: id !== undefined })
+}
+
+export function useControl(params: { period?: string; group?: number; category?: string; sort?: string }) {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'control', params], queryFn: () => assistantApi.control(params), placeholderData: keepPreviousData })
+}
+
+export function useControlStudent(id: number | undefined, period: string) {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'control-student', id, period], queryFn: () => assistantApi.controlStudent(id as number, period), enabled: id !== undefined })
 }
 
 export function useAssistantScholarships() {

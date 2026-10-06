@@ -18,6 +18,8 @@ vi.mock('@/api/assistant', () => ({
     dashboard: vi.fn(),
     search: vi.fn(),
     createGroup: vi.fn(),
+    control: vi.fn(),
+    groupHomework: vi.fn(),
   },
   surveysApi: {},
 }))
@@ -31,6 +33,8 @@ import { AppLayout } from '@/app/layouts/AppLayout'
 import { AssistantActionsProvider } from './actions/AssistantActions'
 import { QuickGroupModal } from './actions/QuickGroupModal'
 import { CommandPalette } from './layout/CommandPalette'
+import { AssistantControlPage } from './pages/ControlPage'
+import { GroupHomeworkTab } from './records/GroupRecordTabs'
 import { AssistantStudentDetailPage } from './pages/StudentDetailPage'
 import { AssistantStudentsPage } from './pages/StudentsPage'
 
@@ -200,5 +204,50 @@ describe('Assistant Workspace', () => {
       ] }],
     })))
     expect(await screen.findByText('Group page')).toBeInTheDocument()
+  })
+
+  it('Контроль активности lists flagged students read only and filters by a KPI', async () => {
+    const activity = {
+      student_id: 7, name: 'Islam Duishobaev', group: { id: 1, name: 'PRO-01' }, attendance: 40, attended: 2, absent: 3, late: 0, excused: 0,
+      marked: 5, lessons: 5, consecutive_absences: 3, homework: 20, homework_done: 1, homework_due: 5, homework_missed: 4, homework_pending: 0,
+      consecutive_missed_homework: 4, last_attended: '2026-09-20', last_lesson: '2026-10-01', last_teacher: 'Islam', last_homework_done: null,
+      last_homework_done_title: '', last_homework_given: '2026-10-01', last_activity: '2026-09-20', status: 'risk', status_label: 'В зоне риска', categories: ['risk', 'both'],
+    }
+    vi.mocked(assistantApi.control).mockResolvedValue({
+      period: '30d', thresholds: { consecutive_absences: 3, consecutive_missed_homework: 3 },
+      kpis: { not_attending: 1, no_homework: 1, both: 1, frequent_absence: 1, stale_homework: 1, low_activity: 1, risk: 1 },
+      categories: [{ key: 'risk', label: 'В зоне риска', count: 1 }], students: [activity as never], total: 1,
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<AssistantActionsProvider><AssistantControlPage /></AssistantActionsProvider>, { route: '/assistant/control' })
+    expect(await screen.findByText('Islam Duishobaev')).toBeInTheDocument()
+    expect(screen.getAllByText('В зоне риска').length).toBeGreaterThan(0)
+    expect(assistantApi.control).toHaveBeenCalledWith(expect.objectContaining({ period: '30d', sort: 'risk' }))
+    await user.click(screen.getByRole('button', { name: /Не сдают ДЗ/ }))
+    await waitFor(() => expect(assistantApi.control).toHaveBeenCalledWith(expect.objectContaining({ category: 'no_homework' })))
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('the ДЗ tab is read only: KPIs and a table, no edit controls', async () => {
+    vi.mocked(assistantApi.groupHomework).mockResolvedValue({
+      summary: { total: 1, complete: 0, missing: 1, review: 0, open: 0, average_percent: 50 },
+      homeworks: [{
+        id: 3, title: 'Циклы', lesson: { id: 4, number: 2, topic: 'Циклы', date: '2026-10-01' }, teacher: { id: 1, name: 'Islam' },
+        deadline: '2026-10-03', issued: '2026-10-01', done: 1, pending: 0, checked: 1, expected: 2, not_done: 1, percent: 50, due: true,
+        status: 'missing', status_display: 'Есть пропуски',
+      }],
+    })
+    renderWithProviders(
+      <AssistantActionsProvider><GroupHomeworkTab group={{ id: 1, name: 'PRO-01', programs: [{ teacher: { id: 1, name: 'Islam' } }], students: [] } as never} /></AssistantActionsProvider>,
+      { route: '/assistant/groups/1?tab=homework' },
+    )
+    const table = await screen.findByRole('table')
+    const row = within(table).getByText('Циклы').closest('tr')!
+    expect(within(row).getByText('1/2')).toBeInTheDocument()
+    expect(within(row).getByText('Есть пропуски')).toBeInTheDocument()
+    for (const name of [/Редактировать/, /Удалить/, /Сохранить/, /Отметить/]) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 })

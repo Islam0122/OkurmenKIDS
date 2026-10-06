@@ -1,7 +1,6 @@
 import { apiClient } from '@/api/client'
 import type {
   AttendanceLesson,
-  AttendanceStatus,
   BulkAction,
   BulkResult,
   Dashboard,
@@ -11,6 +10,12 @@ import type {
   GroupDetail,
   Options,
   SearchResults,
+  ControlOverview,
+  ControlProfile,
+  GroupAttendance,
+  GroupHomework,
+  HomeworkDetail,
+  LessonDetail,
   ProgramInput,
   ScheduleData,
   ScholarshipCandidate,
@@ -34,6 +39,16 @@ export interface GroupListParams {
   day?: string
   page?: number
   page_size?: number
+}
+
+/** Filters of a group's attendance / homework tabs. */
+export interface RecordFilters {
+  period?: 'today' | 'week' | 'month' | 'all' | 'custom'
+  start?: string
+  end?: string
+  student?: number
+  teacher?: number
+  status?: string
 }
 
 export interface StudentListParams {
@@ -113,8 +128,13 @@ export const assistantApi = {
     ),
 
   attendance: (params: { date: string; group?: number; unmarked?: boolean }) => get<{ date: string; lessons: AttendanceLesson[] }>('/attendance/', params),
-  markAttendance: (lessonId: number, entries: { student: number; status: AttendanceStatus; comment?: string }[]) =>
-    post<AttendanceLesson>(`/attendance/lessons/${lessonId}/`, entries),
+
+  groupAttendance: (id: number, params: RecordFilters) => get<GroupAttendance>(`/groups/${id}/attendance/`, params),
+  groupHomework: (id: number, params: RecordFilters) => get<GroupHomework>(`/groups/${id}/homework/`, params),
+  lesson: (id: number) => get<LessonDetail>(`/lessons/${id}/`),
+  homework: (id: number) => get<HomeworkDetail>(`/homework/${id}/`),
+  control: (params: { period?: string; group?: number; category?: string; sort?: string }) => get<ControlOverview>('/control/', params),
+  controlStudent: (id: number, period: string) => get<ControlProfile>(`/control/students/${id}/`, { period }),
 
   scholarships: () => get<{ award_days: number[]; pending: number; periods: ScholarshipPeriodRow[] }>('/scholarships/'),
   generateScholarship: (body: { award_day?: number | null }) =>

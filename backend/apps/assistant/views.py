@@ -41,7 +41,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.academy.models import Group, GroupTeacher, Lesson, Student, StudentStatusEvent
+from apps.academy.models import Group, GroupTeacher, Homework, Lesson, Student, StudentStatusEvent
 from apps.academy.services import student_status
 from apps.academy.services.attendance_service import bulk_mark_attendance
 from apps.academy.services.group_academic_config import save_program_config
@@ -53,9 +53,9 @@ from apps.academy.services.student_enrollment import add_students_to_group, enro
 from apps.scholarships.models import EligibilityStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod, ScholarshipRunLog
 from apps.scholarships.services.generation import add_award, generate_period, get_active_configuration
 from apps.scholarships.services.periods import latest_award_date
-from apps.users.permissions import IsAdminOrAssistant
+from apps.users.permissions import IsAdmin, IsAdminOrAssistant
 
-from . import selectors
+from . import activity, records, selectors
 from .serializers import (
     PAUSE,
     ActivateSerializer,
@@ -483,7 +483,11 @@ class AttendanceDayView(AssistantView):
 @extend_schema(tags=TAGS, request=AttendanceEntrySerializer(many=True), responses={200: dict})
 class AttendanceLessonView(AssistantView):
     """Mark or correct a lesson's attendance (the trainer's own bulk-marking
-    service). Not for a cancelled lesson; every save is logged."""
+    service) — Admin only. For an Assistant attendance is read-only (403):
+    it is the trainer's record. Not for a cancelled lesson; every save is
+    logged."""
+
+    permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
         lesson = get_object_or_404(Lesson, pk=pk)
@@ -604,3 +608,61 @@ class ScholarshipPeriodAwardsView(AssistantView):
         except DjangoValidationError as exc:
             raise _drf_error(exc)
         return Response(_period_row(period), status=status.HTTP_201_CREATED)
+
+
+# ---------------------------------------------------------------------------
+# Read-only records: attendance & homework of a group, «Контроль активности»
+# ---------------------------------------------------------------------------
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class GroupAttendanceView(AssistantView):
+    """GET — a group's attendance: summary, held lessons, students.
+    ?period=today|week|month|all|custom (&start=&end=), ?student=, ?teacher=,
+    ?status=present|absent|late|excused|unmarked."""
+
+    def get(self, request, pk):
+        return Response(records.group_attendance(get_object_or_404(Group, pk=pk), request.query_params))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class GroupHomeworkView(AssistantView):
+    """GET — a group's homework: summary and the list (same filters as
+    attendance; ?status=open|review|complete|missing)."""
+
+    def get(self, request, pk):
+        return Response(records.group_homework(get_object_or_404(Group, pk=pk), request.query_params))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class LessonDetailView(AssistantView):
+    """GET — one lesson: marks of every student and its homework."""
+
+    def get(self, request, pk):
+        lesson = get_object_or_404(Lesson.objects.select_related(*records.LESSON_RELATED), pk=pk)
+        return Response(records.lesson_detail(lesson))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class HomeworkDetailView(AssistantView):
+    """GET — one homework: its lesson, stats and every student's result."""
+
+    def get(self, request, pk):
+        return Response(records.homework_detail(get_object_or_404(Homework, pk=pk)))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class ControlView(AssistantView):
+    """GET — «Контроль активности»: who stops attending / doing homework.
+    ?period=7d|14d|30d|month|all (default 30d), ?group=, ?category=, ?sort=."""
+
+    def get(self, request):
+        return Response(activity.control_overview(request.query_params))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class ControlStudentView(AssistantView):
+    """GET — one student's activity profile and timeline (?period=)."""
+
+    def get(self, request, pk):
+        student = get_object_or_404(Student.objects.select_related("group"), pk=pk)
+        return Response(activity.student_profile(student, request.query_params.get("period", "30d")))

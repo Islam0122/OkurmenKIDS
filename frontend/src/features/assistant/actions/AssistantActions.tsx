@@ -4,7 +4,9 @@ import type { ReactNode } from 'react'
 import { UserPlus } from 'lucide-react'
 
 import { Modal } from '@/components/ui/Modal'
-import type { AssistantLesson, BulkAction, Ref } from '@/types/assistant'
+import type { AssistantLesson, BulkAction, ControlPeriod, Ref } from '@/types/assistant'
+
+import { ControlStudentModal, HomeworkDetailModal, LessonDetailModal, StudentAttendanceModal } from '../records/RecordModals'
 
 import { LessonModal } from './LessonModal'
 import { QuickGroupModal } from './QuickGroupModal'
@@ -29,6 +31,11 @@ export type AssistantAction =
   | { type: 'lesson'; lesson: AssistantLesson }
   | { type: 'create-group' }
   | { type: 'create-student'; group?: Ref }
+  // Read-only record views
+  | { type: 'lesson-detail'; lessonId: number }
+  | { type: 'homework'; homeworkId: number }
+  | { type: 'student-attendance'; groupId: number; student: Ref }
+  | { type: 'control-student'; studentId: number; period: ControlPeriod }
 
 interface ActionsContextValue {
   open: (action: AssistantAction) => void
@@ -87,6 +94,17 @@ export function AssistantActionsProvider({ children }: { children: ReactNode }) 
     modal = <LessonModal lesson={action.lesson} onClose={close} />
   } else if (action?.type === 'create-group') {
     modal = <QuickGroupModal onClose={close} />
+  } else if (action?.type === 'lesson-detail') {
+    modal = <LessonDetailModal key={`l${action.lessonId}`} lessonId={action.lessonId} onClose={close}
+      onOpenHomework={(homeworkId) => setAction({ type: 'homework', homeworkId })} />
+  } else if (action?.type === 'homework') {
+    modal = <HomeworkDetailModal key={`h${action.homeworkId}`} homeworkId={action.homeworkId} onClose={close}
+      onOpenLesson={(lessonId) => setAction({ type: 'lesson-detail', lessonId })} />
+  } else if (action?.type === 'student-attendance') {
+    modal = <StudentAttendanceModal groupId={action.groupId} student={action.student} onClose={close}
+      onOpenLesson={(lessonId) => setAction({ type: 'lesson-detail', lessonId })} />
+  } else if (action?.type === 'control-student') {
+    modal = <ControlStudentModal studentId={action.studentId} period={action.period} onClose={close} />
   } else if (action?.type === 'create-student') {
     modal = (
       <Modal isOpen onClose={close} title="Новый студент" size="lg" icon={<UserPlus className="size-5 text-brand-600" aria-hidden />}>
