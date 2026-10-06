@@ -455,6 +455,23 @@ class SuperuserOnlyDeleteMixin:
             actions.pop("delete_selected", None)
         return actions
 
+    def get_deleted_objects(self, objs, request):
+        """Let a superuser's delete cascade through read-only admins.
+
+        Django's confirmation page asks every *registered* admin of a
+        cascaded model for has_delete_permission. Attendance, homework
+        results, scholarship evaluations, lessons… are read-only monitors
+        whose admins say «no delete» to everyone — they mean «never edited
+        by hand», not «must outlive their student». For a superuser the
+        cascade the models define (on_delete=CASCADE) goes ahead; PROTECT /
+        RESTRICT relations still block it (``protected``). Nobody else ever
+        gets here: has_delete_permission already answered 403.
+        """
+        to_delete, model_count, perms_needed, protected = super().get_deleted_objects(objs, request)
+        if self.has_delete_permission(request):
+            perms_needed = set()
+        return to_delete, model_count, perms_needed, protected
+
     def delete_model(self, request, obj):
         if not self.has_delete_permission(request, obj):
             raise PermissionDenied(self.delete_denied_message)
