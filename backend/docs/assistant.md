@@ -57,9 +57,10 @@ Team Lead workspace already uses:
 
 | Method | Path | |
 |---|---|---|
-| GET | `dashboard/` | cards, today's lessons, attention items |
+| GET | `dashboard/` | cards, today's lessons, attention items, recent activity (admin history + status events) |
 | GET | `options/` | courses (+subjects), trainers, rooms, open groups, weekdays, reasons |
-| GET, POST | `groups/` | list (`status=active\|archived\|all`, `search`, `course`, `teacher`, `page`) / create |
+| GET | `search/?q=` | global search (header / Ctrl+K): students, groups, trainers, the coming week's lessons |
+| GET, POST | `groups/` | list (`status=active\|archived\|all`, `search`, `course`, `teacher`, `day`, `page`) / create |
 | GET, PATCH | `groups/<id>/` | detail (programs, students, lessons, exams, surveys, history) / edit |
 | POST | `groups/<id>/students/` | add existing students |
 | POST | `groups/<id>/programs/` | create / change a program's trainer, subject and slots |
@@ -68,9 +69,9 @@ Team Lead workspace already uses:
 | GET, PATCH | `students/<id>/` | profile / contacts |
 | POST | `students/<id>/deactivate/`, `activate/`, `transfer/` | status and group actions |
 | POST | `students/bulk/` | `transfer`, `add_to_group`, `deactivate`, `activate` — result per student |
-| GET | `schedule/?start=&end=` | lessons (≤ 62 days) + weekly slot conflicts |
+| GET | `schedule/?start=&end=` | lessons (≤ 62 days; `group`, `teacher`, `course`, `day`) + weekly slot conflicts |
 | POST | `lessons/<id>/move/`, `lessons/<id>/cancel/` | |
-| GET | `attendance/?date=` | the day's lessons with rosters and marks |
+| GET | `attendance/?date=` | the day's lessons with rosters and marks (`unmarked=1`: last 3 days' lessons nobody marked) |
 | POST | `attendance/lessons/<id>/` | mark / correct |
 | GET | `scholarships/` | periods with awards |
 | POST | `scholarships/generate/` | form the latest cycle's period |

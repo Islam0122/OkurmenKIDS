@@ -18,6 +18,11 @@ export interface AssistantNavItem {
   end?: boolean
 }
 
+export interface AssistantNavSection {
+  title: string | null
+  items: AssistantNavItem[]
+}
+
 /**
  * The Assistant Workspace sidebar — operations only. No KPI, analytics,
  * trainer control or reports: those are the Team Lead's (/app), never the
@@ -25,15 +30,27 @@ export interface AssistantNavItem {
  * academy has no event or notification module yet; they appear here once
  * the backend has one.
  */
-export const ASSISTANT_NAV: AssistantNavItem[] = [
-  { to: '/assistant', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/assistant/groups', label: 'Группы', icon: Users },
-  { to: '/assistant/students', label: 'Студенты', icon: GraduationCap },
-  { to: '/assistant/schedule', label: 'Расписание', icon: CalendarDays },
-  { to: '/assistant/attendance', label: 'Посещаемость', icon: ClipboardCheck },
-  { to: '/assistant/scholarships', label: 'Стипендии', icon: Award },
-  { to: '/assistant/surveys', label: 'Опросы', icon: MessageSquareText },
+export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
+  { title: null, items: [{ to: '/assistant', label: 'Dashboard', icon: LayoutDashboard, end: true }] },
+  {
+    title: 'Академия',
+    items: [
+      { to: '/assistant/groups', label: 'Группы', icon: Users },
+      { to: '/assistant/students', label: 'Студенты', icon: GraduationCap },
+      { to: '/assistant/schedule', label: 'Расписание', icon: CalendarDays },
+    ],
+  },
+  {
+    title: 'Операции',
+    items: [
+      { to: '/assistant/attendance', label: 'Посещаемость', icon: ClipboardCheck },
+      { to: '/assistant/scholarships', label: 'Стипендии', icon: Award },
+      { to: '/assistant/surveys', label: 'Опросы', icon: MessageSquareText },
+    ],
+  },
 ]
+
+export const ASSISTANT_NAV: AssistantNavItem[] = ASSISTANT_SECTIONS.flatMap((section) => section.items)
 
 export const ASSISTANT_PROFILE: AssistantNavItem = { to: '/assistant/profile', label: 'Профиль', icon: User }
 

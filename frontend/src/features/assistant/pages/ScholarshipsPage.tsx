@@ -7,7 +7,6 @@ import { assistantApi } from '@/api/assistant'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -74,6 +73,7 @@ export function AssistantScholarshipsPage() {
     () => assistantApi.generateScholarship({ award_day: awardDay ? Number(awardDay) : null }),
     (res) => (res.created ? 'Период сформирован' : 'Этот период уже был сформирован'),
   )
+  const awards = (data?.periods ?? []).flatMap((period) => period.awards.map((award) => ({ award, period })))
   const creating = params.get('create') === '1'
   const closeCreate = () => setParams({}, { replace: true })
 
@@ -101,34 +101,43 @@ export function AssistantScholarshipsPage() {
       {data && data.periods.length === 0 ? (
         <EmptyState icon={Award} title="Стипендиальных периодов пока нет" description="Сформируйте первый период — система посчитает рейтинг по правилам стипендии." />
       ) : null}
-      <div className="space-y-6">
-        {data?.periods.map((period) => (
-          <Card key={period.id}
-            title={`${formatDateShort(period.period_start)} – ${formatDateShort(period.period_end)}`}
-            description={`Начисление ${formatDateShort(period.evaluation_date)} · лимит ${period.max_recipients ?? 'без ограничения'}${period.award_amount ? ` · ${period.award_amount} сом` : ''}`}
-            actions={<Badge tone={period.status === 'approved' ? 'success' : 'warning'}>{period.status_display}</Badge>}>
-            {period.awards.length === 0 ? <p className="text-sm text-ink-secondary">Стипендиатов нет.</p> : (
-              <div className="-mx-4 overflow-x-auto sm:-mx-5">
-                <table className="data-table min-w-[560px]">
-                  <thead><tr><th>Место</th><th>Студент</th><th>Группа</th><th>Сумма</th><th>Статус</th><th>Выплата</th></tr></thead>
-                  <tbody>
-                    {period.awards.map((award) => (
-                      <tr key={award.id}>
-                        <td className="tabular-nums">{award.rank}</td>
-                        <td><Link to={`/assistant/students/${award.student.id}?tab=scholarships`} className="font-medium text-ink hover:text-brand-700">{award.student.name}</Link></td>
-                        <td className="text-ink-secondary">{award.group || '—'}</td>
-                        <td className="tabular-nums">{award.amount}</td>
-                        <td><Badge tone={award.status === 'approved' ? 'success' : 'warning'}>{award.status_display}</Badge></td>
-                        <td><Badge tone={award.payment_status === 'paid' ? 'success' : 'muted'}>{award.payment_status_display}</Badge></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        ))}
-      </div>
+      {data && data.periods.length > 0 ? (
+        <>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {data.periods.map((period) => (
+              <span key={period.id} className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm">
+                <span className="font-medium text-ink">{formatDateShort(period.period_start)} – {formatDateShort(period.period_end)}</span>
+                <Badge tone={period.status === 'approved' ? 'success' : 'warning'}>{period.status === 'approved' ? 'Утверждён' : 'Черновик'}</Badge>
+                <span className="text-ink-secondary">{period.awards.length}{period.max_recipients ? `/${period.max_recipients}` : ''}</span>
+              </span>
+            ))}
+          </div>
+          {awards.length === 0 ? <EmptyState icon={Award} title="Стипендиатов пока нет" description="Назначьте стипендию допущенному студенту черновика периода." /> : (
+            <div className="card overflow-x-auto">
+              <table className="data-table min-w-[720px]">
+                <thead><tr><th>Студент</th><th>Группа</th><th>Сумма</th><th>Период</th><th>Основание</th><th>Статус</th></tr></thead>
+                <tbody>
+                  {awards.map(({ award, period }) => (
+                    <tr key={award.id}>
+                      <td><Link to={`/assistant/students/${award.student.id}?tab=scholarships`} className="font-medium text-ink hover:text-brand-700">{award.student.name}</Link></td>
+                      <td className="text-ink-secondary">{award.group || '—'}</td>
+                      <td className="tabular-nums">{award.amount} сом</td>
+                      <td className="whitespace-nowrap text-ink-secondary">{formatDateShort(period.period_start)} – {formatDateShort(period.period_end)}</td>
+                      <td className="text-ink-secondary">Место {award.rank}{award.score ? ` · балл ${award.score}` : ''}</td>
+                      <td>
+                        <span className="flex flex-wrap gap-1">
+                          <Badge tone={award.status === 'approved' ? 'success' : 'warning'}>{award.status === 'approved' ? 'Утверждена' : 'Ожидает'}</Badge>
+                          <Badge tone={award.payment_status === 'paid' ? 'success' : 'muted'}>{award.payment_status_display}</Badge>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ) : null}
       {creating && data ? <AddAwardModal periods={data.periods} onClose={closeCreate} /> : null}
     </div>
   )

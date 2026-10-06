@@ -16,6 +16,8 @@ vi.mock('@/api/assistant', () => ({
     transfer: vi.fn(),
     bulk: vi.fn(),
     dashboard: vi.fn(),
+    search: vi.fn(),
+    createGroup: vi.fn(),
   },
   surveysApi: {},
 }))
@@ -27,6 +29,8 @@ import { assistantApi } from '@/api/assistant'
 import { AppLayout } from '@/app/layouts/AppLayout'
 
 import { AssistantActionsProvider } from './actions/AssistantActions'
+import { QuickGroupModal } from './actions/QuickGroupModal'
+import { CommandPalette } from './layout/CommandPalette'
 import { AssistantStudentDetailPage } from './pages/StudentDetailPage'
 import { AssistantStudentsPage } from './pages/StudentsPage'
 
@@ -38,7 +42,9 @@ const OPTIONS: Options = {
     { id: 1, name: 'PRO-01', course: 'Python', status: 'active', students_count: 18, max_students: null },
     { id: 2, name: 'PRO-02', course: 'Python', status: 'active', students_count: 16, max_students: null },
   ],
-  weekdays: [],
+  weekdays: [
+    { code: 'mon', label: 'Понедельник', short: 'Пн' }, { code: 'wed', label: 'Среда', short: 'Ср' }, { code: 'fri', label: 'Пятница', short: 'Пт' },
+  ],
   deactivation_reasons: [{ value: 'financial_issues', label: 'Финансовые проблемы' }, { value: 'other', label: 'Другая причина' }],
   group_statuses: [],
 }
@@ -139,6 +145,60 @@ describe('Assistant Workspace', () => {
     vi.mocked(assistantApi.students).mockResolvedValue(paginated([]))
     renderWithProviders(<AssistantActionsProvider><AssistantStudentsPage /></AssistantActionsProvider>, { route: '/assistant/students' })
     expect(await screen.findByText('Студентов пока нет')).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: 'Добавить студента' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Студент' }).length).toBeGreaterThan(0)
+  })
+
+  it('global search finds a student and opens the profile', async () => {
+    vi.mocked(assistantApi.search).mockResolvedValue({
+      students: [{ id: 7, name: 'Islam Duishobaev', group: 'PRO-01', status: 'active', status_display: 'Активен' }],
+      groups: [{ id: 1, name: 'PRO-01', course: 'Python', status: 'active', status_display: 'Активна' }],
+      teachers: [], lessons: [],
+    })
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AssistantActionsProvider>
+        <Routes>
+          <Route path="/assistant" element={<CommandPalette isOpen onClose={() => {}} />} />
+          <Route path="/assistant/students/:id" element={<p>Student page</p>} />
+        </Routes>
+      </AssistantActionsProvider>,
+      { route: '/assistant' },
+    )
+    expect(screen.getByRole('option', { name: /Создать группу/ })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Поиск'), 'islam')
+    expect(await screen.findByRole('option', { name: /Islam Duishobaev/ })).toBeInTheDocument()
+    expect(screen.getByText('Студенты')).toBeInTheDocument()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('Student page')).toBeInTheDocument()
+  })
+
+  it('creates a group in fast mode with trainer, days and time', async () => {
+    vi.mocked(assistantApi.students).mockResolvedValue(paginated([row({ id: 9, full_name: 'Aida K' })]))
+    vi.mocked(assistantApi.createGroup).mockResolvedValue({ id: 5, name: 'PRO-05' } as never)
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AssistantActionsProvider>
+        <Routes>
+          <Route path="/assistant" element={<QuickGroupModal onClose={() => {}} />} />
+          <Route path="/assistant/groups/:id" element={<p>Group page</p>} />
+        </Routes>
+      </AssistantActionsProvider>,
+      { route: '/assistant' },
+    )
+    await user.type(await screen.findByLabelText(/Название группы/), 'PRO-05')
+    await user.selectOptions(screen.getByLabelText(/Программа/), '1')
+    await user.selectOptions(screen.getByLabelText(/Тренер/), '1')
+    await user.click(screen.getByRole('button', { name: 'Пт' }))
+    await user.click(await screen.findByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: 'Создать группу' }))
+
+    await waitFor(() => expect(assistantApi.createGroup).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'PRO-05', course: 1, students: [9],
+      programs: [{ teacher: 1, subject: 1, slots: [
+        { day: 'mon', start: '16:00', end: '17:30', room: null },
+        { day: 'wed', start: '16:00', end: '17:30', room: null },
+      ] }],
+    })))
+    expect(await screen.findByText('Group page')).toBeInTheDocument()
   })
 })

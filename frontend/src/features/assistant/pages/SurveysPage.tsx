@@ -17,7 +17,7 @@ import { SearchInput } from '@/components/ui/SearchInput'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
-import { useAssistantFormMutation, useAssistantOptions, useSurveys } from '@/hooks/useAssistant'
+import { useAssistantFormMutation, useAssistantMutation, useAssistantOptions, useSurveys } from '@/hooks/useAssistant'
 import { extractErrorMessage } from '@/lib/apiError'
 import type { QuestionType, SurveyStatus } from '@/types/assistant'
 import { formatDateShort } from '@/utils/format'
@@ -190,7 +190,8 @@ function CreateSurveyModal({ presetGroup, onClose }: { presetGroup?: string; onC
 
 export function AssistantSurveysPage() {
   const [params, setParams] = useSearchParams()
-  const [status, setStatus] = useState<'' | SurveyStatus>('')
+  const [status, setStatus] = useState<'' | SurveyStatus>(() => (['draft', 'published', 'closed'].includes(params.get('status') ?? '') ? params.get('status') as SurveyStatus : ''))
+  const close = useAssistantMutation((id: number) => surveysApi.close(id), 'Опрос закрыт')
   const [group, setGroup] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -216,27 +217,33 @@ export function AssistantSurveysPage() {
       ) : null}
       {data && data.results.length > 0 ? (
         <>
-          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {data.results.map((survey) => {
-              const size = groupSize(survey.group)
-              return (
-                <li key={survey.id}>
-                  <Link to={`/assistant/surveys/${survey.id}`} className="card card-body card-interactive block h-full">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="min-w-0 font-semibold text-ink">{survey.title}</h3>
-                      <Badge tone={SURVEY_STATUS[survey.status].tone}>{SURVEY_STATUS[survey.status].label}</Badge>
-                    </div>
-                    <p className="mt-1 text-sm text-ink-secondary">{groupName(survey.group)} · {survey.audience === 'parent' ? 'родители' : 'студенты'}</p>
-                    <p className="mt-3 text-sm text-ink">
-                      Ответов: <b>{survey.response_count}</b>
-                      {size ? <span className="text-ink-secondary"> · отклик {Math.round((survey.response_count / size) * 100)}%</span> : null}
-                    </p>
-                    <p className="text-xs text-ink-muted">Создан {formatDateShort(survey.created_at.slice(0, 10))} · вопросов: {survey.question_count}</p>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
+          <div className="card overflow-x-auto">
+            <table className="data-table min-w-[720px]">
+              <thead><tr><th>Опрос</th><th>Для кого</th><th>Создан</th><th>Ответы</th><th>Статус</th><th className="text-right">Действия</th></tr></thead>
+              <tbody>
+                {data.results.map((survey) => {
+                  const size = groupSize(survey.group)
+                  return (
+                    <tr key={survey.id}>
+                      <td className="max-w-72"><Link to={`/assistant/surveys/${survey.id}`} className="block truncate font-medium text-ink hover:text-brand-700">{survey.title}</Link></td>
+                      <td className="text-ink-secondary">{groupName(survey.group)} · {survey.audience === 'parent' ? 'родители' : 'студенты'}</td>
+                      <td className="whitespace-nowrap text-ink-secondary">{formatDateShort(survey.created_at.slice(0, 10))}</td>
+                      <td className="tabular-nums">{survey.response_count}{size ? <span className="text-ink-muted"> · {Math.round((survey.response_count / size) * 100)}%</span> : null}</td>
+                      <td><Badge tone={SURVEY_STATUS[survey.status].tone}>{SURVEY_STATUS[survey.status].label}</Badge></td>
+                      <td className="text-right whitespace-nowrap">
+                        <Link to={`/assistant/surveys/${survey.id}`} className="inline-flex h-8 items-center rounded-lg px-2.5 text-sm font-medium text-brand-700 hover:bg-brand-50">
+                          {survey.status === 'draft' ? 'Открыть' : 'Результаты'}
+                        </Link>
+                        {survey.status === 'published' ? (
+                          <Button size="sm" variant="ghost" disabled={close.isPending} onClick={() => close.mutate(survey.id)}>Закрыть</Button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
           <div className="mt-6"><Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} /></div>
         </>
       ) : null}

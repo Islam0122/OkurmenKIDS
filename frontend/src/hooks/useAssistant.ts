@@ -38,12 +38,22 @@ export function useAssistantStudent(id: number | undefined) {
   return useQuery({ queryKey: [...ASSISTANT_KEY, 'student', id], queryFn: () => assistantApi.student(id as number), enabled: id !== undefined })
 }
 
-export function useAssistantSchedule(params: { start: string; end: string; group?: number; teacher?: number }) {
+export function useAssistantSchedule(params: { start: string; end: string; group?: number; teacher?: number; course?: number; day?: string }) {
   return useQuery({ queryKey: [...ASSISTANT_KEY, 'schedule', params], queryFn: () => assistantApi.schedule(params), placeholderData: keepPreviousData })
 }
 
-export function useAssistantAttendance(params: { date: string; group?: number }) {
+export function useAssistantAttendance(params: { date: string; group?: number; unmarked?: boolean }) {
   return useQuery({ queryKey: [...ASSISTANT_KEY, 'attendance', params], queryFn: () => assistantApi.attendance(params) })
+}
+
+export function useAssistantSearch(q: string) {
+  return useQuery({
+    queryKey: [...ASSISTANT_KEY, 'search', q],
+    queryFn: () => assistantApi.search(q),
+    enabled: q.trim().length >= 2,
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  })
 }
 
 export function useAssistantScholarships() {

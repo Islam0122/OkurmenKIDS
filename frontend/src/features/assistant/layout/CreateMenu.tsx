@@ -51,15 +51,15 @@ export function CreateMenu() {
   }, [isOpen])
 
   const items: CreateItem[] = [
-    { key: 'group', label: 'Создать группу', icon: Users, run: () => navigate('/assistant/groups/create') },
-    { key: 'student', label: 'Добавить студента', icon: UserPlus, run: () => navigate('/assistant/students/create') },
-    { key: 'to-group', label: 'Добавить студентов в группу', icon: UsersRound, run: () => open({ type: 'bulk', action: 'add_to_group' }) },
+    { key: 'group', label: 'Группа', icon: Users, run: () => open({ type: 'create-group' }) },
+    { key: 'student', label: 'Студент', icon: UserPlus, run: () => open({ type: 'create-student' }) },
+    { key: 'schedule', label: 'Расписание', icon: CalendarPlus, run: () => open({ type: 'schedule' }) },
+    { key: 'scholarship', label: 'Стипендия', icon: Award, run: () => navigate('/assistant/scholarships?create=1') },
+    { key: 'survey', label: 'Опрос', icon: MessageSquarePlus, run: () => navigate('/assistant/surveys?create=1') },
     { key: 'transfer', label: 'Перевести студента', icon: ArrowRightLeft, run: () => open({ type: 'transfer' }), divider: true },
     { key: 'deactivate', label: 'Деактивировать студента', icon: UserX, run: () => open({ type: 'deactivate' }) },
     { key: 'activate', label: 'Активировать студента', icon: UserCheck, run: () => open({ type: 'activate' }) },
-    { key: 'schedule', label: 'Расписание', icon: CalendarPlus, run: () => open({ type: 'schedule' }), divider: true },
-    { key: 'scholarship', label: 'Стипендия', icon: Award, run: () => navigate('/assistant/scholarships?create=1') },
-    { key: 'survey', label: 'Опрос', icon: MessageSquarePlus, run: () => navigate('/assistant/surveys?create=1') },
+    { key: 'to-group', label: 'Добавить студентов в группу', icon: UsersRound, run: () => open({ type: 'bulk', action: 'add_to_group' }) },
   ]
 
   return (
@@ -79,7 +79,7 @@ export function CreateMenu() {
         <div role="menu" className="absolute right-0 z-40 mt-1 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
           {items.map((item) => (
             <div key={item.key}>
-              {item.divider ? <div className="my-1 border-t border-border" /> : null}
+              {item.divider ? <p className="mt-1 border-t border-border px-3 pt-2 pb-1 text-2xs font-semibold tracking-wider text-ink-muted uppercase">Быстрые действия</p> : null}
               <button
                 type="button"
                 role="menuitem"

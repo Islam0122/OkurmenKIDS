@@ -135,6 +135,14 @@ class DashboardView(AssistantView):
 
 
 @extend_schema(tags=TAGS, responses={200: dict})
+class SearchView(AssistantView):
+    """GET ?q= — students, groups, trainers and the coming week's lessons."""
+
+    def get(self, request):
+        return Response(selectors.search(request.query_params.get("q", "")))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
 class OptionsView(AssistantView):
     """Everything the workspace's forms pick from: courses (with subjects),
     trainers, rooms, open groups, weekdays, deactivation reasons."""
@@ -502,7 +510,7 @@ class AttendanceLessonView(AssistantView):
 # ---------------------------------------------------------------------------
 
 def _period_row(period: ScholarshipPeriod) -> dict:
-    awards = list(period.awards.select_related("student__group").order_by("rank"))
+    awards = list(period.awards.select_related("student__group", "evaluation").order_by("rank"))
     return {
         "id": period.pk,
         "title": str(period),
@@ -519,6 +527,7 @@ def _period_row(period: ScholarshipPeriod) -> dict:
                 "student": {"id": a.student_id, "name": str(a.student)},
                 "group": a.student.group.name if a.student.group_id else "",
                 "rank": a.rank,
+                "score": str(a.evaluation.overall_score) if a.evaluation.overall_score is not None else None,
                 "amount": str(a.amount),
                 "status": a.status,
                 "status_display": a.get_status_display(),
