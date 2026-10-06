@@ -12,6 +12,7 @@ import type {
   SearchResults,
   ControlOverview,
   ControlProfile,
+  MonthlyReport,
   GroupAttendance,
   GroupHomework,
   HomeworkDetail,
@@ -135,6 +136,7 @@ export const assistantApi = {
   homework: (id: number) => get<HomeworkDetail>(`/homework/${id}/`),
   control: (params: { period?: string; group?: number; category?: string; sort?: string }) => get<ControlOverview>('/control/', params),
   controlStudent: (id: number, period: string) => get<ControlProfile>(`/control/students/${id}/`, { period }),
+  monthlyReport: (year: number, month: number) => get<MonthlyReport>('/reports/monthly/', { year, month }),
 
   scholarships: () => get<{ award_days: number[]; pending: number; periods: ScholarshipPeriodRow[] }>('/scholarships/'),
   generateScholarship: (body: { award_day?: number | null }) =>

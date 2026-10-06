@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  ArrowRightLeft, Award, CalendarDays, CalendarPlus, ClipboardCheck, CornerDownLeft, GraduationCap, Loader2,
+  ArrowRightLeft, Award, CalendarDays, CalendarPlus, ClipboardCheck, CornerDownLeft, FileBarChart, GraduationCap, Loader2,
   MessageSquarePlus, Search, ShieldAlert, UserCheck, UserPlus, UserRound, Users, UserX,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -60,6 +60,7 @@ export function CommandPalette({ isOpen, onClose }: { isOpen: boolean; onClose: 
       { key: 'c-schedule', section: 'Команды', label: 'Создать расписание', icon: CalendarPlus, run: act(() => open({ type: 'schedule' })) },
       { key: 'c-open-schedule', section: 'Команды', label: 'Открыть расписание', icon: CalendarDays, run: go('/assistant/schedule') },
       { key: 'c-control', section: 'Команды', label: 'Контроль активности', icon: ShieldAlert, run: go('/assistant/control') },
+      { key: 'c-report', section: 'Команды', label: 'Месячный отчёт', icon: FileBarChart, run: go('/assistant/reports') },
       { key: 'c-attendance', section: 'Команды', label: 'Посещаемость сегодня', icon: ClipboardCheck, run: go('/assistant/attendance') },
       { key: 'c-scholarship', section: 'Команды', label: 'Назначить стипендию', icon: Award, run: go('/assistant/scholarships?create=1') },
       { key: 'c-survey', section: 'Команды', label: 'Создать опрос', icon: MessageSquarePlus, run: go('/assistant/surveys?create=1') },

@@ -55,7 +55,7 @@ from apps.scholarships.services.generation import add_award, generate_period, ge
 from apps.scholarships.services.periods import latest_award_date
 from apps.users.permissions import IsAdmin, IsAdminOrAssistant
 
-from . import activity, records, selectors
+from . import activity, monthly, records, selectors
 from .serializers import (
     PAUSE,
     ActivateSerializer,
@@ -666,3 +666,20 @@ class ControlStudentView(AssistantView):
     def get(self, request, pk):
         student = get_object_or_404(Student.objects.select_related("group"), pk=pk)
         return Response(activity.student_profile(student, request.query_params.get("period", "30d")))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class MonthlyReportView(AssistantView):
+    """GET — «Месячный отчёт» for ?year=&month= (default: the current month).
+    Computed on demand from existing data, read only: requesting it again
+    is «Обновить». Nothing about trainers — that is the Team Lead's report."""
+
+    def get(self, request):
+        today = timezone.localdate()
+        try:
+            year = int(request.query_params.get("year") or today.year)
+            month = int(request.query_params.get("month") or today.month)
+            return Response(monthly.monthly_report(year, month))
+        except (ValueError, monthly.ReportError) as exc:
+            message = str(exc) if isinstance(exc, monthly.ReportError) else "Неверный месяц или год."
+            return Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)

@@ -84,6 +84,30 @@ in settings without code changes:
 ASSISTANT_CONTROL_THRESHOLDS = {"normal_attendance": 85, "consecutive_absences": 2}
 ```
 
+## Месячный отчёт
+
+One report type: a month (`year` + `month`, the 1st 00:00 – the last day
+23:59 in the project timezone). `apps/assistant/monthly.py` computes it on
+request from existing data — no model, nothing stored, «Сформировать» /
+re-requesting is the refresh. Order: overview → attendance (+ by group) →
+low attendance → homework (+ by group) → not doing homework → risk →
+surveys → scholarships → activity → conclusions.
+
+* Attendance / homework / activity use the definitions above; lessons and
+  homework after today never count. Student lists are «Контроль» over the
+  month (`activity.analyse_students(..., start, until)`): active students
+  of active, started groups, current stint only.
+* Surveys (feedback app): surveys published or answered in the month.
+  Average score only from single-choice questions with numeric options
+  (1–5, 1–10), normalised to 5; participation only for a group's survey,
+  against its active students; «низкая оценка» ≤ 40% of the scale. Text
+  answers are quoted as written — repeated ones first.
+* Scholarships: `ScholarshipAward` with `award_date` in the month.
+* Conclusions are rules over these numbers (`GOOD_*` / `LOW_*` in
+  monthly.py) — no generated advice.
+* No trainer data at all (KPI, workload, ratings): that is the Team Lead's
+  report.
+
 ## History / audit
 
 * A transfer is a `StudentStatusEvent` of type `transferred` with
@@ -119,6 +143,7 @@ ASSISTANT_CONTROL_THRESHOLDS = {"normal_attendance": 85, "consecutive_absences":
 | GET | `homework/<id>/` | homework details: every student's result (status, submitted / checked, score, comment) |
 | GET | `control/` | «Контроль активности» (`period=7d\|14d\|30d\|month\|all`, default `30d`; `group`, `category`, `sort`) |
 | GET | `control/students/<id>/` | one student's risk profile and timeline (`period`) |
+| GET | `reports/monthly/?year=&month=` | «Месячный отчёт» (default: current month; a future month → 400) |
 | GET | `scholarships/` | periods with awards |
 | POST | `scholarships/generate/` | form the latest cycle's period |
 | GET, POST | `scholarships/periods/<id>/awards/` | eligible candidates / add an award (draft period) |
