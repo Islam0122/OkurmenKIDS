@@ -11,6 +11,8 @@ from apps.users.models import Subject, Teacher
 # «Пауза» is not a departure reason: it routes the same modal to
 # services.student_status.pause_student instead of deactivate_student.
 PAUSE = "pause"
+# A new departure names one of the current reasons; earlier ones stay on old records only.
+DEPARTURE_REASONS = [(v, l) for v, l in StudentStatusEvent.Reason.choices if v in StudentStatusEvent.DEACTIVATION_REASONS]
 
 
 class SlotSerializer(serializers.Serializer):
@@ -81,7 +83,7 @@ class StudentUpdateSerializer(serializers.Serializer):
 
 
 class DeactivateSerializer(serializers.Serializer):
-    reason = serializers.ChoiceField(choices=[(PAUSE, "Пауза"), *StudentStatusEvent.Reason.choices])
+    reason = serializers.ChoiceField(choices=[(PAUSE, "Пауза"), *DEPARTURE_REASONS])
     event_date = serializers.DateField(required=False, allow_null=True)
     expected_return_date = serializers.DateField(required=False, allow_null=True)
     comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=1000)
@@ -105,7 +107,7 @@ class BulkActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=[(a, a) for a in ACTIONS])
     students = serializers.PrimaryKeyRelatedField(queryset=Student.objects.all(), many=True, allow_empty=False)
     group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all(), required=False, allow_null=True)
-    reason = serializers.ChoiceField(choices=[(PAUSE, "Пауза"), *StudentStatusEvent.Reason.choices], required=False)
+    reason = serializers.ChoiceField(choices=[(PAUSE, "Пауза"), *DEPARTURE_REASONS], required=False)
     event_date = serializers.DateField(required=False, allow_null=True)
     comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=1000)
 

@@ -18,7 +18,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Avg, Count, Min, Prefetch, Q
+from django.db.models import Avg, Count, Min, OuterRef, Prefetch, Q, Subquery
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -2967,9 +2967,17 @@ def student_departure_history_view(request):
     date_to = request.GET.get("date_to") or ""
     query = request.GET.get("q") or ""
 
+    # The return, if any: the first reactivation of the same student after this departure.
+    returned_on = (
+        StudentStatusEvent.objects.filter(
+            student_id=OuterRef("student_id"), event_type=StudentStatusEvent.EventType.REACTIVATED,
+            event_date__gte=OuterRef("event_date"),
+        ).order_by("event_date").values("event_date")[:1]
+    )
     events_qs = (
         StudentStatusEvent.objects.filter(event_type=StudentStatusEvent.EventType.DEACTIVATED)
         .select_related("student", "group", "performed_by")
+        .annotate(returned_on=Subquery(returned_on))
         .order_by("-event_date", "-created_at")
     )
     if year:

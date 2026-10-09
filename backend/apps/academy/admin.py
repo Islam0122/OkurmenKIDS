@@ -339,9 +339,15 @@ class StudentAssignGroupForm(forms.Form):
     )
 
 
+DEACTIVATION_REASON_CHOICES = [
+    (value, label) for value, label in StudentStatusEvent.Reason.choices
+    if value in StudentStatusEvent.DEACTIVATION_REASONS
+]
+
+
 class StudentDeactivateForm(forms.Form):
     reason = forms.ChoiceField(
-        choices=[("", "— Выберите причину —")] + list(StudentStatusEvent.Reason.choices),
+        choices=[("", "— Выберите причину —")] + DEACTIVATION_REASON_CHOICES,
         label="Причина деактивации",
         widget=forms.Select(attrs={"class": "ok-input"}),
     )
@@ -489,7 +495,9 @@ class StudentAdmin(SuperuserOnlyDeleteMixin, admin.ModelAdmin):
     list_filter = ("group", "status")
     search_fields = ("first_name", "last_name", "phone", "parent_phone")
     ordering = ("last_name", "first_name")
-    readonly_fields = ("status", "created_at", "updated_at")
+    # is_active/status change only through services.student_status (with
+    # history and a reason) — never by ticking a box on the form.
+    readonly_fields = ("is_active", "status", "created_at", "updated_at")
     autocomplete_fields = ("group",)
     list_per_page = 25
     actions = ["activate_students", "deactivate_students", "assign_group_action", "export_selected_csv"]
@@ -566,17 +574,71 @@ class StudentAdmin(SuperuserOnlyDeleteMixin, admin.ModelAdmin):
 
     @admin.action(description="Активировать выбранных студентов")
     def activate_students(self, request, queryset):
-        updated = queryset.update(is_active=True)
-        self.message_user(request, f"Активировано студентов: {updated}.", messages.SUCCESS)
+        """Through the same services as the student page: a withdrawn student
+        is reactivated, a paused one continues — each with a history event.
+        Nobody is switched on silently."""
+        done, skipped = 0, []
+        for student in queryset.select_related("group"):
+            try:
+                if student.status == Student.Status.WITHDRAWN:
+                    reactivate_student(student, group=student.group, event_date=timezone.localdate(),
+                                       performed_by=request.user)
+                elif student.status == Student.Status.PAUSED:
+                    continue_student(student, group=student.group, performed_by=request.user)
+                else:
+                    skipped.append(f"{student} — уже {student.get_status_display().lower()}")
+                    continue
+                done += 1
+            except DjangoValidationError as exc:
+                skipped.append(f"{student} — {'; '.join(exc.messages)}")
+        self.message_user(request, f"Активировано студентов: {done}.", messages.SUCCESS if done else messages.WARNING)
+        if skipped:
+            self.message_user(request, "Пропущены: " + "; ".join(skipped[:10]), messages.WARNING)
 
     @admin.action(description="Деактивировать выбранных студентов")
     def deactivate_students(self, request, queryset):
-        updated = queryset.update(is_active=False)
-        self.message_user(
-            request,
-            f"Деактивировано студентов: {updated}. Посещаемость, домашние задания и история сохранены.",
-            messages.SUCCESS,
-        )
+        # A departure needs a reason — the next page asks for it once for all.
+        ids = ",".join(str(pk) for pk in queryset.values_list("pk", flat=True))
+        return redirect(f"{reverse('admin:academy_student_bulk_deactivate')}?ids={ids}")
+
+    def bulk_deactivate_view(self, request):
+        ids_param = request.GET.get("ids") or request.POST.get("ids") or ""
+        student_ids = [int(pk) for pk in ids_param.split(",") if pk.strip().isdigit()]
+        students = list(Student.objects.filter(pk__in=student_ids).select_related("group").order_by("last_name", "first_name"))
+        if not students:
+            self.message_user(request, "Не выбрано ни одного студента.", messages.WARNING)
+            return redirect(reverse("admin:academy_student_changelist"))
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+
+        form = StudentDeactivateForm(request.POST or None)
+        if request.method == "POST" and form.is_valid():
+            done, skipped = 0, []
+            for student in students:
+                try:
+                    deactivate_student(student, reason=form.cleaned_data["reason"],
+                                       comment=form.cleaned_data["comment"], performed_by=request.user)
+                    done += 1
+                except DjangoValidationError as exc:
+                    skipped.append(f"{student} — {'; '.join(exc.messages)}")
+            self.message_user(
+                request, f"Деактивировано студентов: {done}. Посещаемость, домашние задания и история сохранены.",
+                messages.SUCCESS if done else messages.WARNING,
+            )
+            if skipped:
+                self.message_user(request, "Пропущены: " + "; ".join(skipped[:10]), messages.WARNING)
+            return redirect(reverse("admin:academy_student_changelist"))
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Деактивировать студентов",
+            "opts": self.model._meta,
+            "form": form,
+            "students": students,
+            "ids": ids_param,
+            "changelist_url": reverse("admin:academy_student_changelist"),
+        }
+        return render(request, "admin/academy/student/bulk_deactivate.html", context)
 
     @admin.action(description="Назначить группу выбранным студентам")
     def assign_group_action(self, request, queryset):
@@ -589,6 +651,11 @@ class StudentAdmin(SuperuserOnlyDeleteMixin, admin.ModelAdmin):
             path("export/", self.admin_site.admin_view(self.export_view), name="academy_student_export"),
             path("template/", self.admin_site.admin_view(self.template_view), name="academy_student_template"),
             path("bulk-add/", self.admin_site.admin_view(self.bulk_add_view), name="academy_student_bulk_add"),
+            path(
+                "bulk-deactivate/",
+                self.admin_site.admin_view(self.bulk_deactivate_view),
+                name="academy_student_bulk_deactivate",
+            ),
             path(
                 "assign-group/",
                 self.admin_site.admin_view(self.assign_group_view),

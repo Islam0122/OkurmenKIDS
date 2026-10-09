@@ -61,20 +61,23 @@
             <thead>
               <tr>
                 <th>Студент</th><th>Причина</th><th>Группа на момент ухода</th><th>Дата ухода</th>
-                <th>Кто оформил</th><th>Возврат</th><th>Сумма возврата</th><th>Дата возврата</th><th>Текущий статус</th>
+                <th>Кто оформил</th><th>Последняя активность</th><th>Срок обучения</th>
+                <th>Возврат</th><th>Сумма возврата</th><th>Дата возврата</th><th>Текущий статус</th>
               </tr>
             </thead>
             <tbody>
               {% for event in rows %}
                 <tr>
                   <td><a href="{% url 'admin:academy_student_detail' event.student.pk %}">{{ event.student }}</a></td>
-                  <td>{{ event.get_reason_display|default:"—" }}{% if event.comment %}<div class="ok-help-text">{{ event.comment }}</div>{% endif %}</td>
+                  <td>{% if event.reason %}{{ event.get_reason_display }}{% else %}Не указана{% endif %}{% if event.comment %}<div class="ok-help-text">{{ event.comment }}</div>{% endif %}</td>
                   <td>{{ event.group.name|default:"—" }}</td>
                   <td>{{ event.event_date|date:"d.m.Y" }}</td>
                   <td>{{ event.performed_by|default:"—" }}</td>
+                  <td>{{ event.last_activity_date|date:"d.m.Y"|default:"—" }}</td>
+                  <td>{% if event.study_days is not None %}{{ event.study_days }} дн.{% else %}—{% endif %}</td>
+                  <td>{% if event.returned_on %}Вернулся{% else %}—{% endif %}</td>
                   <td>—</td>
-                  <td>—</td>
-                  <td>—</td>
+                  <td>{{ event.returned_on|date:"d.m.Y"|default:"—" }}</td>
                   <td>
                     {% if event.student.is_active %}
                       <span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>Активен</span>

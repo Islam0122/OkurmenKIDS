@@ -14,8 +14,8 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
-import { useMonthlyReport } from '@/hooks/useAssistant'
-import type { MonthlyReport, ReportStudent } from '@/types/assistant'
+import { useAssistantOptions, useMonthlyReport } from '@/hooks/useAssistant'
+import type { MonthlyReport, ReportFilters, ReportStudent } from '@/types/assistant'
 import { cn } from '@/utils/cn'
 
 import { useAssistantActions } from '../actions/AssistantActions'
@@ -114,12 +114,209 @@ function Headline({ label, value, children }: { label: string; value: number | n
   )
 }
 
-function Report({ report }: { report: MonthlyReport }) {
+function Bullets({ items, empty }: { items: string[]; empty: string }) {
+  if (!items.length) return <p className="card px-4 py-3 text-sm text-ink-muted">{empty}</p>
+  return <ul className="card list-disc space-y-1 py-3 pr-4 pl-9 text-sm text-ink">{items.map((line) => <li key={line}>{line}</li>)}</ul>
+}
+
+function Bars({ items, tone = 'bg-brand-500' }: { items: { label: string; count: number; percent: number | null }[]; tone?: string }) {
+  const top = Math.max(1, ...items.map((x) => x.count))
+  return (
+    <ul className="card space-y-2 px-4 py-3" role="list">
+      {items.map((x) => (
+        <li key={x.label} className="grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-3 text-sm sm:grid-cols-[minmax(0,16rem)_1fr_auto]">
+          <span className="min-w-0 break-words text-ink">{x.label}</span>
+          <span className="h-2 overflow-hidden rounded-full bg-surface-hover">
+            <span className={cn('block h-full rounded-full', tone)} style={{ width: `${(x.count / top) * 100}%` }} />
+          </span>
+          <span className="text-right font-semibold whitespace-nowrap text-ink tabular-nums">{x.count}{x.percent !== null ? ` · ${x.percent}%` : ''}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+const dateShort = (value: string | null) => (value ? format(parseISO(value), 'dd.MM.yyyy') : '—')
+
+function InactiveSection({ index, report }: { index: number; report: MonthlyReport }) {
+  const { thresholds: [short, mid, long], counts: c, previous, students } = report.inactive
+  return (
+    <Section index={index} title="Неактивные студенты и динамика активности"
+      hint={`Активные на конец месяца; дни без посещения и сданного ДЗ, пока шли занятия. Пороги ${short} / ${mid} / ${long} дней`}>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <Kpi label="Активные" value={c.active} tone="text-brand-700" />
+        <Kpi label={`Неактивные (${mid}+ дн.)`} value={c.inactive} tone={c.inactive ? 'text-warning' : undefined} />
+        <Kpi label="Без посещений" value={c.no_attendance} tone={c.no_attendance ? 'text-danger' : undefined} />
+        <Kpi label="Не сдают ДЗ" value={c.no_homework} tone={c.no_homework ? 'text-danger' : undefined} />
+        <Kpi label="В зоне риска" value={c.risk} tone={c.risk ? 'text-danger' : undefined} />
+        <Kpi label={`Давно (${long}+ дн.)`} value={c.long_inactive} tone={c.long_inactive ? 'text-danger' : undefined} />
+      </div>
+      {previous ? (
+        <p className="text-sm text-ink-secondary">
+          К прошлому месяцу: неактивны {mid}+ дней — {previous.inactive} → <b className="text-ink">{c.inactive}</b>; в зоне риска — {previous.risk} → <b className="text-ink">{c.risk}</b>.
+        </p>
+      ) : null}
+      <Bars tone="bg-warning" items={report.inactive.thresholds.map((d) => ({ label: `${d}+ дней без активности`, count: c[`idle_${d}`] ?? 0, percent: null }))} />
+      <Table empty={students.length === 0 && 'Неактивных студентов нет.'} head={
+        <tr><th className={th}>Студент</th><th className={th}>Группа · тренер</th><th className={th}>Посл. посещение</th><th className={th}>Посл. ДЗ</th>
+          <th className={cn(th, num)}>Пропуски</th><th className={cn(th, num)}>Посещ.</th><th className={cn(th, num)}>ДЗ</th>
+          <th className={cn(th, num)}>Без активности</th><th className={th}>Статус</th><th className={th}>Действие</th></tr>
+      }>
+        {students.map((x) => (
+          <tr key={x.student_id}>
+            <td className={cn(td, 'font-medium text-ink')}>{x.name}</td>
+            <td className={cn(td, 'text-ink-secondary')}>{x.group?.name ?? '—'}{x.trainer ? <span className="block text-2xs text-ink-muted">{x.trainer}</span> : null}</td>
+            <td className={cn(td, 'whitespace-nowrap')}>{dateShort(x.last_attended)}</td>
+            <td className={cn(td, 'whitespace-nowrap')}>{dateShort(x.last_homework)}</td>
+            <td className={cn(td, num)}>{x.absent}</td>
+            <td className={cn(td, num)}><Percent value={x.attendance} /></td>
+            <td className={cn(td, num)}><Percent value={x.homework} /></td>
+            <td className={cn(td, num, (x.days_inactive ?? 0) >= long ? 'font-semibold text-danger' : (x.days_inactive ?? 0) >= mid ? 'text-warning' : '')}>
+              {x.days_inactive === null ? '—' : `${x.days_inactive} дн.`}
+            </td>
+            <td className={cn(td, 'text-xs')}>{x.status}<span className="block text-ink-muted">{x.activity_label}</span></td>
+            <td className={cn(td, 'min-w-48 text-xs text-ink')}>{x.action}</td>
+          </tr>
+        ))}
+      </Table>
+    </Section>
+  )
+}
+
+function DeparturesSection({ index, report, filterBar }: { index: number; report: MonthlyReport; filterBar: ReactNode }) {
+  const d = report.departures
+  return (
+    <Section index={index} title="Деактивированные студенты" hint="Ушли за месяц. Завершение обучения и пауза — отдельно; неактивные, но не ушедшие — не здесь">
+      {filterBar}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <Kpi label="Ушли за месяц" value={d.total} tone={d.total ? 'text-danger' : undefined} />
+        <Kpi label="Уже вернулись" value={d.returned} tone={d.returned ? 'text-brand-700' : undefined} />
+        <Kpi label="Доля вернувшихся" value={<Percent value={d.returned_percent} />} />
+        <Kpi label="Причина не указана" value={d.unknown} tone={d.unknown ? 'text-warning' : undefined} />
+        <Kpi label="Завершили обучение" value={d.completed} />
+        <Kpi label="Ушли на паузу" value={d.paused} />
+      </div>
+      <Table empty={d.rows.length === 0 && (d.filters_label ? 'По выбранным фильтрам уходов нет.' : 'За месяц никто не ушёл.')} head={
+        <tr><th className={th}>Студент</th><th className={th}>Группа · тренер</th><th className={th}>Дата</th><th className={th}>Причина</th>
+          <th className={th}>Оформил</th><th className={th}>Посл. активность</th><th className={cn(th, num)}>Срок обучения</th><th className={th}>Возврат</th></tr>
+      }>
+        {d.rows.map((x) => (
+          <tr key={x.event_id}>
+            <td className={cn(td, 'font-medium text-ink')}>{x.name}</td>
+            <td className={cn(td, 'text-ink-secondary')}>{x.group?.name ?? '—'}{x.trainer ? <span className="block text-2xs text-ink-muted">{x.trainer}</span> : null}</td>
+            <td className={cn(td, 'whitespace-nowrap')}>{dateShort(x.date)}</td>
+            <td className={cn(td, x.reason === 'unknown' ? 'text-warning' : 'text-ink')}>{x.reason_label}
+              {x.comment ? <span className="block text-2xs text-ink-muted">{x.comment}</span> : null}</td>
+            <td className={cn(td, 'text-ink-secondary')}>{x.performed_by || '—'}</td>
+            <td className={cn(td, 'whitespace-nowrap')}>{dateShort(x.last_activity)}</td>
+            <td className={cn(td, num)}>{x.study_days === null ? '—' : `${x.study_days} дн.`}</td>
+            <td className={cn(td, 'whitespace-nowrap', x.returned_on ? 'text-brand-700' : 'text-ink-muted')}>{x.returned_on ? `Вернулся ${dateShort(x.returned_on)}` : '—'}</td>
+          </tr>
+        ))}
+      </Table>
+    </Section>
+  )
+}
+
+function ReasonsSection({ index, report }: { index: number; report: MonthlyReport }) {
+  const d = report.departures
+  const change = d.change
+  return (
+    <Section index={index} title="Причины ухода" hint="Почему студенты уходят">
+      <p className="text-sm text-ink-secondary">
+        Ушли за месяц: <b className="text-ink">{d.month_total}</b>
+        {d.previous_total !== null ? <> · в прошлом месяце {d.previous_total} ({change && change > 0 ? '+' : ''}{change})</> : null}
+        {d.filters_label ? <> · по фильтрам ({d.filters_label}): <b className="text-ink">{d.total}</b></> : null}
+        {' '}· вернулись {d.returned} ({d.returned_percent ?? '—'}%) · причина не указана: {d.unknown}
+      </p>
+      {d.total === 0 ? <p className="card px-4 py-3 text-sm text-ink-secondary">Уходов нет — распределять нечего.</p> : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="space-y-2 lg:col-span-2"><h3 className="text-sm font-semibold text-ink">По причинам</h3><Bars tone="bg-danger" items={d.by_reason} /></div>
+          <div className="space-y-2"><h3 className="text-sm font-semibold text-ink">По группам</h3><Bars items={d.by_group} /></div>
+          <div className="space-y-2"><h3 className="text-sm font-semibold text-ink">По тренерам групп</h3><Bars items={d.by_trainer} /></div>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+function FinanceSection({ index, report }: { index: number; report: MonthlyReport }) {
+  const f = report.finance
+  return (
+    <Section index={index} title="Финансовая аналитика">
+      {!f.allowed ? <p className="card px-4 py-3 text-sm text-ink-secondary">{f.note}</p> : (
+        <>
+          <p className="rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">{f.note} Суммы не оцениваются и не придумываются.</p>
+          <Table head={<tr><th className={th}>Показатель</th><th className={cn(th, num)}>Значение</th></tr>}>
+            {f.metrics.map((m) => (
+              <tr key={m.label}>
+                <td className={td}>{m.label}</td>
+                <td className={cn(td, num, m.value === null && 'text-ink-muted')}>{m.value ?? 'Недостаточно данных'}</td>
+              </tr>
+            ))}
+          </Table>
+          <p className="text-sm text-ink-secondary">Каких данных не хватает: {f.missing.join('; ')}.</p>
+        </>
+      )}
+    </Section>
+  )
+}
+
+function ComparisonSection({ index, report }: { index: number; report: MonthlyReport }) {
+  const comp = report.comparison
+  const trend = { better: ['▲ лучше', 'text-brand-700'], worse: ['▼ хуже', 'text-danger'], same: ['без изменений', 'text-ink-muted'] } as const
+  return (
+    <Section index={index} title="Сравнение с предыдущим месяцем" hint={`${comp.previous_title} → ${report.title}`}>
+      <Table head={<tr><th className={th}>Показатель</th><th className={cn(th, num)}>{comp.previous_title}</th>
+        <th className={cn(th, num)}>{report.title}</th><th className={cn(th, num)}>Изменение</th></tr>}>
+        {comp.rows.map((x) => (
+          <tr key={x.key}>
+            <td className={td}>{x.label}</td>
+            <td className={cn(td, num)}>{x.previous ?? '—'}</td>
+            <td className={cn(td, num, 'font-semibold')}>{x.current ?? '—'}</td>
+            <td className={cn(td, num, x.trend ? trend[x.trend][1] : 'text-ink-muted')}>
+              {x.trend ? `${(x.delta ?? 0) > 0 ? '+' : ''}${x.delta} · ${trend[x.trend][0]}` : 'нет данных'}
+            </td>
+          </tr>
+        ))}
+      </Table>
+    </Section>
+  )
+}
+
+function ManagementSummary({ report }: { report: MonthlyReport }) {
+  const m = report.summary
+  const block = (title: string, items: string[], empty: string, tone: string) => (
+    <div className="card px-4 py-3">
+      <h4 className={cn('mb-1.5 text-sm font-semibold', tone)}>{title}</h4>
+      {items.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-ink">{items.map((line) => <li key={line}>{line}</li>)}</ul>
+        : <p className="text-sm text-ink-muted">{empty}</p>}
+    </div>
+  )
+  return (
+    <div className="space-y-3">
+      <h3 className="pt-2 text-base font-semibold text-ink">Управленческое резюме</h3>
+      <div className="grid gap-3 md:grid-cols-2">
+        {block('Что улучшилось', m.improved, 'Нет показателей, которые улучшились.', 'text-brand-700')}
+        {block('Что ухудшилось', m.worsened, 'Нет показателей, которые ухудшились.', 'text-danger')}
+        {block('Группы, требующие внимания', m.groups, 'Нет.', 'text-warning')}
+        {block('Частые причины ухода', m.top_reasons, 'Уходов за месяц не было.', 'text-warning')}
+      </div>
+      <p className="rounded-lg bg-warning-soft px-4 py-2 text-sm text-ink">Потенциально нуждаются в контакте: <b>{m.contacts}</b></p>
+      {block('Действия на следующий месяц', m.next_month, 'Нет данных для рекомендаций.', 'text-brand-700')}
+    </div>
+  )
+}
+
+function Report({ report, filterBar }: { report: MonthlyReport; filterBar: ReactNode }) {
   const { overview: o, attendance: att, homework: hw, students: st, surveys: sv, scholarships: sch, conclusions } = report
+  // Sections are numbered in the order they appear — reordering never leaves a gap or a duplicate.
+  let sectionNo = 0
+  const next = () => (sectionNo += 1)
   const act = st.activity
   return (
     <div className="space-y-8">
-      <Section index={1} title="Общая статистика">
+      <Section index={next()} title="Общая статистика">
         <div className="space-y-3">
           <KpiGroup title="Группы">
             <Kpi label="Всего групп" value={o.groups_total} />
@@ -140,7 +337,7 @@ function Report({ report }: { report: MonthlyReport }) {
         </div>
       </Section>
 
-      <Section index={2} title="Посещаемость" hint="Только проведённые занятия, отменённые не учитываются">
+      <Section index={next()} title="Посещаемость" hint="Только проведённые занятия, отменённые не учитываются">
         <Headline label="Посещаемость" value={att.percent}>
           <Totals items={[['Проведено занятий', att.lessons], ['Присутствовали', att.attended, 'text-brand-700'],
             ['Пропустили', att.absent, att.absent ? 'text-danger' : undefined], ['Уважительная причина', att.excused], ['Всего отметок', att.marked]]} />
@@ -161,7 +358,7 @@ function Report({ report }: { report: MonthlyReport }) {
         </Table>
       </Section>
 
-      <Section index={3} title="Требуют внимания — посещаемость">
+      <Section index={next()} title="Требуют внимания — посещаемость">
         <Table empty={st.attendance_attention.length === 0 && 'Студентов с низкой посещаемостью нет.'} head={
           <tr><th className={th}>Студент</th><th className={th}>Группа</th><th className={cn(th, num)}>Посещаемость</th>
             <th className={cn(th, num)}>Пропуски</th><th className={cn(th, num)}>Пропуски подряд</th></tr>
@@ -178,7 +375,7 @@ function Report({ report }: { report: MonthlyReport }) {
         </Table>
       </Section>
 
-      <Section index={4} title="Домашние задания" hint="Выполнение — по заданиям, чей дедлайн уже прошёл">
+      <Section index={next()} title="Домашние задания" hint="Выполнение — по заданиям, чей дедлайн уже прошёл">
         <Headline label="Выполнение ДЗ" value={hw.percent}>
           <Totals items={[['Выдано заданий', hw.given], ['Выполнено работ', hw.done, 'text-brand-700'],
             ['Не выполнено', hw.not_done, hw.not_done ? 'text-danger' : undefined], ['На проверке', hw.pending, hw.pending ? 'text-info' : undefined]]} />
@@ -200,7 +397,7 @@ function Report({ report }: { report: MonthlyReport }) {
         </Table>
       </Section>
 
-      <Section index={5} title="Требуют внимания — ДЗ">
+      <Section index={next()} title="Требуют внимания — ДЗ">
         <Table empty={st.homework_attention.length === 0 && 'Студентов, которые не сдают ДЗ, нет.'} head={
           <tr><th className={th}>Студент</th><th className={th}>Группа</th><th className={cn(th, num)}>Выполнение</th>
             <th className={cn(th, num)}>Не сдано</th><th className={cn(th, num)}>Подряд</th></tr>
@@ -217,7 +414,7 @@ function Report({ report }: { report: MonthlyReport }) {
         </Table>
       </Section>
 
-      <Section index={6} title="В зоне риска" hint="Низкая посещаемость и низкое выполнение ДЗ одновременно">
+      <Section index={next()} title="В зоне риска" hint="Низкая посещаемость и низкое выполнение ДЗ одновременно">
         {st.risk.length === 0 ? <p className="card px-4 py-3 text-sm text-ink-secondary">Студентов в зоне риска нет.</p> : (
           <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {st.risk.map((r) => (
@@ -243,7 +440,7 @@ function Report({ report }: { report: MonthlyReport }) {
         )}
       </Section>
 
-      <Section index={7} title="Опросы">
+      <Section index={next()} title="Опросы">
         {sv.surveys === 0 ? <p className="card px-4 py-3 text-sm text-ink-secondary">В этом месяце опросов и ответов не было.</p> : (
           <>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -289,7 +486,7 @@ function Report({ report }: { report: MonthlyReport }) {
         )}
       </Section>
 
-      <Section index={8} title="Стипендии">
+      <Section index={next()} title="Стипендии">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Kpi label="Стипендий" value={sch.awards} />
           <Kpi label="Получателей" value={sch.recipients} />
@@ -313,7 +510,7 @@ function Report({ report }: { report: MonthlyReport }) {
         </Table>
       </Section>
 
-      <Section index={9} title="Активность студентов" hint={`Активные студенты начавших обучение групп: ${act.analysed}`}>
+      <Section index={next()} title="Активность студентов" hint={`Активные студенты начавших обучение групп: ${act.analysed}`}>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <Kpi label="Активные (норма)" value={act.normal} tone="text-brand-700" />
           <Kpi label="Требуют внимания" value={act.attention} tone={act.attention ? 'text-warning' : undefined} />
@@ -331,7 +528,16 @@ function Report({ report }: { report: MonthlyReport }) {
         {act.no_data ? <p className="text-xs text-ink-muted">Мало данных для оценки (нет отметок и ДЗ к сроку): {act.no_data}.</p> : null}
       </Section>
 
-      <Section index={10} title="Итоги месяца">
+      <InactiveSection index={next()} report={report} />
+      <DeparturesSection index={next()} report={report} filterBar={filterBar} />
+      <ReasonsSection index={next()} report={report} />
+      <FinanceSection index={next()} report={report} />
+      <ComparisonSection index={next()} report={report} />
+      <Section index={next()} title="Рекомендации по удержанию студентов" hint="Только по данным этого отчёта">
+        <Bullets items={report.recommendations} empty="Данных для рекомендаций недостаточно." />
+      </Section>
+
+      <Section index={next()} title="Итоги месяца">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="card px-4 py-3">
             <h3 className="mb-2 flex items-center gap-1.5 font-semibold text-brand-700"><CheckCircle2 className="size-4" aria-hidden />Хорошие показатели</h3>
@@ -358,6 +564,7 @@ function Report({ report }: { report: MonthlyReport }) {
             </tr>
           ))}
         </Table>
+        <ManagementSummary report={report} />
       </Section>
     </div>
   )
@@ -370,14 +577,32 @@ export function AssistantMonthlyReportPage() {
   const year = Number(params.get('year')) || now.getFullYear()
   const month = Number(params.get('month')) || now.getMonth() + 1
   const [draft, setDraft] = useState({ year, month })
-  const { data, isPending, isFetching, isError, error, refetch } = useMonthlyReport(year, month)
+  // Departure filters live in the URL, so the page, a refresh and the PDF all see the same ones.
+  const filters: Partial<ReportFilters> = {
+    ...(params.get('group') ? { group: Number(params.get('group')) } : {}),
+    ...(params.get('teacher') ? { teacher: Number(params.get('teacher')) } : {}),
+    ...(params.get('reason') ? { reason: params.get('reason') as string } : {}),
+  }
+  const setFilter = (key: keyof ReportFilters, value: string) => {
+    const nextParams = new URLSearchParams(params)
+    if (value) nextParams.set(key, value)
+    else nextParams.delete(key)
+    setParams(nextParams, { replace: true })
+  }
+  const { data: options } = useAssistantOptions()
+  const { data, isPending, isFetching, isError, error, refetch } = useMonthlyReport(year, month, filters)
 
   const years = Array.from({ length: now.getFullYear() - FIRST_YEAR + 1 }, (_, i) => now.getFullYear() - i)
   const maxMonth = draft.year === now.getFullYear() ? now.getMonth() + 1 : 12
   const generate = () => {
     const next = { year: draft.year, month: Math.min(draft.month, maxMonth) }
     if (next.year === year && next.month === month) void refetch()
-    else setParams({ year: String(next.year), month: String(next.month) }, { replace: true })
+    else {
+      const nextParams = new URLSearchParams(params)
+      nextParams.set('year', String(next.year))
+      nextParams.set('month', String(next.month))
+      setParams(nextParams, { replace: true })
+    }
   }
   const message = (error as { response?: { data?: { detail?: string } } } | null)?.response?.data?.detail
   const { showToast } = useToast()
@@ -387,7 +612,7 @@ export function AssistantMonthlyReportPage() {
     if (!data) return
     setDownloading(true)
     try {
-      await assistantApi.downloadMonthlyReportPdf(data.year, data.month)
+      await assistantApi.downloadMonthlyReportPdf(data.year, data.month, filters)
     } catch (err) {
       showToast(`Не удалось сформировать PDF: ${extractErrorMessage(err)}`, 'error')
     } finally {
@@ -439,10 +664,22 @@ export function AssistantMonthlyReportPage() {
               </Button>
             </div>
           </div>
-          <Report report={data} />
+          <Report report={data} filterBar={
+            <div className="flex flex-wrap gap-2" aria-label="Фильтры уходов">
+              <div className="w-full sm:w-44"><Select aria-label="Группа" value={String(filters.group ?? '')} placeholder="Все группы"
+                onChange={(e) => setFilter('group', e.target.value)}
+                options={(options?.groups ?? []).map((g) => ({ value: String(g.id), label: g.name }))} /></div>
+              <div className="w-full sm:w-48"><Select aria-label="Тренер" value={String(filters.teacher ?? '')} placeholder="Все тренеры"
+                onChange={(e) => setFilter('teacher', e.target.value)}
+                options={(options?.teachers ?? []).map((t) => ({ value: String(t.id), label: t.name }))} /></div>
+              <div className="w-full sm:w-56"><Select aria-label="Причина ухода" value={filters.reason ?? ''} placeholder="Все причины"
+                onChange={(e) => setFilter('reason', e.target.value)}
+                options={[...(options?.deactivation_reasons ?? []), { value: 'unknown', label: 'Не указана' }]} /></div>
+            </div>
+          } />
           <p className="mt-8 flex items-center gap-1.5 border-t border-border pt-3 text-xs text-ink-muted">
             <Eye className="size-3.5" aria-hidden />
-            Только просмотр: отчёт считается из посещаемости, ДЗ, опросов и стипендий и ничего не меняет. Отчёт по тренерам — у Team Lead.
+            Только просмотр: отчёт считается из посещаемости, ДЗ, истории статусов, опросов и стипендий и ничего не меняет. KPI тренеров — в отчёте Team Lead.
           </p>
         </>
       ) : null}

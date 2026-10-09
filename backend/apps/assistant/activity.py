@@ -122,14 +122,17 @@ def _teacher_name(lesson: Lesson) -> str:
     return str(teacher) if teacher is not None else ""
 
 
-def join_dates(students: list[Student]) -> dict[int, dt.date | None]:
-    """The day each student started their current stint in their current group."""
-    by_pk = {s.pk: s for s in students}
+def join_dates(students: list[Student], group_of: dict[int, int] | None = None,
+               until: dt.date | None = None) -> dict[int, dt.date | None]:
+    """The day each student started their stint in their group (the current
+    one, or `group_of[student]` — the group on a past day `until`)."""
+    group_of = group_of or {s.pk: s.group_id for s in students}
     latest: dict[int, dt.date] = {}
-    for event in StudentStatusEvent.objects.filter(student__in=students, event_type__in=JOIN_EVENTS).values(
-        "student_id", "group_id", "event_date",
-    ):
-        if event["group_id"] != by_pk[event["student_id"]].group_id:
+    events = StudentStatusEvent.objects.filter(student__in=students, event_type__in=JOIN_EVENTS)
+    if until is not None:
+        events = events.filter(event_date__lte=until)
+    for event in events.values("student_id", "group_id", "event_date"):
+        if event["group_id"] != group_of.get(event["student_id"]):
             continue
         if event["event_date"] > latest.get(event["student_id"], dt.date.min):
             latest[event["student_id"]] = event["event_date"]
@@ -219,6 +222,7 @@ def _judge(row: StudentActivity, t: dict, today: dt.date) -> None:
 
 def analyse_students(students: list[Student], *, start: dt.date | None, today: dt.date | None = None,
                      with_timeline: bool = False, until: dt.date | None = None,
+                     groups: dict[int, Group] | None = None,
                      ) -> tuple[list[StudentActivity], dict[int, list[dict]]]:
     """Activity of `students` (each in their current group) from `start`
     (None — all time) to today — or only lessons up to `until` (a closed
@@ -226,9 +230,13 @@ def analyse_students(students: list[Student], *, start: dt.date | None, today: d
     Returns the rows and, when asked, each student's timeline (newest first)."""
     today = today or timezone.localdate()
     t = thresholds()
-    students = [s for s in students if s.group_id]
-    joins = join_dates(students)
-    group_ids = {s.group_id for s in students}
+    # `groups` — each student's group on a past day (history.roster_on); default: today's group.
+    group_of = {s.pk: groups[s.pk].pk for s in students if groups.get(s.pk)} if groups is not None else {
+        s.pk: s.group_id for s in students if s.group_id}
+    group_obj = groups if groups is not None else {s.pk: s.group for s in students if s.group_id}
+    students = [s for s in students if s.pk in group_of]
+    joins = join_dates(students, group_of, until)
+    group_ids = set(group_of.values())
 
     lessons_qs = (
         Lesson.objects.filter(held_q(today), group_id__in=group_ids)
@@ -263,10 +271,11 @@ def analyse_students(students: list[Student], *, start: dt.date | None, today: d
     rows, timelines = [], {}
     for student in students:
         joined = joins.get(student.pk)
+        group_id = group_of[student.pk]
         row = StudentActivity(student_id=student.pk, name=str(student),
-                              group={"id": student.group_id, "name": student.group.name})
+                              group={"id": group_id, "name": group_obj[student.pk].name})
         timeline = []
-        own_lessons = [l for l in lessons_by_group[student.group_id] if joined is None or l.date >= joined]
+        own_lessons = [l for l in lessons_by_group[group_id] if joined is None or l.date >= joined]
         row.lessons = len(own_lessons)
         if own_lessons:
             row.last_lesson = own_lessons[0].date
@@ -298,7 +307,7 @@ def analyse_students(students: list[Student], *, start: dt.date | None, today: d
                 })
         row.attendance = _pct(row.attended, row.marked)
 
-        own_homeworks = [hw for hw in homeworks_by_group[student.group_id] if joined is None or hw.lesson.date >= joined]
+        own_homeworks = [hw for hw in homeworks_by_group[group_id] if joined is None or hw.lesson.date >= joined]
         row.homework_due = len(own_homeworks)
         if own_homeworks:
             row.last_homework_given = own_homeworks[0].lesson.date

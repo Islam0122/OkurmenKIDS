@@ -114,6 +114,40 @@ surveys → scholarships → activity → conclusions.
   a repeated header; running header, footer with generation time and
   «Страница N из M». Same permission as the rest of the workspace.
 
+## Удержание, уходы и финансы (месячный отчёт)
+
+Разделы 10–15 + управленческое резюме (`retention.py`), нумерация
+разделов в HTML и PDF — по порядку, не вручную.
+
+* **Состояние на конец месяца** — `history.roster_on(day)` проигрывает
+  журнал `StudentStatusEvent` до дня: статус и группа каждого студента
+  на ту дату. Отчёт за сентябрь, открытый в октябре, — сентябрьский.
+  Студент без событий в журнале — текущий статус (больше ничего не известно).
+* **Неактивные** — активные на конец месяца, без посещения (был / опоздал)
+  и сданного ДЗ N дней, *пока занятия проходили* (нет занятий — нет
+  неактивности). Пороги `ASSISTANT_INACTIVITY_DAYS` (по умолчанию 7/14/30).
+  У каждого — рекомендуемое действие по правилам.
+* **Ушедшие** — событие `DEACTIVATED` в месяце, один раз на студента.
+  Завершение обучения и пауза — отдельно; неактивные ≠ ушедшие. Возврат —
+  последующее `REACTIVATED`; история ухода при возврате не удаляется.
+  Фильтры раздела: `?group=&teacher=&reason=` (код причины или `unknown`),
+  те же — в PDF.
+* **Причины ухода** — список для новых деактиваций:
+  `StudentStatusEvent.DEACTIVATION_REASONS` (11 причин). Прежние причины
+  остаются валидными на старых записях и для паузы. Пустая причина —
+  «Не указана», никогда не подставляется.
+* **Снимок при уходе** — `last_activity_date`, `study_days` в событии
+  (заполняются `deactivate_student` / `complete_student`; миграция 0021
+  заполнила их для прошлых уходов из реальных данных).
+* **Финансы** — только администратору. В проекте нет тарифов, начислений,
+  оплат, долгов и возвратов, поэтому показатели — «Недостаточно данных»
+  и список недостающих данных; суммы не оцениваются.
+
+Все пути деактивации идут через `services.student_status` с причиной и
+историей: страница студента в админке, массовое действие (промежуточная
+страница с причиной), кабинет Assistant (одиночно и массово). Поле
+`is_active` в форме студента — только для чтения.
+
 ## History / audit
 
 * A transfer is a `StudentStatusEvent` of type `transferred` with
@@ -149,7 +183,7 @@ surveys → scholarships → activity → conclusions.
 | GET | `homework/<id>/` | homework details: every student's result (status, submitted / checked, score, comment) |
 | GET | `control/` | «Контроль активности» (`period=7d\|14d\|30d\|month\|all`, default `30d`; `group`, `category`, `sort`) |
 | GET | `control/students/<id>/` | one student's risk profile and timeline (`period`) |
-| GET | `reports/monthly/?year=&month=` | «Месячный отчёт» (default: current month; a future month → 400) |
+| GET | `reports/monthly/?year=&month=&group=&teacher=&reason=` | «Месячный отчёт» (default: current month; a future month → 400; filters narrow the departure sections; finance for Admin only) |
 | GET | `reports/monthly/<year>/<month>/pdf/` | the same report as an A4 PDF, `monthly_report_<month>_<year>.pdf` |
 | GET | `scholarships/` | periods with awards |
 | POST | `scholarships/generate/` | form the latest cycle's period |

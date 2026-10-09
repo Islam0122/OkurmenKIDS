@@ -2010,15 +2010,34 @@ class StudentAdminUXTests(AcademyTestBase):
         self.assertEqual(self.admin_web.get(reactivate_url).status_code, 403)
 
     def test_bulk_deactivate_and_activate_actions(self):
+        """Bulk actions go through services.student_status: a reason is asked
+        once, every student gets a history event — no silent is_active flip."""
         changelist_url = reverse("admin:academy_student_changelist")
-        self.admin_web.post(
+        response = self.admin_web.post(
             changelist_url,
             {"action": "deactivate_students", "_selected_action": [self.student1.pk, self.student2.pk]},
         )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("admin:academy_student_bulk_deactivate"), response["Location"])
+        self.student1.refresh_from_db()
+        self.assertTrue(self.student1.is_active)  # nothing happens before a reason is given
+
+        bulk_url = reverse("admin:academy_student_bulk_deactivate")
+        ids = f"{self.student1.pk},{self.student2.pk}"
+        response = self.admin_web.post(bulk_url, {"ids": ids, "reason": "", "comment": ""})
+        self.assertEqual(response.status_code, 200)  # the reason is required
+        self.admin_web.post(bulk_url, {"ids": ids, "reason": "schedule", "comment": ""})
         self.student1.refresh_from_db()
         self.student2.refresh_from_db()
         self.assertFalse(self.student1.is_active)
         self.assertFalse(self.student2.is_active)
+        self.assertEqual(self.student1.status, Student.Status.WITHDRAWN)
+        self.assertEqual(
+            StudentStatusEvent.objects.filter(student__in=[self.student1, self.student2],
+                                              event_type=StudentStatusEvent.EventType.DEACTIVATED,
+                                              reason="schedule").count(),
+            2,
+        )
 
         self.admin_web.post(
             changelist_url,
@@ -6552,7 +6571,7 @@ class StudentDeactivateReactivateAdminViewTests(AcademyTestBase):
         deactivate_student(self.student1, reason="no_interest", comment="Тестовый комментарий")
         response = self.admin_web.get(reverse("admin:academy_student_detail", args=[self.student1.pk]))
         body = response.content.decode()
-        self.assertIn("Нет интереса", body)
+        self.assertIn("Потеря интереса", body)
         self.assertIn("Тестовый комментарий", body)
         # No payments model exists — refund columns must always be a dash.
         self.assertIn("<td>—</td>", body)
@@ -6889,14 +6908,14 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(breakdown["no_interest"]["percent"], round(2 / 3 * 100, 1))
         self.assertEqual(breakdown["relocation"]["count"], 1)
         self.assertEqual(breakdown["relocation"]["percent"], round(1 / 3 * 100, 1))
-        self.assertEqual(breakdown["no_interest"]["reason_display"], "Нет интереса")
+        self.assertEqual(breakdown["no_interest"]["reason_display"], "Потеря интереса")
 
     def test_reason_breakdown_uses_russian_labels(self):
         deactivate_student(self.student1, reason="disliked_teacher", comment="")
         today = dt.date.today()
         stats = compute_academy_monthly_stats(today.year, today.month)
         labels = {row["reason_display"] for row in stats["movement"]["reasons"]}
-        self.assertEqual(labels, {"Не понравился преподаватель"})
+        self.assertEqual(labels, {"Не понравился тренер"})
 
     def test_student_who_left_twice_same_month_counted_once_in_breakdown(self):
         """Regression test for a real production anomaly: a student who
@@ -6922,7 +6941,7 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         self.assertEqual(breakdown, {
             "disliked_teacher": {
                 "reason": "disliked_teacher",
-                "reason_display": "Не понравился преподаватель",
+                "reason_display": "Не понравился тренер",
                 "count": 1,
                 "percent": 100.0,
             }

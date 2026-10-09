@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { assistantApi, surveysApi, type GroupListParams, type RecordFilters, type StudentListParams } from '@/api/assistant'
 import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
+import type { ReportFilters } from '@/types/assistant'
 
 /** Every Assistant Workspace query lives under one key root, so a write can
  * refresh everything it may have touched (a transfer changes two groups,
@@ -136,6 +137,10 @@ export function useAssistantFormMutation<TVars, TResult>(
 }
 
 /** Computed on demand by the server — `refetch` is «Обновить». */
-export function useMonthlyReport(year: number, month: number) {
-  return useQuery({ queryKey: [...ASSISTANT_KEY, 'monthly-report', year, month], queryFn: () => assistantApi.monthlyReport(year, month), placeholderData: keepPreviousData })
+export function useMonthlyReport(year: number, month: number, filters: Partial<ReportFilters> = {}) {
+  return useQuery({
+    queryKey: [...ASSISTANT_KEY, 'monthly-report', year, month, filters],
+    queryFn: () => assistantApi.monthlyReport(year, month, filters),
+    placeholderData: keepPreviousData,
+  })
 }

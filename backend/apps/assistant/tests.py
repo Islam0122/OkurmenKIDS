@@ -674,10 +674,12 @@ class MonthlyReportTests(AssistantTestBase):
         self.assertIn("1 место", sch["rows"][0]["reason"])
         self.assertIn("В зоне риска: 1 студент.", data["conclusions"]["attention"])
 
-    def test_nothing_about_trainers(self):
-        body = self.report().content.decode()
-        for word in ("teacher", "trainer", "kpi"):
-            self.assertNotIn(word, body.lower())
+    def test_no_trainer_kpi(self):
+        """A student's trainer is context of their group; trainer KPI, ratings
+        and workload stay in the Team Lead's report."""
+        body = self.report().content.decode().lower()
+        for word in ("kpi", "rating_trainer", "teacher_kpi", "workload"):
+            self.assertNotIn(word, body)
 
     def test_period_validation(self):
         future = TODAY.replace(day=28) + dt.timedelta(days=10)

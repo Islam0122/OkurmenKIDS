@@ -299,16 +299,25 @@ class StudentStatusEvent(models.Model):
         TRANSFERRED = "transferred", "Перевод в другую группу"
 
     class Reason(models.TextChoices):
-        NO_INTEREST = "no_interest", "Нет интереса"
-        DISLIKED_TEACHER = "disliked_teacher", "Не понравился преподаватель"
+        # Reasons for leaving — the list a deactivation offers (DEACTIVATION_REASONS).
+        FINANCIAL_ISSUES = "financial_issues", "Финансовые трудности"
+        TRANSPORT = "transport", "Неудобный адрес или транспорт"
+        SCHEDULE = "schedule", "Неудобное расписание"
+        DISLIKED_CLASSES = "disliked_classes", "Не понравились занятия"
+        DISLIKED_TEACHER = "disliked_teacher", "Не понравился тренер"
+        NO_INTEREST = "no_interest", "Потеря интереса"
+        LOW_MOTIVATION = "low_motivation", "Низкая мотивация и частые пропуски"
+        OTHER_ACADEMY = "other_academy", "Переход в другую академию"
+        RELOCATION = "relocation", "Переезд"
+        GRADUATED = "graduated", "Завершение обучения"
+        OTHER = "other", "Другая причина"
+        # Earlier reasons: still valid for a pause and kept on old records,
+        # no longer offered for a new deactivation.
         FAMILY_CIRCUMSTANCES = "family_circumstances", "Семейные обстоятельства"
         WILL_CONTINUE_LATER = "will_continue_later", "Продолжим через некоторое время"
-        FINANCIAL_ISSUES = "financial_issues", "Финансовые проблемы"
         NOT_ENOUGH_TIME = "not_enough_time", "Не хватает времени / другие курсы"
-        RELOCATION = "relocation", "Переезд"
         HEALTH = "health", "Состояние здоровья"
         CHANGED_PLANS = "changed_plans", "Изменение планов"
-        OTHER = "other", "Другая причина"
 
     student = models.ForeignKey(
         Student,
@@ -391,6 +400,21 @@ class StudentStatusEvent(models.Model):
         verbose_name="Кто оформил",
     )
 
+    # Snapshots taken when the student leaves (deactivation / completion) —
+    # kept as they were even after a return or later edits to the records.
+    last_activity_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Последняя активность до ухода",
+        help_text="Последнее посещение (был / опоздал) или сданное ДЗ на дату события; пусто — активности не было.",
+    )
+    study_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Срок обучения до ухода (дней)",
+        help_text="От даты начала обучения до даты события.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания записи")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления записи")
 
@@ -398,6 +422,12 @@ class StudentStatusEvent(models.Model):
     # deactivation or a pause both need a real reason; a completion/
     # continuation/reactivation is a plain fact with no "why" to record.
     REASON_REQUIRED_TYPES = ("deactivated", "paused")
+    # What a new deactivation may name — the earlier reasons stay valid on old records and pauses.
+    DEACTIVATION_REASONS = (
+        "financial_issues", "transport", "schedule", "disliked_classes", "disliked_teacher", "no_interest",
+        "low_motivation", "other_academy", "relocation", "graduated", "other",
+    )
+    UNKNOWN_REASON_LABEL = "Не указана"
 
     class Meta:
         verbose_name = "Событие статуса студента"
