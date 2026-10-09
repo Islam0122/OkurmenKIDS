@@ -8,6 +8,8 @@ import logo from '@/assets/logo.png'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/hooks/useAuth'
 import { extractErrorMessage, isNetworkOrServerError } from '@/lib/apiError'
+import { HOME_PATH } from '@/lib/appMode'
+import { resolveReturnTo } from '@/lib/returnTo'
 
 import { loginSchema, type LoginFormValues } from './loginSchema'
 
@@ -23,16 +25,19 @@ export function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) })
 
+  // Back to the page that sent the user here (e.g. the Schedule site), else the default home.
+  const from = (location.state as { from?: Location } | null)?.from
+  const target = resolveReturnTo(from ? `${from.pathname}${from.search ?? ''}` : null, HOME_PATH)
+
   if (status === 'authenticated') {
-    const from = (location.state as { from?: Location } | null)?.from
-    return <Navigate to={from?.pathname ?? '/app/dashboard'} replace />
+    return <Navigate to={target} replace />
   }
 
   async function onSubmit(values: LoginFormValues) {
     setFormError(null)
     try {
       await login(values.username, values.password)
-      navigate('/app/dashboard', { replace: true })
+      navigate(target, { replace: true })
     } catch (error) {
       if (isNetworkOrServerError(error)) {
         setFormError('Сервер недоступен. Проверьте подключение к интернету и попробуйте ещё раз.')

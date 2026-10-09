@@ -433,3 +433,57 @@ class FreeRoomsCounterTests(BoardTestBase):
             stat = self.board().data["stats"]["free_rooms"]
         self.assertEqual(stat["mode"], "day")
         self.assertEqual((stat["free"], stat["total"]), (2, 3))
+
+
+class ReadOnlySiteTests(BoardTestBase):
+    """The separate «OkurmenKIDS Schedule» site reads these endpoints only:
+    the server refuses every write, not just a hidden button."""
+
+    URLS = ("schedule-board", "schedule-options", "schedule-free-rooms", "schedule-check")
+
+    def test_every_write_method_is_refused_and_nothing_changes(self):
+        lesson = self.lesson(self.gt1, dt.time(10), dt.time(11), self.room_a)
+        before = Lesson.objects.values().get(pk=lesson.pk)
+        for user in (self.admin, self.assistant, self.lead):
+            client = APIClient()
+            client.force_authenticate(user)
+            for name in self.URLS:
+                url = reverse(name)
+                for method in ("post", "put", "patch", "delete"):
+                    response = getattr(client, method)(url, {"id": lesson.pk, "start_time": "12:00"}, format="json")
+                    self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED, (user.role, name, method))
+        self.assertEqual(Lesson.objects.values().get(pk=lesson.pk), before)
+
+    def test_head_and_options_are_allowed(self):
+        self.assertEqual(self.client.head(reverse("schedule-board"), {"start": str(DAY)}).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.options(reverse("schedule-board")).status_code, status.HTTP_200_OK)
+
+    def test_full_names_and_no_student_personal_data(self):
+        self.islam.user.last_name = "Дуйшобаев"
+        self.islam.user.save()
+        self.lesson(self.gt1, dt.time(10), dt.time(11), self.room_a)
+        data = self.board().data
+        row = data["lessons"][0]
+        self.assertEqual(row["teacher"]["name"], "Islam Дуйшобаев")
+        self.assertEqual(row["group"]["name"], "PRO-01")
+        text = str(data)
+        for secret in ("phone", "parent_phone", "last_name", "first_name"):
+            self.assertNotIn(secret, text)
+
+    def test_past_lessons_keep_their_trainer_after_a_handover(self):
+        from apps.academy.services.program_editing import update_teaching_program
+
+        past = self.lesson(self.gt1, dt.time(10), dt.time(11), self.room_a, date=DAY)
+        legacy = self.lesson(self.gt1, dt.time(12), dt.time(13), self.room_b, date=DAY)
+        Lesson.objects.filter(pk=legacy.pk).update(teacher=None)  # a lesson that never stored its trainer
+        self.course.subjects.add(self.python)
+        handover = DAY + dt.timedelta(days=30)
+        with mock.patch("apps.academy.services.trainer_history.timezone.localdate", return_value=handover):
+            update_teaching_program(self.gt1, teacher=self.aibek, subject=self.python, is_active=True,
+                                    reassign_future_lessons=False, today=handover)
+        rows = {r["id"]: r for r in self.board().data["lessons"]}
+        self.assertEqual(rows[past.pk]["teacher"]["name"], "Islam")
+        self.assertEqual(rows[legacy.pk]["teacher"]["name"], "Islam")
+        ids = {r["id"] for r in self.board(teacher=self.aibek.pk).data["lessons"]}
+        self.assertNotIn(past.pk, ids)
+        self.assertNotIn(legacy.pk, ids)

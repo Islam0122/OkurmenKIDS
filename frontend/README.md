@@ -34,3 +34,27 @@ Vercel project settings for this app: framework **Vite**, build command `npm run
 - Open a URL that doesn't exist — should show the in-app 404, not Vercel's own error page.
 - Check the Network tab: API calls should go to the production backend, never `localhost`.
 - Temporarily block the API host (or check with the backend down) — the app should show a friendly "server unavailable" state, not a blank page or a forced logout.
+
+## OkurmenKIDS Schedule (read-only schedule site)
+
+A separate, read-only interface to the academy schedule — the same app,
+login and API, its own pages and header (no LMS navigation):
+
+| URL | |
+|---|---|
+| `/schedule` | opens the last view of this tab, else the day |
+| `/schedule/day?date=YYYY-MM-DD` | the day, one column per room, 08:00–24:00 |
+| `/schedule/week?date=…` | the week, hours × days |
+
+Filters live in the URL (`teacher`, `room=1,2`, `group`, `q`), so a link opens
+the same view. Who can open it: Admin, Team Lead, Assistant (the backend's
+`CanViewSchedule`); a Trainer gets a «no access» page and the API answers 403.
+
+API (GET only; every other method is a 405 on the server):
+`/api/v1/schedule/options/`, `/api/v1/schedule/board/`, `/api/v1/schedule/free-rooms/`.
+The page re-reads the board every minute and when the window regains focus.
+
+**Own domain** (e.g. `schedule.okurmenkids.com`): a second Vercel project on
+this repo, root directory `frontend`, the same `vercel.json`, with
+`VITE_APP_MODE=schedule` and the same `VITE_API_BASE_URL`. On the backend add
+the domain to `SCHEDULE_SITE_ORIGINS` (CORS). No second backend or database.

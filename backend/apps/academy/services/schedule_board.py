@@ -29,6 +29,7 @@ from django.utils import timezone
 from apps.users.models import Teacher, User
 
 from ..models import Group, Lesson, Room, Student
+from . import trainer_history
 from .group_schedule_conflicts import overlapping_groups, time_ranges_overlap
 
 # The board's visible working day: 08:00 – 24:00.
@@ -116,11 +117,11 @@ class ScheduleFilters:
 
 
 def teacher_q(teacher_id: int, prefix: str = "") -> Q:
-    """Lessons `teacher_id` gives — its own teacher, or its program's
-    (the same rule as Lesson.effective_teacher / LessonQuerySet.for_teacher)."""
-    return Q(**{f"{prefix}teacher_id": teacher_id}) | Q(
-        **{f"{prefix}teacher__isnull": True, f"{prefix}group_teacher__teacher_id": teacher_id}
-    )
+    """Lessons `teacher_id` is responsible for — its stored trainer, else its
+    program's assignment on the lesson's date (services.trainer_history; the
+    same rule as Lesson.effective_teacher and the KPI). A group's *current*
+    trainer never takes over its past lessons."""
+    return trainer_history.taught_by_q(teacher_id, prefix)
 
 
 def lessons_queryset(start: dt.date, end: dt.date, filters: ScheduleFilters):
@@ -161,29 +162,24 @@ def _teacher_name(first, last, username) -> str:
 
 
 def _live_slots(**lookup) -> list[_Slot]:
-    """Not-cancelled lessons matching `lookup`, with their effective trainer."""
-    rows = (
+    """Not-cancelled lessons matching `lookup`, with their responsible
+    trainer (history-aware) — two queries, whatever the number of lessons."""
+    rows = list(
         Lesson.objects.filter(**lookup)
         .exclude(status=Lesson.Status.CANCELLED)
-        .values_list(
-            "id", "date", "start_time", "end_time", "teacher_id", "group_teacher__teacher_id",
-            "room_id", "group_id", "group__name", "room__name",
-            "teacher__user__first_name", "teacher__user__last_name", "teacher__user__username",
-            "group_teacher__teacher__user__first_name", "group_teacher__teacher__user__last_name",
-            "group_teacher__teacher__user__username",
-        )
+        .annotate(_teacher=trainer_history.effective_teacher())
+        .values_list("id", "date", "start_time", "end_time", "_teacher", "room_id", "group_id", "group__name", "room__name")
     )
-    slots = []
-    for (pk, date, start, end, teacher_id, gt_teacher_id, room_id, group_id, group_name, room_name,
-         t_first, t_last, t_user, g_first, g_last, g_user) in rows:
-        own = teacher_id is not None
-        slots.append(_Slot(
-            id=pk, date=date, start_time=start, end_time=end,
-            teacher_id=teacher_id if own else gt_teacher_id,
-            room_id=room_id, group_id=group_id, group_name=group_name, room_name=room_name,
-            teacher_name=_teacher_name(t_first, t_last, t_user) if own else _teacher_name(g_first, g_last, g_user),
-        ))
-    return slots
+    names = {
+        pk: _teacher_name(first, last, username)
+        for pk, first, last, username in Teacher.objects.filter(id__in={row[4] for row in rows if row[4]})
+        .values_list("id", "user__first_name", "user__last_name", "user__username")
+    }
+    return [
+        _Slot(id=pk, date=date, start_time=start, end_time=end, teacher_id=teacher_id, room_id=room_id,
+              group_id=group_id, group_name=group_name, room_name=room_name, teacher_name=names.get(teacher_id, ""))
+        for pk, date, start, end, teacher_id, room_id, group_id, group_name, room_name in rows
+    ]
 
 
 def _slot_ref(slot: _Slot) -> dict:

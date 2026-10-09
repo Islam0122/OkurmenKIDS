@@ -51,4 +51,27 @@ describe('LoginPage', () => {
     expect(screen.getByText('Dashboard content')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Войти' })).not.toBeInTheDocument()
   })
+
+  it('returns to the page that sent the user to log in (the Schedule site)', async () => {
+    mockUseAuth.mockReturnValue({ status: 'guest', user: null, login, logout: vi.fn(), retry: vi.fn() })
+    login.mockResolvedValueOnce(undefined)
+    const user = userEvent.setup()
+    const { MemoryRouter } = await import('react-router-dom')
+    const { render } = await import('@testing-library/react')
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={[{ pathname: '/login', state: { from: { pathname: '/schedule/week', search: '?teacher=2' } } }]}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/schedule/week" element={<div>Schedule week</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    await user.type(screen.getByLabelText('Логин'), 'assist')
+    await user.type(screen.getByLabelText('Пароль'), 'secret-pass')
+    await user.click(screen.getByRole('button', { name: 'Войти' }))
+    expect(await screen.findByText('Schedule week')).toBeInTheDocument()
+  })
 })
