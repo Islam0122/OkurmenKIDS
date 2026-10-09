@@ -101,9 +101,9 @@ class ControlService:
     def responsible_q(teacher_id: int, prefix: str = "") -> Q:
         """Lessons whose *responsible* trainer is `teacher_id` — the
         `Lesson.effective_teacher` rule (see LessonQuerySet.for_teacher)."""
-        return Q(**{f"{prefix}teacher_id": teacher_id}) | Q(
-            **{f"{prefix}teacher__isnull": True, f"{prefix}group_teacher__teacher_id": teacher_id}
-        )
+        from apps.academy.services.trainer_history import taught_by_q
+
+        return taught_by_q(teacher_id, prefix)
 
     def lessons_qs(self) -> QuerySet[Lesson]:
         return self.lessons_qs_for_range(self.filters.start, self.filters.end)

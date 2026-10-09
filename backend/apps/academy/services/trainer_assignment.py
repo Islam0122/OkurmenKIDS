@@ -31,6 +31,7 @@ from apps.users.models import Subject, Teacher, User
 
 from ..models import Group, GroupTeacher
 from .program_editing import update_teaching_program
+from .trainer_history import acting_user
 
 
 def available_trainers():
@@ -118,7 +119,15 @@ def _log(user, program: GroupTeacher, flag: int, message: str) -> None:
 def assign_trainer(group: Group, *, teacher: Teacher, user, subject: Subject | None = None,
                    program: GroupTeacher | None = None) -> AssignmentResult:
     """Replace `program`'s trainer, or (no `program`) give `subject` of
-    `group` to `teacher`. Raises ValidationError (field-keyed)."""
+    `group` to `teacher`. Raises ValidationError (field-keyed). The
+    previous trainer's assignment is closed and kept as history
+    (services.trainer_history), recorded as changed by `user`."""
+    with acting_user(user):
+        return _assign_trainer(group, teacher=teacher, user=user, subject=subject, program=program)
+
+
+def _assign_trainer(group: Group, *, teacher: Teacher, user, subject: Subject | None = None,
+                    program: GroupTeacher | None = None) -> AssignmentResult:
     if program is not None:
         if program.group_id != group.pk:
             raise ValidationError({"program": "Эта программа относится к другой группе."})
@@ -142,7 +151,7 @@ def assign_trainer(group: Group, *, teacher: Teacher, user, subject: Subject | N
             raise ValidationError({"teacher": "Этот тренер уже назначен."})
         # One active trainer per subject is the normal case: replacing is
         # the same as an explicit replace of that program.
-        return assign_trainer(group, teacher=teacher, user=user, program=current)
+        return _assign_trainer(group, teacher=teacher, user=user, program=current)
 
     existing = group.teachers.filter(subject=subject, teacher=teacher).first()
     if existing is not None:  # an inactive program of the same trainer → reactivate it

@@ -18,12 +18,13 @@ from __future__ import annotations
 import datetime as dt
 
 from django.db.models import Count, Q
-from django.db.models.functions import Coalesce
 
 from apps.academy.models import Attendance, Homework, HomeworkResult, Lesson
 from .attendance import _attendance_qs
 from .groups import near_capacity_groups
 from .period import DateRange
+from apps.academy.services.trainer_history import effective_teacher
+
 from .scope import AnalyticsScope
 
 CONSECUTIVE_ABSENCE_THRESHOLD = 3
@@ -99,7 +100,7 @@ def _teachers_with_low_completion(scope: AnalyticsScope, date_range: DateRange) 
     teachers = {t.id: str(t) for t in scope.teachers_qs().select_related("user")}
     rows = (
         scope.lessons_qs(date_range=date_range)
-        .annotate(eff_teacher=Coalesce("teacher_id", "group_teacher__teacher_id"))
+        .annotate(eff_teacher=effective_teacher())
         .values("eff_teacher")
         .annotate(
             total=Count("id"),

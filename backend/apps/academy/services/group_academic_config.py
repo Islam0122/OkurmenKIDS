@@ -31,6 +31,7 @@ from apps.users.models import Subject, Teacher
 from ..constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL, WEEKDAY_LABELS_SHORT
 from ..models import Group, GroupTeacher, Room
 from .program_editing import parse_schedule_specs, save_teaching_program
+from .trainer_history import acting_user
 from .trainer_assignment import _last_change, _user_label, available_trainers
 
 _WEEKDAY_NAMES = {
@@ -142,6 +143,14 @@ def _as_field_errors(exc: ValidationError) -> ValidationError:
 @transaction.atomic
 def save_program_config(group: Group, *, user, teacher: Teacher, subject: Subject | None, slot_items,
                         program: GroupTeacher | None = None) -> GroupTeacher:
+    """See _save_program_config; trainer changes are recorded as made by `user`."""
+    with acting_user(user):
+        return _save_program_config(group, user=user, teacher=teacher, subject=subject, slot_items=slot_items,
+                                    program=program)
+
+
+def _save_program_config(group: Group, *, user, teacher: Teacher, subject: Subject | None, slot_items,
+                         program: GroupTeacher | None = None) -> GroupTeacher:
     """Create (``program`` None) or update one Teaching Program of ``group``:
     trainer, subject and the exact list of its weekly slots. All or nothing;
     raises ValidationError keyed by field (slot problems under "schedule")."""

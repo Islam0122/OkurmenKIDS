@@ -10,12 +10,13 @@ from __future__ import annotations
 import datetime as dt
 
 from django.db.models import Count
-from django.db.models.functions import Coalesce
 
 from apps.academy.services.kpi_engine import ratio, round1
 from apps.academy.services.lesson_status import lesson_status_counts
 from .metrics import build_metric
 from .period import DateRange
+from apps.academy.services.trainer_history import effective_teacher
+
 from .scope import AnalyticsScope
 
 
@@ -23,7 +24,7 @@ def _by_teacher(scope: AnalyticsScope, date_range: DateRange) -> list[dict]:
     teachers = {t.id: str(t) for t in scope.teachers_qs().select_related("user")}
     rows = (
         scope.lessons_qs(date_range=date_range)
-        .annotate(eff_teacher=Coalesce("teacher_id", "group_teacher__teacher_id"))
+        .annotate(eff_teacher=effective_teacher())
         .values("eff_teacher")
         .annotate(lessons=Count("id"))
         .order_by("-lessons")
