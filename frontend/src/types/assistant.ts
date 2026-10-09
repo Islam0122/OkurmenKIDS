@@ -586,6 +586,82 @@ export interface MonthlyReport {
       award_date: string
     }[]
   }
+  inactive: {
+    thresholds: [number, number, number]
+    counts: Record<string, number>
+    previous: { inactive: number; risk: number } | null
+    students: {
+      student_id: number
+      name: string
+      group: Ref | null
+      trainer: string
+      last_attended: string | null
+      last_homework: string | null
+      absent: number
+      attendance: number | null
+      homework: number | null
+      days_inactive: number | null
+      never_active: boolean
+      absences_since: number
+      status: string
+      activity_status: ControlStatus
+      activity_label: string
+      no_attendance: boolean
+      no_homework: boolean
+      action: string
+    }[]
+  }
+  departures: {
+    filters: Partial<ReportFilters>
+    filters_label: string
+    total: number
+    total_unfiltered: number
+    /** All departures of the month, whatever the filters. */
+    month_total: number
+    returned: number
+    returned_percent: number | null
+    unknown: number
+    completed: number
+    paused: number
+    previous_total: number | null
+    change: number | null
+    by_reason: ReportShare[]
+    by_group: ReportShare[]
+    by_trainer: ReportShare[]
+    rows: {
+      event_id: number
+      student_id: number
+      name: string
+      group: Ref | null
+      trainer: string
+      date: string
+      reason: string
+      reason_label: string
+      comment: string
+      performed_by: string
+      last_activity: string | null
+      study_days: number | null
+      returned_on: string | null
+    }[]
+  }
+  /** Only an Admin sees finance; there is no tuition / payment data in the system yet. */
+  finance:
+    | { allowed: false; note: string }
+    | { allowed: true; status: string; note: string; missing: string[]; metrics: { label: string; value: number | null }[] }
+  comparison: {
+    previous_title: string
+    available: boolean
+    rows: { key: string; label: string; current: number | null; previous: number | null; delta: number | null; trend: 'better' | 'worse' | 'same' | null }[]
+  }
+  recommendations: string[]
+  summary: {
+    improved: string[]
+    worsened: string[]
+    groups: string[]
+    top_reasons: string[]
+    contacts: number
+    next_month: string[]
+  }
   conclusions: {
     good: string[]
     attention: string[]
@@ -593,3 +669,8 @@ export interface MonthlyReport {
     students: { student_id: number; name: string; group: string; reason: string }[]
   }
 }
+
+export interface ReportShare { key: string; label: string; count: number; percent: number | null }
+
+/** Narrow the departure sections of the monthly report. */
+export interface ReportFilters { group: number; teacher: number; reason: string }

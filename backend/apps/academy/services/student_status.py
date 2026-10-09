@@ -29,8 +29,10 @@ import datetime as dt
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Max
+from django.utils import timezone
 
-from ..models import Group, Student, StudentStatusEvent
+from ..models import Attendance, Group, HomeworkResult, Lesson, Student, StudentStatusEvent
 
 _REASON_REQUIRED_TYPES = StudentStatusEvent.REASON_REQUIRED_TYPES
 
@@ -38,7 +40,7 @@ _REASON_REQUIRED_TYPES = StudentStatusEvent.REASON_REQUIRED_TYPES
 def _resolve_event_date(event_date: dt.date | None) -> dt.date:
     """A leaving event (deactivation / pause) happens today unless the
     caller names the real day it happened — never a day in the future."""
-    today = dt.date.today()
+    today = timezone.localdate()
     if event_date is None:
         return today
     if event_date > today:
@@ -51,8 +53,36 @@ def _validate_reason(event_type: str, reason: str, comment: str) -> None:
         return
     if not reason:
         raise ValidationError({"reason": "Причина обязательна."})
+    if event_type == StudentStatusEvent.EventType.DEACTIVATED and reason not in StudentStatusEvent.DEACTIVATION_REASONS:
+        raise ValidationError({"reason": "Выберите причину ухода из списка."})
     if reason == StudentStatusEvent.Reason.OTHER and not comment.strip():
         raise ValidationError({"comment": "Для причины «Другая причина» комментарий обязателен."})
+
+
+def departure_snapshot(student: Student, event_date: dt.date) -> dict:
+    """What a departure record keeps about the time before it: the last real
+    activity (attended a held lesson — present or late — or handed in a
+    homework) on or before `event_date`, and how long the student studied
+    (from the enrollment date). Two aggregate queries, project timezone."""
+    attended = (
+        Attendance.objects.filter(
+            student=student, status__in=(Attendance.Status.PRESENT, Attendance.Status.LATE),
+            lesson__date__lte=event_date,
+        ).exclude(lesson__status=Lesson.Status.CANCELLED).aggregate(d=Max("lesson__date"))["d"]
+    )
+    submitted = (
+        HomeworkResult.objects.filter(
+            student=student,
+            status__in=(HomeworkResult.Status.SUBMITTED, HomeworkResult.Status.CHECKED, HomeworkResult.Status.LATE),
+            submitted_at__date__lte=event_date,
+        ).aggregate(d=Max("submitted_at__date"))["d"]
+    )
+    last = max((d for d in (attended, submitted) if d is not None), default=None)
+    start = student.enrollment_date
+    return {
+        "last_activity_date": last,
+        "study_days": (event_date - start).days if start and start <= event_date else None,
+    }
 
 
 def deactivate_student(
@@ -85,6 +115,7 @@ def deactivate_student(
             event_date=event_date,
             performed_by=performed_by,
             previous_status=locked.status,
+            **departure_snapshot(locked, event_date),
         )
         event.full_clean()
         event.save()
@@ -256,9 +287,10 @@ def complete_student(
             event_type=StudentStatusEvent.EventType.COMPLETED,
             comment=comment,
             group=locked.group,
-            event_date=dt.date.today(),
+            event_date=timezone.localdate(),
             performed_by=performed_by,
             previous_status=locked.status,
+            **departure_snapshot(locked, timezone.localdate()),
         )
         event.full_clean()
         event.save()

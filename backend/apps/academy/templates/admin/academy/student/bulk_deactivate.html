@@ -1,0 +1,50 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="ok-form-container" style="max-width: 640px;">
+  <div class="ok-card">
+    <div class="ok-card-header">
+      <i class="bi bi-person-x-fill"></i>
+      <span>Деактивировать студентов</span>
+    </div>
+    <div class="ok-card-body">
+      <p class="ok-section-subtitle">
+        Выбрано студентов: <strong>{{ students|length }}</strong>.
+        Причина и комментарий сохранятся в истории каждого студента. Деактивировать можно только активных —
+        остальные будут пропущены.
+      </p>
+
+      <ul style="margin: 0 0 1.1rem; padding-left: 1.2rem; max-height: 180px; overflow-y: auto;">
+        {% for student in students %}
+          <li>{{ student }}{% if student.group %} — <span class="ok-help-text" style="display:inline;">{{ student.group.name }}</span>{% endif %}
+            <span class="ok-help-text" style="display:inline;">· {{ student.get_status_display }}</span></li>
+        {% endfor %}
+      </ul>
+
+      <form method="post" style="display:flex; flex-direction:column; gap:1.1rem;">
+        {% csrf_token %}
+        <input type="hidden" name="ids" value="{{ ids }}">
+        {% for error in form.non_field_errors %}
+          <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+        {% endfor %}
+        {% for field in form %}
+          <div class="ok-field-group">
+            <label class="ok-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}
+              <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        <span class="ok-help-text">Для «Другая причина» комментарий обязателен.</span>
+
+        <div class="ok-form-actions" style="margin-top:0;">
+          <a href="{{ changelist_url }}" class="ok-btn-secondary"><i class="bi bi-x-lg"></i> Отмена</a>
+          <button type="submit" class="ok-btn-danger"><i class="bi bi-person-x"></i> Деактивировать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

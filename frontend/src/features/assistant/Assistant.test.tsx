@@ -278,30 +278,58 @@ describe('Assistant Workspace', () => {
       scholarships: { awards: 1, recipients: 1, total_amount: 4000, paid: 0, paid_amount: 0, groups: ['PRO-01'],
         rows: [{ id: 1, student: { id: 8, name: 'Aida K' }, group: 'PRO-01', title: 'Стипендия', amount: 4000, reason: '1 место в рейтинге',
           status: 'approved', status_display: 'Утверждена', payment_status: 'unpaid', payment_display: 'Не выдано', award_date: '2026-09-30' }] },
+      inactive: { thresholds: [7, 14, 30], previous: { inactive: 1, risk: 0 },
+        counts: { total: 30, active: 28, inactive: 2, long_inactive: 1, no_attendance: 1, no_homework: 1, risk: 1, idle_7: 3, idle_14: 2, idle_30: 1 },
+        students: [{ student_id: 7, name: 'Islam Duishobaev', group: { id: 1, name: 'PRO-01' }, trainer: 'Нурлан Осмонов', last_attended: '2026-09-02',
+          last_homework: null, absent: 7, attendance: 30, homework: 20, days_inactive: 28, never_active: false, absences_since: 6, status: 'Активен',
+          activity_status: 'risk' as const, activity_label: 'В зоне риска', no_attendance: false, no_homework: false,
+          action: 'Звонок родителям и разговор с тренером: план возвращения' }] },
+      departures: { filters: {}, filters_label: '', total: 2, total_unfiltered: 2, month_total: 2, returned: 1, returned_percent: 50, unknown: 1, completed: 0, paused: 0,
+        previous_total: 1, change: 1,
+        by_reason: [{ key: 'schedule', label: 'Неудобное расписание', count: 1, percent: 50 }, { key: 'unknown', label: 'Не указана', count: 1, percent: 50 }],
+        by_group: [{ key: 'PRO-01', label: 'PRO-01', count: 2, percent: 100 }], by_trainer: [{ key: 'Нурлан Осмонов', label: 'Нурлан Осмонов', count: 2, percent: 100 }],
+        rows: [{ event_id: 1, student_id: 9, name: 'Aibek T', group: { id: 1, name: 'PRO-01' }, trainer: 'Нурлан Осмонов', date: '2026-09-10',
+          reason: 'schedule', reason_label: 'Неудобное расписание', comment: '', performed_by: 'Admin', last_activity: '2026-09-05',
+          study_days: 120, returned_on: '2026-10-01' }] },
+      finance: { allowed: false as const, note: 'Финансовые данные доступны только администратору.' },
+      comparison: { previous_title: 'Август 2026', available: true,
+        rows: [{ key: 'attendance', label: 'Средняя посещаемость, %', current: 87, previous: 80, delta: 7, trend: 'better' as const }] },
+      recommendations: ['«Неудобное расписание» (1): Проверить расписание групп.'],
+      summary: { improved: ['Средняя посещаемость, %: 80 → 87'], worsened: [], groups: [], top_reasons: ['Неудобное расписание — 1'],
+        contacts: 1, next_month: ['Связаться с семьями: 1 студент.'] },
       conclusions: { good: ['Средняя посещаемость 87% — выше 85%.'], attention: ['В зоне риска: 1 студент.'], groups: [],
         students: [{ student_id: 7, name: 'Islam Duishobaev', group: 'PRO-01', reason: 'Нет активности' }] },
     })
     const user = userEvent.setup()
     renderWithProviders(<AssistantActionsProvider><AssistantMonthlyReportPage /></AssistantActionsProvider>, { route: '/assistant/reports?year=2026&month=9' })
     expect(await screen.findByRole('heading', { name: 'Сентябрь 2026' })).toBeInTheDocument()
-    expect(assistantApi.monthlyReport).toHaveBeenCalledWith(2026, 9)
+    expect(assistantApi.monthlyReport).toHaveBeenCalledWith(2026, 9, {})
     const titles = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
     expect(titles.slice(1)).toEqual([
       '1.Общая статистика', '2.Посещаемость', '3.Требуют внимания — посещаемость', '4.Домашние задания', '5.Требуют внимания — ДЗ',
-      '6.В зоне риска', '7.Опросы', '8.Стипендии', '9.Активность студентов', '10.Итоги месяца',
+      '6.В зоне риска', '7.Опросы', '8.Стипендии', '9.Активность студентов', '10.Неактивные студенты и динамика активности',
+      '11.Деактивированные студенты', '12.Причины ухода', '13.Финансовая аналитика', '14.Сравнение с предыдущим месяцем',
+      '15.Рекомендации по удержанию студентов', '16.Итоги месяца',
     ])
+    expect(screen.getByText('Финансовые данные доступны только администратору.')).toBeInTheDocument()
+    expect(screen.getByText('Вернулся 01.10.2026')).toBeInTheDocument()
+    expect(screen.getByText('Управленческое резюме')).toBeInTheDocument()
+
+    // The departure filter goes to the report and the PDF alike.
+    await user.selectOptions(screen.getByLabelText('Причина ухода'), 'unknown')
+    await waitFor(() => expect(assistantApi.monthlyReport).toHaveBeenLastCalledWith(2026, 9, { reason: 'unknown' }))
     expect(screen.getByText('«Больше практики»')).toBeInTheDocument()
     expect(screen.getByText('Aida K')).toBeInTheDocument()
-    expect(screen.queryByText(/KPI|Рейтинг тренеров|Эффективность/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Рейтинг тренеров|Эффективность тренеров|KPI тренера:/)).not.toBeInTheDocument()
 
     // The PDF is the report on screen — not the month merely picked in the selector.
     vi.mocked(assistantApi.downloadMonthlyReportPdf).mockResolvedValue()
     await user.selectOptions(screen.getByLabelText('Месяц'), '8')
     await user.click(screen.getByRole('button', { name: /Скачать PDF/ }))
-    await waitFor(() => expect(assistantApi.downloadMonthlyReportPdf).toHaveBeenCalledWith(2026, 9))
+    await waitFor(() => expect(assistantApi.downloadMonthlyReportPdf).toHaveBeenCalledWith(2026, 9, { reason: 'unknown' }))
     expect(await screen.findByRole('button', { name: /Скачать PDF/ })).toBeEnabled()
 
     await user.click(screen.getByRole('button', { name: /Сформировать отчёт/ }))
-    await waitFor(() => expect(assistantApi.monthlyReport).toHaveBeenCalledWith(2026, 8))
+    await waitFor(() => expect(assistantApi.monthlyReport).toHaveBeenCalledWith(2026, 8, { reason: 'unknown' }))
   })
 })

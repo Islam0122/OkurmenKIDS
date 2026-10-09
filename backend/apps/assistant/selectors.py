@@ -794,6 +794,7 @@ def options() -> dict:
         ],
         "weekdays": [{"code": code, "label": WEEKDAY_LABELS_FULL[code], "short": WEEKDAY_LABELS_SHORT[code]}
                      for code in WEEKDAY_CODES],
-        "deactivation_reasons": [{"value": v, "label": l} for v, l in StudentStatusEvent.Reason.choices],
+        "deactivation_reasons": [{"value": v, "label": l} for v, l in StudentStatusEvent.Reason.choices
+                                 if v in StudentStatusEvent.DEACTIVATION_REASONS],
         "group_statuses": [{"value": v, "label": l} for v, l in Group.Status.choices],
     }

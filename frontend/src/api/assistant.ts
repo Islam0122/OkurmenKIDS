@@ -13,6 +13,7 @@ import type {
   ControlOverview,
   ControlProfile,
   MonthlyReport,
+  ReportFilters,
   GroupAttendance,
   GroupHomework,
   HomeworkDetail,
@@ -136,10 +137,11 @@ export const assistantApi = {
   homework: (id: number) => get<HomeworkDetail>(`/homework/${id}/`),
   control: (params: { period?: string; group?: number; category?: string; sort?: string }) => get<ControlOverview>('/control/', params),
   controlStudent: (id: number, period: string) => get<ControlProfile>(`/control/students/${id}/`, { period }),
-  monthlyReport: (year: number, month: number) => get<MonthlyReport>('/reports/monthly/', { year, month }),
+  monthlyReport: (year: number, month: number, filters: Partial<ReportFilters> = {}) =>
+    get<MonthlyReport>('/reports/monthly/', { year, month, ...filters }),
   /** The same report as a PDF. JWT auth like every call — a plain `<a href>` would 401 — so it is fetched as a blob. */
-  downloadMonthlyReportPdf: async (year: number, month: number): Promise<void> => {
-    const response = await apiClient.get<Blob>(`${BASE}/reports/monthly/${year}/${month}/pdf/`, { responseType: 'blob' })
+  downloadMonthlyReportPdf: async (year: number, month: number, filters: Partial<ReportFilters> = {}): Promise<void> => {
+    const response = await apiClient.get<Blob>(`${BASE}/reports/monthly/${year}/${month}/pdf/`, { params: filters, responseType: 'blob' })
     const match = /filename="?([^";]+)"?/.exec(String(response.headers['content-disposition'] ?? ''))
     const href = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')

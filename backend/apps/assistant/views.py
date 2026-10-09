@@ -54,7 +54,7 @@ from apps.academy.services.student_enrollment import add_students_to_group, enro
 from apps.scholarships.models import EligibilityStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod, ScholarshipRunLog
 from apps.scholarships.services.generation import add_award, generate_period, get_active_configuration
 from apps.scholarships.services.periods import latest_award_date
-from apps.users.permissions import IsAdmin, IsAdminOrAssistant
+from apps.users.permissions import IsAdmin, IsAdminOrAssistant, is_admin_user
 
 from . import activity, monthly, monthly_pdf, records, selectors
 from .serializers import (
@@ -669,10 +669,26 @@ class ControlStudentView(AssistantView):
         return Response(activity.student_profile(student, request.query_params.get("period", "30d")))
 
 
-def _monthly_report(year, month):
-    """The one source for the page and the PDF: (report, None) or (None, 400)."""
+def _report_filters(params) -> dict:
+    """Departure filters: ?group=&teacher=&reason= (a reason code or «unknown»)."""
+    def as_int(key):
+        value = params.get(key)
+        return int(value) if value and str(value).isdigit() else None
+    reason = params.get("reason") or None
+    if reason and reason != "unknown" and reason not in StudentStatusEvent.Reason.values:
+        reason = None
+    return {"group": as_int("group"), "teacher": as_int("teacher"), "reason": reason}
+
+
+def _monthly_report(year, month, request=None):
+    """The one source for the page and the PDF: (report, None) or (None, 400).
+    Finance is included for an Admin only."""
     try:
-        return monthly.monthly_report(int(year), int(month)), None
+        return monthly.monthly_report(
+            int(year), int(month),
+            filters=_report_filters(request.query_params) if request else None,
+            finance_allowed=bool(request and is_admin_user(request.user)),
+        ), None
     except (TypeError, ValueError, monthly.ReportError) as exc:
         message = str(exc) if isinstance(exc, monthly.ReportError) else "Неверный месяц или год."
         return None, Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
@@ -687,7 +703,7 @@ class MonthlyReportView(AssistantView):
     def get(self, request):
         today = timezone.localdate()
         report, error = _monthly_report(request.query_params.get("year") or today.year,
-                                        request.query_params.get("month") or today.month)
+                                        request.query_params.get("month") or today.month, request)
         return error or Response(report)
 
 
@@ -697,7 +713,7 @@ class MonthlyReportPdfView(AssistantView):
     (monthly_report_<month>_<year>.pdf). Same data, same permission."""
 
     def get(self, request, year, month):
-        report, error = _monthly_report(year, month)
+        report, error = _monthly_report(year, month, request)
         if error:
             return error
         response = HttpResponse(monthly_pdf.build_monthly_pdf(report), content_type="application/pdf")
