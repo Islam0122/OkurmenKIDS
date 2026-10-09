@@ -1,4 +1,4 @@
-"""Monthly report — retention, churn and finance sections; the departure
+"""Monthly report — retention and churn sections; the departure
 history behind them (StudentStatusEvent) and every way a student leaves.
 """
 from __future__ import annotations
@@ -234,19 +234,21 @@ class InactivityTests(RetentionBase):
             self.assertEqual(rows[self.s1.pk]["last_homework"], P_START + dt.timedelta(days=2))
 
 
-class FinanceAndAccessTests(RetentionBase):
-    def test_finance_only_for_admin_and_never_invented(self):
-        assistant = self.client.get(self.url("monthly-report"), {"year": P_START.year, "month": P_START.month}).data
-        self.assertEqual(assistant["finance"], {"allowed": False, "note": "Финансовые данные доступны только администратору."})
+class ReportAccessTests(RetentionBase):
+    def test_no_finance_section_for_any_role(self):
+        """Finance analytics was removed from the monthly report: no section,
+        no figures — for an Assistant and an Admin alike."""
+        params = {"year": P_START.year, "month": P_START.month}
         admin = APIClient()
         admin.force_authenticate(self.admin)
-        finance = admin.get(self.url("monthly-report"), {"year": P_START.year, "month": P_START.month}).data["finance"]
-        self.assertTrue(finance["allowed"])
-        self.assertEqual(finance["status"], "insufficient_data")
-        values = {m["label"]: m["value"] for m in finance["metrics"]}
-        self.assertIsNone(values["Начислено за обучение"])
-        self.assertIsNone(values["Фактические поступления"])
-        self.assertIsNone(values["Потенциальный ежемесячный доход ушедших (оценка, не убыток)"])
+        for client in (self.client, admin):
+            data = client.get(self.url("monthly-report"), params).data
+            self.assertNotIn("finance", data)
+            body = str(data)
+            for word in ("Начислено", "поступления", "Задолженность", "Возвраты", "доход"):
+                self.assertNotIn(word, body)
+        self.assertEqual(set(self.client.get(self.url("monthly-report"), params).data),
+                         set(admin.get(self.url("monthly-report"), params).data))
 
     def test_roles(self):
         lead = User.objects.create_user(username="lead", email="l@o.kg", password=PASSWORD, role=User.Role.TEAM_LEAD)
@@ -258,9 +260,8 @@ class FinanceAndAccessTests(RetentionBase):
     def test_pdf_with_new_sections(self):
         self.lesson(P_START + dt.timedelta(days=1))
         student_status.deactivate_student(self.s1, reason="schedule", event_date=P_START + dt.timedelta(days=4))
-        for allowed in (False, True):
-            data = build_monthly_pdf(self.report(finance_allowed=allowed))
-            self.assertTrue(data.startswith(b"%PDF"))
+        data = build_monthly_pdf(self.report())
+        self.assertTrue(data.startswith(b"%PDF"))
 
     def test_no_n_plus_one(self):
         def queries():

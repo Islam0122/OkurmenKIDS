@@ -54,7 +54,7 @@ from apps.academy.services.student_enrollment import add_students_to_group, enro
 from apps.scholarships.models import EligibilityStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod, ScholarshipRunLog
 from apps.scholarships.services.generation import add_award, generate_period, get_active_configuration
 from apps.scholarships.services.periods import latest_award_date
-from apps.users.permissions import IsAdmin, IsAdminOrAssistant, is_admin_user
+from apps.users.permissions import IsAdmin, IsAdminOrAssistant
 
 from . import activity, monthly, monthly_pdf, records, selectors
 from .serializers import (
@@ -681,13 +681,11 @@ def _report_filters(params) -> dict:
 
 
 def _monthly_report(year, month, request=None):
-    """The one source for the page and the PDF: (report, None) or (None, 400).
-    Finance is included for an Admin only."""
+    """The one source for the page and the PDF: (report, None) or (None, 400)."""
     try:
         return monthly.monthly_report(
             int(year), int(month),
             filters=_report_filters(request.query_params) if request else None,
-            finance_allowed=bool(request and is_admin_user(request.user)),
         ), None
     except (TypeError, ValueError, monthly.ReportError) as exc:
         message = str(exc) if isinstance(exc, monthly.ReportError) else "Неверный месяц или год."

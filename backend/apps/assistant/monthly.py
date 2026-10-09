@@ -1,7 +1,7 @@
 """«Месячный отчёт» of the Assistant — one month (`year` + `month`), one
 page: students and groups, attendance, homework, who needs attention,
 surveys, scholarships, activity, inactive and departed students, why they
-leave, finance, month over month, retention advice and the conclusions
+leave, month over month, retention advice and the conclusions
 (the retention part lives in retention.py).
 
 Nothing is stored and nothing is written: the report is computed on demand
@@ -473,9 +473,9 @@ def previous_month(start: dt.date) -> tuple[dt.date, dt.date]:
     return end.replace(day=1), end
 
 
-def monthly_report(year: int, month: int, *, filters: dict | None = None, finance_allowed: bool = False) -> dict:
+def monthly_report(year: int, month: int, *, filters: dict | None = None) -> dict:
     """The month's report. `filters` (group / teacher / reason) narrow the
-    departure sections only; `finance_allowed` — the caller may see finance."""
+    departure sections only."""
     start, end = month_bounds(year, month)
     today = timezone.localdate()
     if start > today:
@@ -503,8 +503,6 @@ def monthly_report(year: int, month: int, *, filters: dict | None = None, financ
         "homework_percent": report["homework"]["percent"],
         "students_at_risk": len(report["students"]["risk"]),
     })
-    report["finance"] = retention.finance(finance_allowed, report["overview"]["students_active"],
-                                          report["overview"]["students_deactivated"])
     report["conclusions"] = _conclusions(report)
 
     prev_start, prev_end = previous_month(start)

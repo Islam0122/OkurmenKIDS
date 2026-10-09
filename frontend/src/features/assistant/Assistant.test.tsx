@@ -291,7 +291,6 @@ describe('Assistant Workspace', () => {
         rows: [{ event_id: 1, student_id: 9, name: 'Aibek T', group: { id: 1, name: 'PRO-01' }, trainer: 'Нурлан Осмонов', date: '2026-09-10',
           reason: 'schedule', reason_label: 'Неудобное расписание', comment: '', performed_by: 'Admin', last_activity: '2026-09-05',
           study_days: 120, returned_on: '2026-10-01' }] },
-      finance: { allowed: false as const, note: 'Финансовые данные доступны только администратору.' },
       comparison: { previous_title: 'Август 2026', available: true,
         rows: [{ key: 'attendance', label: 'Средняя посещаемость, %', current: 87, previous: 80, delta: 7, trend: 'better' as const }] },
       recommendations: ['«Неудобное расписание» (1): Проверить расписание групп.'],
@@ -308,10 +307,10 @@ describe('Assistant Workspace', () => {
     expect(titles.slice(1)).toEqual([
       '1.Общая статистика', '2.Посещаемость', '3.Требуют внимания — посещаемость', '4.Домашние задания', '5.Требуют внимания — ДЗ',
       '6.В зоне риска', '7.Опросы', '8.Стипендии', '9.Активность студентов', '10.Неактивные студенты и динамика активности',
-      '11.Деактивированные студенты', '12.Причины ухода', '13.Финансовая аналитика', '14.Сравнение с предыдущим месяцем',
-      '15.Рекомендации по удержанию студентов', '16.Итоги месяца',
+      '11.Деактивированные студенты', '12.Причины ухода', '13.Сравнение с предыдущим месяцем',
+      '14.Рекомендации по удержанию студентов', '15.Итоги месяца',
     ])
-    expect(screen.getByText('Финансовые данные доступны только администратору.')).toBeInTheDocument()
+    expect(screen.queryByText(/Финансовая аналитика|Недостаточно данных/)).not.toBeInTheDocument()
     expect(screen.getByText('Вернулся 01.10.2026')).toBeInTheDocument()
     expect(screen.getByText('Управленческое резюме')).toBeInTheDocument()
 

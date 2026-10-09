@@ -644,10 +644,6 @@ export interface MonthlyReport {
       returned_on: string | null
     }[]
   }
-  /** Only an Admin sees finance; there is no tuition / payment data in the system yet. */
-  finance:
-    | { allowed: false; note: string }
-    | { allowed: true; status: string; note: string; missing: string[]; metrics: { label: string; value: number | null }[] }
   comparison: {
     previous_title: string
     available: boolean

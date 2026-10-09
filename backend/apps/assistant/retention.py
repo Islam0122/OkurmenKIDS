@@ -1,5 +1,5 @@
 """Retention analytics of the monthly report: inactive students, departures
-and why they happen, finance (when data exists), month-over-month and the
+and why they happen, month-over-month and the
 retention advice. Read only; every number comes from existing records.
 
 Kept apart on purpose:
@@ -304,45 +304,6 @@ def departures(start: dt.date, end: dt.date, filters: dict) -> dict:
 def departed_count(start: dt.date, end: dt.date) -> int:
     return StudentStatusEvent.objects.filter(event_type=E.DEACTIVATED, event_date__gte=start, event_date__lte=end) \
         .values("student_id").distinct().count()
-
-
-# ---------------------------------------------------------------------------
-# Finance
-# ---------------------------------------------------------------------------
-
-FINANCE_MISSING = [
-    "Стоимость обучения / тарифы по курсам и группам",
-    "Начисления за обучение по месяцам",
-    "Оплаты (фактические поступления)",
-    "Задолженности",
-    "Возвраты денежных средств",
-    "Скидки и льготы",
-]
-
-
-def finance(allowed: bool, active_students: int, departed: int) -> dict:
-    """The project has no tuition, payment, debt or refund records (the only
-    money is scholarship payouts — an expense, shown in «Стипендии»). So no
-    charge, income, debt or lost-revenue figure can be given — they are
-    reported as missing, never estimated."""
-    if not allowed:
-        return {"allowed": False, "note": "Финансовые данные доступны только администратору."}
-    return {
-        "allowed": True,
-        "status": "insufficient_data",
-        "note": "Недостаточно данных: в системе нет учёта оплаты обучения.",
-        "missing": FINANCE_MISSING,
-        "metrics": [
-            {"label": "Активные студенты на конец месяца", "value": active_students},
-            {"label": "Активные платные студенты", "value": None},
-            {"label": "Начислено за обучение", "value": None},
-            {"label": "Фактические поступления", "value": None},
-            {"label": "Задолженность на конец месяца", "value": None},
-            {"label": "Возвраты", "value": None},
-            {"label": "Ушли за месяц", "value": departed},
-            {"label": "Потенциальный ежемесячный доход ушедших (оценка, не убыток)", "value": None},
-        ],
-    }
 
 
 # ---------------------------------------------------------------------------
