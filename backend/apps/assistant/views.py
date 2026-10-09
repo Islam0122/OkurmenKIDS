@@ -31,6 +31,7 @@ import datetime as dt
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -55,7 +56,7 @@ from apps.scholarships.services.generation import add_award, generate_period, ge
 from apps.scholarships.services.periods import latest_award_date
 from apps.users.permissions import IsAdmin, IsAdminOrAssistant
 
-from . import activity, monthly, records, selectors
+from . import activity, monthly, monthly_pdf, records, selectors
 from .serializers import (
     PAUSE,
     ActivateSerializer,
@@ -668,6 +669,15 @@ class ControlStudentView(AssistantView):
         return Response(activity.student_profile(student, request.query_params.get("period", "30d")))
 
 
+def _monthly_report(year, month):
+    """The one source for the page and the PDF: (report, None) or (None, 400)."""
+    try:
+        return monthly.monthly_report(int(year), int(month)), None
+    except (TypeError, ValueError, monthly.ReportError) as exc:
+        message = str(exc) if isinstance(exc, monthly.ReportError) else "Неверный месяц или год."
+        return None, Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
+
+
 @extend_schema(tags=TAGS, responses={200: dict})
 class MonthlyReportView(AssistantView):
     """GET — «Месячный отчёт» for ?year=&month= (default: the current month).
@@ -676,10 +686,21 @@ class MonthlyReportView(AssistantView):
 
     def get(self, request):
         today = timezone.localdate()
-        try:
-            year = int(request.query_params.get("year") or today.year)
-            month = int(request.query_params.get("month") or today.month)
-            return Response(monthly.monthly_report(year, month))
-        except (ValueError, monthly.ReportError) as exc:
-            message = str(exc) if isinstance(exc, monthly.ReportError) else "Неверный месяц или год."
-            return Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
+        report, error = _monthly_report(request.query_params.get("year") or today.year,
+                                        request.query_params.get("month") or today.month)
+        return error or Response(report)
+
+
+@extend_schema(tags=TAGS, responses={200: {"type": "string", "format": "binary"}})
+class MonthlyReportPdfView(AssistantView):
+    """GET — the same «Месячный отчёт» as an A4 PDF attachment
+    (monthly_report_<month>_<year>.pdf). Same data, same permission."""
+
+    def get(self, request, year, month):
+        report, error = _monthly_report(year, month)
+        if error:
+            return error
+        response = HttpResponse(monthly_pdf.build_monthly_pdf(report), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{monthly_pdf.pdf_filename(report["year"], report["month"])}"'
+        response["Cache-Control"] = "no-store"
+        return response

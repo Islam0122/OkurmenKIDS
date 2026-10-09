@@ -2,15 +2,18 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { AlertTriangle, CheckCircle2, Eye, FileBarChart, MessageSquareQuote, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, Eye, FileBarChart, MessageSquareQuote, RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 
+import { assistantApi } from '@/api/assistant'
+import { extractErrorMessage } from '@/lib/apiError'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
+import { useToast } from '@/components/ui/Toast'
 import { useMonthlyReport } from '@/hooks/useAssistant'
 import type { MonthlyReport, ReportStudent } from '@/types/assistant'
 import { cn } from '@/utils/cn'
@@ -233,6 +236,7 @@ function Report({ report }: { report: MonthlyReport }) {
                   <dt className="text-ink-secondary">ДЗ не сдано подряд</dt><dd className="text-right"><Streak value={r.consecutive_missed_homework} /></dd>
                   <dt className="text-ink-secondary">Последняя активность</dt><dd className="text-right text-ink">{day(r.last_activity)}</dd>
                 </dl>
+                <p className="text-xs font-medium text-danger">Причина: {r.reason}</p>
               </li>
             ))}
           </ul>
@@ -340,6 +344,20 @@ function Report({ report }: { report: MonthlyReport }) {
               : <p className="text-sm text-ink-muted">Проблем не найдено.</p>}
           </div>
         </div>
+        <p className="text-sm text-ink-secondary">
+          Группы, требующие внимания: <b className="font-semibold text-ink">{conclusions.groups.length ? conclusions.groups.join(', ') : 'нет'}</b>
+        </p>
+        <Table empty={conclusions.students.length === 0 && 'Студентов, требующих внимания, нет.'} head={
+          <tr><th className={th}>Студент, требующий внимания</th><th className={th}>Группа</th><th className={th}>Причина</th></tr>
+        }>
+          {conclusions.students.map((x) => (
+            <tr key={x.student_id}>
+              <td className={cn(td, 'font-medium text-ink')}>{x.name}</td>
+              <td className={cn(td, 'text-ink-secondary')}>{x.group || '—'}</td>
+              <td className={cn(td, 'text-ink-secondary')}>{x.reason}</td>
+            </tr>
+          ))}
+        </Table>
       </Section>
     </div>
   )
@@ -362,6 +380,20 @@ export function AssistantMonthlyReportPage() {
     else setParams({ year: String(next.year), month: String(next.month) }, { replace: true })
   }
   const message = (error as { response?: { data?: { detail?: string } } } | null)?.response?.data?.detail
+  const { showToast } = useToast()
+  const [downloading, setDownloading] = useState(false)
+  // The PDF is always the report on screen: its own year and month, never the picker's draft.
+  const downloadPdf = async () => {
+    if (!data) return
+    setDownloading(true)
+    try {
+      await assistantApi.downloadMonthlyReportPdf(data.year, data.month)
+    } catch (err) {
+      showToast(`Не удалось сформировать PDF: ${extractErrorMessage(err)}`, 'error')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <div>
@@ -390,12 +422,22 @@ export function AssistantMonthlyReportPage() {
       {isError && !data ? (message ? <EmptyState icon={FileBarChart} title={message} /> : <ErrorState onRetry={() => void refetch()} />) : null}
       {data ? (
         <>
-          <div className="mb-6 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 className="text-2xl font-semibold text-ink">{data.title}</h2>
-            <span className="text-sm text-ink-secondary">
-              {format(parseISO(data.start), 'd MMMM', { locale: ru })} — {format(parseISO(data.end), 'd MMMM yyyy', { locale: ru })}
-              {!data.is_complete ? ` · месяц идёт, данные по ${format(parseISO(data.until), 'd MMMM', { locale: ru })}` : ''}
-            </span>
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-2xl font-semibold text-ink">{data.title}</h2>
+              <span className="text-sm text-ink-secondary">
+                {format(parseISO(data.start), 'dd.MM.yyyy')} — {format(parseISO(data.end), 'dd.MM.yyyy')}
+                {!data.is_complete ? ` · месяц идёт, данные по ${format(parseISO(data.until), 'd MMMM', { locale: ru })}` : ''}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" leftIcon={<RefreshCw className="size-4" aria-hidden />} onClick={() => void refetch()}
+                isLoading={isFetching && !isPending} disabled={downloading}>Обновить</Button>
+              <Button leftIcon={<Download className="size-4" aria-hidden />} onClick={() => void downloadPdf()}
+                isLoading={downloading} disabled={isFetching}>
+                {downloading ? 'Генерация PDF…' : 'Скачать PDF'}
+              </Button>
+            </div>
           </div>
           <Report report={data} />
           <p className="mt-8 flex items-center gap-1.5 border-t border-border pt-3 text-xs text-ink-muted">

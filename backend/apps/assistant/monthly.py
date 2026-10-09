@@ -181,8 +181,24 @@ def _homework(lessons: list[Lesson], roster: dict[int, int]) -> dict:
     }
 
 
+def _reason(row: activity.StudentActivity) -> str:
+    """Why the student is flagged — from the same categories «Контроль» set."""
+    no_activity = (row.marked or row.homework_due) and not row.attended and not row.homework_done
+    if no_activity:
+        return "Нет активности"
+    attending, homework = "not_attending" in row.categories, "no_homework" in row.categories
+    if attending and homework:
+        return "Низкая посещаемость + низкое выполнение ДЗ"
+    if attending:
+        return "Низкая посещаемость"
+    if homework:
+        return "Не выполняет ДЗ"
+    return row.status_label
+
+
 def _student_row(row: activity.StudentActivity) -> dict:
     return {
+        "reason": _reason(row),
         "student_id": row.student_id, "name": row.name, "group": row.group,
         "attendance": row.attendance, "attended": row.attended, "marked": row.marked, "absent": row.absent,
         "consecutive_absences": row.consecutive_absences,
@@ -414,7 +430,16 @@ def _conclusions(report: dict) -> dict:
         attention.append(f"Низких оценок в опросах: {sv['low_ratings']}.")
     if hw["pending"]:
         attention.append(f"Ждут проверки тренера: {hw['pending']} {_plural(hw['pending'], 'работа', 'работы', 'работ')} по ДЗ.")
-    return {"good": good, "attention": attention}
+    # Who exactly: the groups below the group thresholds and the flagged students.
+    groups = sorted({g["group"]["name"] for g in att["groups"] if g["percent"] is not None and g["percent"] < LOW_GROUP_ATTENDANCE}
+                    | {g["group"]["name"] for g in hw["groups"] if g["percent"] is not None and g["percent"] < LOW_GROUP_HOMEWORK})
+    flagged, students = set(), []
+    for row in st["risk"] + st["attendance_attention"] + st["homework_attention"]:
+        if row["student_id"] not in flagged:
+            flagged.add(row["student_id"])
+            students.append({"student_id": row["student_id"], "name": row["name"],
+                             "group": (row["group"] or {}).get("name", ""), "reason": row["reason"]})
+    return {"good": good, "attention": attention, "groups": groups, "students": students}
 
 
 def monthly_report(year: int, month: int) -> dict:

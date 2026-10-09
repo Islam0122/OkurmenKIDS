@@ -19,6 +19,7 @@ urlpatterns = [
     path("homework/<int:pk>/", views.HomeworkDetailView.as_view(), name="homework-detail"),
     path("control/", views.ControlView.as_view(), name="control"),
     path("reports/monthly/", views.MonthlyReportView.as_view(), name="monthly-report"),
+    path("reports/monthly/<int:year>/<int:month>/pdf/", views.MonthlyReportPdfView.as_view(), name="monthly-report-pdf"),
     path("control/students/<int:pk>/", views.ControlStudentView.as_view(), name="control-student"),
     path("students/", views.StudentListView.as_view(), name="students"),
     path("students/bulk/", views.StudentBulkView.as_view(), name="students-bulk"),

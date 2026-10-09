@@ -107,6 +107,12 @@ surveys → scholarships → activity → conclusions.
   monthly.py) — no generated advice.
 * No trainer data at all (KPI, workload, ratings): that is the Team Lead's
   report.
+* PDF: `monthly_pdf.build_monthly_pdf(report)` only renders the dict
+  `monthly_report()` returns — the page and the PDF share one source and
+  one period check. reportlab canvas in the academy reports' style (DejaVu
+  fonts, LMS palette); tables wrap long names, continue across pages with
+  a repeated header; running header, footer with generation time and
+  «Страница N из M». Same permission as the rest of the workspace.
 
 ## History / audit
 
@@ -144,6 +150,7 @@ surveys → scholarships → activity → conclusions.
 | GET | `control/` | «Контроль активности» (`period=7d\|14d\|30d\|month\|all`, default `30d`; `group`, `category`, `sort`) |
 | GET | `control/students/<id>/` | one student's risk profile and timeline (`period`) |
 | GET | `reports/monthly/?year=&month=` | «Месячный отчёт» (default: current month; a future month → 400) |
+| GET | `reports/monthly/<year>/<month>/pdf/` | the same report as an A4 PDF, `monthly_report_<month>_<year>.pdf` |
 | GET | `scholarships/` | periods with awards |
 | POST | `scholarships/generate/` | form the latest cycle's period |
 | GET, POST | `scholarships/periods/<id>/awards/` | eligible candidates / add an award (draft period) |

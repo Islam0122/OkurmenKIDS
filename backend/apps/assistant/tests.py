@@ -693,3 +693,65 @@ class MonthlyReportTests(AssistantTestBase):
         client = APIClient()
         client.force_authenticate(self.islam.user)
         self.assertEqual(client.get(self.url("monthly-report")).status_code, status.HTTP_403_FORBIDDEN)
+
+
+class MonthlyReportPdfTests(MonthlyReportTests):
+    """The PDF is the same report, rendered: same month, same permission."""
+
+    def pdf_url(self, year=None, month=None):
+        return self.url("monthly-report-pdf", year or self.start.year, month or self.start.month)
+
+    def test_pdf_download(self):
+        from apps.assistant.monthly_pdf import MONTH_SLUGS
+
+        response = self.client.get(self.pdf_url())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertEqual(
+            response["Content-Disposition"],
+            f'attachment; filename="monthly_report_{MONTH_SLUGS[self.start.month - 1]}_{self.start.year}.pdf"',
+        )
+        self.assertTrue(response.content.startswith(b"%PDF"))
+        self.assertGreaterEqual(response.content.count(b"/Type /Page\n") + response.content.count(b"/Type /Page "), 1)
+
+    def test_pdf_uses_the_same_report_for_the_requested_month(self):
+        from unittest import mock
+
+        from apps.assistant import monthly
+
+        with mock.patch("apps.assistant.monthly_pdf.build_monthly_pdf", return_value=b"%PDF-1.4") as build:
+            self.client.get(self.pdf_url())
+        report = build.call_args.args[0]
+        expected = monthly.monthly_report(self.start.year, self.start.month)
+        self.assertEqual((report["year"], report["month"], report["start"], report["end"]),
+                         (self.start.year, self.start.month, self.start, self.end))
+        for key in ("overview", "attendance", "homework", "surveys", "scholarships", "conclusions"):
+            self.assertEqual(report[key], expected[key], key)
+        self.assertEqual(report["students"]["risk"][0]["reason"], "Нет активности")
+
+    def test_long_names_wrap_and_never_overflow(self):
+        from reportlab.pdfbase import pdfmetrics
+
+        from apps.academy.services.monthly_report_pdf import _REGULAR, _ensure_fonts
+        from apps.assistant.monthly_pdf import _wrap
+
+        _ensure_fonts()
+        Student.objects.filter(pk=self.s1.pk).update(
+            first_name="Абдыкадыр-Абдырахманова-Мамыткожоева" * 2, last_name="Нурсултановна Кыдырмаматова")
+        self.assertEqual(self.client.get(self.pdf_url()).status_code, status.HTTP_200_OK)
+        lines = _wrap("Очень-очень-длинное-имя-без-пробелов-которое-не-влезает " * 3, _REGULAR, 7.8, 80)
+        self.assertGreater(len(lines), 3)
+        self.assertTrue(all(pdfmetrics.stringWidth(line, _REGULAR, 7.8) <= 80 for line in lines))
+        self.assertIn("не-влезает", "".join(lines))  # wrapped, not cut
+
+    def test_pdf_period_and_permissions(self):
+        future = TODAY.replace(day=28) + dt.timedelta(days=10)
+        self.assertEqual(self.client.get(self.pdf_url(future.year, future.month)).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.client.get(self.pdf_url(month=13)).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(APIClient().get(self.pdf_url()).status_code, status.HTTP_401_UNAUTHORIZED)
+        lead = User.objects.create_user(username="lead", email="l@o.kg", password=PASSWORD, role=User.Role.TEAM_LEAD)
+        for user in (self.islam.user, lead):
+            client = APIClient()
+            client.force_authenticate(user)
+            self.assertEqual(client.get(self.pdf_url()).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.post(self.pdf_url()).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
