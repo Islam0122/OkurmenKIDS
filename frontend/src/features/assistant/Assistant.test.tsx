@@ -21,6 +21,7 @@ vi.mock('@/api/assistant', () => ({
     control: vi.fn(),
     groupHomework: vi.fn(),
     monthlyReport: vi.fn(),
+    downloadMonthlyReportPdf: vi.fn(),
   },
   surveysApi: {},
 }))
@@ -255,7 +256,7 @@ describe('Assistant Workspace', () => {
 
   it('Месячный отчёт: one page, sections in order, no trainer report; «Сформировать» picks the month', async () => {
     const student = {
-      student_id: 7, name: 'Islam Duishobaev', group: { id: 1, name: 'PRO-01' }, attendance: 30, attended: 3, marked: 10, absent: 7,
+      reason: 'Нет активности', student_id: 7, name: 'Islam Duishobaev', group: { id: 1, name: 'PRO-01' }, attendance: 30, attended: 3, marked: 10, absent: 7,
       consecutive_absences: 4, homework: 20, homework_done: 1, homework_due: 5, homework_missed: 4, consecutive_missed_homework: 4,
       last_activity: '2026-09-18', status: 'risk' as const, status_label: 'В зоне риска',
     }
@@ -277,7 +278,8 @@ describe('Assistant Workspace', () => {
       scholarships: { awards: 1, recipients: 1, total_amount: 4000, paid: 0, paid_amount: 0, groups: ['PRO-01'],
         rows: [{ id: 1, student: { id: 8, name: 'Aida K' }, group: 'PRO-01', title: 'Стипендия', amount: 4000, reason: '1 место в рейтинге',
           status: 'approved', status_display: 'Утверждена', payment_status: 'unpaid', payment_display: 'Не выдано', award_date: '2026-09-30' }] },
-      conclusions: { good: ['Средняя посещаемость 87% — выше 85%.'], attention: ['В зоне риска: 1 студент.'] },
+      conclusions: { good: ['Средняя посещаемость 87% — выше 85%.'], attention: ['В зоне риска: 1 студент.'], groups: [],
+        students: [{ student_id: 7, name: 'Islam Duishobaev', group: 'PRO-01', reason: 'Нет активности' }] },
     })
     const user = userEvent.setup()
     renderWithProviders(<AssistantActionsProvider><AssistantMonthlyReportPage /></AssistantActionsProvider>, { route: '/assistant/reports?year=2026&month=9' })
@@ -292,7 +294,13 @@ describe('Assistant Workspace', () => {
     expect(screen.getByText('Aida K')).toBeInTheDocument()
     expect(screen.queryByText(/KPI|Рейтинг тренеров|Эффективность/)).not.toBeInTheDocument()
 
+    // The PDF is the report on screen — not the month merely picked in the selector.
+    vi.mocked(assistantApi.downloadMonthlyReportPdf).mockResolvedValue()
     await user.selectOptions(screen.getByLabelText('Месяц'), '8')
+    await user.click(screen.getByRole('button', { name: /Скачать PDF/ }))
+    await waitFor(() => expect(assistantApi.downloadMonthlyReportPdf).toHaveBeenCalledWith(2026, 9))
+    expect(await screen.findByRole('button', { name: /Скачать PDF/ })).toBeEnabled()
+
     await user.click(screen.getByRole('button', { name: /Сформировать отчёт/ }))
     await waitFor(() => expect(assistantApi.monthlyReport).toHaveBeenCalledWith(2026, 8))
   })

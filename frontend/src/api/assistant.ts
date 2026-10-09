@@ -137,6 +137,19 @@ export const assistantApi = {
   control: (params: { period?: string; group?: number; category?: string; sort?: string }) => get<ControlOverview>('/control/', params),
   controlStudent: (id: number, period: string) => get<ControlProfile>(`/control/students/${id}/`, { period }),
   monthlyReport: (year: number, month: number) => get<MonthlyReport>('/reports/monthly/', { year, month }),
+  /** The same report as a PDF. JWT auth like every call — a plain `<a href>` would 401 — so it is fetched as a blob. */
+  downloadMonthlyReportPdf: async (year: number, month: number): Promise<void> => {
+    const response = await apiClient.get<Blob>(`${BASE}/reports/monthly/${year}/${month}/pdf/`, { responseType: 'blob' })
+    const match = /filename="?([^";]+)"?/.exec(String(response.headers['content-disposition'] ?? ''))
+    const href = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+    const link = document.createElement('a')
+    link.href = href
+    link.download = match?.[1] ?? `monthly_report_${year}_${month}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(href)
+  },
 
   scholarships: () => get<{ award_days: number[]; pending: number; periods: ScholarshipPeriodRow[] }>('/scholarships/'),
   generateScholarship: (body: { award_day?: number | null }) =>

@@ -466,6 +466,8 @@ export interface ControlProfile {
 
 /** «Месячный отчёт» — one month of students and groups (no trainers). */
 export interface ReportStudent {
+  /** Why the student is listed: «Низкая посещаемость», «Не выполняет ДЗ», «Нет активности»… */
+  reason: string
   student_id: number
   name: string
   group: Ref | null
@@ -584,5 +586,10 @@ export interface MonthlyReport {
       award_date: string
     }[]
   }
-  conclusions: { good: string[]; attention: string[] }
+  conclusions: {
+    good: string[]
+    attention: string[]
+    groups: string[]
+    students: { student_id: number; name: string; group: string; reason: string }[]
+  }
 }
