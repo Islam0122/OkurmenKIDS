@@ -240,28 +240,6 @@ function ReasonsSection({ index, report }: { index: number; report: MonthlyRepor
   )
 }
 
-function FinanceSection({ index, report }: { index: number; report: MonthlyReport }) {
-  const f = report.finance
-  return (
-    <Section index={index} title="Финансовая аналитика">
-      {!f.allowed ? <p className="card px-4 py-3 text-sm text-ink-secondary">{f.note}</p> : (
-        <>
-          <p className="rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">{f.note} Суммы не оцениваются и не придумываются.</p>
-          <Table head={<tr><th className={th}>Показатель</th><th className={cn(th, num)}>Значение</th></tr>}>
-            {f.metrics.map((m) => (
-              <tr key={m.label}>
-                <td className={td}>{m.label}</td>
-                <td className={cn(td, num, m.value === null && 'text-ink-muted')}>{m.value ?? 'Недостаточно данных'}</td>
-              </tr>
-            ))}
-          </Table>
-          <p className="text-sm text-ink-secondary">Каких данных не хватает: {f.missing.join('; ')}.</p>
-        </>
-      )}
-    </Section>
-  )
-}
-
 function ComparisonSection({ index, report }: { index: number; report: MonthlyReport }) {
   const comp = report.comparison
   const trend = { better: ['▲ лучше', 'text-brand-700'], worse: ['▼ хуже', 'text-danger'], same: ['без изменений', 'text-ink-muted'] } as const
@@ -531,7 +509,6 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
       <InactiveSection index={next()} report={report} />
       <DeparturesSection index={next()} report={report} filterBar={filterBar} />
       <ReasonsSection index={next()} report={report} />
-      <FinanceSection index={next()} report={report} />
       <ComparisonSection index={next()} report={report} />
       <Section index={next()} title="Рекомендации по удержанию студентов" hint="Только по данным этого отчёта">
         <Bullets items={report.recommendations} empty="Данных для рекомендаций недостаточно." />

@@ -114,9 +114,9 @@ surveys → scholarships → activity → conclusions.
   a repeated header; running header, footer with generation time and
   «Страница N из M». Same permission as the rest of the workspace.
 
-## Удержание, уходы и финансы (месячный отчёт)
+## Удержание и уходы (месячный отчёт)
 
-Разделы 10–15 + управленческое резюме (`retention.py`), нумерация
+Разделы 10–14 + управленческое резюме (`retention.py`), нумерация
 разделов в HTML и PDF — по порядку, не вручную.
 
 * **Состояние на конец месяца** — `history.roster_on(day)` проигрывает
@@ -139,9 +139,6 @@ surveys → scholarships → activity → conclusions.
 * **Снимок при уходе** — `last_activity_date`, `study_days` в событии
   (заполняются `deactivate_student` / `complete_student`; миграция 0021
   заполнила их для прошлых уходов из реальных данных).
-* **Финансы** — только администратору. В проекте нет тарифов, начислений,
-  оплат, долгов и возвратов, поэтому показатели — «Недостаточно данных»
-  и список недостающих данных; суммы не оцениваются.
 
 Все пути деактивации идут через `services.student_status` с причиной и
 историей: страница студента в админке, массовое действие (промежуточная
@@ -183,7 +180,7 @@ surveys → scholarships → activity → conclusions.
 | GET | `homework/<id>/` | homework details: every student's result (status, submitted / checked, score, comment) |
 | GET | `control/` | «Контроль активности» (`period=7d\|14d\|30d\|month\|all`, default `30d`; `group`, `category`, `sort`) |
 | GET | `control/students/<id>/` | one student's risk profile and timeline (`period`) |
-| GET | `reports/monthly/?year=&month=&group=&teacher=&reason=` | «Месячный отчёт» (default: current month; a future month → 400; filters narrow the departure sections; finance for Admin only) |
+| GET | `reports/monthly/?year=&month=&group=&teacher=&reason=` | «Месячный отчёт» (default: current month; a future month → 400; filters narrow the departure sections) |
 | GET | `reports/monthly/<year>/<month>/pdf/` | the same report as an A4 PDF, `monthly_report_<month>_<year>.pdf` |
 | GET | `scholarships/` | periods with awards |
 | POST | `scholarships/generate/` | form the latest cycle's period |

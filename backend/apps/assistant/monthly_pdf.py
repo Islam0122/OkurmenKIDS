@@ -678,22 +678,6 @@ def _reasons(doc: _Doc, r: dict) -> None:
                   size=7.3, color=INK_MUTED)
 
 
-def _finance(doc: _Doc, r: dict) -> None:
-    f = r["finance"]
-    _section(doc, "Финансовая аналитика")
-    if not f["allowed"]:
-        _note(doc, f["note"])
-        return
-    _note(doc, f["note"] + " Суммы не оцениваются и не придумываются.", color=WARN, fill=WARN_SOFT)
-    _table(doc, [("Показатель", 0.7, "left"), ("Значение", 0.3, "right")],
-           [[m["label"], str(m["value"]) if m["value"] is not None else ("Недостаточно данных", INK_MUTED)]
-            for m in f["metrics"]], empty="—")
-    _sub(doc, "Каких данных не хватает")
-    for item in f["missing"]:
-        doc.paragraph(f"•  {item}", size=8.3)
-    doc.y -= 4
-
-
 def _comparison(doc: _Doc, r: dict) -> None:
     comp = r["comparison"]
     _section(doc, "Сравнение с предыдущим месяцем", f"{comp['previous_title']} → {r['title']}.")
@@ -747,7 +731,6 @@ def build_monthly_pdf(report: dict) -> bytes:
     _inactive(doc, report)
     _departures(doc, report)
     _reasons(doc, report)
-    _finance(doc, report)
     _comparison(doc, report)
     _recommendations(doc, report)
     _summary(doc, report)
