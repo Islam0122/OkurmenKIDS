@@ -74,6 +74,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Records who changed a group's trainer (academy.TrainerAssignment.changed_by).
+    "apps.academy.services.trainer_history.ActorMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

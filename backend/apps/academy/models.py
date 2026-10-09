@@ -1,3 +1,5 @@
+import datetime as dt
+
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -708,6 +710,16 @@ class GroupTeacher(models.Model):
         subject = self.subject.name if self.subject_id else "—"
         return f"{self.group.name} — {self.teacher} ({subject})"
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Every change of who runs the program (or whether it runs at all)
+        # closes the current TrainerAssignment and opens the next one — the
+        # history the KPI of past periods is read from. One place, so every
+        # path (services, admin, API) keeps it.
+        from .services.trainer_history import sync_assignment
+
+        sync_assignment(self)
+
     def clean(self):
         errors = {}
         if self.teacher_id:
@@ -726,6 +738,70 @@ class GroupTeacher(models.Model):
             errors["subject"] = "Предмет не входит в курс этой группы."
         if errors:
             raise ValidationError(errors)
+
+
+class TrainerAssignment(models.Model):
+    """Who was responsible for a Teaching Program (GroupTeacher) when — the
+    history of trainer assignments of a group.
+
+    A GroupTeacher row is edited in place when its trainer changes (its
+    slots, plan and lesson numbering stay with the program), so on its own
+    it only says who runs it *now*. Each change closes the open assignment
+    and opens a new one (services.trainer_history.sync_assignment, called
+    from GroupTeacher.save()). Rows are never deleted or rewritten: a closed
+    assignment is history.
+
+    The period is half-open: [start_date, end_date) — `end_date` is the
+    first day the trainer is no longer responsible (empty: still is). Two
+    assignments of one program never overlap, so «who ran it on date D» has
+    exactly one answer. A trainer changed twice on the same day leaves a
+    zero-length row (start_date == end_date) that covers no date.
+    """
+
+    program = models.ForeignKey(
+        GroupTeacher, on_delete=models.CASCADE, related_name="assignments", verbose_name="Программа (тренер группы)",
+    )
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="trainer_assignments", verbose_name="Группа")
+    teacher = models.ForeignKey(Teacher, on_delete=models.PROTECT, related_name="trainer_assignments", verbose_name="Тренер")
+    subject = models.ForeignKey(
+        Subject, on_delete=models.SET_NULL, null=True, blank=True, related_name="trainer_assignments", verbose_name="Предмет",
+    )
+    start_date = models.DateField(verbose_name="Отвечает с", db_index=True)
+    end_date = models.DateField(
+        null=True, blank=True, db_index=True, verbose_name="Не отвечает с",
+        help_text="Первый день, когда тренер уже не отвечает за программу (не включительно). Пусто — отвечает сейчас.",
+    )
+    changed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Кто назначил",
+    )
+    source = models.CharField(
+        max_length=20, default="assignment", verbose_name="Источник",
+        help_text="assignment — назначение в LMS; migration — восстановлено из существующих данных при переходе на историю.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Записано")
+    closed_at = models.DateTimeField(null=True, blank=True, verbose_name="Закрыто")
+
+    class Meta:
+        verbose_name = "Назначение тренера"
+        verbose_name_plural = "История назначений тренеров"
+        ordering = ["group", "program", "start_date", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["program"], condition=models.Q(end_date__isnull=True), name="unique_open_trainer_assignment",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_date__isnull=True) | models.Q(end_date__gte=models.F("start_date")),
+                name="trainer_assignment_end_after_start",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["teacher", "start_date"], name="ix_tassign_teacher_start"),
+            models.Index(fields=["program", "start_date"], name="ix_tassign_program_start"),
+        ]
+
+    def __str__(self):
+        until = f" по {self.end_date - dt.timedelta(days=1):%d.%m.%Y}" if self.end_date else " — сейчас"
+        return f"{self.group.name}: {self.teacher} с {self.start_date:%d.%m.%Y}{until}"
 
 
 class GroupTeacherLessonPlan(models.Model):
@@ -1029,9 +1105,9 @@ class LessonQuerySet(models.QuerySet):
         teacher's Lessons/Attendance/Homework must never be visible to or
         editable by another teacher of the very same Group.
         """
-        return self.filter(
-            models.Q(teacher=teacher) | models.Q(teacher__isnull=True, group_teacher__teacher=teacher)
-        )
+        from .services.trainer_history import taught_by_q
+
+        return self.filter(taught_by_q(getattr(teacher, "pk", teacher)))
 
 
 class Lesson(models.Model):
@@ -1322,6 +1398,13 @@ class Lesson(models.Model):
                 update_fields.add("group_teacher")
                 kwargs["update_fields"] = update_fields
 
+        # A new lesson always records its trainer: the program's trainer at
+        # creation. Stored on the lesson, it stays the lesson's trainer when
+        # the program later changes hands (services.trainer_history) — the
+        # KPI of a past month never follows the group's *current* trainer.
+        if self._state.adding and self.teacher_id is None and self.group_teacher_id:
+            self.teacher_id = GroupTeacher.objects.filter(pk=self.group_teacher_id).values_list("teacher_id", flat=True).first()
+
         super().save(*args, **kwargs)
 
     def clean(self):
@@ -1342,7 +1425,12 @@ class Lesson(models.Model):
         if self.teacher_id:
             return self.teacher
         if self.group_teacher_id:
-            return self.group_teacher.teacher
+            # Legacy lesson without a stored trainer: whoever the program's
+            # assignment history says ran it on the lesson's date — never
+            # simply the program's *current* trainer.
+            from .services.trainer_history import teacher_at
+
+            return teacher_at(self.group_teacher_id, self.date)
         return None
 
 

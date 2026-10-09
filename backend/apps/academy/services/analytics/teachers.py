@@ -11,10 +11,11 @@ together (spec: Teaching Assignment isolation).
 from __future__ import annotations
 
 from django.db.models import Count
-from django.db.models.functions import Coalesce
 
 from .metrics import build_metric
 from .period import DateRange
+from apps.academy.services.trainer_history import effective_teacher
+
 from .scope import AnalyticsScope
 
 
@@ -25,7 +26,7 @@ def _workload(scope: AnalyticsScope, date_range: DateRange) -> list[dict]:
 
     rows = (
         scope.lessons_qs(date_range=date_range)
-        .annotate(eff_teacher=Coalesce("teacher_id", "group_teacher__teacher_id"))
+        .annotate(eff_teacher=effective_teacher())
         .values("eff_teacher")
         .annotate(lessons=Count("id"))
         .order_by("-lessons")

@@ -43,7 +43,6 @@ import datetime as dt
 
 from django.conf import settings
 from django.db.models import Avg, Count, Q
-from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from typing import TYPE_CHECKING
@@ -206,7 +205,10 @@ def from_counts(counts: KPICounts, weights: dict[str, float] | None = None) -> K
 
 
 def _effective_teacher():
-    return Coalesce("teacher_id", "group_teacher__teacher_id")
+    # The lesson's responsible trainer, history-aware (services.trainer_history).
+    from apps.academy.services.trainer_history import effective_teacher
+
+    return effective_teacher()
 
 
 class KPIEngine:

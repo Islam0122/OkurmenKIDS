@@ -132,10 +132,16 @@ class AfterAssignmentEverythingFollowsTests(AssignmentFixture):
     def test_reports_kpi_and_sessions_see_the_new_trainer(self):
         self.api.post(self.url, {"teacher": self.aigul.pk, "program": self.program.pk}, format="json")
 
-        # Reports → the group's trainer.
-        rows = self.api.get("/api/v1/reports/groups/", PAST).data["results"]
+        # Reports → the group's trainer from now on is the new one…
+        from_today = {"period": "custom", "start_date": timezone.localdate().isoformat(), "end_date": "2040-12-31"}
+        rows = self.api.get("/api/v1/reports/groups/", from_today).data["results"]
         row = next(r for r in rows if r["id"] == self.group.pk)
         self.assertEqual([t["id"] for t in row["teachers"]], [self.aigul.pk])
+        # …while a period that also covers the past lists both, in order:
+        # the previous trainer is not replaced by the current one.
+        rows = self.api.get("/api/v1/reports/groups/", PAST).data["results"]
+        row = next(r for r in rows if r["id"] == self.group.pk)
+        self.assertEqual([t["id"] for t in row["teachers"]], [self.ivan.pk, self.aigul.pk])
 
         # KPI → the new trainer's report includes the group.
         detail = self.api.get(f"/api/v1/reports/teachers/{self.aigul.pk}/", PAST).data

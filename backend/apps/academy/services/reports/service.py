@@ -42,12 +42,12 @@ import dataclasses
 from collections import defaultdict
 
 from django.db.models import Avg, Count, Q
-from django.db.models.functions import Coalesce
 
 from apps.users.models import Subject, Teacher
 
 from apps.academy.models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
 from .filters import ReportFilters
+from apps.academy.services import trainer_history
 from apps.academy.services.kpi_engine import KPICounts, KPIEngine, KPIResult, from_counts
 
 from .kpi import kpi_weights, rate, weights_description
@@ -168,8 +168,10 @@ def _contract(result: KPIResult) -> dict:
 
 
 def _eff_teacher(prefix: str = ""):
-    """Lesson.effective_teacher as a DB expression (see models.Lesson)."""
-    return Coalesce(f"{prefix}teacher_id", f"{prefix}group_teacher__teacher_id")
+    """Lesson.effective_teacher as a DB expression — the lesson's stored
+    trainer, else its program's assignment on the lesson's date (never the
+    program's *current* trainer; see services.trainer_history)."""
+    return trainer_history.effective_teacher(prefix)
 
 
 _KEYS = {
@@ -289,8 +291,10 @@ def report_teacher_ids(filters: ReportFilters, group_ids: list[int]) -> list[int
         tid for tid in scope.lessons_qs().order_by().annotate(_t=_eff_teacher()).values_list("_t", flat=True).distinct()
         if tid is not None
     }
+    # Assigned to one of the groups at some point of the period (history),
+    # not «assigned today».
     assigned_ids = set(
-        GroupTeacher.objects.filter(group_id__in=group_ids, is_active=True)
+        trainer_history.assignments_overlapping(filters.start, filters.end).filter(group_id__in=group_ids)
         .filter(**({"subject_id": filters.subject_id} if filters.subject_id else {}))
         .values_list("teacher_id", flat=True)
     )
@@ -356,20 +360,19 @@ def _subject_assignment_q(subject_id: int) -> Q:
     return Q(subject_id=subject_id) | Q(subject__isnull=True)
 
 
-def _group_programs(group_ids, subject_id: int | None = None) -> dict[int, list[GroupTeacher]]:
-    """Active Teaching Programs per group — only the ones covering
-    `subject_id` when the report is filtered by a subject (a group's English
-    trainer is not part of its Python figures)."""
+def _group_programs(group_ids, start, end, subject_id: int | None = None) -> dict[int, list]:
+    """The trainer assignments of each group in force during [start, end]
+    (services.trainer_history) — only the ones covering `subject_id` when
+    the report is filtered by a subject (a group's English trainer is not
+    part of its Python figures). For the current period that's the group's
+    active programs; for a past month it's whoever ran the group *then*,
+    never simply today's trainer."""
     programs = defaultdict(list)
-    qs = GroupTeacher.objects.filter(group_id__in=group_ids, is_active=True)
+    qs = trainer_history.assignments_overlapping(start, end).filter(group_id__in=group_ids)
     if subject_id is not None:
         qs = qs.filter(_subject_assignment_q(subject_id))
-    for gt in (
-        qs
-        .select_related("teacher__user", "subject")
-        .order_by("group_id", "subject__name", "id")
-    ):
-        programs[gt.group_id].append(gt)
+    for assignment in qs.select_related("teacher__user", "subject").order_by("group_id", "subject__name", "start_date", "id"):
+        programs[assignment.group_id].append(assignment)
     return programs
 
 
@@ -424,7 +427,7 @@ def build_group_rows(filters: ReportFilters, group_ids: list[int] | None = None)
         return []
     weights = kpi_weights()
     groups = Group.objects.filter(id__in=group_ids).select_related("course").order_by("name")
-    programs = _group_programs(group_ids, filters.subject_id)
+    programs = _group_programs(group_ids, filters.start, filters.end, filters.subject_id)
     counts = _student_counts_by_group(filters, group_ids)
     left = _students_per_group(_event_pairs(filters, [StudentStatusEvent.EventType.DEACTIVATED], group_ids))
     returned = _students_per_group(_event_pairs(filters, _RETURN_EVENTS, group_ids))
@@ -451,11 +454,15 @@ def build_teacher_rows(filters: ReportFilters, group_ids: list[int] | None = Non
         .order_by("user__first_name", "user__last_name")
     )
 
-    # teacher -> groups: active assignments within the report's groups,
-    # plus any group they actually taught in during the period.
+    # teacher -> groups: groups the teacher was assigned to at some point of
+    # the period (assignment history — a group handed over in October is
+    # still the previous trainer's in September, and not yet the new
+    # one's), plus any group they actually taught in during the period.
     teacher_groups: dict[int, set] = defaultdict(set)
     teacher_subjects: dict[int, set] = defaultdict(set)
-    assignments = GroupTeacher.objects.filter(teacher_id__in=teacher_ids, group_id__in=group_ids, is_active=True)
+    assignments = trainer_history.assignments_overlapping(filters.start, filters.end).filter(
+        teacher_id__in=teacher_ids, group_id__in=group_ids,
+    )
     if filters.subject_id is not None:
         # Filtered by a subject: only the groups where the teacher runs it.
         assignments = assignments.filter(_subject_assignment_q(filters.subject_id))

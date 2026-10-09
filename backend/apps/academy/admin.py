@@ -76,6 +76,7 @@ from .admin_views import (
 )
 from .help_center import help_center_view
 from .models import (
+    TrainerAssignment,
     Attendance,
     Course,
     AcademyMonthlyReport,
@@ -1797,3 +1798,35 @@ def _get_urls_with_schedule():
 
 
 admin.site.get_urls = _get_urls_with_schedule
+
+
+@admin.register(TrainerAssignment)
+class TrainerAssignmentAdmin(admin.ModelAdmin):
+    """The trainer assignment history — read only: a past assignment is the
+    basis of past KPI and is never edited after the fact. New rows appear
+    on their own when a program's trainer changes (GroupTeacher.save())."""
+
+    list_display = ("group", "teacher", "subject", "start_date", "until", "changed_by", "source", "created_at")
+    list_filter = ("source", "teacher")
+    search_fields = ("group__name", "teacher__user__first_name", "teacher__user__last_name")
+    list_select_related = ("group", "teacher__user", "subject", "changed_by")
+    date_hierarchy = "start_date"
+
+    @admin.display(description="Отвечает по")
+    def until(self, obj):
+        import datetime as _dt
+
+        if obj.end_date is None:
+            return "сейчас"
+        if obj.end_date == obj.start_date:
+            return "— (заменён в тот же день)"
+        return (obj.end_date - _dt.timedelta(days=1)).strftime("%d.%m.%Y")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

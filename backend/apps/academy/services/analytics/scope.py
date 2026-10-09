@@ -18,6 +18,7 @@ from django.db.models import Q, QuerySet
 from apps.users.models import Teacher
 
 from apps.academy.models import Group, Lesson, Student
+from apps.academy.services import trainer_history
 from .period import DateRange
 
 
@@ -52,13 +53,15 @@ class AnalyticsScope:
         # each Lesson's own `subject` — the real source of truth.
         qs = Group.objects.all()
         if self.teacher_id is not None:
-            qs = qs.filter(teachers__teacher_id=self.teacher_id, teachers__is_active=True)
+            # The trainer's groups *in this period* — assigned at some point
+            # of it (assignment history) or taught in it. Never «the groups
+            # the trainer runs today»: a group handed over to someone else
+            # keeps counting for its previous trainer's past months.
+            qs = qs.filter(trainer_history.teacher_group_ids_q(self.teacher_id, self.date_range.start, self.date_range.end))
         if self.group_id is not None:
             qs = qs.filter(id=self.group_id)
         if self.course_id is not None:
             qs = qs.filter(course_id=self.course_id)
-        if self.teacher_id is not None:
-            qs = qs.distinct()
         return qs
 
     def teachers_qs(self) -> QuerySet[Teacher]:
@@ -66,21 +69,22 @@ class AnalyticsScope:
         qs = Teacher.objects.all()
         if self.teacher_id is not None:
             qs = qs.filter(id=self.teacher_id)
-        if self.group_id is not None:
-            qs = qs.filter(group_assignments__group_id=self.group_id, group_assignments__is_active=True)
-        if self.course_id is not None:
-            qs = qs.filter(group_assignments__group__course_id=self.course_id, group_assignments__is_active=True)
         if self.group_id is not None or self.course_id is not None:
-            qs = qs.distinct()
+            # Trainers responsible for the group / program *in this period*
+            # (assignment history or lessons given), not today's only.
+            qs = qs.filter(trainer_history.group_teacher_ids_q(
+                self.date_range.start, self.date_range.end, group_id=self.group_id, course_id=self.course_id,
+            ))
         return qs
 
     def students_qs(self) -> QuerySet[Student]:
         return Student.objects.filter(group__in=self.groups_qs())
 
     def _effective_teacher_q(self, prefix: str = "") -> Q | None:
-        """Q restricting to rows whose Lesson's *effective* teacher (its own
-        `teacher`, or — for lessons with none — its GroupTeacher's own
-        `teacher`; see Lesson.effective_teacher) is `self.teacher_id`, for a
+        """Q restricting to rows whose Lesson's *responsible* trainer (its own
+        `teacher`, or — for a legacy lesson with none — its program's
+        assignment on the lesson's date; see services.trainer_history) is
+        `self.teacher_id`, for a
         Lesson reached via `prefix` field lookups (e.g. "lesson__" from
         Attendance, "homework__lesson__" from HomeworkResult). Never the
         legacy `Group.teacher` field — every Lesson's `group_teacher` FK
@@ -89,9 +93,7 @@ class AnalyticsScope:
         """
         if self.teacher_id is None:
             return None
-        return Q(**{f"{prefix}teacher_id": self.teacher_id}) | Q(
-            **{f"{prefix}teacher__isnull": True, f"{prefix}group_teacher__teacher_id": self.teacher_id}
-        )
+        return trainer_history.taught_by_q(self.teacher_id, prefix)
 
     def lessons_qs(self, *, date_range: DateRange | None = None) -> QuerySet[Lesson]:
         rng = date_range or self.date_range
