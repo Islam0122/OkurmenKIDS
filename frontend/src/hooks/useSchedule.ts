@@ -11,12 +11,15 @@ export function useScheduleOptions() {
   return useQuery({ queryKey: [...SCHEDULE_KEY, 'options'], queryFn: scheduleApi.options, staleTime: 5 * 60_000 })
 }
 
-export function useScheduleBoard(params: BoardParams) {
+/** `refreshMs` — how often the open page re-reads the schedule (default
+ * 5 minutes); it is also re-read whenever the window regains focus. */
+export function useScheduleBoard(params: BoardParams, { refreshMs = 5 * 60_000 }: { refreshMs?: number } = {}) {
   return useQuery({
     queryKey: [...SCHEDULE_KEY, 'board', params],
     queryFn: () => scheduleApi.board(params),
     placeholderData: keepPreviousData,
-    refetchInterval: 5 * 60_000,
+    refetchInterval: refreshMs,
+    refetchOnWindowFocus: true,
   })
 }
 

@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/app/layouts/AppLayout'
 import { AccessDeniedPage } from '@/features/auth/AccessDeniedPage'
 import { LoginPage } from '@/features/auth/LoginPage'
+import { HOME_PATH } from '@/lib/appMode'
 
 import { NotFoundPage } from './NotFoundPage'
 import { ProtectedRoute } from './ProtectedRoute'
@@ -10,7 +11,7 @@ import { RequireRoles } from './RequireRoles'
 import { RouteErrorPage } from './RouteErrorPage'
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/app/dashboard" replace />, errorElement: <RouteErrorPage /> },
+  { path: '/', element: <Navigate to={HOME_PATH} replace />, errorElement: <RouteErrorPage /> },
   { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
   { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {
@@ -275,6 +276,30 @@ export const router = createBrowserRouter([
               { path: 'surveys/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveyDetailPage')).AssistantSurveyDetailPage }) },
               { path: 'profile', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ProfilePage')).AssistantProfilePage }) },
               { path: '*', lazy: async () => ({ Component: (await import('@/features/assistant/pages/NotFoundPage')).AssistantNotFoundPage }) },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // «OkurmenKIDS Schedule» — the standalone read-only schedule site (its own
+    // layout, same login and API). Academy-wide schedule: Admin, Team Lead,
+    // Assistant (backend: CanViewSchedule; GET only).
+    path: '/schedule',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteLayout')).SiteLayout }),
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteAccess')).SiteAccess }),
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/scheduleSite/SchedulePage')).ScheduleIndex }) },
+              { path: 'day', lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteRoutes')).SiteDayPage }) },
+              { path: 'week', lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteRoutes')).SiteWeekPage }) },
+              { path: '*', element: <Navigate to="/schedule" replace /> },
             ],
           },
         ],

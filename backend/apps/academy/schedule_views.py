@@ -40,7 +40,12 @@ class CanViewSchedule(BasePermission):
 
 
 class ScheduleView(APIView):
+    """Read only, enforced by the server: any method but GET / HEAD /
+    OPTIONS is a 405 here, whatever the client (the LMS pages or the
+    separate «OkurmenKIDS Schedule» site) sends."""
+
     permission_classes = [IsAuthenticated, CanViewSchedule]
+    http_method_names = ["get", "head", "options"]
 
 
 def _date(value, default: dt.date, name: str = "date") -> dt.date:

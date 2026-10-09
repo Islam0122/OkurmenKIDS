@@ -55,7 +55,7 @@ export interface ScheduleBoardProps {
 }
 
 /** The server's «now» (project time zone, Asia/Bishkek), kept ticking each minute. */
-function useServerNow(now: ScheduleBoardData['now'] | undefined, receivedAt: number) {
+export function useServerNow(now: ScheduleBoardData['now'] | undefined, receivedAt: number) {
   const [tick, setTick] = useState(() => Date.now())
   useEffect(() => {
     const id = window.setInterval(() => setTick(Date.now()), 60_000)
