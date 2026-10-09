@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { UserPlus } from 'lucide-react'
 
 import { Modal } from '@/components/ui/Modal'
-import type { AssistantLesson, BulkAction, ControlPeriod, Ref } from '@/types/assistant'
+import type { AssistantLesson, BulkAction, ControlPeriod, Ref, SlotInput } from '@/types/assistant'
 
 import { ControlStudentModal, HomeworkDetailModal, LessonDetailModal, StudentAttendanceModal } from '../records/RecordModals'
 
@@ -27,7 +27,7 @@ import { StudentPickerModal } from './StudentPickerModal'
 export type AssistantAction =
   | { type: 'deactivate' | 'activate' | 'transfer'; student?: StudentLite }
   | { type: 'bulk'; action: BulkAction; students?: StudentLite[]; group?: Ref; onDone?: () => void }
-  | { type: 'schedule'; group?: Ref; programId?: number }
+  | { type: 'schedule'; group?: Ref; programId?: number; preset?: SlotInput }
   | { type: 'lesson'; lesson: AssistantLesson }
   | { type: 'create-group' }
   | { type: 'create-student'; group?: Ref }
@@ -89,7 +89,7 @@ export function AssistantActionsProvider({ children }: { children: ReactNode }) 
       />
     )
   } else if (action?.type === 'schedule') {
-    modal = <ScheduleModal group={action.group} programId={action.programId} onClose={close} />
+    modal = <ScheduleModal group={action.group} programId={action.programId} preset={action.preset} onClose={close} />
   } else if (action?.type === 'lesson') {
     modal = <LessonModal lesson={action.lesson} onClose={close} />
   } else if (action?.type === 'create-group') {

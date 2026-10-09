@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import control_views, report_views, views
+from . import control_views, report_views, schedule_views, views
 
 router = DefaultRouter()
 router.register("courses", views.CourseViewSet, basename="course")
@@ -38,5 +38,10 @@ urlpatterns = [
     path("control/", control_views.ControlOverviewView.as_view(), name="control-overview"),
     path("control/detail/", control_views.ControlDetailView.as_view(), name="control-detail"),
     path("control/lessons/<int:pk>/", control_views.ControlLessonView.as_view(), name="control-lesson"),
+    # «Расписание» of Team Lead / Assistant (read; writes via apps.assistant) — see schedule_views.
+    path("schedule/options/", schedule_views.ScheduleOptionsView.as_view(), name="schedule-options"),
+    path("schedule/board/", schedule_views.ScheduleBoardView.as_view(), name="schedule-board"),
+    path("schedule/free-rooms/", schedule_views.FreeRoomsView.as_view(), name="schedule-free-rooms"),
+    path("schedule/check/", schedule_views.ConflictCheckView.as_view(), name="schedule-check"),
     path("", include(router.urls)),
 ]
