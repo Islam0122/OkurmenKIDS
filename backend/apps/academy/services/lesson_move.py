@@ -18,39 +18,14 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from ..models import Lesson
-from .group_schedule_conflicts import time_ranges_overlap
-
-
-class _Range:
-    def __init__(self, start_time, end_time):
-        self.start_time = start_time
-        self.end_time = end_time
+from .schedule_board import lesson_conflicts
 
 
 def find_lesson_conflicts(lesson: Lesson, *, date: dt.date, start_time: dt.time, end_time: dt.time) -> list[str]:
     """Human-readable clashes of `lesson` placed at date/start–end with any
-    other live (not cancelled) lesson: same trainer, same group, same room."""
-    wanted = _Range(start_time, end_time)
-    others = (
-        Lesson.objects.filter(date=date)
-        .exclude(pk=lesson.pk)
-        .exclude(status=Lesson.Status.CANCELLED)
-        .select_related("group", "teacher__user", "group_teacher__teacher__user", "room")
-    )
-    teacher = lesson.effective_teacher
-    problems: list[str] = []
-    for other in others:
-        if not time_ranges_overlap(wanted, other):
-            continue
-        when = f"{other.start_time:%H:%M}–{other.end_time:%H:%M}"
-        other_teacher = other.effective_teacher
-        if teacher is not None and other_teacher is not None and other_teacher.pk == teacher.pk:
-            problems.append(f"Тренер «{teacher}» уже ведёт занятие в группе «{other.group.name}» ({when}).")
-        if other.group_id == lesson.group_id:
-            problems.append(f"У группы «{lesson.group.name}» уже есть занятие в это время ({when}).")
-        if lesson.room_id and other.room_id == lesson.room_id:
-            problems.append(f"Аудитория «{lesson.room.name}» уже занята группой «{other.group.name}» ({when}).")
-    return problems
+    other live (not cancelled) lesson: same trainer, same group, same room
+    (services.schedule_board.find_conflicts — the schedule board's check)."""
+    return [c["message"] for c in lesson_conflicts(lesson, date=date, start_time=start_time, end_time=end_time)]
 
 
 def move_lesson(lesson: Lesson, *, date: dt.date, start_time: dt.time, end_time: dt.time, user=None) -> Lesson:

@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { assistantApi, surveysApi, type GroupListParams, type RecordFilters, type StudentListParams } from '@/api/assistant'
 import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
+import { SCHEDULE_KEY } from '@/hooks/useSchedule'
 import type { ReportFilters } from '@/types/assistant'
 
 /** Every Assistant Workspace query lives under one key root, so a write can
@@ -117,7 +118,10 @@ export function useAssistantMutation<TVars, TResult>(
   return useMutation({
     mutationFn: fn,
     onSuccess: async (result, vars) => {
-      await queryClient.invalidateQueries({ queryKey: ASSISTANT_KEY })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ASSISTANT_KEY }),
+        queryClient.invalidateQueries({ queryKey: SCHEDULE_KEY }),
+      ])
       const message = typeof successMessage === 'function' ? successMessage(result, vars) : successMessage
       if (message) showToast(message, 'success')
     },

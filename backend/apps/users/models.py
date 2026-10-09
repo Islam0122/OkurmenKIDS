@@ -1,5 +1,5 @@
 from django.contrib.auth.models import AbstractUser, UserManager
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 
 
@@ -242,6 +242,17 @@ class Teacher(models.Model):
         help_text="Может ли тренер работать с группами.",
     )
 
+    color = models.CharField(
+        max_length=7,
+        blank=True,
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Цвет в формате #RRGGBB.")],
+        verbose_name="Цвет в расписании",
+        help_text=(
+            "Постоянный цвет тренера в расписании (#RRGGBB). Пусто — назначается "
+            "автоматически из палитры при сохранении."
+        ),
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Дата создания",
@@ -261,3 +272,50 @@ class Teacher(models.Model):
 
     def __str__(self):
         return self.user.get_full_name() or self.user.username
+
+    def save(self, *args, **kwargs):
+        # A trainer keeps one color for good: it is picked once (the palette
+        # color fewest trainers use) and never re-rolled, so the schedule
+        # looks the same on every page load.
+        if not self.color:
+            self.color = next_trainer_color(exclude_pk=self.pk)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "color"}
+        super().save(*args, **kwargs)
+
+
+# Distinct, calm colors that stay readable as a card's accent stripe and as a
+# light tint behind dark text (see the schedule board on the frontend).
+TRAINER_PALETTE = (
+    "#2563EB",  # blue
+    "#D97706",  # amber
+    "#7C3AED",  # violet
+    "#DB2777",  # pink
+    "#0891B2",  # cyan
+    "#16A34A",  # green
+    "#DC2626",  # red
+    "#4F46E5",  # indigo
+    "#C2410C",  # orange
+    "#0D9488",  # teal
+    "#9333EA",  # purple
+    "#65A30D",  # lime
+    "#BE123C",  # rose
+    "#0369A1",  # sky
+    "#A16207",  # ochre
+    "#475569",  # slate
+)
+
+
+def next_trainer_color(exclude_pk=None) -> str:
+    """The palette color the fewest trainers already have (palette order
+    breaks ties) — so the first 16 trainers all get different colors and
+    later ones spread evenly."""
+    used = Teacher.objects.exclude(color="")
+    if exclude_pk is not None:
+        used = used.exclude(pk=exclude_pk)
+    counts = {color.upper(): 0 for color in TRAINER_PALETTE}
+    for color in used.values_list("color", flat=True):
+        if color.upper() in counts:
+            counts[color.upper()] += 1
+    return min(TRAINER_PALETTE, key=lambda color: counts[color])

@@ -55,7 +55,7 @@ export interface NavItem {
  */
 export const NAV_ITEMS: NavItem[] = [
   { to: '/app/dashboard', label: 'Сегодня', icon: LayoutDashboard, roleLabels: { team_lead: 'Dashboard' } },
-  { to: '/app/schedule', label: 'Расписание', icon: CalendarDays, roles: ['admin', 'teacher'] },
+  { to: '/app/schedule', label: 'Расписание', icon: CalendarDays, roles: ['admin', 'teacher', 'team_lead'] },
   { to: '/app/trainers', label: 'Тренеры', icon: UserCog, roles: ['admin', 'team_lead'] },
   { to: '/app/groups', label: 'Мои группы', shortLabel: 'Группы', icon: Users, roleLabels: { team_lead: 'Группы' } },
   { to: '/app/students', label: 'Студенты', icon: GraduationCap, roles: ['admin', 'team_lead'] },

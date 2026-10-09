@@ -51,6 +51,8 @@ export interface TeamLeadSection {
 
 export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
   { key: 'home', label: 'Главная', icon: House /* house */, to: '/app/dashboard' },
+  // The day-to-day board: lessons, trainers' colors, rooms, conflicts (read only).
+  { key: 'schedule', label: 'Расписание', icon: CalendarDays /* calendar-week */, to: '/app/schedule' },
   {
     key: 'analytics', label: 'Аналитика', icon: TrendingUp /* graph-up */,
     children: [
