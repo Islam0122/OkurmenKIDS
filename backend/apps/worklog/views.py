@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -15,6 +16,7 @@ from apps.academy.models import Group, Student
 from apps.users.models import Teacher
 
 from .models import OPEN_STATUSES, Priority, TaskStatus, TeamLeadReport, WorkLogEntry, WorkType
+from . import report_pdf
 from .permissions import WorkLogAccess
 from .schemas import kinds_payload
 from .serializers import TeamLeadReportSerializer, WorkLogEntrySerializer, refresh_metrics
@@ -130,6 +132,21 @@ class TeamLeadReportViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Пересчитать может только автор отчёта."}, status=http.HTTP_403_FORBIDDEN)
         refresh_metrics(report)
         return Response(self.get_serializer(report).data)
+
+
+    @extend_schema(responses={(200, "application/pdf"): bytes})
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """The report as an A4 PDF attachment — the same payload the report
+        page shows (form fields, day records / decisions, the stored LMS
+        figures), found through the same queryset and permission, so a
+        report the user can't open is a 404 / 403 here too."""
+        report = self.get_object()
+        payload = self.get_serializer(report).data
+        response = HttpResponse(report_pdf.build_report_pdf(payload), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{report_pdf.pdf_filename(report)}"'
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 @extend_schema(tags=["Work log"])

@@ -292,3 +292,132 @@ class ReportTests(WorklogFixture):
         self.assertEqual(q["trainers_checked"], 1)
         self.assertEqual(q["problems_found"], 1)
         self.assertEqual(q["problems_resolved"], 1)
+
+
+def _pdf_text(content: bytes) -> str:
+    """Text of a PDF via poppler's pdftotext (skips the test if it's missing)."""
+    import shutil
+    import subprocess
+    import unittest
+
+    if not shutil.which("pdftotext"):
+        raise unittest.SkipTest("pdftotext is not available")
+    return subprocess.run(["pdftotext", "-layout", "-", "-"], input=content, capture_output=True, check=True).stdout.decode()
+
+
+def _pdf_pages(content: bytes) -> int:
+    import re
+
+    return len(re.findall(rb"/Type\s*/Page[^s]", content))
+
+
+class ReportPdfTests(WorklogFixture):
+    def create(self, **body):
+        res = self.api.post(REPORTS, body, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        return res.data
+
+    def pdf(self, rid, client=None):
+        return (client or self.api).get(f"{REPORTS}{rid}/pdf/")
+
+    def test_monthly_pdf_is_an_attachment_named_by_kind_and_period(self):
+        report = self.create(kind="monthly", period_start="2026-09-01", period_end="2026-09-30", status="submitted", data={
+            "hackathons": 2, "main_problems": ["Нехватка кабинетов"], "done": ["Провели хакатон"],
+            "next_month_plan": ["Экзамены"],
+        })
+        res = self.pdf(report["id"])
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "application/pdf")
+        self.assertEqual(res["Content-Disposition"], 'attachment; filename="teamlead_report_monthly_2026_09.pdf"')
+        self.assertEqual(res["Cache-Control"], "no-store")
+        self.assertTrue(res.content.startswith(b"%PDF"))
+
+    def test_pdf_has_the_page_data_title_author_period_and_metrics(self):
+        report = self.create(kind="weekly", period_start="2026-09-01", period_end="2026-09-07", status="submitted", data={
+            "trainers_internship": 1, "problem_groups": ["Group 12"],
+            "summary": "Неделя прошла спокойно", "next_week_plan": ["Проверить ДЗ", "Собрание"],
+        })
+        text = _pdf_text(self.pdf(report["id"]).content)
+        for expected in ("ОТЧЁТ TEAM LEAD", "Еженедельный отчёт", "01.09.2026 — 07.09.2026", "Нурлан · Team Lead",
+                         "Дата формирования", "Сдан", "Неделя прошла спокойно", "Проверить ДЗ",
+                         "Тренеров на стажировке", "ДАННЫЕ LMS", "KPI академии", "Контроль качества",
+                         "Страница 1 из"):
+            self.assertIn(expected, text)
+        # The figures are the stored snapshot the page shows, not a recalculation.
+        groups_total = report["metrics"]["groups"]["total"]
+        self.assertRegex(text, rf"Всего\s+{groups_total}")
+        self.assertNotIn("сом", text)  # no finance in this report
+
+    def test_filename_of_other_kinds(self):
+        daily = self.create(kind="daily", date="2026-09-04")
+        self.assertIn('filename="teamlead_report_daily_2026_09_04.pdf"', self.pdf(daily["id"])["Content-Disposition"])
+        weekly = self.create(kind="weekly", period_start="2026-09-01", period_end="2026-09-07")
+        self.assertIn("teamlead_report_weekly_2026_09_01-2026_09_07.pdf", self.pdf(weekly["id"])["Content-Disposition"])
+        partial = self.create(kind="monthly", period_start="2026-09-01", period_end="2026-09-15")
+        self.assertIn("teamlead_report_monthly_2026_09_01-2026_09_15.pdf", self.pdf(partial["id"])["Content-Disposition"])
+
+    def test_kyrgyz_text_and_long_tables_span_pages_with_repeated_header(self):
+        self.log(description="Кыргызча: өнүгүү, үйрөнүү, маңыз — " + "узун сөз " * 30)
+        for i in range(45):
+            self.log(time_from=f"{8 + i % 12:02d}:00", time_to=f"{8 + i % 12:02d}:30",
+                     description=f"Запись {i}: Айжаркын Өмүрбекова-Сыдыкбекова текшерди", result="Жыйынтык " * 6)
+        report = self.create(kind="daily", date=self.today.isoformat(), data={
+            "problems": ["Өтө көп сабак"], "decisions": ["Чечим кабыл алынды"], "plan_next_day": ["Үй тапшырма"],
+        })
+        content = self.pdf(report["id"]).content
+        text = _pdf_text(content)
+        for word in ("өнүгүү", "үйрөнүү", "маңыз", "Өмүрбекова", "Өтө көп сабак", "Чечим кабыл алынды"):
+            self.assertIn(word, text)
+        self.assertGreaterEqual(_pdf_pages(content), 3)
+        self.assertGreaterEqual(text.count("продолжение таблицы"), 1)
+        self.assertGreaterEqual(text.count("Группа / тренер"), 2)  # header repeated on the next page
+        self.assertIn("Запись 44", text)  # nothing lost at the end
+
+    def test_meeting_decisions_rows_and_visit_scores(self):
+        meeting = self.create(kind="meeting", date=self.today.isoformat(), status="submitted", data={
+            "participants": ["Айбек", "Мира"], "discussed": ["Экзамены"],
+        })
+        self.task(report=meeting["id"], title="Подготовить экзамен")
+        text = _pdf_text(self.pdf(meeting["id"]).content)
+        for expected in ("Решения", "Подготовить экзамен", "Айбек", "Высокий", "Участники", "Мира"):
+            self.assertIn(expected, text)
+        scores = {k: 4 for k in ("preparation", "structure", "explanation", "engagement", "discipline", "practice", "homework", "lms")}
+        visit = self.create(kind="lesson_visit", lesson=self.lesson.pk, status="submitted", data={
+            **scores, "overall": 5, "good": "Структура", "improve": "Практика", "recommendations": "Больше задач",
+        })
+        text = _pdf_text(self.pdf(visit["id"]).content)
+        self.assertIn("5 из 5", text)
+        self.assertIn("Group 12", text)
+
+    def test_internship_rows_table(self):
+        newbie = make_teacher("newbie")
+        report = self.create(kind="internship", teacher=newbie.pk, period_start="2026-09-01", period_end="2026-09-03",
+                             data={"days": [{"date": "2026-09-01", "learned": "LMS", "improve": "Темп"}]})
+        text = _pdf_text(self.pdf(report["id"]).content)
+        for expected in ("Дни стажировки", "Что изучил", "01.09.2026", "LMS", "Темп"):
+            self.assertIn(expected, text)
+
+    def test_access_same_as_the_report_page(self):
+        rid = self.create(kind="daily", date=self.today.isoformat())["id"]
+        admin = APIClient()
+        admin.force_authenticate(self.admin)
+        self.assertEqual(self.pdf(rid, admin).status_code, 200)
+        trainer = APIClient()
+        trainer.force_authenticate(self.teacher.user)
+        self.assertEqual(self.pdf(rid, trainer).status_code, 403)
+        self.assertEqual(self.pdf(rid, APIClient()).status_code, 401)
+        self.assertEqual(self.pdf(999999).status_code, 404)
+        # A query parameter can't swap the report: the id in the path decides.
+        other = self.create(kind="daily", date=(self.today - dt.timedelta(days=1)).isoformat())["id"]
+        res = self.api.get(f"{REPORTS}{rid}/pdf/", {"id": other, "pk": other})
+        self.assertIn(f"_{self.today:%Y_%m_%d}.pdf", res["Content-Disposition"])
+
+    def test_pdf_does_not_recalculate_or_change_the_report(self):
+        rid = self.create(kind="weekly", period_start="2026-09-01", period_end="2026-09-07")["id"]
+        TeamLeadReport.objects.filter(pk=rid).update(metrics={"groups": {"total": 777}})
+        before = TeamLeadReport.objects.get(pk=rid).updated_at
+        text = _pdf_text(self.pdf(rid).content)
+        self.assertRegex(text, r"Всего\s+777")
+        after = TeamLeadReport.objects.get(pk=rid)
+        self.assertEqual(after.metrics, {"groups": {"total": 777}})
+        self.assertEqual(after.updated_at, before)

@@ -37,6 +37,16 @@ export interface ReportListParams {
   page?: number
 }
 
+/** A Blob's text (FileReader: works everywhere, incl. older browsers and jsdom). */
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+}
+
 /** Team Lead «Рабочий журнал» (backend: /worklog/…, Team Lead and Admin only;
  * only the author edits a record or report). */
 export const worklogApi = {
@@ -73,4 +83,37 @@ export const worklogApi = {
   /** Re-read the LMS figures of the report (author only). */
   recalculate: (id: number): Promise<TeamLeadReport> =>
     apiClient.post<TeamLeadReport>(`/worklog/reports/${id}/recalculate/`).then((r) => r.data),
+
+  /** The saved report as a backend-rendered A4 PDF. JWT auth like every
+   * call — a plain `<a href>` would 401 — so it is fetched as a blob and
+   * saved under the server's file name (teamlead_report_<kind>_<period>.pdf). */
+  downloadReportPdf: async (id: number, fallbackName = `teamlead_report_${id}.pdf`): Promise<string> => {
+    let response
+    try {
+      response = await apiClient.get<Blob>(`/worklog/reports/${id}/pdf/`, { responseType: 'blob' })
+    } catch (error) {
+      // A blob error body hides the API's JSON message — read it back.
+      const data = (error as { response?: { data?: unknown } }).response?.data
+      if (data instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await blobText(data)) as { detail?: string }
+          if (parsed.detail) (error as { response: { data: unknown } }).response.data = parsed
+        } catch {
+          // not JSON — keep the original error
+        }
+      }
+      throw error
+    }
+    const match = /filename="?([^";]+)"?/.exec(String(response.headers['content-disposition'] ?? ''))
+    const name = match?.[1] ?? fallbackName
+    const href = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+    const link = document.createElement('a')
+    link.href = href
+    link.download = name.endsWith('.pdf') ? name : `${name}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(href)
+    return link.download
+  },
 }
