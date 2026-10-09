@@ -15,7 +15,7 @@ vi.mock('@/api/worklog', () => ({
   worklogApi: {
     options: vi.fn(), entries: vi.fn(), summary: vi.fn(), createEntry: vi.fn(), updateEntry: vi.fn(),
     deleteEntry: vi.fn(), reports: vi.fn(), report: vi.fn(), createReport: vi.fn(), updateReport: vi.fn(),
-    deleteReport: vi.fn(), recalculate: vi.fn(),
+    deleteReport: vi.fn(), recalculate: vi.fn(), downloadReportPdf: vi.fn(),
   },
 }))
 
@@ -200,5 +200,51 @@ describe('Рабочий журнал', () => {
     expect(screen.queryByRole('button', { name: 'Пересчитать' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Добавить решение' })).not.toBeInTheDocument()
     expect(screen.getByText('Собраний')).toBeInTheDocument()
+  })
+
+  it('downloads the report as PDF with a loading state, for an author and a reader alike', async () => {
+    let finish: (name: string) => void = () => {}
+    vi.mocked(worklogApi.report).mockResolvedValue(report({ can_edit: false }))
+    vi.mocked(worklogApi.downloadReportPdf).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    const user = userEvent.setup()
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/worklog/reports/:id" element={<ReportPage />} />
+      </Routes>,
+      { route: '/app/worklog/reports/5' },
+    )
+    await user.click(await screen.findByRole('button', { name: 'Скачать PDF' }))
+    expect(worklogApi.downloadReportPdf).toHaveBeenCalledWith(5)
+    const busy = await screen.findByRole('button', { name: /Формируем PDF/ })
+    expect(busy).toBeDisabled()
+    finish('teamlead_report_meeting_2026_10_04.pdf')
+    expect(await screen.findByRole('button', { name: 'Скачать PDF' })).toBeEnabled()
+  })
+
+  it('shows the API error when the PDF cannot be built', async () => {
+    vi.mocked(worklogApi.report).mockResolvedValue(report())
+    vi.mocked(worklogApi.downloadReportPdf).mockRejectedValue(
+      new AxiosError('Forbidden', '403', undefined, undefined, { status: 403, data: { detail: 'Нет доступа' } } as AxiosResponse),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/worklog/reports/:id" element={<ReportPage />} />
+      </Routes>,
+      { route: '/app/worklog/reports/5' },
+    )
+    await user.click(await screen.findByRole('button', { name: 'Скачать PDF' }))
+    expect(await screen.findByText(/Не удалось сформировать PDF: Нет доступа/)).toBeInTheDocument()
+  })
+
+  it('offers no PDF for a report that is not saved yet', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/worklog/reports/:id" element={<ReportPage />} />
+      </Routes>,
+      { route: '/app/worklog/reports/new?kind=meeting' },
+    )
+    expect(await screen.findByRole('button', { name: 'Сохранить' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Скачать PDF' })).not.toBeInTheDocument()
   })
 })

@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, ClipboardList, ListTodo, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { BarChart3, ClipboardList, FileDown, ListTodo, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { lessonsApi } from '@/api/lessons'
+import { worklogApi } from '@/api/worklog'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { BackLink } from '@/components/ui/BackLink'
 import { Badge } from '@/components/ui/Badge'
@@ -134,6 +135,20 @@ function ReportEditor({ schema, options, report }: { schema: ReportKindSchema; o
   const [status, setStatus] = useState(report?.status ?? schema.statuses[0].value)
   const [modal, setModal] = useState<{ kind: 'log' | 'task'; entry?: WorkLogEntry } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  // The PDF is the saved report (the same data as this page after «Сохранить»).
+  const downloadPdf = async () => {
+    if (!report) return
+    setDownloading(true)
+    try {
+      await worklogApi.downloadReportPdf(report.id)
+    } catch (error) {
+      showToast(`Не удалось сформировать PDF: ${extractErrorMessage(error)}`, 'error')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const save = useSaveReport()
   const recalc = useRecalculateReport()
@@ -184,10 +199,24 @@ function ReportEditor({ schema, options, report }: { schema: ReportKindSchema; o
         description={schema.description}
         badge={report ? <Badge tone={report.status === 'draft' ? 'muted' : 'success'}>{report.status_label}</Badge> : null}
         actions={
-          report?.can_edit ? (
-            <Button variant="ghost" leftIcon={<Trash2 className="size-4" aria-hidden />} onClick={() => setConfirmDelete(true)}>
-              Удалить
-            </Button>
+          report ? (
+            <>
+              <Button
+                variant="secondary"
+                leftIcon={<FileDown className="size-4" aria-hidden />}
+                onClick={() => void downloadPdf()}
+                isLoading={downloading}
+                disabled={downloading || save.isPending}
+                title="PDF сохранённой версии отчёта"
+              >
+                {downloading ? 'Формируем PDF…' : 'Скачать PDF'}
+              </Button>
+              {report.can_edit ? (
+                <Button variant="ghost" leftIcon={<Trash2 className="size-4" aria-hidden />} onClick={() => setConfirmDelete(true)}>
+                  Удалить
+                </Button>
+              ) : null}
+            </>
           ) : null
         }
       />
