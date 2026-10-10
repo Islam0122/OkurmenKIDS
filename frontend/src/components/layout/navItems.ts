@@ -76,8 +76,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/control', label: 'Контроль', icon: ShieldCheck },
   { to: '/app/analytics', label: 'Аналитика', icon: LineChart, roles: ['admin', 'team_lead'] },
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },
-  // Свои утверждённые начисления и выплаты (backend: /accounting/my/payrolls/).
-  { to: '/app/salary', label: 'Мои начисления', shortLabel: 'Зарплата', icon: Wallet, roles: ['teacher'] },
+  // «Моя зарплата»: свои начисления и выплаты (backend: /accounting/my/salary/).
+  { to: '/app/my-salary', label: 'Моя зарплата', shortLabel: 'Зарплата', icon: Wallet, roles: ['teacher', 'team_lead'] },
   // The Team Lead's own journal, tasks and reports (Admin reads them).
   { to: '/app/worklog', label: 'Рабочий журнал', shortLabel: 'Журнал', icon: ScrollText, roles: ['admin', 'team_lead'] },
   { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'Отчёты' } },

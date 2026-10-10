@@ -22,6 +22,7 @@ import {
   CircleCheck,
   BookOpen,
   FileQuestion,
+  Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -112,6 +113,8 @@ export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
       { label: 'Рабочий журнал', to: '/app/worklog', icon: ScrollText /* journal */ },
     ],
   },
+  // Свои начисления и выплаты — только чтение (backend: /accounting/my/salary/).
+  { key: 'salary', label: 'Моя зарплата', icon: Wallet /* wallet2 */, to: '/app/my-salary' },
 ]
 
 export const TEAM_LEAD_SETTINGS: TeamLeadLink = { label: 'Настройки', to: '/app/profile', icon: Settings /* gear */ }

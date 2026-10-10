@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   User,
   Users,
+  Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -55,6 +56,11 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
   {
     title: 'Отчёты',
     items: [{ to: '/assistant/reports', label: 'Месячный отчёт', icon: FileBarChart }],
+  },
+  {
+    // Свои начисления и выплаты — только чтение (backend: /accounting/my/salary/).
+    title: 'Личное',
+    items: [{ to: '/assistant/my-salary', label: 'Моя зарплата', icon: Wallet }],
   },
 ]
 

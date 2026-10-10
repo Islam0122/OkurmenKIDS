@@ -26,5 +26,8 @@ urlpatterns = [
     path("employees/", views.EmployeeListView.as_view(), name="employees"),
     path("reports/payroll.pdf", views.PayrollReportPdfView.as_view(), name="report-pdf"),
     path("reports/payroll.xlsx", views.PayrollReportXlsxView.as_view(), name="report-xlsx"),
+    # «Моя зарплата» — собственные начисления и выплаты, только чтение.
+    path("my/salary/", views.MySalaryView.as_view(), name="my-salary"),
+    path("my/salary/report.pdf", views.MySalaryPdfView.as_view(), name="my-salary-pdf"),
     path("", include(router.urls)),
 ]
