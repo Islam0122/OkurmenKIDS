@@ -30,7 +30,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
-from apps.academy.models import Group, Student, TrainerAssignment
+from apps.academy.models import Group, TrainerAssignment
 
 from ..models import (
     EmployeeSalaryProfile,
@@ -275,6 +275,7 @@ def _per_student(rule, ctx: _Context, out: Computation):
             f"Оплата за {len(students)} активн. студ. на {_fmt(control)} ({n_days} из {period.month_days} дн. месяца)",
             amount, rule, source_type="salary_rule", source_id=rule.pk, quantity=Decimal(len(students)),
             rate=rule.amount, metadata={"method": "SNAPSHOT", "control_date": control.isoformat(),
+                                        "students_count": len(students),
                                         "students": _student_rows({s: n_days for s in students})},
         ))
         return
@@ -309,16 +310,14 @@ def _per_student(rule, ctx: _Context, out: Computation):
         f"= {plain(equivalent)} студ.-мес.)",
         amount, rule, source_type="salary_rule", source_id=rule.pk, quantity=equivalent, rate=rule.amount,
         metadata={"method": "STUDENT_DAYS", "student_days": student_days, "month_days": period.month_days,
-                  "students": _student_rows(per_student)},
+                  "students_count": len(per_student), "students": _student_rows(per_student)},
     ))
 
 
 def _student_rows(days_by_student: dict[int, int]) -> list[dict]:
-    names = {s.pk: str(s) for s in Student.objects.filter(pk__in=days_by_student)}
-    return [
-        {"id": sid, "name": names.get(sid, f"#{sid}"), "days": n}
-        for sid, n in sorted(days_by_student.items(), key=lambda kv: names.get(kv[0], ""))
-    ]
+    """Основание строки — только id студента и число дней (без ФИО и других
+    полей профиля); наружу API отдаёт лишь агрегаты (см. serializers)."""
+    return [{"id": sid, "days": n} for sid, n in sorted(days_by_student.items())]
 
 
 class _Responsibility:

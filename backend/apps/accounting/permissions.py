@@ -33,11 +33,14 @@ def is_director(user) -> bool:
 
 
 def can_view_accounting(user) -> bool:
-    return is_accountant(user) or is_director(user) or is_admin_user(user)
+    if is_accountant(user):
+        # Права бухгалтера — из Django-группы `Accountant` (apps.accounting.access).
+        return user.has_perm("accounting.view_payroll")
+    return is_director(user) or is_admin_user(user)
 
 
 def can_operate(user) -> bool:
-    return is_accountant(user)
+    return is_accountant(user) and user.has_perm("accounting.change_payroll")
 
 
 def can_approve(user) -> bool:

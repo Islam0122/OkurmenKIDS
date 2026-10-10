@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LoginPage } from '@/features/auth/LoginPage'
+import { buildUser } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
 import type { AuthContextValue } from '@/features/auth/AuthContext'
 
@@ -50,6 +51,38 @@ describe('LoginPage', () => {
     )
     expect(screen.getByText('Dashboard content')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Войти' })).not.toBeInTheDocument()
+  })
+
+  it('sends an Accountant straight to /accounting after sign-in', async () => {
+    mockUseAuth.mockReturnValue({ status: 'guest', user: null, login, logout: vi.fn(), retry: vi.fn() })
+    login.mockResolvedValueOnce(buildUser({ role: 'accountant' }))
+    const user = userEvent.setup()
+    renderWithProviders(
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/accounting" element={<div>Accounting home</div>} />
+        <Route path="/app/dashboard" element={<div>Dashboard content</div>} />
+      </Routes>,
+      { route: '/login' },
+    )
+    await user.type(screen.getByLabelText('Логин'), 'buh')
+    await user.type(screen.getByLabelText('Пароль'), 'secret-pass')
+    await user.click(screen.getByRole('button', { name: 'Войти' }))
+    expect(await screen.findByText('Accounting home')).toBeInTheDocument()
+    expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
+  })
+
+  it('keeps an authenticated Accountant out of the LMS home', () => {
+    mockUseAuth.mockReturnValue({ status: 'authenticated', user: buildUser({ role: 'accountant' }), login, logout: vi.fn(), retry: vi.fn() })
+    renderWithProviders(
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/accounting" element={<div>Accounting home</div>} />
+        <Route path="/app/dashboard" element={<div>Dashboard content</div>} />
+      </Routes>,
+      { route: '/login' },
+    )
+    expect(screen.getByText('Accounting home')).toBeInTheDocument()
   })
 
   it('returns to the page that sent the user to log in (the Schedule site)', async () => {

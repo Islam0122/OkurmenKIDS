@@ -208,6 +208,7 @@ class PayrollPeriodCreateSerializer(serializers.Serializer):
 
 class PayrollLineSerializer(serializers.ModelSerializer):
     line_type_display = serializers.CharField(source="get_line_type_display", read_only=True)
+    metadata = serializers.SerializerMethodField()
 
     class Meta:
         model = PayrollLine
@@ -215,6 +216,11 @@ class PayrollLineSerializer(serializers.ModelSerializer):
             "id", "line_type", "line_type_display", "description", "source_type", "source_id", "salary_rule",
             "quantity", "rate", "percentage", "base_amount", "amount", "metadata",
         )
+
+    def get_metadata(self, obj) -> dict:
+        """Активные студенты — только агрегатом (число и студенто-дни):
+        поимённый список студентов из API бухгалтерии не отдаётся."""
+        return {k: v for k, v in obj.metadata.items() if k != "students"}
 
 
 class PayrollPaymentSerializer(serializers.ModelSerializer):

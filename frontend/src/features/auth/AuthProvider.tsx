@@ -97,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(me)
     setStatus('authenticated')
+    return me
   }, [])
 
   const value = useMemo<{

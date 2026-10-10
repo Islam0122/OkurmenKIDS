@@ -7,6 +7,8 @@ import type { UserRole } from '@/types/auth'
  * backend refuses the data to those roles anyway (403). */
 export function RequireRoles({ roles }: { roles: UserRole[] }) {
   const { user } = useAuth()
-  if (!user || !roles.includes(user.role)) return <Navigate to="/app/dashboard" replace />
+  if (!user || !roles.includes(user.role)) {
+    return <Navigate to={user?.role === 'accountant' ? '/accounting' : '/app/dashboard'} replace />
+  }
   return <Outlet />
 }

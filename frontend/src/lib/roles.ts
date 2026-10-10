@@ -31,3 +31,10 @@ export function seesWholeAcademy(role: UserRole | undefined): boolean {
 export function isAccountingRole(role: UserRole | undefined): boolean {
   return role === 'accountant' || role === 'director'
 }
+
+/** Where a role lands after sign-in. The Accountant lives only in /accounting
+ * (backend: apps.accounting.access — every LMS URL answers it 403). */
+export function homeFor(role: UserRole | undefined, target: string): string {
+  if (role === 'accountant' && !target.startsWith('/accounting')) return '/accounting'
+  return target
+}

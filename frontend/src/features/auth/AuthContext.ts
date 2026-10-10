@@ -7,7 +7,7 @@ export type AuthStatus = 'loading' | 'guest' | 'forbidden' | 'authenticated' | '
 export interface AuthContextValue {
   user: User | null
   status: AuthStatus
-  login: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string) => Promise<User>
   logout: () => void
   retry: () => void
 }
