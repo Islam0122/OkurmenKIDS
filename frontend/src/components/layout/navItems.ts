@@ -2,6 +2,7 @@ import {
   Award,
   BarChart3,
   BookOpen,
+  Calculator,
   CalendarDays,
   ClipboardCheck,
   FileQuestion,
@@ -19,6 +20,7 @@ import {
   User,
   UserCog,
   Users,
+  Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -74,11 +76,15 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/control', label: 'Контроль', icon: ShieldCheck },
   { to: '/app/analytics', label: 'Аналитика', icon: LineChart, roles: ['admin', 'team_lead'] },
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },
+  // Свои утверждённые начисления и выплаты (backend: /accounting/my/payrolls/).
+  { to: '/app/salary', label: 'Мои начисления', shortLabel: 'Зарплата', icon: Wallet, roles: ['teacher'] },
   // The Team Lead's own journal, tasks and reports (Admin reads them).
   { to: '/app/worklog', label: 'Рабочий журнал', shortLabel: 'Журнал', icon: ScrollText, roles: ['admin', 'team_lead'] },
   { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'Отчёты' } },
   { to: '/app/scholarships', label: 'Стипендии', icon: Award, roles: ['admin', 'teacher'] },
   { to: '/app/news', label: 'Новости', icon: Megaphone, roles: ['admin', 'teacher'] },
+  // Раздел бухгалтерии — для администратора только просмотр (backend: apps.accounting).
+  { to: '/accounting', label: 'Бухгалтерия', icon: Calculator, roles: ['admin'] },
 ]
 
 export const PROFILE_NAV_ITEM: NavItem = { to: '/app/profile', label: 'Профиль', icon: User }

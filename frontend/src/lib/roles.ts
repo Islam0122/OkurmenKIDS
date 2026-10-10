@@ -8,6 +8,8 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   teacher: 'Тренер',
   team_lead: 'Team Lead',
   assistant: 'Ассистент',
+  accountant: 'Бухгалтер',
+  director: 'Директор',
 }
 
 /** The Assistant works only in the Assistant Workspace (/assistant), never in /app. */
@@ -23,4 +25,9 @@ export function isTeamLead(role: UserRole | undefined): boolean {
  * Mirrors `apps.users.permissions.can_view_academy` — never a write gate. */
 export function seesWholeAcademy(role: UserRole | undefined): boolean {
   return role === 'admin' || role === 'team_lead'
+}
+
+/** Бухгалтер и Директор работают только в разделе бухгалтерии (/accounting). */
+export function isAccountingRole(role: UserRole | undefined): boolean {
+  return role === 'accountant' || role === 'director'
 }
