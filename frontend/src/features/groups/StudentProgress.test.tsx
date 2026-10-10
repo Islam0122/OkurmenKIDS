@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -78,7 +78,7 @@ describe('«Прогресс студентов» in the group KPI', () => {
 
   it('shows every student under the group card, with «Нет данных» instead of zeros', async () => {
     await openKpi()
-    expect(await screen.findByRole('heading', { name: 'Прогресс студентов' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Прогресс студентов/ })).toBeInTheDocument()
     expect(screen.getByText('10 (10 проведено)')).toBeInTheDocument() // the group card is still there
     const annaRow = within(table()).getByTestId('progress-row-1')
     expect(within(annaRow).getByText('90%')).toBeInTheDocument()
@@ -95,7 +95,7 @@ describe('«Прогресс студентов» in the group KPI', () => {
 
   it('asks for the same period as the group KPI and recalculates when it changes', async () => {
     const user = await openKpi()
-    await screen.findByRole('heading', { name: 'Прогресс студентов' })
+    await screen.findByRole('heading', { name: /Прогресс студентов/ })
     expect(groupsApi.studentProgress).toHaveBeenLastCalledWith(5, expect.objectContaining({ period: 'this_month' }))
     const dashboard = vi.mocked(kpiApi.dashboard).mock.calls.at(-1)?.[0]
     const progressParams = vi.mocked(groupsApi.studentProgress).mock.calls.at(-1)?.[1]
@@ -111,7 +111,7 @@ describe('«Прогресс студентов» in the group KPI', () => {
 
   it('searches by name and sorts by attendance, homework and score', async () => {
     const user = await openKpi()
-    await screen.findByRole('heading', { name: 'Прогресс студентов' })
+    await screen.findByRole('heading', { name: /Прогресс студентов/ })
     const names = () => within(table()).getAllByRole('row').slice(1).map((r) => r.querySelector('td p')?.textContent)
 
     await user.type(screen.getByRole('searchbox', { name: 'Поиск по имени студента' }), 'бек')
@@ -140,7 +140,7 @@ describe('«Прогресс студентов» in the group KPI', () => {
     }
     vi.mocked(groupsApi.studentProgressDetail).mockResolvedValue(detail)
     const user = await openKpi()
-    await screen.findByRole('heading', { name: 'Прогресс студентов' })
+    await screen.findByRole('heading', { name: /Прогресс студентов/ })
 
     await user.click(within(table()).getByTestId('progress-row-1'))
     const panel = await within(table()).findByTestId('progress-detail-1')
@@ -160,6 +160,92 @@ describe('«Прогресс студентов» in the group KPI', () => {
     vi.mocked(groupsApi.studentProgress).mockResolvedValue(progress([]))
     await openKpi()
     expect(await screen.findByText('В этот период в группе не было студентов')).toBeInTheDocument()
+  })
+})
+
+describe('manual «С — По» range', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(groupsApi.get).mockResolvedValue(buildGroup({ id: 5, name: 'Роботы-5' }))
+    const base = buildAnalyticsDashboard()
+    vi.mocked(kpiApi.dashboard).mockResolvedValue(
+      buildAnalyticsDashboard({ lessons: { ...base.lessons, lessons_total: buildMetric(10), lessons_completed: buildMetric(10) } }),
+    )
+    vi.mocked(groupsApi.studentProgress).mockResolvedValue(progress([anna, bek, nur]))
+  })
+
+  const from = () => screen.getByLabelText('Дата начала')
+  const to = () => screen.getByLabelText('Дата окончания')
+  const names = () => within(screen.getByRole('table')).getAllByRole('row').slice(1).map((r) => r.querySelector('td p')?.textContent)
+
+  it('applies the range to the group KPI and the students, keeping search and sorting', async () => {
+    const user = await openKpi()
+    await screen.findByRole('heading', { name: /Прогресс студентов/ })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Сортировка' }), 'attendance_rate')
+    await user.type(screen.getByRole('searchbox', { name: 'Поиск по имени студента' }), 'а')
+
+    fireEvent.change(from(), { target: { value: '2026-10-01' } })
+    fireEvent.change(to(), { target: { value: '2026-10-10' } })
+    await user.click(screen.getByRole('button', { name: 'Применить' }))
+
+    await waitFor(() =>
+      expect(groupsApi.studentProgress).toHaveBeenLastCalledWith(5, { period: 'custom', start_date: '2026-10-01', end_date: '2026-10-10' }),
+    )
+    expect(kpiApi.dashboard).toHaveBeenLastCalledWith(
+      expect.objectContaining({ period: 'custom', start_date: '2026-10-01', end_date: '2026-10-10', group: 5 }),
+    )
+    expect(await screen.findByTestId('progress-range')).toHaveTextContent('01.10.2026 — 10.10.2026')
+    // The search and the sorting are still there.
+    expect(screen.getByRole('searchbox', { name: 'Поиск по имени студента' })).toHaveValue('а')
+    expect(screen.getByRole('combobox', { name: 'Сортировка' })).toHaveValue('attendance_rate')
+    await waitFor(() => expect(names()).toEqual(['Анна Алиева', 'Бек Бекова', 'Нур Новая']))
+    expect(from()).toHaveValue('2026-10-01')
+    // No quick period is highlighted while the manual range is on.
+    expect(screen.getByRole('radio', { name: 'Этот месяц' })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('refuses a start date after the end date', async () => {
+    const user = await openKpi()
+    await screen.findByRole('heading', { name: /Прогресс студентов/ })
+    const calls = vi.mocked(groupsApi.studentProgress).mock.calls.length
+    fireEvent.change(from(), { target: { value: '2026-10-10' } })
+    fireEvent.change(to(), { target: { value: '2026-10-01' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Дата начала не может быть позже даты окончания.')
+    const apply = screen.getByRole('button', { name: 'Применить' })
+    expect(apply).toBeDisabled()
+    await user.click(apply)
+    expect(groupsApi.studentProgress).toHaveBeenCalledTimes(calls)
+  })
+
+  it('«Сбросить» and the quick periods go back to the standard period', async () => {
+    const user = await openKpi()
+    await screen.findByRole('heading', { name: /Прогресс студентов/ })
+    expect(screen.getByRole('button', { name: 'Сбросить' })).toBeDisabled()
+    fireEvent.change(from(), { target: { value: '2026-10-01' } })
+    fireEvent.change(to(), { target: { value: '2026-10-10' } })
+    await user.click(screen.getByRole('button', { name: 'Применить' }))
+    await waitFor(() => expect(groupsApi.studentProgress).toHaveBeenLastCalledWith(5, expect.objectContaining({ period: 'custom' })))
+
+    await user.click(screen.getByRole('button', { name: 'Сбросить' }))
+    await waitFor(() => expect(groupsApi.studentProgress).toHaveBeenLastCalledWith(5, expect.objectContaining({ period: 'this_month' })))
+    expect(screen.getByRole('radio', { name: 'Этот месяц' })).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.change(from(), { target: { value: '2026-10-02' } })
+    await user.click(screen.getByRole('button', { name: 'Применить' }))
+    await waitFor(() => expect(groupsApi.studentProgress).toHaveBeenLastCalledWith(5, expect.objectContaining({ period: 'custom', start_date: '2026-10-02' })))
+    await user.click(screen.getByRole('radio', { name: 'Последние 7 дней' }))
+    await waitFor(() => expect(groupsApi.studentProgress).toHaveBeenLastCalledWith(5, expect.objectContaining({ period: 'last_7_days' })))
+    expect(kpiApi.dashboard).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'last_7_days' }))
+  })
+
+  it('says «Нет данных за выбранный период» when the range has nothing', async () => {
+    vi.mocked(groupsApi.studentProgress).mockResolvedValue({ ...progress([nur]), lessons_held: 0 })
+    await openKpi()
+    const section = (await screen.findByRole('heading', { name: /Прогресс студентов/ })).closest('section') as HTMLElement
+    expect(await within(section).findByText('Нет данных за выбранный период')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    // The filters stay, so another range can be picked.
+    expect(screen.getByLabelText('Дата начала')).toBeInTheDocument()
   })
 })
 

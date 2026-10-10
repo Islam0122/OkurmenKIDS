@@ -20,6 +20,8 @@ import { ExamCard } from '@/features/exams/ExamCard'
 import { useExamList } from '@/hooks/useExams'
 import { AcademicConfigSummary, GroupAcademicConfig } from './GroupAcademicConfig'
 import { StudentProgress } from './StudentProgress'
+import type { DateRange } from './StudentProgress'
+import type { StudentProgressParams } from '@/types/studentProgress'
 import { useAuth } from '@/hooks/useAuth'
 import { useReportGroup } from '@/hooks/useReports'
 import { seesWholeAcademy } from '@/lib/roles'
@@ -329,39 +331,46 @@ function HomeworkTab({ groupId }: { groupId: number }) {
  * «Прогресс студентов» below follows the same period switch. */
 function KpiTab({ groupId }: { groupId: number }) {
   const [periodKey, setPeriodKey] = useState<KPIPeriodKey>('this_month')
+  // A manual «С — По» range from «Прогресс студентов»; null = the quick period.
+  const [customRange, setCustomRange] = useState<DateRange | null>(null)
   const periods = useMemo(() => getKPIPeriods(), [])
   const period = periods.find((item) => item.key === periodKey) ?? periods[0]
+  // One period for the group card and the students alike.
+  const params: StudentProgressParams = customRange
+    ? { period: 'custom', start_date: customRange.from, end_date: customRange.to }
+    : { period: periodKey, start_date: period.dateFrom, end_date: period.dateTo }
 
-  const { data, isPending, isError, refetch } = useAnalyticsDashboard({
-    period: periodKey,
-    start_date: period.dateFrom,
-    end_date: period.dateTo,
-    group: groupId,
-  })
+  const { data, isPending, isError, refetch } = useAnalyticsDashboard({ ...params, group: groupId })
 
-  if (isPending) return <LoadingState label="Считаем KPI…" />
-  if (isError) return <ErrorState onRetry={() => void refetch()} />
+  const pickQuickPeriod = (key: KPIPeriodKey) => {
+    setCustomRange(null)
+    setPeriodKey(key)
+  }
 
   // Any lesson in the period, whatever its status — not `lessons_scheduled`,
   // which is only still-open lessons and reads 0 once they're all completed.
-  const hasData = data.lessons.lessons_total.value > 0
+  const hasData = data ? data.lessons.lessons_total.value > 0 : false
 
   return (
     <div>
       <SegmentedControl<KPIPeriodKey>
         aria-label="Период"
         className="mb-4"
-        value={periodKey}
-        onChange={setPeriodKey}
+        value={customRange ? 'custom' : periodKey}
+        onChange={pickQuickPeriod}
         options={periods.map((item) => ({ value: item.key, label: item.label }))}
       />
 
-      {!hasData ? (
+      {isPending ? (
+        <LoadingState label="Считаем KPI…" />
+      ) : isError ? (
+        <ErrorState onRetry={() => void refetch()} />
+      ) : !hasData ? (
         <EmptyState title="Нет данных за выбранный период" />
       ) : (
         <div className="card card-body">
           <p className="text-sm font-medium text-ink">
-            {formatDateShort(period.dateFrom)} — {formatDateShort(period.dateTo)}
+            {formatDateShort(params.start_date as string)} — {formatDateShort(params.end_date as string)}
           </p>
           <div className="mt-3 grid grid-cols-1 gap-3 text-sm min-[400px]:grid-cols-2 sm:grid-cols-3">
             <Field
@@ -375,7 +384,13 @@ function KpiTab({ groupId }: { groupId: number }) {
         </div>
       )}
 
-      <StudentProgress groupId={groupId} params={{ period: periodKey, start_date: period.dateFrom, end_date: period.dateTo }} />
+      <StudentProgress
+        groupId={groupId}
+        params={params}
+        customRange={customRange}
+        onApplyRange={setCustomRange}
+        onResetRange={() => setCustomRange(null)}
+      />
     </div>
   )
 }

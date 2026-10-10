@@ -55,7 +55,7 @@ describe('GroupDetailPage', () => {
     vi.mocked(groupsApi.studentProgress).mockResolvedValue({
       period: { key: 'this_month', start_date: '2026-10-01', end_date: '2026-10-20' },
       comparison: { start_date: '2026-09-01', end_date: '2026-09-20' },
-      lessons_held: 0,
+      lessons_held: 4,
       students: [],
     })
   })

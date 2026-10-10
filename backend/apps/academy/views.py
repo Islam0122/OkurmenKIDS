@@ -797,6 +797,9 @@ class GroupViewSet(viewsets.ModelViewSet):
         params = AnalyticsQuerySerializer(data=request.query_params)
         params.is_valid(raise_exception=True)
         data = params.validated_data
+        if data["period"] == "custom" and data["start_date"] > data["end_date"]:
+            # The manual «С — По» range is refused rather than silently swapped.
+            raise DRFValidationError({"start_date": ["Дата начала не может быть позже даты окончания."]})
         teacher_id = None
         if not _sees_academy(request.user):
             teacher = _teacher_profile(request)
