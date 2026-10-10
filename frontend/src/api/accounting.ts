@@ -7,6 +7,8 @@ import type {
   Capabilities,
   CourseCycle,
   CourseSettings,
+  MySalary,
+  MySalaryFilters,
   Dashboard,
   EmployeeRow,
   PayrollAdjustment,
@@ -132,6 +134,9 @@ export const accountingApi = {
 
   audit: (params: Params) => get<Paginated<AuditEntry>>('/audit-log/', params),
 
+  /** Сотрудник — всегда текущий пользователь на сервере; id в запросе нет. */
+  mySalary: (filters: MySalaryFilters = {}) => get<MySalary>('/my/salary/', { ...filters }),
+  downloadMySalaryPdf: (filters: MySalaryFilters = {}) => download('/my/salary/report.pdf', { ...filters }, 'my-salary.pdf'),
   myPayrolls: () => get<Paginated<PayrollDetail>>('/my/payrolls/'),
   downloadMyPayrollPdf: (id: number) => download(`/my/payrolls/${id}/report.pdf/`, undefined, `payroll-${id}.pdf`),
 }

@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { accountingApi } from '@/api/accounting'
 import type { PayrollFilters } from '@/api/accounting'
-import type { PeriodSelection } from '@/types/accounting'
+import type { MySalaryFilters, PeriodSelection } from '@/types/accounting'
 
 export function useAccountingOptions() {
   return useQuery({ queryKey: ['accounting', 'options'], queryFn: accountingApi.options, staleTime: 5 * 60 * 1000 })
@@ -77,6 +77,14 @@ export function useCourseCycles(params: Record<string, string | number | undefin
   return useQuery({
     queryKey: ['accounting', 'cycles', params],
     queryFn: () => accountingApi.cycles(params),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useMySalary(filters: MySalaryFilters) {
+  return useQuery({
+    queryKey: ['accounting', 'my-salary', filters],
+    queryFn: () => accountingApi.mySalary(filters),
     placeholderData: keepPreviousData,
   })
 }

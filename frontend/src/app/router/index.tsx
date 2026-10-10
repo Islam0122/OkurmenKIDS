@@ -13,6 +13,13 @@ import { RouteErrorPage } from './RouteErrorPage'
 export const router = createBrowserRouter([
   { path: '/', element: <Navigate to={HOME_PATH} replace />, errorElement: <RouteErrorPage /> },
   { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
+  {
+    // Короткий адрес «Моей зарплаты»: ведёт на страницу в кабинете своей роли.
+    path: '/my-salary',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [{ index: true, lazy: async () => ({ Component: (await import('./MySalaryRedirect')).MySalaryRedirect }) }],
+  },
   { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {
     path: '/app',
@@ -220,10 +227,16 @@ export const router = createBrowserRouter([
             },
           },
           {
-            // Свои начисления сотрудника (backend: /accounting/my/payrolls/ — только свои).
-            path: 'salary',
-            lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }),
+            // «Моя зарплата» Тренера и Team Lead (backend: /accounting/my/salary/ — только свои, только чтение).
+            element: <RequireRoles roles={['teacher', 'team_lead']} />,
+            children: [
+              {
+                path: 'my-salary',
+                lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }),
+              },
+            ],
           },
+          { path: 'salary', element: <Navigate to="/app/my-salary" replace /> },
           {
             path: 'news',
             lazy: async () => {
@@ -279,6 +292,7 @@ export const router = createBrowserRouter([
               { path: 'scholarships', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ScholarshipsPage')).AssistantScholarshipsPage }) },
               { path: 'surveys', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveysPage')).AssistantSurveysPage }) },
               { path: 'surveys/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveyDetailPage')).AssistantSurveyDetailPage }) },
+              { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: 'profile', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ProfilePage')).AssistantProfilePage }) },
               { path: '*', lazy: async () => ({ Component: (await import('@/features/assistant/pages/NotFoundPage')).AssistantNotFoundPage }) },
             ],

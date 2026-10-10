@@ -338,3 +338,46 @@ export interface CourseCycle {
     adjustment: number | null
   }[]
 }
+
+/** «Моя зарплата» — /accounting/my/salary/ (только свои данные, только чтение). */
+export type MySalaryStatus = 'AWAITING' | 'CALCULATED' | 'APPROVED' | 'PARTIALLY_PAID' | 'PAID'
+
+export interface MySalaryRow {
+  payroll_id: number | null
+  year: number
+  month: number
+  period_type: PeriodType
+  period_label: string
+  status: MySalaryStatus
+  status_display: string
+  is_final: boolean
+  /** null — суммы ещё не рассчитаны («Ожидает расчёта»). */
+  accrued: string | null
+  paid: string | null
+  due: string | null
+  lines: { description: string; amount: string }[]
+  adjustments: { kind: string; reason: string; amount: string }[]
+}
+
+export interface MySalary {
+  employee_name: string
+  has_profile: boolean
+  profile: {
+    salary_type: SalaryType
+    salary_type_display: string
+    position: string
+    rates: { rule_type: string; label: string; amount: string | null; percentage: string | null; scope: string; effective_from: string }[]
+  } | null
+  totals: { accrued: string; paid: string; due: string; pending_approval: string }
+  last_payment: { payment_date: string; amount: string } | null
+  current_month: { year: number; month: number; label: string; accrued: string; periods: MySalaryRow[] }
+  history: MySalaryRow[]
+  payments: { id: number; payment_date: string; amount: string; method: string; is_advance: boolean; reference: string; period_label: string; payroll_id: number }[]
+  filters: { year: number | null; month: number | null; period_type: PeriodType | null }
+}
+
+export interface MySalaryFilters {
+  year?: number
+  month?: number
+  period_type?: PeriodType
+}

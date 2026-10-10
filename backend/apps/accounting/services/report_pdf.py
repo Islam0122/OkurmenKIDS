@@ -2,6 +2,7 @@
 у остальных PDF проекта (встроенные шрифты reportlab без кириллицы)."""
 from __future__ import annotations
 
+import datetime as dt
 import io
 from xml.sax.saxutils import escape
 from decimal import ROUND_HALF_UP, Decimal
@@ -165,4 +166,53 @@ def render_individual_pdf(report: IndividualReport) -> bytes:
         ),
     ]
     doc.build(story, onFirstPage=_footer(report.generated_at), onLaterPages=_footer(report.generated_at))
+    return buf.getvalue()
+
+
+def render_my_salary_pdf(data: dict, generated_at) -> bytes:
+    """Личный отчёт «Моя зарплата» — те же данные, что видит сотрудник на странице."""
+    styles = _styles()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm,
+                            topMargin=16 * mm, bottomMargin=16 * mm, title=f"Моя зарплата — {data['employee_name']}")
+    profile = data["profile"]
+    rates = "; ".join(
+        (f"{plain(r['percentage'])}%" if r["percentage"] else som(r["amount"])) + (f" ({r['scope']})" if r["scope"] else "")
+        for r in (profile or {}).get("rates", [])
+    ) or "—"
+    f = data["filters"]
+    scope = ", ".join(x for x in (
+        f"год {f['year']}" if f.get("year") else "", f"месяц {f['month']:02d}" if f.get("month") else "",
+        {"FIRST_HALF": "1–15", "SECOND_HALF": "16–конец месяца"}.get(f.get("period_type") or "", ""),
+    ) if x) or "все периоды"
+    t = data["totals"]
+    story = [
+        Paragraph("Моя зарплата", styles["title"]),
+        Paragraph(
+            f"{escape(data['employee_name'])} · {escape((profile or {}).get('position') or '—')}<br/>"
+            f"Тип оплаты: {escape((profile or {}).get('salary_type_display') or 'не настроен')} · ставка: {escape(rates)}<br/>"
+            f"История: {scope} · Дата формирования: {generated_at:%d.%m.%Y %H:%M}",
+            styles["sub"],
+        ),
+        Spacer(1, 6),
+        _table(["Начислено (утверждено)", "Выплачено", "Остаток к выплате", "Ожидает утверждения"],
+               [[som(t["accrued"]), som(t["paid"]), som(t["due"]), som(t["pending_approval"])]],
+               [45.5 * mm] * 4, styles=styles),
+        Paragraph("История начислений", styles["h"]),
+        _table(
+            ["Период", "Статус", "Начислено", "Выплачено", "Остаток"],
+            [[r["period_label"], r["status_display"], som(r["accrued"]), som(r["paid"]), som(r["due"])]
+             for r in data["history"]] or [["Начислений пока нет", "", "", "", ""]],
+            [40 * mm, 52 * mm, 30 * mm, 30 * mm, 30 * mm], styles=styles,
+        ),
+        Paragraph("Выплаты", styles["h"]),
+        _table(
+            ["Дата", "Период", "Способ", "Сумма"],
+            [[f"{dt.date.fromisoformat(p['payment_date']):%d.%m.%Y}", p["period_label"],
+              p["method"] + (" (аванс)" if p["is_advance"] else ""), som(p["amount"])] for p in data["payments"]]
+            or [["Выплат пока нет", "", "", ""]],
+            [30 * mm, 50 * mm, 62 * mm, 40 * mm], styles=styles,
+        ),
+    ]
+    doc.build(story, onFirstPage=_footer(generated_at), onLaterPages=_footer(generated_at))
     return buf.getvalue()

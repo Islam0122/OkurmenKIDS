@@ -41,7 +41,8 @@ from .services import AccountingError
 from .services import approval_service, cycles, payment_service, payroll_calculator, report_service, salary_rules
 from .services import student_payments as student_payment_service
 from .services.periods import close_period, get_or_create_period
-from .services.report_pdf import render_individual_pdf, render_period_pdf
+from .services import my_salary
+from .services.report_pdf import render_individual_pdf, render_my_salary_pdf, render_period_pdf
 from .services.report_xlsx import render_individual_xlsx, render_period_xlsx
 
 TAG = ["Accounting"]
@@ -779,3 +780,44 @@ class MyPayrollViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
     def report_pdf(self, request, pk=None):
         report = report_service.build_individual(self.get_object())
         return _file(render_individual_pdf(report), f"payroll-{pk}.pdf", PDF)
+
+
+def _my_salary_filters(request) -> dict:
+    """Фильтры истории. Сотрудник — всегда request.user; параметр
+    `employee` (или любой другой id) из запроса игнорируется."""
+    q = request.query_params
+    period_type = q.get("period_type") or None
+    if period_type and period_type not in PayrollPeriod.PeriodType.values:
+        raise ValidationError({"period_type": "Неизвестный расчётный период."})
+    month = _int(q.get("month"), "month")
+    if month is not None and not 1 <= month <= 12:
+        raise ValidationError({"month": "Месяц должен быть от 1 до 12."})
+    return {"year": _int(q.get("year"), "year"), "month": month, "period_type": period_type}
+
+
+@extend_schema(tags=TAG, parameters=[
+    OpenApiParameter("year", int), OpenApiParameter("month", int), OpenApiParameter("period_type", str),
+])
+class MySalaryView(APIView):
+    """«Моя зарплата»: только собственные данные текущего пользователя, только чтение."""
+
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        return Response(my_salary.build(request.user, **_my_salary_filters(request)))
+
+
+@extend_schema(tags=TAG, parameters=[
+    OpenApiParameter("year", int), OpenApiParameter("month", int), OpenApiParameter("period_type", str),
+])
+class MySalaryPdfView(APIView):
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    def get(self, request):
+        data = my_salary.build(request.user, **_my_salary_filters(request))
+        content = render_my_salary_pdf(data, timezone.localtime())
+        return _file(content, f"my-salary-{timezone.localdate():%Y-%m-%d}.pdf", PDF)

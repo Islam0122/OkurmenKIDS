@@ -22,7 +22,7 @@ describe('Team Lead navigation config', () => {
   })
 
   it('is Russian, without emoji, in the Team Lead order', () => {
-    expect(TEAM_LEAD_SECTIONS.map((s) => s.label)).toEqual(['Главная', 'Расписание', 'Аналитика', 'Группы', 'Тренеры', 'Студенты', 'Тесты', 'KPI', 'Отчёты'])
+    expect(TEAM_LEAD_SECTIONS.map((s) => s.label)).toEqual(['Главная', 'Расписание', 'Аналитика', 'Группы', 'Тренеры', 'Студенты', 'Тесты', 'KPI', 'Отчёты', 'Моя зарплата'])
     for (const label of [...TEAM_LEAD_SECTIONS.map((s) => s.label), ...teamLeadLinks().map((l) => l.label)]) {
       expect(label).not.toMatch(EMOJI)
       expect(label.replace('KPI', '')).not.toMatch(/[A-Za-z]/)
