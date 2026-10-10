@@ -19,6 +19,7 @@ import { CreateSessionModal } from '@/features/exams/CreateSessionModal'
 import { ExamCard } from '@/features/exams/ExamCard'
 import { useExamList } from '@/hooks/useExams'
 import { AcademicConfigSummary, GroupAcademicConfig } from './GroupAcademicConfig'
+import { StudentProgress } from './StudentProgress'
 import { useAuth } from '@/hooks/useAuth'
 import { useReportGroup } from '@/hooks/useReports'
 import { seesWholeAcademy } from '@/lib/roles'
@@ -324,7 +325,8 @@ function HomeworkTab({ groupId }: { groupId: number }) {
 }
 
 /** Computed live from this group's own Lesson/Attendance/HomeworkResult
- * records for the chosen period — nothing stored, nothing to recalculate. */
+ * records for the chosen period — nothing stored, nothing to recalculate.
+ * «Прогресс студентов» below follows the same period switch. */
 function KpiTab({ groupId }: { groupId: number }) {
   const [periodKey, setPeriodKey] = useState<KPIPeriodKey>('this_month')
   const periods = useMemo(() => getKPIPeriods(), [])
@@ -372,6 +374,8 @@ function KpiTab({ groupId }: { groupId: number }) {
           </div>
         </div>
       )}
+
+      <StudentProgress groupId={groupId} params={{ period: periodKey, start_date: period.dateFrom, end_date: period.dateTo }} />
     </div>
   )
 }

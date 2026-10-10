@@ -10,6 +10,7 @@ import type {
   Student,
 } from '@/types/academy'
 import type { Paginated } from '@/types/common'
+import type { GroupStudentProgress, StudentProgressDetail, StudentProgressParams } from '@/types/studentProgress'
 
 export interface GroupListParams {
   search?: string
@@ -35,6 +36,14 @@ export const groupsApi = {
   /** The group's active students (or all, with `is_active: false`). */
   students: (id: number, params?: { is_active?: boolean }): Promise<Student[]> =>
     apiClient.get<Student[]>(`/groups/${id}/students/`, { params }).then((r) => r.data),
+
+  /** «Прогресс студентов» of the group KPI for a period (a Trainer: only their own groups and lessons). */
+  studentProgress: (id: number, params: StudentProgressParams): Promise<GroupStudentProgress> =>
+    apiClient.get<GroupStudentProgress>(`/groups/${id}/student-progress/`, { params }).then((r) => r.data),
+
+  /** One student's lessons, homework and tests of that period. */
+  studentProgressDetail: (id: number, studentId: number, params: StudentProgressParams): Promise<StudentProgressDetail> =>
+    apiClient.get<StudentProgressDetail>(`/groups/${id}/student-progress/${studentId}/`, { params }).then((r) => r.data),
 
   /** Admin / Team Lead: «Учебная конфигурация» — programs with per-day slots. */
   academicConfig: (id: number): Promise<AcademicConfig> =>

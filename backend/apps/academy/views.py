@@ -10,7 +10,7 @@ from django.utils.cache import add_never_cache_headers
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import MethodNotAllowed, PermissionDenied
+from rest_framework.exceptions import MethodNotAllowed, NotFound, PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -98,7 +98,7 @@ from .serializers import (
     TeacherAvailabilityRequestSerializer,
     TeacherAvailabilitySerializer,
 )
-from .services.analytics import COMPARE_CHOICES, get_dashboard
+from .services.analytics import COMPARE_CHOICES, get_dashboard, student_progress
 from .services.attendance_service import bulk_mark_attendance
 from .services.homework_service import bulk_upsert_homework_results
 from .services import lesson_lifecycle
@@ -788,6 +788,43 @@ class GroupViewSet(viewsets.ModelViewSet):
             qs = qs.filter(is_active=True)
 
         return Response(StudentSerializer(qs, many=True, context=self.get_serializer_context()).data)
+
+    def _progress_args(self, request, pk):
+        """The group (a Trainer only ever their own — get_queryset) and the
+        period / trainer scoping of the group KPI (AnalyticsDashboardView):
+        a Trainer sees only the lessons they give in it."""
+        group = get_object_or_404(self.get_queryset(), pk=pk)
+        params = AnalyticsQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        data = params.validated_data
+        teacher_id = None
+        if not _sees_academy(request.user):
+            teacher = _teacher_profile(request)
+            teacher_id = teacher.id if teacher is not None else 0
+        return group, {
+            "period": data["period"], "start_date": data.get("start_date"), "end_date": data.get("end_date"),
+            "teacher_id": teacher_id, "today": timezone.localdate(),
+        }
+
+    @extend_schema(tags=["Groups"], parameters=[AnalyticsQuerySerializer])
+    @action(detail=True, methods=["get"], url_path="student-progress")
+    def student_progress(self, request, pk=None):
+        """«Прогресс студентов» of the group KPI: every student's attendance,
+        homework, scores and tests for the period, with the change against
+        the previous comparable period (services.analytics.student_progress)."""
+        group, args = self._progress_args(request, pk)
+        return Response(student_progress.group_student_progress(group, **args))
+
+    @extend_schema(tags=["Groups"], parameters=[AnalyticsQuerySerializer])
+    @action(detail=True, methods=["get"], url_path=r"student-progress/(?P<student_id>\d+)")
+    def student_progress_detail(self, request, pk=None, student_id=None):
+        """One student's lessons of the period: date, attendance, homework
+        and its status / score, tests, and the change against the previous period."""
+        group, args = self._progress_args(request, pk)
+        detail = student_progress.student_progress_detail(group, int(student_id), **args)
+        if detail is None:
+            raise NotFound("Студент не занимался в этой группе в выбранный период.")
+        return Response(detail)
 
 
 @extend_schema_view(
