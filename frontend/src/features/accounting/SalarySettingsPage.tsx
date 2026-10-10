@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 
 import { accountingApi } from '@/api/accounting'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -17,9 +17,10 @@ import { useAccountingMutation, useAccountingOptions, useSalaryProfiles } from '
 import { Field } from '@/features/worklog/formUi'
 import type { AccountingOptions, RuleType, SalaryProfile, SalaryRule } from '@/types/accounting'
 
+import { RuleCorrectionModal } from './RuleCorrectionModal'
 import { formatDate, som, today, useRunner } from './shared'
 
-type Dialog = null | { kind: 'profile' } | { kind: 'rule'; profile: SalaryProfile } | { kind: 'version'; rule: SalaryRule } | { kind: 'stop'; rule: SalaryRule }
+type Dialog = null | { kind: 'profile' } | { kind: 'rule'; profile: SalaryProfile } | { kind: 'version'; rule: SalaryRule } | { kind: 'stop'; rule: SalaryRule } | { kind: 'correct'; rule: SalaryRule }
 
 function rateText(rule: SalaryRule): string {
   if (rule.rule_type === 'PERCENT') return `${Number(rule.percentage)}% от стоимости курса`
@@ -94,14 +95,24 @@ export function SalarySettingsPage() {
                               <td className="whitespace-nowrap text-sm">
                                 {formatDate(rule.effective_from)} — {rule.effective_to ? formatDate(rule.effective_to) : 'без срока'}
                                 {rule.previous_version ? <p className="text-xs text-ink-muted">версия правила #{rule.previous_version}</p> : null}
+                                {!rule.usage.can_correct ? <p className="text-xs text-ink-muted">в утверждённых начислениях до {formatDate(rule.usage.used_until)}</p> : null}
                               </td>
-                              <td className="whitespace-nowrap text-right">
+                              <td className="text-right">
+                                <div className="flex flex-wrap justify-end gap-1">
+                                {canEdit && !rule.next_version && (rule.rule_type === 'FIXED' || rule.rule_type === 'PERCENT') ? (
+                                  <Button size="sm" variant="ghost" leftIcon={<Pencil className="size-3.5" />}
+                                    title={rule.usage.can_correct ? 'Исправить ошибочное правило' : 'Правило уже в утверждённых начислениях — заменить с даты'}
+                                    onClick={() => setDialog({ kind: 'correct', rule })}>
+                                    {rule.usage.can_correct ? 'Исправить' : 'Заменить с даты'}
+                                  </Button>
+                                ) : null}
                                 {canEdit && !closed && !rule.next_version && (rule.rule_type === 'FIXED' || rule.rule_type === 'PERCENT') ? (
                                   <>
                                     <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: 'version', rule })}>Новая ставка</Button>
                                     <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: 'stop', rule })}>Прекратить</Button>
                                   </>
                                 ) : null}
+                                </div>
                               </td>
                             </tr>
                           )
@@ -119,6 +130,7 @@ export function SalarySettingsPage() {
       {options.data && dialog?.kind === 'rule' ? <RuleModal options={options.data} profile={dialog.profile} onClose={close} /> : null}
       {dialog?.kind === 'version' ? <VersionModal rule={dialog.rule} onClose={close} /> : null}
       {dialog?.kind === 'stop' ? <StopModal rule={dialog.rule} onClose={close} /> : null}
+      {options.data && dialog?.kind === 'correct' ? <RuleCorrectionModal rule={dialog.rule} options={options.data} onClose={close} /> : null}
     </div>
   )
 }

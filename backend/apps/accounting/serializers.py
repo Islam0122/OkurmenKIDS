@@ -112,6 +112,7 @@ class SalaryRuleSerializer(serializers.ModelSerializer):
     employee = serializers.IntegerField(source="employee_profile.employee_id", read_only=True)
     employee_name = serializers.SerializerMethodField()
     next_version = serializers.SerializerMethodField()
+    usage = serializers.SerializerMethodField()
 
     class Meta:
         model = SalaryRule
@@ -120,9 +121,17 @@ class SalaryRuleSerializer(serializers.ModelSerializer):
             "percentage", "program", "program_name", "group", "group_name", "calculation_method",
             "calculation_method_display", "first_half_share", "revenue_basis", "revenue_basis_display",
             "refund_policy", "refund_policy_display", "description", "effective_from", "effective_to", "is_active",
-            "previous_version", "next_version", "created_at",
+            "previous_version", "next_version", "usage", "created_at",
         )
         read_only_fields = ("is_active", "previous_version", "created_at")
+
+    def get_usage(self, obj) -> dict:
+        """Можно ли исправить правило на месте или только заменить с даты."""
+        from .services.salary_rules import rule_usage
+
+        usage = rule_usage(obj)
+        usage["used_until"] = usage["used_until"].isoformat() if usage["used_until"] else None
+        return usage
 
     def get_employee_name(self, obj) -> str:
         return _name(obj.employee_profile.employee)
@@ -151,6 +160,33 @@ class SalaryRuleVersionSerializer(serializers.Serializer):
     calculation_method = serializers.ChoiceField(choices=SalaryRule.Method.choices, required=False)
     first_half_share = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
+
+
+class _RuleBodySerializer(serializers.Serializer):
+    rule_type = serializers.ChoiceField(choices=[(t.value, t.label) for t in SalaryRule.ACTIVE_TYPES], required=False)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, allow_null=True,
+                                      min_value=Decimal("0"))
+    percentage = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, allow_null=True,
+                                          min_value=Decimal("0"), max_value=Decimal("100"))
+    program = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all(), required=False, allow_null=True)
+    group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all(), required=False, allow_null=True)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    reason = serializers.CharField()
+
+
+class SalaryRuleCorrectSerializer(_RuleBodySerializer):
+    """Исправление ошибочного правила (только пока не использовано в
+    утверждённых начислениях)."""
+
+    calculation_method = serializers.ChoiceField(choices=SalaryRule.Method.choices, required=False)
+    effective_from = serializers.DateField(required=False)
+
+
+class SalaryRuleReplaceSerializer(_RuleBodySerializer):
+    """Замена правила с даты (для правил, уже попавших в утверждённые начисления)."""
+
+    effective_from = serializers.DateField()
 
 
 class SalaryRuleDeactivateSerializer(serializers.Serializer):
