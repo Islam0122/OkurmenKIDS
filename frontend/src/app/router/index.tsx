@@ -283,27 +283,17 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    // «OkurmenKIDS Schedule» — the standalone read-only schedule site (its own
-    // layout, same login and API). Academy-wide schedule: Admin, Team Lead,
-    // Assistant (backend: CanViewSchedule; GET only).
+    // «OkurmenKIDS Schedule» — the PUBLIC schedule site: no login, its own
+    // layout, only the public read-only API (/api/v1/public/schedule/ —
+    // whitelisted fields, no personal data). Never behind ProtectedRoute.
     path: '/schedule',
-    element: <ProtectedRoute />,
     errorElement: <RouteErrorPage />,
+    lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteLayout')).SiteLayout }),
     children: [
-      {
-        lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteLayout')).SiteLayout }),
-        children: [
-          {
-            lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteAccess')).SiteAccess }),
-            children: [
-              { index: true, lazy: async () => ({ Component: (await import('@/features/scheduleSite/SchedulePage')).ScheduleIndex }) },
-              { path: 'day', lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteRoutes')).SiteDayPage }) },
-              { path: 'week', lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteRoutes')).SiteWeekPage }) },
-              { path: '*', element: <Navigate to="/schedule" replace /> },
-            ],
-          },
-        ],
-      },
+      { index: true, lazy: async () => ({ Component: (await import('@/features/scheduleSite/SchedulePage')).ScheduleIndex }) },
+      { path: 'day', lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteRoutes')).SiteDayPage }) },
+      { path: 'week', lazy: async () => ({ Component: (await import('@/features/scheduleSite/SiteRoutes')).SiteWeekPage }) },
+      { path: '*', element: <Navigate to="/schedule" replace /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },

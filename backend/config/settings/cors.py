@@ -8,7 +8,7 @@ CORS_ALLOWED_ORIGINS = [
     *[o.strip().rstrip("/") for o in os.getenv("TRAINING_PORTAL_ORIGINS", "https://training-portal-theta.vercel.app/").split(",") if o.strip()],
     # The standalone «OkurmenKIDS Schedule» site (the same frontend built with
     # VITE_APP_MODE=schedule), e.g. https://schedule.okurmenkids.com —
-    # comma-separated. Read-only: it calls GET /api/v1/schedule/* only.
+    # comma-separated. Public, read-only: it calls GET /api/v1/public/schedule/* only.
     *[o.strip().rstrip("/") for o in os.getenv("SCHEDULE_SITE_ORIGINS", "").split(",") if o.strip()],
 ]
 

@@ -35,26 +35,33 @@ Vercel project settings for this app: framework **Vite**, build command `npm run
 - Check the Network tab: API calls should go to the production backend, never `localhost`.
 - Temporarily block the API host (or check with the backend down) — the app should show a friendly "server unavailable" state, not a blank page or a forced logout.
 
-## OkurmenKIDS Schedule (read-only schedule site)
+## OkurmenKIDS Schedule (public schedule site)
 
-A separate, read-only interface to the academy schedule — the same app,
-login and API, its own pages and header (no LMS navigation):
+A public, read-only schedule for parents, students, trainers and visitors —
+**no login**. The same app, its own pages and header (no LMS navigation):
 
 | URL | |
 |---|---|
-| `/schedule` | opens the last view of this tab, else the day |
-| `/schedule/day?date=YYYY-MM-DD` | the day, one column per room, 08:00–24:00 |
+| `/schedule` | today (or the last view of this tab) |
+| `/schedule/day?date=YYYY-MM-DD` | the day, a column per room, 08:00–24:00 |
 | `/schedule/week?date=…` | the week, hours × days |
 
-Filters live in the URL (`teacher`, `room=1,2`, `group`, `q`), so a link opens
-the same view. Who can open it: Admin, Team Lead, Assistant (the backend's
-`CanViewSchedule`); a Trainer gets a «no access» page and the API answers 403.
+Filters live in the URL (`group`, `trainer`, `room` — opaque public keys —
+and `q`), so a link opens the same view. Phones get a list by day.
 
-API (GET only; every other method is a 405 on the server):
-`/api/v1/schedule/options/`, `/api/v1/schedule/board/`, `/api/v1/schedule/free-rooms/`.
-The page re-reads the board every minute and when the window regains focus.
+It reads only the public API (GET only, no auth, rate-limited, cached):
+`/api/v1/public/schedule/options/` and `/api/v1/public/schedule/?start=&end=&group=&trainer=&room=`
+— a closed whitelist of fields: date, time, duration, group, course, subject,
+trainer name + color, room, status. No students, contacts, attendance,
+homework, scores, KPI, comments or database ids. The page re-reads it every
+minute and on window focus; a lesson saved in the LMS clears the server cache.
+
+Backend switches (env): `PUBLIC_SCHEDULE_SHOW_TRAINERS`, `PUBLIC_SCHEDULE_SHOW_ROOMS`
+(default on), `PUBLIC_SCHEDULE_PAST_DAYS` (31), `PUBLIC_SCHEDULE_FUTURE_DAYS` (120),
+`PUBLIC_SCHEDULE_CACHE_SECONDS` (60), `PUBLIC_SCHEDULE_RATE` (`1200/hour` per IP).
 
 **Own domain** (e.g. `schedule.okurmenkids.com`): a second Vercel project on
 this repo, root directory `frontend`, the same `vercel.json`, with
-`VITE_APP_MODE=schedule` and the same `VITE_API_BASE_URL`. On the backend add
-the domain to `SCHEDULE_SITE_ORIGINS` (CORS). No second backend or database.
+`VITE_APP_MODE=schedule` (so `/` opens the schedule) and the same
+`VITE_API_BASE_URL`. On the backend add the domain to `SCHEDULE_SITE_ORIGINS`
+(CORS). No second backend or database.

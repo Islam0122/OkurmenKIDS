@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import control_views, report_views, schedule_views, views
+from . import control_views, public_schedule_views, report_views, schedule_views, views
 
 router = DefaultRouter()
 router.register("courses", views.CourseViewSet, basename="course")
@@ -43,5 +43,8 @@ urlpatterns = [
     path("schedule/board/", schedule_views.ScheduleBoardView.as_view(), name="schedule-board"),
     path("schedule/free-rooms/", schedule_views.FreeRoomsView.as_view(), name="schedule-free-rooms"),
     path("schedule/check/", schedule_views.ConflictCheckView.as_view(), name="schedule-check"),
+    # The public schedule site (no login, GET only, whitelisted fields) — see public_schedule_views.
+    path("public/schedule/", public_schedule_views.PublicScheduleView.as_view(), name="public-schedule"),
+    path("public/schedule/options/", public_schedule_views.PublicScheduleOptionsView.as_view(), name="public-schedule-options"),
     path("", include(router.urls)),
 ]

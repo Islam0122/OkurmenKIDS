@@ -211,6 +211,8 @@ REST_FRAMEWORK = {
         "training_read": "3000/hour",
         "training_start": "120/hour",
         "training_write": "3000/hour",
+        # Public schedule site (apps/academy/public_schedule_views, per IP, no login).
+        "public_schedule": env("PUBLIC_SCHEDULE_RATE", default="1200/hour"),
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -534,3 +536,13 @@ JAZZMIN_UI_TWEAKS = {
 
 
 }
+
+
+# ---------------------------------------------------------------------------
+# Public schedule site (schedule.okurmenkids.com) — what it may publish.
+# ---------------------------------------------------------------------------
+PUBLIC_SCHEDULE_SHOW_TRAINERS = env.bool("PUBLIC_SCHEDULE_SHOW_TRAINERS", default=True)
+PUBLIC_SCHEDULE_SHOW_ROOMS = env.bool("PUBLIC_SCHEDULE_SHOW_ROOMS", default=True)
+PUBLIC_SCHEDULE_PAST_DAYS = env.int("PUBLIC_SCHEDULE_PAST_DAYS", default=31)
+PUBLIC_SCHEDULE_FUTURE_DAYS = env.int("PUBLIC_SCHEDULE_FUTURE_DAYS", default=120)
+PUBLIC_SCHEDULE_CACHE_SECONDS = env.int("PUBLIC_SCHEDULE_CACHE_SECONDS", default=60)
