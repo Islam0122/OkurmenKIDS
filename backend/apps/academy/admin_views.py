@@ -44,6 +44,7 @@ from .models import (
     Student,
     StudentStatusEvent,
 )
+from .services import admin_corrections
 from .services.academy_monthly_report import compute_academy_monthly_stats
 from .services.analytics import get_dashboard
 from .services.kpi_engine import COMPONENTS as KPI_COMPONENTS
@@ -1966,6 +1967,24 @@ def attendance_monitor_view(request):
     return render(request, "admin/academy/attendance/change_list.html", context)
 
 
+# -- Admin corrections (also after the lesson is completed) ----------------
+# The detail pages of Attendance / HomeworkResult / Homework accept a POST
+# with the corrected values. Everything goes through
+# services.admin_corrections, which re-checks that the user is an
+# administrator and logs the change; a Trainer's lock on a completed lesson
+# (the API) is untouched.
+
+def _apply_correction(request, apply, redirect_url):
+    """Run `apply()` for a POST; on success redirect (PRG) with a message,
+    on a validation error return the messages to show next to the form."""
+    try:
+        apply()
+    except DjangoValidationError as exc:
+        return [m for messages_ in (exc.message_dict.values() if hasattr(exc, "error_dict") else [exc.messages]) for m in messages_]
+    messages.success(request, "Исправление сохранено. Статистика и KPI учитывают его сразу.")
+    return redirect(redirect_url)
+
+
 def attendance_detail_view(request, object_id):
     _require_admin(request)
     record = get_object_or_404(
@@ -1988,8 +2007,24 @@ def attendance_detail_view(request, object_id):
     subject = lesson.subject or (lesson.group_teacher.subject if lesson.group_teacher_id else None)
     teacher = lesson.effective_teacher
 
+    errors = []
+    if request.method == "POST":
+        url = reverse("admin:academy_attendance_change", args=[record.pk])
+        outcome = _apply_correction(request, lambda: admin_corrections.correct_attendance(
+            record, status=request.POST.get("status", ""), comment=request.POST.get("comment", ""), user=request.user,
+        ), url)
+        if not isinstance(outcome, list):
+            return outcome
+        errors = outcome
+
     context = {
         **admin.site.each_context(request),
+        "correction": {
+            "allowed": lesson.status != Lesson.Status.CANCELLED,
+            "errors": errors,
+            "statuses": Attendance.Status.choices,
+            "locked_for_trainer": lesson.status == Lesson.Status.COMPLETED,
+        },
         "title": "Посещаемость",
         "record": record,
         "student": record.student,
@@ -2229,8 +2264,31 @@ def homework_detail_view(request, object_id):
     else:
         deadline_badge = {"label": "Без срока", "css": "ok-badge-muted"}
 
+    errors = []
+    if request.method == "POST":
+        def apply():
+            raw = (request.POST.get("deadline") or "").strip()
+            try:
+                deadline = dt.date.fromisoformat(raw) if raw else None
+            except ValueError:
+                raise DjangoValidationError({"deadline": "Неверная дата."})
+            admin_corrections.correct_homework(
+                homework, title=request.POST.get("title", ""), description=request.POST.get("description", ""),
+                deadline=deadline, user=request.user,
+            )
+
+        outcome = _apply_correction(request, apply, reverse("admin:academy_homework_change", args=[homework.pk]))
+        if not isinstance(outcome, list):
+            return outcome
+        errors = outcome
+
     context = {
         **admin.site.each_context(request),
+        "correction": {
+            "allowed": True,
+            "errors": errors,
+            "locked_for_trainer": homework.lesson.status in (Lesson.Status.COMPLETED, Lesson.Status.CANCELLED),
+        },
         "title": "Домашние задания",
         "homework": homework,
         "lesson": lesson,
@@ -2380,8 +2438,25 @@ def homeworkresult_detail_view(request, object_id):
     subject = lesson.subject or (lesson.group_teacher.subject if lesson.group_teacher_id else None)
     teacher = lesson.effective_teacher
 
+    errors = []
+    if request.method == "POST":
+        url = reverse("admin:academy_homeworkresult_change", args=[result.pk])
+        outcome = _apply_correction(request, lambda: admin_corrections.correct_homework_result(
+            result, status=request.POST.get("status", ""), score=request.POST.get("score", ""),
+            comment=request.POST.get("comment", ""), user=request.user,
+        ), url)
+        if not isinstance(outcome, list):
+            return outcome
+        errors = outcome
+
     context = {
         **admin.site.each_context(request),
+        "correction": {
+            "allowed": True,
+            "errors": errors,
+            "statuses": HomeworkResult.Status.choices,
+            "locked_for_trainer": lesson.status in (Lesson.Status.COMPLETED, Lesson.Status.CANCELLED),
+        },
         "title": "Результаты домашних заданий",
         "result": result,
         "student": result.student,

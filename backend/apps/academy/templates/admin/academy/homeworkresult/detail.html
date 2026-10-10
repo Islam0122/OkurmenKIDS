@@ -149,5 +149,6 @@
       <a href="{{ changelist_url }}" class="ok-btn-secondary ok-btn-block"><i class="bi bi-arrow-left"></i> Назад к списку</a>
     </div>
   </div>
+  {% if correction %}{% include "admin/academy/_corrections/homeworkresult.html" %}{% endif %}
 </div>
 {% endblock %}

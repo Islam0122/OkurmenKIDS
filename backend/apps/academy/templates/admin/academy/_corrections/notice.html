@@ -1,0 +1,11 @@
+{% if correction.locked_for_trainer %}
+  <p class="ok-help-text" style="margin:0 0 0.75rem;">
+    <i class="bi bi-lock"></i> Занятие уже проведено — тренер больше не может менять эти данные.
+    Исправление администратора сохраняется в истории изменений записи.
+  </p>
+{% endif %}
+{% if correction.errors %}
+  <div class="ok-help-text" role="alert" style="margin:0 0 0.75rem; color:#c7402e;">
+    {% for message in correction.errors %}<div>{{ message }}</div>{% endfor %}
+  </div>
+{% endif %}
