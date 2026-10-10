@@ -26,6 +26,7 @@ export function LessonProgressChecklist({
     <div className="space-y-2 text-sm">
       <ChecklistLine ok text="Занятие начато" />
       <ChecklistLine ok={lesson.attendance_completed} text={lesson.attendance_completed ? 'Посещаемость отмечена' : 'Посещаемость не отмечена'} />
+      {lesson.homework_expected ? (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ChecklistLine
           ok={homeworkDone}
@@ -42,6 +43,7 @@ export function LessonProgressChecklist({
           </Button>
         ) : null}
       </div>
+      ) : null}
       <ChecklistLine ok={lesson.can_complete} text={lesson.can_complete ? 'Готово к завершению' : 'Ещё не готово к завершению'} />
     </div>
   )

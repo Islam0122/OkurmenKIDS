@@ -68,7 +68,9 @@ export function CompletedLessonKpis({ lesson }: { lesson: Lesson }) {
           value={attendance.attendance_rate !== null ? `${attendance.attendance_rate}%` : '—'}
           icon={Percent}
         />
-        <StatCard label="Домашнее задание" value={homeworkValue} hint={homeworkHint} icon={BookOpen} />
+        {lesson.homework_expected || homework ? (
+          <StatCard label="Домашнее задание" value={homeworkValue} hint={homeworkHint} icon={BookOpen} />
+        ) : null}
       </StatGrid>
     </div>
   )

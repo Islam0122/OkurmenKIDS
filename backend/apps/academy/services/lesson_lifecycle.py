@@ -54,22 +54,40 @@ def homework_satisfied(lesson: Lesson) -> bool:
     return lesson.homework_not_required or homework_added(lesson)
 
 
+def homework_expected(lesson: Lesson) -> bool:
+    """Whether this lesson has homework at all: a real Homework row, or a
+    lesson plan (the program's own plan row, else the course plan row) that
+    declares one — the same `homework_title` the lesson generator creates
+    the lesson's Homework from. A lesson whose plan declares no homework and
+    that has none simply has no homework step: no checklist line, no
+    «ДЗ не требуется», and it doesn't hold up completion."""
+    if homework_added(lesson):
+        return True
+    plan = lesson.individual_plan if lesson.individual_plan_id else lesson.plan if lesson.plan_id else None
+    return bool(plan and plan.homework_title)
+
+
 def completion_requirements(lesson: Lesson) -> list[CompletionRequirement]:
     """The checklist a Trainer sees before completing a lesson — attendance
-    marked for every active student, plus either a real Homework row or an
+    marked for every active student, plus (only for a lesson that has
+    homework — see `homework_expected`) either a real Homework row or an
     explicit "homework not required" flag."""
-    return [
+    requirements = [
         CompletionRequirement(
             key="attendance",
             label="Посещаемость отмечена",
             satisfied=attendance_completed(lesson),
         ),
-        CompletionRequirement(
-            key="homework",
-            label="Добавлено домашнее задание или отмечено «ДЗ не требуется»",
-            satisfied=homework_satisfied(lesson),
-        ),
     ]
+    if homework_expected(lesson):
+        requirements.append(
+            CompletionRequirement(
+                key="homework",
+                label="Добавлено домашнее задание или отмечено «ДЗ не требуется»",
+                satisfied=homework_satisfied(lesson),
+            )
+        )
+    return requirements
 
 
 def completion_progress(lesson: Lesson) -> dict:

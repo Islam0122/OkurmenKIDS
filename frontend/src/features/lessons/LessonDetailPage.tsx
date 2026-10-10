@@ -155,7 +155,7 @@ export function LessonDetailPage() {
           <CompletedLessonNotice lesson={lesson} />
           <CompletedLessonKpis lesson={lesson} />
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className={lesson.homework_expected || homework ? 'grid grid-cols-1 gap-4 lg:grid-cols-2' : 'grid grid-cols-1 gap-4'}>
             <div className="space-y-4">
               <AboutLessonCard lesson={lesson} />
               <MaterialsCard lesson={lesson} />
@@ -163,7 +163,7 @@ export function LessonDetailPage() {
 
             {homework ? (
               <HomeworkSummaryCard homework={homework} summary={lesson.homework_summary} onView={goToHomework} />
-            ) : (
+            ) : !lesson.homework_expected ? null : (
               <div className="card card-body">
                 <p className="mb-1 text-sm font-medium text-ink-secondary">Домашнее задание</p>
                 <p className="text-sm text-ink-secondary">
