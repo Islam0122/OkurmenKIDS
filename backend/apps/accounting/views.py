@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -18,8 +18,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.academy.models import Course, Group, Student
-from apps.users.models import Subject, User
+from apps.academy.models import Course, Group, GroupTeacher, Student
+from apps.users.models import Subject, Teacher, User
 
 from . import serializers as s
 from .filters import filter_payrolls
@@ -171,6 +171,12 @@ class OptionsView(APIView):
             },
             "student_count_rules": [
                 {"value": v, "label": l} for v, l in CoursePayrollSettings.StudentCountRule.choices
+            ],
+            "trainer_split_rules": [
+                {"value": v, "label": l} for v, l in CoursePayrollSettings.TrainerSplitRule.choices
+            ],
+            "trainers": [
+                {"id": t.pk, "name": str(t)} for t in Teacher.objects.select_related("user").order_by("user__last_name")
             ],
             "payment_methods": [{"value": v, "label": l} for v, l in PayrollPayment.Method.choices],
             "student_payment_methods": [{"value": v, "label": l} for v, l in StudentPayment.Method.choices],
@@ -458,11 +464,22 @@ class CourseCycleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
     pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.CourseCycleSerializer
-    filterset_fields = ("status", "course", "group")
+    filterset_fields = ("status", "course", "group", "subject", "per_subject")
 
     def get_queryset(self):
-        qs = CourseCycle.objects.select_related("group", "course").order_by("status", "-completed_on", "group__name")
+        qs = CourseCycle.objects.select_related("group", "course", "subject").prefetch_related("accruals").order_by(
+            "group__name", "group_id", "per_subject", "subject__name", "-number",
+        )
         q = self.request.query_params
+        if q.get("search"):
+            qs = qs.filter(group__name__icontains=q["search"].strip())
+        if q.get("trainer"):
+            trainer = _int(q["trainer"], "trainer")
+            teaches_now = GroupTeacher.objects.filter(
+                group_id=OuterRef("group_id"), subject_id=OuterRef("subject_id"), teacher_id=trainer, is_active=True,
+            )
+            qs = qs.filter(Q(teacher_lessons__has_key=str(trainer))
+                           | Q(Exists(teaches_now), status=CourseCycle.Status.IN_PROGRESS))
         if q.get("completed_from"):
             qs = qs.filter(completed_on__gte=q["completed_from"])
         if q.get("completed_to"):
@@ -562,7 +579,8 @@ class EstimateListView(APIView):
         q = request.query_params
         cycles.sync_all()
         rows = estimates.all_open(group=_int(q.get("group"), "group"), course=_int(q.get("course"), "course"),
-                                  employee=_int(q.get("employee"), "employee"))
+                                  employee=_int(q.get("employee"), "employee"),
+                                  subject=_int(q.get("subject"), "subject"))
         return _paginate_list(request, rows, self)
 
 

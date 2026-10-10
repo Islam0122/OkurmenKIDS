@@ -277,10 +277,12 @@ class PercentCycleTests(AccountingFixture):
         self.leave(self.students[0], day(9, 10))
         self.assertEqual(self.calc(FIRST).lines.get().quantity, D("10"))
 
-    def test_trainer_on_completion_date_gets_the_cycle(self):
+    def test_trainer_is_paid_for_lessons_actually_taught(self):
+        # Назначение закончилось 10.09, но все 12 уроков цикла провёл он —
+        # оплата по фактическим урокам, а не по назначению на дату порога.
         TrainerAssignment.objects.filter(group=self.group_a).update(end_date=day(9, 10))
         self.lessons(self.group_a, days(9, 1, 12))
-        self.assertEqual(self.calc(FIRST).total_accrued, D("0"))
+        self.assertEqual(self.calc(FIRST).total_accrued, D("10000.00"))
 
     def test_cycle_marked_late_in_an_approved_period_is_not_lost(self):
         approve_payroll(self.calc(FIRST), self.director)  # циклов ещё нет

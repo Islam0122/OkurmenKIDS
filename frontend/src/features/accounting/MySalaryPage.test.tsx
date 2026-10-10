@@ -90,7 +90,8 @@ describe('MySalaryPage', () => {
 
   it('shows the preliminary salary of blocks in progress separately from accruals', async () => {
     const block = (done: number, total: number, group: string): MyEstimate => ({
-      cycle_id: total, cycle_number: 1, group_name: group, course_name: 'Prog SOFT', subjects: ['Python'], student_count: 10,
+      cycle_id: total, cycle_number: 1, group_name: group, course_name: 'Prog SOFT', subjects: ['Python'], subject_name: 'IT',
+      share_label: `${total} из ${total} уроков`, student_count: 10,
       price_per_student: '10000.00', percentage: '10.00', expected_amount: '10000.00', lessons_done: done,
       required_lessons: total, lessons_remaining: total - done, projected_completion_date: '2026-10-19',
       expected_payment_date: '2026-11-01', status: 'BLOCK_IN_PROGRESS', status_display: 'Блок в процессе', warnings: [],

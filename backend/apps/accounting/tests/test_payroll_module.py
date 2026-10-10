@@ -159,7 +159,12 @@ class EstimateTests(PercentFixture):
             Lesson.objects.create(group=self.group_a, group_teacher=program, teacher=other, subject=self.python,
                                   lesson_number=99, date=day(10, 5), start_time=dt.time(10), end_time=dt.time(11),
                                   status=Lesson.Status.COMPLETED)
-        self.assertIn("разные тренеры", self.my_estimates()[0]["warnings"][0])
+        # Замена — не предупреждение: оценка основного тренера считает его
+        # 4 урока + 7 оставшихся (он ведёт предмет) = 11 из 12.
+        [row] = self.my_estimates()
+        self.assertEqual(row["warnings"], [])
+        self.assertEqual((row["share_label"], row["expected_amount"]), ("11 из 12 уроков", D("9166.67")))
+        self.assertEqual(sorted(t["lessons"] for t in row["trainers"]), [1, 4])
 
     def test_employee_sees_only_own_estimates(self):
         other = make_user("other")
@@ -248,9 +253,11 @@ class BlockTests(PercentFixture):
         self.assertFalse(CourseCycle.objects.filter(status="COMPLETED").exists())
         self.assertEqual(CourseCycle.objects.get(group=self.group_a).lessons_done, 11)
 
-    def test_trainer_change_inside_block_requires_review(self):
+    def substitute_block(self):
+        """6 уроков основного тренера и 6 — замены, у которой тоже «Процент»."""
         substitute_user = make_user("substitute")
         substitute = Teacher.objects.create(user=substitute_user)
+        self.rule(self.profile(substitute_user, salary_type=SalaryType.PERCENT), R.PERCENT, percentage=D("20"))
         program = GroupTeacher.objects.get(group=self.group_a)
         self.add_lessons(days(9, 1, 6))
         with self.captureOnCommitCallbacks(execute=True):
@@ -258,22 +265,35 @@ class BlockTests(PercentFixture):
                 Lesson.objects.create(group=self.group_a, group_teacher=program, teacher=substitute,
                                       subject=self.python, lesson_number=300 + i, date=d, start_time=dt.time(10),
                                       end_time=dt.time(11), status=Lesson.Status.COMPLETED)
-        accrual = CycleAccrual.objects.get()
-        self.assertEqual(accrual.status, CycleAccrual.Status.REVIEW_REQUIRED)
-        self.assertIn("Смена тренера", accrual.review_reasons[0])
+        return substitute_user
+
+    def test_trainer_change_inside_block_splits_by_lessons(self):
+        substitute_user = self.substitute_block()
+        main = CycleAccrual.objects.get(employee=self.trainer_user)
+        sub = CycleAccrual.objects.get(employee=substitute_user)
+        # Не проверка, а доли: 10 × 10 000 × 10 % × 6/12 и × 20 % × 6/12.
+        self.assertEqual((main.status, main.lessons_taught, main.share, main.amount),
+                         (CycleAccrual.Status.ACCRUED, 6, D("0.5"), D("5000.00")))
+        self.assertEqual((sub.status, sub.lessons_taught, sub.amount), (CycleAccrual.Status.ACCRUED, 6, D("10000.00")))
         payroll = self.calc(FIRST)
-        self.assertEqual(payroll.total_accrued, D("0"))
+        self.assertEqual((payroll.total_accrued, payroll.errors), (D("5000.00"), []))
+        self.assertIn("6/12", payroll.lines.get().description)
+
+    def test_review_split_rule_asks_the_accountant(self):
+        self.settings.trainer_split_rule = "REVIEW"
+        self.settings.save()
+        self.substitute_block()
+        accrual = CycleAccrual.objects.get(employee=self.trainer_user)
+        self.assertEqual(accrual.status, CycleAccrual.Status.REVIEW_REQUIRED)
+        self.assertIn("несколько тренеров", accrual.review_reasons[0])
+        payroll = self.calc(FIRST)
         self.assertTrue(any("требует проверки" in e for e in payroll.errors))
         with self.assertRaises(AccountingError):
-            approve_payroll(payroll, self.director)
-        # Решение бухгалтера с основанием — начисление входит в расчёт.
-        with self.assertRaises(AccountingError):
             review_accrual(accrual, confirm=True, reason="", actor=self.accountant)
-        review_accrual(accrual, confirm=True, reason="Замена на 6 уроков согласована, оплата основному тренеру",
-                       actor=self.accountant)
+        review_accrual(accrual, confirm=True, reason="Доли по урокам согласованы", actor=self.accountant)
         payroll = self.calc(FIRST)
-        self.assertEqual((payroll.total_accrued, payroll.errors), (D("10000.00"), []))
-        self.assertTrue(PayrollAuditLog.objects.filter(action="review_confirm", reason__startswith="Замена").exists())
+        self.assertEqual((payroll.total_accrued, payroll.errors), (D("5000.00"), []))
+        self.assertTrue(PayrollAuditLog.objects.filter(action="review_confirm").exists())
 
     def test_review_cancel_keeps_history_and_api_rights(self):
         self.add_lessons(days(9, 1, 24))  # второй блок 24.09 — тот же месяц

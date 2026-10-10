@@ -231,7 +231,8 @@ def teacher_report(year: int, month: int, filters: dict | None = None) -> dict:
             lines.append({
                 "line_id": line.pk, "line_type": line.line_type, "line_type_display": line.get_line_type_display(),
                 "description": line.description, "group": meta.get("group_id"), "group_name": meta.get("group", ""),
-                "course_name": meta.get("course", ""),
+                "course_name": meta.get("course", ""), "subject_name": meta.get("subject", ""),
+                "lessons_taught": meta.get("lessons_taught"),
                 "students": meta.get("students_count") if is_cycle else None,
                 "price_per_student": line.rate if is_cycle else None,
                 "percentage": line.percentage if is_cycle else None,

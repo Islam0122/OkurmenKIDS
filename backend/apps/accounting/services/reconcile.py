@@ -61,7 +61,8 @@ def run() -> dict:
 
     accrual_mismatch = []
     for a in CycleAccrual.objects.select_related("payroll", "cycle"):
-        amount = money(a.course_price * a.student_count * a.percentage / Decimal(100))
+        numerator = a.lessons_taught if a.lessons_taught is not None else a.lessons
+        amount = money(a.course_price * a.student_count * a.percentage * numerator / (Decimal(100) * a.lessons))
         if amount != a.amount:
             accrual_mismatch.append({"accrual_id": a.pk, "stored": str(a.amount), "formula": str(amount)})
         if a.status == CycleAccrual.Status.APPROVED and (a.payroll is None or not a.payroll.is_locked):

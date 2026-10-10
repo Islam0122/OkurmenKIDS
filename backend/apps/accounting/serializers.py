@@ -416,6 +416,7 @@ class CoursePayrollSettingsSerializer(serializers.ModelSerializer):
     student_count_rule_display = serializers.CharField(source="get_student_count_rule_display", read_only=True)
     counted_subjects = serializers.PrimaryKeyRelatedField(queryset=Subject.objects.all(), many=True, required=False)
     counted_subjects_names = serializers.SerializerMethodField()
+    trainer_split_rule_display = serializers.CharField(source="get_trainer_split_rule_display", read_only=True)
     current_price = serializers.SerializerMethodField()
     price_effective_from = serializers.DateField(write_only=True, required=False)
     price_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -425,7 +426,8 @@ class CoursePayrollSettingsSerializer(serializers.ModelSerializer):
         fields = (
             "id", "course", "course_name", "course_count_lesson", "price_per_student", "current_price",
             "price_effective_from", "price_reason", "required_lessons", "count_lessons_from", "student_count_rule",
-            "student_count_rule_display", "counted_subjects", "counted_subjects_names", "is_active", "updated_at",
+            "student_count_rule_display", "counted_subjects", "counted_subjects_names", "trainer_split_rule",
+            "trainer_split_rule_display", "is_active", "updated_at",
         )
         read_only_fields = ("updated_at",)
 
@@ -481,20 +483,24 @@ class CycleAccrualSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source="cycle.group.name", read_only=True)
     course_name = serializers.CharField(source="cycle.course.name", read_only=True)
     cycle_number = serializers.IntegerField(source="cycle.number", read_only=True)
+    subject_name = serializers.SerializerMethodField()
     planned_payment_date = serializers.DateField(read_only=True)
     reviewed_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CycleAccrual
         fields = (
-            "id", "cycle", "cycle_number", "group", "group_name", "course_name", "employee", "employee_name",
-            "status", "status_display", "lessons", "lessons_total", "completed_on", "student_count", "course_price",
+            "id", "cycle", "cycle_number", "group", "group_name", "course_name", "subject_name", "employee",
+            "employee_name", "status", "status_display", "lessons", "lessons_taught", "share", "lessons_total", "completed_on", "student_count", "course_price",
             "percentage", "amount", "planned_payment_date", "payroll", "review_reasons", "note", "reviewed_by_name",
             "reviewed_at", "created_at",
         )
 
     def get_employee_name(self, obj) -> str:
         return _name(obj.employee)
+
+    def get_subject_name(self, obj) -> str:
+        return obj.cycle.subject.name if obj.cycle.subject_id else ""
 
     def get_reviewed_by_name(self, obj) -> str:
         return _name(obj.reviewed_by)
@@ -506,38 +512,99 @@ class CycleAccrualReviewSerializer(serializers.Serializer):
 
 
 class CourseCycleSerializer(serializers.ModelSerializer):
-    """Цикл курса — только агрегаты: число студентов, без списка студентов."""
+    """Цикл предмета группы — только агрегаты: число студентов, без списка
+    студентов; тренеры — по фактически проведённым урокам цикла."""
 
     group_name = serializers.CharField(source="group.name", read_only=True)
     course_name = serializers.CharField(source="course.name", read_only=True)
+    subject_name = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     base_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    lessons_remaining = serializers.SerializerMethodField()
+    progress_percent = serializers.SerializerMethodField()
+    subject_plan_lessons = serializers.SerializerMethodField()
     trainers = serializers.SerializerMethodField()
+    trainer_lessons = serializers.SerializerMethodField()
     accruals = serializers.SerializerMethodField()
+    warnings = serializers.SerializerMethodField()
     lessons_linked = serializers.SerializerMethodField()
 
     class Meta:
         model = CourseCycle
         fields = (
-            "id", "group", "group_name", "course", "course_name", "number", "status", "status_display",
-            "required_lessons", "lessons_done", "lessons_total", "start_date", "completed_on", "student_count",
-            "course_price", "base_amount", "trainers", "accruals", "invalidated_reason", "lessons_linked",
+            "id", "group", "group_name", "course", "course_name", "subject", "subject_name", "per_subject",
+            "number", "status", "status_display", "required_lessons", "lessons_done", "lessons_remaining",
+            "progress_percent", "lessons_total", "subject_plan_lessons", "start_date", "completed_on",
+            "student_count", "course_price", "base_amount", "trainers", "trainer_lessons", "accruals", "warnings",
+            "invalidated_reason", "lessons_linked",
         )
+
+    def get_subject_name(self, obj) -> str:
+        if not obj.per_subject:
+            return "Все предметы (до предметного учёта)"
+        return obj.subject.name if obj.subject_id else "Без предмета"
+
+    def get_lessons_remaining(self, obj) -> int:
+        return max(obj.required_lessons - obj.lessons_done, 0)
+
+    def get_progress_percent(self, obj) -> int:
+        return min(100, round(obj.lessons_done * 100 / obj.required_lessons)) if obj.required_lessons else 0
+
+    def get_subject_plan_lessons(self, obj) -> int | None:
+        """Уроков предмета в учебном плане курса (например, IT — 48 из 144)."""
+        if not obj.subject_id:
+            return None
+        from apps.academy.models import CourseLessonPlan
+
+        cache = self.context.setdefault("_plan_counts", {})
+        key = (obj.course_id, obj.subject_id)
+        if key not in cache:
+            cache[key] = CourseLessonPlan.objects.filter(course_id=obj.course_id, subject_id=obj.subject_id).count()
+        return cache[key] or None
+
+    def _names(self, obj) -> dict[int, str]:
+        from .services.cycles import teacher_names
+
+        return teacher_names(int(k) for k in obj.teacher_lessons)
+
+    def get_trainer_lessons(self, obj) -> list:
+        names = self._names(obj)
+        return [{"teacher": int(k), "name": names.get(int(k), "—"), "lessons": v}
+                for k, v in sorted(obj.teacher_lessons.items(), key=lambda kv: -kv[1])]
+
+    def get_trainers(self, obj) -> list:
+        if not obj.per_subject:
+            from datetime import date
+
+            from .services.cycles import responsible_teacher_names
+
+            return responsible_teacher_names(obj.group_id, obj.completed_on or date.today())
+        if obj.teacher_lessons:
+            return [t["name"] for t in self.get_trainer_lessons(obj)]
+        from .services.cycles import current_subject_teacher_ids, teacher_names
+
+        return sorted(teacher_names(current_subject_teacher_ids(obj.group_id, obj.subject_id)).values())
+
+    def get_warnings(self, obj) -> list[str]:
+        """Уроки тренеров без правила «Процент» в завершённом цикле — их доля
+        не начислена (и не перераспределена другим)."""
+        if obj.status != CourseCycle.Status.COMPLETED or not obj.per_subject:
+            return []
+        paid = {a.employee_id for a in obj.accruals.all()}
+        from apps.users.models import Teacher
+
+        teachers = Teacher.objects.filter(pk__in=[int(k) for k in obj.teacher_lessons]).select_related("user")
+        return [f"{t}: {obj.teacher_lessons[str(t.pk)]} ур. без правила «Процент» — доля не начислена."
+                for t in teachers if t.user_id not in paid]
 
     def get_lessons_linked(self, obj) -> int:
         return obj.cycle_lessons.filter(is_live=True).count()
 
-    def get_trainers(self, obj) -> list:
-        from datetime import date
-
-        from .services.cycles import responsible_teacher_names
-
-        return responsible_teacher_names(obj.group_id, obj.completed_on or date.today())
-
     def get_accruals(self, obj) -> list:
         return [
             {"id": a.pk, "employee": a.employee_id, "employee_name": _name(a.employee),
-             "percentage": str(a.percentage), "amount": str(a.amount), "status": a.status,
+             "percentage": str(a.percentage), "amount": str(a.amount), "lessons_taught": a.lessons_taught,
+             "share": str(a.share), "status": a.status,
              "status_display": a.get_status_display(), "note": a.note, "payroll": a.payroll_id,
              "payroll_status": a.payroll.status if a.payroll else None,
              "payroll_status_display": a.payroll.get_status_display() if a.payroll else None,

@@ -39,6 +39,8 @@ export interface AccountingOptions extends Capabilities {
   payroll_statuses: Choice[]
   departments: Choice[]
   subjects: { id: number; name: string }[]
+  trainer_split_rules: Choice[]
+  trainers: { id: number; name: string }[]
 }
 
 export interface PayrollPeriod {
@@ -316,6 +318,8 @@ export interface CourseSettings {
   current_price: string | null
   counted_subjects: number[]
   counted_subjects_names: string[]
+  trainer_split_rule: 'BY_LESSONS' | 'REVIEW'
+  trainer_split_rule_display: string
   required_lessons: number
   /** Необязательно: пусто — учёт с первого проведённого урока. */
   count_lessons_from: string | null
@@ -325,19 +329,49 @@ export interface CourseSettings {
   updated_at: string
 }
 
+export interface CycleAccrualRef {
+  id: number
+  employee: number
+  employee_name: string
+  percentage: string
+  amount: string
+  /** Уроков цикла, проведённых сотрудником; null — весь цикл (до предметного учёта или привязка к группе). */
+  lessons_taught: number | null
+  share: string
+  status: CycleAccrualStatus
+  status_display: string
+  note: string
+  payroll: number | null
+  payroll_status: PayrollStatus | null
+  payroll_status_display: string | null
+  period_label: string | null
+  adjustment: number | null
+  review_reasons: string[]
+  planned_payment_date: string
+}
+
+/** Цикл ПРЕДМЕТА группы: у IT, English, Soft Skills свои циклы и прогресс. */
 export interface CourseCycle {
   id: number
   group: number
   group_name: string
   course: number
   course_name: string
+  subject: number | null
+  subject_name: string
+  /** false — исторический общий цикл группы (до предметного учёта). */
+  per_subject: boolean
   number: number
   status: 'IN_PROGRESS' | 'COMPLETED' | 'INVALIDATED'
   status_display: string
   required_lessons: number
   lessons_done: number
-  /** Порог: накопленные проведённые уроки группы (12, 24, 36…). */
+  lessons_remaining: number
+  progress_percent: number
+  /** Порог: накопленные проведённые уроки предмета (12, 24, 36…). */
   lessons_total: number
+  /** Уроков предмета в учебном плане курса (например, 48). */
+  subject_plan_lessons: number | null
   invalidated_reason: string
   start_date: string | null
   completed_on: string | null
@@ -345,24 +379,10 @@ export interface CourseCycle {
   course_price: string | null
   base_amount: string | null
   trainers: string[]
+  trainer_lessons: { teacher: number; name: string; lessons: number }[]
+  warnings: string[]
   lessons_linked: number
-  accruals: {
-    id: number
-    employee: number
-    employee_name: string
-    percentage: string
-    amount: string
-    status: CycleAccrualStatus
-    status_display: string
-    note: string
-    review_reasons: string[]
-    planned_payment_date: string
-    payroll: number | null
-    payroll_status: PayrollStatus | null
-    payroll_status_display: string | null
-    period_label: string | null
-    adjustment: number | null
-  }[]
+  accruals: CycleAccrualRef[]
 }
 
 /** «Моя зарплата» — /accounting/my/salary/ (только свои данные, только чтение). */
@@ -418,6 +438,9 @@ export interface MyEstimate {
   group_name: string
   course_name: string
   subjects: string[]
+  subject_name: string
+  /** «11 из 12 уроков» — ожидаемая доля тренера в блоке предмета. */
+  share_label: string
   student_count: number
   price_per_student: string
   percentage: string
@@ -435,6 +458,9 @@ export interface MyEstimate {
 
 /** Оценка блока в бухгалтерии: те же параметры + сотрудник. */
 export interface BlockEstimate extends Omit<MyEstimate, 'percentage' | 'expected_amount'> {
+  subject: number | null
+  trainers: { name: string; lessons: number }[]
+  expected_lessons: number | null
   employee: number | null
   employee_name: string
   group: number
@@ -469,11 +495,14 @@ export interface CycleAccrual {
   group: number
   group_name: string
   course_name: string
+  subject_name: string
   employee: number
   employee_name: string
   status: CycleAccrualStatus
   status_display: string
   lessons: number
+  lessons_taught: number | null
+  share: string
   lessons_total: number
   completed_on: string
   student_count: number
@@ -550,6 +579,9 @@ export interface TeacherReportLine {
   group: number | null
   group_name: string
   course_name: string
+  subject_name: string
+  /** Уроков блока, проведённых сотрудником (доля); null — весь блок. */
+  lessons_taught: number | null
   students: number | null
   price_per_student: string | null
   percentage: string | null

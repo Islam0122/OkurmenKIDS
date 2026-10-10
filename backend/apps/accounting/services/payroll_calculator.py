@@ -188,7 +188,7 @@ def _percent(profile, period, payroll_id, out: Computation, window_rules: list[S
         ensure_accruals(cycle)
     accruals = CycleAccrual.objects.filter(
         employee=profile.employee, status=CycleAccrual.Status.ACCRUED,
-    ).filter(Q(payroll__isnull=True) | Q(payroll_id=payroll_id)).select_related("cycle__group", "cycle__course")
+    ).filter(Q(payroll__isnull=True) | Q(payroll_id=payroll_id)).select_related("cycle__group", "cycle__course", "cycle__subject")
     for accrual in accruals.order_by("completed_on", "id"):
         late = False
         if not (lo <= accrual.completed_on <= hi):
@@ -209,18 +209,23 @@ def _percent(profile, period, payroll_id, out: Computation, window_rules: list[S
             continue
         cycle = accrual.cycle
         note = " — порог достигнут в уже утверждённом периоде" if late else ""
+        subject = cycle.subject.name if cycle.subject_id else ""
+        part = (f" × {accrual.lessons_taught}/{accrual.lessons} ур. (доля)"
+                if accrual.lessons_taught is not None and accrual.lessons_taught != accrual.lessons else "")
         out.lines.append(LineDraft(
             LineType.PERCENT,
-            f"Цикл {cycle.number} ({accrual.lessons_total} ур.) курса «{cycle.course.name}», группа «{cycle.group.name}»: "
-            f"{accrual.student_count} студ. × {plain(accrual.course_price)} сом × {plain(accrual.percentage)}% "
-            f"(порог {_fmt(accrual.completed_on)}){note}",
+            f"{subject + ', ' if subject else ''}цикл {cycle.number} ({accrual.lessons_total} ур.), "
+            f"группа «{cycle.group.name}»: {accrual.student_count} студ. × {plain(accrual.course_price)} сом × "
+            f"{plain(accrual.percentage)}%{part} (порог {_fmt(accrual.completed_on)}){note}",
             accrual.amount, accrual.salary_rule, source_type="course_cycle", source_id=cycle.pk,
             quantity=Decimal(accrual.student_count), rate=accrual.course_price, percentage=accrual.percentage,
             base_amount=money(accrual.course_price * accrual.student_count), accrual=accrual,
             metadata={
                 "cycle_id": cycle.pk, "cycle_number": cycle.number, "accrual_id": accrual.pk,
                 "group_id": cycle.group_id, "group": cycle.group.name, "course_id": cycle.course_id,
-                "course": cycle.course.name, "lessons": accrual.lessons, "lessons_total": accrual.lessons_total,
+                "course": cycle.course.name, "subject_id": cycle.subject_id, "subject": subject,
+                "lessons": accrual.lessons, "lessons_taught": accrual.lessons_taught, "share": str(accrual.share),
+                "lessons_total": accrual.lessons_total,
                 "completed_on": accrual.completed_on.isoformat(), "students_count": accrual.student_count,
                 "course_price": str(accrual.course_price), "late": late,
                 "planned_payment_date": accrual.planned_payment_date.isoformat(),

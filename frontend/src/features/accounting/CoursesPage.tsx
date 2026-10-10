@@ -11,39 +11,20 @@ import { Input } from '@/components/ui/Input'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Modal } from '@/components/ui/Modal'
 import { Select } from '@/components/ui/Select'
-import { Tabs } from '@/components/ui/Tabs'
-import { useAccountingMutation, useAccountingOptions, useCourseCycles, useCourseSettings } from '@/hooks/useAccounting'
+import { useAccountingMutation, useAccountingOptions, useCourseSettings } from '@/hooks/useAccounting'
 import { Field } from '@/features/worklog/formUi'
-import type { AccountingOptions, CourseCycle, CourseSettings } from '@/types/accounting'
+import type { AccountingOptions, CourseSettings } from '@/types/accounting'
 
 import { BlockReviewSection } from './BlockReviewSection'
-import { Section, formatDate, som, useRunner } from './shared'
+import { SubjectCyclesSection } from './SubjectCyclesSection'
+import { formatDate, som, useRunner } from './shared'
 
-type CycleTab = 'IN_PROGRESS' | 'COMPLETED' | 'INVALIDATED'
-
-const EMPTY: Record<CycleTab, string> = {
-  IN_PROGRESS: 'Незавершённых циклов нет',
-  COMPLETED: 'Завершённых циклов нет',
-  INVALIDATED: 'Отменённых циклов нет',
-}
-
-const ACCRUAL_TONE = {
-  ACCRUED: 'info',
-  APPROVED: 'success',
-  CANCELLED: 'muted',
-  CORRECTED: 'warning',
-  CORRECTION_REQUIRED: 'danger',
-  REVIEW_REQUIRED: 'warning',
-} as const
-
-/** Интервал начисления курса и циклы групп. Уроки учитываются автоматически;
- * на каждом пороге тренеру сразу создаётся начисление. Незавершённые циклы —
- * отдельно: процент за них ещё не начисляется. */
+/** Интервал начисления курса и циклы по предметам групп. Уроки каждого
+ * предмета учитываются автоматически; на каждом пороге предмета тренерам,
+ * которые вели его уроки, сразу создаются начисления. */
 export function CoursesPage() {
   const options = useAccountingOptions()
   const settings = useCourseSettings()
-  const [tab, setTab] = useState<CycleTab>('IN_PROGRESS')
-  const cycles = useCourseCycles({ status: tab })
   const [editing, setEditing] = useState<CourseSettings | 'new' | null>(null)
   const canEdit = options.data?.can_operate ?? false
 
@@ -51,7 +32,7 @@ export function CoursesPage() {
     <div>
       <PageHeader
         title="Курсы и блоки"
-        description="Проведённые уроки групп учитываются автоматически. На каждом пороге (12, 24, 36… — интервал курса) тренеру сразу начисляется: студенты × стоимость курса × процент / 100. Новый интервал действует на следующие циклы."
+        description="Проведённые уроки учитываются автоматически и отдельно по каждому предмету группы (IT, English, Soft Skills…). На каждом пороге предмета (12, 24, 36… — интервал курса) тренерам этого предмета начисляется: студенты × стоимость курса × процент / 100 × доля проведённых уроков."
         actions={canEdit ? <Button leftIcon={<Plus className="size-4" />} onClick={() => setEditing('new')}>Настроить курс</Button> : null}
       />
 
@@ -62,7 +43,7 @@ export function CoursesPage() {
           <div className="card overflow-x-auto">
             <table className="data-table">
               <thead>
-                <tr><th>Курс</th><th className="text-right">Стоимость за студента</th><th className="text-right">Интервал, уроков</th><th>Учёт уроков</th><th>Предметы</th><th>Студенты</th><th /></tr>
+                <tr><th>Курс</th><th className="text-right">Стоимость за студента</th><th className="text-right">Интервал, уроков</th><th>Учёт уроков</th><th>Предметы</th><th>Студенты</th><th>Несколько тренеров</th><th /></tr>
               </thead>
               <tbody>
                 {settings.data?.results.map((c) => (
@@ -71,8 +52,9 @@ export function CoursesPage() {
                     <td className="text-right">{som(c.current_price ?? c.price_per_student)}</td>
                     <td className="text-right">{c.required_lessons}</td>
                     <td>{c.count_lessons_from ? `с ${formatDate(c.count_lessons_from)}` : 'с первого урока'}</td>
-                    <td className="text-xs">{c.counted_subjects_names.length ? c.counted_subjects_names.join(', ') : 'все уроки'}</td>
+                    <td className="text-xs">{c.counted_subjects_names.length ? c.counted_subjects_names.join(', ') : 'все предметы'}</td>
                     <td className="text-xs">{c.student_count_rule_display}</td>
+                    <td className="text-xs">{c.trainer_split_rule_display}</td>
                     <td className="text-right">
                       {canEdit ? <Button size="sm" variant="ghost" leftIcon={<Pencil className="size-3.5" />} onClick={() => setEditing(c)}>Изменить</Button> : null}
                     </td>
@@ -85,85 +67,12 @@ export function CoursesPage() {
 
       <BlockReviewSection canOperate={canEdit} />
 
-      <Section title="Циклы групп">
-        <Tabs
-          aria-label="Циклы"
-          items={[
-            { key: 'IN_PROGRESS', label: 'Незавершённые' },
-            { key: 'COMPLETED', label: 'Завершённые' },
-            { key: 'INVALIDATED', label: 'Отменённые' },
-          ] as const}
-          value={tab}
-          onChange={setTab}
-        />
-        <div className="mt-4">
-          {cycles.isLoading ? <LoadingState /> : cycles.isError ? <ErrorState onRetry={() => cycles.refetch()} /> :
-            cycles.data?.results.length === 0 ? <EmptyState title={EMPTY[tab]} /> :
-              <CyclesTable rows={cycles.data!.results} completed={tab !== 'IN_PROGRESS'} />}
-        </div>
-      </Section>
+      <SubjectCyclesSection options={options.data} />
 
       {editing && options.data ? (
         <SettingsModal options={options.data} current={editing === 'new' ? null : editing}
           taken={(settings.data?.results ?? []).map((c) => c.course)} onClose={() => setEditing(null)} />
       ) : null}
-    </div>
-  )
-}
-
-function CyclesTable({ rows, completed }: { rows: CourseCycle[]; completed: boolean }) {
-  return (
-    <div className="card overflow-x-auto">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Группа</th><th>Курс</th><th>Цикл</th><th>Уроки</th><th>Тренер</th>
-            {completed
-              ? <><th>Порог достигнут</th><th className="text-right">Студенты</th><th className="text-right">База</th><th>Начисление</th></>
-              : <th>Начат</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((c) => (
-            <tr key={c.id}>
-              <td className="font-medium text-ink">{c.group_name}</td>
-              <td>{c.course_name}</td>
-              <td>№{c.number}</td>
-              <td>
-                {completed ? (
-                  <span>{c.lessons_total}<span className="block text-xs text-ink-muted">по {c.required_lessons} в цикле</span></span>
-                ) : (
-                  <span>{c.lessons_done} / {c.required_lessons} <span className="text-xs text-ink-muted">(всего {c.lessons_total})</span>
-                    <span className="mt-1 block h-1.5 w-24 overflow-hidden rounded-full bg-surface-hover">
-                      <span className="block h-full bg-brand-500" style={{ width: `${Math.min(100, (c.lessons_done / c.required_lessons) * 100)}%` }} />
-                    </span>
-                  </span>
-                )}
-              </td>
-              <td className="text-sm">{c.trainers.join(', ') || '—'}</td>
-              {completed ? (
-                <>
-                  <td>{formatDate(c.completed_on)}</td>
-                  <td className="text-right">{c.student_count}</td>
-                  <td className="text-right whitespace-nowrap">{c.student_count} × {som(c.course_price)} = {som(c.base_amount)}</td>
-                  <td className="text-sm">
-                    {c.invalidated_reason ? <p className="mb-1 text-xs text-warning">{c.invalidated_reason}</p> : null}
-                    {c.accruals.length === 0 ? <Badge tone="warning">нет тренера с процентом</Badge> : c.accruals.map((a) => (
-                      <div key={a.id} className="mb-1">
-                        <p>{a.employee_name}: {som(a.amount)} ({Number(a.percentage)}%)</p>
-                        <p className="flex flex-wrap items-center gap-1 text-xs text-ink-muted">
-                          <Badge tone={ACCRUAL_TONE[a.status]}>{a.status_display}</Badge>
-                          {a.period_label ? <span>{a.period_label}, {a.payroll_status_display}</span> : <span>ещё не в расчёте</span>}
-                        </p>
-                      </div>
-                    ))}
-                  </td>
-                </>
-              ) : <td>{formatDate(c.start_date)}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }
@@ -181,6 +90,7 @@ function SettingsModal({ options, current, taken, onClose }: {
     count_lessons_from: current?.count_lessons_from ?? '',
     student_count_rule: current?.student_count_rule ?? 'ON_COMPLETION',
     counted_subjects: current?.counted_subjects ?? [],
+    trainer_split_rule: current?.trainer_split_rule ?? 'BY_LESSONS',
     is_active: current?.is_active ?? true,
   })
   const { run, busy } = useRunner()
@@ -227,10 +137,15 @@ function SettingsModal({ options, current, taken, onClose }: {
           <Select id="cs-rule" value={form.student_count_rule} options={options.student_count_rules}
             onChange={(e) => set({ student_count_rule: e.target.value })} />
         </Field>
+        <Field label="Несколько тренеров в цикле предмета" htmlFor="cs-split" className="sm:col-span-2"
+          help="По умолчанию каждый тренер получает долю по своим проведённым урокам. Правило нужно подтвердить с руководством.">
+          <Select id="cs-split" value={form.trainer_split_rule} options={options.trainer_split_rules}
+            onChange={(e) => set({ trainer_split_rule: e.target.value as 'BY_LESSONS' | 'REVIEW' })} />
+        </Field>
       </div>
       <fieldset className="mt-3">
-        <legend className="field-label mb-1.5">Учитываемые предметы</legend>
-        <p className="mb-2 text-xs text-ink-muted">Только уроки этих предметов входят в блок (например, только IT). Ничего не выбрано — все уроки группы.</p>
+        <legend className="field-label mb-1.5">Предметы с циклами</legend>
+        <p className="mb-2 text-xs text-ink-muted">Циклы ведутся отдельно по каждому выбранному предмету (например, только IT). Ничего не выбрано — по всем предметам группы.</p>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {options.subjects.map((sub) => (
             <label key={sub.id} className="flex items-center gap-1.5 text-sm">

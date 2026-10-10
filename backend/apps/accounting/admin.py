@@ -101,9 +101,9 @@ class CoursePayrollSettingsAdmin(ReadOnlyAdmin):
 
 @admin.register(CourseCycle)
 class CourseCycleAdmin(ReadOnlyAdmin):
-    list_display = ("group", "course", "number", "status", "lessons_done", "required_lessons", "completed_on",
-                    "student_count", "course_price")
-    list_filter = ("status", "course")
+    list_display = ("group", "subject", "course", "number", "status", "lessons_done", "required_lessons",
+                    "completed_on", "student_count", "course_price", "per_subject")
+    list_filter = ("status", "course", "subject", "per_subject")
     exclude = ("student_ids",)
 
 

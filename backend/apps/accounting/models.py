@@ -738,9 +738,18 @@ class CoursePayrollSettings(models.Model):
         max_length=20, choices=StudentCountRule.choices, default=StudentCountRule.ON_COMPLETION,
         verbose_name="Правило учёта студентов",
     )
+    class TrainerSplitRule(models.TextChoices):
+        BY_LESSONS = "BY_LESSONS", "Пропорционально проведённым урокам"
+        REVIEW = "REVIEW", "Решение бухгалтера при нескольких тренерах"
+
     counted_subjects = models.ManyToManyField(
         "users.Subject", blank=True, related_name="+", verbose_name="Учитываемые предметы",
-        help_text="Только уроки этих предметов входят в цикл (например, только IT). Пусто — все уроки группы.",
+        help_text="Циклы ведутся только по этим предметам (например, только IT). Пусто — по всем предметам группы.",
+    )
+    trainer_split_rule = models.CharField(
+        max_length=20, choices=TrainerSplitRule.choices, default=TrainerSplitRule.BY_LESSONS,
+        verbose_name="Несколько тренеров в цикле предмета",
+        help_text="Как делится начисление за цикл, если уроки предмета проводили несколько тренеров.",
     )
     is_active = models.BooleanField(default=True, verbose_name="Активны")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -816,8 +825,14 @@ class CoursePriceVersion(models.Model):
 
 
 class CourseCycle(models.Model):
-    """Расчётный цикл курса в группе: каждые `required_lessons` проведённых
-    уроков группы — один цикл. Завершённый цикл — зафиксированный факт со
+    """Расчётный цикл предмета в группе: каждые `required_lessons`
+    проведённых уроков ЭТОГО предмета — один цикл. У каждого предмета группы
+    (IT, English, Soft Skills…) свои циклы, нумерация и прогресс; уроки других
+    предметов на него не влияют. `subject` пуст — уроки без предмета.
+
+    `per_subject=False` — исторические циклы, считавшиеся по всем урокам
+    группы до перехода на предметный учёт; они остаются историей, а их уроки
+    в предметные циклы повторно не попадают. Завершённый цикл — зафиксированный факт со
     снимком: число уроков, дата последнего необходимого урока, число
     учитываемых студентов и стоимость курса. Незавершённый — текущий
     прогресс группы (обновляется при каждой синхронизации)."""
@@ -830,7 +845,13 @@ class CourseCycle(models.Model):
 
     group = models.ForeignKey("academy.Group", on_delete=models.PROTECT, related_name="payroll_cycles")
     course = models.ForeignKey("academy.Course", on_delete=models.PROTECT, related_name="payroll_cycles")
-    number = models.PositiveIntegerField(verbose_name="Номер цикла в группе")
+    subject = models.ForeignKey(
+        "users.Subject", on_delete=models.PROTECT, null=True, blank=True, related_name="+", verbose_name="Предмет",
+    )
+    per_subject = models.BooleanField(
+        default=True, db_index=True, help_text="False — исторический общий цикл группы (до предметного учёта).",
+    )
+    number = models.PositiveIntegerField(verbose_name="Номер цикла предмета в группе")
     status = models.CharField(max_length=20, choices=Status.choices, db_index=True)
     required_lessons = models.PositiveSmallIntegerField()
     lessons_done = models.PositiveSmallIntegerField(default=0)
@@ -846,27 +867,51 @@ class CourseCycle(models.Model):
     student_ids = models.JSONField(default=list, blank=True, help_text="Основание (только id студентов).")
     student_count_rule = models.CharField(max_length=20, blank=True)
     course_price = models.DecimalField(**MONEY, null=True, blank=True)
+    teacher_lessons = models.JSONField(
+        default=dict, blank=True, help_text="{id тренера: проведено уроков} в этом цикле — по фактическим урокам.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     objects = ImmutableQuerySet.as_manager()
 
     class Meta:
-        verbose_name = "Цикл курса"
-        verbose_name_plural = "Циклы курсов"
-        ordering = ["group", "number"]
+        verbose_name = "Цикл предмета"
+        verbose_name_plural = "Циклы предметов"
+        ordering = ["group", "subject_id", "number"]
         constraints = [
+            # Нумерация — своя у каждого предмета группы.
             models.UniqueConstraint(
-                fields=["group", "course", "number"], condition=~models.Q(status="INVALIDATED"),
-                name="unique_course_cycle",
+                fields=["group", "course", "subject", "number"],
+                condition=~models.Q(status="INVALIDATED") & models.Q(per_subject=True, subject__isnull=False),
+                name="unique_subject_cycle",
             ),
             models.UniqueConstraint(
-                fields=["group", "course"], condition=models.Q(status="IN_PROGRESS"), name="unique_open_course_cycle",
+                fields=["group", "course", "number"],
+                condition=~models.Q(status="INVALIDATED") & models.Q(per_subject=True, subject__isnull=True),
+                name="unique_nosubject_cycle",
+            ),
+            models.UniqueConstraint(
+                fields=["group", "course", "number"],
+                condition=~models.Q(status="INVALIDATED") & models.Q(per_subject=False),
+                name="unique_course_cycle",
+            ),
+            # Один открытый цикл на предмет группы.
+            models.UniqueConstraint(
+                fields=["group", "course", "subject"],
+                condition=models.Q(status="IN_PROGRESS", per_subject=True, subject__isnull=False),
+                name="unique_open_subject_cycle",
+            ),
+            models.UniqueConstraint(
+                fields=["group", "course"],
+                condition=models.Q(status="IN_PROGRESS", per_subject=True, subject__isnull=True),
+                name="unique_open_nosubject_cycle",
             ),
         ]
 
     def __str__(self):
-        return f"{self.group} · цикл {self.number} ({self.lessons_done}/{self.required_lessons})"
+        subject = f" · {self.subject}" if self.subject_id else ""
+        return f"{self.group}{subject} · цикл {self.number} ({self.lessons_done}/{self.required_lessons})"
 
     @property
     def base_amount(self) -> Decimal | None:
@@ -922,11 +967,13 @@ class CycleLesson(models.Model):
 
 
 class CycleAccrual(models.Model):
-    """Начисление процента тренеру за завершённый цикл. Создаётся
-    автоматически, как только группа достигает порога (12, 24, 36… уроков);
-    одно на пару (цикл, сотрудник) — повторное сохранение урока, повторный
-    запуск синхронизации или пересчёт дубликата не создают. Хранит снимок
-    всех величин; расчёт периода только включает его строкой."""
+    """Начисление процента тренеру за завершённый цикл предмета. Создаётся
+    автоматически, как только предмет группы достигает порога (12, 24, 36…
+    уроков этого предмета); одно на пару (цикл, сотрудник) — повторное
+    сохранение урока, повторный запуск синхронизации или пересчёт дубликата
+    не создают. Если уроки цикла проводили несколько тренеров, каждый получает
+    долю по своим урокам (`share`). Хранит снимок всех величин; расчёт
+    периода только включает его строкой."""
 
     class Status(models.TextChoices):
         ACCRUED = "ACCRUED", "Начислено"
@@ -948,6 +995,13 @@ class CycleAccrual(models.Model):
     adjustment = models.ForeignKey(PayrollAdjustment, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="+", help_text="Корректировка, сторнирующая это начисление.")
     lessons = models.PositiveSmallIntegerField(help_text="Уроков в цикле.")
+    lessons_taught = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="Уроков цикла, проведённых этим сотрудником (пусто — до предметного учёта).",
+    )
+    share = models.DecimalField(
+        max_digits=7, decimal_places=4, default=Decimal("1"),
+        help_text="Доля сотрудника в цикле: проведённые им уроки / уроков в цикле (1 — весь цикл).",
+    )
     lessons_total = models.PositiveIntegerField(default=0, help_text="Порог: накопленные уроки группы.")
     completed_on = models.DateField()
     student_count = models.PositiveIntegerField()
