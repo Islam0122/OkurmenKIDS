@@ -67,7 +67,7 @@ describe('AccountingDashboardPage', () => {
       range_label: DASHBOARD.range_label,
       results: [{
         profile_id: 1, employee: 9, employee_name: 'Islam Test', position: 'Программист', salary_type: 'PERCENT',
-        salary_type_display: 'Процент от стоимости курса', is_active: true,
+        salary_type_display: 'Процент от стоимости курса', calc_period: 'HALF', is_active: true,
         rates: [{ rule_type: 'PERCENT', label: 'Процент от стоимости курса', amount: null, percentage: '10.00', scope: '' }],
         active_students: 3, payroll_id: 12, accrued: '16500.00', paid: '6500.00', due: '10000.00',
         status: 'PARTIALLY_PAID', status_display: 'Частично выплачен',
@@ -92,7 +92,7 @@ describe('AccountingDashboardPage', () => {
     // Бухгалтер не утверждает — кнопки утверждения нет.
     expect(screen.queryByText('Утвердить все без ошибок')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Рассчитать зарплаты' }))
+    await user.click(screen.getByRole('button', { name: 'Рассчитать процент за период' }))
     await waitFor(() => expect(accountingApi.calculatePeriod).toHaveBeenCalledWith(4))
     expect(accountingApi.ensurePeriod).toHaveBeenCalledWith(2026, 9, 'FIRST_HALF')
     expect(await screen.findByText(/Без ставки: Не настроена ставка/)).toBeInTheDocument()
@@ -103,6 +103,15 @@ describe('AccountingDashboardPage', () => {
     vi.mocked(accountingApi.options).mockResolvedValue({ ...OPTIONS, can_operate: false, can_approve: true })
     renderWithProviders(<AccountingDashboardPage />, { route: '/accounting?year=2026&month=9&half=FIRST_HALF' })
     expect(await screen.findByRole('button', { name: 'Утвердить все без ошибок' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Рассчитать зарплаты' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Рассчитать/ })).not.toBeInTheDocument()
+  })
+
+  it('calculates monthly salaries when the whole month is selected', async () => {
+    const user = userEvent.setup()
+    vi.mocked(accountingApi.ensurePeriod).mockResolvedValue({ ...PERIOD, id: 9, period_type: 'MONTH' })
+    renderWithProviders(<AccountingDashboardPage />, { route: '/accounting?year=2026&month=9&half=MONTH' })
+    await user.click(await screen.findByRole('button', { name: 'Рассчитать оклады за месяц' }))
+    await waitFor(() => expect(accountingApi.calculatePeriod).toHaveBeenCalledWith(9))
+    expect(accountingApi.ensurePeriod).toHaveBeenCalledWith(2026, 9, 'MONTH')
   })
 })

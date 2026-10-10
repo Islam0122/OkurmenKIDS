@@ -20,10 +20,11 @@ from apps.accounting.models import (
 )
 from apps.accounting.services import AccountingError
 from apps.accounting.services.approval_service import approve_payroll, create_adjustment
+from apps.accounting.services.payment_service import register_payment
 from apps.accounting.services.cycles import sync_all
 from apps.accounting.services.money import allocate_by_days, money
 from apps.accounting.services.payroll_calculator import calculate_period
-from apps.accounting.tests.base import FIRST, SECOND, D, AccountingFixture, day, make_user
+from apps.accounting.tests.base import FIRST, MONTH, SECOND, SEP, D, AccountingFixture, day, make_user
 
 R = SalaryRule.RuleType
 M = SalaryRule.Method
@@ -34,40 +35,98 @@ def days(month, first, last):
 
 
 class FixedSalaryTests(AccountingFixture):
+    """Оклад — за полный календарный месяц, одним расчётом, без деления на половины."""
+
     def setUp(self):
         super().setUp()
         self.manager = make_user("manager", "assistant")
         self.p = self.profile(self.manager, SalaryType.FIXED)
 
-    def test_full_month_is_both_halves(self):
+    def test_full_monthly_amount_in_one_payroll(self):
         self.rule(self.p, R.FIXED, amount=D("30000"))
-        first, second = self.calc(FIRST, self.manager), self.calc(SECOND, self.manager)
-        self.assertEqual(first.total_accrued, D("15000.00"))
-        self.assertEqual(second.total_accrued, D("15000.00"))
-        self.assertEqual(first.total_accrued + second.total_accrued, D("30000.00"))
+        payroll = self.calc(MONTH, self.manager)
+        self.assertEqual(payroll.total_accrued, D("30000.00"))
+        self.assertEqual((payroll.period.start_date, payroll.period.end_date), (day(9, 1), day(9, 30)))
+        line = payroll.lines.get()
+        self.assertIn("полный месяц", line.description)
+        self.assertEqual(Payroll.objects.filter(employee=self.manager).count(), 1)
 
-    def test_half_month_custom_split(self):
-        self.rule(self.p, R.FIXED, amount=D("30000"), first_half_share=D("40"))
-        self.assertEqual(self.calc(FIRST, self.manager).total_accrued, D("12000.00"))
-        self.assertEqual(self.calc(SECOND, self.manager).total_accrued, D("18000.00"))
+    def test_not_split_into_half_month_periods(self):
+        self.rule(self.p, R.FIXED, amount=D("30000"))
+        for half in (FIRST, SECOND):
+            with self.assertRaises(AccountingError) as ctx:
+                self.calc(half, self.manager)
+            self.assertEqual(ctx.exception.code, "wrong_period")
+        self.assertFalse(Payroll.objects.filter(employee=self.manager).exists())
 
-    def test_prorate_by_calendar_days(self):
-        # Сентябрь — 30 дней: первая половина 15/30, вторая 15/30.
-        self.rule(self.p, R.FIXED, amount=D("30000"), method=M.PRORATE_DAYS)
-        self.assertEqual(self.calc(FIRST, self.manager).total_accrued, D("15000.00"))
-        # Октябрь — 31 день: 15/31 и 16/31, в сумме ровно оклад.
-        a = self.calc(FIRST, self.manager, (2026, 10)).total_accrued
-        b = self.calc(SECOND, self.manager, (2026, 10)).total_accrued
-        self.assertEqual(a, money(D("30000") * 15 / 31))
-        self.assertEqual(b, money(D("30000") * 16 / 31))
+    def test_advance_is_a_partial_payment_of_the_month(self):
+        self.rule(self.p, R.FIXED, amount=D("30000"))
+        payroll = approve_payroll(self.calc(MONTH, self.manager), self.director)
+        register_payment(payroll, amount=D("10000"), payment_date=day(9, 15), actor=self.accountant, is_advance=True)
+        payroll.refresh_from_db()
+        self.assertEqual((payroll.status, payroll.total_accrued, payroll.amount_due),
+                         (Payroll.Status.PARTIALLY_PAID, D("30000.00"), D("20000.00")))
+        register_payment(payroll, amount=D("20000"), payment_date=day(10, 1), actor=self.accountant)
+        payroll.refresh_from_db()
+        self.assertEqual((payroll.status, payroll.amount_due), (Payroll.Status.PAID, D("0.00")))
+        self.assertEqual(payroll.payments.count(), 2)
 
-    def test_started_mid_period(self):
+    def test_hired_mid_month_by_established_terms(self):
         self.p.effective_from = day(9, 6)
         self.p.save()
         self.rule(self.p, R.FIXED, amount=D("30000"), start=day(9, 6))
-        # 10 из 15 дней первой половины, доля 50%.
-        self.assertEqual(self.calc(FIRST, self.manager).total_accrued, D("10000.00"))
+        # Действует 25 из 30 дней сентября.
+        self.assertEqual(self.calc(MONTH, self.manager).total_accrued, D("25000.00"))
 
+    def test_rate_change_mid_month(self):
+        from apps.accounting.services.salary_rules import new_version
+
+        old = self.rule(self.p, R.FIXED, amount=D("20000"))
+        new_version(old, actor=self.accountant, changes={"amount": D("30000"), "effective_from": day(9, 16)})
+        payroll = self.calc(MONTH, self.manager)
+        # 20 000 × 15/30 + 30 000 × 15/30
+        self.assertEqual(payroll.total_accrued, D("25000.00"))
+        self.assertEqual(payroll.lines.count(), 2)
+
+    def test_previous_half_month_scheme_is_offset_not_changed(self):
+        rule = self.rule(self.p, R.FIXED, amount=D("30000"))
+        half = Payroll.objects.create(period=self.period(SEP, FIRST), employee=self.manager,
+                                      status=Payroll.Status.APPROVED, total_accrued=D("15000"))
+        PayrollLine.objects.create(payroll=half, line_type="FIXED", description="Оклад за первую половину",
+                                   amount=D("15000"), salary_rule=rule)
+        payroll = self.calc(MONTH, self.manager)
+        self.assertEqual(payroll.total_accrued, D("15000.00"))  # 30 000 − уже начисленные 15 000
+        offset = payroll.lines.get(line_type="PRIOR_FIXED")
+        self.assertEqual(offset.amount, D("-15000.00"))
+        half.refresh_from_db()
+        self.assertEqual((half.status, half.total_accrued), (Payroll.Status.APPROVED, D("15000.00")))
+
+    def test_unapproved_old_half_month_payroll_blocks_approval(self):
+        rule = self.rule(self.p, R.FIXED, amount=D("30000"))
+        half = Payroll.objects.create(period=self.period(SEP, SECOND), employee=self.manager,
+                                      status=Payroll.Status.CALCULATED)
+        PayrollLine.objects.create(payroll=half, line_type="FIXED", description="старая схема", amount=D("15000"),
+                                   salary_rule=rule)
+        payroll = self.calc(MONTH, self.manager)
+        self.assertTrue(any("аннулируйте" in e for e in payroll.errors))
+        with self.assertRaises(AccountingError):
+            approve_payroll(payroll, self.director)
+        half.refresh_from_db()
+        self.assertEqual(half.status, Payroll.Status.CALCULATED)  # ничего не меняется автоматически
+
+    def test_mass_calculation_splits_by_salary_type(self):
+        self.rule(self.p, R.FIXED, amount=D("30000"))
+        percent = self.profile(salary_type=SalaryType.PERCENT)
+        self.rule(percent, R.PERCENT, percentage=D("10"))
+        month = calculate_period(self.period(SEP, MONTH), self.accountant)
+        half = calculate_period(self.period(SEP, FIRST), self.accountant)
+        self.assertEqual([p.employee_id for p in month["calculated"]], [self.manager.pk])
+        self.assertEqual([p.employee_id for p in half["calculated"]], [self.trainer_user.pk])
+
+    def test_percent_is_never_calculated_monthly(self):
+        self.rule(self.profile(salary_type=SalaryType.PERCENT), R.PERCENT, percentage=D("10"))
+        with self.assertRaises(AccountingError):
+            self.calc(MONTH)
 
 
 class PercentCycleTests(AccountingFixture):
@@ -227,9 +286,9 @@ class PercentCycleTests(AccountingFixture):
         fixed = self.profile(manager, SalaryType.FIXED)
         self.rule(fixed, R.FIXED, amount=D("30000"))
         self.lessons(self.group_a, days(9, 1, 12))
-        payroll = self.calc(FIRST, manager)
+        payroll = self.calc(MONTH, manager)
         self.assertEqual([l.line_type for l in payroll.lines.all()], ["FIXED"])
-        self.assertEqual(payroll.total_accrued, D("15000.00"))
+        self.assertEqual(payroll.total_accrued, D("30000.00"))
         self.assertFalse(CycleAccrual.objects.filter(employee=manager).exists())
 
     def test_rule_scoped_to_program(self):
@@ -267,7 +326,7 @@ class RulesTests(AccountingFixture):
         self.assertTrue(any("больше не поддерживается" in e for e in payroll.errors))
 
     def test_missing_rule_is_an_error(self):
-        payroll = self.calc(FIRST)
+        payroll = self.calc(MONTH)
         self.assertIn("Не настроена ставка", payroll.errors[0])
         with self.assertRaises(AccountingError):
             approve_payroll(payroll, self.director)
@@ -275,7 +334,7 @@ class RulesTests(AccountingFixture):
     def test_overlapping_rules_block_approval(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
         self.rule(self.p, R.FIXED, amount=D("25000"), start=day(9, 1))
-        payroll = self.calc(FIRST)
+        payroll = self.calc(MONTH)
         self.assertTrue(any("Пересекающиеся" in e for e in payroll.errors))
         with self.assertRaises(AccountingError):
             approve_payroll(payroll, self.director)
@@ -287,12 +346,13 @@ class RulesTests(AccountingFixture):
         new_version(old, actor=self.accountant, changes={"amount": D("30000"), "effective_from": day(9, 16)})
         old.refresh_from_db()
         self.assertEqual(old.effective_to, day(9, 15))
-        self.assertEqual(self.calc(FIRST).total_accrued, D("10000.00"))
-        self.assertEqual(self.calc(SECOND).total_accrued, D("15000.00"))
+        self.assertEqual(old.next_version.calculation_method, "MONTHLY")
+        self.assertEqual(self.calc(MONTH).total_accrued, D("25000.00"))
 
     def test_rounding(self):
-        self.rule(self.p, R.FIXED, amount=D("10000"), method=M.PRORATE_DAYS)
-        self.assertEqual(self.calc(FIRST, year_month=(2026, 10)).total_accrued, D("4838.71"))
+        self.rule(self.p, R.FIXED, amount=D("10000"), start=day(10, 17))
+        # 10 000 × 15 / 31 дней октября = 4838.709… → 4838.71
+        self.assertEqual(self.calc(MONTH, year_month=(2026, 10)).total_accrued, D("4838.71"))
         self.assertEqual(money(D("0.005")), D("0.01"))
         parts = [allocate_by_days(D("100"), dt.date(2026, 1, 1), dt.date(2026, 1, 3), d, d)
                  for d in (dt.date(2026, 1, 1), dt.date(2026, 1, 2), dt.date(2026, 1, 3))]
@@ -300,26 +360,26 @@ class RulesTests(AccountingFixture):
 
     def test_recalculating_draft_does_not_duplicate(self):
         rule = self.rule(self.p, R.FIXED, amount=D("20000"))
-        first = self.calc(FIRST)
+        first = self.calc(MONTH)
         from apps.accounting.services.salary_rules import new_version
 
         new_version(rule, actor=self.accountant, changes={"amount": D("22000"), "effective_from": day(9, 2)})
-        again = self.calc(FIRST)
+        again = self.calc(MONTH)
         self.assertEqual(first.pk, again.pk)
         self.assertEqual(Payroll.objects.count(), 1)
         self.assertEqual(again.lines.count(), 2)
 
     def test_approved_payroll_is_not_recalculated(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
-        approve_payroll(self.calc(FIRST), self.director)
+        approve_payroll(self.calc(MONTH), self.director)
         with self.assertRaises(AccountingError):
-            self.calc(FIRST)
+            self.calc(MONTH)
 
     def test_mass_calculation_reports_every_employee(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
         broken = make_user("broken", "assistant")
         self.profile(broken)
-        result = calculate_period(self.period(), self.accountant)
+        result = calculate_period(self.period(half=MONTH), self.accountant)
         by_user = {p.employee_id: p for p in result["calculated"]}
         self.assertEqual(len(by_user), 2)
         self.assertTrue(by_user[broken.pk].errors)
@@ -327,14 +387,14 @@ class RulesTests(AccountingFixture):
 
     def test_adjustments_are_the_way_to_add_bonuses(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
-        payroll = self.calc(FIRST)
+        payroll = self.calc(MONTH)
         create_adjustment(payroll, kind="BONUS", amount=D("1500"), reason="олимпиада", actor=self.accountant)
         create_adjustment(payroll, kind="DEDUCTION", amount=D("500"), reason="штраф", actor=self.accountant)
         payroll.refresh_from_db()
-        self.assertEqual(payroll.amount_due, D("11000.00"))
+        self.assertEqual(payroll.amount_due, D("21000.00"))
 
     def test_descriptions_have_no_exponent_notation(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
-        description = self.calc(FIRST).lines.get().description
-        self.assertIn("50% месячного оклада", description)
+        description = self.calc(MONTH).lines.get().description
+        self.assertIn("Оклад за 09.2026 (полный месяц)", description)
         self.assertNotIn("E+", description)

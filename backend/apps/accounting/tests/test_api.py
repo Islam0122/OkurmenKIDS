@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from apps.accounting.models import Payroll, PayrollAuditLog, PayrollPayment, SalaryRule
 from apps.accounting.services.approval_service import approve_payroll
 from apps.accounting.services.payment_service import register_payment, void_payment
-from apps.accounting.tests.base import FIRST, SECOND, D, AccountingFixture, day, make_user
+from apps.accounting.tests.base import FIRST, MONTH, D, AccountingFixture, day, make_user
 from apps.users.models import User
 
 API = "/api/v1/accounting"
@@ -20,10 +20,10 @@ class PermissionTests(AccountingFixture):
     def setUp(self):
         super().setUp()
         self.rule(self.profile(), R.FIXED, amount=D("40000"))
-        self.payroll = self.calc(FIRST)
+        self.payroll = self.calc(MONTH)
         self.other = make_user("other")
         self.rule(self.profile(self.other), R.FIXED, amount=D("10000"))
-        self.other_payroll = self.calc(FIRST, self.other)
+        self.other_payroll = self.calc(MONTH, self.other)
 
     def test_accountant_cannot_become_director_or_admin(self):
         client = self.client_for(self.accountant)
@@ -233,16 +233,15 @@ class FlowTests(AccountingFixture):
 class ReportTests(AccountingFixture):
     def setUp(self):
         super().setUp()
-        self.rule(self.profile(), R.FIXED, amount=D("40000"))
+        self.rule(self.profile(), R.FIXED, amount=D("20000"))  # оклад за месяц
         self.other = make_user("other", User.Role.ASSISTANT)
         self.rule(self.profile(self.other, "PERCENT"), R.PERCENT, percentage=D("10"), group=self.group_a)
         self.course_settings(price="30000", lessons=12)
         self.student()
         self.lessons(self.group_a, [day(9, d) for d in range(1, 13)])  # 1 × 30 000 × 10 % = 3 000
-        self.a = self.calc(FIRST)
-        self.b = self.calc(FIRST, self.other)
-        self.c = self.calc(SECOND)
-        for p in (self.a, self.b, self.c):
+        self.a = self.calc(MONTH)  # оклад — месячный расчёт
+        self.b = self.calc(FIRST, self.other)  # процент — цикл завершён 12.09
+        for p in (self.a, self.b):
             approve_payroll(p, self.director)
         register_payment(self.a, amount=D("5000"), payment_date=day(9, 16), actor=self.accountant)
         voided, _ = register_payment(self.a, amount=D("7000"), payment_date=day(9, 16), actor=self.accountant)
@@ -256,7 +255,7 @@ class ReportTests(AccountingFixture):
         return ws, rows
 
     def test_excel_totals_and_voided_payments_excluded(self):
-        ws, rows = self.xlsx("year=2026&month=9&period_type=FIRST_HALF")
+        ws, rows = self.xlsx("year=2026&month=9")
         total = rows[-1]
         self.assertEqual(total[0], "Итого")
         self.assertEqual(D(str(total[4])), D("23000"))  # 20000 оклад + 3000 процент
@@ -267,21 +266,25 @@ class ReportTests(AccountingFixture):
 
     def test_period_filter(self):
         _, first = self.xlsx("year=2026&month=9&period_type=FIRST_HALF")
+        _, salary = self.xlsx("year=2026&month=9&period_type=MONTH")
         _, month = self.xlsx("year=2026&month=9")
-        self.assertEqual(len(first) - 5, 2)
-        self.assertEqual(len(month) - 5, 3)
-        self.assertEqual(D(str(month[-1][4])), D("43000"))
+        self.assertEqual(len(first) - 5, 1)
+        self.assertEqual(D(str(first[-1][4])), D("3000"))
+        self.assertEqual(len(salary) - 5, 1)
+        self.assertEqual(D(str(salary[-1][4])), D("20000"))
+        self.assertEqual(len(month) - 5, 2)
+        self.assertEqual(D(str(month[-1][4])), D("23000"))
 
     def test_pdf_report_totals(self):
         from apps.accounting.services.report_service import build_report, resolve_periods
 
-        periods, label = resolve_periods(year=2026, month=9, period_type=FIRST)
+        periods, label = resolve_periods(year=2026, month=9)
         report = build_report(periods, label=label)
         self.assertEqual(report.totals.accrued, D("23000"))
         self.assertEqual(report.totals.paid, D("5000"))
         self.assertEqual(report.totals.due, D("18000"))
         self.assertEqual(report.by_program, [("Prog SOFT", D("3000.00"))])
-        r = self.client_for(self.accountant).get(f"{API}/reports/payroll.pdf?year=2026&month=9&period_type={FIRST}")
+        r = self.client_for(self.accountant).get(f"{API}/reports/payroll.pdf?year=2026&month=9")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r["Content-Type"], "application/pdf")
         self.assertTrue(r.content.startswith(b"%PDF"))

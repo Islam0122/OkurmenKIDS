@@ -11,15 +11,15 @@ from apps.accounting.services.approval_service import (
     return_payroll,
 )
 from apps.accounting.services.payment_service import register_payment, void_payment
-from apps.accounting.tests.base import FIRST, D, AccountingFixture, day
+from apps.accounting.tests.base import MONTH, D, AccountingFixture, day
 
 
 class PaymentTests(AccountingFixture):
     def setUp(self):
         super().setUp()
         profile = self.profile()
-        self.rule(profile, SalaryRule.RuleType.FIXED, amount=D("40000"))  # 20 000 за половину
-        self.payroll = self.calc(FIRST)
+        self.rule(profile, SalaryRule.RuleType.FIXED, amount=D("20000"))  # оклад за месяц
+        self.payroll = self.calc(MONTH)
 
     def approve(self):
         return approve_payroll(self.payroll, self.director)
@@ -137,8 +137,8 @@ class PaymentTests(AccountingFixture):
 class LifecycleTests(AccountingFixture):
     def setUp(self):
         super().setUp()
-        self.rule(self.profile(), SalaryRule.RuleType.FIXED, amount=D("40000"))
-        self.payroll = self.calc(FIRST)
+        self.rule(self.profile(), SalaryRule.RuleType.FIXED, amount=D("20000"))
+        self.payroll = self.calc(MONTH)
 
     def test_return_and_recalculate(self):
         return_payroll(self.payroll, self.director, "проверьте ставку")
@@ -146,7 +146,7 @@ class LifecycleTests(AccountingFixture):
         self.assertEqual(self.payroll.status, Payroll.Status.RETURNED)
         with self.assertRaises(AccountingError):
             approve_payroll(self.payroll, self.director)
-        self.assertEqual(self.calc(FIRST).status, Payroll.Status.CALCULATED)
+        self.assertEqual(self.calc(MONTH).status, Payroll.Status.CALCULATED)
 
     def test_reopen_only_without_payments(self):
         approve_payroll(self.payroll, self.director)

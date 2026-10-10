@@ -78,7 +78,7 @@ export function PeriodPicker({ value, onChange, allowMonth = true }: {
   const halves = [
     { value: 'FIRST_HALF', label: '1–15 число' },
     { value: 'SECOND_HALF', label: '16 – конец месяца' },
-    ...(allowMonth ? [{ value: 'MONTH', label: 'Весь месяц' }] : []),
+    ...(allowMonth ? [{ value: 'MONTH', label: 'Весь месяц: оклады и сводка' }] : []),
   ]
   return (
     <div className="flex flex-wrap gap-2">

@@ -6,7 +6,7 @@ from django.utils import timezone
 from apps.accounting.models import Payroll, PayrollPayment, SalaryRule, SalaryType
 from apps.accounting.services.approval_service import approve_payroll
 from apps.accounting.services.payment_service import register_payment
-from apps.accounting.tests.base import FIRST, SECOND, D, AccountingFixture, day, make_user
+from apps.accounting.tests.base import MONTH, D, AccountingFixture, day, make_user
 from apps.users.models import User
 
 URL = "/api/v1/accounting/my/salary/"
@@ -18,8 +18,8 @@ class MySalaryTests(AccountingFixture):
         super().setUp()
         self.assistant = make_user("asya", User.Role.ASSISTANT)
         self.team_lead = make_user("lead", User.Role.TEAM_LEAD)
-        self.rule(self.profile(self.assistant, SalaryType.FIXED), R.FIXED, amount=D("40000"))
-        self.rule(self.profile(self.team_lead, SalaryType.FIXED), R.FIXED, amount=D("60000"))
+        self.rule(self.profile(self.assistant, SalaryType.FIXED), R.FIXED, amount=D("20000"))
+        self.rule(self.profile(self.team_lead, SalaryType.FIXED), R.FIXED, amount=D("30000"))
 
     def get(self, user, url=URL, **params):
         response = self.client_for(user).get(url, params)
@@ -27,24 +27,24 @@ class MySalaryTests(AccountingFixture):
         return response.json()
 
     def test_assistant_sees_own_salary(self):
-        approve_payroll(self.calc(FIRST, self.assistant), self.director)
+        approve_payroll(self.calc(MONTH, self.assistant), self.director)
         data = self.get(self.assistant)
         self.assertEqual(data["profile"]["salary_type"], "FIXED")
-        self.assertEqual(data["profile"]["rates"][0]["amount"], "40000.00")
+        self.assertEqual(data["profile"]["rates"][0]["amount"], "20000.00")
         self.assertEqual(data["totals"], {"accrued": "20000.00", "paid": "0.00", "due": "20000.00",
                                           "pending_approval": "0.00"})
         self.assertEqual([r["status"] for r in data["history"]], ["APPROVED"])
         self.assertEqual(data["history"][0]["lines"][0]["amount"], "20000.00")
 
     def test_team_lead_sees_own_salary(self):
-        approve_payroll(self.calc(FIRST, self.team_lead), self.director)
+        approve_payroll(self.calc(MONTH, self.team_lead), self.director)
         data = self.get(self.team_lead)
         self.assertEqual(data["employee_name"], self.team_lead.get_full_name())
         self.assertEqual(data["totals"]["accrued"], "30000.00")
-        self.assertEqual(data["profile"]["rates"][0]["amount"], "60000.00")
+        self.assertEqual(data["profile"]["rates"][0]["amount"], "30000.00")
 
     def test_no_access_to_someone_elses_data(self):
-        approve_payroll(self.calc(FIRST, self.team_lead), self.director)
+        approve_payroll(self.calc(MONTH, self.team_lead), self.director)
         other = Payroll.objects.get(employee=self.team_lead)
         client = self.client_for(self.assistant)
         # Подставленные id и параметры игнорируются — всегда свои данные.
@@ -62,7 +62,7 @@ class MySalaryTests(AccountingFixture):
                 self.assertEqual(c.get(url).status_code, 403, url)
 
     def test_read_only(self):
-        payroll = approve_payroll(self.calc(FIRST, self.assistant), self.director)
+        payroll = approve_payroll(self.calc(MONTH, self.assistant), self.director)
         client = self.client_for(self.assistant)
         profile = self.assistant.salary_profile
         rule = profile.rules.get()
@@ -79,10 +79,10 @@ class MySalaryTests(AccountingFixture):
             response = getattr(client, method)(url, body, format="json")
             self.assertIn(response.status_code, (403, 405), f"{method} {url}")
         self.assertEqual(PayrollPayment.objects.count(), 0)
-        self.assertEqual(self.assistant.salary_profile.rules.get().amount, D("40000"))
+        self.assertEqual(self.assistant.salary_profile.rules.get().amount, D("20000"))
 
     def test_status_before_approval(self):
-        self.calc(FIRST, self.assistant)
+        self.calc(MONTH, self.assistant)
         data = self.get(self.assistant)
         row = data["history"][0]
         self.assertEqual((row["status"], row["status_display"], row["is_final"]),
@@ -98,7 +98,7 @@ class MySalaryTests(AccountingFixture):
         self.assertEqual((row["status"], row["accrued"], row["lines"]), ("AWAITING", None, []))
 
     def test_payment_updates_totals(self):
-        payroll = approve_payroll(self.calc(FIRST, self.assistant), self.director)
+        payroll = approve_payroll(self.calc(MONTH, self.assistant), self.director)
         register_payment(payroll, amount=D("15000"), payment_date=day(9, 20), actor=self.accountant)
         data = self.get(self.assistant)
         self.assertEqual(data["totals"], {"accrued": "20000.00", "paid": "15000.00", "due": "5000.00",
@@ -122,17 +122,19 @@ class MySalaryTests(AccountingFixture):
         self.assertTrue(response.content.startswith(b"%PDF"))
 
     def test_filters_and_current_month(self):
-        approve_payroll(self.calc(FIRST, self.assistant), self.director)
-        approve_payroll(self.calc(SECOND, self.assistant), self.director)
-        self.assertEqual(len(self.get(self.assistant, year=2026, month=9)["history"]), 2)
-        only = self.get(self.assistant, year=2026, month=9, period_type="SECOND_HALF")["history"]
-        self.assertEqual([r["period_type"] for r in only], ["SECOND_HALF"])
-        self.assertEqual(self.get(self.assistant, month=8)["history"], [])
+        approve_payroll(self.calc(MONTH, self.assistant, year_month=(2026, 8)), self.director)
+        approve_payroll(self.calc(MONTH, self.assistant), self.director)
+        self.assertEqual(len(self.get(self.assistant, year=2026)["history"]), 2)
+        only = self.get(self.assistant, year=2026, month=9, period_type="MONTH")["history"]
+        self.assertEqual([(r["month"], r["period_type"]) for r in only], [(9, "MONTH")])
+        self.assertEqual(self.get(self.assistant, period_type="FIRST_HALF")["history"], [])
+        self.assertEqual(self.get(self.assistant, month=7)["history"], [])
         self.assertEqual(self.client_for(self.assistant).get(URL, {"period_type": "X"}).status_code, 400)
         today = timezone.localdate()
         current = self.get(self.assistant)["current_month"]
         self.assertEqual((current["year"], current["month"]), (today.year, today.month))
-        self.assertEqual(len(current["periods"]), 2)
+        # Оклад — один месячный расчёт в текущем месяце, не две половины.
+        self.assertEqual([p["period_type"] for p in current["periods"]], ["MONTH"])
 
     def test_percent_employee_sees_rate(self):
         trainer_profile = self.profile(salary_type=SalaryType.PERCENT)
@@ -143,7 +145,7 @@ class MySalaryTests(AccountingFixture):
                          ("12.50", "Group A"))
 
     def test_personal_pdf(self):
-        approve_payroll(self.calc(FIRST, self.team_lead), self.director)
+        approve_payroll(self.calc(MONTH, self.team_lead), self.director)
         response = self.client_for(self.team_lead).get("/api/v1/accounting/my/salary/report.pdf", {"year": 2026})
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertTrue(response.content.startswith(b"%PDF"))

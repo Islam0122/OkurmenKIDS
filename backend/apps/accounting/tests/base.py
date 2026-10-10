@@ -25,6 +25,7 @@ from apps.users.models import Subject, Teacher, User
 D = Decimal
 SEP = (2026, 9)
 FIRST, SECOND = PayrollPeriod.PeriodType.FIRST_HALF, PayrollPeriod.PeriodType.SECOND_HALF
+MONTH = PayrollPeriod.PeriodType.MONTH
 _n = itertools.count(1)
 
 

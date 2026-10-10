@@ -26,6 +26,12 @@ const STATUS_TONE: Record<MySalaryStatus, BadgeTone> = {
   PAID: 'success',
 }
 
+const PERIOD_LABEL: Record<PeriodType, string> = {
+  MONTH: 'Весь месяц (оклад)',
+  FIRST_HALF: '1–15 число',
+  SECOND_HALF: '16 – конец месяца',
+}
+
 function StatusBadge({ row }: { row: MySalaryRow }) {
   return <Badge tone={STATUS_TONE[row.status]}>{row.status_display}</Badge>
 }
@@ -95,7 +101,7 @@ export function MySalaryPage() {
           {d.current_month.periods.map((row) => (
             <div key={row.period_type} className="card p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm text-ink-secondary">{row.period_type === 'FIRST_HALF' ? '1–15 число' : '16 – конец месяца'}</p>
+                <p className="text-sm text-ink-secondary">{PERIOD_LABEL[row.period_type]}</p>
                 <StatusBadge row={row} />
               </div>
               <p className="mt-1 text-2xl font-semibold text-ink tabular-nums">{row.accrued !== null ? som(row.accrued) : '—'}</p>
@@ -121,7 +127,7 @@ export function MySalaryPage() {
           </FilterField>
           <FilterField label="Период" htmlFor="ms-half">
             <Select id="ms-half" value={filters.period_type ?? ''} placeholder="Оба периода"
-              options={[{ value: 'FIRST_HALF', label: '1–15 число' }, { value: 'SECOND_HALF', label: '16 – конец месяца' }]}
+              options={Object.entries(PERIOD_LABEL).map(([value, label]) => ({ value, label }))}
               onChange={(e) => setFilters({ ...filters, period_type: (e.target.value || undefined) as PeriodType | undefined })} />
           </FilterField>
         </FilterBar>

@@ -1,7 +1,8 @@
 /** Бухгалтерия (backend: apps.accounting, /api/v1/accounting/). Все суммы —
  * строки Decimal в сомах (KGS), как их отдаёт DRF: без потерь float. */
 
-export type PeriodType = 'FIRST_HALF' | 'SECOND_HALF'
+/** Половины месяца — для процента от курса; MONTH — оклад за полный месяц. */
+export type PeriodType = 'FIRST_HALF' | 'SECOND_HALF' | 'MONTH'
 export type PeriodStatus = 'DRAFT' | 'CALCULATED' | 'APPROVED' | 'CLOSED'
 export type PayrollStatus = 'DRAFT' | 'CALCULATED' | 'RETURNED' | 'APPROVED' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
 /** Только два типа оплаты: оклад и процент от стоимости курса. Прочие
@@ -73,6 +74,8 @@ export interface EmployeeRow {
   position: string
   salary_type: SalaryType
   salary_type_display: string
+  /** Где считается: оклад — месячный период, процент — половины месяца. */
+  calc_period: 'MONTH' | 'HALF'
   is_active: boolean
   rates: { rule_type: string; label: string; amount: string | null; percentage: string | null; scope: string }[]
   active_students: number | null
