@@ -26,6 +26,8 @@ import type {
   PayrollPeriod,
   PeriodSelection,
   PeriodType,
+  RuleChangeBody,
+  RuleChangeEffects,
   SalaryProfile,
   SalaryRule,
   StudentPayment,
@@ -126,6 +128,12 @@ export const accountingApi = {
     apiClient.patch<SalaryProfile>(`${BASE}/salary-profiles/${id}/`, body).then((r) => r.data),
   createRule: (body: Record<string, unknown>) => post<SalaryRule>('/salary-rules/', body),
   newRuleVersion: (id: number, body: Record<string, unknown>) => post<SalaryRule>(`/salary-rules/${id}/new-version/`, body),
+  /** Исправить ошибочное правило на месте (пока оно не в утверждённых начислениях). */
+  correctRule: (id: number, body: RuleChangeBody) =>
+    post<{ rule: SalaryRule; effects: RuleChangeEffects }>(`/salary-rules/${id}/correct/`, body),
+  /** Заменить правило с даты: старое закрывается днём раньше, история не меняется. */
+  replaceRule: (id: number, body: RuleChangeBody & { effective_from: string }) =>
+    post<{ rule: SalaryRule; effects: RuleChangeEffects }>(`/salary-rules/${id}/replace/`, body),
   deactivateRule: (id: number, effectiveTo: string, reason: string) =>
     post<SalaryRule>(`/salary-rules/${id}/deactivate/`, { effective_to: effectiveTo, reason }),
 

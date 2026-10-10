@@ -190,7 +190,40 @@ export interface SalaryRule {
   is_active: boolean
   previous_version: number | null
   next_version: number | null
+  /** Где правило уже использовано: исправить на месте можно, только пока нет утверждённых начислений. */
+  usage: RuleUsage
   created_at: string
+}
+
+export interface RuleUsage {
+  can_correct: boolean
+  locked_payrolls: number
+  draft_payrolls: number
+  locked_accruals: number
+  open_accruals: number
+  /** Последняя дата, по которую правило использовано в утверждённых начислениях. */
+  used_until: string | null
+}
+
+/** Что пересчитано после исправления или замены правила. */
+export interface RuleChangeEffects {
+  accruals_updated: number
+  accruals_cancelled: number
+  payrolls_recalculated: number[]
+  payrolls_voided: number[]
+  payrolls_failed: { payroll_id: number; error: string }[]
+}
+
+export interface RuleChangeBody {
+  rule_type?: RuleType
+  amount?: string | null
+  percentage?: string | null
+  program?: number | null
+  group?: number | null
+  description?: string
+  effective_from?: string
+  effective_to?: string | null
+  reason: string
 }
 
 export interface SalaryProfile {

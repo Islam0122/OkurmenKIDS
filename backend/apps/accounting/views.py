@@ -366,6 +366,34 @@ class SalaryRuleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
             _fail(exc)
         return Response(s.SalaryRuleSerializer(rule).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(request=s.SalaryRuleCorrectSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"])
+    def correct(self, request, pk=None):
+        """Исправить ошибочное правило: тип оплаты, ставку, основание, метод,
+        даты. Только пока правило не попало в утверждённые начисления."""
+        data = _valid(s.SalaryRuleCorrectSerializer, request)
+        reason = data.pop("reason")
+        try:
+            rule, effects = salary_rules.correct_rule(self.get_object(), actor=request.user, changes=data, reason=reason)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response({"rule": s.SalaryRuleSerializer(rule).data, "effects": effects})
+
+    @extend_schema(request=s.SalaryRuleReplaceSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"])
+    def replace(self, request, pk=None):
+        """Заменить правило с даты: старое закрывается днём раньше, история
+        утверждённых начислений не меняется."""
+        data = _valid(s.SalaryRuleReplaceSerializer, request)
+        reason, effective_from = data.pop("reason"), data.pop("effective_from")
+        try:
+            rule, effects = salary_rules.replace_rule(self.get_object(), actor=request.user,
+                                                      effective_from=effective_from, data=data, reason=reason)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response({"rule": s.SalaryRuleSerializer(rule).data, "effects": effects},
+                        status=status.HTTP_201_CREATED)
+
     @extend_schema(request=s.SalaryRuleDeactivateSerializer, responses=s.SalaryRuleSerializer)
     @action(detail=True, methods=["post"])
     def deactivate(self, request, pk=None):
