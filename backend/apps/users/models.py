@@ -32,6 +32,14 @@ class User(AbstractUser):
         # /api/v1/assistant/ в API). Никаких KPI, HR, ролей и Django admin —
         # см. apps.users.permissions.is_assistant / IsAdminOrAssistant.
         ASSISTANT = "assistant", "Ассистент"
+        # Бухгалтерия: расчёт зарплат, выплаты, платежи студентов, отчёты —
+        # только через раздел бухгалтерии (/accounting/ во фронтенде,
+        # /api/v1/accounting/ в API). Не утверждает начисления, не меняет
+        # роли и системные настройки — см. apps.accounting.permissions.
+        ACCOUNTANT = "accountant", "Бухгалтер"
+        # Директор: сводная финансовая панель, утверждение/возврат начислений,
+        # отчёты и журнал изменений бухгалтерии.
+        DIRECTOR = "director", "Директор"
 
     username = models.CharField(
         max_length=150,
@@ -88,6 +96,9 @@ class User(AbstractUser):
 
     objects = CustomUserManager()
 
+    # Roles that work only through the LMS, never through Django admin.
+    LMS_ONLY_ROLES = (Role.TEAM_LEAD, Role.ASSISTANT, Role.ACCOUNTANT, Role.DIRECTOR)
+
     class Meta:
         verbose_name = "Пользователь"
         verbose_name_plural = "Пользователи"
@@ -103,7 +114,7 @@ class User(AbstractUser):
         # (apps.users.permissions), never from Django permissions. The same
         # holds for an Assistant: it works only through the Assistant
         # Workspace, never through Django admin.
-        if self.role in (self.Role.TEAM_LEAD, self.Role.ASSISTANT):
+        if self.role in self.LMS_ONLY_ROLES:
             self.is_superuser = False
             self.is_staff = False
             update_fields = kwargs.get("update_fields")
@@ -126,6 +137,14 @@ class User(AbstractUser):
     @property
     def is_assistant(self):
         return self.role == self.Role.ASSISTANT
+
+    @property
+    def is_accountant(self):
+        return self.role == self.Role.ACCOUNTANT
+
+    @property
+    def is_director(self):
+        return self.role == self.Role.DIRECTOR
 
 
 class Subject(models.Model):

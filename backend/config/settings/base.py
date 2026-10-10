@@ -55,6 +55,7 @@ LOCAL_APPS = [
     "apps.training.apps.TrainingConfig",
     "apps.worklog.apps.WorklogConfig",
     "apps.assistant.apps.AssistantConfig",
+    "apps.accounting.apps.AccountingConfig",
 
 ]
 
@@ -247,6 +248,13 @@ LMS_FRONTEND_URL = env("LMS_FRONTEND_URL", default="https://okurmen-kids-drab.ve
 # categories. Any key set here overrides its default in
 # apps.assistant.activity.DEFAULT_THRESHOLDS, e.g. {"risk_attendance": 45}.
 ASSISTANT_CONTROL_THRESHOLDS: dict = {}
+
+# Бухгалтерия (apps.accounting): может ли бухгалтер сам утверждать начисления
+# (по умолчанию — только директор), разрешена ли выплата сверх остатка и шаг
+# округления сумм (0.01 — до тыйына).
+ACCOUNTING_ACCOUNTANT_CAN_APPROVE = env.bool("ACCOUNTING_ACCOUNTANT_CAN_APPROVE", default=False)
+ACCOUNTING_ALLOW_OVERPAYMENT = env.bool("ACCOUNTING_ALLOW_OVERPAYMENT", default=False)
+ACCOUNTING_ROUNDING_QUANTUM = env("ACCOUNTING_ROUNDING_QUANTUM", default="0.01")
 
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",

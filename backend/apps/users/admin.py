@@ -39,6 +39,8 @@ ROLE_ADMIN_LABELS = {
     User.Role.ADMIN: "👑 Администратор",
     User.Role.TEAM_LEAD: "👨‍🏫 Team Lead — руководитель тренеров",
     User.Role.ASSISTANT: "🗂 Ассистент — ежедневные операции академии",
+    User.Role.ACCOUNTANT: "💰 Бухгалтер — зарплаты и выплаты",
+    User.Role.DIRECTOR: "🏛 Директор — утверждение начислений",
     User.Role.TEACHER: "👨‍💻 Тренер",
 }
 
@@ -48,6 +50,7 @@ ROLE_HELP_TEXT = (
     "только для просмотра и входит в LMS (не в эту админ-панель) по логину и паролю. "
     "Ассистент ведёт группы, студентов, расписание, посещаемость, стипендии и опросы "
     "в Assistant Workspace LMS (/assistant/) — тоже не в этой админ-панели. "
+    "Бухгалтер и Директор работают в разделе бухгалтерии LMS (/accounting/). "
     "Тренера с профилем удобнее создавать в разделе «Тренеры»."
 )
 
@@ -82,8 +85,8 @@ class RoleFormMixin:
     def clean(self):
         cleaned = super().clean()
         role = cleaned.get("role")
-        if role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT):
-            label = "Team Lead" if role == User.Role.TEAM_LEAD else "Ассистент"
+        if role in User.LMS_ONLY_ROLES:
+            label = "Team Lead" if role == User.Role.TEAM_LEAD else User.Role(role).label
             if cleaned.get("is_superuser"):
                 self.add_error("is_superuser", f"{label} не может быть суперпользователем.")
             if cleaned.get("is_staff"):

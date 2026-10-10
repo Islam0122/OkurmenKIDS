@@ -1,0 +1,619 @@
+"""Бухгалтерия и расчёт зарплат OkurmenKIDS.
+
+Источники данных переиспользуются из LMS: сотрудник — это `users.User`
+(тренер — через его `academy.Teacher`), программа — `academy.Course`,
+группа — `academy.Group`, студент — `academy.Student`, история активности
+студента — `academy.StudentStatusEvent`, история тренеров группы —
+`academy.TrainerAssignment`.
+
+Единственная новая «первичная» сущность — `StudentPayment`: до этого модуля
+в проекте не было ни одной модели оплат студентов (см. комментарий над
+`academy.StudentStatusEvent`), а процент тренера считается именно от
+фактических платежей.
+
+Финансовые записи никогда не удаляются физически: платежи, выплаты и
+корректировки отменяются (status=VOID) с причиной, всё пишется в
+`PayrollAuditLog`. Все суммы — `Decimal` в сомах (KGS).
+"""
+from __future__ import annotations
+
+import calendar
+import datetime as dt
+from decimal import Decimal
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models
+
+CURRENCY = "KGS"
+MONEY = {"max_digits": 14, "decimal_places": 2}
+ZERO = Decimal("0.00")
+
+
+class ImmutableQuerySet(models.QuerySet):
+    """Финансовые записи не удаляются массово (admin, shell, каскады)."""
+
+    def delete(self):  # pragma: no cover - guarded by tests through the model
+        raise ValidationError("Финансовые записи нельзя удалять — используйте отмену (VOID).")
+
+
+# ---------------------------------------------------------------------------
+# Платежи студентов
+# ---------------------------------------------------------------------------
+
+class StudentPayment(models.Model):
+    """Фактический платёж студента за обучение (или возврат по нему).
+
+    Различаются три даты: `received_date` — когда деньги реально поступили
+    (или вернулись — для возврата); `service_start`/`service_end` — период
+    обучения, за который заплачено. Платёж за несколько месяцев — одна
+    запись с длинным периодом обучения: в зарплату он попадает один раз
+    (по дате поступления) или распределяется по дням периода обучения —
+    смотря по правилу признания выручки в `SalaryRule.revenue_basis`.
+
+    Возврат — отдельная запись kind=REFUND, обязательно ссылающаяся на
+    исходный платёж (`refund_of`): так всегда известно, к какому платежу
+    (и через него — к какому начислению) он относится.
+    """
+
+    class Kind(models.TextChoices):
+        PAYMENT = "payment", "Оплата"
+        REFUND = "refund", "Возврат"
+
+    class Status(models.TextChoices):
+        CONFIRMED = "confirmed", "Подтверждён"
+        VOID = "void", "Отменён"
+
+    class Method(models.TextChoices):
+        CASH = "cash", "Наличные"
+        BANK = "bank", "Банковский перевод"
+        CARD = "card", "Карта / QR"
+        OTHER = "other", "Другое"
+
+    student = models.ForeignKey(
+        "academy.Student", on_delete=models.PROTECT, related_name="payments", verbose_name="Студент",
+    )
+    group = models.ForeignKey(
+        "academy.Group", on_delete=models.PROTECT, related_name="student_payments", verbose_name="Группа",
+        help_text="Группа, за обучение в которой оплачено.",
+    )
+    course = models.ForeignKey(
+        "academy.Course", on_delete=models.PROTECT, related_name="student_payments", verbose_name="Программа",
+        help_text="Заполняется автоматически из группы.",
+    )
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.PAYMENT, verbose_name="Тип")
+    amount = models.DecimalField(
+        **MONEY, validators=[MinValueValidator(Decimal("0.01"))], verbose_name="Сумма, сом",
+        help_text="Всегда положительная; для возврата знак задаёт тип операции.",
+    )
+    currency = models.CharField(max_length=3, default=CURRENCY, editable=False, verbose_name="Валюта")
+    received_date = models.DateField(db_index=True, verbose_name="Дата поступления / возврата")
+    service_start = models.DateField(verbose_name="Обучение с")
+    service_end = models.DateField(verbose_name="Обучение по")
+    refund_of = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="refunds",
+        verbose_name="Возврат по платежу",
+    )
+    method = models.CharField(max_length=10, choices=Method.choices, default=Method.CASH, verbose_name="Способ")
+    reference = models.CharField(max_length=100, blank=True, verbose_name="Номер документа")
+    comment = models.TextField(blank=True, verbose_name="Комментарий")
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.CONFIRMED, db_index=True, verbose_name="Статус",
+    )
+    void_reason = models.TextField(blank=True, verbose_name="Причина отмены")
+    idempotency_key = models.CharField(max_length=64, null=True, blank=True, unique=True, editable=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+", verbose_name="Кто внёс",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    voided_at = models.DateTimeField(null=True, blank=True, verbose_name="Отменено")
+    voided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+        verbose_name="Кто отменил",
+    )
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Платёж студента"
+        verbose_name_plural = "Платежи студентов"
+        ordering = ["-received_date", "-id"]
+        indexes = [
+            models.Index(fields=["group", "received_date"], name="ix_stpay_group_date"),
+            models.Index(fields=["course", "received_date"], name="ix_stpay_course_date"),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="student_payment_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(service_end__gte=models.F("service_start")), name="student_payment_service_range",
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(kind="refund", refund_of__isnull=False) | models.Q(kind="payment", refund_of__isnull=True)),
+                name="student_payment_refund_link",
+            ),
+        ]
+
+    def __str__(self):
+        sign = "−" if self.kind == self.Kind.REFUND else ""
+        return f"{self.student} · {sign}{self.amount} сом · {self.received_date:%d.%m.%Y}"
+
+    @property
+    def signed_amount(self) -> Decimal:
+        return -self.amount if self.kind == self.Kind.REFUND else self.amount
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Платёж нельзя удалить — отмените его с указанием причины.")
+
+
+# ---------------------------------------------------------------------------
+# Зарплатные настройки
+# ---------------------------------------------------------------------------
+
+class SalaryType(models.TextChoices):
+    FIXED = "FIXED", "Фиксированный оклад"
+    REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты студентов"
+    PER_STUDENT = "PER_STUDENT", "За активного студента"
+    PER_GROUP = "PER_GROUP", "За группу"
+    COMBINED = "COMBINED", "Комбинированная схема"
+
+
+class EmployeeSalaryProfile(models.Model):
+    """Зарплатная карточка сотрудника. Ставки живут в `SalaryRule` —
+    у каждой своя версия и срок действия, поэтому изменение ставки никогда
+    не переписывает условия уже рассчитанных периодов."""
+
+    employee = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="salary_profile", verbose_name="Сотрудник",
+    )
+    position = models.CharField(
+        max_length=100, blank=True, verbose_name="Должность",
+        help_text="Пусто — должность из профиля тренера или роль пользователя.",
+    )
+    salary_type = models.CharField(max_length=20, choices=SalaryType.choices, verbose_name="Тип оплаты")
+    currency = models.CharField(max_length=3, default=CURRENCY, editable=False, verbose_name="Валюта")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Активна")
+    effective_from = models.DateField(verbose_name="Действует с")
+    effective_to = models.DateField(null=True, blank=True, verbose_name="Действует по")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Зарплатный профиль"
+        verbose_name_plural = "Зарплатные профили"
+        ordering = ["employee__last_name", "employee__first_name"]
+
+    def __str__(self):
+        return f"{self.employee} · {self.get_salary_type_display()}"
+
+    @property
+    def display_position(self) -> str:
+        if self.position:
+            return self.position
+        teacher = getattr(self.employee, "teacher_profile", None)
+        if teacher is not None:
+            return teacher.position
+        return self.employee.get_role_display()
+
+    def clean(self):
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValidationError({"effective_to": "Дата окончания раньше даты начала."})
+
+
+class SalaryRule(models.Model):
+    """Одна версия одного правила начисления.
+
+    Правило не редактируется после создания: новая ставка — новая версия
+    (`previous_version` → старая версия закрывается датой). Строки расчёта
+    хранят снимок ставки, так что утверждённые начисления не зависят от
+    последующих изменений.
+    """
+
+    class RuleType(models.TextChoices):
+        FIXED = "FIXED", "Оклад"
+        REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты студентов"
+        PER_STUDENT = "PER_STUDENT", "За активного студента"
+        PER_GROUP = "PER_GROUP", "За группу"
+        BONUS = "BONUS", "Дополнительное начисление"
+
+    class Method(models.TextChoices):
+        # FIXED / PER_GROUP
+        SPLIT = "SPLIT", "Доля месячной суммы в каждой половине (по умолчанию 50/50)"
+        PRORATE_DAYS = "PRORATE_DAYS", "Пропорционально календарным дням"
+        # PER_STUDENT
+        STUDENT_DAYS = "STUDENT_DAYS", "По дням активности каждого студента"
+        SNAPSHOT = "SNAPSHOT", "По числу студентов на контрольную дату (конец периода)"
+        # REVENUE_PERCENT / BONUS
+        STANDARD = "STANDARD", "Стандартный"
+
+    class RevenueBasis(models.TextChoices):
+        RECEIVED = "RECEIVED", "Фактически полученные платежи (по дате поступления)"
+        ALLOCATED = "ALLOCATED", "Распределённая выручка (по дням периода обучения)"
+
+    class RefundPolicy(models.TextChoices):
+        DEDUCT = "DEDUCT", "Вычитать в периоде возврата (со ссылкой на исходный платёж)"
+        IGNORE = "IGNORE", "Не учитывать возвраты в зарплате"
+
+    METHODS_BY_TYPE = {
+        RuleType.FIXED: (Method.SPLIT, Method.PRORATE_DAYS),
+        RuleType.PER_GROUP: (Method.PRORATE_DAYS, Method.SPLIT),
+        RuleType.PER_STUDENT: (Method.STUDENT_DAYS, Method.SNAPSHOT),
+        RuleType.REVENUE_PERCENT: (Method.STANDARD,),
+        RuleType.BONUS: (Method.STANDARD,),
+    }
+
+    employee_profile = models.ForeignKey(
+        EmployeeSalaryProfile, on_delete=models.PROTECT, related_name="rules", verbose_name="Профиль",
+    )
+    rule_type = models.CharField(max_length=20, choices=RuleType.choices, verbose_name="Тип правила")
+    amount = models.DecimalField(
+        **MONEY, null=True, blank=True, validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Сумма / ставка, сом",
+        help_text="Оклад в месяц, ставка за студента в месяц, ставка за группу в месяц или сумма бонуса.",
+    )
+    percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))], verbose_name="Процент",
+    )
+    program = models.ForeignKey(
+        "academy.Course", on_delete=models.PROTECT, null=True, blank=True, related_name="salary_rules",
+        verbose_name="Программа",
+    )
+    group = models.ForeignKey(
+        "academy.Group", on_delete=models.PROTECT, null=True, blank=True, related_name="salary_rules",
+        verbose_name="Группа",
+    )
+    calculation_method = models.CharField(max_length=20, choices=Method.choices, verbose_name="Метод расчёта")
+    first_half_share = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("50.00"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        verbose_name="Доля первой половины, %", help_text="Для метода SPLIT: остаток — во второй половине.",
+    )
+    revenue_basis = models.CharField(
+        max_length=20, choices=RevenueBasis.choices, default=RevenueBasis.RECEIVED, verbose_name="База процента",
+    )
+    refund_policy = models.CharField(
+        max_length=20, choices=RefundPolicy.choices, default=RefundPolicy.DEDUCT, verbose_name="Учёт возвратов",
+    )
+    description = models.CharField(max_length=255, blank=True, verbose_name="Комментарий")
+    effective_from = models.DateField(verbose_name="Действует с")
+    effective_to = models.DateField(null=True, blank=True, verbose_name="Действует по (включительно)")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Активно")
+    previous_version = models.OneToOneField(
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="next_version",
+        verbose_name="Предыдущая версия",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Правило начисления"
+        verbose_name_plural = "Правила начисления"
+        ordering = ["employee_profile", "rule_type", "-effective_from", "-id"]
+        indexes = [models.Index(fields=["employee_profile", "is_active"], name="ix_srule_profile_active")]
+
+    def __str__(self):
+        return f"{self.employee_profile.employee} · {self.get_rule_type_display()} с {self.effective_from:%d.%m.%Y}"
+
+    def overlaps(self, start: dt.date, end: dt.date) -> bool:
+        return self.effective_from <= end and (self.effective_to is None or self.effective_to >= start)
+
+    def clean(self):
+        errors = {}
+        if self.effective_to and self.effective_to < self.effective_from:
+            errors["effective_to"] = "Дата окончания раньше даты начала."
+        if self.rule_type == self.RuleType.REVENUE_PERCENT:
+            if self.percentage is None:
+                errors["percentage"] = "Укажите процент."
+        elif self.amount is None:
+            errors["amount"] = "Укажите сумму."
+        if not self.calculation_method:
+            self.calculation_method = self.METHODS_BY_TYPE[self.rule_type][0]
+        elif self.calculation_method not in self.METHODS_BY_TYPE.get(self.rule_type, ()):
+            errors["calculation_method"] = "Метод не подходит для этого типа правила."
+        if self.group_id and self.program_id and self.group.course_id != self.program_id:
+            errors["group"] = "Группа не относится к выбранной программе."
+        if errors:
+            raise ValidationError(errors)
+
+
+# ---------------------------------------------------------------------------
+# Периоды и расчёты
+# ---------------------------------------------------------------------------
+
+class PayrollPeriod(models.Model):
+    class PeriodType(models.TextChoices):
+        FIRST_HALF = "FIRST_HALF", "1–15"
+        SECOND_HALF = "SECOND_HALF", "16–конец месяца"
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Черновик"
+        CALCULATED = "CALCULATED", "Рассчитан"
+        APPROVED = "APPROVED", "Утверждён"
+        CLOSED = "CLOSED", "Закрыт"
+
+    year = models.PositiveSmallIntegerField(validators=[MinValueValidator(2000), MaxValueValidator(2100)])
+    month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
+    period_type = models.CharField(max_length=20, choices=PeriodType.choices)
+    start_date = models.DateField(editable=False)
+    end_date = models.DateField(editable=False)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Расчётный период"
+        verbose_name_plural = "Расчётные периоды"
+        ordering = ["-year", "-month", "-period_type"]
+        constraints = [
+            models.UniqueConstraint(fields=["year", "month", "period_type"], name="unique_payroll_period"),
+        ]
+
+    def __str__(self):
+        return f"{self.start_date:%d.%m.%Y}–{self.end_date:%d.%m.%Y}"
+
+    @staticmethod
+    def bounds(year: int, month: int, period_type: str) -> tuple[dt.date, dt.date]:
+        if period_type == PayrollPeriod.PeriodType.FIRST_HALF:
+            return dt.date(year, month, 1), dt.date(year, month, 15)
+        last = calendar.monthrange(year, month)[1]
+        return dt.date(year, month, 16), dt.date(year, month, last)
+
+    @property
+    def month_days(self) -> int:
+        return calendar.monthrange(self.year, self.month)[1]
+
+    @property
+    def month_start(self) -> dt.date:
+        return dt.date(self.year, self.month, 1)
+
+    @property
+    def month_end(self) -> dt.date:
+        return dt.date(self.year, self.month, self.month_days)
+
+    @property
+    def days(self) -> int:
+        return (self.end_date - self.start_date).days + 1
+
+    @property
+    def is_first_half(self) -> bool:
+        return self.period_type == self.PeriodType.FIRST_HALF
+
+    def save(self, *args, **kwargs):
+        self.start_date, self.end_date = self.bounds(self.year, self.month, self.period_type)
+        super().save(*args, **kwargs)
+
+
+class Payroll(models.Model):
+    """Расчёт зарплаты одного сотрудника за один период.
+
+    `total_accrued` — сумма строк расчёта (замораживается утверждением);
+    `total_adjustments` — сумма применённых корректировок; `total_paid` —
+    сумма подтверждённых выплат; `amount_due` = начислено + корректировки −
+    выплачено. Итоги пересчитываются только сервисами из записей.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Черновик"
+        CALCULATED = "CALCULATED", "Рассчитан"
+        RETURNED = "RETURNED", "Возвращён на исправление"
+        APPROVED = "APPROVED", "Утверждён"
+        PARTIALLY_PAID = "PARTIALLY_PAID", "Частично выплачен"
+        PAID = "PAID", "Выплачен"
+        VOID = "VOID", "Аннулирован"
+
+    EDITABLE_STATUSES = (Status.DRAFT, Status.CALCULATED, Status.RETURNED)
+    LOCKED_STATUSES = (Status.APPROVED, Status.PARTIALLY_PAID, Status.PAID)
+
+    period = models.ForeignKey(PayrollPeriod, on_delete=models.PROTECT, related_name="payrolls")
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="payrolls")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    total_accrued = models.DecimalField(**MONEY, default=ZERO)
+    total_adjustments = models.DecimalField(**MONEY, default=ZERO)
+    total_paid = models.DecimalField(**MONEY, default=ZERO)
+    amount_due = models.DecimalField(**MONEY, default=ZERO)
+    warnings = models.JSONField(default=list, blank=True, help_text="Предупреждения последнего расчёта.")
+    errors = models.JSONField(default=list, blank=True, help_text="Ошибки, блокирующие утверждение.")
+    salary_type = models.CharField(max_length=20, choices=SalaryType.choices, blank=True)
+    position = models.CharField(max_length=100, blank=True)
+    active_students = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Число разных активных студентов в периоде — если применимо.",
+    )
+    return_reason = models.TextField(blank=True)
+    calculated_at = models.DateTimeField(null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Расчёт зарплаты"
+        verbose_name_plural = "Расчёты зарплаты"
+        ordering = ["-period__year", "-period__month", "-period__period_type", "employee__last_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["period", "employee"], name="unique_payroll_employee_period"),
+        ]
+
+    def __str__(self):
+        return f"{self.employee} · {self.period}"
+
+    @property
+    def is_editable(self) -> bool:
+        return self.status in self.EDITABLE_STATUSES
+
+    @property
+    def is_locked(self) -> bool:
+        return self.status in self.LOCKED_STATUSES
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Расчёт нельзя удалить — его можно только аннулировать.")
+
+
+class PayrollLine(models.Model):
+    class LineType(models.TextChoices):
+        FIXED = "FIXED", "Оклад"
+        REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты"
+        REFUND_CORRECTION = "REFUND_CORRECTION", "Корректировка возврата"
+        PER_STUDENT = "PER_STUDENT", "За активных студентов"
+        PER_GROUP = "PER_GROUP", "За группу"
+        BONUS = "BONUS", "Дополнительное начисление"
+
+    payroll = models.ForeignKey(Payroll, on_delete=models.CASCADE, related_name="lines")
+    line_type = models.CharField(max_length=20, choices=LineType.choices)
+    description = models.CharField(max_length=255)
+    source_type = models.CharField(max_length=40, blank=True)
+    source_id = models.PositiveBigIntegerField(null=True, blank=True)
+    salary_rule = models.ForeignKey(SalaryRule, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    quantity = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    rate = models.DecimalField(**MONEY, null=True, blank=True)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    base_amount = models.DecimalField(**MONEY, null=True, blank=True)
+    amount = models.DecimalField(**MONEY)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Строка расчёта"
+        verbose_name_plural = "Строки расчёта"
+        ordering = ["payroll", "id"]
+
+    def __str__(self):
+        return f"{self.description}: {self.amount}"
+
+
+class PayrollAdjustment(models.Model):
+    """Корректировка начисления: бонус, удержание или исправление.
+
+    К черновому расчёту применяется сразу (входит в утверждаемую сумму).
+    К утверждённому — создаётся как PENDING и меняет остаток только после
+    утверждения директором: утверждённое начисление нельзя изменить
+    незаметно.
+    """
+
+    class Kind(models.TextChoices):
+        BONUS = "BONUS", "Премия / доплата"
+        DEDUCTION = "DEDUCTION", "Удержание"
+        CORRECTION = "CORRECTION", "Исправление"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Ожидает утверждения"
+        APPLIED = "APPLIED", "Применена"
+        REJECTED = "REJECTED", "Отклонена"
+        VOID = "VOID", "Отменена"
+
+    payroll = models.ForeignKey(Payroll, on_delete=models.PROTECT, related_name="adjustments")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    amount = models.DecimalField(
+        **MONEY, help_text="Со знаком: удержание всегда отрицательное, премия — положительная.",
+    )
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=Status.choices, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Корректировка"
+        verbose_name_plural = "Корректировки"
+        ordering = ["payroll", "id"]
+
+    def __str__(self):
+        return f"{self.get_kind_display()}: {self.amount}"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Корректировку нельзя удалить — её можно отменить.")
+
+
+class PayrollPayment(models.Model):
+    class Method(models.TextChoices):
+        BANK = "bank", "Банковский перевод"
+        CASH = "cash", "Наличные"
+        OTHER = "other", "Другое"
+
+    class Status(models.TextChoices):
+        CONFIRMED = "CONFIRMED", "Подтверждена"
+        VOID = "VOID", "Отменена"
+
+    payroll = models.ForeignKey(Payroll, on_delete=models.PROTECT, related_name="payments")
+    amount = models.DecimalField(**MONEY, validators=[MinValueValidator(Decimal("0.01"))])
+    payment_date = models.DateField()
+    payment_method = models.CharField(max_length=10, choices=Method.choices, default=Method.BANK)
+    reference = models.CharField(max_length=100, blank=True)
+    comment = models.TextField(blank=True)
+    is_advance = models.BooleanField(default=False, verbose_name="Аванс")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.CONFIRMED, db_index=True)
+    void_reason = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=64, null=True, blank=True, unique=True, editable=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    voided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    voided_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Выплата сотруднику"
+        verbose_name_plural = "Выплаты сотрудникам"
+        ordering = ["payroll", "payment_date", "id"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="payroll_payment_amount_positive"),
+        ]
+
+    def __str__(self):
+        return f"{self.amount} сом · {self.payment_date:%d.%m.%Y}"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Выплату нельзя удалить — отмените её с указанием причины.")
+
+
+class PayrollAuditLog(models.Model):
+    """Журнал финансовых изменений. Только добавление: ни API, ни admin
+    не дают изменить или удалить запись."""
+
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    entity_type = models.CharField(max_length=40, db_index=True)
+    entity_id = models.PositiveBigIntegerField(db_index=True)
+    action = models.CharField(max_length=40, db_index=True)
+    old_values = models.JSONField(default=dict, blank=True)
+    new_values = models.JSONField(default=dict, blank=True)
+    reason = models.TextField(blank=True)
+    payroll = models.ForeignKey(
+        Payroll, on_delete=models.PROTECT, null=True, blank=True, related_name="audit_entries",
+        help_text="Расчёт, к которому относится запись (для истории на странице расчёта).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Запись журнала аудита"
+        verbose_name_plural = "Журнал аудита бухгалтерии"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.created_at:%d.%m.%Y %H:%M} · {self.action} · {self.entity_type}#{self.entity_id}"
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            raise ValidationError("Запись журнала аудита нельзя изменить.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Запись журнала аудита нельзя удалить.")
