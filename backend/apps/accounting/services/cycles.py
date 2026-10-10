@@ -564,7 +564,9 @@ def sync_all(*, actor=None) -> int:
 def sync_group_safely(group_id: int, actor=None) -> None:
     """Для сигнала урока: ошибка учёта не должна ломать сохранение урока в LMS."""
     try:
-        group = Group.objects.select_related("course").get(pk=group_id)
+        group = Group.objects.select_related("course").filter(pk=group_id).first()
+        if group is None:  # группу удалили вместе с уроками — пересчитывать нечего
+            return
         settings = CoursePayrollSettings.objects.filter(course_id=group.course_id, is_active=True).first()
         if settings is not None and group.status != Group.Status.CANCELLED:
             sync_group(group, settings, actor=actor)

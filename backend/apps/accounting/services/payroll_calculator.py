@@ -181,8 +181,15 @@ def _percent(profile, period, payroll_id, out: Computation, window_rules: list[S
     if not windows:
         return
     lo, hi = min(w[0] for w in windows), max(w[1] for w in windows)
+    # Досоздаются начисления только по циклам, за которые сотруднику вообще
+    # может быть положено: он проводил их уроки, правило привязано к группе,
+    # или это исторический общий цикл. Чужие циклы расчёт не трогает.
+    teacher = getattr(profile.employee, "teacher_profile", None)
+    could_be_due = Q(per_subject=False) | Q(group_id__in=[r.group_id for r in window_rules if r.group_id])
+    if teacher is not None:
+        could_be_due |= Q(teacher_lessons__has_key=str(teacher.pk))
     candidates = CourseCycle.objects.filter(
-        status=CourseCycle.Status.COMPLETED, completed_on__gte=lo, completed_on__lte=hi,
+        could_be_due, status=CourseCycle.Status.COMPLETED, completed_on__gte=lo, completed_on__lte=hi,
     ).exclude(accruals__employee=profile.employee)
     for cycle in candidates.select_related("group", "course"):
         ensure_accruals(cycle)

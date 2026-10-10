@@ -1066,3 +1066,36 @@ class CycleAccrual(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Начисление за цикл нельзя удалить — только отменить или сторнировать.")
+
+
+# ---------------------------------------------------------------------------
+# Реестр тестовых данных (manage.py seed_accounting_demo)
+# ---------------------------------------------------------------------------
+
+class DemoSeedRecord(models.Model):
+    """Отметка «эта запись создана генератором тестовых данных».
+
+    Тестовые данные определяются ТОЛЬКО по этому реестру (не по именам):
+    `--clear` удаляет лишь зарегистрированные объекты и останавливается, если
+    удаление задело бы хоть одну незарегистрированную запись. Строка без
+    объекта (`content_type` пуст) — метаданные набора (seed, дата генерации)."""
+
+    dataset = models.CharField(max_length=40, db_index=True)
+    key = models.CharField(max_length=200, unique=True, help_text="Стабильный ключ объекта в наборе.")
+    content_type = models.ForeignKey(
+        "contenttypes.ContentType", on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    object_id = models.PositiveBigIntegerField(null=True, blank=True)
+    meta = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Запись тестового набора"
+        verbose_name_plural = "Реестр тестовых данных"
+        ordering = ["dataset", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["content_type", "object_id"], name="unique_demo_seed_object"),
+        ]
+
+    def __str__(self):
+        return self.key
