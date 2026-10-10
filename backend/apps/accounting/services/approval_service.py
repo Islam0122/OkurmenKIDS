@@ -7,7 +7,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import Payroll, PayrollAdjustment, PayrollPayment, PayrollPeriod
+from ..models import CycleAccrual, Payroll, PayrollAdjustment, PayrollPayment, PayrollPeriod
 from . import AccountingError, audit
 from .payroll_calculator import refresh_totals
 from .periods import sync_period_status
@@ -55,6 +55,9 @@ def approve_payroll(payroll: Payroll, actor) -> Payroll:
         payroll.approved_by = actor
         payroll.approved_at = timezone.now()
         payroll.save()
+        CycleAccrual.objects.filter(payroll=payroll, status=CycleAccrual.Status.ACCRUED).update(
+            status=CycleAccrual.Status.APPROVED,
+        )
         audit.log(actor, payroll, "approve", old=old, new={
             **audit.snapshot(payroll, TOTALS),
             "lines": [
@@ -112,6 +115,22 @@ def reopen_payroll(payroll: Payroll, actor, reason: str) -> Payroll:
         payroll.approved_by = None
         payroll.approved_at = None
         payroll.save()
+        CycleAccrual.objects.filter(payroll=payroll, status=CycleAccrual.Status.APPROVED).update(
+            status=CycleAccrual.Status.ACCRUED,
+        )
+        # Ждущее сторно отменённого цикла больше не нужно: после пересчёта
+        # строки этого цикла в расчёте просто не будет.
+        for accrual in CycleAccrual.objects.filter(
+            payroll=payroll, status=CycleAccrual.Status.CORRECTED, adjustment__status=PayrollAdjustment.Status.PENDING,
+        ).select_related("adjustment"):
+            accrual.adjustment.status = PayrollAdjustment.Status.VOID
+            accrual.adjustment.decided_by, accrual.adjustment.decided_at = actor, timezone.now()
+            accrual.adjustment.save()
+            accrual.status = CycleAccrual.Status.CANCELLED
+            accrual.save()
+            audit.log(actor, accrual, "cancel", old={"status": CycleAccrual.Status.CORRECTED},
+                      new={"status": accrual.status}, reason="Расчёт переоткрыт — сторно не требуется.",
+                      payroll=payroll)
         audit.log(actor, payroll, "reopen", old=old, new={"status": payroll.status}, reason=reason, payroll=payroll)
         sync_period_status(payroll.period)
     return payroll
@@ -126,6 +145,10 @@ def void_payroll(payroll: Payroll, actor, reason: str) -> Payroll:
         old = audit.snapshot(payroll, TOTALS)
         payroll.status = Payroll.Status.VOID
         payroll.save(update_fields=["status", "updated_at"])
+        # Начисления за циклы освобождаются и попадут в следующий расчёт.
+        CycleAccrual.objects.filter(payroll=payroll, status=CycleAccrual.Status.ACCRUED).update(
+            payroll=None, line=None,
+        )
         audit.log(actor, payroll, "void", old=old, new={"status": payroll.status}, reason=reason, payroll=payroll)
         sync_period_status(payroll.period)
     return payroll
@@ -194,6 +217,11 @@ def decide_adjustment(adjustment: PayrollAdjustment, *, approve: bool, actor, re
         adjustment.save()
         if approve:
             _apply(payroll, adjustment)
+        else:
+            # Директор отклонил автоматическое сторно — начисление за цикл остаётся в силе.
+            CycleAccrual.objects.filter(adjustment=adjustment).update(
+                status=CycleAccrual.Status.APPROVED, note="Сторно отклонено директором.",
+            )
         audit.log(actor, adjustment, "approve" if approve else "reject", old=old,
                   new={"status": adjustment.status, **audit.snapshot(payroll, TOTALS)}, reason=reason, payroll=payroll)
     return adjustment

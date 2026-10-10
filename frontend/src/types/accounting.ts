@@ -294,7 +294,8 @@ export interface CourseSettings {
   course_count_lesson: number
   price_per_student: string
   required_lessons: number
-  count_lessons_from: string
+  /** Необязательно: пусто — учёт с первого проведённого урока. */
+  count_lessons_from: string | null
   student_count_rule: string
   student_count_rule_display: string
   is_active: boolean
@@ -308,15 +309,32 @@ export interface CourseCycle {
   course: number
   course_name: string
   number: number
-  status: 'IN_PROGRESS' | 'COMPLETED'
+  status: 'IN_PROGRESS' | 'COMPLETED' | 'INVALIDATED'
   status_display: string
   required_lessons: number
   lessons_done: number
+  /** Порог: накопленные проведённые уроки группы (12, 24, 36…). */
+  lessons_total: number
+  invalidated_reason: string
   start_date: string | null
   completed_on: string | null
   student_count: number | null
   course_price: string | null
   base_amount: string | null
   trainers: string[]
-  accruals: { employee: number; employee_name: string; percentage: string; amount: string; payroll: number; payroll_status: PayrollStatus; period_label: string }[]
+  accruals: {
+    id: number
+    employee: number
+    employee_name: string
+    percentage: string
+    amount: string
+    status: 'ACCRUED' | 'APPROVED' | 'CANCELLED' | 'CORRECTED' | 'CORRECTION_REQUIRED'
+    status_display: string
+    note: string
+    payroll: number | null
+    payroll_status: PayrollStatus | null
+    payroll_status_display: string | null
+    period_label: string | null
+    adjustment: number | null
+  }[]
 }
