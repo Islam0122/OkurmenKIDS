@@ -8,6 +8,9 @@
 from django.contrib import admin
 
 from .models import (
+    CourseCycle,
+    CoursePayrollSettings,
+    CycleAccrual,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -87,3 +90,21 @@ class PayrollAdjustmentAdmin(ReadOnlyAdmin):
 class PayrollAuditLogAdmin(ReadOnlyAdmin):
     list_display = ("created_at", "actor", "action", "entity_type", "entity_id")
     list_filter = ("action", "entity_type")
+
+
+@admin.register(CoursePayrollSettings)
+class CoursePayrollSettingsAdmin(ReadOnlyAdmin):
+    list_display = ("course", "price_per_student", "required_lessons", "count_lessons_from", "is_active")
+
+
+@admin.register(CourseCycle)
+class CourseCycleAdmin(ReadOnlyAdmin):
+    list_display = ("group", "course", "number", "status", "lessons_done", "required_lessons", "completed_on",
+                    "student_count", "course_price")
+    list_filter = ("status", "course")
+    exclude = ("student_ids",)
+
+
+@admin.register(CycleAccrual)
+class CycleAccrualAdmin(ReadOnlyAdmin):
+    list_display = ("cycle", "employee", "payroll", "student_count", "course_price", "percentage", "amount")

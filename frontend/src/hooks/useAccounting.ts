@@ -68,3 +68,15 @@ export function useAccountingMutation<TArgs, TResult>(fn: (args: TArgs) => Promi
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['accounting'] }),
   })
 }
+
+export function useCourseSettings() {
+  return useQuery({ queryKey: ['accounting', 'course-settings'], queryFn: accountingApi.courseSettings })
+}
+
+export function useCourseCycles(params: Record<string, string | number | undefined>) {
+  return useQuery({
+    queryKey: ['accounting', 'cycles', params],
+    queryFn: () => accountingApi.cycles(params),
+    placeholderData: keepPreviousData,
+  })
+}

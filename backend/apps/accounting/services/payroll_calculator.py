@@ -1,38 +1,38 @@
-"""Расчёт начислений за период.
+"""Расчёт начислений за период. Разрешены два типа оплаты.
 
-`compute(period, profile)` — чистая функция: по правилам сотрудника и
-данным LMS возвращает строки расчёта, предупреждения и ошибки, ничего не
-записывая. `calculate_payroll` сохраняет результат в `Payroll` (один на
-сотрудника и период) в транзакции; `calculate_period` — массовый расчёт.
+* FIXED — индивидуальный месячный оклад. Не зависит от студентов, курсов,
+  платежей и посещаемости. Распределение между половинами месяца:
+    SPLIT        — оклад × доля половины (по умолчанию 50/50) × дни действия / дни периода
+    PRORATE_DAYS — оклад × дни действия в периоде / дни месяца
+* PERCENT — процент от фиксированной стоимости курса, начисляется за
+  каждый ЗАВЕРШЁННЫЙ цикл курса (services.cycles) в группе, за которую
+  сотрудник отвечал на дату завершения:
+    студенты цикла × стоимость курса × процент / 100
+  Цикл относится к периоду по дате завершения (1–15 → первая половина,
+  16–конец → вторая). Один цикл начисляется сотруднику один раз
+  (`CycleAccrual`, уникально по циклу и сотруднику). Фактические платежи,
+  посещаемость и число уроков сверх цикла на сумму не влияют.
 
-Формулы (все суммы — Decimal, округление по строке — services.money):
-
-* FIXED / SPLIT        — оклад × доля половины × (дни действия / дни периода)
-* FIXED / PRORATE_DAYS — оклад × дни действия в периоде / дни месяца
-* PER_GROUP            — так же, по дням, когда группа существовала и
-                         сотрудник отвечал за неё (история тренеров)
-* PER_STUDENT / STUDENT_DAYS — ставка × Σ(дни активности студента / дни месяца);
-                         студент считается один раз на день, даже если
-                         попадает под несколько групп / правил
-* PER_STUDENT / SNAPSHOT — ставка × студенты на конец периода × дни действия / дни месяца
-* REVENUE_PERCENT      — учитываемая выручка × процент / 100, отдельно по
-                         каждой группе; возвраты — отдельными строками
-* BONUS                — разово, в периоде, куда попадает дата начала правила
+`compute()` — чистая функция (строки, предупреждения, ошибки);
+`calculate_payroll()` сохраняет результат в транзакции; `calculate_period()`
+— массовый расчёт.
 """
 from __future__ import annotations
 
 import datetime as dt
-from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import F, Q, Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.academy.models import Group, TrainerAssignment
 
 from ..models import (
+    ALLOWED_SALARY_TYPES,
+    CourseCycle,
+    CycleAccrual,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -40,11 +40,11 @@ from ..models import (
     PayrollPayment,
     PayrollPeriod,
     SalaryRule,
-    StudentPayment,
 )
 from . import AccountingError, audit
-from .activity import active_student_days, days_between, group_active_days, trainer_days, trainer_group_ids_ever
-from .money import ZERO, allocate_by_days, money, plain
+from .activity import trainer_group_ids_ever
+from .cycles import sync_all
+from .money import ZERO, money, plain
 
 LineType = PayrollLine.LineType
 RuleType = SalaryRule.RuleType
@@ -66,6 +66,7 @@ class LineDraft:
     percentage: Decimal | None = None
     base_amount: Decimal | None = None
     metadata: dict = field(default_factory=dict)
+    cycle: CourseCycle | None = None
 
 
 @dataclass
@@ -88,20 +89,6 @@ def _fmt(day: dt.date) -> str:
     return f"{day:%d.%m.%Y}"
 
 
-def _runs(days: set[dt.date]):
-    """Непрерывные отрезки [lo, hi] из множества дней."""
-    ordered = sorted(days)
-    if not ordered:
-        return
-    lo = prev = ordered[0]
-    for day in ordered[1:]:
-        if day != prev + dt.timedelta(days=1):
-            yield lo, prev
-            lo = day
-        prev = day
-    yield lo, prev
-
-
 def rules_for(profile: EmployeeSalaryProfile, period: PayrollPeriod) -> list[SalaryRule]:
     return [
         rule for rule in profile.rules.filter(is_active=True).select_related("group", "program").order_by("id")
@@ -121,60 +108,17 @@ def _rule_label(rule: SalaryRule) -> str:
     return f"{rule.get_rule_type_display()}{f' · {scope}' if scope else ''} (правило #{rule.pk})"
 
 
-class _Context:
-    """Общие данные одного расчёта сотрудника: учтённые платежи и
-    студенто-дни, чтобы одно основание не попало в зарплату дважды."""
-
-    def __init__(self, period, profile):
-        self.period = period
-        self.profile = profile
-        self.employee = profile.employee
-        teacher = getattr(self.employee, "teacher_profile", None)
-        self.teacher_id = teacher.pk if teacher is not None else None
-        self.counted_payments: set[int] = set()
-        self.counted_refunds: set[int] = set()
-        self.counted_student_days: set[tuple[int, dt.date]] = set()
-        self.counted_group_days: set[tuple[int, dt.date]] = set()
-        self.students: set[int] = set()
-        self._ever = None
-
-    @property
-    def ever_groups(self) -> set[int]:
-        if self._ever is None:
-            self._ever = trainer_group_ids_ever(self.teacher_id)
-        return self._ever
-
-    def scope_groups(self, rule: SalaryRule) -> list[Group]:
-        if rule.group_id:
-            return [rule.group]
-        groups = Group.objects.filter(id__in=self.ever_groups)
-        if rule.program_id:
-            groups = groups.filter(course_id=rule.program_id)
-        return list(groups.select_related("course"))
-
-    def coverage(self, rule: SalaryRule, lo: dt.date, hi: dt.date) -> dict[int, set[dt.date]]:
-        """{group_id: дни [lo, hi], когда сотрудник отвечает за группу по
-        этому правилу}. Если правило привязано к группе, а сотрудник в ней
-        никогда не был тренером (куратор, программист без назначения) —
-        все дни окна: основанием служит сама привязка правила."""
-        tdays = trainer_days(self.teacher_id, lo, hi)
-        window = days_between(lo, hi)
-        result = {}
-        for group in self.scope_groups(rule):
-            if rule.group_id and group.pk not in self.ever_groups:
-                result[group.pk] = set(window)
-            else:
-                result[group.pk] = tdays.get(group.pk, set()) & window
-        return result
+def period_of(day: dt.date) -> tuple[int, int, str]:
+    half = PayrollPeriod.PeriodType.FIRST_HALF if day.day <= 15 else PayrollPeriod.PeriodType.SECOND_HALF
+    return day.year, day.month, half
 
 
 # ---------------------------------------------------------------------------
-# Компоненты
+# FIXED
 # ---------------------------------------------------------------------------
 
-def _fixed(rule, ctx: _Context, out: Computation):
-    period = ctx.period
-    window = _window(rule, ctx.profile, period)
+def _fixed(rule, profile, period, out: Computation):
+    window = _window(rule, profile, period)
     if window is None:
         return
     lo, hi = window
@@ -196,300 +140,95 @@ def _fixed(rule, ctx: _Context, out: Computation):
     ))
 
 
-def _bonus(rule, ctx: _Context, out: Computation):
-    period = ctx.period
-    if period.start_date <= rule.effective_from <= period.end_date:
-        out.lines.append(LineDraft(
-            LineType.BONUS, rule.description or "Дополнительное начисление", money(rule.amount), rule,
-            source_type="salary_rule", source_id=rule.pk, quantity=Decimal("1"), rate=rule.amount,
-        ))
+# ---------------------------------------------------------------------------
+# PERCENT — завершённые циклы курса
+# ---------------------------------------------------------------------------
+
+def _responsible(teacher_id, group_id, day) -> bool:
+    return TrainerAssignment.objects.filter(
+        teacher_id=teacher_id, group_id=group_id, start_date__lte=day,
+    ).filter(Q(end_date__isnull=True) | Q(end_date__gt=day)).exists()
 
 
-def _per_group(rule, ctx: _Context, out: Computation):
-    period = ctx.period
-    window = _window(rule, ctx.profile, period)
+def _scope_groups(rule: SalaryRule, teacher_id) -> list[int]:
+    if rule.group_id:
+        return [rule.group_id]
+    groups = Group.objects.filter(id__in=trainer_group_ids_ever(teacher_id))
+    if rule.program_id:
+        groups = groups.filter(course_id=rule.program_id)
+    return list(groups.values_list("id", flat=True))
+
+
+def _owns(rule, teacher_id, cycle) -> bool:
+    """Цикл — сотрудника, если тот отвечал за группу на дату завершения.
+    Правило с конкретной группой у сотрудника без истории назначений в ней
+    (не тренер группы) — основание сама привязка."""
+    if rule.group_id and cycle.group_id not in trainer_group_ids_ever(teacher_id):
+        return True
+    return teacher_id is not None and _responsible(teacher_id, cycle.group_id, cycle.completed_on)
+
+
+def _percent(rule, profile, period, payroll_id, out: Computation, counted: set[int]):
+    window = _window(rule, profile, period)
     if window is None:
         return
     lo, hi = window
-    coverage = ctx.coverage(rule, lo, hi)
-    if not coverage:
-        out.warnings.append(f"{_rule_label(rule)}: нет групп, за которые отвечает сотрудник.")
+    teacher = getattr(profile.employee, "teacher_profile", None)
+    teacher_id = teacher.pk if teacher is not None else None
+    if not rule.group_id and teacher_id is None:
+        out.errors.append(f"{_rule_label(rule)}: сотрудник не тренер — укажите в правиле конкретную группу.")
         return
-    groups = {g.pk: g for g in Group.objects.filter(pk__in=coverage)}
-    for group_id, days in coverage.items():
-        group = groups[group_id]
-        days = days & group_active_days(group, lo, hi)
-        fresh = {d for d in days if (group_id, d) not in ctx.counted_group_days}
-        if len(fresh) < len(days):
-            out.warnings.append(
-                f"{_rule_label(rule)}: группа «{group.name}» уже оплачена другим правилом за "
-                f"{len(days) - len(fresh)} дн. — повторно не начисляется."
-            )
-        if not fresh:
+    groups = _scope_groups(rule, teacher_id)
+    accrued_elsewhere = set(
+        CycleAccrual.objects.filter(employee=profile.employee).exclude(payroll_id=payroll_id)
+        .values_list("cycle_id", flat=True)
+    )
+    completed = CourseCycle.objects.filter(status=CourseCycle.Status.COMPLETED, group_id__in=groups)
+    candidates = list(
+        completed.filter(completed_on__gte=lo, completed_on__lte=hi).select_related("group", "course")
+    )
+    # Цикл, отмеченный завершённым задним числом в уже утверждённом периоде,
+    # не теряется: он начисляется в текущем периоде с пометкой.
+    late = []
+    for cycle in completed.filter(completed_on__lt=period.start_date, completed_on__gte=rule.effective_from).exclude(
+        pk__in=accrued_elsewhere,
+    ).select_related("group", "course"):
+        year, month, half = period_of(cycle.completed_on)
+        if Payroll.objects.filter(
+            employee=profile.employee, period__year=year, period__month=month, period__period_type=half,
+            status__in=Payroll.LOCKED_STATUSES,
+        ).exists():
+            late.append(cycle)
+    for cycle in candidates + late:
+        if cycle.pk in accrued_elsewhere or cycle.pk in counted or not _owns(rule, teacher_id, cycle):
             continue
-        ctx.counted_group_days.update((group_id, d) for d in fresh)
-        n = len(fresh)
-        if rule.calculation_method == Method.SPLIT:
-            share = rule.first_half_share if period.is_first_half else Decimal("100") - rule.first_half_share
-            amount = money(rule.amount * share / 100 * n / period.days)
-            quantity = _q(share / 100 * Decimal(n) / period.days)
-            how = f"{plain(share)}% ставки, {n} из {period.days} дн."
-        else:
-            amount = money(rule.amount * n / period.month_days)
-            quantity = _q(Decimal(n) / period.month_days)
-            how = f"{n} из {period.month_days} дн. месяца"
+        counted.add(cycle.pk)
+        base = cycle.course_price * cycle.student_count
+        amount = money(base * rule.percentage / 100)
+        note = " — завершён в уже утверждённом периоде" if cycle in late else ""
         out.lines.append(LineDraft(
-            LineType.PER_GROUP, f"Оплата за группу «{group.name}» ({how})", amount, rule,
-            source_type="group", source_id=group_id, quantity=quantity, rate=rule.amount,
-            metadata={"group": group.name, "days": n, "method": rule.calculation_method},
+            LineType.PERCENT,
+            f"Цикл {cycle.number} курса «{cycle.course.name}», группа «{cycle.group.name}»: "
+            f"{cycle.student_count} студ. × {plain(cycle.course_price)} сом × {plain(rule.percentage)}% "
+            f"(завершён {_fmt(cycle.completed_on)}, {cycle.required_lessons} ур.){note}",
+            amount, rule, source_type="course_cycle", source_id=cycle.pk,
+            quantity=Decimal(cycle.student_count), rate=cycle.course_price, percentage=rule.percentage,
+            base_amount=money(base), cycle=cycle,
+            metadata={
+                "cycle_id": cycle.pk, "cycle_number": cycle.number, "group_id": cycle.group_id,
+                "group": cycle.group.name, "course_id": cycle.course_id, "course": cycle.course.name,
+                "lessons": cycle.required_lessons, "completed_on": cycle.completed_on.isoformat(),
+                "students_count": cycle.student_count, "course_price": str(cycle.course_price),
+                "late": bool(note),
+            },
         ))
-
-
-def _per_student(rule, ctx: _Context, out: Computation):
-    period = ctx.period
-    window = _window(rule, ctx.profile, period)
-    if window is None:
-        return
-    lo, hi = window
-    coverage = ctx.coverage(rule, lo, hi)
-    if not coverage:
-        out.warnings.append(f"{_rule_label(rule)}: нет групп, за которые отвечает сотрудник.")
-        return
-    activity = active_student_days(lo, hi, group_ids=coverage.keys())
-
-    if rule.calculation_method == Method.SNAPSHOT:
-        control = hi
-        students = sorted(
-            sid for sid, days in activity.items()
-            if control in days and control in coverage.get(days[control], set())
-            and (sid, control) not in ctx.counted_student_days
-        )
-        ctx.counted_student_days.update((sid, control) for sid in students)
-        ctx.students.update(students)
-        n_days = (hi - lo).days + 1
-        amount = money(rule.amount * len(students) * n_days / period.month_days)
-        if not students:
-            out.warnings.append(f"{_rule_label(rule)}: на {_fmt(control)} нет активных студентов.")
-        out.lines.append(LineDraft(
-            LineType.PER_STUDENT,
-            f"Оплата за {len(students)} активн. студ. на {_fmt(control)} ({n_days} из {period.month_days} дн. месяца)",
-            amount, rule, source_type="salary_rule", source_id=rule.pk, quantity=Decimal(len(students)),
-            rate=rule.amount, metadata={"method": "SNAPSHOT", "control_date": control.isoformat(),
-                                        "students_count": len(students),
-                                        "students": _student_rows({s: n_days for s in students})},
-        ))
-        return
-
-    per_student: dict[int, int] = {}
-    duplicates = 0
-    for sid, days in activity.items():
-        n = 0
-        for day, group_id in days.items():
-            if day not in coverage.get(group_id, set()):
-                continue
-            if (sid, day) in ctx.counted_student_days:
-                duplicates += 1
-                continue
-            ctx.counted_student_days.add((sid, day))
-            n += 1
-        if n:
-            per_student[sid] = n
-    if duplicates:
-        out.warnings.append(
-            f"{_rule_label(rule)}: {duplicates} студенто-дн. уже учтены другим правилом — повторно не начисляются."
-        )
-    ctx.students.update(per_student)
-    student_days = sum(per_student.values())
-    equivalent = _q(Decimal(student_days) / period.month_days)
-    amount = money(rule.amount * student_days / period.month_days)
-    if not per_student:
-        out.warnings.append(f"{_rule_label(rule)}: нет данных об активных студентах в периоде.")
-    out.lines.append(LineDraft(
-        LineType.PER_STUDENT,
-        f"Оплата за {len(per_student)} активн. студ. ({student_days} студенто-дн. / {period.month_days} дн. месяца "
-        f"= {plain(equivalent)} студ.-мес.)",
-        amount, rule, source_type="salary_rule", source_id=rule.pk, quantity=equivalent, rate=rule.amount,
-        metadata={"method": "STUDENT_DAYS", "student_days": student_days, "month_days": period.month_days,
-                  "students_count": len(per_student), "students": _student_rows(per_student)},
-    ))
-
-
-def _student_rows(days_by_student: dict[int, int]) -> list[dict]:
-    """Основание строки — только id студента и число дней (без ФИО и других
-    полей профиля); наружу API отдаёт лишь агрегаты (см. serializers)."""
-    return [{"id": sid, "days": n} for sid, n in sorted(days_by_student.items())]
-
-
-class _Responsibility:
-    """Кто отвечал за группу в конкретный день (по истории назначений)."""
-
-    def __init__(self, group_ids):
-        self.rows = defaultdict(list)
-        for row in TrainerAssignment.objects.filter(group_id__in=group_ids).exclude(end_date=F("start_date")):
-            self.rows[row.group_id].append(row)
-
-    def teachers(self, group_id, day) -> set[int]:
-        return {
-            r.teacher_id for r in self.rows[group_id]
-            if r.start_date <= day and (r.end_date is None or r.end_date > day)
-        }
-
-    def attribution_day(self, payment: StudentPayment) -> dt.date:
-        """День, по которому платёж закрепляется за тренером: дата
-        поступления. Предоплата до первого назначения тренера в группу
-        (деньги пришли раньше, чем группа начала работать) закрепляется за
-        первым тренером, отвечающим за оплаченный период."""
-        if self.teachers(payment.group_id, payment.received_date):
-            return payment.received_date
-        starts = [r.start_date for r in self.rows[payment.group_id]]
-        if starts and payment.received_date < min(starts):
-            return max(payment.service_start, min(starts))
-        return payment.received_date
-
-
-def _revenue(rule, ctx: _Context, out: Computation):
-    period = ctx.period
-    window = _window(rule, ctx.profile, period)
-    if window is None:
-        return
-    lo, hi = window
-    groups = ctx.scope_groups(rule)
-    if not groups:
-        out.warnings.append(f"{_rule_label(rule)}: нет групп, за которые отвечает сотрудник.")
-        return
-    group_ids = [g.pk for g in groups]
-    names = {g.pk: g for g in groups}
-    resp = _Responsibility(group_ids)
-    bound_without_history = {gid for gid in group_ids if rule.group_id and gid not in ctx.ever_groups}
-    pct = rule.percentage
-    allocated = rule.revenue_basis == SalaryRule.RevenueBasis.ALLOCATED
-    coverage = ctx.coverage(rule, lo, hi) if allocated else None
-
-    def owns(payment: StudentPayment) -> bool:
-        if payment.group_id in bound_without_history:
-            return True
-        return ctx.teacher_id in resp.teachers(payment.group_id, resp.attribution_day(payment))
-
-    confirmed = StudentPayment.objects.filter(status=StudentPayment.Status.CONFIRMED, group_id__in=group_ids)
-    base: dict[int, Decimal] = defaultdict(lambda: ZERO)
-    rows: dict[int, list] = defaultdict(list)
-    skipped = 0
-
-    if allocated:
-        payments = confirmed.filter(
-            kind=StudentPayment.Kind.PAYMENT, service_start__lte=hi, service_end__gte=lo,
-        ).select_related("student")
-        for p in payments:
-            portion = sum(
-                (allocate_by_days(p.amount, p.service_start, p.service_end, a, b)
-                 for a, b in _runs(coverage.get(p.group_id, set()))),
-                ZERO,
-            )
-            if not portion:
-                continue
-            if p.pk in ctx.counted_payments:
-                skipped += 1
-                continue
-            ctx.counted_payments.add(p.pk)
-            base[p.group_id] += portion
-            rows[p.group_id].append(_payment_row(p, portion))
-    else:
-        payments = confirmed.filter(
-            kind=StudentPayment.Kind.PAYMENT, received_date__gte=lo, received_date__lte=hi,
-        ).select_related("student")
-        for p in payments:
-            if not owns(p):
-                continue
-            if p.pk in ctx.counted_payments:
-                skipped += 1
-                continue
-            ctx.counted_payments.add(p.pk)
-            base[p.group_id] += p.amount
-            rows[p.group_id].append(_payment_row(p, p.amount))
-    if skipped:
-        out.warnings.append(f"{_rule_label(rule)}: {skipped} платеж(а) уже учтены другим правилом — повторно не начисляются.")
-
-    for group_id in sorted(base, key=lambda gid: names[gid].name):
-        group_base = base[group_id]
-        group = names[group_id]
-        out.lines.append(LineDraft(
-            LineType.REVENUE_PERCENT,
-            f"{plain(pct)}% с оплаты группы «{group.name}» ({group.course.name})",
-            money(group_base * pct / 100), rule, source_type="group", source_id=group_id,
-            quantity=Decimal(len(rows[group_id])), percentage=pct, base_amount=money(group_base),
-            metadata={"basis": rule.revenue_basis, "group": group.name, "program": group.course.name,
-                      "payments": rows[group_id]},
-        ))
-    if not base:
-        out.warnings.append(f"{_rule_label(rule)}: за период нет учитываемых платежей студентов.")
-
-    if rule.refund_policy == SalaryRule.RefundPolicy.IGNORE:
-        return
-    refunds = confirmed.filter(kind=StudentPayment.Kind.REFUND, refund_of__status=StudentPayment.Status.CONFIRMED)
-    if allocated:
-        refunds = refunds.filter(received_date__lte=hi).filter(
-            Q(refund_of__service_end__gte=lo) | Q(received_date__gte=lo)
-        )
-    else:
-        refunds = refunds.filter(received_date__gte=lo, received_date__lte=hi)
-    for r in refunds.select_related("refund_of", "student"):
-        original = r.refund_of
-        if allocated:
-            start = max(r.received_date, original.service_start)
-            end = original.service_end if r.received_date <= original.service_end else r.received_date
-            portion = sum(
-                (allocate_by_days(r.amount, start, end, a, b) for a, b in _runs(coverage.get(r.group_id, set()))),
-                ZERO,
-            )
-        else:
-            portion = r.amount if owns(original) else ZERO
-        if not portion or r.pk in ctx.counted_refunds:
-            continue
-        ctx.counted_refunds.add(r.pk)
-        origin_payroll = (
-            Payroll.objects.filter(
-                employee=ctx.employee, period__start_date__lte=original.received_date,
-                period__end_date__gte=original.received_date,
-            ).values("id", "period_id").first()
-        )
-        group = names.get(r.group_id)
-        out.lines.append(LineDraft(
-            LineType.REFUND_CORRECTION,
-            f"Корректировка возврата: {r.student} — {r.amount} сом от {_fmt(r.received_date)} "
-            f"(платёж от {_fmt(original.received_date)})",
-            -money(portion * pct / 100), rule, source_type="student_payment", source_id=r.pk,
-            percentage=pct, base_amount=-money(portion),
-            metadata={"refund_id": r.pk, "original_payment_id": original.pk,
-                      "original_received_date": original.received_date.isoformat(),
-                      "original_payroll_id": origin_payroll["id"] if origin_payroll else None,
-                      "group": group.name if group else "", "group_id": r.group_id},
-        ))
-
-
-def _payment_row(p: StudentPayment, counted: Decimal) -> dict:
-    return {
-        "id": p.pk, "student_id": p.student_id, "student": str(p.student), "amount": str(p.amount),
-        "counted": str(money(counted)), "received_date": p.received_date.isoformat(),
-        "service_start": p.service_start.isoformat(), "service_end": p.service_end.isoformat(),
-    }
-
-
-_HANDLERS = {
-    RuleType.FIXED: _fixed,
-    RuleType.BONUS: _bonus,
-    RuleType.PER_GROUP: _per_group,
-    RuleType.PER_STUDENT: _per_student,
-    RuleType.REVENUE_PERCENT: _revenue,
-}
 
 
 def _overlaps(rules: list[SalaryRule]) -> list[str]:
     errors = []
     for i, a in enumerate(rules):
         for b in rules[i + 1:]:
-            if a.rule_type == RuleType.BONUS or a.rule_type != b.rule_type:
-                continue
-            if (a.group_id, a.program_id) != (b.group_id, b.program_id):
+            if a.rule_type != b.rule_type or (a.group_id, a.program_id) != (b.group_id, b.program_id):
                 continue
             a_end, b_end = a.effective_to or dt.date.max, b.effective_to or dt.date.max
             if a.effective_from <= b_end and b.effective_from <= a_end:
@@ -500,33 +239,40 @@ def _overlaps(rules: list[SalaryRule]) -> list[str]:
     return errors
 
 
-def compute(period: PayrollPeriod, profile: EmployeeSalaryProfile) -> Computation:
+def compute(period: PayrollPeriod, profile: EmployeeSalaryProfile, *, payroll_id=None) -> Computation:
     out = Computation()
-    rules = rules_for(profile, period)
     if not profile.is_active:
         out.errors.append("Зарплатный профиль отключён.")
         return out
+    if profile.salary_type not in ALLOWED_SALARY_TYPES:
+        out.errors.append(
+            f"Схема оплаты «{profile.get_salary_type_display()}» больше не поддерживается — "
+            "выберите «Фиксированный оклад» или «Процент от стоимости курса»."
+        )
+        return out
+    rules = rules_for(profile, period)
+    usable = []
+    for rule in rules:
+        if rule.rule_type != profile.salary_type:
+            out.errors.append(f"{_rule_label(rule)}: тип правила не соответствует типу оплаты сотрудника — не применяется.")
+        elif (rule.percentage if rule.rule_type == RuleType.PERCENT else rule.amount) is None:
+            out.errors.append(f"{_rule_label(rule)}: не указана ставка.")
+        else:
+            usable.append(rule)
     if not rules:
         out.errors.append("Не настроена ставка: нет действующих правил начисления в этом периоде.")
         return out
-    out.errors.extend(_overlaps(rules))
-    ctx = _Context(period, profile)
-    for rule in rules:
-        if rule.rule_type == RuleType.REVENUE_PERCENT and rule.percentage is None or (
-            rule.rule_type != RuleType.REVENUE_PERCENT and rule.amount is None
-        ):
-            out.errors.append(f"{_rule_label(rule)}: не указана ставка.")
-            continue
-        if not rule.group_id and ctx.teacher_id is None and rule.rule_type in (
-            RuleType.PER_GROUP, RuleType.PER_STUDENT, RuleType.REVENUE_PERCENT,
-        ):
-            out.errors.append(
-                f"{_rule_label(rule)}: сотрудник не тренер — укажите в правиле конкретную группу."
-            )
-            continue
-        _HANDLERS[rule.rule_type](rule, ctx, out)
-    if any(r.rule_type == RuleType.PER_STUDENT for r in rules):
-        out.active_students = len(ctx.students)
+    out.errors.extend(_overlaps(usable))
+    counted: set[int] = set()
+    for rule in usable:
+        if rule.rule_type == RuleType.FIXED:
+            _fixed(rule, profile, period, out)
+        else:
+            _percent(rule, profile, period, payroll_id, out, counted)
+    if profile.salary_type == RuleType.PERCENT:
+        out.active_students = sum(int(l.quantity) for l in out.lines if l.line_type == LineType.PERCENT)
+        if not out.lines:
+            out.warnings.append("В периоде нет завершённых циклов курса — процент не начисляется.")
     return out
 
 
@@ -564,7 +310,7 @@ def _lock_payroll(period: PayrollPeriod, employee) -> tuple[Payroll, bool]:
     return Payroll.objects.select_for_update().get(pk=payroll.pk), created
 
 
-def calculate_payroll(period: PayrollPeriod, employee, actor) -> Payroll:
+def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = True) -> Payroll:
     """Рассчитать (или пересчитать черновой) расчёт сотрудника за период.
     Утверждённый расчёт не пересчитывается — только корректировкой или
     контролируемым переоткрытием."""
@@ -573,6 +319,8 @@ def calculate_payroll(period: PayrollPeriod, employee, actor) -> Payroll:
     profile = EmployeeSalaryProfile.objects.select_related("employee").filter(employee=employee).first()
     if profile is None:
         raise AccountingError("У сотрудника нет зарплатного профиля.", code="no_profile")
+    if sync and profile.salary_type == RuleType.PERCENT:
+        sync_all()
     with transaction.atomic():
         payroll, created = _lock_payroll(period, employee)
         if not payroll.is_editable:
@@ -582,17 +330,22 @@ def calculate_payroll(period: PayrollPeriod, employee, actor) -> Payroll:
                 code="locked",
             )
         old = audit.snapshot(payroll, ("status", "total_accrued", "total_adjustments", "amount_due"))
-        result = compute(period, profile)
-        payroll.lines.all().delete()
-        PayrollLine.objects.bulk_create([
-            PayrollLine(
+        result = compute(period, profile, payroll_id=payroll.pk)
+        payroll.lines.all().delete()  # вместе со строками уходят и их CycleAccrual
+        for d in result.lines:
+            line = PayrollLine.objects.create(
                 payroll=payroll, line_type=d.line_type, description=d.description[:255],
                 source_type=d.source_type, source_id=d.source_id, salary_rule=d.rule, quantity=d.quantity,
                 rate=d.rate, percentage=d.percentage, base_amount=d.base_amount, amount=d.amount,
                 metadata=d.metadata,
             )
-            for d in result.lines
-        ])
+            if d.cycle is not None:
+                CycleAccrual.objects.create(
+                    cycle=d.cycle, employee=employee, payroll=payroll, line=line, salary_rule=d.rule,
+                    lessons=d.cycle.required_lessons, completed_on=d.cycle.completed_on,
+                    student_count=d.cycle.student_count, course_price=d.cycle.course_price,
+                    percentage=d.percentage, amount=d.amount,
+                )
         refresh_totals(payroll)
         warnings = list(result.warnings)
         previous = _previous_total(payroll)
@@ -632,6 +385,7 @@ def calculate_period(period: PayrollPeriod, actor) -> dict:
     """Массовый расчёт: каждый сотрудник с действующим профилем. Ошибка
     одного сотрудника не прерывает расчёт остальных и не теряется — она
     попадает в отдельный список результата."""
+    sync_all()
     calculated, skipped, failed = [], [], []
     for profile in employees_for(period):
         existing = Payroll.objects.filter(period=period, employee=profile.employee).first()
@@ -641,7 +395,7 @@ def calculate_period(period: PayrollPeriod, actor) -> dict:
                             "reason": f"Расчёт уже в статусе «{existing.get_status_display()}»."})
             continue
         try:
-            payroll = calculate_payroll(period, profile.employee, actor)
+            payroll = calculate_payroll(period, profile.employee, actor, sync=False)
         except Exception as exc:  # noqa: BLE001 — каждая ошибка показывается, а не теряется
             message = exc.message if isinstance(exc, AccountingError) else "Внутренняя ошибка расчёта."
             failed.append({"employee_id": profile.employee_id, "employee": str(profile.employee), "error": message})

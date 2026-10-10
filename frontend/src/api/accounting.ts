@@ -5,6 +5,8 @@ import type {
   AuditEntry,
   CalculationResult,
   Capabilities,
+  CourseCycle,
+  CourseSettings,
   Dashboard,
   EmployeeRow,
   PayrollAdjustment,
@@ -121,6 +123,12 @@ export const accountingApi = {
   createStudentPayment: (body: Record<string, unknown>, idempotencyKey: string) =>
     post<StudentPayment>('/student-payments/', body, { 'Idempotency-Key': idempotencyKey }),
   voidStudentPayment: (id: number, reason: string) => post<StudentPayment>(`/student-payments/${id}/void/`, { reason }),
+
+  courseSettings: () => get<Paginated<CourseSettings>>('/course-settings/', { page_size: 200 }),
+  createCourseSettings: (body: Record<string, unknown>) => post<CourseSettings>('/course-settings/', body),
+  updateCourseSettings: (id: number, body: Record<string, unknown>) =>
+    apiClient.patch<CourseSettings>(`${BASE}/course-settings/${id}/`, body).then((r) => r.data),
+  cycles: (params: Params) => get<Paginated<CourseCycle>>('/cycles/', { page_size: 200, ...params }),
 
   audit: (params: Params) => get<Paginated<AuditEntry>>('/audit-log/', params),
 

@@ -11,7 +11,7 @@ import datetime as dt
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from ..models import EmployeeSalaryProfile, Payroll, SalaryRule
+from ..models import CoursePayrollSettings, EmployeeSalaryProfile, Payroll, SalaryRule
 from . import AccountingError, audit
 
 PROFILE_FIELDS = ("position", "salary_type", "is_active", "effective_from", "effective_to")
@@ -45,7 +45,7 @@ def save_profile(profile: EmployeeSalaryProfile, *, actor, data: dict) -> Employ
 def create_rule(*, actor, data: dict, previous: SalaryRule | None = None) -> SalaryRule:
     rule = SalaryRule(created_by=actor, previous_version=previous, **data)
     if not rule.calculation_method:
-        rule.calculation_method = SalaryRule.METHODS_BY_TYPE[rule.rule_type][0]
+        rule.calculation_method = SalaryRule.METHODS_BY_TYPE.get(rule.rule_type, (SalaryRule.Method.STANDARD,))[0]
     with transaction.atomic():
         if previous is not None:
             previous = SalaryRule.objects.select_for_update().get(pk=previous.pk)
@@ -94,3 +94,20 @@ def deactivate_rule(rule: SalaryRule, *, actor, effective_to: dt.date, reason: s
         rule.save(update_fields=["effective_to"])
         audit.log(actor, rule, "deactivate", old=old, new={"effective_to": effective_to}, reason=reason)
     return rule
+
+
+COURSE_FIELDS = ("price_per_student", "required_lessons", "count_lessons_from", "student_count_rule", "is_active")
+
+
+def save_course_settings(settings: CoursePayrollSettings, *, actor, data: dict) -> CoursePayrollSettings:
+    """Настройки курса. Уже завершённые циклы хранят свой снимок — новая
+    стоимость и число уроков действуют только на следующие циклы."""
+    created = settings.pk is None
+    old = {} if created else audit.snapshot(CoursePayrollSettings.objects.get(pk=settings.pk), COURSE_FIELDS)
+    for name, value in data.items():
+        setattr(settings, name, value)
+    with transaction.atomic():
+        _validated(settings).save()
+        audit.log(actor, settings, "create" if created else "update", old=old,
+                  new=audit.snapshot(settings, COURSE_FIELDS))
+    return settings

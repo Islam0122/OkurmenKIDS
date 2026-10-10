@@ -8,6 +8,9 @@ from apps.academy.models import Course, Group, Student
 from apps.users.models import User
 
 from .models import (
+    ALLOWED_SALARY_TYPES,
+    CourseCycle,
+    CoursePayrollSettings,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -128,13 +131,14 @@ class SalaryRuleSerializer(serializers.ModelSerializer):
 
 
 class SalaryRuleCreateSerializer(serializers.ModelSerializer):
+    rule_type = serializers.ChoiceField(choices=[(t.value, t.label) for t in SalaryRule.ACTIVE_TYPES])
     calculation_method = serializers.ChoiceField(choices=SalaryRule.Method.choices, required=False, allow_blank=True)
 
     class Meta:
         model = SalaryRule
         fields = (
             "employee_profile", "rule_type", "amount", "percentage", "program", "group", "calculation_method",
-            "first_half_share", "revenue_basis", "refund_policy", "description", "effective_from", "effective_to",
+            "first_half_share", "description", "effective_from", "effective_to",
         )
 
 
@@ -144,8 +148,6 @@ class SalaryRuleVersionSerializer(serializers.Serializer):
     percentage = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, allow_null=True)
     calculation_method = serializers.ChoiceField(choices=SalaryRule.Method.choices, required=False)
     first_half_share = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
-    revenue_basis = serializers.ChoiceField(choices=SalaryRule.RevenueBasis.choices, required=False)
-    refund_policy = serializers.ChoiceField(choices=SalaryRule.RefundPolicy.choices, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
 
 
@@ -172,6 +174,11 @@ class EmployeeSalaryProfileSerializer(serializers.ModelSerializer):
 
     def get_employee_name(self, obj) -> str:
         return _name(obj.employee)
+
+    def validate_salary_type(self, value):
+        if value not in ALLOWED_SALARY_TYPES:
+            raise serializers.ValidationError("Допустимы только «Фиксированный оклад» и «Процент от стоимости курса».")
+        return value
 
     def validate_employee(self, value):
         if self.instance is not None and value != self.instance.employee:
@@ -328,6 +335,7 @@ class PayrollListSerializer(serializers.ModelSerializer):
 
 class PayrollDetailSerializer(PayrollListSerializer):
     lines = PayrollLineSerializer(many=True, read_only=True)
+    open_cycles = serializers.SerializerMethodField()
     payments = PayrollPaymentSerializer(many=True, read_only=True)
     adjustments = PayrollAdjustmentSerializer(many=True, read_only=True)
     approved_by_name = serializers.SerializerMethodField()
@@ -338,8 +346,20 @@ class PayrollDetailSerializer(PayrollListSerializer):
     class Meta(PayrollListSerializer.Meta):
         fields = PayrollListSerializer.Meta.fields + (
             "lines", "payments", "adjustments", "approved_by_name", "period_detail", "rules", "audit",
-            "return_reason",
+            "return_reason", "open_cycles",
         )
+
+    def get_open_cycles(self, obj) -> list:
+        """Незавершённые циклы — отдельно: за них процент ещё не начисляется."""
+        if obj.salary_type != "PERCENT":
+            return []
+        from .services.cycles import open_cycles_for
+
+        return [
+            {"id": c.pk, "group_name": c.group.name, "course_name": c.course.name, "number": c.number,
+             "lessons_done": c.lessons_done, "required_lessons": c.required_lessons}
+            for c in open_cycles_for(obj.employee)
+        ]
 
     def get_approved_by_name(self, obj) -> str:
         return _name(obj.approved_by)
@@ -374,3 +394,56 @@ class GroupRefSerializer(serializers.ModelSerializer):
     class Meta:
         model = Group
         fields = ("id", "name", "course", "status")
+
+
+class CoursePayrollSettingsSerializer(serializers.ModelSerializer):
+    course_name = serializers.CharField(source="course.name", read_only=True)
+    course_count_lesson = serializers.IntegerField(source="course.count_lesson", read_only=True)
+    student_count_rule_display = serializers.CharField(source="get_student_count_rule_display", read_only=True)
+
+    class Meta:
+        model = CoursePayrollSettings
+        fields = (
+            "id", "course", "course_name", "course_count_lesson", "price_per_student", "required_lessons",
+            "count_lessons_from", "student_count_rule", "student_count_rule_display", "is_active", "updated_at",
+        )
+        read_only_fields = ("updated_at",)
+
+    def validate_course(self, value):
+        if self.instance is not None and value != self.instance.course:
+            raise serializers.ValidationError("Курс изменить нельзя.")
+        return value
+
+
+class CourseCycleSerializer(serializers.ModelSerializer):
+    """Цикл курса — только агрегаты: число студентов, без списка студентов."""
+
+    group_name = serializers.CharField(source="group.name", read_only=True)
+    course_name = serializers.CharField(source="course.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    base_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    trainers = serializers.SerializerMethodField()
+    accruals = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CourseCycle
+        fields = (
+            "id", "group", "group_name", "course", "course_name", "number", "status", "status_display",
+            "required_lessons", "lessons_done", "start_date", "completed_on", "student_count", "course_price",
+            "base_amount", "trainers", "accruals",
+        )
+
+    def get_trainers(self, obj) -> list:
+        from datetime import date
+
+        from .services.cycles import responsible_teacher_names
+
+        return responsible_teacher_names(obj.group_id, obj.completed_on or date.today())
+
+    def get_accruals(self, obj) -> list:
+        return [
+            {"employee": a.employee_id, "employee_name": _name(a.employee), "percentage": str(a.percentage),
+             "amount": str(a.amount), "payroll": a.payroll_id, "payroll_status": a.payroll.status,
+             "period_label": period_label(a.payroll.period)}
+            for a in obj.accruals.select_related("employee", "payroll__period")
+        ]

@@ -141,6 +141,18 @@ export function PayrollDetailPage() {
         <Lines lines={p.lines} />
       </Section>
 
+      {p.open_cycles.length ? (
+        <Section title="Незавершённые циклы — процент ещё не начисляется">
+          <ul className="space-y-1 text-sm text-ink-secondary">
+            {p.open_cycles.map((c) => (
+              <li key={c.id}>
+                {c.group_name} · {c.course_name} · цикл {c.number}: проведено <b>{c.lessons_done}</b> из {c.required_lessons} уроков
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
       {p.rules.length ? (
         <Section title="Использованные зарплатные правила">
           <ul className="space-y-1 text-sm text-ink-secondary">

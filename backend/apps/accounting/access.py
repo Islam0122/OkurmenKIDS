@@ -24,9 +24,10 @@ ACCOUNTANT_GROUP = "Accountant"
 # Только финансовые модели: просмотр всего, добавление/изменение операций.
 # Ни одного `delete_*`, журнал аудита — только просмотр.
 _VIEW = ("studentpayment", "employeesalaryprofile", "salaryrule", "payrollperiod", "payroll", "payrollline",
-         "payrolladjustment", "payrollpayment", "payrollauditlog")
+         "payrolladjustment", "payrollpayment", "payrollauditlog", "coursepayrollsettings", "coursecycle",
+         "cycleaccrual")
 _WRITE = ("studentpayment", "employeesalaryprofile", "salaryrule", "payrollperiod", "payroll", "payrollline",
-          "payrolladjustment", "payrollpayment")
+          "payrolladjustment", "payrollpayment", "coursepayrollsettings")
 ACCOUNTANT_PERMISSIONS = tuple(
     [f"view_{m}" for m in _VIEW] + [f"add_{m}" for m in _WRITE] + [f"change_{m}" for m in _WRITE]
 )

@@ -9,8 +9,15 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.academy.models import Course, Group, GroupTeacher, Student, StudentStatusEvent
-from apps.accounting.models import EmployeeSalaryProfile, PayrollPeriod, SalaryRule, SalaryType, StudentPayment
+from apps.academy.models import Course, Group, GroupTeacher, Lesson, Student, StudentStatusEvent
+from apps.accounting.models import (
+    CoursePayrollSettings,
+    EmployeeSalaryProfile,
+    PayrollPeriod,
+    SalaryRule,
+    SalaryType,
+    StudentPayment,
+)
 from apps.accounting.services.payroll_calculator import calculate_payroll
 from apps.accounting.services.periods import get_or_create_period
 from apps.users.models import Subject, Teacher, User
@@ -78,7 +85,7 @@ class AccountingFixture(TestCase):
         )
         Student.objects.filter(pk=student.pk).update(group=to)
 
-    def profile(self, user=None, salary_type=SalaryType.COMBINED, *, start=day(1, 1)) -> EmployeeSalaryProfile:
+    def profile(self, user=None, salary_type=SalaryType.FIXED, *, start=day(1, 1)) -> EmployeeSalaryProfile:
         return EmployeeSalaryProfile.objects.create(
             employee=user or self.trainer_user, salary_type=salary_type, effective_from=start,
         )
@@ -104,6 +111,22 @@ class AccountingFixture(TestCase):
         return self.pay(original.student, amount, on, group=original.group,
                         service=(original.service_start, original.service_end),
                         kind=StudentPayment.Kind.REFUND, refund_of=original)
+
+    def course_settings(self, course=None, *, price="10000", lessons=12, start=day(1, 1), **extra):
+        return CoursePayrollSettings.objects.create(
+            course=course or self.course, price_per_student=D(price), required_lessons=lessons,
+            count_lessons_from=start, **extra,
+        )
+
+    def lessons(self, group, dates, *, status=Lesson.Status.COMPLETED):
+        """Проведённые уроки группы в указанные даты (по одному в день)."""
+        program = GroupTeacher.objects.filter(group=group).first()
+        for d in dates:
+            Lesson.objects.create(
+                group=group, group_teacher=program, teacher=program.teacher, subject=self.python,
+                lesson_number=next(_n), date=d,
+                start_time=dt.time(10), end_time=dt.time(11), status=status,
+            )
 
     def period(self, year_month=SEP, half=FIRST) -> PayrollPeriod:
         return get_or_create_period(*year_month, half, self.accountant)[0]

@@ -45,7 +45,7 @@ const PERIOD = {
 const DASHBOARD: Dashboard = {
   total_accrued: '16500.00', total_lines: '16500.00', total_adjustments: '0.00', total_paid: '6500.00',
   total_due: '10000.00', employees_with_accruals: 1, pending_approval: 1, pending_adjustments: 0, with_errors: 0,
-  outstanding_debt_all_periods: '10000.00', range_label: '01.09.2026–15.09.2026', periods: [PERIOD],
+  outstanding_debt_all_periods: '10000.00', open_cycles: 2, range_label: '01.09.2026–15.09.2026', periods: [PERIOD],
 }
 
 describe('som', () => {
@@ -66,9 +66,9 @@ describe('AccountingDashboardPage', () => {
     vi.mocked(accountingApi.employees).mockResolvedValue({
       range_label: DASHBOARD.range_label,
       results: [{
-        profile_id: 1, employee: 9, employee_name: 'Islam Test', position: 'Программист', salary_type: 'PER_STUDENT',
-        salary_type_display: 'За активного студента', is_active: true,
-        rates: [{ rule_type: 'PER_STUDENT', label: 'За активного студента', amount: '11000.00', percentage: null, scope: '' }],
+        profile_id: 1, employee: 9, employee_name: 'Islam Test', position: 'Программист', salary_type: 'PERCENT',
+        salary_type_display: 'Процент от стоимости курса', is_active: true,
+        rates: [{ rule_type: 'PERCENT', label: 'Процент от стоимости курса', amount: null, percentage: '10.00', scope: '' }],
         active_students: 3, payroll_id: 12, accrued: '16500.00', paid: '6500.00', due: '10000.00',
         status: 'PARTIALLY_PAID', status_display: 'Частично выплачен',
       }],

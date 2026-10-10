@@ -152,10 +152,10 @@ def build_report(periods, *, label: str, payrolls=None) -> PayrollReport:
 
     group_sums: dict[int, Decimal] = defaultdict(lambda: ZERO)
     for line in PayrollLine.objects.filter(payroll__in=[r.payroll.pk for r in report.rows]):
-        if line.source_type == "group" and line.source_id:
-            group_sums[line.source_id] += line.amount
-        elif line.line_type == PayrollLine.LineType.REFUND_CORRECTION and line.metadata.get("group_id"):
-            group_sums[line.metadata["group_id"]] += line.amount
+        # Процент за цикл курса (и строки прежних версий) несут группу в metadata.
+        gid = line.metadata.get("group_id") or (line.source_id if line.source_type == "group" else None)
+        if gid:
+            group_sums[gid] += line.amount
     groups = {g.pk: g for g in Group.objects.filter(pk__in=group_sums).select_related("course")}
     program_sums: dict[str, Decimal] = defaultdict(lambda: ZERO)
     for gid, amount in sorted(group_sums.items(), key=lambda kv: groups[kv[0]].name):

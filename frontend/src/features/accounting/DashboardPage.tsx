@@ -35,10 +35,7 @@ function readSelection(params: URLSearchParams): PeriodSelection {
 
 const RATE_SUFFIX: Record<string, string> = {
   FIXED: 'оклад',
-  PER_STUDENT: 'за студента',
-  PER_GROUP: 'за группу',
-  BONUS: 'бонус',
-  REVENUE_PERCENT: 'от оплат',
+  PERCENT: 'от стоимости курса',
 }
 
 function rateLabel(row: EmployeeRow): string {
@@ -115,7 +112,7 @@ export function AccountingDashboardPage() {
             tone={Number(d.total_due) > 0 ? 'warning' : 'default'}
             hint={`Всего по утверждённым: ${som(d.outstanding_debt_all_periods)}`} />
           <StatCard label="Сотрудников с начислениями" value={d.employees_with_accruals} icon={Users}
-            hint={`Ждут утверждения: ${d.pending_approval}${d.pending_adjustments ? ` · корректировок: ${d.pending_adjustments}` : ''}`}
+            hint={`Ждут утверждения: ${d.pending_approval}${d.pending_adjustments ? ` · корректировок: ${d.pending_adjustments}` : ''} · незавершённых циклов: ${d.open_cycles}`}
             tone={d.pending_approval ? 'warning' : 'default'} />
         </StatGrid>
       ) : dashboard.isLoading ? <LoadingState /> : null}
