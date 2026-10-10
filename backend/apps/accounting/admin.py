@@ -1,4 +1,5 @@
-"""Django admin бухгалтерии — только просмотр.
+"""Django admin бухгалтерии — только просмотр (плюс отдельная страница
+очистки данных для суперпользователя, см. admin_views).
 
 Финансовые операции выполняются через API бухгалтерии (сервисный слой
 с проверками, транзакциями и аудитом). Здесь администратор может только
@@ -6,6 +7,7 @@
 сервисов нельзя — в том числе журнал аудита.
 """
 from django.contrib import admin
+from django.urls import path
 
 from .models import (
     CourseCycle,
@@ -92,6 +94,17 @@ class PayrollAdjustmentAdmin(ReadOnlyAdmin):
 class PayrollAuditLogAdmin(ReadOnlyAdmin):
     list_display = ("created_at", "actor", "action", "entity_type", "entity_id")
     list_filter = ("action", "entity_type")
+
+    def get_urls(self):
+        from .admin_views import purge_view
+
+        # Обслуживание базы данных → Очистка данных (только суперпользователь —
+        # проверка в самом представлении).
+        return [
+            path("maintenance/purge/", self.admin_site.admin_view(lambda request: purge_view(request, self.admin_site)),
+                 name="accounting_maintenance_purge"),
+            *super().get_urls(),
+        ]
 
 
 @admin.register(CoursePayrollSettings)

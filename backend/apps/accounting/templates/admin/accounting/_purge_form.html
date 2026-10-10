@@ -1,0 +1,38 @@
+<form method="post" style="display:flex; flex-direction:column; gap:0.9rem;"
+      onsubmit="return confirm('{{ mode.title|escapejs }}: удалить данные без возможности восстановления?');">
+  {% csrf_token %}
+  <input type="hidden" name="mode" value="{{ mode.key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {% for error in form.non_field_errors %}
+    <span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>
+  {% endfor %}
+  <div class="ok-field-group">
+    <label class="ok-label" for="id_{{ mode.key }}_confirm">{{ form.confirm_phrase.label }}</label>
+    <input id="id_{{ mode.key }}_confirm" type="text" name="confirm_phrase" class="ok-input" autocomplete="off" required
+           placeholder="{{ confirm_phrase }}">
+    {% for error in form.confirm_phrase.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+  </div>
+  {% if mode.key == 'FULL' %}
+    <div class="ok-field-group">
+      <label class="ok-label" for="id_FULL_full">{{ form.full_phrase.label }}</label>
+      <input id="id_FULL_full" type="text" name="full_phrase" class="ok-input" autocomplete="off" required
+             placeholder="{{ full_phrase }}">
+      {% for error in form.full_phrase.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+    </div>
+    <label style="display:flex; gap:.5rem; align-items:flex-start;">
+      <input type="checkbox" name="include_tariffs" value="on">
+      <span>{{ form.include_tariffs.label }} — <code>{{ mode.tariffs.db_table }}</code> ({{ mode.tariffs.count }})
+        <br><span class="ok-help-text" style="display:inline;">{{ mode.tariffs.note }}</span></span>
+    </label>
+  {% endif %}
+  <label style="display:flex; gap:.5rem; align-items:flex-start;">
+    <input type="checkbox" name="backup_confirmed" value="on" required>
+    <span>{{ form.backup_confirmed.label }}</span>
+  </label>
+  {% for error in form.backup_confirmed.errors %}<span class="ok-error-text"><i class="bi bi-x-circle"></i>{{ error }}</span>{% endfor %}
+  <div class="ok-form-actions" style="margin-top:0;">
+    <button type="submit" class="ok-btn-danger">
+      <i class="bi bi-trash3"></i> {% if mode.key == 'FULL' %}Полностью очистить бухгалтерию{% else %}Очистить расчёты зарплаты{% endif %}
+    </button>
+  </div>
+</form>

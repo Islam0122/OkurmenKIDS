@@ -18,7 +18,9 @@
 from __future__ import annotations
 
 import calendar
+import contextvars
 import datetime as dt
+from contextlib import contextmanager
 from decimal import Decimal
 
 from django.conf import settings
@@ -31,10 +33,30 @@ MONEY = {"max_digits": 14, "decimal_places": 2}
 ZERO = Decimal("0.00")
 
 
-class ImmutableQuerySet(models.QuerySet):
-    """Финансовые записи не удаляются массово (admin, shell, каскады)."""
+_MAINTENANCE_DELETE = contextvars.ContextVar("accounting_maintenance_delete", default=False)
 
-    def delete(self):  # pragma: no cover - guarded by tests through the model
+
+@contextmanager
+def maintenance_delete():
+    """Разрешить массовое удаление финансовых записей ТОЛЬКО внутри этого
+    блока. Используется единственным местом — services.maintenance (очистка
+    данных суперпользователем из Django Admin). Удаление идёт обычным
+    `QuerySet.delete()`: проверки внешних ключей, on_delete и сигналы
+    продолжают работать."""
+    token = _MAINTENANCE_DELETE.set(True)
+    try:
+        yield
+    finally:
+        _MAINTENANCE_DELETE.reset(token)
+
+
+class ImmutableQuerySet(models.QuerySet):
+    """Финансовые записи не удаляются массово (admin, shell, каскады) —
+    кроме обслуживающей очистки (`maintenance_delete`)."""
+
+    def delete(self):
+        if _MAINTENANCE_DELETE.get():
+            return super().delete()
         raise ValidationError("Финансовые записи нельзя удалять — используйте отмену (VOID).")
 
 
@@ -693,6 +715,9 @@ class PayrollAuditLog(models.Model):
         verbose_name = "Запись журнала аудита"
         verbose_name_plural = "Журнал аудита бухгалтерии"
         ordering = ["-created_at", "-id"]
+        permissions = [
+            ("purge_accounting_data", "Очистка данных бухгалтерии (только суперпользователь)"),
+        ]
 
     def __str__(self):
         return f"{self.created_at:%d.%m.%Y %H:%M} · {self.action} · {self.entity_type}#{self.entity_id}"
