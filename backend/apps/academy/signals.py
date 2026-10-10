@@ -24,3 +24,21 @@ services.lesson_generator, safe to click as often as needed.
 services.group_schedule_sync and generate_mock_data) is now a harmless
 no-op kept for backward compatibility.
 """
+
+
+# ---------------------------------------------------------------------------
+# Public schedule cache: any change to what the public site shows (a lesson
+# moved / cancelled / added, a group or room renamed, a trainer handover)
+# makes the next public request rebuild instead of waiting for the cache TTL.
+# Bulk `.update()` calls bypass signals — the short TTL covers those.
+# ---------------------------------------------------------------------------
+from django.db.models.signals import post_delete as _post_delete, post_save as _post_save  # noqa: E402
+
+from apps.users.models import Teacher as _Teacher  # noqa: E402
+
+from .models import Group as _Group, Lesson as _Lesson, Room as _Room, TrainerAssignment as _TrainerAssignment  # noqa: E402
+from .services.public_schedule import bump_cache_version as _bump_public_schedule  # noqa: E402
+
+for _model in (_Lesson, _Group, _Room, _Teacher, _TrainerAssignment):
+    _post_save.connect(_bump_public_schedule, sender=_model, dispatch_uid=f"public_schedule_save_{_model.__name__}")
+    _post_delete.connect(_bump_public_schedule, sender=_model, dispatch_uid=f"public_schedule_delete_{_model.__name__}")

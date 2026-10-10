@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, DoorOpen } from 'lucide-react'
+import { DoorOpen } from 'lucide-react'
 
-import { StatusIcon, TrainerDot, lessonLabel, trainerStyle } from '@/features/scheduleBoard/LessonCard'
+import { StatusIcon, TrainerDot, trainerStyle } from '@/features/scheduleBoard/LessonCard'
 import { DAY_MINUTES, assignLanes, formatDuration, fromMinutes, hourMarks, place } from '@/features/scheduleBoard/timeGrid'
-import type { BoardLesson } from '@/types/schedule'
+import type { PublicLesson } from '@/types/publicSchedule'
 import { cn } from '@/utils/cn'
 
 /** Taller hours than the LMS board: a one-hour card has room for the time,
@@ -19,15 +19,28 @@ const LANE_PX = 200
 export interface SiteColumn {
   key: string
   header: ReactNode
-  lessons: BoardLesson[]
+  lessons: PublicLesson[]
   highlighted?: boolean
   showNow?: boolean
 }
 
-/** One lesson: every field in full, wrapped. Read only — a click opens details. */
+/** What a screen reader says for a lesson (every public field). */
+export function publicLessonLabel(lesson: PublicLesson): string {
+  return [
+    `${lesson.start}–${lesson.end} (${formatDuration(lesson.duration_minutes)})`,
+    lesson.group.name,
+    lesson.subject ?? lesson.course,
+    lesson.trainer ? `Тренер: ${lesson.trainer.name}` : null,
+    lesson.room ? `Кабинет: ${lesson.room.name}` : null,
+    lesson.status !== 'scheduled' ? lesson.status_label : null,
+    lesson.rescheduled ? 'перенесено' : null,
+  ].filter(Boolean).join(' · ')
+}
+
+/** One lesson: every published field in full, wrapped (never «…»). A click opens details. */
 export function FullLessonCard({ lesson, onOpen, style, className }: {
-  lesson: BoardLesson
-  onOpen: (lesson: BoardLesson) => void
+  lesson: PublicLesson
+  onOpen: (lesson: PublicLesson) => void
   style?: React.CSSProperties
   className?: string
 }) {
@@ -35,32 +48,39 @@ export function FullLessonCard({ lesson, onOpen, style, className }: {
     <button
       type="button"
       onClick={() => onOpen(lesson)}
-      aria-label={lessonLabel(lesson)}
-      data-lesson-id={lesson.id}
+      aria-label={publicLessonLabel(lesson)}
+      data-lesson-key={lesson.key}
       className={cn(
         'flex flex-col gap-0.5 overflow-visible rounded-md border border-l-4 border-black/5 px-2 py-1.5 text-left text-ink shadow-xs',
         'break-words hover:z-30 hover:shadow-md focus-visible:z-30 focus-visible:outline-2 focus-visible:outline-brand-500',
-        lesson.status === 'cancelled' && 'opacity-60',
-        lesson.conflicts.length > 0 && 'ring-2 ring-danger/70',
+        lesson.status === 'cancelled' && 'opacity-70',
         className,
       )}
-      style={{ ...trainerStyle(lesson.teacher?.color, lesson.status), ...style }}
+      style={{ ...trainerStyle(lesson.trainer?.color, lesson.status), ...style }}
     >
       <span className="flex flex-wrap items-center gap-x-1 text-xs font-semibold tabular-nums text-ink-secondary">
-        {lesson.conflicts.length ? <AlertTriangle className="size-3.5 shrink-0 text-danger" aria-hidden /> : null}
         <span className="whitespace-nowrap">{lesson.start}–{lesson.end}</span>
         <span className="whitespace-nowrap font-normal text-ink-muted">{formatDuration(lesson.duration_minutes)}</span>
         <span className="ml-auto"><StatusIcon status={lesson.status} /></span>
       </span>
       <span className={cn('text-sm font-semibold leading-snug', lesson.status === 'cancelled' && 'line-through')}>{lesson.group.name}</span>
-      <span className="flex items-start gap-1.5 text-xs leading-snug">
-        <TrainerDot color={lesson.teacher?.color} className="mt-1" />
-        <span>{lesson.teacher?.name ?? 'Тренер не указан'}</span>
-      </span>
-      <span className="flex items-start gap-1.5 text-xs leading-snug text-ink-secondary">
-        <DoorOpen className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        <span>{lesson.room?.name ?? 'Без кабинета'}</span>
-      </span>
+      {lesson.status === 'cancelled' || lesson.rescheduled ? (
+        <span className={cn('text-xs font-medium', lesson.status === 'cancelled' ? 'text-danger' : 'text-warning')}>
+          {lesson.status === 'cancelled' ? 'Занятие отменено' : 'Время изменено'}
+        </span>
+      ) : null}
+      {lesson.trainer ? (
+        <span className="flex items-start gap-1.5 text-xs leading-snug">
+          <TrainerDot color={lesson.trainer.color} className="mt-1" />
+          <span>{lesson.trainer.name}</span>
+        </span>
+      ) : null}
+      {lesson.room !== undefined ? (
+        <span className="flex items-start gap-1.5 text-xs leading-snug text-ink-secondary">
+          <DoorOpen className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>{lesson.room?.name ?? 'Кабинет уточняется'}</span>
+        </span>
+      ) : null}
     </button>
   )
 }
@@ -71,7 +91,7 @@ export function FullLessonCard({ lesson, onOpen, style, className }: {
 export function FullGrid({ columns, nowMinutes, onOpen, scrollTo, minColumnPx = 220 }: {
   columns: SiteColumn[]
   nowMinutes: number | null
-  onOpen: (lesson: BoardLesson) => void
+  onOpen: (lesson: PublicLesson) => void
   scrollTo: number
   minColumnPx?: number
 }) {
@@ -122,7 +142,7 @@ export function FullGrid({ columns, nowMinutes, onOpen, scrollTo, minColumnPx = 
               const { top, height } = place(item.start, item.end)
               return (
                 <FullLessonCard
-                  key={item.id}
+                  key={item.key}
                   lesson={item}
                   onOpen={onOpen}
                   className="absolute"
@@ -155,15 +175,15 @@ export function FullGrid({ columns, nowMinutes, onOpen, scrollTo, minColumnPx = 
  */
 export function WeekTable({ days, lessons, onOpen, nowDate, nowMinutes, onDay }: {
   days: { key: string; header: ReactNode; highlighted?: boolean }[]
-  lessons: BoardLesson[]
-  onOpen: (lesson: BoardLesson) => void
+  lessons: PublicLesson[]
+  onOpen: (lesson: PublicLesson) => void
   nowDate: string | null
   nowMinutes: number | null
   onDay?: (day: string) => void
 }) {
   const hours = Array.from({ length: 16 }, (_, i) => 8 + i)
-  const cell = new Map<string, BoardLesson[]>()
-  const early: BoardLesson[] = []
+  const cell = new Map<string, PublicLesson[]>()
+  const early: PublicLesson[] = []
   for (const lesson of lessons) {
     const hour = Math.floor(Number(lesson.start.slice(0, 2)))
     if (hour < 8) early.push(lesson)
@@ -202,7 +222,7 @@ export function WeekTable({ days, lessons, onOpen, nowDate, nowMinutes, onDay }:
                   <td key={day.key} className={cn('border-l border-border p-1 align-top', day.highlighted && 'bg-brand-50/30', isNow && 'bg-danger-soft/40')}>
                     {items.length ? (
                       <div className="space-y-1">
-                        {items.map((lesson) => <FullLessonCard key={lesson.id} lesson={lesson} onOpen={onOpen} className="w-full" />)}
+                        {items.map((lesson) => <FullLessonCard key={lesson.key} lesson={lesson} onOpen={onOpen} className="w-full" />)}
                       </div>
                     ) : <div className="h-6" aria-hidden />}
                   </td>
