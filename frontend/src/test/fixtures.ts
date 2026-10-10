@@ -155,6 +155,7 @@ export function buildLesson(overrides: Partial<Lesson> = {}): Lesson {
     can_cancel: true,
     attendance_completed: false,
     homework_added: false,
+    homework_expected: true,
     completion_requirements: [
       { key: 'attendance', label: 'Посещаемость отмечена', satisfied: false },
       { key: 'homework', label: 'Добавлено домашнее задание или отмечено «ДЗ не требуется»', satisfied: false },

@@ -81,7 +81,11 @@ export function getLessonActionPlan(lesson: Lesson): LessonActionPlan {
 
     case 'in_progress':
       return {
-        primary: [action('attendance'), action('homework'), action('complete')],
+        // No homework for this lesson (none added, none in its plan) → no
+        // homework button at all; otherwise exactly as before.
+        primary: lesson.homework_expected
+          ? [action('attendance'), action('homework'), action('complete')]
+          : [action('attendance'), action('complete')],
         secondary: [],
         danger: lesson.can_cancel ? action('cancel') : undefined,
         isReadOnly: false,
@@ -112,7 +116,7 @@ export function getLessonActionPlan(lesson: Lesson): LessonActionPlan {
 export function getPrimaryCardAction(lesson: Lesson): LessonAction {
   if (lesson.status === 'in_progress') {
     if (!lesson.attendance_completed) return action('attendance')
-    if (!lesson.homework_added && !lesson.homework_not_required) return action('homework')
+    if (lesson.homework_expected && !lesson.homework_added && !lesson.homework_not_required) return action('homework')
     return action('complete')
   }
   const plan = getLessonActionPlan(lesson)

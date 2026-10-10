@@ -4854,6 +4854,16 @@ class LessonLifecycleActionsTests(AcademyTestBase):
         for student in (self.student1, self.student2):
             Attendance.objects.create(student=student, lesson=lesson, status=Attendance.Status.PRESENT)
 
+    def _plan_declares_homework(self, lesson):
+        if lesson.plan_id is None:
+            lesson.plan = CourseLessonPlan.objects.create(
+                course=lesson.group.course, subject=lesson.subject or lesson.group.course.subjects.first(),
+                lesson_number=900 + lesson.pk, topic="Тема", homework_title="ДЗ по плану",
+            )
+            lesson.save(update_fields=["plan"])
+        else:
+            CourseLessonPlan.objects.filter(pk=lesson.plan_id).update(homework_title="ДЗ по плану")
+
     # -- generation / initial state ---------------------------------------
 
     def test_generated_lesson_starts_as_scheduled(self):
@@ -4917,6 +4927,9 @@ class LessonLifecycleActionsTests(AcademyTestBase):
         self.assertEqual(self.lesson1.status, Lesson.Status.IN_PROGRESS)
 
     def test_cannot_complete_without_homework_or_not_required_flag(self):
+        # A lesson whose plan declares homework (see
+        # lesson_lifecycle.homework_expected) still needs it or «ДЗ не требуется».
+        self._plan_declares_homework(self.lesson1)
         self.teacher1_client.post(f"/api/v1/lessons/{self.lesson1.id}/start/")
         self._mark_full_attendance(self.lesson1)
 

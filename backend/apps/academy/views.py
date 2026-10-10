@@ -950,7 +950,7 @@ class LessonViewSet(
 
     def get_queryset(self):
         qs = Lesson.objects.select_related(
-            "group__teacher__user", "teacher__user", "room", "subject", "plan", "rescheduled_to",
+            "group__teacher__user", "teacher__user", "room", "subject", "plan", "individual_plan", "rescheduled_to",
         )
         user = self.request.user
         if _sees_academy(user):

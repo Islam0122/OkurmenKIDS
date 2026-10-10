@@ -729,6 +729,7 @@ class LessonSerializer(_RequestAwareSerializer):
     can_cancel = serializers.SerializerMethodField()
     attendance_completed = serializers.SerializerMethodField()
     homework_added = serializers.SerializerMethodField()
+    homework_expected = serializers.SerializerMethodField()
     completion_requirements = serializers.SerializerMethodField()
     completion_progress = serializers.SerializerMethodField()
     attendance_summary = serializers.SerializerMethodField()
@@ -774,6 +775,7 @@ class LessonSerializer(_RequestAwareSerializer):
             "can_cancel",
             "attendance_completed",
             "homework_added",
+            "homework_expected",
             "completion_requirements",
             "completion_progress",
             "attendance_summary",
@@ -838,6 +840,9 @@ class LessonSerializer(_RequestAwareSerializer):
 
     def get_homework_added(self, obj: Lesson) -> bool:
         return lesson_lifecycle.homework_added(obj)
+
+    def get_homework_expected(self, obj: Lesson) -> bool:
+        return lesson_lifecycle.homework_expected(obj)
 
     def get_completion_requirements(self, obj: Lesson) -> list[dict]:
         return [

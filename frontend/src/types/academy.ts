@@ -217,6 +217,10 @@ export interface Lesson {
   can_cancel: boolean
   attendance_completed: boolean
   homework_added: boolean
+  /** The lesson has homework at all: added, or declared by its lesson plan.
+   * False — no homework step for this lesson (no button, no checklist line,
+   * not required for completion). */
+  homework_expected: boolean
   completion_requirements: LessonCompletionRequirement[]
   completion_progress: LessonCompletionProgress
   attendance_summary: LessonAttendanceSummary
