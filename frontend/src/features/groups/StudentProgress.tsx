@@ -168,28 +168,32 @@ export function StudentProgress({ groupId, params, customRange, onApplyRange, on
         ) : null}
       </div>
 
-      {/* Search, sorting and the manual range: side by side on a wide screen, stacked on a phone. */}
-      <div className="mb-3 flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-end">
-        <div className="min-w-0 xl:min-w-56 xl:flex-1">
+      {/* Compact filter bar, every control 40 px high. Wide screens: one row
+          when it fits, otherwise search + sorting, then the dates. Phones:
+          search, then sorting with its arrow, then the dates. */}
+      <div className="mb-4 flex flex-wrap items-start gap-2">
+        <div className="w-full min-w-0 sm:w-auto sm:min-w-56 sm:flex-1">
           <SearchInput value={search} onChange={setSearch} placeholder="Поиск по имени студента" />
         </div>
-        <div className="xl:w-52">
-          <Select
-            aria-label="Сортировка"
-            value={sortKey}
-            onChange={(event) => changeSort(event.target.value as SortKey)}
-            options={SORT_OPTIONS}
-          />
+        <div className="flex w-full min-w-0 gap-2 sm:w-auto">
+          <div className="min-w-0 flex-1 sm:w-48 sm:flex-none">
+            <Select
+              aria-label="Сортировка"
+              value={sortKey}
+              onChange={(event) => changeSort(event.target.value as SortKey)}
+              options={SORT_OPTIONS}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setDescending((value) => !value)}
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink focus-visible:border-brand-500"
+            aria-label={descending ? 'По убыванию' : 'По возрастанию'}
+            title={descending ? 'По убыванию — нажмите, чтобы сменить' : 'По возрастанию — нажмите, чтобы сменить'}
+          >
+            {descending ? <ArrowDown className="size-4" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setDescending((value) => !value)}
-          className="form-control inline-flex items-center justify-center gap-1.5 whitespace-nowrap xl:w-auto"
-          aria-label={descending ? 'По убыванию' : 'По возрастанию'}
-        >
-          {descending ? <ArrowDown className="size-4" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
-          {descending ? 'По убыванию' : 'По возрастанию'}
-        </button>
         {/* Re-mounted whenever the applied period changes, so its fields always start from it. */}
         <DateRangeFilter
           key={`${params.start_date}|${params.end_date}`}
@@ -456,28 +460,32 @@ function DateRangeFilter({ from, to, isCustom, onApply, onReset }: {
   const isUnchanged = isCustom && draftFrom === from && draftTo === to
 
   return (
-    <div role="group" aria-label="Период" className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
-      <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-secondary sm:w-40">
-        С
+    <div role="group" aria-label="Период" className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
+      <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+        <span className="hidden text-sm text-ink-secondary sm:inline">Период</span>
         <DatePicker
           aria-label="Дата начала"
+          title="Дата начала"
+          className="min-w-0 flex-1 sm:w-36 sm:flex-none"
           value={draftFrom}
           max={draftTo || undefined}
           onChange={(event) => setDraftFrom(event.target.value)}
           aria-invalid={error ? true : undefined}
         />
-      </label>
-      <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-secondary sm:w-40">
-        По
+        <span className="text-ink-muted" aria-hidden>
+          —
+        </span>
         <DatePicker
           aria-label="Дата окончания"
+          title="Дата окончания"
+          className="min-w-0 flex-1 sm:w-36 sm:flex-none"
           value={draftTo}
           min={draftFrom || undefined}
           onChange={(event) => setDraftTo(event.target.value)}
           aria-invalid={error ? true : undefined}
         />
-      </label>
-      <div className="flex gap-2">
+      </div>
+      <div className="flex w-full items-center gap-1 sm:w-auto">
         <Button
           className="flex-1 sm:flex-none"
           disabled={!isComplete || error !== null || isUnchanged}
@@ -485,12 +493,17 @@ function DateRangeFilter({ from, to, isCustom, onApply, onReset }: {
         >
           Применить
         </Button>
-        <Button variant="secondary" className="flex-1 sm:flex-none" disabled={!isCustom} onClick={onReset}>
+        <Button
+          variant="ghost"
+          className="px-3 hover:text-brand-700 disabled:hover:bg-transparent disabled:hover:text-ink-secondary"
+          disabled={!isCustom}
+          onClick={onReset}
+        >
           Сбросить
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="text-xs text-danger sm:basis-full">
+        <p role="alert" className="basis-full text-xs text-danger">
           {error}
         </p>
       ) : null}
