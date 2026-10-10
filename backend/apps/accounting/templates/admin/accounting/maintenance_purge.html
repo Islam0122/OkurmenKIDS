@@ -1,0 +1,57 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="ok-form-container" style="max-width: 960px;">
+  <div class="ok-alert ok-alert-danger" role="alert" style="margin-bottom:1rem;">
+    <i class="bi bi-exclamation-octagon-fill"></i>
+    <strong>Операция необратима без резервной копии.</strong>
+    Перед очисткой сделайте резервную копию базы данных (например, <code>pg_dump -Fc</code>).
+    Удаление выполняется одной транзакцией: при любой ошибке ничего не удаляется.
+  </div>
+
+  <div style="display:grid; gap:1.25rem;">
+  {% for mode in modes %}
+    <div class="ok-card">
+      <div class="ok-card-header">
+        <i class="bi {% if mode.key == 'FULL' %}bi-radioactive{% else %}bi-trash3{% endif %}"></i>
+        <span>{{ mode.title }}</span>
+      </div>
+      <div class="ok-card-body">
+        <p class="ok-section-subtitle">Будет удалено:</p>
+        <div style="overflow-x:auto;">
+        <table class="table table-sm" style="margin-bottom:1rem;">
+          <thead><tr><th>Данные</th><th>Таблица</th><th style="text-align:right;">Записей</th></tr></thead>
+          <tbody>
+          {% for row in mode.delete %}
+            <tr>
+              <td>{{ row.label }}{% if row.note %}<br><span class="ok-help-text" style="display:inline;">{{ row.note }}</span>{% endif %}</td>
+              <td><code style="word-break:break-all;">{{ row.db_table }}</code></td>
+              <td style="text-align:right; white-space:nowrap;"><strong>{{ row.count }}</strong></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% if mode.keep %}
+          <p class="ok-section-subtitle">Сохраняется:</p>
+          <ul style="margin:0 0 1rem; padding-left:1.2rem;">
+            {% for row in mode.keep %}
+              <li>{{ row.label }} — <code>{{ row.db_table }}</code> ({{ row.count }})</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% for note in mode.notes %}
+          <div class="ok-alert ok-alert-warning" style="margin-bottom:1rem;"><i class="bi bi-info-circle"></i> {{ note }}</div>
+        {% endfor %}
+
+        {% if mode.key == 'FULL' %}{% with form=forms.FULL %}
+          {% include "admin/accounting/_purge_form.html" %}
+        {% endwith %}{% else %}{% with form=forms.PAYROLL %}
+          {% include "admin/accounting/_purge_form.html" %}
+        {% endwith %}{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+</div>
+{% endblock %}

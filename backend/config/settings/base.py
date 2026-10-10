@@ -464,6 +464,18 @@ JAZZMIN_SETTINGS = {
             {"name": "Аудитории", "model": "academy.room", "icon": "bi bi-door-open"},
         ],
 
+        # Приложение «Бухгалтерия» видно отдельной группой сайдбара; ссылка на
+        # обслуживание — только с правом purge_accounting_data, которое есть
+        # лишь у суперпользователя (представление проверяет is_superuser само).
+        "accounting": [
+            {
+                "name": "Обслуживание базы данных: очистка данных",
+                "url": "admin:accounting_maintenance_purge",
+                "icon": "bi bi-trash3",
+                "permissions": ["accounting.purge_accounting_data"],
+            },
+        ],
+
         "система": [
             {
                 # A "url" link (not "model") so the short label is used —
