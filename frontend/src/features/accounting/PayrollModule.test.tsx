@@ -41,6 +41,7 @@ const SETTINGS = {
   id: 1, course: 7, course_name: 'Prog SOFT', course_count_lesson: 48, price_per_student: '10000.00', current_price: '10000.00',
   counted_subjects: [], counted_subjects_names: [], required_lessons: 12, count_lessons_from: null,
   student_count_rule: 'ON_COMPLETION', student_count_rule_display: 'на дату завершения', is_active: true, updated_at: '',
+  trainer_split_rule: 'BY_LESSONS' as const, trainer_split_rule_display: 'Пропорционально проведённым урокам',
 }
 
 describe('PricingPage', () => {
@@ -126,9 +127,11 @@ const REPORT: TeacherReport = {
     lines: [
       { line_id: 1, line_type: 'PERCENT', line_type_display: '', description: '', group: 1, group_name: 'Python A', course_name: '',
         students: 10, price_per_student: '10000.00', percentage: '10.00', lessons_done: 12, target_lessons: 12, completed_on: null,
+        subject_name: 'IT', lessons_taught: 12,
         rate: null, accrued: '10000.00' },
       { line_id: 2, line_type: 'PERCENT', line_type_display: '', description: '', group: 2, group_name: 'Python B', course_name: '',
         students: 5, price_per_student: '10000.00', percentage: '10.00', lessons_done: 12, target_lessons: 12, completed_on: null,
+        subject_name: 'IT', lessons_taught: 12,
         rate: null, accrued: '5000.00' },
     ],
     accrued: '15000.00', adjustments: '0.00', total: '15000.00', paid: '13000.00', due: '2000.00',
@@ -166,7 +169,8 @@ describe('ReportsPage', () => {
 })
 
 const REVIEW: CycleAccrual = {
-  id: 11, cycle: 4, cycle_number: 2, group: 1, group_name: 'Python A', course_name: 'Prog SOFT', employee: 9,
+  id: 11, cycle: 4, cycle_number: 2, group: 1, group_name: 'Python A', course_name: 'Prog SOFT', subject_name: 'IT',
+  lessons_taught: 12, share: '1.0000', employee: 9,
   employee_name: 'Trainer Test', status: 'REVIEW_REQUIRED', status_display: 'Требует проверки', lessons: 12, lessons_total: 24,
   completed_on: '2026-09-24', student_count: 10, course_price: '10000.00', percentage: '10.00', amount: '10000.00',
   planned_payment_date: '2026-10-01', payroll: null, review_reasons: ['Смена тренера внутри цикла'], note: '',

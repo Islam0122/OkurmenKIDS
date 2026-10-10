@@ -75,7 +75,7 @@ export function ReportsPage() {
                   <tr>
                     <th>Сотрудник</th><th>Направление</th><th>Группа</th><th>Период</th><th>Тип оплаты</th>
                     <th className="text-right">Учен.</th><th className="text-right">Цена</th><th className="text-right">%</th>
-                    <th>Уроки</th><th className="text-right">Начислено</th><th className="text-right">Выплачено</th>
+                    <th>Уроки тренера</th><th className="text-right">Начислено</th><th className="text-right">Выплачено</th>
                     <th className="text-right">Остаток</th><th>План. выплата</th><th>Статус</th>
                   </tr>
                 </thead>
@@ -86,13 +86,13 @@ export function ReportsPage() {
                         <tr key={l.line_id}>
                           <td>{p.employee_name}</td>
                           <td>{p.department_display}</td>
-                          <td>{l.group_name || '—'}</td>
+                          <td>{l.group_name || '—'}{l.subject_name ? <p className="text-xs text-ink-muted">{l.subject_name}</p> : null}</td>
                           <td className="whitespace-nowrap">{p.period_label}</td>
                           <td className="text-xs">{p.salary_type_display}</td>
                           <td className="text-right">{l.students ?? '—'}</td>
                           <td className="text-right whitespace-nowrap">{l.price_per_student ? som(l.price_per_student) : '—'}</td>
                           <td className="text-right">{l.percentage ? `${Number(l.percentage)}%` : '—'}</td>
-                          <td className="whitespace-nowrap">{l.lessons_done ? `${l.lessons_done}/${l.target_lessons}` : '—'}</td>
+                          <td className="whitespace-nowrap">{l.lessons_done ? `${l.lessons_taught ?? l.lessons_done}/${l.target_lessons}` : '—'}</td>
                           <td className="text-right whitespace-nowrap">{som(l.accrued)}</td>
                           <td /><td />
                           <td className="whitespace-nowrap">{formatDate(p.planned_payment_date)}</td>

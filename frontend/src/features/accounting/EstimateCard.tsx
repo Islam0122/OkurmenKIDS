@@ -50,13 +50,12 @@ export function LessonProgress({ done, total }: { done: number; total: number })
  */
 export function EstimateCard({ estimate: e }: { estimate: MyEstimate }) {
   return (
-    <article className="rounded-xl border border-dashed border-border bg-surface p-4" aria-label={`Блок группы ${e.group_name}`}>
+    <article className="rounded-xl border border-dashed border-border bg-surface p-4" aria-label={`Блок ${e.subject_name}, группа ${e.group_name}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate font-semibold text-ink">{e.group_name}</h3>
-          <p className="text-xs text-ink-muted">
-            {e.course_name}{e.subjects.length ? ` · ${e.subjects.join(', ')}` : ''} · блок №{e.cycle_number}
-          </p>
+          <p className="text-sm font-medium text-ink-secondary">{e.subject_name}</p>
+          <p className="text-xs text-ink-muted">{e.course_name} · блок №{e.cycle_number}</p>
         </div>
         <EstimateStatusBadge status={e.status} label={e.status_display} />
       </div>
@@ -65,6 +64,9 @@ export function EstimateCard({ estimate: e }: { estimate: MyEstimate }) {
         <dt className="text-ink-secondary">Ученики</dt><dd className="text-right tabular-nums">{e.student_count}</dd>
         <dt className="text-ink-secondary">Цена за ученика</dt><dd className="text-right tabular-nums">{som(e.price_per_student)}/мес</dd>
         <dt className="text-ink-secondary">Процент тренера</dt><dd className="text-right tabular-nums">{Number(e.percentage)}%</dd>
+        {e.share_label && e.share_label !== `${e.required_lessons} из ${e.required_lessons} уроков` ? (
+          <><dt className="text-ink-secondary">Ваша доля</dt><dd className="text-right tabular-nums">{e.share_label}</dd></>
+        ) : null}
       </dl>
 
       <div className="mt-3"><LessonProgress done={e.lessons_done} total={e.required_lessons} /></div>

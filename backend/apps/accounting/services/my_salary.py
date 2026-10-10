@@ -112,7 +112,8 @@ def _estimate(e: dict) -> dict:
 
     return {
         "cycle_id": e["cycle_id"], "cycle_number": e["cycle_number"], "group_name": e["group_name"],
-        "course_name": e["course_name"], "subjects": e["subjects"], "student_count": e["student_count"],
+        "course_name": e["course_name"], "subjects": e["subjects"], "subject_name": e["subject_name"],
+        "share_label": e["share_label"], "student_count": e["student_count"],
         "price_per_student": _money(e["price_per_student"]), "percentage": str(e["percentage"]),
         "expected_amount": _money(e["expected_amount"]), "lessons_done": e["lessons_done"],
         "required_lessons": e["required_lessons"], "lessons_remaining": e["lessons_remaining"],

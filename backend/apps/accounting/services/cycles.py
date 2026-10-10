@@ -1,40 +1,60 @@
-"""Автоматический учёт уроков и начисление процента тренеру по циклам курса.
+"""Автоматический учёт уроков и начисление процента тренеру — по предметам.
+
+Циклы ведутся отдельно для каждой пары «группа + предмет»: у IT, English и
+Soft Skills одной группы свои уроки, нумерация циклов и прогресс. Урок
+одного предмета никогда не увеличивает счётчик другого, а завершение цикла
+по IT не завершает циклы остальных предметов.
 
 Учёт: уроки группы со статусом «Проведён» (отменённые и запланированные не
-считаются), по порядку (дата, время, id), с первого проведённого урока
-(или с необязательной даты `count_lessons_from`). Бухгалтер число уроков не
-вводит — его даёт LMS.
+считаются), по порядку (дата, время, id), с необязательной даты
+`count_lessons_from` и только учитываемых предметов курса (если заданы).
+Бухгалтер число уроков не вводит — его даёт LMS.
 
-Интервал — `required_lessons` из настроек курса (Course): при 12 пороги
-12, 24, 36, 48…; при 20 — 20, 40, 60… Достигнут очередной порог — цикл
-завершён: дата завершения = дата урока, на котором достигнут порог; цикл
-фиксируется со снимком (уроки, порог, дата, студенты, стоимость курса), и
-тренеру СРАЗУ создаётся начисление `CycleAccrual` по его проценту —
-`студенты × стоимость курса × процент / 100`. Уникальность: один цикл с
-номером на группу и одно начисление на (цикл, тренер), поэтому повторное
-сохранение урока, повторный запуск или пересчёт дублей не создают.
+Интервал — `required_lessons` из настроек курса: при 12 пороги предмета 12,
+24, 36…; при 20 — 20, 40, 60… Достигнут порог — цикл предмета завершён
+(дата завершения = дата урока порога), фиксируется со снимком (уроки,
+фактические тренеры и их уроки, студенты, тариф), и начисления создаются
+сразу.
 
-Изменение интервала действует на новые циклы: завершённые хранят свой
-порог. Исправление уроков задним числом (урок отменили — порог больше не
-достигнут) не удаляет историю: цикл помечается «Отменён», неутверждённое
-начисление отменяется, а утверждённое сторнируется корректировкой,
-которую утверждает директор; всё пишется в журнал аудита.
+Кому и сколько: тренерам, ФАКТИЧЕСКИ проводившим уроки цикла (`Lesson.teacher`,
+иначе тренер программы группы), при действующем правиле «Процент»:
 
-Синхронизация запускается автоматически при сохранении/удалении урока
-(signals), при расчёте зарплаты, при открытии списка циклов и командой
-`manage.py sync_course_cycles`.
+    студенты × тариф × процент тренера / 100 × (его уроки / уроков в цикле)
+
+— правило курса `trainer_split_rule = BY_LESSONS` (по умолчанию). Один
+тренер провёл весь цикл — получает полную сумму; замена на 3 урока из 12 —
+3/12 замене и 9/12 основному тренеру. Смена тренера сама по себе на проверку
+не отправляет. Правило `REVIEW` — при нескольких тренерах доли предлагаются,
+а решение принимает бухгалтер. Сотрудник с правилом, привязанным к группе,
+который никогда не был в ней тренером, получает полную сумму (основание —
+сама привязка, как и раньше).
+
+Уникальность: один живой цикл с номером на группу и предмет и одно
+начисление на (цикл, сотрудник) — повторное сохранение урока, повторный
+запуск или пересчёт дублей не создают.
+
+Переход с общего цикла группы: исторические циклы (`per_subject=False`)
+остаются историей со своими начислениями; их уроки (по привязке, иначе —
+все уроки группы до последнего урока последнего такого цикла) в предметные
+циклы повторно не попадают, поэтому оплаченный урок не оплачивается дважды.
+
+Исправление уроков задним числом не удаляет историю: цикл помечается
+«Отменён», неутверждённое начисление отменяется, утверждённое сторнируется
+корректировкой, которую утверждает директор; всё пишется в журнал аудита.
 """
 from __future__ import annotations
 
 import datetime as dt
 import logging
+from collections import Counter
+from decimal import Decimal
 
 from django.conf import settings as django_settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.academy.models import Group, Lesson, TrainerAssignment
+from apps.academy.models import Group, GroupTeacher, Lesson, TrainerAssignment
 from apps.users.models import Teacher
 
 from ..models import (
@@ -58,6 +78,8 @@ logger = logging.getLogger(__name__)
 Status = CourseCycle.Status
 AccrualStatus = CycleAccrual.Status
 Rule = CoursePayrollSettings.StudentCountRule
+Split = CoursePayrollSettings.TrainerSplitRule
+SHARE_Q = Decimal("0.0001")
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +102,7 @@ def responsible(teacher_id, group_id, day) -> bool:
 
 
 def responsible_teacher_names(group_id: int, day) -> list[str]:
-    """Тренеры, отвечавшие за группу в день `day` (по истории назначений)."""
+    """Тренеры, отвечавшие за группу в день `day` (для исторических циклов)."""
     rows = (
         TrainerAssignment.objects.filter(group_id=group_id, start_date__lte=day)
         .filter(Q(end_date__isnull=True) | Q(end_date__gt=day)).select_related("teacher__user")
@@ -88,33 +110,30 @@ def responsible_teacher_names(group_id: int, day) -> list[str]:
     return sorted({r.teacher.user.get_full_name() or r.teacher.user.username for r in rows})
 
 
-def rule_covers_on(rule: SalaryRule, group_id: int, course_id: int, day) -> bool:
-    """Правило «Процент» сотрудника распространяется на группу курса в день
-    `day`: действует, подходит по курсу/группе, и сотрудник отвечал за группу
-    (правило с конкретной группой у сотрудника, который никогда не был в ней
-    тренером, — основание сама привязка)."""
+def teacher_names(ids) -> dict[int, str]:
+    return {t.pk: str(t) for t in Teacher.objects.filter(pk__in=list(ids)).select_related("user")}
+
+
+def current_subject_teacher_ids(group_id: int, subject_id: int | None) -> set[int]:
+    """Тренеры, которые сейчас ведут предмет в группе (активная программа)."""
+    qs = GroupTeacher.objects.filter(group_id=group_id, is_active=True)
+    qs = qs.filter(subject_id=subject_id) if subject_id else qs.filter(subject__isnull=True)
+    return set(qs.values_list("teacher_id", flat=True))
+
+
+def _rule_applies(rule: SalaryRule, group_id: int, course_id: int, day) -> bool:
     if not rule.is_active or not rule.overlaps(day, day):
         return False
     if rule.group_id and rule.group_id != group_id:
         return False
-    if rule.program_id and rule.program_id != course_id:
-        return False
-    teacher = getattr(rule.employee_profile.employee, "teacher_profile", None)
-    teacher_id = teacher.pk if teacher is not None else None
-    if rule.group_id and group_id not in trainer_group_ids_ever(teacher_id):
-        return True
-    return teacher_id is not None and responsible(teacher_id, group_id, day)
-
-
-def rule_covers(rule: SalaryRule, cycle: CourseCycle) -> bool:
-    """Правило покрывает завершённый цикл — на дату его завершения."""
-    return rule_covers_on(rule, cycle.group_id, cycle.course_id, cycle.completed_on)
+    return not (rule.program_id and rule.program_id != course_id)
 
 
 def percent_rules_on(group_id: int, course_id: int, day) -> dict[int, SalaryRule]:
-    """{employee_id: правило} — кому положен процент за группу курса в день
-    `day` (по одному правилу на сотрудника: при пересечении — первое, расчёт
-    покажет ошибку)."""
+    """{employee_id: правило} — действующие в день `day` правила «Процент»,
+    подходящие группе и курсу (по одному на сотрудника: при пересечении —
+    первое, расчёт покажет ошибку). Кому из них положено начисление,
+    решают фактические уроки (см. shares)."""
     profiles = EmployeeSalaryProfile.objects.filter(
         salary_type=SalaryType.PERCENT, is_active=True, effective_from__lte=day,
     ).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=day))
@@ -125,57 +144,94 @@ def percent_rules_on(group_id: int, course_id: int, day) -> dict[int, SalaryRule
     result: dict[int, SalaryRule] = {}
     for rule in rules:
         employee_id = rule.employee_profile.employee_id
-        if employee_id not in result and rule_covers_on(rule, group_id, course_id, day):
+        if employee_id not in result and _rule_applies(rule, group_id, course_id, day):
             result[employee_id] = rule
     return result
 
 
-def percent_rules_for(cycle: CourseCycle) -> dict[int, SalaryRule]:
-    return percent_rules_on(cycle.group_id, cycle.course_id, cycle.completed_on)
+def _teacher_id(rule: SalaryRule) -> int | None:
+    teacher = getattr(rule.employee_profile.employee, "teacher_profile", None)
+    return teacher.pk if teacher is not None else None
 
 
-def accrual_values(cycle: CourseCycle, rule: SalaryRule) -> dict:
+def shares(cycle: CourseCycle, teacher_lessons: dict | None = None, day=None) -> list[dict]:
+    """Кому положено начисление за цикл и какая доля.
+
+    `teacher_lessons` — {id тренера: уроков}; по умолчанию — фактические уроки
+    цикла (для оценки передаются ожидаемые). Возвращает
+    [{employee_id, rule, lessons_taught, numerator}] — доля = numerator /
+    уроков в цикле."""
+    day = day or cycle.completed_on
+    lessons = {int(k): v for k, v in (cycle.teacher_lessons if teacher_lessons is None else teacher_lessons).items()}
+    result = []
+    for employee_id, rule in percent_rules_on(cycle.group_id, cycle.course_id, day).items():
+        teacher_id = _teacher_id(rule)
+        if not cycle.per_subject:
+            # Исторический общий цикл: как раньше — отвечавшему за группу.
+            if teacher_id is not None and responsible(teacher_id, cycle.group_id, day):
+                result.append({"employee_id": employee_id, "rule": rule, "lessons_taught": None,
+                               "numerator": cycle.required_lessons})
+            elif rule.group_id and cycle.group_id not in trainer_group_ids_ever(teacher_id):
+                result.append({"employee_id": employee_id, "rule": rule, "lessons_taught": None,
+                               "numerator": cycle.required_lessons})
+            continue
+        taught = lessons.get(teacher_id, 0) if teacher_id is not None else 0
+        if taught:
+            result.append({"employee_id": employee_id, "rule": rule, "lessons_taught": taught, "numerator": taught})
+        elif rule.group_id and cycle.group_id not in trainer_group_ids_ever(teacher_id):
+            result.append({"employee_id": employee_id, "rule": rule, "lessons_taught": None,
+                           "numerator": cycle.required_lessons})
+    return result
+
+
+def share_amount(price, students, percentage, numerator, required) -> Decimal:
+    """студенты × тариф × процент / 100 × уроки тренера / уроков в цикле —
+    одним округлением, без накопления ошибки от округлённой доли."""
+    return money(Decimal(price) * students * Decimal(percentage) * numerator / (Decimal(100) * required))
+
+
+def accrual_values(cycle: CourseCycle, item: dict) -> dict:
+    rule, numerator = item["rule"], item["numerator"]
     return dict(
         salary_rule=rule, lessons=cycle.required_lessons, lessons_total=cycle.lessons_total,
+        lessons_taught=item["lessons_taught"],
+        share=(Decimal(numerator) / cycle.required_lessons).quantize(SHARE_Q),
         completed_on=cycle.completed_on, student_count=cycle.student_count, course_price=cycle.course_price,
-        percentage=rule.percentage, amount=money(cycle.course_price * cycle.student_count * rule.percentage / 100),
+        percentage=rule.percentage,
+        amount=share_amount(cycle.course_price, cycle.student_count, rule.percentage, numerator,
+                            cycle.required_lessons),
     )
 
 
-def review_reasons(cycle: CourseCycle, employee_id: int, rule: SalaryRule | None = None) -> list[str]:
-    """Почему начисление за цикл нельзя создать автоматически.
+def review_reasons(cycle: CourseCycle) -> list[str]:
+    """Почему начисления за цикл нельзя создать автоматически.
 
-    * Уроки цикла проводили разные тренеры (или не тот, кому положено
-      начисление): весь цикл не переносится одному тренеру — правило
-      распределения между тренерами не утверждено, решает бухгалтер.
-    * У группы уже есть завершённый цикл в этом же календарном месяце:
-      стоимость курса — месячная, и начислять процент от полной месячной
-      базы за каждый цикл без решения бухгалтера нельзя.
+    * Курс с правилом `REVIEW`, и уроки цикла проводили несколько тренеров:
+      доли рассчитаны, но решение — за бухгалтером. При правиле по умолчанию
+      (`BY_LESSONS`) смена тренера на проверку не отправляет.
+    * У предмета группы уже есть завершённый цикл в этом же календарном
+      месяце: стоимость курса — месячная, и начислять процент от полной
+      месячной базы за каждый цикл без решения бухгалтера нельзя.
     """
     reasons = []
-    links = list(cycle.cycle_lessons.filter(is_live=True).values_list("teacher_id", flat=True))
-    teachers = {t for t in links if t is not None}
-    if teachers:
-        names = {t.pk: str(t) for t in Teacher.objects.filter(pk__in=teachers).select_related("user")}
-        counts = {t: links.count(t) for t in teachers}
-        recipient = Teacher.objects.filter(user_id=employee_id).values_list("pk", flat=True).first()
-        if len(teachers) > 1:
-            listed = ", ".join(f"{names[t]} — {counts[t]} ур." for t in sorted(teachers, key=lambda t: names[t]))
-            reasons.append(f"Смена тренера внутри цикла: уроки проводили {listed}.")
-        elif recipient is not None and recipient not in teachers and not (rule and rule.group_id):
-            only = next(iter(teachers))
-            reasons.append(
-                f"Уроки цикла проводил {names[only]}, а начисление положено по назначению на дату завершения "
-                "другому сотруднику."
-            )
+    settings = CoursePayrollSettings.objects.filter(course_id=cycle.course_id).first()
+    teachers = {int(k) for k, v in cycle.teacher_lessons.items() if v}
+    if settings is not None and settings.trainer_split_rule == Split.REVIEW and len(teachers) > 1:
+        names = teacher_names(teachers)
+        listed = ", ".join(f"{names.get(t, t)} — {cycle.teacher_lessons[str(t)]} ур."
+                           for t in sorted(teachers, key=lambda t: names.get(t, "")))
+        reasons.append(f"Уроки цикла проводили несколько тренеров ({listed}); по правилу курса доли подтверждает "
+                       "бухгалтер.")
     if getattr(django_settings, "ACCOUNTING_REVIEW_REPEATED_MONTHLY_CYCLES", True) and cycle.completed_on:
         earlier = CourseCycle.objects.filter(
-            group_id=cycle.group_id, course_id=cycle.course_id, status=Status.COMPLETED, number__lt=cycle.number,
+            group_id=cycle.group_id, course_id=cycle.course_id, subject_id=cycle.subject_id,
+            per_subject=cycle.per_subject, status=Status.COMPLETED, number__lt=cycle.number,
             completed_on__year=cycle.completed_on.year, completed_on__month=cycle.completed_on.month,
         ).exclude(pk=cycle.pk).order_by("number").first()
         if earlier is not None:
+            what = f"по предмету «{cycle.subject}»" if cycle.subject_id else "у группы"
             reasons.append(
-                f"В {cycle.completed_on:%m.%Y} у группы уже завершён цикл {earlier.number} "
+                f"В {cycle.completed_on:%m.%Y} {what} уже завершён цикл {earlier.number} "
                 f"({earlier.completed_on:%d.%m.%Y}): месячная стоимость курса не начисляется дважды за месяц "
                 "автоматически — подтвердите или отмените начисление."
             )
@@ -185,36 +241,38 @@ def review_reasons(cycle: CourseCycle, employee_id: int, rule: SalaryRule | None
 def ensure_accruals(cycle: CourseCycle, actor=None) -> list[CycleAccrual]:
     """Создать недостающие начисления за завершённый цикл (идемпотентно) и
     обновить ещё не утверждённые, если с тех пор поправили правило.
-    Спорный цикл (см. review_reasons) получает начисление в статусе
-    «Требует проверки» — в расчёт оно не входит до решения бухгалтера."""
+    Спорный цикл (см. review_reasons) получает начисления в статусе
+    «Требует проверки» — в расчёт они не входят до решения бухгалтера."""
     if cycle.status != Status.COMPLETED:
         return []
     created = []
-    for employee_id, rule in percent_rules_for(cycle).items():
-        values = accrual_values(cycle, rule)
-        reasons = review_reasons(cycle, employee_id, rule)
+    reasons = review_reasons(cycle)
+    for item in shares(cycle):
+        values = accrual_values(cycle, item)
         defaults = {**values, "status": AccrualStatus.REVIEW_REQUIRED if reasons else AccrualStatus.ACCRUED,
                     "review_reasons": reasons}
         try:
             with transaction.atomic():
                 accrual, was_created = CycleAccrual.objects.get_or_create(
-                    cycle=cycle, employee_id=employee_id, defaults=defaults,
+                    cycle=cycle, employee_id=item["employee_id"], defaults=defaults,
                 )
         except IntegrityError:  # параллельный запуск уже создал
             continue
         if was_created:
             created.append(accrual)
             audit.log(actor, accrual, "auto_accrue", new={
-                "group": cycle.group_id, "cycle": cycle.number, "lessons_total": cycle.lessons_total,
-                "completed_on": cycle.completed_on, "students": cycle.student_count,
-                "course_price": cycle.course_price, "percentage": rule.percentage, "amount": accrual.amount,
-                "status": accrual.status, "planned_payment_date": accrual.planned_payment_date,
+                "group": cycle.group_id, "subject": cycle.subject_id, "cycle": cycle.number,
+                "lessons_total": cycle.lessons_total, "completed_on": cycle.completed_on,
+                "students": cycle.student_count, "course_price": cycle.course_price,
+                "percentage": item["rule"].percentage, "lessons_taught": item["lessons_taught"],
+                "share": values["share"], "amount": accrual.amount, "status": accrual.status,
+                "planned_payment_date": accrual.planned_payment_date,
             })
             if reasons:
                 audit.log(actor, accrual, "review_required", new={"status": accrual.status, "reasons": reasons},
                           reason=" ".join(reasons))
         elif accrual.status in (AccrualStatus.ACCRUED, AccrualStatus.REVIEW_REQUIRED) and (
-            accrual.amount != values["amount"] or accrual.salary_rule_id != rule.pk
+            accrual.amount != values["amount"] or accrual.salary_rule_id != item["rule"].pk
         ):
             old = {"percentage": accrual.percentage, "amount": accrual.amount}
             for name, value in values.items():
@@ -257,7 +315,8 @@ def review_accrual(accrual: CycleAccrual, *, confirm: bool, reason: str, actor) 
 
 def _invalidate(cycle: CourseCycle, lessons_now: int, actor) -> None:
     reason = (
-        f"Уроки группы исправлены: проведено {lessons_now}, порог цикла {cycle.number} "
+        f"Уроки исправлены: проведено {lessons_now}"
+        f"{f' по предмету «{cycle.subject}»' if cycle.subject_id else ''}, порог цикла {cycle.number} "
         f"({cycle.lessons_total} уроков) больше не достигнут."
     )
     cycle.status = Status.INVALIDATED
@@ -323,9 +382,8 @@ def _reverse(accrual: CycleAccrual, reason: str, actor) -> None:
 # ---------------------------------------------------------------------------
 
 def counted_lessons(group: Group, settings: CoursePayrollSettings):
-    """Уроки группы, которые учитываются в циклах курса: только проведённые
-    (отменённые и запланированные — нет), с даты начала учёта, и только
-    учитываемых предметов, если они заданы (например, только IT-уроки)."""
+    """Уроки группы, которые учитываются в циклах курса: с даты начала учёта
+    и только учитываемых предметов, если они заданы (например, только IT)."""
     lessons = Lesson.objects.filter(group=group)
     if settings.count_lessons_from:
         lessons = lessons.filter(date__gte=settings.count_lessons_from)
@@ -336,12 +394,20 @@ def counted_lessons(group: Group, settings: CoursePayrollSettings):
 
 
 def _completed_lessons(group: Group, settings: CoursePayrollSettings) -> list[dict]:
+    """Проведённые учитываемые уроки группы (все предметы), по порядку."""
     lessons = counted_lessons(group, settings).filter(status=Lesson.Status.COMPLETED)
-    rows = lessons.order_by("date", "start_time", "id").values("id", "date", "teacher_id", "group_teacher__teacher_id")
+    rows = lessons.order_by("date", "start_time", "id").values(
+        "id", "date", "subject_id", "teacher_id", "group_teacher__teacher_id",
+    )
     return [
-        {"id": r["id"], "date": r["date"], "teacher_id": r["teacher_id"] or r["group_teacher__teacher_id"]}
+        {"id": r["id"], "date": r["date"], "subject_id": r["subject_id"],
+         "teacher_id": r["teacher_id"] or r["group_teacher__teacher_id"]}
         for r in rows
     ]
+
+
+def _teacher_counts(rows: list[dict]) -> dict[str, int]:
+    return {str(k): v for k, v in sorted(Counter(r["teacher_id"] for r in rows if r["teacher_id"]).items())}
 
 
 def _link_lessons(cycle: CourseCycle, chunk: list[dict]) -> None:
@@ -353,67 +419,124 @@ def _link_lessons(cycle: CourseCycle, chunk: list[dict]) -> None:
     ])
 
 
-def sync_group(group: Group, settings: CoursePayrollSettings, *, actor=None) -> list[CourseCycle]:
-    """Привести циклы группы в соответствие с проведёнными уроками;
-    вернуть новые завершённые циклы (начисления по ним уже созданы)."""
-    lessons = _completed_lessons(group, settings)
+def _legacy(group: Group, settings: CoursePayrollSettings, rows: list[dict], actor) -> set[int]:
+    """Исторические общие циклы группы: снять те, чей порог больше не
+    достигнут, закрыть открытый общий цикл и вернуть id уже учтённых ими
+    уроков — в предметные циклы они повторно не попадают."""
+    legacy = CourseCycle.objects.select_for_update().filter(group=group, course=settings.course, per_subject=False)
+    for open_cycle in legacy.filter(status=Status.IN_PROGRESS):
+        open_cycle.status = Status.INVALIDATED
+        open_cycle.invalidated_reason = "Учёт переведён на циклы по предметам."
+        open_cycle.save()
+        audit.log(actor, open_cycle, "close_legacy", new={"status": open_cycle.status},
+                  reason=open_cycle.invalidated_reason)
+    completed = list(legacy.filter(status=Status.COMPLETED).order_by("number"))
+    while completed and completed[-1].lessons_total > len(rows):
+        _invalidate(completed.pop(), len(rows), actor)
+    if not completed:
+        return set()
+    last = completed[-1]
+    consumed = set(CycleLesson.objects.filter(cycle__in=completed, is_live=True).values_list("lesson_ref", flat=True))
+    position = next((i for i, r in enumerate(rows) if r["id"] == last.last_lesson_id), None)
+    if position is not None:
+        consumed |= {r["id"] for r in rows[:position + 1]}
+    else:
+        consumed |= {r["id"] for r in rows if r["date"] <= last.completed_on}
+    return consumed
+
+
+def subjects_for(group: Group, settings: CoursePayrollSettings, rows: list[dict]) -> list:
+    """Предметы, по которым ведутся циклы группы: учитываемые предметы курса,
+    если заданы; иначе предметы курса, программ группы и проведённых уроков.
+    None — уроки без предмета (только если такие есть)."""
+    counted = set(settings.counted_subjects.values_list("pk", flat=True))
+    if counted:
+        subjects = set(counted)
+    else:
+        subjects = set(settings.course.subjects.values_list("pk", flat=True))
+        subjects |= set(GroupTeacher.objects.filter(group=group, is_active=True, subject__isnull=False)
+                        .values_list("subject_id", flat=True))
+        subjects |= {r["subject_id"] for r in rows if r["subject_id"]}
+    ordered: list = sorted(subjects)
+    if not counted and any(r["subject_id"] is None for r in rows):
+        ordered.append(None)
+    return ordered
+
+
+def _sync_subject(group, settings, subject_id, lessons: list[dict], actor) -> list[CourseCycle]:
     total = len(lessons)
     created: list[CourseCycle] = []
-    with transaction.atomic():
-        live = CourseCycle.objects.select_for_update().filter(group=group, course=settings.course).exclude(
-            status=Status.INVALIDATED,
+    live = CourseCycle.objects.select_for_update().filter(
+        group=group, course=settings.course, subject_id=subject_id, per_subject=True,
+    ).exclude(status=Status.INVALIDATED)
+    completed = list(live.filter(status=Status.COMPLETED).order_by("number"))
+    open_cycle = live.filter(status=Status.IN_PROGRESS).first()
+    # Урок исправили задним числом — снять циклы, чей порог больше не достигнут.
+    while completed and completed[-1].lessons_total > total:
+        _invalidate(completed.pop(), total, actor)
+    consumed = completed[-1].lessons_total if completed else 0
+    number = len(completed) + 1
+    required = settings.required_lessons
+    remaining = lessons[consumed:]
+    while len(remaining) >= required:
+        chunk, remaining = remaining[:required], remaining[required:]
+        consumed += required
+        start, end = chunk[0]["date"], chunk[-1]["date"]
+        students = counted_students(group.pk, start, end, settings.student_count_rule)
+        price = price_on(settings, end)
+        fields = dict(
+            status=Status.COMPLETED, required_lessons=required, lessons_done=required, lessons_total=consumed,
+            start_date=start, completed_on=end, last_lesson_id=chunk[-1]["id"], student_count=len(students),
+            student_ids=students, student_count_rule=settings.student_count_rule, course_price=price,
+            teacher_lessons=_teacher_counts(chunk),
         )
-        completed = list(live.filter(status=Status.COMPLETED).order_by("number"))
-        open_cycle = live.filter(status=Status.IN_PROGRESS).first()
-        # Урок исправили задним числом — снять циклы, чей порог больше не достигнут.
-        while completed and completed[-1].lessons_total > total:
-            _invalidate(completed.pop(), total, actor)
-        consumed = completed[-1].lessons_total if completed else 0
-        number = len(completed) + 1
-        required = settings.required_lessons
-        remaining = lessons[consumed:]
-        while len(remaining) >= required:
-            chunk, remaining = remaining[:required], remaining[required:]
-            consumed += required
-            start, end = chunk[0]["date"], chunk[-1]["date"]
-            students = counted_students(group.pk, start, end, settings.student_count_rule)
-            price = price_on(settings, end)
-            fields = dict(
-                status=Status.COMPLETED, required_lessons=required, lessons_done=required, lessons_total=consumed,
-                start_date=start, completed_on=end, last_lesson_id=chunk[-1]["id"], student_count=len(students),
-                student_ids=students, student_count_rule=settings.student_count_rule,
-                course_price=price,
-            )
-            if open_cycle is not None:
-                open_cycle.number = number
-                for name, value in fields.items():
-                    setattr(open_cycle, name, value)
-                open_cycle.save()
-                cycle, open_cycle = open_cycle, None
-            else:
-                cycle = CourseCycle.objects.create(group=group, course=settings.course, number=number, **fields)
-            _link_lessons(cycle, chunk)
-            audit.log(actor, cycle, "complete", new={
-                "group": group.pk, "number": number, "lessons_total": consumed, "completed_on": end,
-                "students": len(students), "course_price": price, "lessons": [row["id"] for row in chunk],
-            })
-            created.append(cycle)
-            number += 1
-        progress = dict(
-            number=number, required_lessons=required, lessons_done=len(remaining),
-            lessons_total=consumed + len(remaining), start_date=remaining[0]["date"] if remaining else None,
-        )
-        if open_cycle is None:
-            try:
-                with transaction.atomic():
-                    CourseCycle.objects.create(group=group, course=settings.course, status=Status.IN_PROGRESS,
-                                               **progress)
-            except IntegrityError:  # параллельная синхронизация уже создала
-                pass
-        elif any(getattr(open_cycle, k) != v for k, v in progress.items()):
-            for name, value in progress.items():
+        if open_cycle is not None:
+            open_cycle.number = number
+            for name, value in fields.items():
                 setattr(open_cycle, name, value)
             open_cycle.save()
+            cycle, open_cycle = open_cycle, None
+        else:
+            cycle = CourseCycle.objects.create(group=group, course=settings.course, subject_id=subject_id,
+                                               number=number, **fields)
+        _link_lessons(cycle, chunk)
+        audit.log(actor, cycle, "complete", new={
+            "group": group.pk, "subject": subject_id, "number": number, "lessons_total": consumed,
+            "completed_on": end, "students": len(students), "course_price": price,
+            "teachers": fields["teacher_lessons"], "lessons": [row["id"] for row in chunk],
+        })
+        created.append(cycle)
+        number += 1
+    progress = dict(
+        number=number, required_lessons=required, lessons_done=len(remaining),
+        lessons_total=consumed + len(remaining), start_date=remaining[0]["date"] if remaining else None,
+        teacher_lessons=_teacher_counts(remaining),
+    )
+    if open_cycle is None:
+        try:
+            with transaction.atomic():
+                CourseCycle.objects.create(group=group, course=settings.course, subject_id=subject_id,
+                                           status=Status.IN_PROGRESS, **progress)
+        except IntegrityError:  # параллельная синхронизация уже создала
+            pass
+    elif any(getattr(open_cycle, k) != v for k, v in progress.items()):
+        for name, value in progress.items():
+            setattr(open_cycle, name, value)
+        open_cycle.save()
+    return created
+
+
+def sync_group(group: Group, settings: CoursePayrollSettings, *, actor=None) -> list[CourseCycle]:
+    """Привести циклы всех предметов группы в соответствие с проведёнными
+    уроками; вернуть новые завершённые циклы (начисления по ним уже созданы)."""
+    rows = _completed_lessons(group, settings)
+    created: list[CourseCycle] = []
+    with transaction.atomic():
+        consumed = _legacy(group, settings, rows, actor)
+        fresh = [r for r in rows if r["id"] not in consumed]
+        for subject_id in subjects_for(group, settings, rows):
+            lessons = [r for r in fresh if r["subject_id"] == subject_id]
+            created += _sync_subject(group, settings, subject_id, lessons, actor)
         for cycle in created:
             ensure_accruals(cycle, actor)
     return created
@@ -450,19 +573,22 @@ def sync_group_safely(group_id: int, actor=None) -> None:
 
 
 def open_cycles_for(employee) -> list[CourseCycle]:
-    """Незавершённые циклы групп, за которые сотрудник сейчас отвечает или к
-    которым привязано его правило «Процент»."""
+    """Незавершённые циклы предметов, которые сотрудник сейчас ведёт, в
+    которых он уже провёл уроки, или групп, к которым привязано его правило."""
     teacher = getattr(employee, "teacher_profile", None)
-    group_ids = set(
+    rule_groups = set(
         SalaryRule.objects.filter(employee_profile__employee=employee, rule_type=SalaryRule.RuleType.PERCENT,
                                   is_active=True, group__isnull=False).values_list("group_id", flat=True)
     )
+    cond = Q(group_id__in=rule_groups)
     if teacher is not None:
-        group_ids |= set(TrainerAssignment.objects.filter(teacher=teacher, end_date__isnull=True)
-                         .values_list("group_id", flat=True))
+        programs = GroupTeacher.objects.filter(teacher=teacher, is_active=True).values_list("group_id", "subject_id")
+        for group_id, subject_id in programs:
+            cond |= Q(group_id=group_id, subject_id=subject_id)
+        cond |= Q(teacher_lessons__has_key=str(teacher.pk))
     return list(
-        CourseCycle.objects.filter(status=Status.IN_PROGRESS, group_id__in=group_ids)
-        .select_related("group", "course").order_by("group__name")
+        CourseCycle.objects.filter(cond, status=Status.IN_PROGRESS, per_subject=True)
+        .select_related("group", "course", "subject").order_by("group__name", "subject__name")
     )
 
 

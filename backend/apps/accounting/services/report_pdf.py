@@ -235,11 +235,13 @@ def render_teacher_report_pdf(report: dict) -> bytes:
     rows = []
     for p in report["payrolls"]:
         for line in p["lines"]:
-            rows.append([p["employee_name"], p["department_display"], line["group_name"] or "—", p["period_label"],
+            group = " · ".join(x for x in (line["group_name"], line.get("subject_name")) if x) or "—"
+            taught = line["lessons_taught"] if line.get("lessons_taught") is not None else line["lessons_done"]
+            rows.append([p["employee_name"], p["department_display"], group, p["period_label"],
                          p["salary_type_display"], num(line["students"]),
                          som(line["price_per_student"]) if line["price_per_student"] is not None else "—",
                          f"{num(line['percentage'])}%" if line["percentage"] is not None else "—",
-                         f"{num(line['lessons_done'])}/{num(line['target_lessons'])}" if line["lessons_done"] else "—",
+                         f"{num(taught)}/{num(line['target_lessons'])}" if line["lessons_done"] else "—",
                          som(line["accrued"]), "", "", d(p["planned_payment_date"]), p["status_display"]])
         rows.append([f"Итого: {p['employee_name']}", "", "", "", "", "", "", "", "", som(p["total"]), som(p["paid"]),
                      som(p["due"]), d(p["planned_payment_date"]), p["status_display"]])

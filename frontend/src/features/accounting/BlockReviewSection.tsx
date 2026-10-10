@@ -60,9 +60,12 @@ function ReviewList({ query, canOperate }: { query: ReturnType<typeof useCycleAc
           <div key={a.id} className="card p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="font-semibold text-ink">{a.employee_name} · {a.group_name}, блок №{a.cycle_number}</p>
+                <p className="font-semibold text-ink">
+                  {a.employee_name} · {a.group_name}{a.subject_name ? `, ${a.subject_name}` : ''}, блок №{a.cycle_number}
+                </p>
                 <p className="text-sm text-ink-secondary">
-                  {a.course_name} · завершён {formatDate(a.completed_on)} · {a.student_count} × {som(a.course_price)} × {Number(a.percentage)}% ={' '}
+                  {a.course_name} · завершён {formatDate(a.completed_on)} · {a.student_count} × {som(a.course_price)} × {Number(a.percentage)}%
+                  {a.lessons_taught !== null && a.lessons_taught !== a.lessons ? ` × ${a.lessons_taught}/${a.lessons} ур.` : ''} ={' '}
                   <b>{som(a.amount)}</b> · плановая выплата {formatDate(a.planned_payment_date)}
                 </p>
               </div>
@@ -113,7 +116,7 @@ function EstimatesTable() {
       </p>
       <table className="data-table">
         <thead>
-          <tr><th>Тренер</th><th>Группа</th><th>Прогресс</th><th className="text-right">Ученики</th><th className="text-right">Цена</th>
+          <tr><th>Тренер</th><th>Группа</th><th>Предмет</th><th>Прогресс</th><th className="text-right">Ученики</th><th className="text-right">Цена</th>
             <th className="text-right">%</th><th className="text-right">Ожидается</th><th>Ожид. выплата</th><th>Статус</th></tr>
         </thead>
         <tbody>
@@ -121,6 +124,7 @@ function EstimatesTable() {
             <tr key={`${e.cycle_id}-${e.employee ?? 'none'}`}>
               <td className="font-medium text-ink">{e.employee_name || <span className="text-warning">нет правила</span>}</td>
               <td>{e.group_name}<p className="text-xs text-ink-muted">{e.course_name}</p></td>
+              <td>{e.subject_name}{e.share_label ? <p className="text-xs text-ink-muted">{e.share_label}</p> : null}</td>
               <td className="whitespace-nowrap tabular-nums">{e.lessons_done}/{e.required_lessons}</td>
               <td className="text-right">{e.student_count}</td>
               <td className="text-right whitespace-nowrap">{som(e.price_per_student)}</td>

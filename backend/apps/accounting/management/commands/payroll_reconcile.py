@@ -32,6 +32,7 @@ class Command(BaseCommand):
                 else:
                     self.stdout.write(f"{key}: {value}")
         problems = reconcile.problems_count(report)
-        self.stdout.write(f"Расхождений: {problems}")
+        # В режиме --json stdout — только JSON (для сравнения файлов до/после).
+        (self.stderr if options["json"] else self.stdout).write(f"Расхождений: {problems}")
         if problems:
             sys.exit(1)

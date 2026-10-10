@@ -120,9 +120,11 @@ def render_teacher_report_xlsx(report: dict) -> bytes:
     for p in report["payrolls"]:
         for line in p["lines"]:
             rows.append([
-                p["employee_name"], p["department_display"], line["group_name"] or "—", p["period_label"],
+                p["employee_name"], p["department_display"],
+                " · ".join(x for x in (line["group_name"], line.get("subject_name")) if x) or "—", p["period_label"],
                 p["salary_type_display"], line["students"], line["price_per_student"], line["percentage"],
-                line["lessons_done"], line["target_lessons"], line["accrued"], None, None,
+                line["lessons_taught"] if line.get("lessons_taught") is not None else line["lessons_done"],
+                line["target_lessons"], line["accrued"], None, None,
                 _d(p["planned_payment_date"]), p["status_display"],
             ])
         rows.append([
