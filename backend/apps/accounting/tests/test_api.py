@@ -131,7 +131,8 @@ class FlowTests(AccountingFixture):
 
         detail = acc.get(f"{API}/payrolls/{payroll_id}/").json()
         self.assertEqual(len(detail["lines"]), 1)
-        self.assertEqual(len(detail["lines"][0]["metadata"]["students"]), 3)
+        self.assertEqual(detail["lines"][0]["metadata"]["students_count"], 3)
+        self.assertNotIn("students", detail["lines"][0]["metadata"])
         self.assertTrue(detail["audit"])
 
         r = acc.post(f"{API}/payrolls/{payroll_id}/payments/", {"amount": "100", "payment_date": "2026-09-16"},

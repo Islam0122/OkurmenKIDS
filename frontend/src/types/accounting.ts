@@ -97,7 +97,9 @@ export interface PayrollLine {
   amount: string
   metadata: {
     payments?: { id: number; student: string; amount: string; counted: string; received_date: string; service_start: string; service_end: string }[]
-    students?: { id: number; name: string; days: number }[]
+    /** Активные студенты — только агрегатом (поимённого списка API не отдаёт). */
+    students_count?: number
+    student_days?: number
     [key: string]: unknown
   }
 }

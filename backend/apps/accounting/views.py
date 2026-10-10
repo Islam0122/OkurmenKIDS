@@ -173,14 +173,17 @@ class StudentLookupView(APIView):
 
     @extend_schema(responses=OpenApiTypes.OBJECT)
     def get(self, request):
+        # Только то, что нужно, чтобы привязать платёж: id, ФИО, группа.
+        # Без телефонов, статусов и прочего профиля; минимум 2 символа запроса.
         term = (request.query_params.get("search") or "").strip()
-        qs = Student.objects.select_related("group")
+        if len(term) < 2:
+            return Response([])
+        qs = Student.objects.only("id", "first_name", "last_name", "group_id", "group__name").select_related("group")
         for part in term.split():
             qs = qs.filter(Q(first_name__icontains=part) | Q(last_name__icontains=part))
         return Response([
-            {"id": st.pk, "name": str(st), "group": st.group_id, "group_name": st.group.name if st.group else None,
-             "status": st.status}
-            for st in qs.order_by("last_name", "first_name")[:30]
+            {"id": st.pk, "name": str(st), "group": st.group_id, "group_name": st.group.name if st.group else None}
+            for st in qs.order_by("last_name", "first_name")[:20]
         ])
 
 

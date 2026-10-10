@@ -267,14 +267,14 @@ function Lines({ lines }: { lines: PayrollLine[] }) {
         <tbody>
           {lines.map((l) => {
             const payments = l.metadata.payments ?? []
-            const students = l.metadata.students ?? []
-            const details = payments.length + students.length > 0
+            const details = payments.length > 0
             return (
               <Fragment key={l.id}>
                 <tr onClick={details ? () => setOpen(open === l.id ? null : l.id) : undefined} className={details ? 'cursor-pointer' : undefined}>
                   <td>
                     <p className="font-medium text-ink">{l.description}</p>
-                    <p className="text-xs text-ink-muted">{l.line_type_display}{details ? ` · ${open === l.id ? 'скрыть' : 'показать'} основание` : ''}</p>
+                    <p className="text-xs text-ink-muted">{l.line_type_display}
+                      {l.metadata.students_count !== undefined ? ` · активных студентов: ${l.metadata.students_count}` : ''}{details ? ` · ${open === l.id ? 'скрыть' : 'показать'} основание` : ''}</p>
                   </td>
                   <td className="text-right">{l.quantity !== null ? Number(l.quantity) : '—'}</td>
                   <td className="text-right">{l.rate !== null ? som(l.rate) : '—'}</td>
@@ -298,11 +298,6 @@ function Lines({ lines }: { lines: PayrollLine[] }) {
                             ))}
                           </tbody>
                         </table>
-                      ) : null}
-                      {students.length ? (
-                        <ul className="columns-2 sm:columns-3">
-                          {students.map((st) => <li key={st.id}>{st.name} — {st.days} дн.</li>)}
-                        </ul>
                       ) : null}
                     </td>
                   </tr>

@@ -1,4 +1,11 @@
-"""Источники активности для расчёта: когда студент был активен и в какой
+"""Шлюз расчёта к данным LMS — с ограниченным набором полей.
+
+Расчёт зарплат читает LMS только отсюда и только то, что нужно для формул:
+у студента — id, группу, статус и даты (без ФИО, телефонов, оценок и прочего
+профиля), у событий статуса — тип, даты и группы, у назначений тренеров —
+группу, тренера и даты.
+
+Источники активности для расчёта: когда студент был активен и в какой
 группе, когда сотрудник был тренером группы.
 
 Всё считается по истории LMS, а не по текущему состоянию: студент —
@@ -25,6 +32,10 @@ from django.db.models import Q
 from apps.academy.models import Group, Student, StudentStatusEvent, TrainerAssignment
 
 ACTIVE = Student.Status.ACTIVE
+
+STUDENT_FIELDS = ("id", "group_id", "status", "enrollment_date", "created_at")
+EVENT_FIELDS = ("id", "student_id", "event_type", "previous_status", "group_id", "from_group_id", "event_date",
+                "created_at")
 
 _STATUS_AFTER = {
     StudentStatusEvent.EventType.DEACTIVATED: Student.Status.WITHDRAWN,
@@ -103,9 +114,9 @@ def active_student_days(start: dt.date, end: dt.date, *, group_ids=None) -> dict
             | Q(status_events__group_id__in=group_ids)
             | Q(status_events__from_group_id__in=group_ids)
         ).distinct()
-    students = list(candidates)
+    students = list(candidates.only(*STUDENT_FIELDS))
     events_by_student: dict[int, list] = defaultdict(list)
-    for event in StudentStatusEvent.objects.filter(student__in=[s.pk for s in students]):
+    for event in StudentStatusEvent.objects.filter(student__in=[s.pk for s in students]).only(*EVENT_FIELDS):
         events_by_student[event.student_id].append(event)
 
     result: dict[int, dict[dt.date, int]] = {}
@@ -141,7 +152,7 @@ def trainer_days(teacher_id: int | None, start: dt.date, end: dt.date) -> dict[i
         return result
     rows = TrainerAssignment.objects.filter(teacher_id=teacher_id, start_date__lte=end).filter(
         Q(end_date__isnull=True) | Q(end_date__gt=start)
-    )
+    ).only("group_id", "start_date", "end_date")
     for row in rows:
         stop = end if row.end_date is None else min(end, row.end_date - dt.timedelta(days=1))
         result[row.group_id].update(_days(max(start, row.start_date), stop))

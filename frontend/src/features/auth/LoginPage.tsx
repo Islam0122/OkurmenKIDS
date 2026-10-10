@@ -10,11 +10,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { extractErrorMessage, isNetworkOrServerError } from '@/lib/apiError'
 import { HOME_PATH } from '@/lib/appMode'
 import { resolveReturnTo } from '@/lib/returnTo'
+import { homeFor } from '@/lib/roles'
 
 import { loginSchema, type LoginFormValues } from './loginSchema'
 
 export function LoginPage() {
-  const { status, login } = useAuth()
+  const { status, login, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [formError, setFormError] = useState<string | null>(null)
@@ -30,14 +31,14 @@ export function LoginPage() {
   const target = resolveReturnTo(from ? `${from.pathname}${from.search ?? ''}` : null, HOME_PATH)
 
   if (status === 'authenticated') {
-    return <Navigate to={target} replace />
+    return <Navigate to={homeFor(user?.role, target)} replace />
   }
 
   async function onSubmit(values: LoginFormValues) {
     setFormError(null)
     try {
-      await login(values.username, values.password)
-      navigate(target, { replace: true })
+      const me = await login(values.username, values.password)
+      navigate(homeFor(me?.role, target), { replace: true })
     } catch (error) {
       if (isNetworkOrServerError(error)) {
         setFormError('Сервер недоступен. Проверьте подключение к интернету и попробуйте ещё раз.')

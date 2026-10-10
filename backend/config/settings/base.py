@@ -77,6 +77,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Records who changed a group's trainer (academy.TrainerAssignment.changed_by).
     "apps.academy.services.trainer_history.ActorMiddleware",
+    # Бухгалтер — только /api/v1/accounting/ и вход; LMS и /admin/ — 403.
+    "apps.accounting.access.AccountingIsolationMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -255,6 +257,8 @@ ASSISTANT_CONTROL_THRESHOLDS: dict = {}
 ACCOUNTING_ACCOUNTANT_CAN_APPROVE = env.bool("ACCOUNTING_ACCOUNTANT_CAN_APPROVE", default=False)
 ACCOUNTING_ALLOW_OVERPAYMENT = env.bool("ACCOUNTING_ALLOW_OVERPAYMENT", default=False)
 ACCOUNTING_ROUNDING_QUANTUM = env("ACCOUNTING_ROUNDING_QUANTUM", default="0.01")
+# Роли, которым доступна только бухгалтерия (apps.accounting.access).
+ACCOUNTING_ISOLATED_ROLES = ("accountant",)
 
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",
