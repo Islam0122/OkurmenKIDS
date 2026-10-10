@@ -28,6 +28,7 @@ vi.mock('@/api/groups', () => ({
   groupsApi: {
     get: vi.fn(), list: vi.fn(), schedule: vi.fn(), students: vi.fn(),
     academicConfig: vi.fn(), createProgram: vi.fn(), saveProgram: vi.fn(), generateLessons: vi.fn(),
+    studentProgress: vi.fn(), studentProgressDetail: vi.fn(),
   },
 }))
 
@@ -51,6 +52,12 @@ describe('GroupDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRole.role = 'teacher'
+    vi.mocked(groupsApi.studentProgress).mockResolvedValue({
+      period: { key: 'this_month', start_date: '2026-10-01', end_date: '2026-10-20' },
+      comparison: { start_date: '2026-09-01', end_date: '2026-09-20' },
+      lessons_held: 0,
+      students: [],
+    })
   })
 
   it('shows the group overview by default', async () => {
