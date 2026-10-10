@@ -328,3 +328,120 @@ class ApiAccessTests(ProgressFixture):
         dashboard = self.api.get("/api/v1/analytics/dashboard/", {"period": "today", "group": self.group.pk})
         self.assertEqual(dashboard.status_code, 200)
         self.assertEqual(dashboard.data["attendance"]["attendance_rate"]["value"], 100.0)
+
+
+class CustomRangeTests(ProgressFixture):
+    """The manual «С — По» range (period=custom): inclusive, in the project's
+    time zone, compared with the interval of the same length right before it."""
+
+    def setUp(self):
+        super().setUp()
+        self.before = self.lesson(dt.date(2026, 9, 30))
+        self.first_day = self.lesson(dt.date(2026, 10, 1))
+        self.middle = self.lesson(dt.date(2026, 10, 5))
+        self.last_day = self.lesson(dt.date(2026, 10, 10))
+        self.after = self.lesson(dt.date(2026, 10, 11))
+        self.cancelled = self.lesson(dt.date(2026, 10, 6), status=Lesson.Status.CANCELLED)
+        for lesson in (self.before, self.first_day, self.middle, self.last_day, self.after):
+            self.mark(lesson, self.anna, "present")
+        self.mark(self.before, self.bek, "present")
+        for lesson in (self.first_day, self.middle, self.last_day):
+            self.mark(lesson, self.bek, "absent")
+
+    def custom(self, start, end, today=TODAY):
+        return self.progress("custom", start_date=start, end_date=end, today=today)
+
+    def test_both_boundary_days_are_included(self):
+        data = self.custom(dt.date(2026, 10, 1), dt.date(2026, 10, 10))
+        self.assertEqual((data["period"]["start_date"], data["period"]["end_date"]), (dt.date(2026, 10, 1), dt.date(2026, 10, 10)))
+        self.assertEqual(data["lessons_held"], 3)
+        self.assertEqual(self.row(data, self.anna)["lessons_held"], 3)
+        bek = self.row(data, self.bek)
+        self.assertEqual((bek["absences"], bek["attendance_rate"]), (3, 0.0))
+        detail = student_progress.student_progress_detail(
+            self.group, self.bek.pk, period="custom", start_date=dt.date(2026, 10, 1), end_date=dt.date(2026, 10, 10), today=TODAY,
+        )
+        self.assertEqual([l["date"] for l in detail["lessons"]], [dt.date(2026, 10, 1), dt.date(2026, 10, 5), dt.date(2026, 10, 10)])
+
+    def test_single_day_range(self):
+        data = self.custom(dt.date(2026, 10, 10), dt.date(2026, 10, 10))
+        self.assertEqual(self.row(data, self.anna)["lessons_held"], 1)
+
+    def test_comparison_is_the_same_length_right_before(self):
+        data = self.custom(dt.date(2026, 10, 1), dt.date(2026, 10, 10))
+        self.assertEqual((data["comparison"]["start_date"], data["comparison"]["end_date"]), (dt.date(2026, 9, 21), dt.date(2026, 9, 30)))
+        bek = self.row(data, self.bek)
+        self.assertEqual(bek["previous"]["attendance_rate"], 100.0)
+        self.assertEqual(bek["change"]["attendance_rate"], -100.0)
+
+    def test_future_part_of_the_range_is_not_held(self):
+        upcoming = self.lesson(dt.date(2026, 10, 22), status=Lesson.Status.SCHEDULED)
+        Homework.objects.create(lesson=upcoming, title="Будущее ДЗ")
+        data = self.custom(dt.date(2026, 10, 1), dt.date(2026, 10, 31))
+        anna = self.row(data, self.anna)
+        self.assertEqual((anna["lessons_held"], anna["homework_due"]), (4, 0))
+
+    def test_empty_range(self):
+        data = self.custom(dt.date(2026, 10, 14), dt.date(2026, 10, 18))
+        self.assertEqual(data["lessons_held"], 0)
+        for row in data["students"]:
+            self.assertEqual(row["lessons_held"], 0)
+            self.assertIsNone(row["attendance_rate"])
+
+    def test_tests_on_the_boundary_follow_the_project_time_zone(self):
+        test = Test.objects.create(title="Boundary", passing_score=50)
+        session = TestSession.objects.create(test=test, group=self.group, teacher=self.trainer)
+        bishkek = timezone.get_current_timezone()
+        for local, score in ((dt.datetime(2026, 10, 10, 23, 30), 90.0), (dt.datetime(2026, 10, 11, 0, 30), 10.0),
+                             (dt.datetime(2026, 10, 1, 0, 15), 70.0)):
+            attempt = StudentAttempt.objects.create(session=session, student=self.anna, group=self.group, teacher=self.trainer,
+                                                    student_name="Анна", test_title="Boundary")
+            StudentAttempt.objects.filter(pk=attempt.pk).update(
+                status=AttemptStatus.FINISHED, score=score, finished_at=timezone.make_aware(local, bishkek),
+            )
+        anna = self.row(self.custom(dt.date(2026, 10, 1), dt.date(2026, 10, 10)), self.anna)
+        # 23:30 on the last day and 00:15 on the first day (both still "yesterday" in UTC) count; 00:30 next day doesn't.
+        self.assertEqual((anna["tests_count"], anna["test_average"]), (2, 80.0))
+
+
+class CustomRangeApiTests(ProgressFixture):
+    def setUp(self):
+        super().setUp()
+        self.api = APIClient()
+        self.api.force_authenticate(self.trainer.user)
+        self.today = timezone.localdate()
+        self.day = self.today - dt.timedelta(days=3)
+        self.mark(self.lesson(self.day), self.anna, "present")
+
+    def get(self, start, end):
+        return self.api.get(f"/api/v1/groups/{self.group.pk}/student-progress/",
+                            {"period": "custom", "start_date": str(start), "end_date": str(end)})
+
+    def test_custom_range_through_the_api(self):
+        response = self.get(self.day, self.day)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["period"]["start_date"], self.day)
+        anna = next(row for row in response.data["students"] if row["id"] == self.anna.pk)
+        self.assertEqual(anna["attendance_rate"], 100.0)
+        detail = self.api.get(f"/api/v1/groups/{self.group.pk}/student-progress/{self.anna.pk}/",
+                              {"period": "custom", "start_date": str(self.day), "end_date": str(self.day)})
+        self.assertEqual(len(detail.data["lessons"]), 1)
+        outside = self.get(self.day + dt.timedelta(days=1), self.today)
+        self.assertEqual(outside.data["lessons_held"], 0)
+
+    def test_start_after_end_is_refused(self):
+        response = self.get(self.today, self.day)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("start_date", response.data)
+
+    def test_custom_needs_both_dates(self):
+        response = self.api.get(f"/api/v1/groups/{self.group.pk}/student-progress/", {"period": "custom", "start_date": str(self.day)})
+        self.assertEqual(response.status_code, 400)
+
+    def test_group_kpi_accepts_the_same_range(self):
+        response = self.api.get("/api/v1/analytics/dashboard/", {
+            "period": "custom", "start_date": str(self.day), "end_date": str(self.day), "group": self.group.pk,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["lessons"]["lessons_total"]["value"], 1)
+        self.assertEqual(response.data["attendance"]["attendance_rate"]["value"], 100.0)

@@ -3,6 +3,8 @@ import { ArrowDown, ArrowUp, ChevronDown, Minus, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { DatePicker } from '@/components/ui/DatePicker'
 import type { BadgeTone } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -119,7 +121,14 @@ export function dynamicsSummary(row: StudentProgressRow): string {
  * and a row that opens the student's lessons of the period. A table on wide
  * screens, compact cards on a phone.
  */
-export function StudentProgress({ groupId, params }: { groupId: number; params: StudentProgressParams }) {
+export function StudentProgress({ groupId, params, customRange, onApplyRange, onResetRange }: {
+  groupId: number
+  params: StudentProgressParams
+  /** The applied manual range, `null` while a quick period is in use. */
+  customRange: DateRange | null
+  onApplyRange: (range: DateRange) => void
+  onResetRange: () => void
+}) {
   const { data, isPending, isError, refetch } = useGroupStudentProgress(groupId, params)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('name')
@@ -138,48 +147,71 @@ export function StudentProgress({ groupId, params }: { groupId: number; params: 
     setDescending(key !== 'name')
   }
   const toggle = (id: number) => setOpenId((current) => (current === id ? null : id))
+  // No held lesson and no test in the range — nothing at all to show.
+  const isEmptyPeriod = data ? data.lessons_held === 0 && data.students.every((row) => row.tests_count === 0) : false
 
   return (
     <section className="mt-6" aria-labelledby="student-progress-title">
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h3 id="student-progress-title" className="section-title">Прогресс студентов</h3>
-          {data ? (
-            <p className="mt-0.5 text-xs text-ink-muted">
-              Динамика — к периоду {formatDateShort(data.comparison.start_date)} — {formatDateShort(data.comparison.end_date)}
-            </p>
+      <div className="mb-3">
+        <h3 id="student-progress-title" className="section-title">
+          Прогресс студентов
+          {params.start_date && params.end_date ? (
+            <span className="ml-2 text-sm font-normal text-ink-secondary" data-testid="progress-range">
+              {formatDateShort(params.start_date)} — {formatDateShort(params.end_date)}
+            </span>
           ) : null}
+        </h3>
+        {data && !isEmptyPeriod ? (
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Динамика — к периоду {formatDateShort(data.comparison.start_date)} — {formatDateShort(data.comparison.end_date)}
+          </p>
+        ) : null}
+      </div>
+
+      {/* Search, sorting and the manual range: side by side on a wide screen, stacked on a phone. */}
+      <div className="mb-3 flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-end">
+        <div className="min-w-0 xl:min-w-56 xl:flex-1">
+          <SearchInput value={search} onChange={setSearch} placeholder="Поиск по имени студента" />
         </div>
+        <div className="xl:w-52">
+          <Select
+            aria-label="Сортировка"
+            value={sortKey}
+            onChange={(event) => changeSort(event.target.value as SortKey)}
+            options={SORT_OPTIONS}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setDescending((value) => !value)}
+          className="form-control inline-flex items-center justify-center gap-1.5 whitespace-nowrap xl:w-auto"
+          aria-label={descending ? 'По убыванию' : 'По возрастанию'}
+        >
+          {descending ? <ArrowDown className="size-4" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
+          {descending ? 'По убыванию' : 'По возрастанию'}
+        </button>
+        {/* Re-mounted whenever the applied period changes, so its fields always start from it. */}
+        <DateRangeFilter
+          key={`${params.start_date}|${params.end_date}`}
+          from={params.start_date ?? ''}
+          to={params.end_date ?? ''}
+          isCustom={customRange !== null}
+          onApply={onApplyRange}
+          onReset={onResetRange}
+        />
       </div>
 
       {isPending ? <LoadingState label="Считаем прогресс студентов…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
 
-      {data && data.students.length === 0 ? (
+      {data && isEmptyPeriod ? <EmptyState icon={Users} title="Нет данных за выбранный период" /> : null}
+
+      {data && !isEmptyPeriod && data.students.length === 0 ? (
         <EmptyState icon={Users} title="В этот период в группе не было студентов" />
       ) : null}
 
-      {data && data.students.length > 0 ? (
+      {data && !isEmptyPeriod && data.students.length > 0 ? (
         <>
-          <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_14rem_auto]">
-            <SearchInput value={search} onChange={setSearch} placeholder="Поиск по имени студента" />
-            <Select
-              aria-label="Сортировка"
-              value={sortKey}
-              onChange={(event) => changeSort(event.target.value as SortKey)}
-              options={SORT_OPTIONS}
-            />
-            <button
-              type="button"
-              onClick={() => setDescending((value) => !value)}
-              className="form-control inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
-              aria-label={descending ? 'По убыванию' : 'По возрастанию'}
-            >
-              {descending ? <ArrowDown className="size-4" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
-              {descending ? 'По убыванию' : 'По возрастанию'}
-            </button>
-          </div>
-
           {rows.length === 0 ? (
             <EmptyState title="Никого не нашли" description="Проверьте имя в поиске." />
           ) : (
@@ -394,6 +426,73 @@ function StudentProgressDetailPanel({ groupId, row, params }: { groupId: number;
             </div>
           ) : null}
         </>
+      ) : null}
+    </div>
+  )
+}
+
+export interface DateRange {
+  /** `YYYY-MM-DD`, inclusive. */
+  from: string
+  to: string
+}
+
+export const RANGE_ORDER_ERROR = 'Дата начала не может быть позже даты окончания.'
+
+/** «Период»: a manual inclusive date range on top of the quick periods —
+ * «Применить» applies it, «Сбросить» goes back to the quick period. */
+function DateRangeFilter({ from, to, isCustom, onApply, onReset }: {
+  from: string
+  to: string
+  isCustom: boolean
+  onApply: (range: DateRange) => void
+  onReset: () => void
+}) {
+  const [draftFrom, setDraftFrom] = useState(from)
+  const [draftTo, setDraftTo] = useState(to)
+  const isComplete = Boolean(draftFrom && draftTo)
+  // ISO dates compare correctly as strings.
+  const error = isComplete && draftFrom > draftTo ? RANGE_ORDER_ERROR : null
+  const isUnchanged = isCustom && draftFrom === from && draftTo === to
+
+  return (
+    <div role="group" aria-label="Период" className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+      <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-secondary sm:w-40">
+        С
+        <DatePicker
+          aria-label="Дата начала"
+          value={draftFrom}
+          max={draftTo || undefined}
+          onChange={(event) => setDraftFrom(event.target.value)}
+          aria-invalid={error ? true : undefined}
+        />
+      </label>
+      <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-secondary sm:w-40">
+        По
+        <DatePicker
+          aria-label="Дата окончания"
+          value={draftTo}
+          min={draftFrom || undefined}
+          onChange={(event) => setDraftTo(event.target.value)}
+          aria-invalid={error ? true : undefined}
+        />
+      </label>
+      <div className="flex gap-2">
+        <Button
+          className="flex-1 sm:flex-none"
+          disabled={!isComplete || error !== null || isUnchanged}
+          onClick={() => onApply({ from: draftFrom, to: draftTo })}
+        >
+          Применить
+        </Button>
+        <Button variant="secondary" className="flex-1 sm:flex-none" disabled={!isCustom} onClick={onReset}>
+          Сбросить
+        </Button>
+      </div>
+      {error ? (
+        <p role="alert" className="text-xs text-danger sm:basis-full">
+          {error}
+        </p>
       ) : null}
     </div>
   )
