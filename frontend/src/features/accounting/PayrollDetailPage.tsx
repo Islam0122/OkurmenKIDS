@@ -130,7 +130,8 @@ export function PayrollDetailPage() {
           <StatCard label="Начислено" value={som(p.total_accrued)} />
           <StatCard label="Корректировки" value={som(p.total_adjustments)} />
           <StatCard label="Выплачено" value={som(p.total_paid)} />
-          <StatCard label="Остаток к выплате" value={som(p.amount_due)} tone={Number(p.amount_due) > 0 ? 'warning' : 'default'} />
+          <StatCard label="Остаток к выплате" value={som(p.amount_due)} tone={Number(p.amount_due) > 0 ? 'warning' : 'default'}
+            hint={p.planned_payment_date ? `плановая выплата ${formatDate(p.planned_payment_date)} (не факт перевода)` : undefined} />
         </StatGrid>
       </div>
       {p.active_students !== null ? (
@@ -348,7 +349,7 @@ function AuditList({ entries }: { entries: AuditEntry[] }) {
   )
 }
 
-function PaymentModal({ payroll, isOpen, onClose, onSubmit, methods }: {
+export function PaymentModal({ payroll, isOpen, onClose, onSubmit, methods }: {
   payroll: PayrollDetail
   isOpen: boolean
   onClose: () => void

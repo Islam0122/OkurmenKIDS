@@ -34,6 +34,9 @@ export function SalarySettingsPage() {
   const [dialog, setDialog] = useState<Dialog>(null)
   const canEdit = options.data?.can_operate ?? false
   const close = () => setDialog(null)
+  const { save } = useSave()
+  const changeDepartment = (id: number, department: string) =>
+    save(() => accountingApi.updateProfile(id, { department }), 'Направление сохранено')
 
   return (
     <div>
@@ -55,12 +58,17 @@ export function SalarySettingsPage() {
                   <div>
                     <p className="font-semibold text-ink">{profile.employee_name}</p>
                     <p className="text-sm text-ink-secondary">
-                      {profile.display_position} · {profile.salary_type_display} · с {formatDate(profile.effective_from)}
+                      {profile.display_position} · {profile.salary_type_display} · {profile.department_display} · с {formatDate(profile.effective_from)}
                       {profile.effective_to ? ` по ${formatDate(profile.effective_to)}` : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {!profile.is_active ? <Badge>Отключён</Badge> : null}
+                    {canEdit ? (
+                      <Select aria-label={`Направление: ${profile.employee_name}`} className="w-40" value={profile.department}
+                        placeholder={`По роли: ${profile.department_display}`} options={options.data?.departments ?? []}
+                        onChange={(e) => void changeDepartment(profile.id, e.target.value)} />
+                    ) : null}
                     {canEdit ? (
                       <Button size="sm" variant="secondary" leftIcon={<Plus className="size-3.5" />}
                         onClick={() => setDialog({ kind: 'rule', profile })}>Правило</Button>
@@ -122,7 +130,7 @@ function useSave() {
 }
 
 function ProfileModal({ options, onClose }: { options: AccountingOptions; onClose: () => void }) {
-  const [form, setForm] = useState({ employee: '', salary_type: 'COMBINED', position: '', effective_from: today() })
+  const [form, setForm] = useState({ employee: '', salary_type: 'FIXED', position: '', department: '', effective_from: today() })
   const { save, busy } = useSave()
   return (
     <Modal isOpen onClose={onClose} title="Зарплатный профиль сотрудника">
@@ -133,6 +141,10 @@ function ProfileModal({ options, onClose }: { options: AccountingOptions; onClos
         </Field>
         <Field label="Тип оплаты" required htmlFor="pf-type">
           <Select id="pf-type" value={form.salary_type} options={options.salary_types} onChange={(e) => setForm({ ...form, salary_type: e.target.value })} />
+        </Field>
+        <Field label="Направление" htmlFor="pf-dep" help="Для аналитики расходов. Пусто — по роли">
+          <Select id="pf-dep" value={form.department} placeholder="По роли" options={options.departments}
+            onChange={(e) => setForm({ ...form, department: e.target.value })} />
         </Field>
         <Field label="Должность" htmlFor="pf-pos" help="Пусто — из профиля тренера или роли">
           <Input id="pf-pos" value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} />
@@ -179,11 +191,18 @@ function RuleModal({ options, profile, onClose }: { options: AccountingOptions; 
   return (
     <Modal isOpen onClose={onClose} title={`${percent ? 'Процент от стоимости курса' : 'Оклад'} — ${profile.employee_name}`} size="lg">
       {percent ? (
-        <p className="mb-3 text-sm text-ink-secondary">
-          За каждый завершённый цикл курса: студенты × стоимость курса × процент / 100. Стоимость и число уроков в цикле
-          задаются в разделе «Курсы и циклы».
-        </p>
+        <div className="mb-3 rounded-lg bg-surface-muted p-3 text-sm text-ink-secondary">
+          <p><b>Количество учеников × месячная цена за ученика × процент / 100</b> — за каждый завершённый блок (12 или 20 уроков).
+            Цена — в разделе «Стоимость курсов», размер блока — в «Курсы и блоки».</p>
+          {form.percentage ? (
+            <p className="mt-1">Пример: 10 учеников × 10 000 сом × {Number(form.percentage)}% ={' '}
+              <b>{som(((10 * 10000 * Number(form.percentage)) / 100).toFixed(2))}</b> (только подсказка, начисление не создаётся).</p>
+          ) : null}
+        </div>
       ) : null}
+      <p className="mb-3 text-xs text-warning">
+        Условия действуют с указанной даты и не меняют уже утверждённые начисления. Изменить ставку — «Новая ставка» (новая версия).
+      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {percent ? (
           <Field label="Процент тренера" required htmlFor="r-pct">

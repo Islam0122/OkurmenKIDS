@@ -67,7 +67,7 @@ describe('AccountingDashboardPage', () => {
       range_label: DASHBOARD.range_label,
       results: [{
         profile_id: 1, employee: 9, employee_name: 'Islam Test', position: 'Программист', salary_type: 'PERCENT',
-        salary_type_display: 'Процент от стоимости курса', calc_period: 'HALF', is_active: true,
+        salary_type_display: 'Процент от стоимости курса', department: 'IT', department_display: 'IT', calc_period: 'HALF', is_active: true,
         rates: [{ rule_type: 'PERCENT', label: 'Процент от стоимости курса', amount: null, percentage: '10.00', scope: '' }],
         active_students: 3, payroll_id: 12, accrued: '16500.00', paid: '6500.00', due: '10000.00',
         status: 'PARTIALLY_PAID', status_display: 'Частично выплачен',

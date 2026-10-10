@@ -216,3 +216,57 @@ def render_my_salary_pdf(data: dict, generated_at) -> bytes:
     ]
     doc.build(story, onFirstPage=_footer(generated_at), onLaterPages=_footer(generated_at))
     return buf.getvalue()
+
+
+def render_teacher_report_pdf(report: dict) -> bytes:
+    styles = _styles()
+    buf = io.BytesIO()
+    generated = report["generated_at"]
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10 * mm, rightMargin=10 * mm,
+                            topMargin=16 * mm, bottomMargin=16 * mm, title="Отчёт по сотрудникам")
+    t = report["totals"]
+
+    def d(value):
+        return f"{value:%d.%m.%Y}" if value else "—"
+
+    def num(value):
+        return "—" if value is None else plain(value)
+
+    rows = []
+    for p in report["payrolls"]:
+        for line in p["lines"]:
+            rows.append([p["employee_name"], p["department_display"], line["group_name"] or "—", p["period_label"],
+                         p["salary_type_display"], num(line["students"]),
+                         som(line["price_per_student"]) if line["price_per_student"] is not None else "—",
+                         f"{num(line['percentage'])}%" if line["percentage"] is not None else "—",
+                         f"{num(line['lessons_done'])}/{num(line['target_lessons'])}" if line["lessons_done"] else "—",
+                         som(line["accrued"]), "", "", d(p["planned_payment_date"]), p["status_display"]])
+        rows.append([f"Итого: {p['employee_name']}", "", "", "", "", "", "", "", "", som(p["total"]), som(p["paid"]),
+                     som(p["due"]), d(p["planned_payment_date"]), p["status_display"]])
+    story = [
+        Paragraph("Отчёт по сотрудникам", styles["title"]),
+        Paragraph(f"Месяц: {report['range_label']} · Валюта: KGS · Дата формирования: {generated:%d.%m.%Y %H:%M}<br/>"
+                  f"{escape(report['note'])}", styles["sub"]),
+        Spacer(1, 6),
+        _table(["Начислено", "Выплачено", "Остаток", "Расчётов"],
+               [[som(t["total"]), som(t["paid"]), som(t["due"]), len(report["payrolls"])]], [50 * mm] * 4,
+               styles=styles),
+        Paragraph("Сотрудники", styles["h"]),
+        _table(
+            ["Сотрудник", "Направл.", "Группа", "Период", "Тип оплаты", "Учен.", "Цена", "%", "Уроки",
+             "Начислено", "Выплачено", "Остаток", "План. выплата", "Статус"],
+            rows or [["Начислений нет"] + [""] * 13],
+            [34 * mm, 18 * mm, 22 * mm, 30 * mm, 24 * mm, 11 * mm, 20 * mm, 10 * mm, 13 * mm, 22 * mm, 22 * mm,
+             22 * mm, 18 * mm, 21 * mm],
+            total_row=["Итого", "", "", "", "", "", "", "", "", som(t["total"]), som(t["paid"]), som(t["due"]), "", ""],
+            styles=styles,
+        ),
+        Paragraph("Итоги по направлениям", styles["h"]),
+        _table(["Направление", "Начислено", "Выплачено", "Остаток"],
+               [[r["label"], som(r["accrued"]), som(r["paid"]), som(r["due"])] for r in report["by_department"]]
+               or [["—", "", "", ""]],
+               [70 * mm, 40 * mm, 40 * mm, 40 * mm],
+               total_row=["Итого", som(t["total"]), som(t["paid"]), som(t["due"])], styles=styles),
+    ]
+    doc.build(story, onFirstPage=_footer(generated), onLaterPages=_footer(generated))
+    return buf.getvalue()

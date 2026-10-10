@@ -257,6 +257,14 @@ ASSISTANT_CONTROL_THRESHOLDS: dict = {}
 ACCOUNTING_ACCOUNTANT_CAN_APPROVE = env.bool("ACCOUNTING_ACCOUNTANT_CAN_APPROVE", default=False)
 ACCOUNTING_ALLOW_OVERPAYMENT = env.bool("ACCOUNTING_ALLOW_OVERPAYMENT", default=False)
 ACCOUNTING_ROUNDING_QUANTUM = env("ACCOUNTING_ROUNDING_QUANTUM", default="0.01")
+# Месячный календарь выплаты оклада (apps.accounting.services.payout): число
+# месяца и «в следующем месяце после расчётного». Пусто — дата не планируется.
+ACCOUNTING_FIXED_PAYDAY_DAY = env.int("ACCOUNTING_FIXED_PAYDAY_DAY", default=None)
+ACCOUNTING_FIXED_PAYDAY_NEXT_MONTH = env.bool("ACCOUNTING_FIXED_PAYDAY_NEXT_MONTH", default=True)
+# Второй завершённый цикл группы в том же календарном месяце не начисляется
+# автоматически, а ждёт проверки бухгалтера: месячная цена курса не должна
+# незаметно начисляться дважды за месяц (правило распределения не утверждено).
+ACCOUNTING_REVIEW_REPEATED_MONTHLY_CYCLES = env.bool("ACCOUNTING_REVIEW_REPEATED_MONTHLY_CYCLES", default=True)
 # Роли, которым доступна только бухгалтерия (apps.accounting.access).
 ACCOUNTING_ISOLATED_ROLES = ("accountant",)
 

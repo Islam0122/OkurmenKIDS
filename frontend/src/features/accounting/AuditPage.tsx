@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { useAuditLog } from '@/hooks/useAccounting'
 
@@ -20,7 +21,14 @@ const ENTITIES = [
   { value: 'employeesalaryprofile', label: 'Зарплатные профили' },
   { value: 'studentpayment', label: 'Платежи студентов' },
   { value: 'payrollperiod', label: 'Периоды' },
+  { value: 'coursepriceversion', label: 'Тарифы курсов' },
+  { value: 'coursepayrollsettings', label: 'Настройки курсов' },
+  { value: 'cycleaccrual', label: 'Начисления за блоки' },
+  { value: 'coursecycle', label: 'Блоки (циклы)' },
 ]
+const ACTIONS = ['create', 'update', 'calculate', 'recalculate', 'approve', 'return', 'reopen', 'void', 'close',
+  'price_change', 'auto_accrue', 'review_required', 'review_confirm', 'review_cancel', 'decide', 'deactivate']
+  .map((value) => ({ value, label: value }))
 const ENTITY_LABEL = Object.fromEntries(ENTITIES.map((e) => [e.value, e.label]))
 
 function changes(oldValues: Record<string, unknown>, newValues: Record<string, unknown>): string {
@@ -33,8 +41,13 @@ function changes(oldValues: Record<string, unknown>, newValues: Record<string, u
 /** Журнал финансовых изменений — только чтение для всех ролей. */
 export function AuditPage() {
   const [entity, setEntity] = useState('')
+  const [action, setAction] = useState('')
+  const [range, setRange] = useState({ from: '', to: '' })
   const [page, setPage] = useState(1)
-  const log = useAuditLog({ entity_type: entity || undefined, page })
+  const log = useAuditLog({
+    entity_type: entity || undefined, action: action || undefined,
+    date_from: range.from || undefined, date_to: range.to || undefined, page,
+  })
 
   return (
     <div>
@@ -43,6 +56,16 @@ export function AuditPage() {
         <FilterField>
           <Select aria-label="Объект" value={entity} placeholder="Все объекты" options={ENTITIES}
             onChange={(e) => { setEntity(e.target.value); setPage(1) }} />
+        </FilterField>
+        <FilterField>
+          <Select aria-label="Действие" value={action} placeholder="Все действия" options={ACTIONS}
+            onChange={(e) => { setAction(e.target.value); setPage(1) }} />
+        </FilterField>
+        <FilterField>
+          <Input aria-label="С даты" type="date" value={range.from} onChange={(e) => { setRange({ ...range, from: e.target.value }); setPage(1) }} />
+        </FilterField>
+        <FilterField>
+          <Input aria-label="По дату" type="date" value={range.to} onChange={(e) => { setRange({ ...range, to: e.target.value }); setPage(1) }} />
         </FilterField>
       </FilterBar>
       {log.isLoading ? <LoadingState /> : log.isError ? <ErrorState onRetry={() => log.refetch()} /> :

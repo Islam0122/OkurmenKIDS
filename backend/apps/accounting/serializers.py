@@ -5,12 +5,14 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from apps.academy.models import Course, Group, Student
-from apps.users.models import User
+from apps.users.models import Subject, User
 
 from .models import (
     ALLOWED_SALARY_TYPES,
     CourseCycle,
     CoursePayrollSettings,
+    CoursePriceVersion,
+    CycleAccrual,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -161,19 +163,26 @@ class EmployeeSalaryProfileSerializer(serializers.ModelSerializer):
     employee_role = serializers.CharField(source="employee.role", read_only=True)
     salary_type_display = serializers.CharField(source="get_salary_type_display", read_only=True)
     display_position = serializers.CharField(read_only=True)
+    effective_department = serializers.CharField(read_only=True)
+    department_display = serializers.SerializerMethodField()
     rules = SalaryRuleSerializer(many=True, read_only=True)
 
     class Meta:
         model = EmployeeSalaryProfile
         fields = (
             "id", "employee", "employee_name", "employee_role", "position", "display_position", "salary_type",
-            "salary_type_display", "currency", "is_active", "effective_from", "effective_to", "rules",
-            "created_at", "updated_at",
+            "salary_type_display", "department", "effective_department", "department_display", "currency",
+            "is_active", "effective_from", "effective_to", "rules", "created_at", "updated_at",
         )
         read_only_fields = ("currency", "created_at", "updated_at")
 
     def get_employee_name(self, obj) -> str:
         return _name(obj.employee)
+
+    def get_department_display(self, obj) -> str:
+        from .models import Department
+
+        return Department(obj.effective_department).label
 
     def validate_salary_type(self, value):
         if value not in ALLOWED_SALARY_TYPES:
@@ -310,14 +319,16 @@ class PayrollListSerializer(serializers.ModelSerializer):
     period_type = serializers.CharField(source="period.period_type", read_only=True)
     total = serializers.SerializerMethodField()
     has_errors = serializers.SerializerMethodField()
+    planned_payment_date = serializers.DateField(read_only=True)
+    department_display = serializers.CharField(source="get_department_display", read_only=True)
 
     class Meta:
         model = Payroll
         fields = (
             "id", "period", "period_label", "period_type", "employee", "employee_name", "position", "salary_type",
-            "salary_type_display", "status", "status_display", "active_students", "total_accrued",
-            "total_adjustments", "total", "total_paid", "amount_due", "warnings", "errors", "has_errors",
-            "calculated_at", "approved_at",
+            "salary_type_display", "department", "department_display", "status", "status_display",
+            "active_students", "total_accrued", "total_adjustments", "total", "total_paid", "amount_due",
+            "planned_payment_date", "warnings", "errors", "has_errors", "calculated_at", "approved_at",
         )
 
     def get_employee_name(self, obj) -> str:
@@ -397,15 +408,24 @@ class GroupRefSerializer(serializers.ModelSerializer):
 
 
 class CoursePayrollSettingsSerializer(serializers.ModelSerializer):
+    """`price_per_student` задаётся при создании (первая версия тарифа);
+    дальше стоимость меняется только через `pricing/` — с датой и причиной."""
+
     course_name = serializers.CharField(source="course.name", read_only=True)
     course_count_lesson = serializers.IntegerField(source="course.count_lesson", read_only=True)
     student_count_rule_display = serializers.CharField(source="get_student_count_rule_display", read_only=True)
+    counted_subjects = serializers.PrimaryKeyRelatedField(queryset=Subject.objects.all(), many=True, required=False)
+    counted_subjects_names = serializers.SerializerMethodField()
+    current_price = serializers.SerializerMethodField()
+    price_effective_from = serializers.DateField(write_only=True, required=False)
+    price_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = CoursePayrollSettings
         fields = (
-            "id", "course", "course_name", "course_count_lesson", "price_per_student", "required_lessons",
-            "count_lessons_from", "student_count_rule", "student_count_rule_display", "is_active", "updated_at",
+            "id", "course", "course_name", "course_count_lesson", "price_per_student", "current_price",
+            "price_effective_from", "price_reason", "required_lessons", "count_lessons_from", "student_count_rule",
+            "student_count_rule_display", "counted_subjects", "counted_subjects_names", "is_active", "updated_at",
         )
         read_only_fields = ("updated_at",)
 
@@ -413,6 +433,76 @@ class CoursePayrollSettingsSerializer(serializers.ModelSerializer):
         if self.instance is not None and value != self.instance.course:
             raise serializers.ValidationError("Курс изменить нельзя.")
         return value
+
+    def get_counted_subjects_names(self, obj) -> list[str]:
+        return [s.name for s in obj.counted_subjects.all()] if obj.pk else []
+
+    def get_current_price(self, obj) -> str | None:
+        from django.utils import timezone
+
+        from .services.pricing import price_on
+
+        return str(price_on(obj, timezone.localdate())) if obj.pk else None
+
+
+class CoursePriceVersionSerializer(serializers.ModelSerializer):
+    course_name = serializers.CharField(source="course.name", read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CoursePriceVersion
+        fields = (
+            "id", "course", "course_name", "price_per_student", "currency", "effective_from", "effective_to",
+            "reason", "previous_version", "is_migrated", "is_current", "created_by", "created_by_name", "created_at",
+        )
+
+    def get_created_by_name(self, obj) -> str:
+        return _name(obj.created_by) or "система (перенос данных)"
+
+    def get_is_current(self, obj) -> bool:
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        return obj.effective_from <= today and (obj.effective_to is None or obj.effective_to >= today)
+
+
+class CoursePriceCreateSerializer(serializers.Serializer):
+    course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all())
+    price_per_student = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    effective_from = serializers.DateField()
+    reason = serializers.CharField()
+
+
+class CycleAccrualSerializer(serializers.ModelSerializer):
+    employee_name = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    group = serializers.IntegerField(source="cycle.group_id", read_only=True)
+    group_name = serializers.CharField(source="cycle.group.name", read_only=True)
+    course_name = serializers.CharField(source="cycle.course.name", read_only=True)
+    cycle_number = serializers.IntegerField(source="cycle.number", read_only=True)
+    planned_payment_date = serializers.DateField(read_only=True)
+    reviewed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CycleAccrual
+        fields = (
+            "id", "cycle", "cycle_number", "group", "group_name", "course_name", "employee", "employee_name",
+            "status", "status_display", "lessons", "lessons_total", "completed_on", "student_count", "course_price",
+            "percentage", "amount", "planned_payment_date", "payroll", "review_reasons", "note", "reviewed_by_name",
+            "reviewed_at", "created_at",
+        )
+
+    def get_employee_name(self, obj) -> str:
+        return _name(obj.employee)
+
+    def get_reviewed_by_name(self, obj) -> str:
+        return _name(obj.reviewed_by)
+
+
+class CycleAccrualReviewSerializer(serializers.Serializer):
+    confirm = serializers.BooleanField()
+    reason = serializers.CharField()
 
 
 class CourseCycleSerializer(serializers.ModelSerializer):
@@ -424,14 +514,18 @@ class CourseCycleSerializer(serializers.ModelSerializer):
     base_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     trainers = serializers.SerializerMethodField()
     accruals = serializers.SerializerMethodField()
+    lessons_linked = serializers.SerializerMethodField()
 
     class Meta:
         model = CourseCycle
         fields = (
             "id", "group", "group_name", "course", "course_name", "number", "status", "status_display",
             "required_lessons", "lessons_done", "lessons_total", "start_date", "completed_on", "student_count",
-            "course_price", "base_amount", "trainers", "accruals", "invalidated_reason",
+            "course_price", "base_amount", "trainers", "accruals", "invalidated_reason", "lessons_linked",
         )
+
+    def get_lessons_linked(self, obj) -> int:
+        return obj.cycle_lessons.filter(is_live=True).count()
 
     def get_trainers(self, obj) -> list:
         from datetime import date
@@ -448,6 +542,7 @@ class CourseCycleSerializer(serializers.ModelSerializer):
              "payroll_status": a.payroll.status if a.payroll else None,
              "payroll_status_display": a.payroll.get_status_display() if a.payroll else None,
              "period_label": period_label(a.payroll.period) if a.payroll else None,
-             "adjustment": a.adjustment_id}
+             "adjustment": a.adjustment_id, "review_reasons": a.review_reasons,
+             "planned_payment_date": a.planned_payment_date.isoformat()}
             for a in obj.accruals.select_related("employee", "payroll__period")
         ]

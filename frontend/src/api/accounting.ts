@@ -2,7 +2,15 @@ import { apiClient } from '@/api/client'
 import type { Paginated } from '@/types/common'
 import type {
   AccountingOptions,
+  AnalyticsFilters,
+  AnalyticsSummary,
   AuditEntry,
+  BlockEstimate,
+  CoursePriceVersion,
+  CycleAccrual,
+  DepartmentTotals,
+  MyEstimate,
+  TeacherReport,
   CalculationResult,
   Capabilities,
   CourseCycle,
@@ -112,9 +120,9 @@ export const accountingApi = {
     download(`/reports/payroll.${format}`, { ...periodParams(selection), ...filters }, `payroll.${format}`),
 
   profiles: (params?: Params) => get<Paginated<SalaryProfile>>('/salary-profiles/', { page_size: 200, ...params }),
-  createProfile: (body: { employee: number; salary_type: string; position: string; effective_from: string }) =>
+  createProfile: (body: { employee: number; salary_type: string; position: string; effective_from: string; department?: string }) =>
     post<SalaryProfile>('/salary-profiles/', body),
-  updateProfile: (id: number, body: Partial<{ salary_type: string; position: string; is_active: boolean; effective_to: string | null }>) =>
+  updateProfile: (id: number, body: Partial<{ salary_type: string; position: string; is_active: boolean; effective_to: string | null; department: string }>) =>
     apiClient.patch<SalaryProfile>(`${BASE}/salary-profiles/${id}/`, body).then((r) => r.data),
   createRule: (body: Record<string, unknown>) => post<SalaryRule>('/salary-rules/', body),
   newRuleVersion: (id: number, body: Record<string, unknown>) => post<SalaryRule>(`/salary-rules/${id}/new-version/`, body),
@@ -134,9 +142,27 @@ export const accountingApi = {
 
   audit: (params: Params) => get<Paginated<AuditEntry>>('/audit-log/', params),
 
+  /** История тарифов: новая версия — с датой начала и причиной; старые не меняются. */
+  pricing: (params: Params = {}) => get<Paginated<CoursePriceVersion>>('/pricing/', { page_size: 200, ...params }),
+  createPrice: (body: { course: number; price_per_student: string; effective_from: string; reason: string }) =>
+    post<CoursePriceVersion>('/pricing/', body),
+  cycleAccruals: (params: Params) => get<Paginated<CycleAccrual>>('/cycle-accruals/', params),
+  reviewCycleAccrual: (id: number, confirm: boolean, reason: string) =>
+    post<CycleAccrual>(`/cycle-accruals/${id}/review/`, { confirm, reason }),
+  estimates: (params: Params = {}) => get<Paginated<BlockEstimate>>('/estimates/', params),
+
+  analyticsSummary: (filters: AnalyticsFilters) => get<AnalyticsSummary>('/analytics/summary/', { ...filters }),
+  analyticsByDepartment: (filters: AnalyticsFilters) =>
+    get<{ year: number; month: number; results: DepartmentTotals[] }>('/analytics/by-department/', { ...filters }),
+  teacherReport: (filters: AnalyticsFilters & { page?: number; page_size?: number }) =>
+    get<TeacherReport>('/reports/teachers/', { ...filters }),
+  downloadTeacherReport: (format: 'pdf' | 'xlsx', filters: AnalyticsFilters) =>
+    download(`/reports/teachers.${format}`, { ...filters }, `teachers.${format}`),
+
   /** Сотрудник — всегда текущий пользователь на сервере; id в запросе нет. */
   mySalary: (filters: MySalaryFilters = {}) => get<MySalary>('/my/salary/', { ...filters }),
   downloadMySalaryPdf: (filters: MySalaryFilters = {}) => download('/my/salary/report.pdf', { ...filters }, 'my-salary.pdf'),
   myPayrolls: () => get<Paginated<PayrollDetail>>('/my/payrolls/'),
+  myEstimates: () => get<{ results: MyEstimate[]; note: string }>('/my/estimates/'),
   downloadMyPayrollPdf: (id: number) => download(`/my/payrolls/${id}/report.pdf/`, undefined, `payroll-${id}.pdf`),
 }

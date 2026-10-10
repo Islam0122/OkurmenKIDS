@@ -6,6 +6,7 @@ import datetime as dt
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.test import override_settings
 
 from apps.academy.models import Lesson, TrainerAssignment
 from apps.accounting.models import (
@@ -237,8 +238,18 @@ class PercentCycleTests(AccountingFixture):
     def test_consecutive_cycles(self):
         self.lessons(self.group_a, days(9, 1, 24))
         self.assertEqual(self.calc(FIRST).total_accrued, D("10000.00"))   # 12-й урок 12.09
-        self.assertEqual(self.calc(SECOND).total_accrued, D("10000.00"))  # 24-й урок 24.09
+        # 24-й урок 24.09 — второй блок группы в том же месяце: месячная цена
+        # курса не начисляется дважды автоматически, решение — за бухгалтером.
+        second = self.calc(SECOND)
+        self.assertEqual(second.total_accrued, D("0"))
+        self.assertIn("требует проверки", second.errors[0])
         self.assertEqual(sorted(CourseCycle.objects.filter(status="COMPLETED").values_list("number", flat=True)), [1, 2])
+
+    @override_settings(ACCOUNTING_REVIEW_REPEATED_MONTHLY_CYCLES=False)
+    def test_consecutive_cycles_without_monthly_review(self):
+        self.lessons(self.group_a, days(9, 1, 24))
+        self.assertEqual(self.calc(FIRST).total_accrued, D("10000.00"))
+        self.assertEqual(self.calc(SECOND).total_accrued, D("10000.00"))
 
     def test_lessons_before_tracking_start_are_ignored(self):
         self.settings.count_lessons_from = day(9, 5)

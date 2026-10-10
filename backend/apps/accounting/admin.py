@@ -10,7 +10,9 @@ from django.contrib import admin
 from .models import (
     CourseCycle,
     CoursePayrollSettings,
+    CoursePriceVersion,
     CycleAccrual,
+    CycleLesson,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -108,3 +110,15 @@ class CourseCycleAdmin(ReadOnlyAdmin):
 @admin.register(CycleAccrual)
 class CycleAccrualAdmin(ReadOnlyAdmin):
     list_display = ("cycle", "employee", "payroll", "student_count", "course_price", "percentage", "amount")
+
+
+@admin.register(CoursePriceVersion)
+class CoursePriceVersionAdmin(ReadOnlyAdmin):
+    list_display = ("course", "price_per_student", "effective_from", "effective_to", "created_by", "is_migrated")
+    list_filter = ("course", "is_migrated")
+
+
+@admin.register(CycleLesson)
+class CycleLessonAdmin(ReadOnlyAdmin):
+    list_display = ("cycle", "position", "lesson_date", "lesson_ref", "teacher", "is_live", "backfilled")
+    list_filter = ("is_live", "backfilled")
