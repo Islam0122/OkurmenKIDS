@@ -16,12 +16,27 @@ import { useAccountingMutation, useAccountingOptions, useCourseCycles, useCourse
 import { Field } from '@/features/worklog/formUi'
 import type { AccountingOptions, CourseCycle, CourseSettings } from '@/types/accounting'
 
-import { Section, formatDate, som, today, useRunner } from './shared'
+import { Section, formatDate, som, useRunner } from './shared'
 
-type CycleTab = 'IN_PROGRESS' | 'COMPLETED'
+type CycleTab = 'IN_PROGRESS' | 'COMPLETED' | 'INVALIDATED'
 
-/** Стоимость курса за студента, уроков в цикле и циклы групп: незавершённые
- * отдельно — процент за них ещё не начисляется. */
+const EMPTY: Record<CycleTab, string> = {
+  IN_PROGRESS: 'Незавершённых циклов нет',
+  COMPLETED: 'Завершённых циклов нет',
+  INVALIDATED: 'Отменённых циклов нет',
+}
+
+const ACCRUAL_TONE = {
+  ACCRUED: 'info',
+  APPROVED: 'success',
+  CANCELLED: 'muted',
+  CORRECTED: 'warning',
+  CORRECTION_REQUIRED: 'danger',
+} as const
+
+/** Интервал начисления курса и циклы групп. Уроки учитываются автоматически;
+ * на каждом пороге тренеру сразу создаётся начисление. Незавершённые циклы —
+ * отдельно: процент за них ещё не начисляется. */
 export function CoursesPage() {
   const options = useAccountingOptions()
   const settings = useCourseSettings()
@@ -34,18 +49,18 @@ export function CoursesPage() {
     <div>
       <PageHeader
         title="Курсы и циклы"
-        description="Процент тренера = студенты × стоимость курса × процент / 100 — за каждый завершённый цикл уроков. Изменение настроек не меняет уже завершённые циклы."
+        description="Проведённые уроки групп учитываются автоматически. На каждом пороге (12, 24, 36… — интервал курса) тренеру сразу начисляется: студенты × стоимость курса × процент / 100. Новый интервал действует на следующие циклы."
         actions={canEdit ? <Button leftIcon={<Plus className="size-4" />} onClick={() => setEditing('new')}>Настроить курс</Button> : null}
       />
 
       {settings.isLoading ? <LoadingState /> : settings.isError ? <ErrorState onRetry={() => settings.refetch()} /> :
         settings.data?.results.length === 0 ? (
-          <EmptyState title="Курсы не настроены" description="Укажите стоимость курса за студента и число уроков в цикле." />
+          <EmptyState title="Курсы не настроены" description="Укажите стоимость курса за студента и интервал начисления в уроках." />
         ) : (
           <div className="card overflow-x-auto">
             <table className="data-table">
               <thead>
-                <tr><th>Курс</th><th className="text-right">Стоимость за студента</th><th className="text-right">Уроков в цикле</th><th>Учёт уроков с</th><th>Студенты</th><th /></tr>
+                <tr><th>Курс</th><th className="text-right">Стоимость за студента</th><th className="text-right">Интервал, уроков</th><th>Учёт уроков</th><th>Студенты</th><th /></tr>
               </thead>
               <tbody>
                 {settings.data?.results.map((c) => (
@@ -53,7 +68,7 @@ export function CoursesPage() {
                     <td className="font-medium text-ink">{c.course_name}{!c.is_active ? <Badge className="ml-2">отключён</Badge> : null}</td>
                     <td className="text-right">{som(c.price_per_student)}</td>
                     <td className="text-right">{c.required_lessons}</td>
-                    <td>{formatDate(c.count_lessons_from)}</td>
+                    <td>{c.count_lessons_from ? `с ${formatDate(c.count_lessons_from)}` : 'с первого урока'}</td>
                     <td className="text-xs">{c.student_count_rule_display}</td>
                     <td className="text-right">
                       {canEdit ? <Button size="sm" variant="ghost" leftIcon={<Pencil className="size-3.5" />} onClick={() => setEditing(c)}>Изменить</Button> : null}
@@ -68,14 +83,18 @@ export function CoursesPage() {
       <Section title="Циклы групп">
         <Tabs
           aria-label="Циклы"
-          items={[{ key: 'IN_PROGRESS', label: 'Незавершённые' }, { key: 'COMPLETED', label: 'Завершённые' }] as const}
+          items={[
+            { key: 'IN_PROGRESS', label: 'Незавершённые' },
+            { key: 'COMPLETED', label: 'Завершённые' },
+            { key: 'INVALIDATED', label: 'Отменённые' },
+          ] as const}
           value={tab}
           onChange={setTab}
         />
         <div className="mt-4">
           {cycles.isLoading ? <LoadingState /> : cycles.isError ? <ErrorState onRetry={() => cycles.refetch()} /> :
-            cycles.data?.results.length === 0 ? <EmptyState title={tab === 'IN_PROGRESS' ? 'Незавершённых циклов нет' : 'Завершённых циклов нет'} /> :
-              <CyclesTable rows={cycles.data!.results} completed={tab === 'COMPLETED'} />}
+            cycles.data?.results.length === 0 ? <EmptyState title={EMPTY[tab]} /> :
+              <CyclesTable rows={cycles.data!.results} completed={tab !== 'IN_PROGRESS'} />}
         </div>
       </Section>
 
@@ -94,7 +113,9 @@ function CyclesTable({ rows, completed }: { rows: CourseCycle[]; completed: bool
         <thead>
           <tr>
             <th>Группа</th><th>Курс</th><th>Цикл</th><th>Уроки</th><th>Тренер</th>
-            {completed ? <><th>Завершён</th><th className="text-right">Студенты</th><th className="text-right">База</th><th>Начислено</th></> : <th>Начат</th>}
+            {completed
+              ? <><th>Порог достигнут</th><th className="text-right">Студенты</th><th className="text-right">База</th><th>Начисление</th></>
+              : <th>Начат</th>}
           </tr>
         </thead>
         <tbody>
@@ -104,8 +125,10 @@ function CyclesTable({ rows, completed }: { rows: CourseCycle[]; completed: bool
               <td>{c.course_name}</td>
               <td>№{c.number}</td>
               <td>
-                {completed ? c.required_lessons : (
-                  <span>{c.lessons_done} / {c.required_lessons}
+                {completed ? (
+                  <span>{c.lessons_total}<span className="block text-xs text-ink-muted">по {c.required_lessons} в цикле</span></span>
+                ) : (
+                  <span>{c.lessons_done} / {c.required_lessons} <span className="text-xs text-ink-muted">(всего {c.lessons_total})</span>
                     <span className="mt-1 block h-1.5 w-24 overflow-hidden rounded-full bg-surface-hover">
                       <span className="block h-full bg-brand-500" style={{ width: `${Math.min(100, (c.lessons_done / c.required_lessons) * 100)}%` }} />
                     </span>
@@ -119,8 +142,15 @@ function CyclesTable({ rows, completed }: { rows: CourseCycle[]; completed: bool
                   <td className="text-right">{c.student_count}</td>
                   <td className="text-right whitespace-nowrap">{c.student_count} × {som(c.course_price)} = {som(c.base_amount)}</td>
                   <td className="text-sm">
-                    {c.accruals.length === 0 ? <Badge tone="warning">ещё не начислен</Badge> : c.accruals.map((a) => (
-                      <p key={a.payroll}>{a.employee_name}: {som(a.amount)} ({Number(a.percentage)}%, {a.period_label})</p>
+                    {c.invalidated_reason ? <p className="mb-1 text-xs text-warning">{c.invalidated_reason}</p> : null}
+                    {c.accruals.length === 0 ? <Badge tone="warning">нет тренера с процентом</Badge> : c.accruals.map((a) => (
+                      <div key={a.id} className="mb-1">
+                        <p>{a.employee_name}: {som(a.amount)} ({Number(a.percentage)}%)</p>
+                        <p className="flex flex-wrap items-center gap-1 text-xs text-ink-muted">
+                          <Badge tone={ACCRUAL_TONE[a.status]}>{a.status_display}</Badge>
+                          {a.period_label ? <span>{a.period_label}, {a.payroll_status_display}</span> : <span>ещё не в расчёте</span>}
+                        </p>
+                      </div>
                     ))}
                   </td>
                 </>
@@ -143,14 +173,19 @@ function SettingsModal({ options, current, taken, onClose }: {
     course: current ? String(current.course) : '',
     price_per_student: current?.price_per_student ?? '',
     required_lessons: current ? String(current.required_lessons) : '',
-    count_lessons_from: current?.count_lessons_from ?? today(),
+    count_lessons_from: current?.count_lessons_from ?? '',
     student_count_rule: current?.student_count_rule ?? 'ON_COMPLETION',
     is_active: current?.is_active ?? true,
   })
   const { run, busy } = useRunner()
   const mutate = useAccountingMutation(async (fn: () => Promise<unknown>) => fn())
   const set = (patch: Partial<typeof form>) => setForm({ ...form, ...patch })
-  const body = { ...form, course: Number(form.course), required_lessons: Number(form.required_lessons) }
+  const body = {
+    ...form,
+    course: Number(form.course),
+    required_lessons: Number(form.required_lessons),
+    count_lessons_from: form.count_lessons_from || null,
+  }
   const save = () => run(
     () => mutate.mutateAsync(() => (current ? accountingApi.updateCourseSettings(current.id, body) : accountingApi.createCourseSettings(body))),
     'Настройки курса сохранены',
@@ -159,7 +194,7 @@ function SettingsModal({ options, current, taken, onClose }: {
   return (
     <Modal isOpen onClose={onClose} title={current ? `Курс «${current.course_name}»` : 'Настроить курс'}>
       {current ? (
-        <p className="mb-3 text-sm text-ink-secondary">Новые значения действуют на следующие циклы; завершённые циклы и утверждённые начисления не меняются.</p>
+        <p className="mb-3 text-sm text-ink-secondary">Новый интервал и стоимость действуют на следующие циклы; завершённые циклы и утверждённые начисления не меняются.</p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         {!current ? (
@@ -172,10 +207,10 @@ function SettingsModal({ options, current, taken, onClose }: {
         <Field label="Стоимость за студента, сом" required htmlFor="cs-price">
           <Input id="cs-price" type="number" min="0.01" step="0.01" value={form.price_per_student} onChange={(e) => set({ price_per_student: e.target.value })} />
         </Field>
-        <Field label="Уроков в цикле" required htmlFor="cs-lessons" help="Например 12 или 20">
+        <Field label="Интервал начисления, уроков" required htmlFor="cs-lessons" help="12 → пороги 12, 24, 36…; 20 → 20, 40, 60…">
           <Input id="cs-lessons" type="number" min="1" value={form.required_lessons} onChange={(e) => set({ required_lessons: e.target.value })} />
         </Field>
-        <Field label="Учитывать уроки с" required htmlFor="cs-from" help="Более ранние уроки в циклы не входят">
+        <Field label="Учитывать уроки с" htmlFor="cs-from" help="Необязательно. Пусто — с первого проведённого урока группы">
           <Input id="cs-from" type="date" value={form.count_lessons_from} onChange={(e) => set({ count_lessons_from: e.target.value })} />
         </Field>
         <Field label="Учитываемые студенты" htmlFor="cs-rule">

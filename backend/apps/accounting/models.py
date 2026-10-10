@@ -540,7 +540,10 @@ class PayrollAdjustment(models.Model):
     )
     reason = models.TextField()
     status = models.CharField(max_length=20, choices=Status.choices, db_index=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+        help_text="Пусто — создана системой (автокорректировка после исправления уроков).",
+    )
     decided_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
     )
@@ -666,8 +669,8 @@ class CoursePayrollSettings(models.Model):
         help_text="Сколько проведённых уроков завершают расчётный цикл (например 12 или 20).",
     )
     count_lessons_from = models.DateField(
-        verbose_name="Учитывать уроки с",
-        help_text="Уроки до этой даты в циклы не входят (старт учёта в бухгалтерии).",
+        null=True, blank=True, verbose_name="Учитывать уроки с",
+        help_text="Необязательно. Пусто — учёт с первого проведённого урока группы.",
     )
     student_count_rule = models.CharField(
         max_length=20, choices=StudentCountRule.choices, default=StudentCountRule.ON_COMPLETION,
@@ -696,6 +699,8 @@ class CourseCycle(models.Model):
     class Status(models.TextChoices):
         IN_PROGRESS = "IN_PROGRESS", "Идёт"
         COMPLETED = "COMPLETED", "Завершён"
+        # Порог больше не достигнут: урок исправили после завершения цикла.
+        INVALIDATED = "INVALIDATED", "Отменён (уроки исправлены)"
 
     group = models.ForeignKey("academy.Group", on_delete=models.PROTECT, related_name="payroll_cycles")
     course = models.ForeignKey("academy.Course", on_delete=models.PROTECT, related_name="payroll_cycles")
@@ -703,6 +708,10 @@ class CourseCycle(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, db_index=True)
     required_lessons = models.PositiveSmallIntegerField()
     lessons_done = models.PositiveSmallIntegerField(default=0)
+    lessons_total = models.PositiveIntegerField(
+        default=0, help_text="Накопленное число проведённых уроков группы на пороге цикла (12, 24, 36…).",
+    )
+    invalidated_reason = models.TextField(blank=True)
     start_date = models.DateField(null=True, blank=True, help_text="Дата первого урока цикла.")
     completed_on = models.DateField(null=True, blank=True, db_index=True,
                                     help_text="Дата проведения последнего необходимого урока.")
@@ -721,7 +730,10 @@ class CourseCycle(models.Model):
         verbose_name_plural = "Циклы курсов"
         ordering = ["group", "number"]
         constraints = [
-            models.UniqueConstraint(fields=["group", "course", "number"], name="unique_course_cycle"),
+            models.UniqueConstraint(
+                fields=["group", "course", "number"], condition=~models.Q(status="INVALIDATED"),
+                name="unique_course_cycle",
+            ),
             models.UniqueConstraint(
                 fields=["group", "course"], condition=models.Q(status="IN_PROGRESS"), name="unique_open_course_cycle",
             ),
@@ -741,28 +753,49 @@ class CourseCycle(models.Model):
 
 
 class CycleAccrual(models.Model):
-    """Начисление процента сотруднику за завершённый цикл — не более одного
-    на пару (цикл, сотрудник). Строка расчёта пересоздаётся при пересчёте
-    черновика (вместе с ней — эта запись), утверждённое начисление
-    остаётся навсегда со своим снимком."""
+    """Начисление процента тренеру за завершённый цикл. Создаётся
+    автоматически, как только группа достигает порога (12, 24, 36… уроков);
+    одно на пару (цикл, сотрудник) — повторное сохранение урока, повторный
+    запуск синхронизации или пересчёт дубликата не создают. Хранит снимок
+    всех величин; расчёт периода только включает его строкой."""
+
+    class Status(models.TextChoices):
+        ACCRUED = "ACCRUED", "Начислено"
+        APPROVED = "APPROVED", "Утверждено"
+        CANCELLED = "CANCELLED", "Отменено (уроки исправлены до утверждения)"
+        CORRECTED = "CORRECTED", "Сторнировано корректировкой"
+        CORRECTION_REQUIRED = "CORRECTION_REQUIRED", "Требует ручной корректировки"
 
     cycle = models.ForeignKey(CourseCycle, on_delete=models.PROTECT, related_name="accruals")
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    payroll = models.ForeignKey(Payroll, on_delete=models.PROTECT, related_name="cycle_accruals")
-    line = models.OneToOneField(PayrollLine, on_delete=models.CASCADE, related_name="cycle_accrual")
     salary_rule = models.ForeignKey(SalaryRule, on_delete=models.PROTECT, related_name="+")
-    lessons = models.PositiveSmallIntegerField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACCRUED, db_index=True)
+    payroll = models.ForeignKey(Payroll, on_delete=models.PROTECT, null=True, blank=True, related_name="cycle_accruals")
+    line = models.OneToOneField(PayrollLine, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name="cycle_accrual")
+    adjustment = models.ForeignKey(PayrollAdjustment, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+", help_text="Корректировка, сторнирующая это начисление.")
+    lessons = models.PositiveSmallIntegerField(help_text="Уроков в цикле.")
+    lessons_total = models.PositiveIntegerField(default=0, help_text="Порог: накопленные уроки группы.")
     completed_on = models.DateField()
     student_count = models.PositiveIntegerField()
     course_price = models.DecimalField(**MONEY)
     percentage = models.DecimalField(max_digits=5, decimal_places=2)
     amount = models.DecimalField(**MONEY)
+    note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ImmutableQuerySet.as_manager()
 
     class Meta:
         verbose_name = "Начисление за цикл"
         verbose_name_plural = "Начисления за циклы"
+        ordering = ["-completed_on", "id"]
         constraints = [models.UniqueConstraint(fields=["cycle", "employee"], name="unique_cycle_accrual")]
 
     def __str__(self):
         return f"{self.employee} · {self.cycle}: {self.amount}"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Начисление за цикл нельзя удалить — только отменить или сторнировать.")

@@ -27,8 +27,6 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 
-from apps.academy.models import Group, TrainerAssignment
-
 from ..models import (
     ALLOWED_SALARY_TYPES,
     CourseCycle,
@@ -42,8 +40,7 @@ from ..models import (
     SalaryRule,
 )
 from . import AccountingError, audit
-from .activity import trainer_group_ids_ever
-from .cycles import sync_all
+from .cycles import ensure_accruals, sync_all
 from .money import ZERO, money, plain
 
 LineType = PayrollLine.LineType
@@ -66,7 +63,7 @@ class LineDraft:
     percentage: Decimal | None = None
     base_amount: Decimal | None = None
     metadata: dict = field(default_factory=dict)
-    cycle: CourseCycle | None = None
+    accrual: CycleAccrual | None = None
 
 
 @dataclass
@@ -144,82 +141,57 @@ def _fixed(rule, profile, period, out: Computation):
 # PERCENT — завершённые циклы курса
 # ---------------------------------------------------------------------------
 
-def _responsible(teacher_id, group_id, day) -> bool:
-    return TrainerAssignment.objects.filter(
-        teacher_id=teacher_id, group_id=group_id, start_date__lte=day,
-    ).filter(Q(end_date__isnull=True) | Q(end_date__gt=day)).exists()
-
-
-def _scope_groups(rule: SalaryRule, teacher_id) -> list[int]:
-    if rule.group_id:
-        return [rule.group_id]
-    groups = Group.objects.filter(id__in=trainer_group_ids_ever(teacher_id))
-    if rule.program_id:
-        groups = groups.filter(course_id=rule.program_id)
-    return list(groups.values_list("id", flat=True))
-
-
-def _owns(rule, teacher_id, cycle) -> bool:
-    """Цикл — сотрудника, если тот отвечал за группу на дату завершения.
-    Правило с конкретной группой у сотрудника без истории назначений в ней
-    (не тренер группы) — основание сама привязка."""
-    if rule.group_id and cycle.group_id not in trainer_group_ids_ever(teacher_id):
-        return True
-    return teacher_id is not None and _responsible(teacher_id, cycle.group_id, cycle.completed_on)
-
-
-def _percent(rule, profile, period, payroll_id, out: Computation, counted: set[int]):
-    window = _window(rule, profile, period)
-    if window is None:
+def _percent(profile, period, payroll_id, out: Computation, window_rules: list[SalaryRule]):
+    """Строки процента — из начислений за циклы (`CycleAccrual`), которые
+    создаются автоматически при достижении порога уроков (services.cycles).
+    Здесь только: досоздать недостающие (правило появилось позже порога),
+    обновить неутверждённые и включить их в период по дате завершения."""
+    windows = [w for w in (_window(r, profile, period) for r in window_rules) if w]
+    if not windows:
         return
-    lo, hi = window
-    teacher = getattr(profile.employee, "teacher_profile", None)
-    teacher_id = teacher.pk if teacher is not None else None
-    if not rule.group_id and teacher_id is None:
-        out.errors.append(f"{_rule_label(rule)}: сотрудник не тренер — укажите в правиле конкретную группу.")
-        return
-    groups = _scope_groups(rule, teacher_id)
-    accrued_elsewhere = set(
-        CycleAccrual.objects.filter(employee=profile.employee).exclude(payroll_id=payroll_id)
-        .values_list("cycle_id", flat=True)
-    )
-    completed = CourseCycle.objects.filter(status=CourseCycle.Status.COMPLETED, group_id__in=groups)
-    candidates = list(
-        completed.filter(completed_on__gte=lo, completed_on__lte=hi).select_related("group", "course")
-    )
-    # Цикл, отмеченный завершённым задним числом в уже утверждённом периоде,
-    # не теряется: он начисляется в текущем периоде с пометкой.
-    late = []
-    for cycle in completed.filter(completed_on__lt=period.start_date, completed_on__gte=rule.effective_from).exclude(
-        pk__in=accrued_elsewhere,
-    ).select_related("group", "course"):
-        year, month, half = period_of(cycle.completed_on)
-        if Payroll.objects.filter(
-            employee=profile.employee, period__year=year, period__month=month, period__period_type=half,
-            status__in=Payroll.LOCKED_STATUSES,
-        ).exists():
-            late.append(cycle)
-    for cycle in candidates + late:
-        if cycle.pk in accrued_elsewhere or cycle.pk in counted or not _owns(rule, teacher_id, cycle):
+    lo, hi = min(w[0] for w in windows), max(w[1] for w in windows)
+    candidates = CourseCycle.objects.filter(
+        status=CourseCycle.Status.COMPLETED, completed_on__gte=lo, completed_on__lte=hi,
+    ).exclude(accruals__employee=profile.employee)
+    for cycle in candidates.select_related("group", "course"):
+        ensure_accruals(cycle)
+    accruals = CycleAccrual.objects.filter(
+        employee=profile.employee, status=CycleAccrual.Status.ACCRUED,
+    ).filter(Q(payroll__isnull=True) | Q(payroll_id=payroll_id)).select_related("cycle__group", "cycle__course")
+    for accrual in accruals.order_by("completed_on", "id"):
+        late = False
+        if not (lo <= accrual.completed_on <= hi):
+            if accrual.completed_on > hi:
+                continue
+            # Порог достигнут задним числом в уже утверждённом периоде — не
+            # теряется, а включается в текущий период с пометкой.
+            year, month, half = period_of(accrual.completed_on)
+            if not Payroll.objects.filter(
+                employee=profile.employee, period__year=year, period__month=month, period__period_type=half,
+                status__in=Payroll.LOCKED_STATUSES,
+            ).exists():
+                continue
+            late = True
+        ensure_accruals(accrual.cycle)  # обновить сумму, если правило поправили до утверждения
+        accrual.refresh_from_db()
+        if accrual.status != CycleAccrual.Status.ACCRUED:
             continue
-        counted.add(cycle.pk)
-        base = cycle.course_price * cycle.student_count
-        amount = money(base * rule.percentage / 100)
-        note = " — завершён в уже утверждённом периоде" if cycle in late else ""
+        cycle = accrual.cycle
+        note = " — порог достигнут в уже утверждённом периоде" if late else ""
         out.lines.append(LineDraft(
             LineType.PERCENT,
-            f"Цикл {cycle.number} курса «{cycle.course.name}», группа «{cycle.group.name}»: "
-            f"{cycle.student_count} студ. × {plain(cycle.course_price)} сом × {plain(rule.percentage)}% "
-            f"(завершён {_fmt(cycle.completed_on)}, {cycle.required_lessons} ур.){note}",
-            amount, rule, source_type="course_cycle", source_id=cycle.pk,
-            quantity=Decimal(cycle.student_count), rate=cycle.course_price, percentage=rule.percentage,
-            base_amount=money(base), cycle=cycle,
+            f"Цикл {cycle.number} ({accrual.lessons_total} ур.) курса «{cycle.course.name}», группа «{cycle.group.name}»: "
+            f"{accrual.student_count} студ. × {plain(accrual.course_price)} сом × {plain(accrual.percentage)}% "
+            f"(порог {_fmt(accrual.completed_on)}){note}",
+            accrual.amount, accrual.salary_rule, source_type="course_cycle", source_id=cycle.pk,
+            quantity=Decimal(accrual.student_count), rate=accrual.course_price, percentage=accrual.percentage,
+            base_amount=money(accrual.course_price * accrual.student_count), accrual=accrual,
             metadata={
-                "cycle_id": cycle.pk, "cycle_number": cycle.number, "group_id": cycle.group_id,
-                "group": cycle.group.name, "course_id": cycle.course_id, "course": cycle.course.name,
-                "lessons": cycle.required_lessons, "completed_on": cycle.completed_on.isoformat(),
-                "students_count": cycle.student_count, "course_price": str(cycle.course_price),
-                "late": bool(note),
+                "cycle_id": cycle.pk, "cycle_number": cycle.number, "accrual_id": accrual.pk,
+                "group_id": cycle.group_id, "group": cycle.group.name, "course_id": cycle.course_id,
+                "course": cycle.course.name, "lessons": accrual.lessons, "lessons_total": accrual.lessons_total,
+                "completed_on": accrual.completed_on.isoformat(), "students_count": accrual.student_count,
+                "course_price": str(accrual.course_price), "late": late,
             },
         ))
 
@@ -263,12 +235,11 @@ def compute(period: PayrollPeriod, profile: EmployeeSalaryProfile, *, payroll_id
         out.errors.append("Не настроена ставка: нет действующих правил начисления в этом периоде.")
         return out
     out.errors.extend(_overlaps(usable))
-    counted: set[int] = set()
     for rule in usable:
         if rule.rule_type == RuleType.FIXED:
             _fixed(rule, profile, period, out)
-        else:
-            _percent(rule, profile, period, payroll_id, out, counted)
+    if profile.salary_type == RuleType.PERCENT:
+        _percent(profile, period, payroll_id, out, usable)
     if profile.salary_type == RuleType.PERCENT:
         out.active_students = sum(int(l.quantity) for l in out.lines if l.line_type == LineType.PERCENT)
         if not out.lines:
@@ -331,7 +302,10 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
             )
         old = audit.snapshot(payroll, ("status", "total_accrued", "total_adjustments", "amount_due"))
         result = compute(period, profile, payroll_id=payroll.pk)
-        payroll.lines.all().delete()  # вместе со строками уходят и их CycleAccrual
+        CycleAccrual.objects.filter(payroll=payroll, status=CycleAccrual.Status.ACCRUED).update(
+            payroll=None, line=None,
+        )
+        payroll.lines.all().delete()
         for d in result.lines:
             line = PayrollLine.objects.create(
                 payroll=payroll, line_type=d.line_type, description=d.description[:255],
@@ -339,13 +313,8 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
                 rate=d.rate, percentage=d.percentage, base_amount=d.base_amount, amount=d.amount,
                 metadata=d.metadata,
             )
-            if d.cycle is not None:
-                CycleAccrual.objects.create(
-                    cycle=d.cycle, employee=employee, payroll=payroll, line=line, salary_rule=d.rule,
-                    lessons=d.cycle.required_lessons, completed_on=d.cycle.completed_on,
-                    student_count=d.cycle.student_count, course_price=d.cycle.course_price,
-                    percentage=d.percentage, amount=d.amount,
-                )
+            if d.accrual is not None:
+                CycleAccrual.objects.filter(pk=d.accrual.pk).update(payroll=payroll, line=line)
         refresh_totals(payroll)
         warnings = list(result.warnings)
         previous = _previous_total(payroll)

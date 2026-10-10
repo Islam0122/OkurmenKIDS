@@ -429,8 +429,8 @@ class CourseCycleSerializer(serializers.ModelSerializer):
         model = CourseCycle
         fields = (
             "id", "group", "group_name", "course", "course_name", "number", "status", "status_display",
-            "required_lessons", "lessons_done", "start_date", "completed_on", "student_count", "course_price",
-            "base_amount", "trainers", "accruals",
+            "required_lessons", "lessons_done", "lessons_total", "start_date", "completed_on", "student_count",
+            "course_price", "base_amount", "trainers", "accruals", "invalidated_reason",
         )
 
     def get_trainers(self, obj) -> list:
@@ -442,8 +442,12 @@ class CourseCycleSerializer(serializers.ModelSerializer):
 
     def get_accruals(self, obj) -> list:
         return [
-            {"employee": a.employee_id, "employee_name": _name(a.employee), "percentage": str(a.percentage),
-             "amount": str(a.amount), "payroll": a.payroll_id, "payroll_status": a.payroll.status,
-             "period_label": period_label(a.payroll.period)}
+            {"id": a.pk, "employee": a.employee_id, "employee_name": _name(a.employee),
+             "percentage": str(a.percentage), "amount": str(a.amount), "status": a.status,
+             "status_display": a.get_status_display(), "note": a.note, "payroll": a.payroll_id,
+             "payroll_status": a.payroll.status if a.payroll else None,
+             "payroll_status_display": a.payroll.get_status_display() if a.payroll else None,
+             "period_label": period_label(a.payroll.period) if a.payroll else None,
+             "adjustment": a.adjustment_id}
             for a in obj.accruals.select_related("employee", "payroll__period")
         ]
