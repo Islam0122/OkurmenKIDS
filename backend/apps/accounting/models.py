@@ -167,6 +167,31 @@ class SalaryType(models.TextChoices):
 ALLOWED_SALARY_TYPES = (SalaryType.FIXED, SalaryType.PERCENT)
 
 
+class Department(models.TextChoices):
+    """Направление сотрудника — разрез аналитики директора (расходы по
+    направлениям). В LMS такого поля нет, поэтому его ведёт бухгалтер в
+    зарплатном профиле; в каждом расчёте хранится снимок."""
+
+    IT = "IT", "IT"
+    SOFT_SKILLS = "SOFT_SKILLS", "Soft Skills"
+    ENGLISH = "ENGLISH", "Английский"
+    TEAM_LEAD = "TEAM_LEAD", "Тимлиды"
+    ASSISTANT = "ASSISTANT", "Ассистенты"
+    OTHER = "OTHER", "Прочий персонал"
+
+
+def default_department(user) -> str:
+    """Направление по роли, если бухгалтер его не указал: Team Lead и
+    Ассистент однозначны, остальным — «Прочий персонал» (тренера по роли
+    не отнести к IT / Soft Skills / английскому — это решает бухгалтер)."""
+    role = getattr(user, "role", None)
+    if role == "team_lead":
+        return Department.TEAM_LEAD
+    if role == "assistant":
+        return Department.ASSISTANT
+    return Department.OTHER
+
+
 class EmployeeSalaryProfile(models.Model):
     """Зарплатная карточка сотрудника. Ставки живут в `SalaryRule` —
     у каждой своя версия и срок действия, поэтому изменение ставки никогда
@@ -180,6 +205,10 @@ class EmployeeSalaryProfile(models.Model):
         help_text="Пусто — должность из профиля тренера или роль пользователя.",
     )
     salary_type = models.CharField(max_length=20, choices=SalaryType.choices, verbose_name="Тип оплаты")
+    department = models.CharField(
+        max_length=20, choices=Department.choices, blank=True, verbose_name="Направление",
+        help_text="Пусто — по роли: Team Lead, Ассистент, иначе «Прочий персонал».",
+    )
     currency = models.CharField(max_length=3, default=CURRENCY, editable=False, verbose_name="Валюта")
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="Активна")
     effective_from = models.DateField(verbose_name="Действует с")
@@ -203,6 +232,10 @@ class EmployeeSalaryProfile(models.Model):
         if teacher is not None:
             return teacher.position
         return self.employee.get_role_display()
+
+    @property
+    def effective_department(self) -> str:
+        return self.department or default_department(self.employee)
 
     def clean(self):
         if self.effective_to and self.effective_to < self.effective_from:
@@ -367,7 +400,10 @@ class PayrollPeriod(models.Model):
     start_date = models.DateField(editable=False)
     end_date = models.DateField(editable=False)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+        help_text="Пусто — период создан автоматически (manage.py payroll_autorun).",
+    )
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
     )
@@ -455,6 +491,10 @@ class Payroll(models.Model):
     errors = models.JSONField(default=list, blank=True, help_text="Ошибки, блокирующие утверждение.")
     salary_type = models.CharField(max_length=20, choices=SalaryType.choices, blank=True)
     position = models.CharField(max_length=100, blank=True)
+    department = models.CharField(
+        max_length=20, choices=Department.choices, blank=True, db_index=True,
+        help_text="Снимок направления сотрудника на момент расчёта (для аналитики).",
+    )
     active_students = models.PositiveIntegerField(
         null=True, blank=True, help_text="Число разных активных студентов в периоде — если применимо.",
     )
@@ -487,6 +527,13 @@ class Payroll(models.Model):
     @property
     def is_locked(self) -> bool:
         return self.status in self.LOCKED_STATUSES
+
+    @property
+    def planned_payment_date(self) -> dt.date | None:
+        """Плановая дата выплаты (не факт перевода) — services.payout."""
+        from .services.payout import planned_date_for_period
+
+        return planned_date_for_period(self.period)
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Расчёт нельзя удалить — его можно только аннулировать.")
@@ -691,6 +738,10 @@ class CoursePayrollSettings(models.Model):
         max_length=20, choices=StudentCountRule.choices, default=StudentCountRule.ON_COMPLETION,
         verbose_name="Правило учёта студентов",
     )
+    counted_subjects = models.ManyToManyField(
+        "users.Subject", blank=True, related_name="+", verbose_name="Учитываемые предметы",
+        help_text="Только уроки этих предметов входят в цикл (например, только IT). Пусто — все уроки группы.",
+    )
     is_active = models.BooleanField(default=True, verbose_name="Активны")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -702,6 +753,66 @@ class CoursePayrollSettings(models.Model):
 
     def __str__(self):
         return f"{self.course}: {self.price_per_student} сом, {self.required_lessons} ур."
+
+
+class CoursePriceVersion(models.Model):
+    """Версия тарифа: фиксированная стоимость обучения одного студента за
+    календарный месяц, действующая с даты. Не редактируется и не удаляется:
+    новая цена — новая версия, предыдущая закрывается днём раньше. Каждый
+    завершённый цикл берёт цену, действовавшую на дату его завершения, и
+    хранит её снимок, поэтому новый тариф не меняет уже созданные начисления.
+
+    Это согласованная цена курса, а не поступившие деньги — фактические
+    платежи студентов ведёт `StudentPayment`.
+    """
+
+    course = models.ForeignKey(
+        "academy.Course", on_delete=models.PROTECT, related_name="price_versions", verbose_name="Курс",
+    )
+    price_per_student = models.DecimalField(
+        **MONEY, validators=[MinValueValidator(Decimal("0.01"))], verbose_name="Стоимость за студента в месяц, сом",
+    )
+    currency = models.CharField(max_length=3, default=CURRENCY, editable=False, verbose_name="Валюта")
+    effective_from = models.DateField(verbose_name="Действует с")
+    effective_to = models.DateField(null=True, blank=True, verbose_name="Действует по (включительно)")
+    reason = models.TextField(verbose_name="Причина изменения")
+    previous_version = models.OneToOneField(
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="next_version",
+        verbose_name="Предыдущая версия",
+    )
+    is_migrated = models.BooleanField(
+        default=False, verbose_name="Перенесена из прежних настроек",
+        help_text="Цена из настроек курса до введения истории тарифов: дата начала неизвестна — проверьте.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+        verbose_name="Автор изменения",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Тариф курса"
+        verbose_name_plural = "История тарифов курсов"
+        ordering = ["course", "-effective_from", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["course", "effective_from"], name="unique_course_price_start"),
+            models.UniqueConstraint(
+                fields=["course"], condition=models.Q(effective_to__isnull=True), name="unique_open_course_price",
+            ),
+            models.CheckConstraint(condition=models.Q(price_per_student__gt=0), name="course_price_positive"),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")),
+                name="course_price_range",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.course}: {self.price_per_student} сом с {self.effective_from:%d.%m.%Y}"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Тариф нельзя удалить — создайте новую версию.")
 
 
 class CourseCycle(models.Model):
@@ -767,6 +878,49 @@ class CourseCycle(models.Model):
         raise ValidationError("Цикл курса нельзя удалить.")
 
 
+class CycleLesson(models.Model):
+    """Конкретный проведённый урок, вошедший в завершённый цикл.
+
+    Связь фиксируется при завершении цикла и не переписывается: у
+    отменённого цикла она остаётся историей (`is_live=False`). Частичный
+    уникальный индекс не даёт одному уроку попасть в два действующих
+    оплачиваемых цикла. Урок, удалённый из LMS, остаётся здесь датой и id."""
+
+    cycle = models.ForeignKey(CourseCycle, on_delete=models.PROTECT, related_name="cycle_lessons")
+    lesson = models.ForeignKey(
+        "academy.Lesson", on_delete=models.SET_NULL, null=True, blank=True, related_name="payroll_cycle_links",
+    )
+    lesson_ref = models.PositiveBigIntegerField(help_text="id урока (сохраняется, даже если урок удалён).")
+    lesson_date = models.DateField()
+    position = models.PositiveSmallIntegerField(help_text="Порядковый номер урока в цикле, с 1.")
+    teacher = models.ForeignKey(
+        "users.Teacher", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        help_text="Тренер, фактически проводивший урок.",
+    )
+    is_live = models.BooleanField(default=True, db_index=True)
+    backfilled = models.BooleanField(default=False, help_text="Восстановлено миграцией по текущим урокам.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Урок цикла"
+        verbose_name_plural = "Уроки циклов"
+        ordering = ["cycle", "position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lesson_ref"], condition=models.Q(is_live=True), name="unique_live_cycle_lesson",
+            ),
+            models.UniqueConstraint(fields=["cycle", "position"], name="unique_cycle_lesson_position"),
+        ]
+
+    def __str__(self):
+        return f"{self.cycle} · урок {self.position} ({self.lesson_date:%d.%m.%Y})"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Связь урока с циклом нельзя удалить.")
+
+
 class CycleAccrual(models.Model):
     """Начисление процента тренеру за завершённый цикл. Создаётся
     автоматически, как только группа достигает порога (12, 24, 36… уроков);
@@ -780,6 +934,9 @@ class CycleAccrual(models.Model):
         CANCELLED = "CANCELLED", "Отменено (уроки исправлены до утверждения)"
         CORRECTED = "CORRECTED", "Сторнировано корректировкой"
         CORRECTION_REQUIRED = "CORRECTION_REQUIRED", "Требует ручной корректировки"
+        # Не начисляется автоматически: смена тренера внутри цикла или второй
+        # цикл группы в том же месяце — решение принимает бухгалтер.
+        REVIEW_REQUIRED = "REVIEW_REQUIRED", "Требует проверки"
 
     cycle = models.ForeignKey(CourseCycle, on_delete=models.PROTECT, related_name="accruals")
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
@@ -798,10 +955,26 @@ class CycleAccrual(models.Model):
     percentage = models.DecimalField(max_digits=5, decimal_places=2)
     amount = models.DecimalField(**MONEY)
     note = models.TextField(blank=True)
+    review_reasons = models.JSONField(default=list, blank=True, help_text="Почему начисление требует проверки.")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     objects = ImmutableQuerySet.as_manager()
+
+    @property
+    def planned_payment_date(self) -> dt.date:
+        """Плановая дата выплаты по дате завершения цикла (1–15 → 15-е,
+        16–конец → 1-е следующего месяца); если начисление вошло в расчёт —
+        по периоду этого расчёта."""
+        from .services.payout import planned_date_for_completion, planned_date_for_period
+
+        if self.payroll_id:
+            return planned_date_for_period(self.payroll.period)
+        return planned_date_for_completion(self.completed_on)
 
     class Meta:
         verbose_name = "Начисление за цикл"

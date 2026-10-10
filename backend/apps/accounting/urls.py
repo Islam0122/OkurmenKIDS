@@ -11,12 +11,15 @@ router.register("salary-rules", views.SalaryRuleViewSet, basename="salary-rule")
 router.register("student-payments", views.StudentPaymentViewSet, basename="student-payment")
 router.register("course-settings", views.CoursePayrollSettingsViewSet, basename="course-settings")
 router.register("cycles", views.CourseCycleViewSet, basename="cycle")
+router.register("cycle-accruals", views.CycleAccrualViewSet, basename="cycle-accrual")
+router.register("pricing", views.CoursePriceVersionViewSet, basename="pricing")
 router.register("periods", views.PayrollPeriodViewSet, basename="period")
 router.register("payrolls", views.PayrollViewSet, basename="payroll")
 router.register("payments", views.PaymentViewSet, basename="payment")
 router.register("adjustments", views.AdjustmentViewSet, basename="adjustment")
 router.register("audit-log", views.AuditLogViewSet, basename="audit-log")
 router.register("my/payrolls", views.MyPayrollViewSet, basename="my-payroll")
+router.register("my/payments", views.MyPaymentsView, basename="my-payment")
 
 urlpatterns = [
     path("me/", views.MeView.as_view(), name="me"),
@@ -26,8 +29,16 @@ urlpatterns = [
     path("employees/", views.EmployeeListView.as_view(), name="employees"),
     path("reports/payroll.pdf", views.PayrollReportPdfView.as_view(), name="report-pdf"),
     path("reports/payroll.xlsx", views.PayrollReportXlsxView.as_view(), name="report-xlsx"),
+    path("reports/teachers/", views.TeacherReportView.as_view(), name="report-teachers"),
+    path("reports/teachers.xlsx", views.TeacherReportXlsxView.as_view(), name="report-teachers-xlsx"),
+    path("reports/teachers.pdf", views.TeacherReportPdfView.as_view(), name="report-teachers-pdf"),
+    path("analytics/summary/", views.AnalyticsSummaryView.as_view(), name="analytics-summary"),
+    path("analytics/by-department/", views.AnalyticsByDepartmentView.as_view(), name="analytics-by-department"),
+    path("estimates/", views.EstimateListView.as_view(), name="estimates"),
     # «Моя зарплата» — собственные начисления и выплаты, только чтение.
     path("my/salary/", views.MySalaryView.as_view(), name="my-salary"),
     path("my/salary/report.pdf", views.MySalaryPdfView.as_view(), name="my-salary-pdf"),
+    path("my/summary/", views.MySalaryView.as_view(), name="my-summary"),
+    path("my/estimates/", views.MyEstimatesView.as_view(), name="my-estimates"),
     path("", include(router.urls)),
 ]

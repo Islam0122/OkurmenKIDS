@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { accountingApi } from '@/api/accounting'
 import type { PayrollFilters } from '@/api/accounting'
-import type { MySalaryFilters, PeriodSelection } from '@/types/accounting'
+import type { AnalyticsFilters, MySalaryFilters, PeriodSelection } from '@/types/accounting'
 
 export function useAccountingOptions() {
   return useQuery({ queryKey: ['accounting', 'options'], queryFn: accountingApi.options, staleTime: 5 * 60 * 1000 })
@@ -85,6 +85,45 @@ export function useMySalary(filters: MySalaryFilters) {
   return useQuery({
     queryKey: ['accounting', 'my-salary', filters],
     queryFn: () => accountingApi.mySalary(filters),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function usePriceHistory(course?: number) {
+  return useQuery({
+    queryKey: ['accounting', 'pricing', course ?? 'all'],
+    queryFn: () => accountingApi.pricing(course ? { course } : {}),
+  })
+}
+
+export function useCycleAccruals(params: Record<string, string | number | undefined>) {
+  return useQuery({
+    queryKey: ['accounting', 'cycle-accruals', params],
+    queryFn: () => accountingApi.cycleAccruals(params),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useBlockEstimates(params: Record<string, string | number | undefined>) {
+  return useQuery({
+    queryKey: ['accounting', 'estimates', params],
+    queryFn: () => accountingApi.estimates(params),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useAnalyticsSummary(filters: AnalyticsFilters) {
+  return useQuery({
+    queryKey: ['accounting', 'analytics', filters],
+    queryFn: () => accountingApi.analyticsSummary(filters),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useTeacherReport(filters: AnalyticsFilters & { page?: number }) {
+  return useQuery({
+    queryKey: ['accounting', 'teacher-report', filters],
+    queryFn: () => accountingApi.teacherReport({ page_size: 25, ...filters }),
     placeholderData: keepPreviousData,
   })
 }

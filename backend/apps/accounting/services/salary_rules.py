@@ -102,14 +102,41 @@ COURSE_FIELDS = ("price_per_student", "required_lessons", "count_lessons_from", 
 
 
 def save_course_settings(settings: CoursePayrollSettings, *, actor, data: dict) -> CoursePayrollSettings:
-    """Настройки курса. Уже завершённые циклы хранят свой снимок — новая
-    стоимость и число уроков действуют только на следующие циклы."""
+    """Настройки курса. Уже завершённые циклы хранят свой снимок — новое
+    число уроков и учитываемые предметы действуют только на следующие циклы.
+
+    Стоимость задаётся при создании (первая версия тарифа), а меняется только
+    новой версией тарифа (services.pricing.set_price) — с датой и причиной."""
+    from django.utils import timezone
+
+    from .pricing import set_price
+
+    data = dict(data)
+    subjects = data.pop("counted_subjects", None)
+    price_from = data.pop("price_effective_from", None) or timezone.localdate()
+    price_reason = data.pop("price_reason", "") or "Первоначальная стоимость курса"
     created = settings.pk is None
-    old = {} if created else audit.snapshot(CoursePayrollSettings.objects.get(pk=settings.pk), COURSE_FIELDS)
+    if not created and "price_per_student" in data and data["price_per_student"] != settings.price_per_student:
+        raise AccountingError(
+            "Стоимость курса меняется только новой версией тарифа (раздел «Стоимость курсов»): "
+            "с датой начала действия и причиной — так сохраняется история цен.",
+            code="use_pricing",
+        )
+    old = {} if created else {
+        **audit.snapshot(CoursePayrollSettings.objects.get(pk=settings.pk), COURSE_FIELDS),
+        "counted_subjects": sorted(settings.counted_subjects.values_list("pk", flat=True)),
+    }
     for name, value in data.items():
         setattr(settings, name, value)
     with transaction.atomic():
         _validated(settings).save()
-        audit.log(actor, settings, "create" if created else "update", old=old,
-                  new=audit.snapshot(settings, COURSE_FIELDS))
+        if subjects is not None:
+            settings.counted_subjects.set(subjects)
+        audit.log(actor, settings, "create" if created else "update", old=old, new={
+            **audit.snapshot(settings, COURSE_FIELDS),
+            "counted_subjects": sorted(settings.counted_subjects.values_list("pk", flat=True)),
+        })
+        if created:
+            set_price(course=settings.course, price_per_student=settings.price_per_student,
+                      effective_from=price_from, reason=price_reason, actor=actor)
     return settings

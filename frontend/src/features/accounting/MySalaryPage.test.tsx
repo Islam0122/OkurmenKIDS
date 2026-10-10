@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MySalaryPage } from '@/features/accounting/MySalaryPage'
 import { renderWithProviders } from '@/test/testUtils'
-import type { MySalary, MySalaryRow } from '@/types/accounting'
+import type { MyEstimate, MySalary, MySalaryRow } from '@/types/accounting'
 
 vi.mock('@/api/accounting', () => ({
   accountingApi: { mySalary: vi.fn(), downloadMySalaryPdf: vi.fn() },
@@ -15,13 +15,16 @@ import { accountingApi } from '@/api/accounting'
 const awaiting = (period_type: 'FIRST_HALF' | 'SECOND_HALF'): MySalaryRow => ({
   payroll_id: null, year: 2026, month: 10, period_type, period_label: '', status: 'AWAITING',
   status_display: 'Ожидает расчёта', is_final: false, accrued: null, paid: null, due: null, lines: [], adjustments: [],
+  planned_payment_date: null,
 })
 
 const EMPTY: MySalary = {
   employee_name: 'Asya Test',
   has_profile: false,
   profile: null,
-  totals: { accrued: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00' },
+  totals: { accrued: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00' },
+  next_planned_payment_date: null,
+  estimates: [],
   last_payment: null,
   current_month: { year: 2026, month: 10, label: 'Октябрь 2026', accrued: '0.00', periods: [awaiting('FIRST_HALF'), awaiting('SECOND_HALF')] },
   history: [],
@@ -36,7 +39,7 @@ const WITH_DATA: MySalary = {
     salary_type: 'FIXED', salary_type_display: 'Фиксированный оклад', position: 'Ассистент',
     rates: [{ rule_type: 'FIXED', label: 'Оклад', amount: '40000.00', percentage: null, scope: '', effective_from: '2026-01-01' }],
   },
-  totals: { accrued: '20000.00', paid: '15000.00', due: '5000.00', pending_approval: '20000.00' },
+  totals: { accrued: '20000.00', paid: '15000.00', due: '5000.00', pending_approval: '20000.00', estimated: '0.00' },
   last_payment: { payment_date: '2026-09-20', amount: '15000.00' },
   history: [
     {
@@ -83,5 +86,41 @@ describe('MySalaryPage', () => {
     }
     await user.click(screen.getByRole('button', { name: 'Скачать PDF' }))
     expect(accountingApi.downloadMySalaryPdf).toHaveBeenCalledWith({ month: 9 })
+  })
+
+  it('shows the preliminary salary of blocks in progress separately from accruals', async () => {
+    const block = (done: number, total: number, group: string): MyEstimate => ({
+      cycle_id: total, cycle_number: 1, group_name: group, course_name: 'Prog SOFT', subjects: ['Python'], student_count: 10,
+      price_per_student: '10000.00', percentage: '10.00', expected_amount: '10000.00', lessons_done: done,
+      required_lessons: total, lessons_remaining: total - done, projected_completion_date: '2026-10-19',
+      expected_payment_date: '2026-11-01', status: 'BLOCK_IN_PROGRESS', status_display: 'Блок в процессе', warnings: [],
+      note: 'Предварительный расчёт — не начисление и не задолженность.',
+    })
+    vi.mocked(accountingApi.mySalary).mockResolvedValue({
+      ...EMPTY, has_profile: true,
+      totals: { ...EMPTY.totals, estimated: '20000.00' },
+      estimates: [block(8, 12, 'Python A'), block(8, 20, 'Python B')],
+    })
+    renderWithProviders(<MySalaryPage />)
+    expect((await screen.findAllByText('Предварительная зарплата')).length).toBe(3) // карточка KPI + 2 блока
+    expect(screen.getByText('8 из 12 уроков')).toBeInTheDocument()
+    expect(screen.getByText('8 из 20 уроков')).toBeInTheDocument()
+    expect(screen.getByText('Осталось провести: 4')).toBeInTheDocument()
+    expect(screen.getByText('Осталось провести: 12')).toBeInTheDocument()
+    expect(screen.getAllByText('Блок в процессе')).toHaveLength(2)
+    expect(screen.getAllByRole('progressbar')).toHaveLength(2)
+    // Оценка не попадает в «Начислено»: там по-прежнему 0.
+    expect(screen.getByText(/20\s000\sсом/)).toBeInTheDocument()
+    expect(screen.getAllByText(/20\s000\sсом/)).toHaveLength(1)
+    expect(screen.getAllByText(/^0\sсом$/).length).toBeGreaterThanOrEqual(3) // начислено, выплачено, остаток
+    expect(screen.getAllByText(/ожидаемая выплата 01\.11\.2026/)).toHaveLength(2)
+    // Сотруднику не предлагается регистрировать выплату.
+    expect(screen.queryByRole('button', { name: /выплат/i })).not.toBeInTheDocument()
+  })
+
+  it('offers a retry when the API fails', async () => {
+    vi.mocked(accountingApi.mySalary).mockRejectedValue(new Error('boom'))
+    renderWithProviders(<MySalaryPage />)
+    expect(await screen.findByRole('button', { name: /повтор/i })).toBeInTheDocument()
   })
 })

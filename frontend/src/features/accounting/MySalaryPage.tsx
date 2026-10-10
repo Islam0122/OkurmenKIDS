@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { FileDown, Wallet } from 'lucide-react'
+import { CalendarClock, FileDown, Hourglass, Wallet } from 'lucide-react'
 
 import { accountingApi } from '@/api/accounting'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -16,7 +16,8 @@ import { StatGrid } from '@/components/ui/StatGrid'
 import { useMySalary } from '@/hooks/useAccounting'
 import type { MySalaryFilters, MySalaryRow, MySalaryStatus, PeriodType } from '@/types/accounting'
 
-import { MONTHS, Section, formatDate, som, useRunner } from './shared'
+import { EstimateCard } from './EstimateCard'
+import { MONTHS, Section, formatDate, som, today, useRunner } from './shared'
 
 const STATUS_TONE: Record<MySalaryStatus, BadgeTone> = {
   AWAITING: 'muted',
@@ -72,7 +73,19 @@ export function MySalaryPage() {
         }
       />
 
-      <StatGrid>
+      {d.estimates.length ? (
+        <StatGrid>
+          <StatCard label="Предварительная зарплата" icon={Hourglass} value={som(d.totals.estimated)}
+            hint="оценка по незавершённым блокам — ещё не начислено" />
+          <StatCard label="Ближайшая плановая выплата" icon={CalendarClock}
+            value={d.next_planned_payment_date ? formatDate(d.next_planned_payment_date) : '—'}
+            tone={d.next_planned_payment_date && d.next_planned_payment_date < today() ? 'warning' : 'default'}
+            hint={!d.next_planned_payment_date ? 'нет утверждённого остатка'
+              : d.next_planned_payment_date < today() ? 'плановая дата прошла — выплата ожидается' : 'плановая дата, не факт перевода'} />
+        </StatGrid>
+      ) : null}
+
+      <StatGrid className={d.estimates.length ? 'mt-3 sm:mt-4' : undefined}>
         <StatCard label="Начислено" value={som(d.totals.accrued)}
           hint={Number(d.totals.pending_approval) ? `ещё ${som(d.totals.pending_approval)} ожидает утверждения` : 'утверждённые начисления'} />
         <StatCard label="Выплачено" value={som(d.totals.paid)} />
@@ -96,6 +109,15 @@ export function MySalaryPage() {
         </Section>
       ) : null}
 
+      {d.estimates.length ? (
+        <Section title="Блоки в процессе — предварительный расчёт">
+          <p className="mb-3 text-sm text-ink-secondary">{d.estimates[0].note}</p>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {d.estimates.map((e) => <EstimateCard key={e.cycle_id} estimate={e} />)}
+          </div>
+        </Section>
+      ) : null}
+
       <Section title={`Текущий месяц: ${d.current_month.label}`}>
         <div className="grid gap-3 sm:grid-cols-2">
           {d.current_month.periods.map((row) => (
@@ -108,6 +130,9 @@ export function MySalaryPage() {
               <p className="text-xs text-ink-muted">
                 {row.accrued !== null ? `выплачено ${som(row.paid)} · остаток ${som(row.due)}` : 'начисление появится после расчёта бухгалтерией'}
               </p>
+              {row.planned_payment_date ? (
+                <p className="mt-1 text-xs text-ink-secondary">Плановая выплата: {formatDate(row.planned_payment_date)}</p>
+              ) : null}
             </div>
           ))}
         </div>
@@ -169,7 +194,7 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
     <div className="card overflow-x-auto">
       <table className="data-table">
         <thead>
-          <tr><th>Период</th><th>Статус</th><th className="text-right">Начислено</th><th className="text-right">Выплачено</th><th className="text-right">Остаток</th></tr>
+          <tr><th>Период</th><th>Статус</th><th className="text-right">Начислено</th><th className="text-right">Выплачено</th><th className="text-right">Остаток</th><th>Плановая выплата</th></tr>
         </thead>
         <tbody>
           {rows.map((row) => {
@@ -186,10 +211,11 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
                   <td className="text-right">{som(row.accrued)}</td>
                   <td className="text-right">{som(row.paid)}</td>
                   <td className="text-right">{som(row.due)}</td>
+                  <td className="whitespace-nowrap">{formatDate(row.planned_payment_date)}</td>
                 </tr>
                 {open === key ? (
                   <tr>
-                    <td colSpan={5} className="bg-surface-muted text-sm">
+                    <td colSpan={6} className="bg-surface-muted text-sm">
                       <ul className="space-y-1">
                         {row.lines.map((l) => (
                           <li key={l.description} className="flex justify-between gap-3"><span>{l.description}</span><span className="whitespace-nowrap">{som(l.amount)}</span></li>

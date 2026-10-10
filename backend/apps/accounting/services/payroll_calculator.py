@@ -223,8 +223,20 @@ def _percent(profile, period, payroll_id, out: Computation, window_rules: list[S
                 "course": cycle.course.name, "lessons": accrual.lessons, "lessons_total": accrual.lessons_total,
                 "completed_on": accrual.completed_on.isoformat(), "students_count": accrual.student_count,
                 "course_price": str(accrual.course_price), "late": late,
+                "planned_payment_date": accrual.planned_payment_date.isoformat(),
             },
         ))
+    # Спорные начисления (смена тренера, второй цикл за месяц) в расчёт не
+    # входят и блокируют утверждение, пока бухгалтер не примет решение.
+    for accrual in CycleAccrual.objects.filter(
+        employee=profile.employee, status=CycleAccrual.Status.REVIEW_REQUIRED, completed_on__gte=lo,
+        completed_on__lte=hi,
+    ).select_related("cycle__group").order_by("completed_on", "id"):
+        out.errors.append(
+            f"Начисление за цикл {accrual.cycle.number} группы «{accrual.cycle.group.name}» "
+            f"({_fmt(accrual.completed_on)}, {accrual.amount} сом) требует проверки: "
+            + " ".join(accrual.review_reasons)
+        )
 
 
 def _overlaps(rules: list[SalaryRule]) -> list[str]:
@@ -378,6 +390,7 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
         payroll.errors = result.errors
         payroll.salary_type = profile.salary_type
         payroll.position = profile.display_position
+        payroll.department = profile.effective_department
         payroll.active_students = result.active_students
         payroll.status = Payroll.Status.CALCULATED
         payroll.return_reason = ""

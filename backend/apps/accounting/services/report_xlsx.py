@@ -103,3 +103,53 @@ def render_individual_xlsx(report: IndividualReport) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _d(value):
+    return value.strftime("%d.%m.%Y") if hasattr(value, "strftime") else (value or "")
+
+
+def render_teacher_report_xlsx(report: dict) -> bytes:
+    """Отчёт по сотрудникам: строки расчёта + строка итога каждого расчёта
+    (выплачено и остаток — только в ней, без деления между группами),
+    итоги по направлениям и общая сумма."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Сотрудники"
+    rows = []
+    for p in report["payrolls"]:
+        for line in p["lines"]:
+            rows.append([
+                p["employee_name"], p["department_display"], line["group_name"] or "—", p["period_label"],
+                p["salary_type_display"], line["students"], line["price_per_student"], line["percentage"],
+                line["lessons_done"], line["target_lessons"], line["accrued"], None, None,
+                _d(p["planned_payment_date"]), p["status_display"],
+            ])
+        rows.append([
+            f"Итого: {p['employee_name']}", p["department_display"], "", p["period_label"], p["salary_type_display"],
+            None, None, None, None, None, p["total"], p["paid"], p["due"], _d(p["planned_payment_date"]),
+            p["status_display"],
+        ])
+    t = report["totals"]
+    _sheet(
+        ws, "Отчёт по сотрудникам",
+        f"Месяц: {report['range_label']} · KGS · сформировано {report['generated_at']:%d.%m.%Y %H:%M} · {report['note']}",
+        [("Сотрудник", 30), ("Направление", 16), ("Группа", 20), ("Расчётный период", 24), ("Тип оплаты", 24),
+         ("Учеников", 10), ("Цена за ученика", 15), ("Процент", 9), ("Проведено уроков", 10), ("Блок", 8),
+         ("Начислено", 14), ("Выплачено", 14), ("Остаток", 14), ("Плановая выплата", 14), ("Статус", 20)],
+        rows, {7, 11, 12, 13},
+        ["Итого", "", "", "", "", None, None, None, None, None, t["total"], t["paid"], t["due"], "", ""],
+    )
+    dep = wb.create_sheet("По направлениям")
+    _sheet(dep, "Итоги по направлениям", report["range_label"],
+           [("Направление", 24), ("Начислено", 16), ("Выплачено", 16), ("Остаток", 16)],
+           [[d["label"], d["accrued"], d["paid"], d["due"]] for d in report["by_department"]], {2, 3, 4},
+           ["Итого", t["total"], t["paid"], t["due"]])
+    if report["by_group"]:
+        grp = wb.create_sheet("По группам")
+        _sheet(grp, "Начислено по группам (без выплат: они относятся к расчёту целиком)", report["range_label"],
+               [("Группа", 30), ("Начислено", 16)], [[g["group_name"], g["accrued"]] for g in report["by_group"]],
+               {2}, None)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

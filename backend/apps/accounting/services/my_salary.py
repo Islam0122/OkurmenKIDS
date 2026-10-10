@@ -19,7 +19,9 @@ from decimal import Decimal
 from django.utils import timezone
 
 from ..models import EmployeeSalaryProfile, Payroll, PayrollAdjustment, PayrollPayment, PayrollPeriod
+from . import estimates as estimates_service
 from .money import ZERO
+from .payout import planned_date_for_period
 from .report_service import period_label
 
 AWAITING = "AWAITING"
@@ -69,8 +71,10 @@ def _row(payroll: Payroll) -> dict:
     shown = status != AWAITING
     adjustments = payroll.adjustments.filter(status=PayrollAdjustment.Status.APPLIED) if shown else []
     accrued = payroll.total_accrued + payroll.total_adjustments
+    planned = planned_date_for_period(payroll.period)
     return {
         "payroll_id": payroll.pk,
+        "planned_payment_date": planned.isoformat() if planned else None,
         "year": payroll.period.year,
         "month": payroll.period.month,
         "period_type": payroll.period.period_type,
@@ -98,6 +102,24 @@ def _payments(employee, payrolls_qs) -> list[dict]:
          "period_label": period_label(p.payroll.period), "payroll_id": p.payroll_id}
         for p in payments
     ]
+
+
+def _estimate(e: dict) -> dict:
+    """Предварительная оценка блока для сотрудника — без чужих данных и без
+    списка студентов (только их число)."""
+    def iso(value):
+        return value.isoformat() if value else None
+
+    return {
+        "cycle_id": e["cycle_id"], "cycle_number": e["cycle_number"], "group_name": e["group_name"],
+        "course_name": e["course_name"], "subjects": e["subjects"], "student_count": e["student_count"],
+        "price_per_student": _money(e["price_per_student"]), "percentage": str(e["percentage"]),
+        "expected_amount": _money(e["expected_amount"]), "lessons_done": e["lessons_done"],
+        "required_lessons": e["required_lessons"], "lessons_remaining": e["lessons_remaining"],
+        "projected_completion_date": iso(e["projected_completion_date"]),
+        "expected_payment_date": iso(e["expected_payment_date"]),
+        "status": e["status"], "status_display": e["status_display"], "warnings": e["warnings"], "note": e["note"],
+    }
 
 
 def build(employee, *, year: int | None = None, month: int | None = None, period_type: str | None = None) -> dict:
@@ -128,6 +150,9 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
             "period_label": f"{start:%d.%m.%Y}–{end:%d.%m.%Y}", "status": AWAITING,
             "status_display": STATUS_LABELS[AWAITING], "is_final": False, "accrued": None, "paid": None,
             "due": None, "lines": [], "adjustments": [],
+            "planned_payment_date": (lambda d: d.isoformat() if d else None)(
+                planned_date_for_period(PayrollPeriod(year=today.year, month=today.month, period_type=half,
+                                                      start_date=start, end_date=end))),
         }
         current.append(row)
     month_accrued = sum((Decimal(r["accrued"]) for r in current if r["accrued"] is not None), ZERO)
@@ -141,6 +166,16 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
         history = history.filter(period__period_type=period_type)
     history = history.prefetch_related("lines", "adjustments")
 
+    # Предварительная зарплата — отдельно от начислений: не входит ни в
+    # «Начислено», ни в «Остаток» (это не задолженность).
+    estimates = estimates_service.for_employee(employee, today=today)
+    estimated = sum((e["expected_amount"] for e in estimates), ZERO)
+    upcoming = sorted(
+        (planned_date_for_period(p.period), p) for p in locked.filter(amount_due__gt=0)
+        if planned_date_for_period(p.period) is not None
+    )
+    next_planned = next((d for d, _ in upcoming if d >= today), upcoming[0][0] if upcoming else None)
+
     return {
         "employee_name": employee.get_full_name() or employee.username,
         "has_profile": profile is not None,
@@ -152,8 +187,10 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
         },
         "totals": {
             "accrued": _money(accrued), "paid": _money(paid), "due": _money(accrued - paid),
-            "pending_approval": _money(pending),
+            "pending_approval": _money(pending), "estimated": _money(estimated),
         },
+        "next_planned_payment_date": next_planned.isoformat() if next_planned else None,
+        "estimates": [_estimate(e) for e in estimates],
         "last_payment": None if last is None else {
             "payment_date": last.payment_date.isoformat(), "amount": _money(last.amount),
         },

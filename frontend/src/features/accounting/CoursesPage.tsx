@@ -16,6 +16,7 @@ import { useAccountingMutation, useAccountingOptions, useCourseCycles, useCourse
 import { Field } from '@/features/worklog/formUi'
 import type { AccountingOptions, CourseCycle, CourseSettings } from '@/types/accounting'
 
+import { BlockReviewSection } from './BlockReviewSection'
 import { Section, formatDate, som, useRunner } from './shared'
 
 type CycleTab = 'IN_PROGRESS' | 'COMPLETED' | 'INVALIDATED'
@@ -32,6 +33,7 @@ const ACCRUAL_TONE = {
   CANCELLED: 'muted',
   CORRECTED: 'warning',
   CORRECTION_REQUIRED: 'danger',
+  REVIEW_REQUIRED: 'warning',
 } as const
 
 /** Интервал начисления курса и циклы групп. Уроки учитываются автоматически;
@@ -48,7 +50,7 @@ export function CoursesPage() {
   return (
     <div>
       <PageHeader
-        title="Курсы и циклы"
+        title="Курсы и блоки"
         description="Проведённые уроки групп учитываются автоматически. На каждом пороге (12, 24, 36… — интервал курса) тренеру сразу начисляется: студенты × стоимость курса × процент / 100. Новый интервал действует на следующие циклы."
         actions={canEdit ? <Button leftIcon={<Plus className="size-4" />} onClick={() => setEditing('new')}>Настроить курс</Button> : null}
       />
@@ -60,15 +62,16 @@ export function CoursesPage() {
           <div className="card overflow-x-auto">
             <table className="data-table">
               <thead>
-                <tr><th>Курс</th><th className="text-right">Стоимость за студента</th><th className="text-right">Интервал, уроков</th><th>Учёт уроков</th><th>Студенты</th><th /></tr>
+                <tr><th>Курс</th><th className="text-right">Стоимость за студента</th><th className="text-right">Интервал, уроков</th><th>Учёт уроков</th><th>Предметы</th><th>Студенты</th><th /></tr>
               </thead>
               <tbody>
                 {settings.data?.results.map((c) => (
                   <tr key={c.id} className={c.is_active ? undefined : 'opacity-60'}>
                     <td className="font-medium text-ink">{c.course_name}{!c.is_active ? <Badge className="ml-2">отключён</Badge> : null}</td>
-                    <td className="text-right">{som(c.price_per_student)}</td>
+                    <td className="text-right">{som(c.current_price ?? c.price_per_student)}</td>
                     <td className="text-right">{c.required_lessons}</td>
                     <td>{c.count_lessons_from ? `с ${formatDate(c.count_lessons_from)}` : 'с первого урока'}</td>
+                    <td className="text-xs">{c.counted_subjects_names.length ? c.counted_subjects_names.join(', ') : 'все уроки'}</td>
                     <td className="text-xs">{c.student_count_rule_display}</td>
                     <td className="text-right">
                       {canEdit ? <Button size="sm" variant="ghost" leftIcon={<Pencil className="size-3.5" />} onClick={() => setEditing(c)}>Изменить</Button> : null}
@@ -79,6 +82,8 @@ export function CoursesPage() {
             </table>
           </div>
         )}
+
+      <BlockReviewSection canOperate={canEdit} />
 
       <Section title="Циклы групп">
         <Tabs
@@ -175,13 +180,16 @@ function SettingsModal({ options, current, taken, onClose }: {
     required_lessons: current ? String(current.required_lessons) : '',
     count_lessons_from: current?.count_lessons_from ?? '',
     student_count_rule: current?.student_count_rule ?? 'ON_COMPLETION',
+    counted_subjects: current?.counted_subjects ?? [],
     is_active: current?.is_active ?? true,
   })
   const { run, busy } = useRunner()
   const mutate = useAccountingMutation(async (fn: () => Promise<unknown>) => fn())
   const set = (patch: Partial<typeof form>) => setForm({ ...form, ...patch })
+  const { price_per_student, ...rest } = form
+  // Стоимость задаётся только при создании; дальше — новой версией тарифа.
   const body = {
-    ...form,
+    ...(current ? rest : form),
     course: Number(form.course),
     required_lessons: Number(form.required_lessons),
     count_lessons_from: form.count_lessons_from || null,
@@ -194,7 +202,7 @@ function SettingsModal({ options, current, taken, onClose }: {
   return (
     <Modal isOpen onClose={onClose} title={current ? `Курс «${current.course_name}»` : 'Настроить курс'}>
       {current ? (
-        <p className="mb-3 text-sm text-ink-secondary">Новый интервал и стоимость действуют на следующие циклы; завершённые циклы и утверждённые начисления не меняются.</p>
+        <p className="mb-3 text-sm text-ink-secondary">Новый интервал и предметы действуют на следующие циклы; завершённые циклы и утверждённые начисления не меняются. Стоимость меняется в разделе «Стоимость курсов».</p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         {!current ? (
@@ -204,9 +212,11 @@ function SettingsModal({ options, current, taken, onClose }: {
               onChange={(e) => set({ course: e.target.value })} />
           </Field>
         ) : null}
-        <Field label="Стоимость за студента, сом" required htmlFor="cs-price">
-          <Input id="cs-price" type="number" min="0.01" step="0.01" value={form.price_per_student} onChange={(e) => set({ price_per_student: e.target.value })} />
-        </Field>
+        {!current ? (
+          <Field label="Стоимость за студента в месяц, сом" required htmlFor="cs-price" help="Первая версия тарифа">
+            <Input id="cs-price" type="number" min="0.01" step="0.01" value={price_per_student} onChange={(e) => set({ price_per_student: e.target.value })} />
+          </Field>
+        ) : null}
         <Field label="Интервал начисления, уроков" required htmlFor="cs-lessons" help="12 → пороги 12, 24, 36…; 20 → 20, 40, 60…">
           <Input id="cs-lessons" type="number" min="1" value={form.required_lessons} onChange={(e) => set({ required_lessons: e.target.value })} />
         </Field>
@@ -218,6 +228,20 @@ function SettingsModal({ options, current, taken, onClose }: {
             onChange={(e) => set({ student_count_rule: e.target.value })} />
         </Field>
       </div>
+      <fieldset className="mt-3">
+        <legend className="field-label mb-1.5">Учитываемые предметы</legend>
+        <p className="mb-2 text-xs text-ink-muted">Только уроки этих предметов входят в блок (например, только IT). Ничего не выбрано — все уроки группы.</p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {options.subjects.map((sub) => (
+            <label key={sub.id} className="flex items-center gap-1.5 text-sm">
+              <input type="checkbox" checked={form.counted_subjects.includes(sub.id)}
+                onChange={(e) => set({ counted_subjects: e.target.checked
+                  ? [...form.counted_subjects, sub.id] : form.counted_subjects.filter((id) => id !== sub.id) })} />
+              {sub.name}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       {current ? (
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} />

@@ -25,9 +25,9 @@ ACCOUNTANT_GROUP = "Accountant"
 # Ни одного `delete_*`, журнал аудита — только просмотр.
 _VIEW = ("studentpayment", "employeesalaryprofile", "salaryrule", "payrollperiod", "payroll", "payrollline",
          "payrolladjustment", "payrollpayment", "payrollauditlog", "coursepayrollsettings", "coursecycle",
-         "cycleaccrual")
+         "cycleaccrual", "coursepriceversion", "cyclelesson")
 _WRITE = ("studentpayment", "employeesalaryprofile", "salaryrule", "payrollperiod", "payroll", "payrollline",
-          "payrolladjustment", "payrollpayment", "coursepayrollsettings")
+          "payrolladjustment", "payrollpayment", "coursepayrollsettings", "coursepriceversion", "cycleaccrual")
 ACCOUNTANT_PERMISSIONS = tuple(
     [f"view_{m}" for m in _VIEW] + [f"add_{m}" for m in _WRITE] + [f"change_{m}" for m in _WRITE]
 )

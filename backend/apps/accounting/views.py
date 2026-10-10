@@ -19,7 +19,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.academy.models import Course, Group, Student
-from apps.users.models import User
+from apps.users.models import Subject, User
 
 from . import serializers as s
 from .filters import filter_payrolls
@@ -27,6 +27,9 @@ from .models import (
     ALLOWED_SALARY_TYPES,
     CourseCycle,
     CoursePayrollSettings,
+    CoursePriceVersion,
+    CycleAccrual,
+    Department,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -41,9 +44,14 @@ from .services import AccountingError
 from .services import approval_service, cycles, payment_service, payroll_calculator, report_service, salary_rules
 from .services import student_payments as student_payment_service
 from .services.periods import close_period, get_or_create_period
-from .services import my_salary
-from .services.report_pdf import render_individual_pdf, render_my_salary_pdf, render_period_pdf
-from .services.report_xlsx import render_individual_xlsx, render_period_xlsx
+from .services import analytics, estimates, my_salary, pricing
+from .services.report_pdf import (
+    render_individual_pdf,
+    render_my_salary_pdf,
+    render_period_pdf,
+    render_teacher_report_pdf,
+)
+from .services.report_xlsx import render_individual_xlsx, render_period_xlsx, render_teacher_report_xlsx
 
 TAG = ["Accounting"]
 
@@ -168,6 +176,8 @@ class OptionsView(APIView):
             "student_payment_methods": [{"value": v, "label": l} for v, l in StudentPayment.Method.choices],
             "adjustment_kinds": [{"value": v, "label": l} for v, l in PayrollAdjustment.Kind.choices],
             "payroll_statuses": [{"value": v, "label": l} for v, l in Payroll.Status.choices],
+            "departments": [{"value": v, "label": l} for v, l in Department.choices],
+            "subjects": [{"id": sub.pk, "name": sub.name} for sub in Subject.objects.order_by("name")],
             **capabilities(request.user),
         })
 
@@ -219,6 +229,7 @@ class EmployeeListView(APIView):
                 profiles = profiles.filter(Q(employee__first_name__icontains=part) | Q(employee__last_name__icontains=part))
         if q.get("salary_type"):
             profiles = profiles.filter(salary_type=q["salary_type"])
+        department = q.get("department")
         if q.get("employee"):
             profiles = profiles.filter(employee_id=_int(q["employee"], "employee"))
         if q.get("program"):
@@ -252,6 +263,8 @@ class EmployeeListView(APIView):
             )
             if payment_status and status_value != payment_status:
                 continue
+            if department and profile.effective_department != department:
+                continue
             result.append({
                 "profile_id": profile.pk,
                 "employee": profile.employee_id,
@@ -259,6 +272,8 @@ class EmployeeListView(APIView):
                 "position": profile.display_position,
                 "salary_type": profile.salary_type,
                 "salary_type_display": profile.get_salary_type_display(),
+                "department": profile.effective_department,
+                "department_display": Department(profile.effective_department).label,
                 # Оклад — в месячном периоде, процент — в половинах месяца.
                 "calc_period": "MONTH" if profile.salary_type == "FIXED" else "HALF",
                 "is_active": profile.is_active,
@@ -463,6 +478,189 @@ class CourseCycleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
     @action(detail=False, methods=["post"])
     def sync(self, request):
         return Response({"completed": cycles.sync_all()})
+
+
+@extend_schema(tags=TAG, parameters=[OpenApiParameter("course", int)])
+class CoursePriceVersionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """История тарифов курса: чтение — бухгалтер, директор, администратор;
+    новая версия — только бухгалтер. Версии не редактируются и не удаляются."""
+
+    pagination_class = AccountingPagination
+    permission_classes = [AccountingAccess]
+    serializer_class = s.CoursePriceVersionSerializer
+    filterset_fields = ("course", "is_migrated")
+
+    def get_queryset(self):
+        return CoursePriceVersion.objects.select_related("course", "created_by")
+
+    @extend_schema(request=s.CoursePriceCreateSerializer, responses=s.CoursePriceVersionSerializer)
+    def create(self, request):
+        data = _valid(s.CoursePriceCreateSerializer, request)
+        try:
+            version = pricing.set_price(actor=request.user, **data)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response(s.CoursePriceVersionSerializer(version).data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=TAG)
+class CycleAccrualViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Начисления за завершённые циклы (блоки). `status=REVIEW_REQUIRED` —
+    спорные: смена тренера внутри блока или второй блок группы за месяц."""
+
+    pagination_class = AccountingPagination
+    permission_classes = [AccountingAccess]
+    serializer_class = s.CycleAccrualSerializer
+    filterset_fields = ("status", "employee", "cycle__group", "cycle__course", "payroll")
+
+    def get_queryset(self):
+        return CycleAccrual.objects.select_related(
+            "employee", "cycle__group", "cycle__course", "reviewed_by", "payroll__period",
+        ).order_by("-completed_on", "id")
+
+    @extend_schema(request=s.CycleAccrualReviewSerializer, responses=s.CycleAccrualSerializer)
+    @action(detail=True, methods=["post"])
+    def review(self, request, pk=None):
+        data = _valid(s.CycleAccrualReviewSerializer, request)
+        try:
+            accrual = cycles.review_accrual(self.get_object(), actor=request.user, **data)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response(s.CycleAccrualSerializer(self.get_queryset().get(pk=accrual.pk)).data)
+
+
+def _jsonable(value):
+    import datetime as dt
+
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (dt.date, dt.datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _paginate_list(request, rows: list, view) -> Response:
+    paginator = AccountingPagination()
+    page = paginator.paginate_queryset(rows, request, view=view)
+    return paginator.get_paginated_response(_jsonable(page))
+
+
+@extend_schema(tags=TAG, parameters=[
+    OpenApiParameter("group", int), OpenApiParameter("course", int), OpenApiParameter("employee", int),
+])
+class EstimateListView(APIView):
+    """Предварительные оценки по всем незавершённым блокам (не начисления)."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        q = request.query_params
+        cycles.sync_all()
+        rows = estimates.all_open(group=_int(q.get("group"), "group"), course=_int(q.get("course"), "course"),
+                                  employee=_int(q.get("employee"), "employee"))
+        return _paginate_list(request, rows, self)
+
+
+# ---------------------------------------------------------------------------
+# Аналитика директора и отчёт по сотрудникам (только чтение)
+# ---------------------------------------------------------------------------
+
+_ANALYTICS_PARAMS = [
+    OpenApiParameter("year", int), OpenApiParameter("month", int), OpenApiParameter("department", str),
+    OpenApiParameter("employee", int), OpenApiParameter("group", int), OpenApiParameter("salary_type", str),
+    OpenApiParameter("status", str), OpenApiParameter("period_type", str),
+]
+
+
+def _analytics_query(request) -> tuple[int, int, dict]:
+    q = request.query_params
+    today = timezone.localdate()
+    year, month = _int(q.get("year"), "year") or today.year, _int(q.get("month"), "month") or today.month
+    if not 1 <= month <= 12:
+        raise ValidationError({"month": "Месяц должен быть от 1 до 12."})
+    department = q.get("department") or None
+    if department and department not in Department.values:
+        raise ValidationError({"department": "Неизвестное направление."})
+    status_value = q.get("status") or None
+    if status_value and status_value not in Payroll.Status.values:
+        raise ValidationError({"status": "Неизвестный статус."})
+    period_type = q.get("period_type") or None
+    if period_type and period_type not in PayrollPeriod.PeriodType.values:
+        raise ValidationError({"period_type": "Неизвестный расчётный период."})
+    return year, month, {
+        "department": department, "employee": _int(q.get("employee"), "employee"),
+        "group": _int(q.get("group"), "group"), "salary_type": q.get("salary_type") or None,
+        "status": status_value, "period_type": period_type,
+    }
+
+
+@extend_schema(tags=TAG, parameters=_ANALYTICS_PARAMS)
+class AnalyticsSummaryView(APIView):
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        year, month, filters = _analytics_query(request)
+        return Response(_jsonable(analytics.summary(year, month, filters)))
+
+
+@extend_schema(tags=TAG, parameters=_ANALYTICS_PARAMS)
+class AnalyticsByDepartmentView(APIView):
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        year, month, filters = _analytics_query(request)
+        filters.pop("department", None)
+        rows = analytics._month_payrolls(year, month, filters)
+        return Response({"year": year, "month": month, "results": _jsonable(analytics.by_department(rows))})
+
+
+@extend_schema(tags=TAG, parameters=_ANALYTICS_PARAMS)
+class TeacherReportView(APIView):
+    """Отчёт по сотрудникам: расчёты месяца со строками (группа, студенты,
+    цена, процент, уроки) и итогами. Пагинация — по расчётам; итоги — по
+    всему отбору."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        year, month, filters = _analytics_query(request)
+        report = analytics.teacher_report(year, month, filters)
+        paginator = AccountingPagination()
+        page = paginator.paginate_queryset(report["payrolls"], request, view=self)
+        body = {k: v for k, v in report.items() if k != "payrolls"}
+        body.update({"count": paginator.page.paginator.count, "next": paginator.get_next_link(),
+                     "previous": paginator.get_previous_link(), "results": page})
+        return Response(_jsonable(body))
+
+
+@extend_schema(tags=TAG, parameters=_ANALYTICS_PARAMS)
+class TeacherReportXlsxView(APIView):
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    def get(self, request):
+        year, month, filters = _analytics_query(request)
+        content = render_teacher_report_xlsx(analytics.teacher_report(year, month, filters))
+        return _file(content, f"teachers-{year}-{month:02d}.xlsx", XLSX)
+
+
+@extend_schema(tags=TAG, parameters=_ANALYTICS_PARAMS)
+class TeacherReportPdfView(APIView):
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    def get(self, request):
+        year, month, filters = _analytics_query(request)
+        content = render_teacher_report_pdf(analytics.teacher_report(year, month, filters))
+        return _file(content, f"teachers-{year}-{month:02d}.pdf", PDF)
 
 
 # ---------------------------------------------------------------------------
@@ -714,7 +912,13 @@ class AuditLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     filterset_fields = ("entity_type", "entity_id", "action", "actor", "payroll")
 
     def get_queryset(self):
-        return PayrollAuditLog.objects.select_related("actor")
+        qs = PayrollAuditLog.objects.select_related("actor")
+        q = self.request.query_params
+        if q.get("date_from"):
+            qs = qs.filter(created_at__date__gte=q["date_from"])
+        if q.get("date_to"):
+            qs = qs.filter(created_at__date__lte=q["date_to"])
+        return qs
 
 
 # ---------------------------------------------------------------------------
@@ -824,3 +1028,33 @@ class MySalaryPdfView(APIView):
         data = my_salary.build(request.user, **_my_salary_filters(request))
         content = render_my_salary_pdf(data, timezone.localtime())
         return _file(content, f"my-salary-{timezone.localdate():%Y-%m-%d}.pdf", PDF)
+
+
+@extend_schema(tags=TAG)
+class MyEstimatesView(APIView):
+    """Предварительная зарплата по своим незавершённым блокам — только своя."""
+
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        rows = [my_salary._estimate(e) for e in estimates.for_employee(request.user)]
+        return Response({"results": rows, "note": estimates.NOTE})
+
+
+@extend_schema(tags=TAG)
+class MyPaymentsView(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Свои подтверждённые выплаты — только чтение."""
+
+    pagination_class = AccountingPagination
+    permission_classes = [IsAuthenticated]
+    serializer_class = s.PayrollPaymentSerializer
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return PayrollPayment.objects.none()
+        return (
+            PayrollPayment.objects.filter(payroll__employee=self.request.user, status=PayrollPayment.Status.CONFIRMED)
+            .select_related("created_by", "payroll").order_by("-payment_date", "-id")
+        )
