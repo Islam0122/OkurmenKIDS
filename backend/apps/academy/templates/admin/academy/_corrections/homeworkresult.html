@@ -1,0 +1,30 @@
+<div class="ok-card" id="correction">
+  <div class="ok-card-header"><i class="bi bi-pencil-square"></i><span>Исправить результат</span></div>
+  <div class="ok-card-body">
+    {% include "admin/academy/_corrections/notice.html" %}
+    <form method="post" action="">
+      {% csrf_token %}
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label" for="id_status">Статус</label>
+          <select class="ok-input" id="id_status" name="status">
+            {% for value, label in correction.statuses %}
+              <option value="{{ value }}"{% if value == result.status %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label" for="id_score">Оценка (0–10)</label>
+          <input class="ok-input" id="id_score" name="score" type="number" min="0" max="10" value="{{ result.score|default_if_none:'' }}">
+        </div>
+        <div class="ok-field-group" style="grid-column: 1 / -1;">
+          <label class="ok-label" for="id_comment">Комментарий</label>
+          <input class="ok-input" id="id_comment" name="comment" maxlength="255" value="{{ result.comment }}">
+        </div>
+      </div>
+      <div class="ok-form-actions">
+        <button type="submit" class="ok-btn-primary">Сохранить исправление</button>
+      </div>
+    </form>
+  </div>
+</div>

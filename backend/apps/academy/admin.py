@@ -16,6 +16,7 @@ from django.utils.safestring import mark_safe
 
 from apps.data_io.admin_mixin import TemplatedIOAdminMixin
 from apps.users.import_export.formats import UnsupportedFileFormat, is_valid_phone
+from apps.users.permissions import is_admin_user
 
 from .control_admin_views import (
     control_export_excel_view,
@@ -1584,9 +1585,12 @@ class LessonAdmin(admin.ModelAdmin):
 
 
 # ---------------------------------------------------------------------------
-# Homework, its results, and Attendance — Admin's read-only control center
+# Homework, its results, and Attendance — Admin's control center
 # (spec: Admin controls/watches/analyses/searches/drills-down here, never
-# creates or edits directly; a Teacher records this data themselves, through
+# creates or deletes; the one write is a *correction* of an existing record
+# from its detail page — status / score / comment, the homework's title /
+# deadline — also after the lesson is completed, through
+# services.admin_corrections (admin role re-checked, every change logged); a Teacher records this data themselves, through
 # their own lesson/homework-checking screens — see
 # services.attendance_service.bulk_mark_attendance and
 # services.homework_service.bulk_upsert_homework_results). Both the
@@ -1602,7 +1606,10 @@ class HomeworkAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
-        return False
+        # An administrator may correct the record from its detail page — also
+        # after the lesson is completed (services.admin_corrections, which
+        # re-checks the role and logs every change). Never a Trainer.
+        return request is not None and is_admin_user(getattr(request, "user", None))
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -1622,7 +1629,10 @@ class HomeworkResultAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
-        return False
+        # An administrator may correct the record from its detail page — also
+        # after the lesson is completed (services.admin_corrections, which
+        # re-checks the role and logs every change). Never a Trainer.
+        return request is not None and is_admin_user(getattr(request, "user", None))
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -1642,7 +1652,10 @@ class AttendanceAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
-        return False
+        # An administrator may correct the record from its detail page — also
+        # after the lesson is completed (services.admin_corrections, which
+        # re-checks the role and logs every change). Never a Trainer.
+        return request is not None and is_admin_user(getattr(request, "user", None))
 
     def has_delete_permission(self, request, obj=None):
         return False

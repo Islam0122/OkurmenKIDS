@@ -1,0 +1,26 @@
+<div class="ok-card" id="correction">
+  <div class="ok-card-header"><i class="bi bi-pencil-square"></i><span>Исправить задание</span></div>
+  <div class="ok-card-body">
+    {% include "admin/academy/_corrections/notice.html" %}
+    <form method="post" action="">
+      {% csrf_token %}
+      <div class="ok-grid-2">
+        <div class="ok-field-group">
+          <label class="ok-label" for="id_title">Название</label>
+          <input class="ok-input" id="id_title" name="title" maxlength="255" required value="{{ homework.title }}">
+        </div>
+        <div class="ok-field-group">
+          <label class="ok-label" for="id_deadline">Срок сдачи</label>
+          <input class="ok-input" id="id_deadline" name="deadline" type="date" value="{{ homework.deadline|date:'Y-m-d' }}">
+        </div>
+        <div class="ok-field-group" style="grid-column: 1 / -1;">
+          <label class="ok-label" for="id_description">Описание</label>
+          <textarea class="ok-input" id="id_description" name="description" rows="3">{{ homework.description }}</textarea>
+        </div>
+      </div>
+      <div class="ok-form-actions">
+        <button type="submit" class="ok-btn-primary">Сохранить исправление</button>
+      </div>
+    </form>
+  </div>
+</div>
