@@ -43,7 +43,7 @@ export function StudentPaymentsPage() {
     <div>
       <PageHeader
         title="Платежи студентов"
-        description="Фактические оплаты и возвраты — база для процента тренеров. Платежи не удаляются: ошибочный отменяется с причиной."
+        description="Учёт поступлений и возвратов. На зарплату не влияют: процент считается от фиксированной стоимости курса. Платежи не удаляются — ошибочный отменяется с причиной."
         actions={canEdit ? <Button leftIcon={<Plus className="size-4" />} onClick={() => setCreating({})}>Внести платёж</Button> : null}
       />
       <FilterBar>

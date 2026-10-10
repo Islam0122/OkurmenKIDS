@@ -104,15 +104,31 @@ class FlowTests(AccountingFixture):
 
     def test_full_cycle(self):
         acc, boss = self.client_for(self.accountant), self.client_for(self.director)
-        r = acc.post(f"{API}/salary-profiles/", {"employee": self.trainer_user.pk, "salary_type": "PER_STUDENT",
+        bad = acc.post(f"{API}/salary-profiles/", {"employee": self.trainer_user.pk, "salary_type": "COMBINED",
+                                                    "effective_from": "2026-01-01"}, format="json")
+        self.assertEqual(bad.status_code, 400)
+        r = acc.post(f"{API}/salary-profiles/", {"employee": self.trainer_user.pk, "salary_type": "PERCENT",
                                                   "effective_from": "2026-01-01"}, format="json")
         self.assertEqual(r.status_code, 201, r.content)
-        r = acc.post(f"{API}/salary-rules/", {"employee_profile": r.json()["id"], "rule_type": "PER_STUDENT",
-                                               "amount": "11000", "effective_from": "2026-01-01"}, format="json")
+        profile_id = r.json()["id"]
+        bad = acc.post(f"{API}/salary-rules/", {"employee_profile": profile_id, "rule_type": "PER_STUDENT",
+                                                 "amount": "11000", "effective_from": "2026-01-01"}, format="json")
+        self.assertEqual(bad.status_code, 400)
+        r = acc.post(f"{API}/salary-rules/", {"employee_profile": profile_id, "rule_type": "PERCENT",
+                                               "percentage": "50", "effective_from": "2026-01-01"}, format="json")
         self.assertEqual(r.status_code, 201, r.content)
-        self.assertEqual(r.json()["calculation_method"], "STUDENT_DAYS")
+        self.assertEqual(r.json()["calculation_method"], "STANDARD")
+        r = acc.post(f"{API}/course-settings/", {"course": self.course.pk, "price_per_student": "11000",
+                                                  "required_lessons": 12, "count_lessons_from": "2026-01-01"},
+                     format="json")
+        self.assertEqual(r.status_code, 201, r.content)
         for _ in range(3):
             self.student()
+        self.lessons(self.group_a, [day(9, d) for d in range(1, 12)])
+        cycles = acc.get(f"{API}/cycles/?status=IN_PROGRESS").json()["results"]
+        self.assertEqual([(c["group_name"], c["lessons_done"], c["required_lessons"]) for c in cycles],
+                         [("Group A", 11, 12), ("Group B", 0, 12)])
+        self.lessons(self.group_a, [day(9, 12)])
         r = acc.post(f"{API}/periods/", {"year": 2026, "month": 9, "period_type": FIRST}, format="json")
         self.assertEqual(r.status_code, 201)
         period_id = r.json()["id"]
@@ -132,7 +148,13 @@ class FlowTests(AccountingFixture):
         detail = acc.get(f"{API}/payrolls/{payroll_id}/").json()
         self.assertEqual(len(detail["lines"]), 1)
         self.assertEqual(detail["lines"][0]["metadata"]["students_count"], 3)
-        self.assertNotIn("students", detail["lines"][0]["metadata"])
+        self.assertEqual(detail["lines"][0]["metadata"]["lessons"], 12)
+        self.assertEqual([c["group_name"] for c in detail["open_cycles"]], ["Group A", "Group B"])
+        done = acc.get(f"{API}/cycles/?status=COMPLETED").json()["results"]
+        self.assertEqual((done[0]["completed_on"], done[0]["student_count"], done[0]["base_amount"]),
+                         ("2026-09-12", 3, "33000.00"))
+        self.assertEqual(done[0]["accruals"][0]["amount"], "16500.00")
+        self.assertNotIn("student_ids", done[0])
         self.assertTrue(detail["audit"])
 
         r = acc.post(f"{API}/payrolls/{payroll_id}/payments/", {"amount": "100", "payment_date": "2026-09-16"},
@@ -213,8 +235,10 @@ class ReportTests(AccountingFixture):
         super().setUp()
         self.rule(self.profile(), R.FIXED, amount=D("40000"))
         self.other = make_user("other", User.Role.ASSISTANT)
-        self.rule(self.profile(self.other), R.REVENUE_PERCENT, percentage=D("10"), group=self.group_a)
-        self.pay(self.student(), 30000, day(9, 4))
+        self.rule(self.profile(self.other, "PERCENT"), R.PERCENT, percentage=D("10"), group=self.group_a)
+        self.course_settings(price="30000", lessons=12)
+        self.student()
+        self.lessons(self.group_a, [day(9, d) for d in range(1, 13)])  # 1 × 30 000 × 10 % = 3 000
         self.a = self.calc(FIRST)
         self.b = self.calc(FIRST, self.other)
         self.c = self.calc(SECOND)

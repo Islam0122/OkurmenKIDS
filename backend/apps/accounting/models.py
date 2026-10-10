@@ -151,11 +151,20 @@ class StudentPayment(models.Model):
 # ---------------------------------------------------------------------------
 
 class SalaryType(models.TextChoices):
+    """Разрешены только два типа оплаты: оклад или процент от стоимости
+    курса. Комбинированной схемы нет. Остальные значения — устаревшие (из
+    первой версии модуля): остаются в истории, новые записи их не получают,
+    а расчёт по ним выдаёт ошибку."""
+
     FIXED = "FIXED", "Фиксированный оклад"
-    REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты студентов"
-    PER_STUDENT = "PER_STUDENT", "За активного студента"
-    PER_GROUP = "PER_GROUP", "За группу"
-    COMBINED = "COMBINED", "Комбинированная схема"
+    PERCENT = "PERCENT", "Процент от стоимости курса"
+    REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты студентов (устар.)"
+    PER_STUDENT = "PER_STUDENT", "За активного студента (устар.)"
+    PER_GROUP = "PER_GROUP", "За группу (устар.)"
+    COMBINED = "COMBINED", "Комбинированная схема (устар.)"
+
+
+ALLOWED_SALARY_TYPES = (SalaryType.FIXED, SalaryType.PERCENT)
 
 
 class EmployeeSalaryProfile(models.Model):
@@ -198,6 +207,8 @@ class EmployeeSalaryProfile(models.Model):
     def clean(self):
         if self.effective_to and self.effective_to < self.effective_from:
             raise ValidationError({"effective_to": "Дата окончания раньше даты начала."})
+        if self.salary_type not in ALLOWED_SALARY_TYPES:
+            raise ValidationError({"salary_type": "Допустимы только «Фиксированный оклад» и «Процент от стоимости курса»."})
 
 
 class SalaryRule(models.Model):
@@ -211,10 +222,12 @@ class SalaryRule(models.Model):
 
     class RuleType(models.TextChoices):
         FIXED = "FIXED", "Оклад"
-        REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты студентов"
-        PER_STUDENT = "PER_STUDENT", "За активного студента"
-        PER_GROUP = "PER_GROUP", "За группу"
-        BONUS = "BONUS", "Дополнительное начисление"
+        PERCENT = "PERCENT", "Процент от стоимости курса"
+        # Устаревшие типы первой версии — только история, не рассчитываются.
+        REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты студентов (устар.)"
+        PER_STUDENT = "PER_STUDENT", "За активного студента (устар.)"
+        PER_GROUP = "PER_GROUP", "За группу (устар.)"
+        BONUS = "BONUS", "Дополнительное начисление (устар.)"
 
     class Method(models.TextChoices):
         # FIXED / PER_GROUP
@@ -234,8 +247,11 @@ class SalaryRule(models.Model):
         DEDUCT = "DEDUCT", "Вычитать в периоде возврата (со ссылкой на исходный платёж)"
         IGNORE = "IGNORE", "Не учитывать возвраты в зарплате"
 
+    ACTIVE_TYPES = (RuleType.FIXED, RuleType.PERCENT)
+
     METHODS_BY_TYPE = {
         RuleType.FIXED: (Method.SPLIT, Method.PRORATE_DAYS),
+        RuleType.PERCENT: (Method.STANDARD,),
         RuleType.PER_GROUP: (Method.PRORATE_DAYS, Method.SPLIT),
         RuleType.PER_STUDENT: (Method.STUDENT_DAYS, Method.SNAPSHOT),
         RuleType.REVENUE_PERCENT: (Method.STANDARD,),
@@ -304,7 +320,12 @@ class SalaryRule(models.Model):
         errors = {}
         if self.effective_to and self.effective_to < self.effective_from:
             errors["effective_to"] = "Дата окончания раньше даты начала."
-        if self.rule_type == self.RuleType.REVENUE_PERCENT:
+        if self.rule_type not in self.ACTIVE_TYPES:
+            raise ValidationError({"rule_type": "Допустимы только правила «Оклад» и «Процент от стоимости курса»."})
+        if self.employee_profile_id and self.employee_profile.salary_type != self.rule_type:
+            raise ValidationError({"rule_type": "Тип правила должен совпадать с типом оплаты сотрудника "
+                                                f"(«{self.employee_profile.get_salary_type_display()}»)."})
+        if self.rule_type in (self.RuleType.PERCENT, self.RuleType.REVENUE_PERCENT):
             if self.percentage is None:
                 errors["percentage"] = "Укажите процент."
         elif self.amount is None:
@@ -462,6 +483,7 @@ class Payroll(models.Model):
 class PayrollLine(models.Model):
     class LineType(models.TextChoices):
         FIXED = "FIXED", "Оклад"
+        PERCENT = "PERCENT", "Процент за завершённый цикл курса"
         REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты"
         REFUND_CORRECTION = "REFUND_CORRECTION", "Корректировка возврата"
         PER_STUDENT = "PER_STUDENT", "За активных студентов"
@@ -617,3 +639,130 @@ class PayrollAuditLog(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Запись журнала аудита нельзя удалить.")
+
+
+# ---------------------------------------------------------------------------
+# Процент от стоимости курса: настройки курса, циклы, начисления по циклу
+# ---------------------------------------------------------------------------
+
+class CoursePayrollSettings(models.Model):
+    """Зарплатные настройки курса (программы): фиксированная стоимость за
+    студента и число уроков в расчётном цикле. Хранятся в бухгалтерии, а не
+    в коде и не в учебной карточке курса: их ведёт бухгалтер. Изменение
+    настроек не трогает уже завершённые циклы — у каждого свой снимок."""
+
+    class StudentCountRule(models.TextChoices):
+        ON_COMPLETION = "ON_COMPLETION", "Активные в группе на дату завершения цикла"
+        DURING_CYCLE = "DURING_CYCLE", "Активные в группе хотя бы один день цикла"
+
+    course = models.OneToOneField(
+        "academy.Course", on_delete=models.PROTECT, related_name="payroll_settings", verbose_name="Курс",
+    )
+    price_per_student = models.DecimalField(
+        **MONEY, validators=[MinValueValidator(Decimal("0.01"))], verbose_name="Стоимость курса за студента, сом",
+    )
+    required_lessons = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1)], verbose_name="Уроков в цикле",
+        help_text="Сколько проведённых уроков завершают расчётный цикл (например 12 или 20).",
+    )
+    count_lessons_from = models.DateField(
+        verbose_name="Учитывать уроки с",
+        help_text="Уроки до этой даты в циклы не входят (старт учёта в бухгалтерии).",
+    )
+    student_count_rule = models.CharField(
+        max_length=20, choices=StudentCountRule.choices, default=StudentCountRule.ON_COMPLETION,
+        verbose_name="Правило учёта студентов",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Активны")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Зарплатные настройки курса"
+        verbose_name_plural = "Зарплатные настройки курсов"
+        ordering = ["course__name"]
+
+    def __str__(self):
+        return f"{self.course}: {self.price_per_student} сом, {self.required_lessons} ур."
+
+
+class CourseCycle(models.Model):
+    """Расчётный цикл курса в группе: каждые `required_lessons` проведённых
+    уроков группы — один цикл. Завершённый цикл — зафиксированный факт со
+    снимком: число уроков, дата последнего необходимого урока, число
+    учитываемых студентов и стоимость курса. Незавершённый — текущий
+    прогресс группы (обновляется при каждой синхронизации)."""
+
+    class Status(models.TextChoices):
+        IN_PROGRESS = "IN_PROGRESS", "Идёт"
+        COMPLETED = "COMPLETED", "Завершён"
+
+    group = models.ForeignKey("academy.Group", on_delete=models.PROTECT, related_name="payroll_cycles")
+    course = models.ForeignKey("academy.Course", on_delete=models.PROTECT, related_name="payroll_cycles")
+    number = models.PositiveIntegerField(verbose_name="Номер цикла в группе")
+    status = models.CharField(max_length=20, choices=Status.choices, db_index=True)
+    required_lessons = models.PositiveSmallIntegerField()
+    lessons_done = models.PositiveSmallIntegerField(default=0)
+    start_date = models.DateField(null=True, blank=True, help_text="Дата первого урока цикла.")
+    completed_on = models.DateField(null=True, blank=True, db_index=True,
+                                    help_text="Дата проведения последнего необходимого урока.")
+    last_lesson_id = models.PositiveBigIntegerField(null=True, blank=True)
+    student_count = models.PositiveIntegerField(null=True, blank=True)
+    student_ids = models.JSONField(default=list, blank=True, help_text="Основание (только id студентов).")
+    student_count_rule = models.CharField(max_length=20, blank=True)
+    course_price = models.DecimalField(**MONEY, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Цикл курса"
+        verbose_name_plural = "Циклы курсов"
+        ordering = ["group", "number"]
+        constraints = [
+            models.UniqueConstraint(fields=["group", "course", "number"], name="unique_course_cycle"),
+            models.UniqueConstraint(
+                fields=["group", "course"], condition=models.Q(status="IN_PROGRESS"), name="unique_open_course_cycle",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.group} · цикл {self.number} ({self.lessons_done}/{self.required_lessons})"
+
+    @property
+    def base_amount(self) -> Decimal | None:
+        if self.student_count is None or self.course_price is None:
+            return None
+        return self.course_price * self.student_count
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Цикл курса нельзя удалить.")
+
+
+class CycleAccrual(models.Model):
+    """Начисление процента сотруднику за завершённый цикл — не более одного
+    на пару (цикл, сотрудник). Строка расчёта пересоздаётся при пересчёте
+    черновика (вместе с ней — эта запись), утверждённое начисление
+    остаётся навсегда со своим снимком."""
+
+    cycle = models.ForeignKey(CourseCycle, on_delete=models.PROTECT, related_name="accruals")
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    payroll = models.ForeignKey(Payroll, on_delete=models.PROTECT, related_name="cycle_accruals")
+    line = models.OneToOneField(PayrollLine, on_delete=models.CASCADE, related_name="cycle_accrual")
+    salary_rule = models.ForeignKey(SalaryRule, on_delete=models.PROTECT, related_name="+")
+    lessons = models.PositiveSmallIntegerField()
+    completed_on = models.DateField()
+    student_count = models.PositiveIntegerField()
+    course_price = models.DecimalField(**MONEY)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    amount = models.DecimalField(**MONEY)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Начисление за цикл"
+        verbose_name_plural = "Начисления за циклы"
+        constraints = [models.UniqueConstraint(fields=["cycle", "employee"], name="unique_cycle_accrual")]
+
+    def __str__(self):
+        return f"{self.employee} · {self.cycle}: {self.amount}"

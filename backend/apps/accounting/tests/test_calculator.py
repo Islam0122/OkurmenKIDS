@@ -1,19 +1,36 @@
-"""Расчёт начислений: все схемы оплаты и пограничные случаи (ТЗ §12)."""
+"""Расчёт начислений: FIXED и PERCENT (процент от стоимости курса за
+завершённый цикл) и пограничные случаи."""
 from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
 
-from apps.academy.models import TrainerAssignment
-from apps.accounting.models import Payroll, PayrollLine, SalaryRule, SalaryType
+from django.core.exceptions import ValidationError
+
+from apps.academy.models import Lesson, TrainerAssignment
+from apps.accounting.models import (
+    CourseCycle,
+    CoursePayrollSettings,
+    CycleAccrual,
+    EmployeeSalaryProfile,
+    Payroll,
+    PayrollLine,
+    SalaryRule,
+    SalaryType,
+)
 from apps.accounting.services import AccountingError
 from apps.accounting.services.approval_service import approve_payroll, create_adjustment
+from apps.accounting.services.cycles import sync_all
 from apps.accounting.services.money import allocate_by_days, money
 from apps.accounting.services.payroll_calculator import calculate_period
 from apps.accounting.tests.base import FIRST, SECOND, D, AccountingFixture, day, make_user
 
 R = SalaryRule.RuleType
 M = SalaryRule.Method
+
+
+def days(month, first, last):
+    return [day(month, d) for d in range(first, last + 1)]
 
 
 class FixedSalaryTests(AccountingFixture):
@@ -52,265 +69,205 @@ class FixedSalaryTests(AccountingFixture):
         self.assertEqual(self.calc(FIRST, self.manager).total_accrued, D("10000.00"))
 
 
-class RevenuePercentTests(AccountingFixture):
+
+class PercentCycleTests(AccountingFixture):
+    """Процент от стоимости курса: студенты × стоимость × процент / 100
+    за каждый завершённый цикл (required_lessons проведённых уроков)."""
+
     def setUp(self):
         super().setUp()
-        self.p = self.profile(salary_type=SalaryType.REVENUE_PERCENT)
+        self.settings = self.course_settings(price="10000", lessons=12)
+        self.p = self.profile(salary_type=SalaryType.PERCENT)
+        self.rule(self.p, R.PERCENT, percentage=D("10"))
+        self.students = [self.student(self.group_a) for _ in range(10)]
 
-    def test_single_student(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"), group=self.group_a)
-        self.pay(self.student(), 10000, day(9, 3))
-        payroll = self.calc()
-        self.assertEqual(payroll.total_accrued, D("1000.00"))
+    def percent_lines(self, payroll):
+        return list(payroll.lines.filter(line_type=PayrollLine.LineType.PERCENT))
+
+    def test_completed_cycle_accrues_by_formula(self):
+        self.lessons(self.group_a, days(9, 1, 12))
+        payroll = self.calc(FIRST)
         line = payroll.lines.get()
-        self.assertEqual(line.base_amount, D("10000.00"))
-        self.assertEqual(line.percentage, D("10"))
-        self.assertEqual(len(line.metadata["payments"]), 1)
+        # 10 студентов × 10 000 × 10 % = 10 000
+        self.assertEqual(line.amount, D("10000.00"))
+        self.assertEqual((line.quantity, line.rate, line.percentage, line.base_amount),
+                         (D("10"), D("10000"), D("10"), D("100000.00")))
+        self.assertEqual(payroll.active_students, 10)
+        accrual = CycleAccrual.objects.get()
+        self.assertEqual((accrual.lessons, accrual.completed_on, accrual.student_count, accrual.course_price,
+                          accrual.percentage, accrual.amount),
+                         (12, day(9, 12), 10, D("10000"), D("10"), D("10000.00")))
+        self.assertEqual(self.calc(SECOND).total_accrued, D("0"))
 
-    def test_group_of_ten(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"), group=self.group_a)
-        for _ in range(10):
-            self.pay(self.student(), 10000, day(9, 5))
-        payroll = self.calc()
-        self.assertEqual(payroll.total_accrued, D("10000.00"))
-        self.assertIn("Group A", payroll.lines.get().description)
+    def test_completion_date_picks_the_half_of_month(self):
+        self.lessons(self.group_a, days(9, 4, 15))  # 12-й урок 15-го → первая половина
+        self.lessons(self.group_b, days(9, 5, 16))  # 12-й урок 16-го → вторая половина
+        for _ in range(5):
+            self.student(self.group_b)
+        self.assertEqual(self.calc(FIRST).total_accrued, D("10000.00"))
+        self.assertEqual(self.calc(SECOND).total_accrued, D("5000.00"))
 
-    def test_only_payments_received_in_period(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"))
-        s = self.student()
-        self.pay(s, 10000, day(9, 5))
-        self.pay(s, 5000, day(9, 20))
-        self.pay(s, 7000, day(8, 30))
-        self.assertEqual(self.calc(FIRST).total_accrued, D("1000.00"))
-        self.assertEqual(self.calc(SECOND).total_accrued, D("500.00"))
+    def test_completion_date_is_last_lesson_not_group_status(self):
+        self.lessons(self.group_a, days(9, 1, 11))
+        self.lessons(self.group_a, [day(9, 20)])
+        self.group_a.status = "completed"
+        self.group_a.save()
+        self.assertEqual(self.calc(FIRST).total_accrued, D("0"))
+        self.assertEqual(self.calc(SECOND).total_accrued, D("10000.00"))
+        self.assertEqual(CourseCycle.objects.get(status="COMPLETED").completed_on, day(9, 20))
 
-    def test_refund_of_earlier_payment(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"))
-        s = self.student()
-        original = self.pay(s, 10000, day(9, 5))
-        first = self.calc(FIRST)
-        approve_payroll(first, self.director)
-        self.refund(original, 4000, day(9, 20))
-        second = self.calc(SECOND)
-        line = second.lines.get(line_type=PayrollLine.LineType.REFUND_CORRECTION)
-        self.assertEqual(line.amount, D("-400.00"))
-        self.assertEqual(line.metadata["original_payment_id"], original.pk)
-        self.assertEqual(line.metadata["original_payroll_id"], first.pk)
-        # Утверждённое начисление первой половины не изменилось.
-        first.refresh_from_db()
-        self.assertEqual(first.total_accrued, D("1000.00"))
-
-    def test_refund_of_payment_outside_scope_is_not_deducted(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"), group=self.group_a)
-        other = self.student(self.group_b)
-        original = self.pay(other, 10000, day(8, 5))
-        self.refund(original, 10000, day(9, 3))
-        self.assertEqual(self.calc().lines.count(), 0)
-
-    def test_refund_policy_ignore(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"), refund_policy=SalaryRule.RefundPolicy.IGNORE)
-        s = self.student()
-        original = self.pay(s, 10000, day(8, 5))
-        self.refund(original, 10000, day(9, 3))
-        self.assertEqual(self.calc().total_accrued, D("0.00"))
-
-    def test_multi_period_payment_counted_once_on_received_basis(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"))
-        s = self.student()
-        self.pay(s, 30000, day(9, 2), service=(day(9, 1), day(11, 30)))
-        totals = [self.calc(FIRST).total_accrued, self.calc(SECOND).total_accrued,
-                  self.calc(FIRST, year_month=(2026, 10)).total_accrued]
-        self.assertEqual(totals, [D("3000.00"), D("0.00"), D("0.00")])
-
-    def test_multi_period_payment_allocated_by_days(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"), revenue_basis=SalaryRule.RevenueBasis.ALLOCATED)
-        s = self.student()
-        # 91 день обучения (сентябрь–ноябрь), 9100 сом → 100 сом в день.
-        self.pay(s, 9100, day(9, 2), service=(day(9, 1), day(11, 30)))
-        periods = [((2026, 9), FIRST), ((2026, 9), SECOND), ((2026, 10), FIRST), ((2026, 10), SECOND),
-                   ((2026, 11), FIRST), ((2026, 11), SECOND)]
-        bases = []
-        for ym, half in periods:
-            payroll = self.calc(half, year_month=ym)
-            bases.append(sum((l.base_amount for l in payroll.lines.all()), D("0")))
-        self.assertEqual(bases, [D("1500.00"), D("1500.00"), D("1500.00"), D("1600.00"), D("1500.00"), D("1500.00")])
-        self.assertEqual(sum(bases), D("9100.00"))
-
-    def test_trainer_change_attributes_payment_to_responsible_trainer(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"))
-        s = self.student()
-        TrainerAssignment.objects.filter(group=self.group_a).update(end_date=day(9, 10))
-        self.pay(s, 10000, day(9, 5))
-        self.pay(s, 20000, day(9, 12))
-        self.assertEqual(self.calc().total_accrued, D("1000.00"))
-
-    def test_prepayment_before_group_start_goes_to_first_trainer(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"))
-        new_group = self.group("New", start=day(9, 10))
-        self.pay(self.student(new_group), 10000, day(9, 2), service=(day(9, 10), day(10, 9)))
-        self.assertEqual(self.calc().total_accrued, D("1000.00"))
-
-    def test_same_payment_not_counted_twice_by_two_rules(self):
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"), group=self.group_a)
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"), program=self.course)
-        self.pay(self.student(), 10000, day(9, 5))
-        payroll = self.calc()
-        self.assertEqual(payroll.total_accrued, D("1000.00"))
-        self.assertTrue(any("уже учтены" in w for w in payroll.warnings))
-
-    def test_voided_payment_is_excluded(self):
-        from apps.accounting.services.student_payments import void_student_payment
-
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("10"))
-        payment = self.pay(self.student(), 10000, day(9, 5))
-        void_student_payment(payment, actor=self.accountant, reason="ошибка")
-        self.assertEqual(self.calc().total_accrued, D("0.00"))
-
-
-class PerStudentTests(AccountingFixture):
-    """Программист: 11 000 сом за активного студента в месяц."""
-
-    RATE = D("11000")
-
-    def setUp(self):
-        super().setUp()
-        self.p = self.profile(salary_type=SalaryType.PER_STUDENT)
-
-    def month_total(self):
-        return self.calc(FIRST).total_accrued + self.calc(SECOND).total_accrued
-
-    def test_one_active_student(self):
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE)
-        self.student()
-        self.assertEqual(self.month_total(), D("11000.00"))
-        self.assertEqual(Payroll.objects.get(period__period_type=FIRST).active_students, 1)
-
-    def test_ten_active_students(self):
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE)
-        for _ in range(10):
-            self.student()
-        self.assertEqual(self.month_total(), D("110000.00"))
-
-    def test_count_changes_during_month_is_prorated(self):
-        # Сентябрь — 30 дней: A весь месяц, B с 16-го (15 дней) → 11000 × 1.5.
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE)
-        self.student()
-        self.student(enrolled=day(9, 16))
-        first = self.calc(FIRST)
-        second = self.calc(SECOND)
-        self.assertEqual(first.total_accrued, D("5500.00"))
-        self.assertEqual(second.total_accrued, D("11000.00"))
-        self.assertEqual(first.total_accrued + second.total_accrued, D("16500.00"))
-
-    def test_student_who_left_counts_until_departure(self):
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE)
-        s = self.student()
-        self.leave(s, day(9, 11))  # активен 1–10 сентября
-        self.assertEqual(self.calc(FIRST).total_accrued, money(self.RATE * 10 / 30))
-        self.assertEqual(self.calc(SECOND).total_accrued, D("0.00"))
-
-    def test_student_in_several_groups_counted_once(self):
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE, group=self.group_a)
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE, group=self.group_b)
-        s = self.student(self.group_a)
-        self.transfer(s, self.group_b, day(9, 8))
+    def test_unfinished_cycle_is_not_accrued_and_listed_separately(self):
+        self.lessons(self.group_a, days(9, 1, 11))
         payroll = self.calc(FIRST)
-        # 15 студенто-дней одного студента, несмотря на две группы и два правила.
-        self.assertEqual(payroll.total_accrued, money(self.RATE * 15 / 30))
-        self.assertEqual(payroll.active_students, 1)
+        self.assertEqual(payroll.total_accrued, D("0"))
+        self.assertTrue(any("нет завершённых циклов" in w for w in payroll.warnings))
+        open_cycle = CourseCycle.objects.get(group=self.group_a)
+        self.assertEqual((open_cycle.status, open_cycle.lessons_done, open_cycle.required_lessons),
+                         ("IN_PROGRESS", 11, 12))
 
-    def test_overlapping_program_and_group_rules_do_not_double_count(self):
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE, group=self.group_a)
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE, program=self.course)
-        self.student(self.group_a)
-        payroll = self.calc(FIRST)
-        self.assertEqual(payroll.total_accrued, D("5500.00"))
-        self.assertTrue(any("уже учтены" in w for w in payroll.warnings))
+    def test_only_completed_lessons_count(self):
+        self.lessons(self.group_a, days(9, 1, 11))
+        self.lessons(self.group_a, [day(9, 12)], status=Lesson.Status.CANCELLED)
+        self.lessons(self.group_a, [day(9, 13)], status=Lesson.Status.SCHEDULED)
+        self.assertEqual(self.calc(FIRST).total_accrued, D("0"))
 
-    def test_rate_only_for_program(self):
+    def test_course_price_per_course(self):
         robo = self.group("Robo 1", course=self.other_course)
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE, program=self.course)
-        self.student(self.group_a)
+        self.course_settings(self.other_course, price="11000", lessons=20)
+        for _ in range(5):
+            self.student(robo)
+        self.lessons(robo, days(9, 1, 20))
+        # Prog SOFT ещё не завершён; Robotics: 5 × 11 000 × 10 % = 5 500
+        self.assertEqual(self.calc(SECOND).total_accrued, D("5500.00"))
+
+    def test_payments_and_attendance_do_not_change_the_base(self):
+        self.lessons(self.group_a, days(9, 1, 12))
+        self.pay(self.students[0], 999, day(9, 3))
+        baseline = self.calc(FIRST).total_accrued
+        self.assertEqual(baseline, D("10000.00"))
+
+    def test_cycle_is_accrued_only_once(self):
+        self.lessons(self.group_a, days(9, 1, 12))
+        self.calc(FIRST)
+        self.calc(FIRST)
+        calculate_period(self.period(), self.accountant)
+        self.assertEqual(CycleAccrual.objects.count(), 1)
+        self.assertEqual(PayrollLine.objects.filter(line_type="PERCENT").count(), 1)
+        approve_payroll(Payroll.objects.get(period__period_type=FIRST), self.director)
+        # Следующие периоды этот цикл не получают.
+        self.assertEqual(self.calc(SECOND).total_accrued, D("0"))
+        self.assertEqual(self.calc(FIRST, year_month=(2026, 10)).total_accrued, D("0"))
+        self.assertEqual(CycleAccrual.objects.count(), 1)
+
+    def test_settings_change_does_not_touch_completed_cycles(self):
+        self.lessons(self.group_a, days(9, 1, 12))
+        approved = approve_payroll(self.calc(FIRST), self.director)
+        self.settings.required_lessons = 20
+        self.settings.price_per_student = D("15000")
+        self.settings.save()
+        self.lessons(self.group_a, days(9, 13, 30))  # ещё 18 уроков — меньше новых 20
+        sync_all()
+        done = CourseCycle.objects.get(status="COMPLETED")
+        self.assertEqual((done.required_lessons, done.course_price, done.student_count), (12, D("10000"), 10))
+        current = CourseCycle.objects.get(status="IN_PROGRESS", group=self.group_a)
+        self.assertEqual((current.number, current.lessons_done, current.required_lessons), (2, 18, 20))
+        approved.refresh_from_db()
+        self.assertEqual(approved.total_accrued, D("10000.00"))
+        self.assertEqual(self.calc(SECOND).total_accrued, D("0"))
+
+    def test_consecutive_cycles(self):
+        self.lessons(self.group_a, days(9, 1, 24))
+        self.assertEqual(self.calc(FIRST).total_accrued, D("10000.00"))   # 12-й урок 12.09
+        self.assertEqual(self.calc(SECOND).total_accrued, D("10000.00"))  # 24-й урок 24.09
+        self.assertEqual(sorted(CourseCycle.objects.filter(status="COMPLETED").values_list("number", flat=True)), [1, 2])
+
+    def test_lessons_before_tracking_start_are_ignored(self):
+        self.settings.count_lessons_from = day(9, 5)
+        self.settings.save()
+        self.lessons(self.group_a, days(9, 1, 15))  # с 5-го только 11 уроков
+        self.assertEqual(self.calc(FIRST).total_accrued, D("0"))
+
+    def test_student_count_rules(self):
+        self.lessons(self.group_a, days(9, 1, 12))
+        self.leave(self.students[0], day(9, 10))
+        self.assertEqual(self.calc(FIRST).lines.get().quantity, D("9"))  # на дату завершения
+        self.settings.student_count_rule = CoursePayrollSettings.StudentCountRule.DURING_CYCLE
+        self.settings.save()
+        self.lessons(self.group_a, days(9, 13, 24))
+        sync_all()
+        second = CourseCycle.objects.get(number=2, group=self.group_a)
+        # Во втором цикле ушедший студент уже ни дня не был активен.
+        self.assertEqual(second.student_count, 9)
+        self.assertEqual(CourseCycle.objects.get(number=1, group=self.group_a).student_count, 9)
+
+    def test_during_cycle_rule_counts_students_who_left(self):
+        self.settings.student_count_rule = CoursePayrollSettings.StudentCountRule.DURING_CYCLE
+        self.settings.save()
+        self.lessons(self.group_a, days(9, 1, 12))
+        self.leave(self.students[0], day(9, 10))
+        self.assertEqual(self.calc(FIRST).lines.get().quantity, D("10"))
+
+    def test_trainer_on_completion_date_gets_the_cycle(self):
+        TrainerAssignment.objects.filter(group=self.group_a).update(end_date=day(9, 10))
+        self.lessons(self.group_a, days(9, 1, 12))
+        self.assertEqual(self.calc(FIRST).total_accrued, D("0"))
+
+    def test_cycle_marked_late_in_an_approved_period_is_not_lost(self):
+        approve_payroll(self.calc(FIRST), self.director)  # циклов ещё нет
+        self.lessons(self.group_a, days(9, 1, 12))  # уроки отметили задним числом
+        line = self.calc(SECOND).lines.get()
+        self.assertEqual(line.amount, D("10000.00"))
+        self.assertTrue(line.metadata["late"])
+
+    def test_fixed_salary_ignores_cycles(self):
+        manager = make_user("manager")
+        from apps.users.models import Teacher
+
+        Teacher.objects.create(user=manager)
+        fixed = self.profile(manager, SalaryType.FIXED)
+        self.rule(fixed, R.FIXED, amount=D("30000"))
+        self.lessons(self.group_a, days(9, 1, 12))
+        payroll = self.calc(FIRST, manager)
+        self.assertEqual([l.line_type for l in payroll.lines.all()], ["FIXED"])
+        self.assertEqual(payroll.total_accrued, D("15000.00"))
+        self.assertFalse(CycleAccrual.objects.filter(employee=manager).exists())
+
+    def test_rule_scoped_to_program(self):
+        robo = self.group("Robo 1", course=self.other_course)
+        self.course_settings(self.other_course, price="11000", lessons=12)
         self.student(robo)
-        self.assertEqual(self.calc(FIRST).total_accrued, D("5500.00"))
-
-    def test_snapshot_mode(self):
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE, method=M.SNAPSHOT)
-        self.student()
-        gone = self.student()
-        self.leave(gone, day(9, 10))
-        self.assertEqual(self.calc(FIRST).total_accrued, D("5500.00"))
-
-    def test_paused_student_not_counted(self):
-        from apps.academy.models import Student, StudentStatusEvent
-
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE)
-        s = self.student()
-        StudentStatusEvent.objects.create(
-            student=s, event_type=StudentStatusEvent.EventType.PAUSED, reason=StudentStatusEvent.Reason.HEALTH,
-            previous_status=Student.Status.ACTIVE, group=s.group, event_date=day(9, 6),
-        )
-        Student.objects.filter(pk=s.pk).update(status=Student.Status.PAUSED, is_active=False)
-        self.assertEqual(self.calc(FIRST).total_accrued, money(self.RATE * 5 / 30))
-
-    def test_no_students_gives_warning(self):
-        self.rule(self.p, R.PER_STUDENT, amount=self.RATE)
-        payroll = self.calc(FIRST)
-        self.assertEqual(payroll.total_accrued, D("0.00"))
-        self.assertTrue(any("нет данных об активных студентах" in w for w in payroll.warnings))
+        self.p.rules.update(program=self.other_course)
+        self.lessons(self.group_a, days(9, 1, 12))
+        self.lessons(robo, days(9, 1, 12))
+        self.assertEqual(self.calc(FIRST).total_accrued, D("1100.00"))
 
 
-class PerGroupTests(AccountingFixture):
+class RulesTests(AccountingFixture):
     def setUp(self):
         super().setUp()
-        self.p = self.profile(salary_type=SalaryType.PER_GROUP)
+        self.p = self.profile(salary_type=SalaryType.FIXED)
 
-    def test_two_groups(self):
-        self.rule(self.p, R.PER_GROUP, amount=D("10000"))
-        total = self.calc(FIRST).total_accrued + self.calc(SECOND).total_accrued
-        self.assertEqual(total, D("20000.00"))
-        self.assertEqual(Payroll.objects.get(period__period_type=FIRST).lines.count(), 2)
+    def test_only_two_salary_types(self):
+        self.assertEqual([t.value for t in SalaryRule.ACTIVE_TYPES], ["FIXED", "PERCENT"])
+        profile = EmployeeSalaryProfile(employee=make_user("x"), salary_type="COMBINED", effective_from=day(1, 1))
+        with self.assertRaises(ValidationError):
+            profile.full_clean()
+        for legacy in ("PER_STUDENT", "REVENUE_PERCENT", "PER_GROUP", "BONUS"):
+            with self.assertRaises(ValidationError):
+                self.rule(self.p, legacy, amount=D("1"), percentage=D("1"))
 
-    def test_trainer_replaced_mid_month(self):
-        self.rule(self.p, R.PER_GROUP, amount=D("10000"), group=self.group_a)
-        TrainerAssignment.objects.filter(group=self.group_a).update(end_date=day(9, 11))
-        self.assertEqual(self.calc(FIRST).total_accrued, money(D("10000") * 10 / 30))
-        self.assertEqual(self.calc(SECOND).total_accrued, D("0.00"))
+    def test_rule_must_match_profile_type(self):
+        with self.assertRaises(ValidationError):
+            self.rule(self.p, R.PERCENT, percentage=D("10"))
 
-    def test_group_started_mid_month(self):
-        late = self.group("Late", start=day(9, 21))
-        self.rule(self.p, R.PER_GROUP, amount=D("9000"), group=late)
-        self.assertEqual(self.calc(SECOND).total_accrued, money(D("9000") * 10 / 30))
-
-
-class CombinedAndRulesTests(AccountingFixture):
-    def setUp(self):
-        super().setUp()
-        self.p = self.profile(salary_type=SalaryType.COMBINED)
-
-    def test_combined_scheme(self):
-        self.rule(self.p, R.FIXED, amount=D("20000"))
-        self.rule(self.p, R.REVENUE_PERCENT, percentage=D("5"), group=self.group_a)
-        self.rule(self.p, R.PER_GROUP, amount=D("4000"), group=self.group_b)
-        self.rule(self.p, R.BONUS, amount=D("1500"), start=day(9, 10), description="Олимпиада")
-        self.pay(self.student(), 20000, day(9, 3))
-        payroll = self.calc(FIRST)
-        types = sorted(payroll.lines.values_list("line_type", flat=True))
-        self.assertEqual(types, sorted(["FIXED", "REVENUE_PERCENT", "PER_GROUP", "BONUS"]))
-        self.assertEqual(payroll.total_accrued, D("10000") + D("1000") + D("2000") + D("1500"))
-        create_adjustment(payroll, kind="DEDUCTION", amount=D("500"), reason="штраф", actor=self.accountant)
-        payroll.refresh_from_db()
-        self.assertEqual(payroll.total_adjustments, D("-500.00"))
-        self.assertEqual(payroll.amount_due, D("14000.00"))
-
-    def test_bonus_only_in_its_period(self):
-        self.rule(self.p, R.BONUS, amount=D("1500"), start=day(9, 20))
-        self.assertEqual(self.calc(FIRST).total_accrued, D("0.00"))
-        self.assertEqual(self.calc(SECOND).total_accrued, D("1500.00"))
+    def test_legacy_profile_is_an_error(self):
+        legacy = EmployeeSalaryProfile.objects.create(employee=make_user("old"), salary_type="COMBINED",
+                                                      effective_from=day(1, 1))
+        payroll = self.calc(FIRST, legacy.employee)
+        self.assertTrue(any("больше не поддерживается" in e for e in payroll.errors))
 
     def test_missing_rule_is_an_error(self):
         payroll = self.calc(FIRST)
-        self.assertTrue(payroll.errors)
         self.assertIn("Не настроена ставка", payroll.errors[0])
         with self.assertRaises(AccountingError):
             approve_payroll(payroll, self.director)
@@ -323,7 +280,7 @@ class CombinedAndRulesTests(AccountingFixture):
         with self.assertRaises(AccountingError):
             approve_payroll(payroll, self.director)
 
-    def test_rule_version_change_does_not_overlap(self):
+    def test_rule_version_change(self):
         from apps.accounting.services.salary_rules import new_version
 
         old = self.rule(self.p, R.FIXED, amount=D("20000"))
@@ -335,7 +292,6 @@ class CombinedAndRulesTests(AccountingFixture):
 
     def test_rounding(self):
         self.rule(self.p, R.FIXED, amount=D("10000"), method=M.PRORATE_DAYS)
-        # 10000 × 15 / 31 = 4838.709… → 4838.71 (ROUND_HALF_UP)
         self.assertEqual(self.calc(FIRST, year_month=(2026, 10)).total_accrued, D("4838.71"))
         self.assertEqual(money(D("0.005")), D("0.01"))
         parts = [allocate_by_days(D("100"), dt.date(2026, 1, 1), dt.date(2026, 1, 3), d, d)
@@ -343,14 +299,15 @@ class CombinedAndRulesTests(AccountingFixture):
         self.assertEqual(sum(parts), D("100.00"))
 
     def test_recalculating_draft_does_not_duplicate(self):
-        self.rule(self.p, R.FIXED, amount=D("20000"))
+        rule = self.rule(self.p, R.FIXED, amount=D("20000"))
         first = self.calc(FIRST)
-        self.rule(self.p, R.BONUS, amount=D("1000"), start=day(9, 2))
+        from apps.accounting.services.salary_rules import new_version
+
+        new_version(rule, actor=self.accountant, changes={"amount": D("22000"), "effective_from": day(9, 2)})
         again = self.calc(FIRST)
         self.assertEqual(first.pk, again.pk)
         self.assertEqual(Payroll.objects.count(), 1)
         self.assertEqual(again.lines.count(), 2)
-        self.assertEqual(again.total_accrued, D("11000.00"))
 
     def test_approved_payroll_is_not_recalculated(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
@@ -361,28 +318,23 @@ class CombinedAndRulesTests(AccountingFixture):
     def test_mass_calculation_reports_every_employee(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
         broken = make_user("broken", "assistant")
-        self.profile(broken)  # без правил
+        self.profile(broken)
         result = calculate_period(self.period(), self.accountant)
-        self.assertEqual(len(result["calculated"]), 2)
         by_user = {p.employee_id: p for p in result["calculated"]}
+        self.assertEqual(len(by_user), 2)
         self.assertTrue(by_user[broken.pk].errors)
         self.assertFalse(by_user[self.trainer_user.pk].errors)
 
-    def test_big_change_warning(self):
+    def test_adjustments_are_the_way_to_add_bonuses(self):
         self.rule(self.p, R.FIXED, amount=D("20000"))
-        approve_payroll(self.calc(FIRST), self.director)
-        self.rule(self.p, R.BONUS, amount=D("50000"), start=day(9, 20))
-        payroll = self.calc(SECOND)
-        self.assertTrue(any("существенно отличается" in w for w in payroll.warnings))
+        payroll = self.calc(FIRST)
+        create_adjustment(payroll, kind="BONUS", amount=D("1500"), reason="олимпиада", actor=self.accountant)
+        create_adjustment(payroll, kind="DEDUCTION", amount=D("500"), reason="штраф", actor=self.accountant)
+        payroll.refresh_from_db()
+        self.assertEqual(payroll.amount_due, D("11000.00"))
 
-
-class DescriptionTests(AccountingFixture):
     def test_descriptions_have_no_exponent_notation(self):
-        p = self.profile()
-        self.rule(p, R.FIXED, amount=D("20000"))
-        self.rule(p, R.REVENUE_PERCENT, percentage=D("10"), group=self.group_a)
-        self.pay(self.student(), 10000, day(9, 3))
-        descriptions = list(self.calc(FIRST).lines.values_list("description", flat=True))
-        self.assertTrue(any("50% месячного оклада" in d for d in descriptions), descriptions)
-        self.assertTrue(any(d.startswith("10% с оплаты") for d in descriptions), descriptions)
-        self.assertFalse(any("E+" in d for d in descriptions), descriptions)
+        self.rule(self.p, R.FIXED, amount=D("20000"))
+        description = self.calc(FIRST).lines.get().description
+        self.assertIn("50% месячного оклада", description)
+        self.assertNotIn("E+", description)

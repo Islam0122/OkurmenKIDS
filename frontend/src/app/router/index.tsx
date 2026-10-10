@@ -303,6 +303,7 @@ export const router = createBrowserRouter([
               { index: true, lazy: async () => ({ Component: (await import('@/features/accounting/DashboardPage')).AccountingDashboardPage }) },
               { path: 'payrolls/:id', lazy: async () => ({ Component: (await import('@/features/accounting/PayrollDetailPage')).PayrollDetailPage }) },
               { path: 'settings', lazy: async () => ({ Component: (await import('@/features/accounting/SalarySettingsPage')).SalarySettingsPage }) },
+              { path: 'courses', lazy: async () => ({ Component: (await import('@/features/accounting/CoursesPage')).CoursesPage }) },
               { path: 'student-payments', lazy: async () => ({ Component: (await import('@/features/accounting/StudentPaymentsPage')).StudentPaymentsPage }) },
               { path: 'audit', lazy: async () => ({ Component: (await import('@/features/accounting/AuditPage')).AuditPage }) },
               { path: '*', element: <Navigate to="/accounting" replace /> },

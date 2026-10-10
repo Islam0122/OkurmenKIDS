@@ -12,7 +12,7 @@ from rest_framework.test import APIClient
 from apps.accounting.access import ACCOUNTANT_GROUP
 from apps.accounting.models import SalaryRule
 from apps.accounting.services.approval_service import approve_payroll
-from apps.accounting.tests.base import FIRST, D, AccountingFixture, make_user
+from apps.accounting.tests.base import FIRST, D, AccountingFixture, day, make_user
 from apps.users.models import User
 
 PASSWORD = "Str0ngPassw0rd!"
@@ -47,7 +47,9 @@ class AccountantIsolationTests(AccountingFixture):
     def setUp(self):
         super().setUp()
         self.student_obj = self.student()
-        self.rule(self.profile(), SalaryRule.RuleType.PER_STUDENT, amount=D("11000"))
+        self.rule(self.profile(salary_type="PERCENT"), SalaryRule.RuleType.PERCENT, percentage=D("10"))
+        self.course_settings(price="10000", lessons=2)
+        self.lessons(self.group_a, [day(9, 1), day(9, 2)])
         self.payroll = self.calc(FIRST)
 
     def jwt(self, user) -> APIClient:

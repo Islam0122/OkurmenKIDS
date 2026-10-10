@@ -4,8 +4,10 @@
 export type PeriodType = 'FIRST_HALF' | 'SECOND_HALF'
 export type PeriodStatus = 'DRAFT' | 'CALCULATED' | 'APPROVED' | 'CLOSED'
 export type PayrollStatus = 'DRAFT' | 'CALCULATED' | 'RETURNED' | 'APPROVED' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
-export type SalaryType = 'FIXED' | 'REVENUE_PERCENT' | 'PER_STUDENT' | 'PER_GROUP' | 'COMBINED'
-export type RuleType = 'FIXED' | 'REVENUE_PERCENT' | 'PER_STUDENT' | 'PER_GROUP' | 'BONUS'
+/** Только два типа оплаты: оклад и процент от стоимости курса. Прочие
+ * значения — устаревшие записи первой версии (только для истории). */
+export type SalaryType = 'FIXED' | 'PERCENT' | (string & {})
+export type RuleType = 'FIXED' | 'PERCENT'
 export type AdjustmentKind = 'BONUS' | 'DEDUCTION' | 'CORRECTION'
 
 export interface Choice {
@@ -26,8 +28,7 @@ export interface AccountingOptions extends Capabilities {
   salary_types: Choice[]
   rule_types: Choice[]
   methods: Record<RuleType, Choice[]>
-  revenue_bases: Choice[]
-  refund_policies: Choice[]
+  student_count_rules: Choice[]
   payment_methods: Choice[]
   student_payment_methods: Choice[]
   adjustment_kinds: Choice[]
@@ -60,6 +61,7 @@ export interface Dashboard {
   pending_adjustments: number
   with_errors: number
   outstanding_debt_all_periods: string
+  open_cycles: number
   range_label: string
   periods: PayrollPeriod[]
 }
@@ -72,7 +74,7 @@ export interface EmployeeRow {
   salary_type: SalaryType
   salary_type_display: string
   is_active: boolean
-  rates: { rule_type: RuleType; label: string; amount: string | null; percentage: string | null; scope: string }[]
+  rates: { rule_type: string; label: string; amount: string | null; percentage: string | null; scope: string }[]
   active_students: number | null
   payroll_id: number | null
   accrued: string | null
@@ -97,6 +99,9 @@ export interface PayrollLine {
   amount: string
   metadata: {
     payments?: { id: number; student: string; amount: string; counted: string; received_date: string; service_start: string; service_end: string }[]
+    lessons?: number
+    completed_on?: string
+    late?: boolean
     /** Активные студенты — только агрегатом (поимённого списка API не отдаёт). */
     students_count?: number
     student_days?: number
@@ -156,7 +161,7 @@ export interface SalaryRule {
   employee_profile: number
   employee: number
   employee_name: string
-  rule_type: RuleType
+  rule_type: RuleType | (string & {})
   rule_type_display: string
   amount: string | null
   percentage: string | null
@@ -167,10 +172,6 @@ export interface SalaryRule {
   calculation_method: string
   calculation_method_display: string
   first_half_share: string
-  revenue_basis: string
-  revenue_basis_display: string
-  refund_policy: string
-  refund_policy_display: string
   description: string
   effective_from: string
   effective_to: string | null
@@ -230,6 +231,8 @@ export interface PayrollDetail extends PayrollListItem {
   rules: SalaryRule[]
   audit?: AuditEntry[]
   return_reason: string
+  /** Незавершённые циклы групп сотрудника — процент за них ещё не начисляется. */
+  open_cycles: { id: number; group_name: string; course_name: string; number: number; lessons_done: number; required_lessons: number }[]
 }
 
 export interface CalculationResult {
@@ -282,4 +285,38 @@ export interface PeriodSelection {
   year: number
   month: number
   half: PeriodType | 'MONTH'
+}
+
+export interface CourseSettings {
+  id: number
+  course: number
+  course_name: string
+  course_count_lesson: number
+  price_per_student: string
+  required_lessons: number
+  count_lessons_from: string
+  student_count_rule: string
+  student_count_rule_display: string
+  is_active: boolean
+  updated_at: string
+}
+
+export interface CourseCycle {
+  id: number
+  group: number
+  group_name: string
+  course: number
+  course_name: string
+  number: number
+  status: 'IN_PROGRESS' | 'COMPLETED'
+  status_display: string
+  required_lessons: number
+  lessons_done: number
+  start_date: string | null
+  completed_on: string | null
+  student_count: number | null
+  course_price: string | null
+  base_amount: string | null
+  trainers: string[]
+  accruals: { employee: number; employee_name: string; percentage: string; amount: string; payroll: number; payroll_status: PayrollStatus; period_label: string }[]
 }

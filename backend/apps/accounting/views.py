@@ -24,6 +24,9 @@ from apps.users.models import User
 from . import serializers as s
 from .filters import filter_payrolls
 from .models import (
+    ALLOWED_SALARY_TYPES,
+    CourseCycle,
+    CoursePayrollSettings,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -31,12 +34,11 @@ from .models import (
     PayrollPayment,
     PayrollPeriod,
     SalaryRule,
-    SalaryType,
     StudentPayment,
 )
 from .permissions import AccountingAccess, CanApprove, CanViewAccounting, capabilities
 from .services import AccountingError
-from .services import approval_service, payment_service, payroll_calculator, report_service, salary_rules
+from .services import approval_service, cycles, payment_service, payroll_calculator, report_service, salary_rules
 from .services import student_payments as student_payment_service
 from .services.periods import close_period, get_or_create_period
 from .services.report_pdf import render_individual_pdf, render_period_pdf
@@ -135,6 +137,7 @@ class DashboardView(APIView):
         periods, label = _periods_from_query(request, required=False)
         data = _money_str(report_service.dashboard(periods))
         data["outstanding_debt_all_periods"] = str(report_service.outstanding_debt())
+        data["open_cycles"] = CourseCycle.objects.filter(status=CourseCycle.Status.IN_PROGRESS).count()
         data["range_label"] = label
         data["periods"] = s.PayrollPeriodSerializer(periods, many=True).data
         return Response(data)
@@ -151,14 +154,15 @@ class OptionsView(APIView):
             "employees": s.UserRefSerializer(users, many=True).data,
             "courses": s.CourseRefSerializer(Course.objects.order_by("name"), many=True).data,
             "groups": s.GroupRefSerializer(Group.objects.order_by("name"), many=True).data,
-            "salary_types": [{"value": v, "label": l} for v, l in SalaryType.choices],
-            "rule_types": [{"value": v, "label": l} for v, l in SalaryRule.RuleType.choices],
+            "salary_types": [{"value": t.value, "label": t.label} for t in ALLOWED_SALARY_TYPES],
+            "rule_types": [{"value": t.value, "label": t.label} for t in SalaryRule.ACTIVE_TYPES],
             "methods": {
-                rt: [{"value": m, "label": SalaryRule.Method(m).label} for m in methods]
-                for rt, methods in SalaryRule.METHODS_BY_TYPE.items()
+                rt: [{"value": m, "label": SalaryRule.Method(m).label} for m in SalaryRule.METHODS_BY_TYPE[rt]]
+                for rt in SalaryRule.ACTIVE_TYPES
             },
-            "revenue_bases": [{"value": v, "label": l} for v, l in SalaryRule.RevenueBasis.choices],
-            "refund_policies": [{"value": v, "label": l} for v, l in SalaryRule.RefundPolicy.choices],
+            "student_count_rules": [
+                {"value": v, "label": l} for v, l in CoursePayrollSettings.StudentCountRule.choices
+            ],
             "payment_methods": [{"value": v, "label": l} for v, l in PayrollPayment.Method.choices],
             "student_payment_methods": [{"value": v, "label": l} for v, l in StudentPayment.Method.choices],
             "adjustment_kinds": [{"value": v, "label": l} for v, l in PayrollAdjustment.Kind.choices],
@@ -395,6 +399,66 @@ class StudentPaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vi
         body = s.StudentPaymentSerializer(payment).data
         body["affected_payrolls"] = affected
         return Response(body)
+
+
+# ---------------------------------------------------------------------------
+# Курсы: стоимость за студента, уроков в цикле; циклы групп
+# ---------------------------------------------------------------------------
+
+@extend_schema(tags=TAG)
+class CoursePayrollSettingsViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin,
+                                   mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    pagination_class = AccountingPagination
+    permission_classes = [AccountingAccess]
+    serializer_class = s.CoursePayrollSettingsSerializer
+    queryset = CoursePayrollSettings.objects.select_related("course")
+
+    def perform_create(self, serializer):
+        try:
+            serializer.instance = salary_rules.save_course_settings(
+                CoursePayrollSettings(), actor=self.request.user, data=serializer.validated_data,
+            )
+        except AccountingError as exc:
+            _fail(exc)
+
+    def perform_update(self, serializer):
+        try:
+            serializer.instance = salary_rules.save_course_settings(
+                serializer.instance, actor=self.request.user, data=serializer.validated_data,
+            )
+        except AccountingError as exc:
+            _fail(exc)
+
+
+@extend_schema(tags=TAG)
+class CourseCycleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Циклы курсов. Список сначала фиксирует новые завершённые циклы по
+    проведённым урокам (идемпотентно), поэтому показывает актуальное
+    состояние. `status=IN_PROGRESS` — незавершённые, отдельно от завершённых."""
+
+    pagination_class = AccountingPagination
+    permission_classes = [AccountingAccess]
+    serializer_class = s.CourseCycleSerializer
+    filterset_fields = ("status", "course", "group")
+
+    def get_queryset(self):
+        qs = CourseCycle.objects.select_related("group", "course").order_by("status", "-completed_on", "group__name")
+        q = self.request.query_params
+        if q.get("completed_from"):
+            qs = qs.filter(completed_on__gte=q["completed_from"])
+        if q.get("completed_to"):
+            qs = qs.filter(completed_on__lte=q["completed_to"])
+        if q.get("not_accrued"):
+            qs = qs.filter(status=CourseCycle.Status.COMPLETED, accruals__isnull=True)
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        cycles.sync_all()
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=False, methods=["post"])
+    def sync(self, request):
+        return Response({"completed": cycles.sync_all()})
 
 
 # ---------------------------------------------------------------------------

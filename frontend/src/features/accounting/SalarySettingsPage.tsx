@@ -22,8 +22,9 @@ import { formatDate, som, today, useRunner } from './shared'
 type Dialog = null | { kind: 'profile' } | { kind: 'rule'; profile: SalaryProfile } | { kind: 'version'; rule: SalaryRule } | { kind: 'stop'; rule: SalaryRule }
 
 function rateText(rule: SalaryRule): string {
-  if (rule.rule_type === 'REVENUE_PERCENT') return `${Number(rule.percentage)}% (${rule.revenue_basis_display.toLowerCase()})`
-  return som(rule.amount) + (rule.rule_type === 'BONUS' ? ' разово' : ' в месяц')
+  if (rule.rule_type === 'PERCENT') return `${Number(rule.percentage)}% от стоимости курса`
+  if (rule.percentage !== null) return `${Number(rule.percentage)}%`
+  return `${som(rule.amount)} в месяц`
 }
 
 export function SalarySettingsPage() {
@@ -80,14 +81,14 @@ export function SalarySettingsPage() {
                               <td>#{rule.id} {rule.rule_type_display}{rule.description ? <p className="text-xs text-ink-muted">{rule.description}</p> : null}</td>
                               <td>{rateText(rule)}</td>
                               <td>{rule.group_name ? `группа ${rule.group_name}` : rule.program_name ? `программа ${rule.program_name}`
-                                : rule.rule_type === 'FIXED' || rule.rule_type === 'BONUS' ? '—' : 'все группы тренера'}</td>
+                                : rule.rule_type === 'PERCENT' ? 'все группы тренера' : '—'}</td>
                               <td className="text-xs">{rule.calculation_method_display}</td>
                               <td className="whitespace-nowrap text-sm">
                                 {formatDate(rule.effective_from)} — {rule.effective_to ? formatDate(rule.effective_to) : 'без срока'}
                                 {rule.previous_version ? <p className="text-xs text-ink-muted">версия правила #{rule.previous_version}</p> : null}
                               </td>
                               <td className="whitespace-nowrap text-right">
-                                {canEdit && !closed && !rule.next_version ? (
+                                {canEdit && !closed && !rule.next_version && (rule.rule_type === 'FIXED' || rule.rule_type === 'PERCENT') ? (
                                   <>
                                     <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: 'version', rule })}>Новая ставка</Button>
                                     <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: 'stop', rule })}>Прекратить</Button>
@@ -152,52 +153,52 @@ function ProfileModal({ options, onClose }: { options: AccountingOptions; onClos
 }
 
 function RuleModal({ options, profile, onClose }: { options: AccountingOptions; profile: SalaryProfile; onClose: () => void }) {
+  // Тип правила = тип оплаты сотрудника: оклад или процент от стоимости курса.
+  const ruleType: RuleType = profile.salary_type === 'PERCENT' ? 'PERCENT' : 'FIXED'
+  const percent = ruleType === 'PERCENT'
   const [form, setForm] = useState({
-    rule_type: 'FIXED' as RuleType, amount: '', percentage: '', program: '', group: '', calculation_method: '',
-    first_half_share: '50', revenue_basis: 'RECEIVED', refund_policy: 'DEDUCT', description: '',
+    amount: '', percentage: '', program: '', group: '', calculation_method: '', first_half_share: '50', description: '',
     effective_from: profile.effective_from > today() ? profile.effective_from : today(), effective_to: '',
   })
   const { save, busy } = useSave()
-  const percent = form.rule_type === 'REVENUE_PERCENT'
-  const methods = options.methods[form.rule_type] ?? []
+  const methods = options.methods[ruleType] ?? []
   const set = (patch: Partial<typeof form>) => setForm({ ...form, ...patch })
-  const amountLabel = { FIXED: 'Оклад в месяц, сом', PER_STUDENT: 'Ставка за студента в месяц, сом', PER_GROUP: 'Ставка за группу в месяц, сом', BONUS: 'Сумма, сом', REVENUE_PERCENT: '' }[form.rule_type]
   const submit = () => save(() => accountingApi.createRule({
     employee_profile: profile.id,
-    rule_type: form.rule_type,
+    rule_type: ruleType,
     amount: percent ? null : form.amount,
     percentage: percent ? form.percentage : null,
-    program: form.program ? Number(form.program) : null,
-    group: form.group ? Number(form.group) : null,
+    program: percent && form.program ? Number(form.program) : null,
+    group: percent && form.group ? Number(form.group) : null,
     calculation_method: form.calculation_method || methods[0]?.value,
     first_half_share: form.first_half_share,
-    revenue_basis: form.revenue_basis,
-    refund_policy: form.refund_policy,
     description: form.description,
     effective_from: form.effective_from,
     effective_to: form.effective_to || null,
   }), 'Правило добавлено')
 
   return (
-    <Modal isOpen onClose={onClose} title={`Правило начисления — ${profile.employee_name}`} size="lg">
+    <Modal isOpen onClose={onClose} title={`${percent ? 'Процент от стоимости курса' : 'Оклад'} — ${profile.employee_name}`} size="lg">
+      {percent ? (
+        <p className="mb-3 text-sm text-ink-secondary">
+          За каждый завершённый цикл курса: студенты × стоимость курса × процент / 100. Стоимость и число уроков в цикле
+          задаются в разделе «Курсы и циклы».
+        </p>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Тип правила" required htmlFor="r-type">
-          <Select id="r-type" value={form.rule_type} options={options.rule_types}
-            onChange={(e) => set({ rule_type: e.target.value as RuleType, calculation_method: '' })} />
-        </Field>
         {percent ? (
-          <Field label="Процент" required htmlFor="r-pct">
+          <Field label="Процент тренера" required htmlFor="r-pct">
             <Input id="r-pct" type="number" min="0" max="100" step="0.01" value={form.percentage} onChange={(e) => set({ percentage: e.target.value })} />
           </Field>
         ) : (
-          <Field label={amountLabel} required htmlFor="r-amount">
+          <Field label="Оклад в месяц, сом" required htmlFor="r-amount">
             <Input id="r-amount" type="number" min="0" step="0.01" value={form.amount} onChange={(e) => set({ amount: e.target.value })} />
           </Field>
         )}
-        {form.rule_type !== 'FIXED' && form.rule_type !== 'BONUS' ? (
+        {percent ? (
           <>
-            <Field label="Программа" htmlFor="r-prog" help="Пусто — все программы">
-              <Select id="r-prog" value={form.program} placeholder="Все программы"
+            <Field label="Курс" htmlFor="r-prog" help="Пусто — все курсы">
+              <Select id="r-prog" value={form.program} placeholder="Все курсы"
                 options={options.courses.map((c) => ({ value: String(c.id), label: c.name }))}
                 onChange={(e) => set({ program: e.target.value, group: '' })} />
             </Field>
@@ -207,35 +208,24 @@ function RuleModal({ options, profile, onClose }: { options: AccountingOptions; 
                 onChange={(e) => set({ group: e.target.value })} />
             </Field>
           </>
-        ) : null}
-        {methods.length > 1 ? (
-          <Field label="Метод расчёта" htmlFor="r-method">
-            <Select id="r-method" value={form.calculation_method || methods[0].value} options={methods} onChange={(e) => set({ calculation_method: e.target.value })} />
-          </Field>
-        ) : null}
-        {(form.calculation_method || methods[0]?.value) === 'SPLIT' ? (
-          <Field label="Доля первой половины, %" htmlFor="r-share" help="Остаток — во второй половине месяца">
-            <Input id="r-share" type="number" min="0" max="100" value={form.first_half_share} onChange={(e) => set({ first_half_share: e.target.value })} />
-          </Field>
-        ) : null}
-        {percent ? (
+        ) : (
           <>
-            <Field label="База расчёта" htmlFor="r-basis">
-              <Select id="r-basis" value={form.revenue_basis} options={options.revenue_bases} onChange={(e) => set({ revenue_basis: e.target.value })} />
+            <Field label="Распределение по половинам месяца" htmlFor="r-method">
+              <Select id="r-method" value={form.calculation_method || methods[0]?.value} options={methods} onChange={(e) => set({ calculation_method: e.target.value })} />
             </Field>
-            <Field label="Возвраты" htmlFor="r-refund">
-              <Select id="r-refund" value={form.refund_policy} options={options.refund_policies} onChange={(e) => set({ refund_policy: e.target.value })} />
-            </Field>
+            {(form.calculation_method || methods[0]?.value) === 'SPLIT' ? (
+              <Field label="Доля 1–15 числа, %" htmlFor="r-share" help="Остаток — в периоде 16–конец месяца">
+                <Input id="r-share" type="number" min="0" max="100" value={form.first_half_share} onChange={(e) => set({ first_half_share: e.target.value })} />
+              </Field>
+            ) : null}
           </>
-        ) : null}
-        <Field label={form.rule_type === 'BONUS' ? 'Дата начисления' : 'Действует с'} required htmlFor="r-from">
+        )}
+        <Field label="Действует с" required htmlFor="r-from">
           <Input id="r-from" type="date" value={form.effective_from} onChange={(e) => set({ effective_from: e.target.value })} />
         </Field>
-        {form.rule_type !== 'BONUS' ? (
-          <Field label="Действует по" htmlFor="r-to" help="Пусто — без срока">
-            <Input id="r-to" type="date" value={form.effective_to} onChange={(e) => set({ effective_to: e.target.value })} />
-          </Field>
-        ) : null}
+        <Field label="Действует по" htmlFor="r-to" help="Пусто — без срока">
+          <Input id="r-to" type="date" value={form.effective_to} onChange={(e) => set({ effective_to: e.target.value })} />
+        </Field>
       </div>
       <Field label="Комментарий" htmlFor="r-desc" className="mt-3">
         <Input id="r-desc" value={form.description} onChange={(e) => set({ description: e.target.value })} />
@@ -250,7 +240,7 @@ function RuleModal({ options, profile, onClose }: { options: AccountingOptions; 
 }
 
 function VersionModal({ rule, onClose }: { rule: SalaryRule; onClose: () => void }) {
-  const percent = rule.rule_type === 'REVENUE_PERCENT'
+  const percent = rule.percentage !== null
   const [value, setValue] = useState(percent ? rule.percentage ?? '' : rule.amount ?? '')
   const [from, setFrom] = useState(today())
   const { save, busy } = useSave()
