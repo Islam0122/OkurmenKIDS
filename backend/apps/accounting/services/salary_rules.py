@@ -69,6 +69,8 @@ def new_version(rule: SalaryRule, *, actor, changes: dict) -> SalaryRule:
     data = {name: getattr(rule, name) for name in RULE_FIELDS}
     data["employee_profile"] = rule.employee_profile
     data["effective_to"] = None
+    # Новая версия получает действующий метод типа (оклад — всегда полный месячный).
+    data["calculation_method"] = SalaryRule.METHODS_BY_TYPE.get(rule.rule_type, (rule.calculation_method,))[0]
     data.update(changes)
     if "effective_from" not in changes:
         raise AccountingError("Укажите дату, с которой действует новая ставка.")

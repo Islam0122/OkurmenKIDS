@@ -157,7 +157,7 @@ function RuleModal({ options, profile, onClose }: { options: AccountingOptions; 
   const ruleType: RuleType = profile.salary_type === 'PERCENT' ? 'PERCENT' : 'FIXED'
   const percent = ruleType === 'PERCENT'
   const [form, setForm] = useState({
-    amount: '', percentage: '', program: '', group: '', calculation_method: '', first_half_share: '50', description: '',
+    amount: '', percentage: '', program: '', group: '', calculation_method: '', description: '',
     effective_from: profile.effective_from > today() ? profile.effective_from : today(), effective_to: '',
   })
   const { save, busy } = useSave()
@@ -171,7 +171,6 @@ function RuleModal({ options, profile, onClose }: { options: AccountingOptions; 
     program: percent && form.program ? Number(form.program) : null,
     group: percent && form.group ? Number(form.group) : null,
     calculation_method: form.calculation_method || methods[0]?.value,
-    first_half_share: form.first_half_share,
     description: form.description,
     effective_from: form.effective_from,
     effective_to: form.effective_to || null,
@@ -209,16 +208,9 @@ function RuleModal({ options, profile, onClose }: { options: AccountingOptions; 
             </Field>
           </>
         ) : (
-          <>
-            <Field label="Распределение по половинам месяца" htmlFor="r-method">
-              <Select id="r-method" value={form.calculation_method || methods[0]?.value} options={methods} onChange={(e) => set({ calculation_method: e.target.value })} />
-            </Field>
-            {(form.calculation_method || methods[0]?.value) === 'SPLIT' ? (
-              <Field label="Доля 1–15 числа, %" htmlFor="r-share" help="Остаток — в периоде 16–конец месяца">
-                <Input id="r-share" type="number" min="0" max="100" value={form.first_half_share} onChange={(e) => set({ first_half_share: e.target.value })} />
-              </Field>
-            ) : null}
-          </>
+          <p className="self-end text-sm text-ink-secondary sm:col-span-1">
+            Начисляется полной суммой за календарный месяц, на половины не делится. Аванс — частичная выплата этой суммы.
+          </p>
         )}
         <Field label="Действует с" required htmlFor="r-from">
           <Input id="r-from" type="date" value={form.effective_from} onChange={(e) => set({ effective_from: e.target.value })} />

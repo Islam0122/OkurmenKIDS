@@ -61,7 +61,7 @@ export function AccountingDashboardPage() {
   const options = useAccountingOptions()
   const dashboard = useAccountingDashboard(selection)
   const employees = useAccountingEmployees(selection, filters)
-  const isHalf = selection.half !== 'MONTH'
+  const isMonth = selection.half === 'MONTH'
   const period = dashboard.data?.periods.find((p) => p.period_type === selection.half)
 
   const setSelection = (next: PeriodSelection) => {
@@ -72,7 +72,6 @@ export function AccountingDashboardPage() {
 
   const calculate = () =>
     run(async () => {
-      if (selection.half === 'MONTH') return
       const p = await accountingApi.ensurePeriod(selection.year, selection.month, selection.half)
       setResult(await accountingApi.calculatePeriod(p.id))
       await refresh()
@@ -119,9 +118,9 @@ export function AccountingDashboardPage() {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {opts?.can_operate ? (
-          <Button leftIcon={<Calculator className="size-4" />} isLoading={busy} disabled={!isHalf || period?.status === 'CLOSED'}
-            onClick={calculate} title={isHalf ? undefined : 'Выберите половину месяца'}>
-            Рассчитать зарплаты
+          <Button leftIcon={<Calculator className="size-4" />} isLoading={busy} disabled={period?.status === 'CLOSED'}
+            onClick={calculate}>
+            {isMonth ? 'Рассчитать оклады за месяц' : 'Рассчитать процент за период'}
           </Button>
         ) : null}
         {opts?.can_approve ? (
@@ -138,7 +137,10 @@ export function AccountingDashboardPage() {
           onClick={() => run(() => accountingApi.downloadReport('xlsx', selection, filters))}>
           Excel
         </Button>
-        {period ? <span className="self-center text-sm text-ink-muted">Статус периода: {period.status_display}</span> : null}
+        <span className="self-center text-sm text-ink-muted">
+          {isMonth ? 'Оклад начисляется полной суммой за месяц; сводка — по всем расчётам месяца.' : 'Процент от курса — за циклы, завершённые в этом периоде.'}
+          {period ? ` Статус периода: ${period.status_display}.` : ''}
+        </span>
       </div>
 
       {result ? <CalculationSummary result={result} onOpen={(id) => navigate(`/accounting/payrolls/${id}`)} /> : null}
@@ -189,7 +191,11 @@ export function AccountingDashboardPage() {
               { key: 'accrued', header: 'Начислено', className: 'text-right', render: (r) => som(r.accrued) },
               { key: 'paid', header: 'Выплачено', className: 'text-right', render: (r) => som(r.paid) },
               { key: 'due', header: 'Остаток', className: 'text-right', render: (r) => som(r.due) },
-              { key: 'status', header: 'Статус', render: (r) => <PayrollStatusBadge status={r.status} label={r.status_display} /> },
+              {
+                key: 'status', header: 'Статус', render: (r) => (!isMonth && r.calc_period === 'MONTH' && !r.status
+                  ? <span className="text-xs text-ink-muted">оклад — в расчёте «Весь месяц»</span>
+                  : <PayrollStatusBadge status={r.status} label={r.status_display} />),
+              },
             ]}
           />
         )}

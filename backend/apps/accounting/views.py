@@ -226,11 +226,12 @@ class EmployeeListView(APIView):
                 rules__group__course_id=_int(q["program"], "program"))).distinct()
         if q.get("group"):
             profiles = profiles.filter(rules__group_id=_int(q["group"], "group")).distinct()
-        payrolls = {
-            p.employee_id: p for p in report_service.with_totals(
-                Payroll.objects.filter(period__in=periods).exclude(status=Payroll.Status.VOID)
-            ).select_related("period")
-        } if len(periods) == 1 else {}
+        # Ссылка на расчёт — когда у сотрудника в выбранном диапазоне он один
+        # (половина месяца у процента или месячный период у оклада).
+        by_employee: dict[int, list] = {}
+        for p in Payroll.objects.filter(period__in=periods).exclude(status=Payroll.Status.VOID).select_related("period"):
+            by_employee.setdefault(p.employee_id, []).append(p)
+        payrolls = {emp: rows[0] for emp, rows in by_employee.items() if len(rows) == 1}
         sums: dict[int, dict] = {}
         for p in report_service.with_totals(Payroll.objects.filter(period__in=periods).exclude(status=Payroll.Status.VOID)):
             row = sums.setdefault(p.employee_id, {"accrued": 0, "paid": 0, "due": 0, "statuses": set()})
@@ -258,6 +259,8 @@ class EmployeeListView(APIView):
                 "position": profile.display_position,
                 "salary_type": profile.salary_type,
                 "salary_type_display": profile.get_salary_type_display(),
+                # Оклад — в месячном периоде, процент — в половинах месяца.
+                "calc_period": "MONTH" if profile.salary_type == "FIXED" else "HALF",
                 "is_active": profile.is_active,
                 "rates": [
                     {"rule_type": r.rule_type, "label": r.get_rule_type_display(),

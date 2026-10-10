@@ -116,7 +116,11 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
 
     current = []
     by_half = {p.period.period_type: p for p in own.filter(period__year=today.year, period__month=today.month)}
-    for half in HALVES:
+    # Оклад — один месячный расчёт, процент — две половины месяца (плюс любые
+    # уже существующие расчёты этого месяца, например прежней схемы).
+    expected = (PayrollPeriod.PeriodType.MONTH,) if profile and profile.salary_type == "FIXED" else HALVES
+    kinds = [k for k in (*HALVES, PayrollPeriod.PeriodType.MONTH) if k in expected or k in by_half]
+    for half in kinds:
         start, end = PayrollPeriod.bounds(today.year, today.month, half)
         payroll = by_half.get(half)
         row = _row(payroll) if payroll else {
@@ -128,7 +132,7 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
         current.append(row)
     month_accrued = sum((Decimal(r["accrued"]) for r in current if r["accrued"] is not None), ZERO)
 
-    history = own.order_by("-period__year", "-period__month", "-period__period_type")
+    history = own.order_by("-period__end_date", "-period__start_date")
     if year:
         history = history.filter(period__year=year)
     if month:

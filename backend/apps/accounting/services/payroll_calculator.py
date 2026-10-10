@@ -1,9 +1,13 @@
 """Расчёт начислений за период. Разрешены два типа оплаты.
 
-* FIXED — индивидуальный месячный оклад. Не зависит от студентов, курсов,
-  платежей и посещаемости. Распределение между половинами месяца:
-    SPLIT        — оклад × доля половины (по умолчанию 50/50) × дни действия / дни периода
-    PRORATE_DAYS — оклад × дни действия в периоде / дни месяца
+* FIXED — индивидуальный месячный оклад, начисляется ПОЛНОЙ суммой за
+  календарный месяц одним расчётом в месячном периоде (`PeriodType.MONTH`) и
+  на половины месяца не делится. Не зависит от студентов, курсов, платежей и
+  посещаемости. Неполный месяц бывает только по установленным условиям —
+  правило или профиль начинают/прекращают действовать внутри месяца (приём,
+  увольнение, новая ставка): тогда оклад × дни действия / дни месяца.
+  Аванс — это частичная выплата месячного начисления (`is_advance`), а не
+  отдельная половина оклада.
 * PERCENT — процент от фиксированной стоимости курса, начисляется за
   каждый ЗАВЕРШЁННЫЙ цикл курса (services.cycles) в группе, за которую
   сотрудник отвечал на дату завершения:
@@ -38,6 +42,7 @@ from ..models import (
     PayrollPayment,
     PayrollPeriod,
     SalaryRule,
+    SalaryType,
 )
 from . import AccountingError, audit
 from .cycles import ensure_accruals, sync_all
@@ -115,26 +120,52 @@ def period_of(day: dt.date) -> tuple[int, int, str]:
 # ---------------------------------------------------------------------------
 
 def _fixed(rule, profile, period, out: Computation):
+    """Оклад за календарный месяц: полная сумма, если правило и профиль
+    действуют весь месяц; иначе — по дням их действия."""
     window = _window(rule, profile, period)
     if window is None:
         return
     lo, hi = window
     days = (hi - lo).days + 1
-    half = "первую" if period.is_first_half else "вторую"
-    if rule.calculation_method == Method.PRORATE_DAYS:
-        quantity = _q(Decimal(days) / period.month_days)
-        amount = money(rule.amount * days / period.month_days)
-        how = f"{days} из {period.month_days} дн. месяца"
+    month_name = f"{period.month:02d}.{period.year}"
+    if days == period.month_days:
+        amount, how = money(rule.amount), "полный месяц"
     else:
-        share = rule.first_half_share if period.is_first_half else Decimal("100") - rule.first_half_share
-        quantity = _q(share / 100 * Decimal(days) / period.days)
-        amount = money(rule.amount * share / 100 * days / period.days)
-        how = f"{plain(share)}% месячного оклада" + (f", {days} из {period.days} дн." if days != period.days else "")
+        amount = money(rule.amount * days / period.month_days)
+        how = f"{days} из {period.month_days} дн.: правило действует {_fmt(lo)}–{_fmt(hi)}"
     out.lines.append(LineDraft(
-        LineType.FIXED, f"Оклад за {half} половину месяца ({how})", amount, rule,
-        source_type="salary_rule", source_id=rule.pk, quantity=quantity, rate=rule.amount,
-        metadata={"method": rule.calculation_method, "days": days, "from": lo.isoformat(), "to": hi.isoformat()},
+        LineType.FIXED, f"Оклад за {month_name} ({how})", amount, rule,
+        source_type="salary_rule", source_id=rule.pk, quantity=_q(Decimal(days) / period.month_days), rate=rule.amount,
+        metadata={"method": SalaryRule.Method.MONTHLY, "days": days, "month_days": period.month_days,
+                  "from": lo.isoformat(), "to": hi.isoformat()},
     ))
+
+
+def _prior_half_month_fixed(profile, period, out: Computation):
+    """Переход с прежней схемы: оклад за этот месяц мог уже начисляться
+    полумесячными расчётами. Утверждённые не меняются — их сумма засчитывается
+    отрицательной строкой; неутверждённые блокируют утверждение, пока
+    бухгалтер их не аннулирует (сам расчёт ничего не меняет)."""
+    halves = Payroll.objects.filter(
+        employee=profile.employee, period__year=period.year, period__month=period.month,
+        period__period_type__in=PayrollPeriod.HALVES,
+    ).exclude(status=Payroll.Status.VOID).select_related("period")
+    for half in halves:
+        fixed = half.lines.filter(line_type=LineType.FIXED).aggregate(s=Sum("amount"))["s"] or ZERO
+        if not fixed:
+            continue
+        label = f"{_fmt(half.period.start_date)}–{_fmt(half.period.end_date)}"
+        if half.is_locked:
+            out.lines.append(LineDraft(
+                LineType.PRIOR_FIXED, f"Зачёт: оклад за {label} уже начислен утверждённым расчётом прежней схемы",
+                -fixed, None, source_type="payroll", source_id=half.pk,
+                metadata={"payroll_id": half.pk, "period": label, "amount": str(fixed)},
+            ))
+        else:
+            out.errors.append(
+                f"Есть неутверждённый полумесячный расчёт оклада за {label} (прежняя схема) — "
+                "аннулируйте его, чтобы оклад не начислился дважды."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -234,10 +265,19 @@ def compute(period: PayrollPeriod, profile: EmployeeSalaryProfile, *, payroll_id
     if not rules:
         out.errors.append("Не настроена ставка: нет действующих правил начисления в этом периоде.")
         return out
+    # Оклад — только в месячном периоде, процент — только в половинах месяца.
+    if profile.salary_type == RuleType.FIXED and not period.is_month:
+        out.errors.append("Оклад начисляется за полный месяц — рассчитайте период «Весь месяц (оклад)».")
+        return out
+    if profile.salary_type == RuleType.PERCENT and period.is_month:
+        out.errors.append("Процент от курса начисляется по периодам 1–15 и 16–конец месяца, а не за месяц.")
+        return out
     out.errors.extend(_overlaps(usable))
     for rule in usable:
         if rule.rule_type == RuleType.FIXED:
             _fixed(rule, profile, period, out)
+    if profile.salary_type == RuleType.FIXED:
+        _prior_half_month_fixed(profile, period, out)
     if profile.salary_type == RuleType.PERCENT:
         _percent(profile, period, payroll_id, out, usable)
     if profile.salary_type == RuleType.PERCENT:
@@ -266,7 +306,10 @@ def refresh_totals(payroll: Payroll) -> Payroll:
 
 def _previous_total(payroll: Payroll) -> Decimal | None:
     prev = (
-        Payroll.objects.filter(employee_id=payroll.employee_id, period__end_date__lt=payroll.period.start_date)
+        Payroll.objects.filter(employee_id=payroll.employee_id, period__end_date__lt=payroll.period.start_date,
+                               period__period_type__in=(
+                                   [PayrollPeriod.PeriodType.MONTH] if payroll.period.is_month else PayrollPeriod.HALVES
+                               ))
         .exclude(status=Payroll.Status.VOID).order_by("-period__end_date").first()
     )
     return prev.total_accrued if prev else None
@@ -290,6 +333,15 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
     profile = EmployeeSalaryProfile.objects.select_related("employee").filter(employee=employee).first()
     if profile is None:
         raise AccountingError("У сотрудника нет зарплатного профиля.", code="no_profile")
+    mismatch = (profile.salary_type == RuleType.FIXED) != period.is_month
+    if mismatch and profile.salary_type in ALLOWED_SALARY_TYPES and not Payroll.objects.filter(
+        period=period, employee=employee,
+    ).exists():
+        raise AccountingError(
+            "Оклад рассчитывается в периоде «Весь месяц (оклад)»." if profile.salary_type == RuleType.FIXED
+            else "Процент от курса рассчитывается в периодах 1–15 и 16–конец месяца.",
+            code="wrong_period",
+        )
     if sync and profile.salary_type == RuleType.PERCENT:
         sync_all()
     with transaction.atomic():
@@ -343,11 +395,16 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
 
 
 def employees_for(period: PayrollPeriod):
-    return (
+    """Кого считать в периоде: месяц — сотрудники на окладе; половины месяца —
+    все остальные (процент и устаревшие схемы, по которым расчёт покажет ошибку)."""
+    profiles = (
         EmployeeSalaryProfile.objects.filter(is_active=True, effective_from__lte=period.end_date)
         .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=period.start_date))
         .select_related("employee")
     )
+    if period.is_month:
+        return profiles.filter(salary_type=SalaryType.FIXED)
+    return profiles.exclude(salary_type=SalaryType.FIXED)
 
 
 def calculate_period(period: PayrollPeriod, actor) -> dict:

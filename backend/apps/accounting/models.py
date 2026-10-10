@@ -230,7 +230,9 @@ class SalaryRule(models.Model):
         BONUS = "BONUS", "Дополнительное начисление (устар.)"
 
     class Method(models.TextChoices):
-        # FIXED / PER_GROUP
+        # FIXED: полная сумма за календарный месяц
+        MONTHLY = "MONTHLY", "Полный месячный оклад"
+        # Устаревшие методы оклада (делили оклад на половины месяца) — только история
         SPLIT = "SPLIT", "Доля месячной суммы в каждой половине (по умолчанию 50/50)"
         PRORATE_DAYS = "PRORATE_DAYS", "Пропорционально календарным дням"
         # PER_STUDENT
@@ -250,7 +252,7 @@ class SalaryRule(models.Model):
     ACTIVE_TYPES = (RuleType.FIXED, RuleType.PERCENT)
 
     METHODS_BY_TYPE = {
-        RuleType.FIXED: (Method.SPLIT, Method.PRORATE_DAYS),
+        RuleType.FIXED: (Method.MONTHLY,),
         RuleType.PERCENT: (Method.STANDARD,),
         RuleType.PER_GROUP: (Method.PRORATE_DAYS, Method.SPLIT),
         RuleType.PER_STUDENT: (Method.STUDENT_DAYS, Method.SNAPSHOT),
@@ -348,6 +350,10 @@ class PayrollPeriod(models.Model):
     class PeriodType(models.TextChoices):
         FIRST_HALF = "FIRST_HALF", "1–15"
         SECOND_HALF = "SECOND_HALF", "16–конец месяца"
+        # Оклад (FIXED) начисляется за полный календарный месяц — одним расчётом.
+        MONTH = "MONTH", "Весь месяц (оклад)"
+
+    HALVES = (PeriodType.FIRST_HALF, PeriodType.SECOND_HALF)
 
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Черновик"
@@ -381,9 +387,11 @@ class PayrollPeriod(models.Model):
 
     @staticmethod
     def bounds(year: int, month: int, period_type: str) -> tuple[dt.date, dt.date]:
+        last = calendar.monthrange(year, month)[1]
         if period_type == PayrollPeriod.PeriodType.FIRST_HALF:
             return dt.date(year, month, 1), dt.date(year, month, 15)
-        last = calendar.monthrange(year, month)[1]
+        if period_type == PayrollPeriod.PeriodType.MONTH:
+            return dt.date(year, month, 1), dt.date(year, month, last)
         return dt.date(year, month, 16), dt.date(year, month, last)
 
     @property
@@ -405,6 +413,10 @@ class PayrollPeriod(models.Model):
     @property
     def is_first_half(self) -> bool:
         return self.period_type == self.PeriodType.FIRST_HALF
+
+    @property
+    def is_month(self) -> bool:
+        return self.period_type == self.PeriodType.MONTH
 
     def save(self, *args, **kwargs):
         self.start_date, self.end_date = self.bounds(self.year, self.month, self.period_type)
@@ -486,6 +498,9 @@ class PayrollLine(models.Model):
         PERCENT = "PERCENT", "Процент за завершённый цикл курса"
         REVENUE_PERCENT = "REVENUE_PERCENT", "Процент от оплаты"
         REFUND_CORRECTION = "REFUND_CORRECTION", "Корректировка возврата"
+        # Оклад за месяц, часть которого уже начислена утверждёнными
+        # полумесячными расчётами прежней схемы, — зачёт без их изменения.
+        PRIOR_FIXED = "PRIOR_FIXED", "Зачёт оклада, начисленного по прежней схеме"
         PER_STUDENT = "PER_STUDENT", "За активных студентов"
         PER_GROUP = "PER_GROUP", "За группу"
         BONUS = "BONUS", "Дополнительное начисление"
