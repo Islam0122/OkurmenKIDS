@@ -220,6 +220,11 @@ export const router = createBrowserRouter([
             },
           },
           {
+            // Свои начисления сотрудника (backend: /accounting/my/payrolls/ — только свои).
+            path: 'salary',
+            lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }),
+          },
+          {
             path: 'news',
             lazy: async () => {
               const { NewsListPage } = await import('@/features/news/NewsListPage')
@@ -276,6 +281,31 @@ export const router = createBrowserRouter([
               { path: 'surveys/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveyDetailPage')).AssistantSurveyDetailPage }) },
               { path: 'profile', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ProfilePage')).AssistantProfilePage }) },
               { path: '*', lazy: async () => ({ Component: (await import('@/features/assistant/pages/NotFoundPage')).AssistantNotFoundPage }) },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Бухгалтерия — Бухгалтер, Директор; Администратор только просматривает
+    // (backend: apps.accounting.permissions). Свой layout, как у ассистента.
+    path: '/accounting',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['accountant', 'director', 'admin']} />,
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/accounting/AccountingLayout')).AccountingLayout }),
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/accounting/DashboardPage')).AccountingDashboardPage }) },
+              { path: 'payrolls/:id', lazy: async () => ({ Component: (await import('@/features/accounting/PayrollDetailPage')).PayrollDetailPage }) },
+              { path: 'settings', lazy: async () => ({ Component: (await import('@/features/accounting/SalarySettingsPage')).SalarySettingsPage }) },
+              { path: 'student-payments', lazy: async () => ({ Component: (await import('@/features/accounting/StudentPaymentsPage')).StudentPaymentsPage }) },
+              { path: 'audit', lazy: async () => ({ Component: (await import('@/features/accounting/AuditPage')).AuditPage }) },
+              { path: '*', element: <Navigate to="/accounting" replace /> },
             ],
           },
         ],

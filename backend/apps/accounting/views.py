@@ -13,6 +13,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -42,6 +43,12 @@ from .services.report_pdf import render_individual_pdf, render_period_pdf
 from .services.report_xlsx import render_individual_xlsx, render_period_xlsx
 
 TAG = ["Accounting"]
+
+
+class AccountingPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 500
 
 
 def _fail(exc: AccountingError):
@@ -263,6 +270,7 @@ class EmployeeListView(APIView):
 @extend_schema(tags=TAG)
 class SalaryProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin,
                            mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.EmployeeSalaryProfileSerializer
     search_fields = ("employee__first_name", "employee__last_name")
@@ -295,6 +303,7 @@ class SalaryRuleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
     """Правила не редактируются и не удаляются: создание, новая версия,
     прекращение действия."""
 
+    pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.SalaryRuleSerializer
     filterset_fields = ("employee_profile", "rule_type", "program", "group", "is_active")
@@ -342,6 +351,7 @@ class SalaryRuleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
 
 @extend_schema(tags=TAG)
 class StudentPaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.StudentPaymentSerializer
     filterset_fields = ("student", "group", "course", "kind", "status", "method")
@@ -390,6 +400,7 @@ class StudentPaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vi
 
 @extend_schema(tags=TAG)
 class PayrollPeriodViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.PayrollPeriodSerializer
     queryset = PayrollPeriod.objects.all()
@@ -446,6 +457,7 @@ class PayrollPeriodViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vie
 
 @extend_schema(tags=TAG)
 class PayrollViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.PayrollListSerializer
     filterset_fields = ("period", "employee", "status", "salary_type")
@@ -571,6 +583,7 @@ class PayrollViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
 class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """История выплат сотрудникам."""
 
+    pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.PayrollPaymentSerializer
     filterset_fields = ("payroll", "status", "payment_method", "payroll__employee", "payroll__period")
@@ -591,6 +604,7 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
 
 @extend_schema(tags=TAG)
 class AdjustmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    pagination_class = AccountingPagination
     permission_classes = [AccountingAccess]
     serializer_class = s.PayrollAdjustmentSerializer
     filterset_fields = ("payroll", "status", "kind", "payroll__period")
@@ -623,6 +637,7 @@ class AdjustmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
 class AuditLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """Журнал аудита — только чтение для всех ролей."""
 
+    pagination_class = AccountingPagination
     permission_classes = [CanViewAccounting]
     serializer_class = s.PayrollAuditLogSerializer
     filterset_fields = ("entity_type", "entity_id", "action", "actor", "payroll")
@@ -678,6 +693,7 @@ class PayrollReportXlsxView(APIView):
 
 @extend_schema(tags=TAG)
 class MyPayrollViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    pagination_class = AccountingPagination
     permission_classes = [IsAuthenticated]
     serializer_class = s.OwnPayrollSerializer
 

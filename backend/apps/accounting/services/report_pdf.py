@@ -23,6 +23,7 @@ from apps.academy.services.monthly_report_pdf import (
     _ensure_fonts,
 )
 
+from .money import plain
 from .report_service import IndividualReport, PayrollReport
 
 _NBSP = " "
@@ -101,7 +102,7 @@ def render_period_pdf(report: PayrollReport) -> bytes:
             ["Сотрудник", "Должность", "Тип оплаты", "Период", "Начислено", "Корр.", "Выплачено", "Остаток", "Статус"],
             [[r.employee, r.position, r.salary_type, r.period, som(r.accrued), som(r.adjustments), som(r.paid),
               som(r.due), r.status] for r in report.rows],
-            [44 * mm, 28 * mm, 32 * mm, 30 * mm, 27 * mm, 22 * mm, 27 * mm, 27 * mm, 30 * mm],
+            [40 * mm, 26 * mm, 30 * mm, 38 * mm, 27 * mm, 22 * mm, 27 * mm, 27 * mm, 28 * mm],
             total_row=["Итого", "", "", "", som(t.accrued), som(t.adjustments), som(t.paid), som(t.due), ""],
             styles=styles,
         ),
@@ -135,10 +136,10 @@ def render_individual_pdf(report: IndividualReport) -> bytes:
         Paragraph("Начисления", styles["h"]),
         _table(
             ["Начисление", "Кол-во", "Ставка", "%", "База", "Сумма"],
-            [[l.description, l.quantity.normalize() if l.quantity is not None else "—", som(l.rate) if l.rate is not None else "—",
-              l.percentage.normalize() if l.percentage is not None else "—",
+            [[l.description, plain(l.quantity) if l.quantity is not None else "—", som(l.rate) if l.rate is not None else "—",
+              plain(l.percentage) if l.percentage is not None else "—",
               som(l.base_amount) if l.base_amount is not None else "—", som(l.amount)] for l in report.lines],
-            [76 * mm, 16 * mm, 24 * mm, 12 * mm, 26 * mm, 28 * mm],
+            [66 * mm, 14 * mm, 30 * mm, 10 * mm, 30 * mm, 32 * mm],
             total_row=["Начислено", "", "", "", "", som(report.accrued)], styles=styles,
         ),
     ]

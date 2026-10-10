@@ -6,7 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { MobileNavigation } from '@/components/layout/MobileNavigation'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useAuth } from '@/hooks/useAuth'
-import { isAssistant } from '@/lib/roles'
+import { isAccountingRole, isAssistant } from '@/lib/roles'
 
 /**
  * The one page shell every /app route renders in:
@@ -23,6 +23,8 @@ export function AppLayout() {
   // The Assistant works only in its own workspace — /app (trainer, Team Lead
   // and Admin pages) always sends it to /assistant.
   if (isAssistant(user?.role)) return <Navigate to="/assistant" replace />
+  // Бухгалтер и Директор — только в разделе бухгалтерии.
+  if (isAccountingRole(user?.role)) return <Navigate to="/accounting" replace />
 
   return (
     <div className="flex min-h-dvh bg-surface-muted">

@@ -9,7 +9,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.academy.models import Course, Group, GroupTeacher, Student, StudentStatusEvent, TrainerAssignment
+from apps.academy.models import Course, Group, GroupTeacher, Student, StudentStatusEvent
 from apps.accounting.models import EmployeeSalaryProfile, PayrollPeriod, SalaryRule, SalaryType, StudentPayment
 from apps.accounting.services.payroll_calculator import calculate_payroll
 from apps.accounting.services.periods import get_or_create_period

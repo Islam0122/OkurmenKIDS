@@ -1,6 +1,8 @@
 /** `team_lead` — руководитель тренеров: читает всю академию, ничего не изменяет.
  * `assistant` — ежедневные операции академии, только через Assistant Workspace (/assistant). */
-export type UserRole = 'admin' | 'teacher' | 'team_lead' | 'assistant'
+/** `accountant` — бухгалтерия (/accounting): расчёт зарплат, выплаты, отчёты.
+ * `director` — утверждение начислений и финансовая сводка (/accounting). */
+export type UserRole = 'admin' | 'teacher' | 'team_lead' | 'assistant' | 'accountant' | 'director'
 
 /** `apps.users.serializers.UserSerializer` — read-only in full. */
 export interface User {

@@ -374,3 +374,15 @@ class CombinedAndRulesTests(AccountingFixture):
         self.rule(self.p, R.BONUS, amount=D("50000"), start=day(9, 20))
         payroll = self.calc(SECOND)
         self.assertTrue(any("существенно отличается" in w for w in payroll.warnings))
+
+
+class DescriptionTests(AccountingFixture):
+    def test_descriptions_have_no_exponent_notation(self):
+        p = self.profile()
+        self.rule(p, R.FIXED, amount=D("20000"))
+        self.rule(p, R.REVENUE_PERCENT, percentage=D("10"), group=self.group_a)
+        self.pay(self.student(), 10000, day(9, 3))
+        descriptions = list(self.calc(FIRST).lines.values_list("description", flat=True))
+        self.assertTrue(any("50% месячного оклада" in d for d in descriptions), descriptions)
+        self.assertTrue(any(d.startswith("10% с оплаты") for d in descriptions), descriptions)
+        self.assertFalse(any("E+" in d for d in descriptions), descriptions)

@@ -44,7 +44,7 @@ from ..models import (
 )
 from . import AccountingError, audit
 from .activity import active_student_days, days_between, group_active_days, trainer_days, trainer_group_ids_ever
-from .money import ZERO, allocate_by_days, money
+from .money import ZERO, allocate_by_days, money, plain
 
 LineType = PayrollLine.LineType
 RuleType = SalaryRule.RuleType
@@ -188,7 +188,7 @@ def _fixed(rule, ctx: _Context, out: Computation):
         share = rule.first_half_share if period.is_first_half else Decimal("100") - rule.first_half_share
         quantity = _q(share / 100 * Decimal(days) / period.days)
         amount = money(rule.amount * share / 100 * days / period.days)
-        how = f"{share.normalize()}% месячного оклада" + (f", {days} из {period.days} дн." if days != period.days else "")
+        how = f"{plain(share)}% месячного оклада" + (f", {days} из {period.days} дн." if days != period.days else "")
     out.lines.append(LineDraft(
         LineType.FIXED, f"Оклад за {half} половину месяца ({how})", amount, rule,
         source_type="salary_rule", source_id=rule.pk, quantity=quantity, rate=rule.amount,
@@ -233,7 +233,7 @@ def _per_group(rule, ctx: _Context, out: Computation):
             share = rule.first_half_share if period.is_first_half else Decimal("100") - rule.first_half_share
             amount = money(rule.amount * share / 100 * n / period.days)
             quantity = _q(share / 100 * Decimal(n) / period.days)
-            how = f"{share.normalize()}% ставки, {n} из {period.days} дн."
+            how = f"{plain(share)}% ставки, {n} из {period.days} дн."
         else:
             amount = money(rule.amount * n / period.month_days)
             quantity = _q(Decimal(n) / period.month_days)
@@ -306,7 +306,7 @@ def _per_student(rule, ctx: _Context, out: Computation):
     out.lines.append(LineDraft(
         LineType.PER_STUDENT,
         f"Оплата за {len(per_student)} активн. студ. ({student_days} студенто-дн. / {period.month_days} дн. месяца "
-        f"= {equivalent.normalize()} студ.-мес.)",
+        f"= {plain(equivalent)} студ.-мес.)",
         amount, rule, source_type="salary_rule", source_id=rule.pk, quantity=equivalent, rate=rule.amount,
         metadata={"method": "STUDENT_DAYS", "student_days": student_days, "month_days": period.month_days,
                   "students": _student_rows(per_student)},
@@ -415,7 +415,7 @@ def _revenue(rule, ctx: _Context, out: Computation):
         group = names[group_id]
         out.lines.append(LineDraft(
             LineType.REVENUE_PERCENT,
-            f"{pct.normalize()}% с оплаты группы «{group.name}» ({group.course.name})",
+            f"{plain(pct)}% с оплаты группы «{group.name}» ({group.course.name})",
             money(group_base * pct / 100), rule, source_type="group", source_id=group_id,
             quantity=Decimal(len(rows[group_id])), percentage=pct, base_amount=money(group_base),
             metadata={"basis": rule.revenue_basis, "group": group.name, "program": group.course.name,

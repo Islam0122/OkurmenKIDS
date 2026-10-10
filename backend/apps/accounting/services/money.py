@@ -34,3 +34,9 @@ def allocate_by_days(amount: Decimal, start: dt.date, end: dt.date, part_start: 
     before = (lo - start).days
     through = (hi - start).days + 1
     return money(amount * through / total_days) - money(amount * before / total_days)
+
+
+def plain(value) -> str:
+    """Число без лишних нулей и без экспоненты: 50.00 → «50», 12.50 → «12,5»."""
+    text = format(Decimal(value).normalize(), "f")
+    return text.replace(".", ",")

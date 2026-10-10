@@ -34,6 +34,8 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
     # Public training API: the signed token of the student's own attempt.
     "x-attempt-token",
+    # Accounting: a repeated payment request returns the same payment.
+    "idempotency-key",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
