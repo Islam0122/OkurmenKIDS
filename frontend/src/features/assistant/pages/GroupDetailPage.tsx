@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRightLeft, CalendarDays, CalendarPlus, Pencil, RefreshCw, UserCheck, UserPlus, Users, UserX } from 'lucide-react'
+import { ArrowRightLeft, CalendarClock, CalendarDays, CalendarPlus, Pencil, RefreshCw, UserCheck, UserPlus, Users, UserX } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { assistantApi } from '@/api/assistant'
@@ -23,6 +23,8 @@ import { useAssistantGroup, useAssistantFormMutation, useAssistantMutation, useA
 import { extractErrorMessage, isNotFound } from '@/lib/apiError'
 import type { GroupDetail, StudentRow } from '@/types/assistant'
 import { formatDate, formatDateShort, pluralize } from '@/utils/format'
+
+import { SubjectStartDatesModal } from '@/features/groups/SubjectStartDatesModal'
 
 import { useAssistantActions } from '../actions/AssistantActions'
 import { GroupAttendanceTab, GroupHomeworkTab } from '../records/GroupRecordTabs'
@@ -157,6 +159,7 @@ export function AssistantGroupDetailPage() {
   const { data: group, isPending, isError, error, refetch } = useAssistantGroup(Number.isFinite(groupId) ? groupId : undefined)
   const { open } = useAssistantActions()
   const [editing, setEditing] = useState(false)
+  const [startsOpen, setStartsOpen] = useState(false)
   const generate = useAssistantMutation(() => assistantApi.generateLessons(groupId), (report) =>
     report.created ? `Создано занятий: ${report.created}` : 'Занятия уже актуальны')
 
@@ -189,12 +192,14 @@ export function AssistantGroupDetailPage() {
             <Menu
               items={[
                 { key: 'existing', label: 'Добавить существующих студентов', icon: <UserPlus className="size-4" aria-hidden />, onClick: () => open({ type: 'bulk', action: 'add_to_group', group: ref }) },
+                { key: 'subject-starts', label: 'Даты старта предметов', icon: <CalendarClock className="size-4" aria-hidden />, onClick: () => setStartsOpen(true) },
                 { key: 'generate', label: 'Сгенерировать занятия', icon: <RefreshCw className="size-4" aria-hidden />, onClick: () => generate.mutate(undefined), disabled: generate.isPending || group.programs.length === 0 },
               ]}
             />
           </>
         }
       />
+      <SubjectStartDatesModal isOpen={startsOpen} onClose={() => setStartsOpen(false)} groupId={group.id} source="assistant" />
       <Tabs aria-label="Разделы группы" items={TABS} value={tab} onChange={(key) => setParams(key === 'overview' ? {} : { tab: key }, { replace: true })} />
 
       {tab === 'overview' ? (

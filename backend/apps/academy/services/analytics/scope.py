@@ -19,6 +19,7 @@ from apps.users.models import Teacher
 
 from apps.academy.models import Group, Lesson, Student
 from apps.academy.services import trainer_history
+from apps.academy.services.subject_start import before_subject_start_q
 from .period import DateRange
 
 
@@ -103,7 +104,9 @@ class AnalyticsScope:
             qs = qs.filter(teacher_q)
         if self.subject_id is not None:
             qs = qs.filter(subject_id=self.subject_id)
-        return qs
+        # A subject's lessons count only from its own start date in the group
+        # (models.GroupSubject) — never a lesson planned before it.
+        return qs.exclude(before_subject_start_q())
 
     def lesson_teacher_q(self, prefix: str) -> Q | None:
         """Same as `_effective_teacher_q`, exposed for other modules that

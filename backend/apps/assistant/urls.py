@@ -13,6 +13,11 @@ urlpatterns = [
     path("groups/<int:pk>/students/", views.GroupStudentsView.as_view(), name="group-students"),
     path("groups/<int:pk>/programs/", views.GroupProgramView.as_view(), name="group-programs"),
     path("groups/<int:pk>/generate-lessons/", views.GroupGenerateLessonsView.as_view(), name="group-generate-lessons"),
+    path("groups/<int:pk>/subject-start-dates/", views.GroupSubjectStartDatesView.as_view(), name="group-subject-starts"),
+    path(
+        "groups/<int:pk>/subject-start-dates/<int:subject_id>/",
+        views.GroupSubjectStartDateView.as_view(), name="group-subject-start",
+    ),
     path("groups/<int:pk>/attendance/", views.GroupAttendanceView.as_view(), name="group-attendance"),
     path("groups/<int:pk>/homework/", views.GroupHomeworkView.as_view(), name="group-homework"),
     path("lessons/<int:pk>/", views.LessonDetailView.as_view(), name="lesson-detail"),

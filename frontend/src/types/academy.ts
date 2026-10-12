@@ -125,6 +125,8 @@ export interface Group {
   end_date: string | null
   schedules: GroupScheduleSlot[]
   teachers: GroupTeacherSummary[]
+  /** Every subject of the course with its own start date (`is_custom` false — starts with the group). */
+  subject_starts: GroupSubjectStart[]
   students_count: number
   max_students: number | null
   status: GroupStatus
@@ -132,6 +134,38 @@ export interface Group {
   description: string
   created_at: string
   updated_at: string
+}
+
+/** `GroupSerializer.subject_starts` — dates are `YYYY-MM-DD` (no time zone). */
+export interface GroupSubjectStart {
+  subject: number
+  subject_name: string
+  start_date: string
+  is_custom: boolean
+}
+
+export type SubjectStartStatus = 'not_started' | 'in_progress' | 'completed'
+
+/** One row of `GET /groups/{id}/subject-start-dates/` (services.subject_start.overview). */
+export interface SubjectStartRow {
+  subject: { id: number; name: string }
+  start_date: string
+  is_custom: boolean
+  status: SubjectStartStatus
+  status_display: string
+  lessons_total: number
+  lessons_open: number
+  first_lesson_date: string | null
+  updated_by: string | null
+  updated_at: string | null
+}
+
+export interface SubjectStartOverview {
+  group: { id: number; name: string; course: string; status: GroupStatus; start_date: string; end_date: string | null }
+  today: string
+  subjects: SubjectStartRow[]
+  /** Present after a save: the changed subject and how many not-yet-given lessons moved. */
+  saved?: { subject: number; previous_start_date: string; start_date: string; moved: number }
 }
 
 /** `apps.academy.serializers.StudentSerializer` */

@@ -19,6 +19,7 @@ from django.db import transaction
 
 from ..models import Lesson
 from .schedule_board import lesson_conflicts
+from .subject_start import check_lesson_date
 
 
 def find_lesson_conflicts(lesson: Lesson, *, date: dt.date, start_time: dt.time, end_time: dt.time) -> list[str]:
@@ -33,6 +34,7 @@ def move_lesson(lesson: Lesson, *, date: dt.date, start_time: dt.time, end_time:
         raise ValidationError("Перенести можно только запланированное занятие.")
     if end_time <= start_time:
         raise ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
+    check_lesson_date(lesson, date)
     problems = find_lesson_conflicts(lesson, date=date, start_time=start_time, end_time=end_time)
     if problems:
         raise ValidationError({"conflicts": problems})

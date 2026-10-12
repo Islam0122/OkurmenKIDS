@@ -43,7 +43,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.academy.models import Group, GroupTeacher, Homework, Lesson, Student, StudentStatusEvent
-from apps.academy.services import student_status
+from apps.academy.services import student_status, subject_start
 from apps.academy.services.attendance_service import bulk_mark_attendance
 from apps.academy.services.group_academic_config import save_program_config
 from apps.academy.services.group_setup import ProgramSpec, create_group
@@ -250,6 +250,27 @@ class GroupGenerateLessonsView(AssistantView):
         if summary["errors"] and not (summary["created"] or summary["updated"] or summary["rescheduled"]):
             raise DRFValidationError({"detail": summary["errors"]})
         return Response(summary)
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class GroupSubjectStartDatesView(AssistantView):
+    """«Даты старта предметов» — the LMS endpoint's own service and rules
+    (GroupViewSet.subject_start_dates / services.subject_start)."""
+
+    def get(self, request, pk):
+        group = get_object_or_404(Group.objects.select_related("course"), pk=pk)
+        return Response(subject_start.overview(group))
+
+
+@extend_schema(tags=TAGS, request=None, responses={200: dict})
+class GroupSubjectStartDateView(AssistantView):
+    def patch(self, request, pk, subject_id):
+        from apps.academy.views import save_subject_start_date
+
+        group = get_object_or_404(Group.objects.select_related("course"), pk=pk)
+        return Response(save_subject_start_date(request, group, subject_id))
+
+    put = patch
 
 
 # ---------------------------------------------------------------------------

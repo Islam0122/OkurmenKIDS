@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.users.permissions import can_view_academy
@@ -481,6 +482,10 @@ class GroupTeacherSerializer(serializers.ModelSerializer):
         return instance
 
 
+class SubjectStartDateInputSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+
+
 class GroupSerializer(serializers.ModelSerializer):
     """teacher/room/start_time/end_time/days_of_week are legacy fields on
     the `Group` model, kept only for backward compatibility with data that
@@ -495,6 +500,9 @@ class GroupSerializer(serializers.ModelSerializer):
     students_count = serializers.SerializerMethodField()
     schedules = GroupScheduleSlotSerializer(many=True, read_only=True)
     teachers = GroupTeacherSerializer(many=True, read_only=True)
+    subject_starts = serializers.SerializerMethodField(
+        help_text="Дата старта каждого предмета курса в группе (без своей даты — дата начала группы).",
+    )
     students = serializers.PrimaryKeyRelatedField(
         queryset=Student.objects.all(),
         many=True,
@@ -514,6 +522,7 @@ class GroupSerializer(serializers.ModelSerializer):
             "end_date",
             "schedules",
             "teachers",
+            "subject_starts",
             "students",
             "students_count",
             "max_students",
@@ -533,6 +542,19 @@ class GroupSerializer(serializers.ModelSerializer):
         # (IsAdminOrReadOnly), but keeps this field safe by construction if
         # a teacher-facing roster-edit endpoint is ever added later.
         self.fields["students"].queryset = Student.objects.filter(is_active=True)
+
+    @extend_schema_field(serializers.ListField(child=serializers.DictField()))
+    def get_subject_starts(self, obj: Group) -> list[dict]:
+        explicit = {row.subject_id: row.start_date for row in obj.subject_starts.all()}
+        return [
+            {
+                "subject": subject.pk,
+                "subject_name": subject.name,
+                "start_date": max(explicit[subject.pk], obj.start_date) if subject.pk in explicit else obj.start_date,
+                "is_custom": subject.pk in explicit,
+            }
+            for subject in sorted(obj.course.subjects.all(), key=lambda s: s.name)
+        ]
 
     def get_students_count(self, obj: Group) -> int:
         annotated = getattr(obj, "active_students_count", None)

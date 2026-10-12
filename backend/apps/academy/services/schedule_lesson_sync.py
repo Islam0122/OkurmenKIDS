@@ -143,6 +143,16 @@ def follows_slot(lesson: Lesson, slot: GroupSchedule | SlotSnapshot) -> bool:
     )
 
 
+def _before_subject_start(group):
+    """(lesson, date) -> True when `date` is before the lesson's subject's
+    own start date in `group` (services.subject_start): moving a lesson
+    within its week must never put it there — it stays where it is."""
+    from .subject_start import subject_start_dates
+
+    starts = subject_start_dates(group)
+    return lambda lesson, date: date < starts.get(lesson.subject_id, date)
+
+
 def lessons_with_data(lesson_ids) -> set[int]:
     """Of `lesson_ids`, the lessons with attendance or homework results."""
     return set(
@@ -206,9 +216,11 @@ def sync_schedule_lessons(slot: GroupSchedule, before: SlotSnapshot, *, today: d
     with transaction.atomic():
         future = _future_lessons(slot, now_local)
         with_data = lessons_with_data([lesson.pk for lesson in future])
+        too_early = _before_subject_start(slot.group)
         movable = []
         for lesson in future:
-            lands_ahead = is_ahead(target_date(lesson.date, new_weekday), after.start_time, now_local)
+            new_date = target_date(lesson.date, new_weekday)
+            lands_ahead = is_ahead(new_date, after.start_time, now_local) and not too_early(lesson, new_date)
             if follows_slot(lesson, before) and lesson_is_open(lesson, with_data) and lands_ahead:
                 movable.append(lesson)
             else:
@@ -270,10 +282,11 @@ def align_schedule_lessons(slot: GroupSchedule, *, today: dt.date | None = None,
         if not future:
             return result
         with_data = lessons_with_data([lesson.pk for lesson in future])
+        too_early = _before_subject_start(slot.group)
         planned = []
         for lesson in future:
             date = target_date(lesson.date, weekday)
-            if lesson_is_open(lesson, with_data) and is_ahead(date, slot.start_time, now_local):
+            if lesson_is_open(lesson, with_data) and is_ahead(date, slot.start_time, now_local) and not too_early(lesson, date):
                 planned.append((lesson, date, lesson.room_id, lesson.teacher_id))
             else:
                 result.kept += 1

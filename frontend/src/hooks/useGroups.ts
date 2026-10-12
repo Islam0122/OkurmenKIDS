@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { assistantApi } from '@/api/assistant'
 import { groupsApi, type GroupListParams } from '@/api/groups'
 import type { AcademicProgramInput, LessonStatus } from '@/types/academy'
 
@@ -61,6 +62,36 @@ export function useGenerateLessons(id: number) {
       void queryClient.invalidateQueries({ queryKey: ['groups'] })
       void queryClient.invalidateQueries({ queryKey: ['lessons'] })
       void queryClient.invalidateQueries({ queryKey: ['schedule'] })
+    },
+  })
+}
+
+/** Which API serves «Даты старта предметов»: the LMS (Admin / Team Lead) or the Assistant Workspace. */
+export type SubjectStartSource = 'lms' | 'assistant'
+
+const subjectStartApi = (source: SubjectStartSource) => (source === 'assistant' ? assistantApi : groupsApi)
+
+export function useSubjectStartDates(id: number | undefined, source: SubjectStartSource = 'lms') {
+  return useQuery({
+    queryKey: ['groups', 'detail', id, 'subject-start-dates', source],
+    queryFn: () => subjectStartApi(source).subjectStartDates(id as number),
+    enabled: id !== undefined,
+  })
+}
+
+export function useSaveSubjectStartDate(id: number, source: SubjectStartSource = 'lms') {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ subjectId, startDate }: { subjectId: number; startDate: string }) =>
+      subjectStartApi(source).saveSubjectStartDate(id, subjectId, startDate),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['groups', 'detail', id, 'subject-start-dates', source], data)
+      // The subject's not-yet-given lessons may have moved: every lesson view refetches.
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['lessons'] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule'] })
+      void queryClient.invalidateQueries({ queryKey: ['assistant'] })
+      void queryClient.invalidateQueries({ queryKey: ['reports'] })
     },
   })
 }

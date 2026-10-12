@@ -127,6 +127,13 @@ function OverviewTab({ group, linkTrainers, onEditSchedule }: { group: Group; li
         <Field label="Дата окончания" value={group.end_date ? formatDateShort(group.end_date) : '—'} />
         <Field label="Студентов" value={`${group.students_count}${group.max_students ? ` / ${group.max_students}` : ''}`} />
         <Field label="Учебных программ" value={`${group.teachers.length}`} />
+        {group.subject_starts?.length ? (
+          <Field
+            label="Старт предметов"
+            className="sm:col-span-2"
+            value={group.subject_starts.map((row) => `${row.subject_name} — ${formatDateShort(row.start_date)}`).join(' · ')}
+          />
+        ) : null}
         {group.description ? <Field label="Описание" value={group.description} className="sm:col-span-2" /> : null}
       </dl>
 

@@ -8,6 +8,7 @@ import type {
   GroupStatus,
   LessonStatus,
   Student,
+  SubjectStartOverview,
 } from '@/types/academy'
 import type { Paginated } from '@/types/common'
 import type { GroupStudentProgress, StudentProgressDetail, StudentProgressParams } from '@/types/studentProgress'
@@ -56,6 +57,16 @@ export const groupsApi = {
   /** Replace a program's trainer, subject and whole slot list (left-out slots are removed). */
   saveProgram: (id: number, programId: number, payload: AcademicProgramInput): Promise<AcademicConfig> =>
     apiClient.put<AcademicConfig>(`/groups/${id}/academic-config/programs/${programId}/`, payload).then((r) => r.data),
+
+  /** Admin / Team Lead / Assistant: every subject's own start date, status and lesson counts. */
+  subjectStartDates: (id: number): Promise<SubjectStartOverview> =>
+    apiClient.get<SubjectStartOverview>(`/groups/${id}/subject-start-dates/`).then((r) => r.data),
+
+  /** Change ONE subject's start date (`YYYY-MM-DD`); the group's own dates and other subjects stay as they are. */
+  saveSubjectStartDate: (id: number, subjectId: number, startDate: string): Promise<SubjectStartOverview> =>
+    apiClient
+      .patch<SubjectStartOverview>(`/groups/${id}/subject-start-dates/${subjectId}/`, { start_date: startDate })
+      .then((r) => r.data),
 
   /** The existing lesson generator: one lesson per slot occurrence (its time, room, trainer, subject). */
   generateLessons: (id: number): Promise<GenerateLessonsResult> =>

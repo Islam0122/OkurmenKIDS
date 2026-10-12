@@ -102,6 +102,7 @@ from .group_schedule_conflicts import (
     find_schedule_teacher_conflict,
 )
 from .schedule_lesson_sync import align_schedule_lessons, attach_detached_lessons
+from .subject_start import subject_start_dates
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +334,7 @@ class _Occupancy:
     back-filled into a past week.
     """
 
-    def __init__(self, *, group: Group, teacher_ids: set[int], room_ids: set[int]):
+    def __init__(self, *, group: Group, teacher_ids: set[int], room_ids: set[int], exclude_ids=()):
         self._group: dict[dt.date, list[tuple]] = defaultdict(list)
         self._teacher: dict[tuple[int, dt.date], list[tuple]] = defaultdict(list)
         self._room: dict[tuple[int, dt.date], list[tuple]] = defaultdict(list)
@@ -349,6 +350,10 @@ class _Occupancy:
         )
         if group.end_date:
             qs = qs.filter(date__lte=group.end_date)
+        if exclude_ids:
+            # Lessons being re-planned (services.subject_start) don't hold
+            # their current place.
+            qs = qs.exclude(pk__in=exclude_ids)
 
         for row in qs.values(
             "group_id", "date", "start_time", "end_time", "teacher_id", "group_teacher__teacher_id", "room_id", "status",
@@ -619,9 +624,10 @@ def _walk_and_generate(*, group: Group, slots_by_weekday, take_next, remaining, 
     `group.end_date` (or a hard scan cap), visiting every slot occurrence in
     weekday/start_time order.
 
-    `take_next(slot)` pops the next plan row *this slot* may carry (the
-    head of its own subject's queue — see _SubjectRouting), or returns None
-    when the slot has nothing left to teach. `remaining()` lists the plan
+    `take_next(slot, date)` pops the next plan row *this slot* may carry on
+    `date` (the head of its own subject's queue — see _SubjectRouting — once
+    that subject has started, see services.subject_start), or returns None
+    when the slot has nothing to teach that day. `remaining()` lists the plan
     rows no slot has taken yet; the walk stops as soon as it is empty.
     `lesson_kwargs_for(slot, plan, date)` returns the concrete Lesson
     identity/content, or None when the row can't be given a teacher (it has
@@ -644,7 +650,7 @@ def _walk_and_generate(*, group: Group, slots_by_weekday, take_next, remaining, 
         for slot in slots_by_weekday.get(current_date.weekday(), []):
             if occupancy.group_busy(current_date, slot.start_time, slot.end_time) or occupancy.slot_week_taken(slot, current_date):
                 continue
-            plan = take_next(slot)
+            plan = take_next(slot, current_date)
             if plan is None:
                 continue
 
@@ -860,14 +866,20 @@ def _generate_from_course_plan(group: Group, group_teachers: list[GroupTeacher],
         return
 
     legacy_subject_ids = [sid for sid, route in routing.route.items() if route == ROUTE_LEGACY]
+    # A subject's lessons never go before its own start date (GroupSubject);
+    # until then its slot occurrences are simply not used — not reserved.
+    starts = subject_start_dates(group)
 
-    def take_next(slot: GroupSchedule):
+    def started(subject_id, date) -> bool:
+        return date >= starts.get(subject_id, group.start_date)
+
+    def take_next(slot: GroupSchedule, date):
         if slot.subject_id is not None:
             queue = queues.get(slot.subject_id)
-            return queue.popleft() if queue else None
+            return queue.popleft() if queue and started(slot.subject_id, date) else None
         # A legacy subject-less slot serves every subject without slots of
         # its own, in plan order — exactly the old single-teacher behaviour.
-        heads = [queues[sid] for sid in legacy_subject_ids if queues.get(sid)]
+        heads = [queues[sid] for sid in legacy_subject_ids if queues.get(sid) and started(sid, date)]
         if not heads:
             return None
         return min(heads, key=lambda q: q[0].lesson_number).popleft()
@@ -944,6 +956,10 @@ def _generate_from_individual_plan(group: Group, group_teacher: GroupTeacher, ru
         teacher_ids={group_teacher.teacher_id},
         room_ids={slot.room_id for slot in slots if slot.room_id},
     )
+    starts_on = subject_start_dates(group).get(group_teacher.subject_id, group.start_date)
+
+    def take_next(slot: GroupSchedule, date):
+        return queue.popleft() if queue and date >= starts_on else None
 
     def lesson_kwargs_for(slot: GroupSchedule, plan, date):
         return dict(
@@ -966,7 +982,7 @@ def _generate_from_individual_plan(group: Group, group_teacher: GroupTeacher, ru
 
     _walk_and_generate(
         group=group, slots_by_weekday=slots_by_weekday,
-        take_next=lambda slot: queue.popleft() if queue else None, remaining=lambda: list(queue),
+        take_next=take_next, remaining=lambda: list(queue),
         lesson_kwargs_for=lesson_kwargs_for, occupancy=occupancy, run=run, label=label, not_before=not_before,
     )
 

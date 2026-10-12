@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Users } from 'lucide-react'
+import { CalendarClock, Users } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 
 import { GroupCard } from '@/components/academy/GroupCard'
@@ -11,8 +11,12 @@ import { Pagination } from '@/components/ui/Pagination'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
 import { FilterBar, FilterField } from '@/components/ui/FilterBar'
+import { Button } from '@/components/ui/Button'
+import { useAuth } from '@/hooks/useAuth'
 import { useGroups } from '@/hooks/useGroups'
+import { seesWholeAcademy } from '@/lib/roles'
 import type { GroupStatus } from '@/types/academy'
+import { SubjectStartDatesModal } from './SubjectStartDatesModal'
 
 const STATUS_OPTIONS: { value: GroupStatus; label: string }[] = [
   { value: 'active', label: 'Активна' },
@@ -29,6 +33,10 @@ export function GroupsListPage() {
   const status = STATUS_OPTIONS.some((o) => o.value === params.get('status')) ? (params.get('status') as string) : ''
   const setStatus = (value: string) => setParams(value ? { status: value } : {}, { replace: true })
   const [page, setPage] = useState(1)
+  const { user } = useAuth()
+  // Admin / Team Lead (backend: CanManageSubjectStartDates); a trainer only reads the dates on the group page.
+  const managesStarts = seesWholeAcademy(user?.role)
+  const [startsOpen, setStartsOpen] = useState(false)
 
   const { data, isPending, isError, refetch } = useGroups({
     search: search || undefined,
@@ -38,7 +46,18 @@ export function GroupsListPage() {
 
   return (
     <div>
-      <PageHeader title="Мои группы" description="Группы, с которыми вы работаете." />
+      <PageHeader
+        title="Мои группы"
+        description="Группы, с которыми вы работаете."
+        actions={
+          managesStarts ? (
+            <Button variant="secondary" size="sm" leftIcon={<CalendarClock className="size-4" aria-hidden />} onClick={() => setStartsOpen(true)}>
+              Даты старта предметов
+            </Button>
+          ) : undefined
+        }
+      />
+      {managesStarts ? <SubjectStartDatesModal isOpen={startsOpen} onClose={() => setStartsOpen(false)} /> : null}
 
       <FilterBar>
         <FilterField size="lg">

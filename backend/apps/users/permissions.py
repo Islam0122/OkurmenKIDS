@@ -164,3 +164,19 @@ class CanManageGroupAcademicConfig(BasePermission):
 
 # The trainer assignment action is part of the same right.
 CanAssignTrainerToGroup = CanManageGroupAcademicConfig
+
+
+class CanManageSubjectStartDates(BasePermission):
+    """«Даты старта предметов» of a group (models.GroupSubject): read and
+    change one subject's start date — and with it re-plan that subject's
+    not-yet-conducted lessons. Part of the group's academic configuration,
+    so whoever may change a group's schedule and generate its lessons may do
+    this too: Admin, Team Lead (CanManageGroupAcademicConfig) and Assistant
+    (its Workspace already manages programs, schedule and generation). A
+    Trainer only reads the dates (GroupSerializer.subject_starts)."""
+
+    message = "Даты старта предметов может менять руководитель тренеров, ассистент или администратор."
+
+    def has_permission(self, request, view) -> bool:
+        user = request.user
+        return is_admin_user(user) or is_team_lead(user) or is_assistant(user)
