@@ -20,10 +20,11 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.users.import_export.formats import UnsupportedFileFormat
-from apps.users.models import Teacher, User
+from apps.users.models import Subject, Teacher, User
 from apps.users.permissions import (
     CanAssignTrainerToGroup,
     CanManageGroupAcademicConfig,
+    CanManageSubjectStartDates,
     IsAdmin,
     IsAdminOrTeamLeadReadOnly,
     can_view_academy,
@@ -61,6 +62,7 @@ from .models import (
 )
 from .permissions import IsAdminOrOwningTeacher, IsAdminOrReadOnly
 from .serializers import (
+    SubjectStartDateInputSerializer,
     AcademyMonthlyReportCommentSerializer,
     AcademyMonthlyReportCreateSerializer,
     AcademyMonthlyReportSerializer,
@@ -117,6 +119,8 @@ from .services.lesson_generator import generate_lessons_for_group_with_report, p
 from .services.lesson_reschedule import cancel_and_reschedule, reschedule_cancelled_lesson
 from .services.subject_assignments import subject_assignment_overview
 from .services.group_academic_config import config_overview, save_program_config
+from .services import subject_start
+from .services.subject_start import check_lesson_date
 from .services.trainer_assignment import assign_trainer, assignment_overview
 from .services.schedule_lesson_sync import snapshot as schedule_snapshot, sync_schedule_lessons
 
@@ -146,6 +150,27 @@ def _sees_academy(user) -> bool:
     lesson ownership) instead, and Team Lead writes are refused up front by
     the permission classes (IsAdminOrReadOnly / IsAdminOrOwningTeacher)."""
     return can_view_academy(user)
+
+
+def save_subject_start_date(request, group, subject_id) -> dict:
+    """Shared by the LMS and the Assistant Workspace endpoints."""
+    subject = get_object_or_404(Subject, pk=subject_id)
+    data = SubjectStartDateInputSerializer(data=request.data)
+    data.is_valid(raise_exception=True)
+    try:
+        change = subject_start.set_subject_start_date(
+            group, subject, data.validated_data["start_date"], user=request.user,
+        )
+    except DjangoValidationError as exc:
+        raise DRFValidationError(exc.message_dict if hasattr(exc, "error_dict") else {"start_date": exc.messages})
+    payload = subject_start.overview(group)
+    payload["saved"] = {
+        "subject": subject.pk,
+        "previous_start_date": change.previous,
+        "start_date": change.subject_start.start_date,
+        "moved": change.moved,
+    }
+    return payload
 
 
 def _as_drf_validation_error(exc: DjangoValidationError) -> DRFValidationError:
@@ -489,6 +514,7 @@ class GroupViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = (
             Group.objects.select_related("teacher__user", "room", "course")
+            .prefetch_related("subject_starts", "course__subjects")
             .annotate(
                 active_students_count=Count(
                     "students", filter=Q(students__is_active=True), distinct=True
@@ -728,6 +754,39 @@ class GroupViewSet(viewsets.ModelViewSet):
         group = get_object_or_404(self.get_queryset(), pk=pk)
         program = get_object_or_404(GroupTeacher, pk=program_id, group=group)
         return Response(self._save_config(request, group, program=program))
+
+    @extend_schema(
+        tags=["Groups"],
+        description=(
+            "«Даты старта предметов» (Admin, Team Lead, Assistant): every subject of the group's course "
+            "with its own start date (`is_custom` false — it starts with the group), status "
+            "(not_started / in_progress / completed) and lesson counts."
+        ),
+    )
+    @action(
+        detail=True, methods=["get"], url_path="subject-start-dates",
+        permission_classes=[IsAuthenticated, CanManageSubjectStartDates],
+    )
+    def subject_start_dates(self, request, pk=None):
+        group = get_object_or_404(Group.objects.select_related("course"), pk=pk)
+        return Response(subject_start.overview(group))
+
+    @extend_schema(
+        tags=["Groups"],
+        request=SubjectStartDateInputSerializer,
+        description=(
+            "Change one subject's start date ({start_date: YYYY-MM-DD}). Never changes the group's own "
+            "dates or any other subject. The subject's not-yet-conducted lessons move onto its schedule "
+            "from that date (`saved.moved`); a date after an already conducted lesson is refused."
+        ),
+    )
+    @action(
+        detail=True, methods=["put", "patch"], url_path=r"subject-start-dates/(?P<subject_id>\d+)",
+        permission_classes=[IsAuthenticated, CanManageSubjectStartDates],
+    )
+    def subject_start_date(self, request, pk=None, subject_id=None):
+        group = get_object_or_404(Group.objects.select_related("course"), pk=pk)
+        return Response(save_subject_start_date(request, group, subject_id))
 
     @extend_schema(tags=["Groups"], responses=SubjectAssignmentSerializer(many=True))
     @action(detail=True, methods=["get"], url_path="subject-assignments")
@@ -1022,6 +1081,11 @@ class LessonViewSet(
             flags["manually_edited"] = True
         if changed(Lesson.SCHEDULE_FIELDS):
             flags["schedule_overridden"] = True
+            if "date" in serializer.validated_data:
+                try:
+                    check_lesson_date(lesson, serializer.validated_data["date"])
+                except DjangoValidationError as exc:
+                    raise DRFValidationError(exc.message_dict)
         serializer.save(**flags)
 
     @extend_schema(

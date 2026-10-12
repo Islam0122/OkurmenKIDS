@@ -617,6 +617,68 @@ class Group(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# GroupSubject — a subject's own start date within one group ("IT from
+# 10.10, English from 12.10"). Per (group, subject), not per program: a
+# subject can be taught by several programs (GroupTeacher) of the group, and
+# they all start together. A row is optional — a subject without one starts
+# with the group (Group.start_date), exactly as before this model existed;
+# the effective date is never earlier than the group's own start. Changing a
+# row never touches Group.start_date or any other subject. Written only
+# through services.subject_start.set_subject_start_date (it also re-plans
+# the subject's not-yet-conducted lessons), read by lesson generation.
+# ---------------------------------------------------------------------------
+
+class GroupSubject(models.Model):
+    group = models.ForeignKey(
+        Group,
+        on_delete=models.CASCADE,
+        related_name="subject_starts",
+        verbose_name="Группа",
+    )
+
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="group_starts",
+        verbose_name="Предмет",
+    )
+
+    start_date = models.DateField(
+        verbose_name="Дата старта предмета",
+        help_text="До этой даты занятия предмета в группе не создаются и не учитываются в KPI.",
+    )
+
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Кто изменил",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Дата старта предмета"
+        verbose_name_plural = "Даты старта предметов"
+        ordering = ["group", "start_date", "subject__name"]
+        constraints = [
+            models.UniqueConstraint(fields=["group", "subject"], name="unique_group_subject_start"),
+        ]
+
+    def __str__(self):
+        return f"{self.group.name} — {self.subject.name} с {self.start_date:%d.%m.%Y}"
+
+    def clean(self):
+        from .services.subject_start import validate_start_date
+
+        if self.group_id and self.subject_id and self.start_date:
+            validate_start_date(self.group, self.subject, self.start_date)
+
+
+# ---------------------------------------------------------------------------
 # GroupTeacher — "Teacher Program": one Teacher teaching one Subject on its
 # own Schedule with its own Lesson Plan within one Group. This is the *only*
 # unit a Group's teachers, schedules and lesson plans belong to — every

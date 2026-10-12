@@ -3,6 +3,7 @@ import { AxiosError } from 'axios'
 import {
   BookOpen,
   Building2,
+  CalendarClock,
   CalendarDays,
   CalendarPlus,
   Clock,
@@ -25,6 +26,7 @@ import { useAcademicConfig, useGenerateLessons, useSaveAcademicProgram } from '@
 import { extractErrorMessage } from '@/lib/apiError'
 import type { AcademicConfig, AcademicProgram } from '@/types/academy'
 import { DAY_LABELS, WEEKDAY_ORDER, type DayOfWeek } from '@/types/common'
+import { SubjectStartDatesModal } from './SubjectStartDatesModal'
 
 /**
  * «Расписание группы» for Admin / Team Lead (manage_group_academic_config):
@@ -37,6 +39,7 @@ import { DAY_LABELS, WEEKDAY_ORDER, type DayOfWeek } from '@/types/common'
 export function GroupAcademicConfig({ groupId }: { groupId: number }) {
   const { data, isPending, isError, refetch } = useAcademicConfig(groupId)
   const [editing, setEditing] = useState<number | 'new' | null>(null)
+  const [startsOpen, setStartsOpen] = useState(false)
 
   if (isPending) return <LoadingState label="Загружаем расписание группы…" />
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />
@@ -52,6 +55,9 @@ export function GroupAcademicConfig({ groupId }: { groupId: number }) {
           Расписание группы
         </h3>
         <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" leftIcon={<CalendarClock className="size-4" aria-hidden />} onClick={() => setStartsOpen(true)}>
+            Даты старта предметов
+          </Button>
           {freeSubjects.length > 0 && editing === null ? (
             <Button variant="secondary" size="sm" leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => setEditing('new')}>
               Добавить предмет и тренера
@@ -85,6 +91,8 @@ export function GroupAcademicConfig({ groupId }: { groupId: number }) {
       {editing === 'new' ? (
         <ProgramEditor groupId={groupId} config={data} program={null} subjects={freeSubjects} onDone={() => setEditing(null)} />
       ) : null}
+
+      <SubjectStartDatesModal isOpen={startsOpen} onClose={() => setStartsOpen(false)} groupId={groupId} />
     </section>
   )
 }

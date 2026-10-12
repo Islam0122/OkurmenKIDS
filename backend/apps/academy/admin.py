@@ -83,6 +83,7 @@ from .models import (
     AcademyMonthlyReport,
     CourseLessonPlan,
     Group,
+    GroupSubject,
     GroupTeacher,
     GroupTeacherLessonPlan,
     Homework,
@@ -1843,3 +1844,70 @@ class TrainerAssignmentAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+# ---------------------------------------------------------------------------
+# GroupSubject — «Даты старта предметов». Saved through
+# services.subject_start.set_subject_start_date (validation, history
+# protection and the move of the subject's open lessons), never a bare save.
+# ---------------------------------------------------------------------------
+
+class GroupSubjectAdminForm(forms.ModelForm):
+    class Meta:
+        model = GroupSubject
+        fields = ("group", "subject", "start_date")
+
+    def _post_clean(self):
+        # Model validation (dates, uniqueness) first, then the real write.
+        super()._post_clean()
+        from .services.subject_start import set_subject_start_date
+
+        instance = self.instance
+        if self.errors or not (instance.group_id and instance.subject_id and instance.start_date):
+            return
+        # The admin change view runs in one transaction: the service's write
+        # is rolled back with it if anything later fails.
+        try:
+            self.change = set_subject_start_date(
+                instance.group, instance.subject, instance.start_date, user=getattr(self, "user", None),
+            )
+        except DjangoValidationError as exc:
+            self.add_error(None, exc.messages)
+
+
+@admin.register(GroupSubject)
+class GroupSubjectAdmin(admin.ModelAdmin):
+    form = GroupSubjectAdminForm
+    list_display = ("group", "subject", "start_date", "updated_by", "updated_at")
+    list_filter = ("subject", "start_date")
+    search_fields = ("group__name", "subject__name")
+    autocomplete_fields = ("group",)
+    readonly_fields = ("updated_by", "created_at", "updated_at")
+    ordering = ("group__name", "start_date")
+
+    def get_readonly_fields(self, request, obj=None):
+        # One subject of one group per row: an existing row only changes its date.
+        return self.readonly_fields + (("group", "subject") if obj else ())
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        class Form(form):
+            def __init__(self, *args, **inner):
+                super().__init__(*args, **inner)
+                self.user = request.user
+
+        return Form
+
+    def save_model(self, request, obj, form, change):
+        change_result = getattr(form, "change", None)
+        if change_result is None:
+            return super().save_model(request, obj, form, change)
+        obj.pk = change_result.subject_start.pk
+        obj.refresh_from_db()
+        if change_result.moved:
+            messages.info(request, f"Перенесено ещё не проведённых занятий предмета: {change_result.moved}.")
+
+    def delete_model(self, request, obj):
+        # Deleting the row only means «starts with the group» again; lessons stay as they are.
+        super().delete_model(request, obj)

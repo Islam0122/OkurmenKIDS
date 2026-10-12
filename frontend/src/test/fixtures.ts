@@ -112,6 +112,7 @@ export function buildGroup(overrides: Partial<Group> = {}): Group {
     end_date: null,
     schedules: [buildGroupScheduleSlot()],
     teachers: [buildGroupTeacherSummary()],
+    subject_starts: [],
     students_count: 2,
     max_students: 12,
     status: 'active',

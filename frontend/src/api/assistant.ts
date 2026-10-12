@@ -29,6 +29,7 @@ import type {
   SurveyDetail,
   QuestionType,
 } from '@/types/assistant'
+import type { SubjectStartOverview } from '@/types/academy'
 import type { Paginated } from '@/types/common'
 
 const BASE = '/assistant'
@@ -108,6 +109,9 @@ export const assistantApi = {
     patch<GroupDetail>(`/groups/${id}/`, body),
   addStudentsToGroup: (id: number, students: number[]) => post<{ added: number; group: GroupDetail }>(`/groups/${id}/students/`, { students }),
   saveProgram: (groupId: number, body: ProgramInput) => post<GroupDetail>(`/groups/${groupId}/programs/`, body),
+  subjectStartDates: (groupId: number) => get<SubjectStartOverview>(`/groups/${groupId}/subject-start-dates/`),
+  saveSubjectStartDate: (groupId: number, subjectId: number, startDate: string) =>
+    patch<SubjectStartOverview>(`/groups/${groupId}/subject-start-dates/${subjectId}/`, { start_date: startDate }),
   generateLessons: (groupId: number) => post<GenerationSummary>(`/groups/${groupId}/generate-lessons/`),
 
   students: (params: StudentListParams) =>
