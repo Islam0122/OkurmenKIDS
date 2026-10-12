@@ -202,13 +202,20 @@ def set_subject_start_date(group: Group, subject: Subject, start_date: dt.date, 
     from .schedule_lesson_sync import lessons_with_data
 
     with transaction.atomic():
-        # Same lock as lesson generation: the two never interleave.
-        group = Group.objects.select_for_update().select_related("course").get(pk=group.pk)
+        # Same lock as lesson generation: the two never interleave, and two
+        # date changes of one group run one after the other. Only the group
+        # row is locked (`of=("self",)`), not its course.
+        group = Group.objects.select_for_update(of=("self",)).select_related("course").get(pk=group.pk)
         validate_start_date(group, subject, start_date)
         previous = effective_start(group, subject.pk)
 
+        # Only the subject's Lesson rows are locked — they are what moves.
+        # The joined schedule / program / make-up are nullable relations
+        # (LEFT OUTER JOIN), which PostgreSQL refuses to lock ("FOR UPDATE
+        # cannot be applied to the nullable side of an outer join"); they
+        # are only read here.
         lessons = list(
-            Lesson.objects.select_for_update()
+            Lesson.objects.select_for_update(of=("self",))
             .filter(group=group, subject=subject)
             .exclude(status=Lesson.Status.CANCELLED)
             .select_related("schedule", "rescheduled_to", "group_teacher")
