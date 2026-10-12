@@ -7,10 +7,14 @@ Absolute imports only — see the note at the top of apps/academy/tests.py.
 from __future__ import annotations
 
 import datetime as dt
+import threading
+from unittest import skipUnless
 
 from django.contrib.admin.models import LogEntry
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -46,7 +50,7 @@ def make_teacher(username: str) -> Teacher:
     return Teacher.objects.create(user=make_user(username, User.Role.TEACHER))
 
 
-class SubjectStartFixture(TestCase):
+class SubjectStartData:
     """Group starts Mon 05.10.2026. IT: Sat/Mon/Wed 09:00 (Ivan), English:
     Mon/Wed/Fri 10:00 (Aida); 4 plan rows each."""
 
@@ -85,6 +89,10 @@ class SubjectStartFixture(TestCase):
     def set_starts(self, it=D(2026, 10, 10), english=D(2026, 10, 12)):
         GroupSubject.objects.create(group=self.group, subject=self.it, start_date=it)
         GroupSubject.objects.create(group=self.group, subject=self.english, start_date=english)
+
+
+class SubjectStartFixture(SubjectStartData, TestCase):
+    pass
 
 
 class GenerationRespectsSubjectStartTests(SubjectStartFixture):
@@ -317,3 +325,121 @@ class SubjectStartAdminTests(SubjectStartFixture):
         self.assertEqual(row.start_date, D(2026, 10, 19))
         self.assertEqual(self.dates(self.english)[0], D(2026, 10, 19))
         self.assertEqual(self.dates(self.it)[0], D(2026, 10, 5))
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL: the subject's lessons are loaded with nullable relations
+# (schedule, group_teacher, the make-up — LEFT OUTER JOIN). Only the lesson
+# and group rows may be locked: "FOR UPDATE cannot be applied to the nullable
+# side of an outer join" (HTTP 500 on PATCH .../subject-start-dates/{id}/).
+# SQLite ignores FOR UPDATE, so these run on PostgreSQL only.
+# ---------------------------------------------------------------------------
+
+def _with_nullable_relations(fixture):
+    """Lessons whose nullable joins really are NULL / present: a lesson
+    whose slot was deleted (schedule NULL), a cancelled lesson with its
+    make-up (rescheduled_to), the rest with their slot and program."""
+    generate_lessons_for_group_with_report(fixture.group)
+    english = list(Lesson.objects.filter(subject=fixture.english).order_by("date"))
+    Lesson.objects.filter(pk=english[1].pk).update(schedule=None)
+    it = list(Lesson.objects.filter(subject=fixture.it).order_by("date"))
+    Lesson.objects.filter(pk=it[-1].pk).update(status=Lesson.Status.CANCELLED)
+    Lesson.objects.create(
+        group=fixture.group, group_teacher=fixture.it_program, subject=fixture.it, lesson_number=it[-1].lesson_number,
+        date=D(2026, 10, 31), start_time=dt.time(9), end_time=dt.time(10), rescheduled_from=it[-1],
+    )
+
+
+@skipUnless(connection.vendor == "postgresql", "row locks are only emitted on PostgreSQL")
+class SubjectStartLockingTests(SubjectStartFixture):
+    def test_only_lesson_and_group_rows_are_locked(self):
+        _with_nullable_relations(self)
+        with CaptureQueriesContext(connection) as ctx:
+            set_subject_start_date(self.group, self.english, D(2026, 10, 19))
+        locking = [q["sql"] for q in ctx.captured_queries if "FOR UPDATE" in q["sql"]]
+        self.assertTrue(any("LEFT OUTER JOIN" in sql and 'FOR UPDATE OF "academy_lesson"' in sql for sql in locking))
+        self.assertTrue(any('FOR UPDATE OF "academy_group"' in sql for sql in locking))
+        for sql in locking:
+            if "JOIN" in sql:  # a joined query locks only its own table
+                self.assertRegex(sql, r'FOR UPDATE OF "academy_(lesson|group)"$')
+            else:  # update_or_create's own lock of the GroupSubject row
+                self.assertIn('FROM "academy_groupsubject"', sql)
+
+
+@skipUnless(connection.vendor == "postgresql", "needs real transactions and row locks (PostgreSQL)")
+class SubjectStartPostgresApiTests(SubjectStartData, TransactionTestCase):
+    """Committed transactions, as in production (no test-case atomic block)."""
+
+    def setUp(self):
+        super().setUp()
+        self.set_starts()
+        _with_nullable_relations(self)
+
+    def patch(self, subject, start_date, user=None):
+        api = APIClient()
+        api.force_authenticate(user or self.assistant)
+        return api.patch(
+            f"/api/v1/assistant/groups/{self.group.pk}/subject-start-dates/{subject.pk}/",
+            {"start_date": start_date}, format="json",
+        )
+
+    def test_patch_changes_one_subject_with_nullable_relations(self):
+        it_before = list(Lesson.objects.filter(subject=self.it).order_by("pk").values_list("pk", "date", "status"))
+        english_ids = set(Lesson.objects.filter(subject=self.english).values_list("pk", flat=True))
+
+        response = self.patch(self.english, "2026-10-19")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        self.assertEqual(response.json()["saved"]["start_date"], "2026-10-19")
+        self.assertEqual(GroupSubject.objects.get(group=self.group, subject=self.english).start_date, D(2026, 10, 19))
+        self.assertEqual(GroupSubject.objects.get(group=self.group, subject=self.it).start_date, D(2026, 10, 10))
+        self.assertEqual(set(Lesson.objects.filter(subject=self.english).values_list("pk", flat=True)), english_ids)
+        self.assertEqual(min(self.dates(self.english)), D(2026, 10, 19))
+        # The detached lesson got a slot of its program back.
+        self.assertFalse(Lesson.objects.filter(subject=self.english, schedule__isnull=True).exists())
+        self.assertEqual(
+            list(Lesson.objects.filter(subject=self.it).order_by("pk").values_list("pk", "date", "status")), it_before,
+        )
+        self.group.refresh_from_db()
+        self.assertEqual((self.group.start_date, self.group.end_date), (D(2026, 10, 5), None))
+
+    def test_concurrent_changes_keep_the_data_consistent(self):
+        barrier = threading.Barrier(3)
+        responses, errors = [], []
+
+        def worker(subject, start_date):
+            try:
+                barrier.wait(timeout=10)
+                responses.append(self.patch(subject, start_date).status_code)
+            except Exception as exc:  # surfaced by the assertions below
+                errors.append(exc)
+            finally:
+                connection.close()
+
+        threads = [
+            threading.Thread(target=worker, args=(self.english, "2026-10-19")),
+            threading.Thread(target=worker, args=(self.english, "2026-10-26")),
+            threading.Thread(target=worker, args=(self.it, "2026-10-12")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(responses), [200, 200, 200])
+        starts = dict(GroupSubject.objects.filter(group=self.group).values_list("subject_id", "start_date"))
+        self.assertIn(starts[self.english.pk], (D(2026, 10, 19), D(2026, 10, 26)))
+        self.assertEqual(starts[self.it.pk], D(2026, 10, 12))
+        self.assertEqual(GroupSubject.objects.filter(group=self.group).count(), 2)
+
+        live = list(Lesson.objects.filter(group=self.group).exclude(status=Lesson.Status.CANCELLED))
+        self.assertEqual(len(live), 8)  # nothing deleted or duplicated
+        for lesson in live:
+            self.assertGreaterEqual(lesson.date, starts[lesson.subject_id], lesson)
+        # One live lesson per program and number, never two at the same time.
+        self.assertEqual(len({(l.group_teacher_id, l.lesson_number) for l in live}), 8)
+        slots = [(l.date, l.start_time) for l in live]
+        self.assertEqual(len(slots), len(set(slots)))
+        self.group.refresh_from_db()
+        self.assertEqual(self.group.start_date, D(2026, 10, 5))
