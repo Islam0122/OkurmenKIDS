@@ -13,6 +13,8 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
 import { StatCard } from '@/components/ui/StatCard'
 import { StatGrid } from '@/components/ui/StatGrid'
+import { useQuery } from '@tanstack/react-query'
+
 import { useMySalary } from '@/hooks/useAccounting'
 import type { MySalaryFilters, MySalaryRow, MySalaryStatus, PeriodType } from '@/types/accounting'
 
@@ -138,6 +140,8 @@ export function MySalaryPage() {
         </div>
       </Section>
 
+      <MyPlannedPayouts />
+
       <Section title="История начислений">
         <FilterBar>
           <FilterField label="Год" htmlFor="ms-year">
@@ -235,5 +239,32 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
         </tbody>
       </table>
     </div>
+  )
+}
+
+/** Свои строки утверждённых планов выплат (только свои суммы; бюджет плана не показывается). */
+function MyPlannedPayouts() {
+  const planned = useQuery({ queryKey: ['accounting', 'my', 'payout-plan'], queryFn: accountingApi.myPayoutPlan })
+  const rows = (planned.data?.results ?? []).filter((r) => Number(r.remaining) > 0)
+  if (!rows.length) return null
+  return (
+    <Section title="Запланированные выплаты">
+      <div className="card overflow-x-auto">
+        <table className="data-table">
+          <thead><tr><th>Дата</th><th>Начисление</th><th className="text-right">Запланировано</th><th className="text-right">Осталось получить</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.payroll}-${r.payout_date}`}>
+                <td>{formatDate(r.payout_date)}</td>
+                <td>{r.period_label}</td>
+                <td className="text-right">{som(r.planned_amount)}</td>
+                <td className="text-right">{som(r.remaining)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">Плановая дата — не факт перевода: выплата появится в разделе «Выплаты» после регистрации бухгалтерией.</p>
+    </Section>
   )
 }

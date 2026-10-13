@@ -12,7 +12,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -31,6 +31,8 @@ from .models import (
     CycleAccrual,
     Department,
     EmployeeSalaryProfile,
+    PayoutPlan,
+    PayoutPlanLine,
     Payroll,
     PayrollAdjustment,
     PayrollAuditLog,
@@ -44,14 +46,20 @@ from .services import AccountingError
 from .services import approval_service, cycles, payment_service, payroll_calculator, report_service, salary_rules
 from .services import student_payments as student_payment_service
 from .services.periods import close_period, get_or_create_period
-from .services import analytics, estimates, my_salary, pricing
+from .services import analytics, estimates, my_salary, payout_plans, pricing
 from .services.report_pdf import (
     render_individual_pdf,
     render_my_salary_pdf,
+    render_payout_plan_pdf,
     render_period_pdf,
     render_teacher_report_pdf,
 )
-from .services.report_xlsx import render_individual_xlsx, render_period_xlsx, render_teacher_report_xlsx
+from .services.report_xlsx import (
+    render_individual_xlsx,
+    render_payout_plan_xlsx,
+    render_period_xlsx,
+    render_teacher_report_xlsx,
+)
 
 TAG = ["Accounting"]
 
@@ -968,6 +976,204 @@ class AuditLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
 
 
 # ---------------------------------------------------------------------------
+# План выплат
+# ---------------------------------------------------------------------------
+
+class Conflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "Конфликт изменений."
+
+
+def _plan_fail(exc: AccountingError):
+    if exc.code == "conflict":
+        raise Conflict({"detail": exc.message, "code": exc.code})
+    _fail(exc)
+
+
+PLAN_FILTERS = [
+    OpenApiParameter("year", int), OpenApiParameter("month", int), OpenApiParameter("payout_date", OpenApiTypes.DATE),
+    OpenApiParameter("date_from", OpenApiTypes.DATE), OpenApiParameter("date_to", OpenApiTypes.DATE),
+    OpenApiParameter("status", str), OpenApiParameter("department", str), OpenApiParameter("employee", int),
+]
+
+
+def _plan_params(request) -> dict:
+    q = request.query_params
+    params = {"year": _int(q.get("year"), "year"), "month": _int(q.get("month"), "month"),
+              "employee": _int(q.get("employee"), "employee")}
+    for name in ("payout_date", "date_from", "date_to"):
+        value = q.get(name)
+        if value:
+            try:
+                params[name] = timezone.datetime.fromisoformat(value).date()
+            except ValueError:
+                raise ValidationError({name: "Ожидается дата ГГГГ-ММ-ДД."})
+    if q.get("status"):
+        if q["status"] not in payout_plans.STATUS_LABELS:
+            raise ValidationError({"status": "Неизвестный статус."})
+        params["status"] = q["status"]
+    if q.get("department"):
+        params["department"] = q["department"]
+    return params
+
+
+@extend_schema(tags=TAG)
+class PayoutPlanViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """План выплат на дату. Чтение — бухгалтер, директор, администратор;
+    изменения — только бухгалтер. Подготовленные средства — не выплаты:
+    фактические выплаты регистрируются действием `pay` строки (существующий
+    механизм выплат)."""
+
+    pagination_class = AccountingPagination
+    permission_classes = [AccountingAccess]
+    serializer_class = s.PayoutPlanSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        return PayoutPlan.objects.select_related("created_by", "approved_by", "cancelled_by")
+
+    def _detail(self, plan, *, code=status.HTTP_200_OK):
+        plan = self.get_queryset().get(pk=plan.pk)
+        line_ids = list(plan.lines.values_list("pk", flat=True))
+        history = PayrollAuditLog.objects.filter(
+            Q(entity_type="payoutplan", entity_id=plan.pk) | Q(entity_type="payoutplanline", entity_id__in=line_ids),
+        ).select_related("actor").order_by("-created_at", "-id")
+        data = s.PayoutPlanSerializer(plan).data
+        data["lines"] = _jsonable(payout_plans.plan_lines(plan))
+        data["history"] = s.PayrollAuditLogSerializer(history, many=True).data
+        return Response(data, status=code)
+
+    @extend_schema(parameters=PLAN_FILTERS)
+    def list(self, request, *args, **kwargs):
+        plans = payout_plans.filtered_plans(_plan_params(request))
+        page = self.paginate_queryset(plans)
+        return self.get_paginated_response(s.PayoutPlanSerializer(page, many=True).data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return self._detail(self.get_object())
+
+    @extend_schema(request=s.PayoutPlanCreateSerializer, responses=s.PayoutPlanSerializer)
+    def create(self, request, *args, **kwargs):
+        data = _valid(s.PayoutPlanCreateSerializer, request)
+        try:
+            plan = payout_plans.create_plan(actor=request.user, **data)
+        except AccountingError as exc:
+            _plan_fail(exc)
+        return self._detail(plan, code=status.HTTP_201_CREATED)
+
+    @extend_schema(request=s.PayoutPlanUpdateSerializer, responses=s.PayoutPlanSerializer)
+    def partial_update(self, request, *args, **kwargs):
+        data = dict(_valid(s.PayoutPlanUpdateSerializer, request))
+        version, reason = data.pop("version", None), data.pop("reason", "")
+        try:
+            plan = payout_plans.update_plan(self.get_object(), actor=request.user, changes=data, reason=reason,
+                                            version=version)
+        except AccountingError as exc:
+            _plan_fail(exc)
+        return self._detail(plan)
+
+    @extend_schema(request=s.PayoutPlanVersionSerializer, responses=s.PayoutPlanSerializer)
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        data = _valid(s.PayoutPlanVersionSerializer, request)
+        try:
+            plan = payout_plans.approve_plan(self.get_object(), actor=request.user, version=data.get("version"))
+        except AccountingError as exc:
+            _plan_fail(exc)
+        return self._detail(plan)
+
+    @extend_schema(request=s.PayoutPlanCancelSerializer, responses=s.PayoutPlanSerializer)
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        data = _valid(s.PayoutPlanCancelSerializer, request)
+        try:
+            plan = payout_plans.cancel_plan(self.get_object(), actor=request.user, reason=data["reason"],
+                                            version=data.get("version"))
+        except AccountingError as exc:
+            _plan_fail(exc)
+        return self._detail(plan)
+
+    @extend_schema(request=s.PayoutPlanAddLinesSerializer, responses=s.PayoutPlanSerializer)
+    @action(detail=True, methods=["post"])
+    def lines(self, request, pk=None):
+        data = _valid(s.PayoutPlanAddLinesSerializer, request)
+        try:
+            plan = payout_plans.add_lines(self.get_object(), actor=request.user, items=data["lines"],
+                                          version=data.get("version"))
+        except AccountingError as exc:
+            _plan_fail(exc)
+        return self._detail(plan)
+
+    def _line(self, plan, line_id):
+        return get_object_or_404(PayoutPlanLine, pk=line_id, plan=plan)
+
+    @extend_schema(request=s.PayoutPlanLineUpdateSerializer, responses=s.PayoutPlanSerializer)
+    @action(detail=True, methods=["patch"], url_path=r"lines/(?P<line_id>\d+)")
+    def line(self, request, pk=None, line_id=None):
+        plan = self.get_object()
+        data = _valid(s.PayoutPlanLineUpdateSerializer, request)
+        try:
+            payout_plans.update_line(self._line(plan, line_id), actor=request.user, amount=data.get("amount"),
+                                     comment=data.get("comment"), remove=data["remove"], reason=data["reason"],
+                                     version=data.get("version"))
+        except AccountingError as exc:
+            _plan_fail(exc)
+        return self._detail(plan)
+
+    @extend_schema(request=s.PayoutPlanPaySerializer, responses=s.PayrollPaymentSerializer)
+    @action(detail=True, methods=["post"], url_path=r"lines/(?P<line_id>\d+)/pay")
+    def pay(self, request, pk=None, line_id=None):
+        plan = self.get_object()
+        data = _valid(s.PayoutPlanPaySerializer, request)
+        key = _idempotency_key(request, data)
+        data.pop("idempotency_key", None)
+        try:
+            payment, created = payout_plans.pay_line(self._line(plan, line_id), actor=request.user,
+                                                     idempotency_key=key, **data)
+        except AccountingError as exc:
+            _plan_fail(exc)
+        return Response(s.PayrollPaymentSerializer(payment).data,
+                        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    @extend_schema(parameters=PLAN_FILTERS, responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        return Response(_jsonable(payout_plans.summary(payout_plans.filtered_plans(_plan_params(request)))))
+
+    @extend_schema(parameters=PLAN_FILTERS, responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["get"])
+    def calendar(self, request):
+        params = _plan_params(request)
+        data = payout_plans.calendar(payout_plans.filtered_plans(params), year=params["year"], month=params["month"])
+        return Response(_jsonable(data))
+
+    @extend_schema(parameters=[OpenApiParameter("year", int), OpenApiParameter("month", int),
+                               OpenApiParameter("employee", int), OpenApiParameter("department", str)],
+                   responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["get"])
+    def candidates(self, request):
+        q = request.query_params
+        rows = payout_plans.candidates(year=_int(q.get("year"), "year"), month=_int(q.get("month"), "month"),
+                                       employee=_int(q.get("employee"), "employee"),
+                                       department=q.get("department") or None)
+        return Response({"results": _jsonable(rows)})
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    @action(detail=True, methods=["get"], url_path="report.xlsx")
+    def report_xlsx(self, request, pk=None):
+        plan = self.get_object()
+        return _file(render_payout_plan_xlsx(payout_plans.plan_report(plan)),
+                     f"payout-plan-{plan.pk}-{plan.payout_date:%Y-%m-%d}.xlsx", XLSX)
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    @action(detail=True, methods=["get"], url_path="report.pdf")
+    def report_pdf(self, request, pk=None):
+        plan = self.get_object()
+        return _file(render_payout_plan_pdf(payout_plans.plan_report(plan)),
+                     f"payout-plan-{plan.pk}-{plan.payout_date:%Y-%m-%d}.pdf", PDF)
+
+
+# ---------------------------------------------------------------------------
 # Отчёты
 # ---------------------------------------------------------------------------
 
@@ -1104,3 +1310,15 @@ class MyPaymentsView(mixins.ListModelMixin, viewsets.GenericViewSet):
             PayrollPayment.objects.filter(payroll__employee=self.request.user, status=PayrollPayment.Status.CONFIRMED)
             .select_related("created_by", "payroll").order_by("-payment_date", "-id")
         )
+
+
+@extend_schema(tags=TAG)
+class MyPayoutPlanView(APIView):
+    """Свои запланированные выплаты (утверждённые планы) — только своё, только чтение."""
+
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        return Response({"results": _jsonable(payout_plans.my_planned(request.user))})

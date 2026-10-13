@@ -7,7 +7,7 @@ import { renderWithProviders } from '@/test/testUtils'
 import type { MyEstimate, MySalary, MySalaryRow } from '@/types/accounting'
 
 vi.mock('@/api/accounting', () => ({
-  accountingApi: { mySalary: vi.fn(), downloadMySalaryPdf: vi.fn() },
+  accountingApi: { mySalary: vi.fn(), downloadMySalaryPdf: vi.fn(), myPayoutPlan: vi.fn().mockResolvedValue({ results: [] }) },
 }))
 
 import { accountingApi } from '@/api/accounting'

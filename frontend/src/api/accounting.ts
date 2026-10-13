@@ -17,6 +17,14 @@ import type {
   CourseSettings,
   MySalary,
   MySalaryFilters,
+  MyPlannedPayout,
+  PayoutCalendar,
+  PayoutCandidate,
+  PayoutPlan,
+  PayoutPlanCreateBody,
+  PayoutPlanDetail,
+  PayoutPlanFilters,
+  PayoutPlanSummary,
   Dashboard,
   EmployeeRow,
   PayrollAdjustment,
@@ -41,6 +49,7 @@ type Params = Record<string, string | number | boolean | undefined | null>
 const get = <T>(url: string, params?: Params) => apiClient.get<T>(`${BASE}${url}`, { params }).then((r) => r.data)
 const post = <T>(url: string, body?: unknown, headers?: Record<string, string>) =>
   apiClient.post<T>(`${BASE}${url}`, body, { headers }).then((r) => r.data)
+const patch = <T>(url: string, body: unknown) => apiClient.patch<T>(`${BASE}${url}`, body).then((r) => r.data)
 
 /** Query params for a period choice: one half → period_type; whole month → none. */
 export function periodParams(selection: PeriodSelection): Params {
@@ -166,6 +175,33 @@ export const accountingApi = {
     get<TeacherReport>('/reports/teachers/', { ...filters }),
   downloadTeacherReport: (format: 'pdf' | 'xlsx', filters: AnalyticsFilters) =>
     download(`/reports/teachers.${format}`, { ...filters }, `teachers.${format}`),
+
+  /** План выплат. Подготовленные средства — не выплаты; фактическая выплата —
+   * `payPlanLine` (тот же механизм выплат, что и в карточке начисления). */
+  payoutPlans: (filters: PayoutPlanFilters) => get<Paginated<PayoutPlan>>('/payout-plans/', { ...filters }),
+  payoutPlan: (id: number) => get<PayoutPlanDetail>(`/payout-plans/${id}/`),
+  payoutSummary: (filters: PayoutPlanFilters) => get<PayoutPlanSummary>('/payout-plans/summary/', { ...filters, page: undefined }),
+  payoutCalendar: (filters: PayoutPlanFilters) => get<PayoutCalendar>('/payout-plans/calendar/', { ...filters, page: undefined }),
+  payoutCandidates: (params: { year?: number; month?: number; employee?: number; department?: string }) =>
+    get<{ results: PayoutCandidate[] }>('/payout-plans/candidates/', params),
+  createPayoutPlan: (body: PayoutPlanCreateBody) => post<PayoutPlanDetail>('/payout-plans/', body),
+  updatePayoutPlan: (id: number, body: Record<string, unknown> & { version: number }) =>
+    patch<PayoutPlanDetail>(`/payout-plans/${id}/`, body),
+  approvePayoutPlan: (id: number, version: number) => post<PayoutPlanDetail>(`/payout-plans/${id}/approve/`, { version }),
+  cancelPayoutPlan: (id: number, version: number, reason: string) =>
+    post<PayoutPlanDetail>(`/payout-plans/${id}/cancel/`, { version, reason }),
+  addPayoutLines: (id: number, version: number, lines: { payroll: number; amount?: string | null }[]) =>
+    post<PayoutPlanDetail>(`/payout-plans/${id}/lines/`, { version, lines }),
+  updatePayoutLine: (id: number, lineId: number, body: { version: number; amount?: string; comment?: string; remove?: boolean; reason?: string }) =>
+    patch<PayoutPlanDetail>(`/payout-plans/${id}/lines/${lineId}/`, body),
+  payPlanLine: (
+    id: number, lineId: number,
+    body: { amount: string; payment_date: string; payment_method: string; reference: string; comment: string },
+    idempotencyKey: string,
+  ) => post<PayrollPayment>(`/payout-plans/${id}/lines/${lineId}/pay/`, body, { 'Idempotency-Key': idempotencyKey }),
+  downloadPayoutPlan: (id: number, format: 'pdf' | 'xlsx') =>
+    download(`/payout-plans/${id}/report.${format}/`, undefined, `payout-plan-${id}.${format}`),
+  myPayoutPlan: () => get<{ results: MyPlannedPayout[] }>('/my/payout-plan/'),
 
   /** Сотрудник — всегда текущий пользователь на сервере; id в запросе нет. */
   mySalary: (filters: MySalaryFilters = {}) => get<MySalary>('/my/salary/', { ...filters }),
