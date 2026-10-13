@@ -471,7 +471,21 @@ export interface MySalary {
     position: string
     rates: { rule_type: string; label: string; amount: string | null; percentage: string | null; scope: string; effective_from: string }[]
   } | null
-  totals: { accrued: string; deducted: string; paid: string; due: string; pending_approval: string; estimated: string }
+  /** Итоги по утверждённым начислениям — считает backend: до удержаний, удержания,
+   * после удержаний, выплачено, остаток (= Σ остатков расчётов). */
+  totals: {
+    accrued: string
+    deducted: string
+    net: string
+    paid: string
+    due: string
+    pending_approval: string
+    estimated: string
+    /** Удержание для предварительной суммы не прогнозируется — null и пояснение. */
+    estimated_deductions: string | null
+    estimated_deductions_note: string
+  }
+  deductions: MyDeduction[]
   next_planned_payment_date: string | null
   estimates: MyEstimate[]
   last_payment: { payment_date: string; amount: string } | null
@@ -888,4 +902,23 @@ export interface DeductionRuleBody {
 export interface DeductionEffects {
   payrolls_recalculated: number[]
   payrolls_failed: { payroll_id: number; error: string }[]
+}
+
+export type MyDeductionStatus = 'WITHHELD' | 'PARTIAL' | 'NOT_WITHHELD' | 'PENDING'
+
+/** Своё удержание за месяц (одна запись на правило и месяц). */
+export interface MyDeduction {
+  id: number
+  name: string
+  kind: DeductionKind
+  kind_display: string
+  year: number
+  month: number
+  period_label: string
+  month_amount: string
+  withheld: string
+  remaining: string
+  status: MyDeductionStatus
+  status_display: string
+  applied_at: string | null
 }
