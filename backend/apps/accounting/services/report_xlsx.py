@@ -155,3 +155,29 @@ def render_teacher_report_xlsx(report: dict) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def render_payout_plan_xlsx(report: dict) -> bytes:
+    plan, t = report["plan"], report["totals"]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "План выплат"
+    rows = [[
+        r["employee_name"], r["position"], r["department_display"], ", ".join(r["subjects"]) or "—",
+        r["salary_type_display"], r["period_label"], r["accrued"], r["paid_before"], r["planned_amount"],
+        r["paid_by_plan"], r["remaining_in_plan"], r["due_after_plan"], r["status_display"],
+    ] for r in report["lines"]]
+    _sheet(
+        ws, f"План выплат: {plan.title}",
+        f"Дата выплаты {_d(plan.payout_date)} · месяц {plan.month:02d}.{plan.year} · статус «{t['status_display']}» · "
+        f"подготовлено {t['prepared']} · дефицит {t['deficit']} · готовность {t['readiness_percent']}% · KGS · "
+        f"сформировано {report['generated_at']:%d.%m.%Y %H:%M}",
+        [("Сотрудник", 30), ("Должность", 20), ("Направление", 16), ("Предмет", 18), ("Тип оплаты", 24),
+         ("Месяц начисления", 24), ("Начислено", 14), ("Выплачено ранее", 14), ("Запланировано", 14),
+         ("Выплачено по плану", 14), ("Осталось по плану", 14), ("Остаток после плана", 14), ("Статус", 20)],
+        rows, {7, 8, 9, 10, 11, 12},
+        ["Итого", "", "", "", "", "", None, None, t["planned"], t["paid"], t["remaining"], None, ""],
+    )
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

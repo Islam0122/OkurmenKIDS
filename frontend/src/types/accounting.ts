@@ -659,3 +659,152 @@ export interface TeacherReport {
   by_group: { group_name: string; accrued: string }[]
   note: string
 }
+
+// ---------------------------------------------------------------------------
+// План выплат
+// ---------------------------------------------------------------------------
+
+export type PayoutPlanStatus =
+  | 'DRAFT' | 'SCHEDULED' | 'PARTIALLY_FUNDED' | 'READY' | 'PARTIALLY_PAID' | 'PAID' | 'CANCELLED'
+
+export interface PayoutPlanTotals {
+  planned: string
+  paid: string
+  /** Осталось выплатить по плану (с учётом выплат вне плана). */
+  remaining: string
+  prepared: string
+  deficit: string
+  readiness_percent: string
+  employees: number
+  status: PayoutPlanStatus
+  status_display: string
+}
+
+export interface PayoutPlan {
+  id: number
+  title: string
+  year: number
+  month: number
+  payout_date: string
+  prepared_amount: string
+  comment: string
+  state: 'DRAFT' | 'APPROVED' | 'CANCELLED'
+  cancel_reason: string
+  version: number
+  created_by_name: string
+  created_at: string
+  updated_at: string
+  approved_by_name: string
+  approved_at: string | null
+  cancelled_by_name: string
+  cancelled_at: string | null
+  totals: PayoutPlanTotals
+}
+
+export interface PayoutPlanLine {
+  id: number
+  payroll: number
+  employee: number
+  employee_name: string
+  position: string
+  department: string
+  department_display: string
+  subjects: string[]
+  salary_type: string
+  salary_type_display: string
+  period_label: string
+  year: number
+  month: number
+  accrued: string
+  paid_before: string
+  planned_amount: string
+  paid_by_plan: string
+  remaining_in_plan: string
+  due_after_plan: string
+  payroll_status: PayrollStatus
+  payroll_status_display: string
+  planned_payment_date: string | null
+  basis: { description: string; amount: string }[]
+  comment: string
+  status: 'PLANNED' | 'PARTIALLY_PAID' | 'PAID' | 'SETTLED_OUTSIDE'
+  status_display: string
+}
+
+export interface PayoutPlanDetail extends PayoutPlan {
+  lines: PayoutPlanLine[]
+  history: AuditEntry[]
+}
+
+export interface PayoutPlanFilters {
+  year?: number
+  month?: number
+  payout_date?: string
+  status?: string
+  department?: string
+  employee?: number
+  page?: number
+}
+
+export interface PayoutPlanSummary {
+  planned: string
+  to_pay: string
+  prepared: string
+  deficit: string
+  employees: number
+  paid: string
+  remaining_obligations: string
+  plans: number
+  readiness_percent: string
+}
+
+export interface PayoutCalendarDay {
+  date: string
+  to_pay: string
+  prepared: string
+  paid: string
+  deficit: string
+  employees: number
+  readiness_percent: string
+  plans: { id: number; title: string; status: PayoutPlanStatus; status_display: string }[]
+}
+
+export interface PayoutCalendar {
+  days: PayoutCalendarDay[]
+  suggestions: { date: string | null; amount: string; employees: number; payrolls: number; rule: string }[]
+}
+
+export interface PayoutCandidate {
+  payroll: number
+  employee: number
+  employee_name: string
+  department: string
+  department_display: string
+  period_label: string
+  salary_type_display: string
+  accrued: string
+  paid: string
+  due: string
+  reserved: string
+  available: string
+  planned_payment_date: string | null
+  status_display: string
+}
+
+export interface PayoutPlanCreateBody {
+  title: string
+  year: number
+  month: number
+  payout_date: string
+  prepared_amount: string
+  comment: string
+  lines: { payroll: number; amount?: string | null }[]
+}
+
+export interface MyPlannedPayout {
+  payout_date: string
+  period_label: string
+  payroll: number
+  planned_amount: string
+  paid: string
+  remaining: string
+}

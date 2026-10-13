@@ -665,6 +665,10 @@ class PayrollPayment(models.Model):
     reference = models.CharField(max_length=100, blank=True)
     comment = models.TextField(blank=True)
     is_advance = models.BooleanField(default=False, verbose_name="Аванс")
+    payout_plan_line = models.ForeignKey(
+        "PayoutPlanLine", on_delete=models.PROTECT, null=True, blank=True, related_name="payments",
+        verbose_name="Строка плана выплат", help_text="Если выплата зарегистрирована по плану выплат.",
+    )
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.CONFIRMED, db_index=True)
     void_reason = models.TextField(blank=True)
     idempotency_key = models.CharField(max_length=64, null=True, blank=True, unique=True, editable=False)
@@ -1099,3 +1103,96 @@ class DemoSeedRecord(models.Model):
 
     def __str__(self):
         return self.key
+
+
+# ---------------------------------------------------------------------------
+# План выплат
+# ---------------------------------------------------------------------------
+
+class PayoutPlan(models.Model):
+    """План выплат на дату: какие утверждённые начисления (`Payroll`) и на
+    какие суммы планируется погасить, и сколько денег подготовлено.
+
+    Подготовленные средства — сумма, которую бухгалтер вносит вручную (данных
+    о кассе в системе нет); это НЕ выплаты. Фактические выплаты регистрируются
+    существующим механизмом (`PayrollPayment`) со ссылкой на строку плана.
+    Хранится только состояние (черновик / утверждён / отменён); отображаемый
+    статус вычисляется (services.payout_plans.display_status)."""
+
+    class State(models.TextChoices):
+        DRAFT = "DRAFT", "Черновик"
+        APPROVED = "APPROVED", "Утверждён"
+        CANCELLED = "CANCELLED", "Отменён"
+
+    title = models.CharField(max_length=200, verbose_name="Название")
+    year = models.PositiveSmallIntegerField(validators=[MinValueValidator(2000), MaxValueValidator(2100)])
+    month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
+    payout_date = models.DateField(db_index=True, verbose_name="Дата выплаты")
+    prepared_amount = models.DecimalField(
+        **MONEY, default=ZERO, validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Подготовлено средств, сом", help_text="Вносится вручную; это не выплаты сотрудникам.",
+    )
+    comment = models.TextField(blank=True, verbose_name="Комментарий")
+    state = models.CharField(max_length=10, choices=State.choices, default=State.DRAFT, db_index=True)
+    cancel_reason = models.TextField(blank=True)
+    version = models.PositiveIntegerField(default=1, help_text="Защита от одновременного изменения.")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "План выплат"
+        verbose_name_plural = "Планы выплат"
+        ordering = ["payout_date", "id"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(prepared_amount__gte=0), name="payout_plan_prepared_nonnegative"),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.payout_date:%d.%m.%Y})"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("План выплат нельзя удалить — его можно отменить с причиной.")
+
+
+class PayoutPlanLine(models.Model):
+    """Строка плана: сколько планируется выплатить по одному утверждённому
+    начислению (расчёту сотрудника за период)."""
+
+    plan = models.ForeignKey(PayoutPlan, on_delete=models.PROTECT, related_name="lines")
+    payroll = models.ForeignKey(Payroll, on_delete=models.PROTECT, related_name="payout_plan_lines")
+    planned_amount = models.DecimalField(**MONEY, validators=[MinValueValidator(Decimal("0.01"))])
+    comment = models.CharField(max_length=255, blank=True)
+    is_removed = models.BooleanField(
+        default=False, help_text="Исключена из черновика (запись остаётся в истории).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Строка плана выплат"
+        verbose_name_plural = "Строки планов выплат"
+        ordering = ["plan", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["plan", "payroll"], condition=models.Q(is_removed=False),
+                                    name="unique_payout_plan_payroll"),
+            models.CheckConstraint(condition=models.Q(planned_amount__gt=0), name="payout_line_amount_positive"),
+        ]
+
+    def __str__(self):
+        return f"{self.plan} · {self.payroll}: {self.planned_amount}"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Строку плана нельзя удалить — исключите её из черновика.")

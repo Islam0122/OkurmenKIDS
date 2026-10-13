@@ -17,6 +17,7 @@ router.register("periods", views.PayrollPeriodViewSet, basename="period")
 router.register("payrolls", views.PayrollViewSet, basename="payroll")
 router.register("payments", views.PaymentViewSet, basename="payment")
 router.register("adjustments", views.AdjustmentViewSet, basename="adjustment")
+router.register("payout-plans", views.PayoutPlanViewSet, basename="payout-plan")
 router.register("audit-log", views.AuditLogViewSet, basename="audit-log")
 router.register("my/payrolls", views.MyPayrollViewSet, basename="my-payroll")
 router.register("my/payments", views.MyPaymentsView, basename="my-payment")
@@ -39,6 +40,7 @@ urlpatterns = [
     path("my/salary/", views.MySalaryView.as_view(), name="my-salary"),
     path("my/salary/report.pdf", views.MySalaryPdfView.as_view(), name="my-salary-pdf"),
     path("my/summary/", views.MySalaryView.as_view(), name="my-summary"),
+    path("my/payout-plan/", views.MyPayoutPlanView.as_view(), name="my-payout-plan"),
     path("my/estimates/", views.MyEstimatesView.as_view(), name="my-estimates"),
     path("", include(router.urls)),
 ]

@@ -15,6 +15,8 @@ from apps.accounting.models import (
     CycleAccrual,
     CycleLesson,
     EmployeeSalaryProfile,
+    PayoutPlan,
+    PayoutPlanLine,
     Payroll,
     PayrollAdjustment,
     PayrollAuditLog,
@@ -25,18 +27,19 @@ from apps.accounting.models import (
     SalaryType,
     StudentPayment,
 )
-from apps.accounting.services import AccountingError, maintenance
+from apps.accounting.services import AccountingError, maintenance, payout_plans
 from apps.accounting.services.approval_service import approve_payroll, create_adjustment
 from apps.accounting.services.payment_service import register_payment
 from apps.accounting.services.pricing import set_price
 from apps.accounting.services.salary_rules import new_version
-from apps.accounting.tests.base import FIRST, D, AccountingFixture, day, make_user
+from apps.accounting.tests.base import FIRST, AccountingFixture, D, day, make_user
 from apps.users.models import Subject, Teacher, User
 
 R = SalaryRule.RuleType
 URL = reverse("admin:accounting_maintenance_purge")
 
-PAYROLL_MODELS = (CycleAccrual, PayrollAuditLog, PayrollPayment, PayrollAdjustment, PayrollLine, Payroll, PayrollPeriod)
+PAYROLL_MODELS = (CycleAccrual, PayrollAuditLog, PayrollPayment, PayoutPlanLine, PayoutPlan, PayrollAdjustment, PayrollLine,
+                  Payroll, PayrollPeriod)
 KEPT_IN_A = (SalaryRule, EmployeeSalaryProfile, CourseCycle, CoursePayrollSettings, StudentPayment, CycleLesson,
              CoursePriceVersion)
 
@@ -62,6 +65,11 @@ class PurgeFixture(AccountingFixture):
             self.lessons(self.group_a, [day(9, d) for d in range(1, 13)])
         payroll = approve_payroll(self.calc(FIRST), self.director)
         register_payment(payroll, amount=D("1000"), payment_date=day(9, 20), actor=self.accountant)
+        plan = payout_plans.approve_plan(payout_plans.create_plan(
+            actor=self.accountant, title="15 сентября", year=2026, month=9, payout_date=day(9, 15),
+            lines=[{"payroll": payroll}]), actor=self.accountant)
+        payout_plans.pay_line(plan.lines.get(), actor=self.accountant, amount=D("100"), payment_date=day(9, 21),
+                              payment_method="bank")  # выплата по плану ссылается на строку плана (PROTECT)
         create_adjustment(payroll, kind="BONUS", amount=D("100"), reason="премия", actor=self.accountant)
         paid = self.pay(kids[0], "10000", day(9, 1))
         self.refund(paid, "2000", day(9, 5))
@@ -101,7 +109,8 @@ class ServiceTests(PurgeFixture):
         self.assertEqual({m: n(m) for m in KEPT_IN_A}, kept)
         [record] = PayrollAuditLog.objects.all()  # журнал очищен, остаётся запись о самой операции
         self.assertEqual((record.action, record.actor), ("purge_payroll", self.superuser))
-        self.assertEqual(record.old_values["deleted"]["payrollpayment"], 1)
+        self.assertEqual(record.old_values["deleted"]["payrollpayment"], 2)
+        self.assertEqual(record.old_values["deleted"]["payoutplan"], 1)
         self.assert_lms_untouched()
 
     def test_mode_a_then_recalculation_recreates_accruals_for_kept_cycles(self):
@@ -145,10 +154,11 @@ class ServiceTests(PurgeFixture):
             self.assertGreater(n(model), 0, model)
 
     def test_wrong_order_is_caught_by_protect_and_rolled_back(self):
-        reordered = (maintenance.PAYROLL_TABLES[5],) + maintenance.PAYROLL_TABLES  # расчёты раньше выплат
+        payroll_table = next(t for t in maintenance.PAYROLL_TABLES if t.model is Payroll)
+        reordered = (payroll_table,) + maintenance.PAYROLL_TABLES  # расчёты раньше выплат
         with mock.patch.object(maintenance, "PAYROLL_TABLES", reordered), self.assertRaises(Exception):
             maintenance.purge(maintenance.PAYROLL, actor=self.superuser)
-        self.assertEqual((n(Payroll), n(PayrollPayment), n(CycleAccrual)), (1, 1, 1))
+        self.assertEqual((n(Payroll), n(PayrollPayment), n(CycleAccrual)), (1, 2, 1))
 
     def test_financial_records_stay_undeletable_outside_maintenance(self):
         with self.assertRaises(ValidationError):

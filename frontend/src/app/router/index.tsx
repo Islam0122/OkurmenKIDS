@@ -316,6 +316,8 @@ export const router = createBrowserRouter([
             children: [
               { index: true, lazy: async () => ({ Component: (await import('@/features/accounting/DashboardPage')).AccountingDashboardPage }) },
               { path: 'payrolls/:id', lazy: async () => ({ Component: (await import('@/features/accounting/PayrollDetailPage')).PayrollDetailPage }) },
+              { path: 'payout-plan', lazy: async () => ({ Component: (await import('@/features/accounting/PayoutPlanPage')).PayoutPlanPage }) },
+              { path: 'payout-plan/:id', lazy: async () => ({ Component: (await import('@/features/accounting/PayoutPlanDetailPage')).PayoutPlanDetailPage }) },
               { path: 'settings', lazy: async () => ({ Component: (await import('@/features/accounting/SalarySettingsPage')).SalarySettingsPage }) },
               { path: 'courses', lazy: async () => ({ Component: (await import('@/features/accounting/CoursesPage')).CoursesPage }) },
               { path: 'student-payments', lazy: async () => ({ Component: (await import('@/features/accounting/StudentPaymentsPage')).StudentPaymentsPage }) },

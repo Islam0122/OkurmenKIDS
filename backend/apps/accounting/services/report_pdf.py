@@ -272,3 +272,39 @@ def render_teacher_report_pdf(report: dict) -> bytes:
     ]
     doc.build(story, onFirstPage=_footer(generated), onLaterPages=_footer(generated))
     return buf.getvalue()
+
+
+def render_payout_plan_pdf(report: dict) -> bytes:
+    styles = _styles()
+    buf = io.BytesIO()
+    plan, t, generated = report["plan"], report["totals"], report["generated_at"]
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10 * mm, rightMargin=10 * mm,
+                            topMargin=16 * mm, bottomMargin=16 * mm, title=f"План выплат: {plan.title}")
+    rows = [[r["employee_name"], r["position"] or r["department_display"], ", ".join(r["subjects"]) or "—",
+             r["salary_type_display"], r["period_label"], som(r["accrued"]), som(r["paid_before"]),
+             som(r["planned_amount"]), som(r["paid_by_plan"]), som(r["due_after_plan"]), r["status_display"]]
+            for r in report["lines"]]
+    story = [
+        Paragraph(f"План выплат: {escape(plan.title)}", styles["title"]),
+        Paragraph(f"Дата выплаты: {plan.payout_date:%d.%m.%Y} · Месяц: {plan.month:02d}.{plan.year} · "
+                  f"Статус: {t['status_display']} · Валюта: KGS · Дата формирования: {generated:%d.%m.%Y %H:%M}",
+                  styles["sub"]),
+        Spacer(1, 6),
+        _table(["Запланировано", "Выплачено", "К выплате", "Подготовлено", "Дефицит", "Готовность", "Сотрудников"],
+               [[som(t["planned"]), som(t["paid"]), som(t["remaining"]), som(t["prepared"]), som(t["deficit"]),
+                 f"{t['readiness_percent']}%", t["employees"]]], [39 * mm] * 7, styles=styles),
+        Paragraph("Сотрудники", styles["h"]),
+        _table(
+            ["Сотрудник", "Должность", "Предмет", "Тип оплаты", "Месяц начисления", "Начислено", "Выплачено ранее",
+             "Запланировано", "Выплачено по плану", "Остаток после плана", "Статус"],
+            rows or [["Начислений в плане нет"] + [""] * 10],
+            [38 * mm, 24 * mm, 22 * mm, 26 * mm, 30 * mm, 23 * mm, 23 * mm, 23 * mm, 23 * mm, 23 * mm, 22 * mm],
+            total_row=["Итого", "", "", "", "", "", "", som(t["planned"]), som(t["paid"]), "", ""], styles=styles,
+        ),
+    ]
+    if plan.comment:
+        story += [Paragraph("Комментарий", styles["h"]), Paragraph(escape(plan.comment), styles["sub"])]
+    if plan.cancel_reason:
+        story += [Paragraph("Причина отмены", styles["h"]), Paragraph(escape(plan.cancel_reason), styles["sub"])]
+    doc.build(story, onFirstPage=_footer(generated), onLaterPages=_footer(generated))
+    return buf.getvalue()

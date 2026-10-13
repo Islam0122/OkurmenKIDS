@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { accountingApi } from '@/api/accounting'
 import type { PayrollFilters } from '@/api/accounting'
-import type { AnalyticsFilters, MySalaryFilters, PeriodSelection } from '@/types/accounting'
+import type { AnalyticsFilters, MySalaryFilters, PayoutPlanFilters, PeriodSelection } from '@/types/accounting'
 
 export function useAccountingOptions() {
   return useQuery({ queryKey: ['accounting', 'options'], queryFn: accountingApi.options, staleTime: 5 * 60 * 1000 })
@@ -125,5 +125,46 @@ export function useTeacherReport(filters: AnalyticsFilters & { page?: number }) 
     queryKey: ['accounting', 'teacher-report', filters],
     queryFn: () => accountingApi.teacherReport({ page_size: 25, ...filters }),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function usePayoutPlans(filters: PayoutPlanFilters) {
+  return useQuery({
+    queryKey: ['accounting', 'payout-plans', filters],
+    queryFn: () => accountingApi.payoutPlans(filters),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function usePayoutSummary(filters: PayoutPlanFilters) {
+  return useQuery({
+    queryKey: ['accounting', 'payout-plans', 'summary', filters],
+    queryFn: () => accountingApi.payoutSummary(filters),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function usePayoutCalendar(filters: PayoutPlanFilters, enabled = true) {
+  return useQuery({
+    queryKey: ['accounting', 'payout-plans', 'calendar', filters],
+    queryFn: () => accountingApi.payoutCalendar(filters),
+    placeholderData: keepPreviousData,
+    enabled,
+  })
+}
+
+export function usePayoutPlan(id: number | undefined) {
+  return useQuery({
+    queryKey: ['accounting', 'payout-plan', id],
+    queryFn: () => accountingApi.payoutPlan(id as number),
+    enabled: id !== undefined && !Number.isNaN(id),
+  })
+}
+
+export function usePayoutCandidates(params: { year?: number; month?: number; employee?: number; department?: string }, enabled = true) {
+  return useQuery({
+    queryKey: ['accounting', 'payout-candidates', params],
+    queryFn: () => accountingApi.payoutCandidates(params),
+    enabled,
   })
 }

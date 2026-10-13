@@ -14,6 +14,7 @@ from .models import (
     CoursePriceVersion,
     CycleAccrual,
     EmployeeSalaryProfile,
+    PayoutPlan,
     Payroll,
     PayrollAdjustment,
     PayrollAuditLog,
@@ -285,7 +286,7 @@ class PayrollPaymentSerializer(serializers.ModelSerializer):
         fields = (
             "id", "payroll", "amount", "payment_date", "payment_method", "payment_method_display", "reference",
             "comment", "is_advance", "status", "status_display", "void_reason", "created_by_name", "created_at",
-            "voided_at",
+            "voided_at", "payout_plan_line",
         )
 
     def get_created_by_name(self, obj) -> str:
@@ -649,3 +650,94 @@ class CourseCycleSerializer(serializers.ModelSerializer):
              "planned_payment_date": a.planned_payment_date.isoformat()}
             for a in obj.accruals.select_related("employee", "payroll__period")
         ]
+
+
+# ---------------------------------------------------------------------------
+# План выплат
+# ---------------------------------------------------------------------------
+
+class PayoutPlanSerializer(serializers.ModelSerializer):
+    """План с итогами (суммы считает сервис `payout_plans.totals`)."""
+
+    created_by_name = serializers.SerializerMethodField()
+    approved_by_name = serializers.SerializerMethodField()
+    cancelled_by_name = serializers.SerializerMethodField()
+    totals = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PayoutPlan
+        fields = (
+            "id", "title", "year", "month", "payout_date", "prepared_amount", "comment", "state", "cancel_reason",
+            "version", "created_by_name", "created_at", "updated_at", "approved_by_name", "approved_at",
+            "cancelled_by_name", "cancelled_at", "totals",
+        )
+
+    def get_created_by_name(self, obj) -> str:
+        return _name(obj.created_by)
+
+    def get_approved_by_name(self, obj) -> str:
+        return _name(obj.approved_by)
+
+    def get_cancelled_by_name(self, obj) -> str:
+        return _name(obj.cancelled_by)
+
+    def get_totals(self, obj) -> dict:
+        from .services.payout_plans import totals
+
+        return {k: str(v) if isinstance(v, Decimal) else v for k, v in totals(obj).as_dict().items()}
+
+
+class PayoutPlanLineInputSerializer(serializers.Serializer):
+    payroll = serializers.PrimaryKeyRelatedField(queryset=Payroll.objects.all())
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"), required=False,
+                                      allow_null=True, help_text="Пусто — весь свободный остаток начисления.")
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PayoutPlanCreateSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200)
+    year = serializers.IntegerField(min_value=2000, max_value=2100)
+    month = serializers.IntegerField(min_value=1, max_value=12)
+    payout_date = serializers.DateField()
+    prepared_amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"), default=Decimal("0"))
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+    lines = PayoutPlanLineInputSerializer(many=True, required=False, default=list)
+
+
+class PayoutPlanUpdateSerializer(serializers.Serializer):
+    version = serializers.IntegerField(required=False)
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+    title = serializers.CharField(max_length=200, required=False)
+    year = serializers.IntegerField(min_value=2000, max_value=2100, required=False)
+    month = serializers.IntegerField(min_value=1, max_value=12, required=False)
+    payout_date = serializers.DateField(required=False)
+    prepared_amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"), required=False)
+    comment = serializers.CharField(required=False, allow_blank=True)
+
+
+class PayoutPlanVersionSerializer(serializers.Serializer):
+    version = serializers.IntegerField(required=False)
+
+
+class PayoutPlanCancelSerializer(PayoutPlanVersionSerializer):
+    reason = serializers.CharField()
+
+
+class PayoutPlanAddLinesSerializer(PayoutPlanVersionSerializer):
+    lines = PayoutPlanLineInputSerializer(many=True, allow_empty=False)
+
+
+class PayoutPlanLineUpdateSerializer(PayoutPlanVersionSerializer):
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, required=False)
+    comment = serializers.CharField(required=False, allow_blank=True)
+    remove = serializers.BooleanField(required=False, default=False)
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PayoutPlanPaySerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    payment_date = serializers.DateField()
+    payment_method = serializers.ChoiceField(choices=PayrollPayment.Method.choices, default=PayrollPayment.Method.BANK)
+    reference = serializers.CharField(required=False, allow_blank=True, max_length=100, default="")
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+    idempotency_key = serializers.CharField(required=False, allow_blank=True, max_length=64)
