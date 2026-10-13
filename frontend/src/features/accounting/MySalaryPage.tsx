@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { CalendarClock, FileDown, Hourglass, Wallet } from 'lucide-react'
+import { CalendarClock, FileDown, Hourglass, Receipt, Wallet } from 'lucide-react'
 
 import { accountingApi } from '@/api/accounting'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -16,7 +16,7 @@ import { StatGrid } from '@/components/ui/StatGrid'
 import { useQuery } from '@tanstack/react-query'
 
 import { useMySalary } from '@/hooks/useAccounting'
-import type { MySalaryFilters, MySalaryRow, MySalaryStatus, PeriodType } from '@/types/accounting'
+import type { MyDeductionStatus, MySalaryFilters, MySalaryRow, MySalaryStatus, PeriodType } from '@/types/accounting'
 
 import { EstimateCard } from './EstimateCard'
 import { MONTHS, Section, formatDate, som, today, useRunner } from './shared'
@@ -27,6 +27,13 @@ const STATUS_TONE: Record<MySalaryStatus, BadgeTone> = {
   APPROVED: 'brand',
   PARTIALLY_PAID: 'warning',
   PAID: 'success',
+}
+
+const DEDUCTION_TONE: Record<MyDeductionStatus, BadgeTone> = {
+  WITHHELD: 'success',
+  PARTIAL: 'warning',
+  NOT_WITHHELD: 'muted',
+  PENDING: 'info',
 }
 
 const PERIOD_LABEL: Record<PeriodType, string> = {
@@ -78,7 +85,8 @@ export function MySalaryPage() {
       {d.estimates.length ? (
         <StatGrid>
           <StatCard label="Предварительная зарплата" icon={Hourglass} value={som(d.totals.estimated)}
-            hint="оценка по незавершённым блокам — ещё не начислено" />
+            hint={`прогноз по незавершённым блокам — ещё не начислено, сумма может измениться · налог и удержания: ${
+              d.totals.estimated_deductions !== null ? som(d.totals.estimated_deductions) : d.totals.estimated_deductions_note.toLowerCase() || 'будет рассчитано после начисления'}`} />
           <StatCard label="Ближайшая плановая выплата" icon={CalendarClock}
             value={d.next_planned_payment_date ? formatDate(d.next_planned_payment_date) : '—'}
             tone={d.next_planned_payment_date && d.next_planned_payment_date < today() ? 'warning' : 'default'}
@@ -87,11 +95,13 @@ export function MySalaryPage() {
         </StatGrid>
       ) : null}
 
-      <StatGrid className={d.estimates.length ? 'mt-3 sm:mt-4' : undefined}>
-        <StatCard label="Начислено" value={som(d.totals.accrued)}
+      <StatGrid columns={3} className={d.estimates.length ? 'mt-3 sm:mt-4' : undefined}>
+        <StatCard label="Начислено до удержаний" value={som(d.totals.accrued)}
           hint={Number(d.totals.pending_approval) ? `ещё ${som(d.totals.pending_approval)} ожидает утверждения` : 'утверждённые начисления'} />
-        <StatCard label="Выплачено" value={som(d.totals.paid)}
-          hint={Number(d.totals.deducted) > 0 ? `удержано (налоги и др.): ${som(d.totals.deducted)}` : undefined} />
+        <StatCard label="Налог и удержания" icon={Receipt} value={som(d.totals.deducted)}
+          hint={Number(d.totals.deducted) > 0 ? 'по утверждённым начислениям, подробности ниже' : 'удержаний нет'} />
+        <StatCard label="К выплате после удержаний" value={som(d.totals.net)} />
+        <StatCard label="Выплачено" value={som(d.totals.paid)} />
         <StatCard label="Остаток к выплате" value={som(d.totals.due)} tone={Number(d.totals.due) > 0 ? 'warning' : 'default'} />
         <StatCard label="Последняя выплата" icon={Wallet}
           value={d.last_payment ? som(d.last_payment.amount) : '—'}
@@ -139,6 +149,38 @@ export function MySalaryPage() {
             </div>
           ))}
         </div>
+      </Section>
+
+      <Section title="Налоги и удержания">
+        {d.deductions.length === 0 ? (
+          <p className="text-sm text-ink-muted">Удержаний нет.</p>
+        ) : (
+          <div className="card overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr><th>Удержание</th><th>Период</th><th className="text-right">Сумма</th><th className="text-right">Удержано</th><th>Статус</th><th>Дата применения</th></tr>
+              </thead>
+              <tbody>
+                {d.deductions.map((x) => (
+                  <tr key={x.id}>
+                    <td>{x.name}<p className="text-xs text-ink-muted">{x.kind_display}</p></td>
+                    <td className="whitespace-nowrap">{x.period_label}</td>
+                    <td className="whitespace-nowrap text-right">{som(x.month_amount)}</td>
+                    <td className="whitespace-nowrap text-right">
+                      {som(x.withheld)}
+                      {Number(x.remaining) > 0 ? <p className="text-xs text-ink-muted">не удержано {som(x.remaining)}</p> : null}
+                    </td>
+                    <td><Badge tone={DEDUCTION_TONE[x.status]}>{x.status_display}</Badge></td>
+                    <td className="whitespace-nowrap">{x.applied_at ? formatDate(x.applied_at) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="px-4 py-2 text-xs text-ink-muted">
+              Ежемесячное удержание применяется один раз за месяц, даже если начислений несколько. Оно уже учтено в остатке к выплате.
+            </p>
+          </div>
+        )}
       </Section>
 
       <MyPlannedPayouts />

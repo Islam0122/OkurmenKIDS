@@ -22,7 +22,8 @@ const EMPTY: MySalary = {
   employee_name: 'Asya Test',
   has_profile: false,
   profile: null,
-  totals: { accrued: '0.00', deducted: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00' },
+  totals: { accrued: '0.00', deducted: '0.00', net: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00', estimated_deductions: null, estimated_deductions_note: '' },
+  deductions: [],
   next_planned_payment_date: null,
   estimates: [],
   last_payment: null,
@@ -39,7 +40,7 @@ const WITH_DATA: MySalary = {
     salary_type: 'FIXED', salary_type_display: 'Фиксированный оклад', position: 'Ассистент',
     rates: [{ rule_type: 'FIXED', label: 'Оклад', amount: '40000.00', percentage: null, scope: '', effective_from: '2026-01-01' }],
   },
-  totals: { accrued: '20000.00', deducted: '0.00', paid: '15000.00', due: '5000.00', pending_approval: '20000.00', estimated: '0.00' },
+  totals: { accrued: '20000.00', deducted: '0.00', net: '20000.00', paid: '15000.00', due: '5000.00', pending_approval: '20000.00', estimated: '0.00', estimated_deductions: null, estimated_deductions_note: '' },
   last_payment: { payment_date: '2026-09-20', amount: '15000.00' },
   history: [
     {
@@ -126,25 +127,63 @@ describe('MySalaryPage', () => {
   })
 })
 
-describe('MySalaryPage — удержания', () => {
-  it('shows own deductions per payroll with a clear breakdown', async () => {
-    vi.mocked(accountingApi.mySalary).mockResolvedValue({
-      ...WITH_DATA,
-      totals: { ...WITH_DATA.totals, deducted: '3000.00', due: '2000.00' },
-      history: [{
-        ...awaiting('FIRST_HALF'), payroll_id: 1, year: 2026, month: 10, period_label: '01.10.2026–31.10.2026',
-        status: 'APPROVED', status_display: 'Утверждено', is_final: true, accrued: '20000.00', paid: '15000.00', due: '2000.00',
-        deducted: '3000.00', lines: [{ description: 'Оклад', amount: '20000.00' }],
-        deductions: [{ name: 'Налог', kind_display: 'Налог', amount: '3000.00', month_amount: '3000.00', remaining: '0.00' }],
-      }],
-    })
+describe('MySalaryPage — налоги и удержания', () => {
+  const TAXED: MySalary = {
+    ...WITH_DATA,
+    totals: { ...WITH_DATA.totals, accrued: '50000.00', deducted: '3000.00', net: '47000.00', paid: '20000.00', due: '27000.00', pending_approval: '0.00' },
+    deductions: [{
+      id: 1, name: 'Налог', kind: 'TAX', kind_display: 'Налог', year: 2026, month: 10, period_label: 'Октябрь 2026',
+      month_amount: '3000.00', withheld: '3000.00', remaining: '0.00', status: 'WITHHELD', status_display: 'Удержано', applied_at: '2026-11-01',
+    }],
+    history: [{
+      ...awaiting('FIRST_HALF'), payroll_id: 1, year: 2026, month: 10, period_label: '01.10.2026–31.10.2026',
+      status: 'PARTIALLY_PAID', status_display: 'Частично выплачено', is_final: true, accrued: '50000.00', paid: '20000.00', due: '27000.00',
+      deducted: '3000.00', lines: [{ description: 'Оклад', amount: '50000.00' }],
+      deductions: [{ name: 'Налог', kind_display: 'Налог', amount: '3000.00', month_amount: '3000.00', remaining: '0.00' }],
+    }],
+  }
+
+  it('shows before/after deductions cards exactly as the API returns them', async () => {
+    vi.mocked(accountingApi.mySalary).mockResolvedValue(TAXED)
+    renderWithProviders(<MySalaryPage />)
+    const card = async (label: string) => (await screen.findByText(label)).closest('div.card, [class*="card"]') as HTMLElement
+    expect(await card('Начислено до удержаний')).toHaveTextContent('50 000 сом')
+    expect(await card('Налог и удержания')).toHaveTextContent('3 000 сом')
+    expect(await card('К выплате после удержаний')).toHaveTextContent('47 000 сом')
+    expect(screen.getAllByText('Выплачено').length).toBeGreaterThan(0)
+    expect(await card('Остаток к выплате')).toHaveTextContent('27 000 сом')
+  })
+
+  it('lists own deductions with period, amount, status and date', async () => {
+    vi.mocked(accountingApi.mySalary).mockResolvedValue(TAXED)
     const user = userEvent.setup()
     renderWithProviders(<MySalaryPage />)
-    expect(await screen.findByText('удержано (налоги и др.): 3 000 сом')).toBeInTheDocument()
-    const row = screen.getByText('01.10.2026–31.10.2026').closest('tr')!
+    const row = (await screen.findByText('Октябрь 2026')).closest('tr')!
+    expect(row).toHaveTextContent('Налог')
     expect(row).toHaveTextContent('3 000 сом')
-    await user.click(row)
-    expect(screen.getByText(/Удержание «Налог»/)).toBeInTheDocument()
+    expect(row).toHaveTextContent('Удержано')
+    expect(row).toHaveTextContent('01.11.2026')
+    const payroll = screen.getByText('01.10.2026–31.10.2026').closest('tr')!
+    await user.click(payroll)
     expect(screen.getByText('−3 000 сом')).toBeInTheDocument()
+  })
+
+  it('preliminary salary stays separate and says tax will be calculated later', async () => {
+    vi.mocked(accountingApi.mySalary).mockResolvedValue({
+      ...EMPTY,
+      totals: { ...EMPTY.totals, estimated: '47160.00', estimated_deductions: null, estimated_deductions_note: 'Будет рассчитано после начисления' },
+      estimates: [{
+        cycle_id: 1, cycle_number: 1, group_name: 'Group A', course_name: 'Prog', subjects: ['Python'], subject_name: 'Python',
+        share_label: '', student_count: 10, price_per_student: '10000.00', percentage: '10', expected_amount: '47160.00',
+        lessons_done: 5, required_lessons: 12, lessons_remaining: 7, projected_completion_date: null, expected_payment_date: null,
+        status: 'ON_TRACK', status_display: 'Идёт', warnings: [], note: '',
+      }] as unknown as MySalary['estimates'],
+    })
+    renderWithProviders(<MySalaryPage />)
+    const card = (await screen.findAllByText('Предварительная зарплата'))[0].closest('[class*="card"]') as HTMLElement
+    expect(card).toHaveTextContent('47 160 сом')
+    expect(card).toHaveTextContent('может измениться')
+    expect(card).toHaveTextContent('будет рассчитано после начисления')
+    expect(screen.getByText('Начислено до удержаний').closest('[class*="card"]')).toHaveTextContent('0 сом')
   })
 })

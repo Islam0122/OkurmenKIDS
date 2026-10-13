@@ -208,15 +208,25 @@ def render_my_salary_pdf(data: dict, generated_at) -> bytes:
             styles["sub"],
         ),
         Spacer(1, 6),
-        _table(["Начислено (утверждено)", "Выплачено", "Остаток к выплате", "Ожидает утверждения"],
-               [[som(t["accrued"]), som(t["paid"]), som(t["due"]), som(t["pending_approval"])]],
-               [45.5 * mm] * 4, styles=styles),
+        _table(["Начислено до удержаний", "Налог и удержания", "К выплате после удержаний", "Выплачено",
+                "Остаток к выплате"],
+               [[som(t["accrued"]), som(t["deducted"]), som(t["net"]), som(t["paid"]), som(t["due"])]],
+               [36.4 * mm] * 5, styles=styles),
+        Paragraph(f"Ожидает утверждения: {som(t['pending_approval'])}", styles["sub"]),
         Paragraph("История начислений", styles["h"]),
         _table(
-            ["Период", "Статус", "Начислено", "Выплачено", "Остаток"],
-            [[r["period_label"], r["status_display"], som(r["accrued"]), som(r["paid"]), som(r["due"])]
-             for r in data["history"]] or [["Начислений пока нет", "", "", "", ""]],
-            [40 * mm, 52 * mm, 30 * mm, 30 * mm, 30 * mm], styles=styles,
+            ["Период", "Статус", "Начислено", "Удержано", "Выплачено", "Остаток"],
+            [[r["period_label"], r["status_display"], som(r["accrued"]), som(r["deducted"]), som(r["paid"]),
+              som(r["due"])] for r in data["history"]] or [["Начислений пока нет", "", "", "", "", ""]],
+            [36 * mm, 46 * mm, 25 * mm, 25 * mm, 25 * mm, 25 * mm], styles=styles,
+        ),
+        Paragraph("Налоги и удержания", styles["h"]),
+        _table(
+            ["Удержание", "Период", "Сумма", "Удержано", "Статус", "Дата"],
+            [[d["name"], d["period_label"], som(d["month_amount"]), som(d["withheld"]), d["status_display"],
+              f"{dt.date.fromisoformat(d['applied_at']):%d.%m.%Y}" if d["applied_at"] else "—"]
+             for d in data["deductions"]] or [["Удержаний нет", "", "", "", "", ""]],
+            [36 * mm, 26 * mm, 24 * mm, 24 * mm, 50 * mm, 22 * mm], styles=styles,
         ),
         Paragraph("Выплаты", styles["h"]),
         _table(

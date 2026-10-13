@@ -10,6 +10,13 @@ PayrollLine / PayrollAdjustment / PayrollPayment.
 возвращённый на исправление расчёт — «Ожидает расчёта» без сумм (цифры в нём
 ещё не проверены бухгалтером); аннулированные не показываются. Итоги
 «Начислено / Выплачено / Остаток» — только по утверждённым начислениям.
+
+Налоги и удержания приходят из тех же записей, что и у бухгалтерии
+(`Payroll.total_deductions`, `AppliedDeduction` / `DeductionAllocation`):
+здесь они только показываются, второго расчёта нет. Остаток к выплате —
+`amount_due`, в котором удержание уже учтено, поэтому оно не вычитается
+повторно. Для предварительной зарплаты (незавершённые блоки) удержание не
+прогнозируется: оно применяется один раз за месяц при начислении.
 """
 from __future__ import annotations
 
@@ -19,6 +26,8 @@ from decimal import Decimal
 from django.utils import timezone
 
 from ..models import (
+    AppliedDeduction,
+    DeductionRule,
     EmployeeSalaryProfile,
     Payroll,
     PayrollAdjustment,
@@ -146,6 +155,7 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
     accrued = sum((p.total_accrued + p.total_adjustments for p in locked), ZERO)
     deducted = sum((p.total_deductions for p in locked), ZERO)
     paid = sum((p.total_paid for p in locked), ZERO)
+    due = sum((p.amount_due for p in locked), ZERO)  # удержания уже внутри amount_due
     pending = sum((p.total_accrued + p.total_adjustments for p in own.filter(status=Payroll.Status.CALCULATED)), ZERO)
     last = (
         PayrollPayment.objects.filter(payroll__employee=employee, status=PayrollPayment.Status.CONFIRMED)
@@ -202,10 +212,17 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
             "rates": _rates(profile, today),
         },
         "totals": {
-            "accrued": _money(accrued), "deducted": _money(deducted), "paid": _money(paid),
-            "due": _money(accrued - deducted - paid),
+            # До удержаний / удержания / после удержаний / выплачено / остаток —
+            # по утверждённым начислениям; остаток = Σ amount_due.
+            "accrued": _money(accrued), "deducted": _money(deducted), "net": _money(accrued - deducted),
+            "paid": _money(paid), "due": _money(due),
             "pending_approval": _money(pending), "estimated": _money(estimated),
+            # Предварительная зарплата — до удержаний: удержание применяется один
+            # раз за месяц при начислении, для прогноза оно не рассчитывается.
+            "estimated_deductions": None,
+            "estimated_deductions_note": ESTIMATE_DEDUCTIONS_NOTE if estimates else "",
         },
+        "deductions": deductions_for(employee, year=year, month=month),
         "next_planned_payment_date": next_planned.isoformat() if next_planned else None,
         "estimates": [_estimate(e) for e in estimates],
         "last_payment": None if last is None else {
@@ -219,3 +236,51 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
         "payments": _payments(employee, history),
         "filters": {"year": year, "month": month, "period_type": period_type},
     }
+
+
+DEDUCTION_STATUS = {
+    "WITHHELD": "Удержано",
+    "PARTIAL": "Удержано частично: начисления не хватило",
+    "NOT_WITHHELD": "Не удержано: начисления не хватило",
+    "PENDING": "Рассчитано, ожидает утверждения",
+}
+ESTIMATE_DEDUCTIONS_NOTE = "Будет рассчитано после начисления"
+
+
+def deductions_for(employee, *, year: int | None = None, month: int | None = None) -> list[dict]:
+    """Свои удержания по месяцам: одна запись на правило и месяц. Учитываются
+    только расчёты, которые сотрудник видит (рассчитанные и утверждённые);
+    черновики и аннулированные — нет."""
+    visible_months = set(
+        Payroll.objects.filter(employee=employee, status__in=VISIBLE).values_list("period__year", "period__month")
+    )
+    headers = AppliedDeduction.objects.filter(employee=employee).prefetch_related("allocations__payroll")
+    if year:
+        headers = headers.filter(year=year)
+    if month:
+        headers = headers.filter(month=month)
+    rows = []
+    for h in headers.order_by("-year", "-month", "kind", "name", "id"):
+        if (h.year, h.month) not in visible_months:
+            continue
+        allocations = [a for a in h.allocations.all() if a.payroll.status in VISIBLE]
+        withheld = sum((a.amount for a in allocations), ZERO)
+        locked = [a for a in allocations if a.payroll.status in Payroll.LOCKED_STATUSES]
+        remaining = max(ZERO, h.amount - withheld)
+        if len(locked) < len(allocations):
+            status = "PENDING"
+        elif withheld <= 0:
+            status = "NOT_WITHHELD"
+        elif remaining > 0:
+            status = "PARTIAL"
+        else:
+            status = "WITHHELD"
+        approved = [a.payroll.approved_at for a in locked if a.payroll.approved_at]
+        rows.append({
+            "id": h.pk, "name": h.name, "kind": h.kind, "kind_display": DeductionRule.Kind(h.kind).label,
+            "year": h.year, "month": h.month, "period_label": f"{MONTHS[h.month - 1]} {h.year}",
+            "month_amount": _money(h.amount), "withheld": _money(withheld), "remaining": _money(remaining),
+            "status": status, "status_display": DEDUCTION_STATUS[status],
+            "applied_at": timezone.localtime(max(approved)).date().isoformat() if approved else None,
+        })
+    return rows
