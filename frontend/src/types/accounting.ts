@@ -981,8 +981,77 @@ export interface EarningsDeduction {
   remaining: string
 }
 
+export type PayoutScheduleStatus = 'SCHEDULED' | 'PARTIALLY_PAID' | 'PAID'
+
+export interface PayoutScheduleItem {
+  source: EarningsSource
+  source_display: string
+  official: boolean
+  gross: string
+  period_label: string
+  payroll_id: number | null
+  // расчёт зарплаты
+  payroll_status_display?: string
+  paid?: string
+  due?: string | null
+  blocks?: { description: string; subject_name: string; group_name: string; cycle_number: number | null; completed_on: string | null; amount: string }[]
+  // завершённый / незавершённый блок вне расчёта
+  subject_name?: string
+  group_name?: string
+  cycle_number?: number
+  lessons_taught?: number | null
+  required_lessons?: number
+  completed_on?: string | null
+}
+
+export interface PayoutScheduleAmounts {
+  gross: string
+  tax: string
+  other_deductions: string
+  net: string
+}
+
+export interface PayoutScheduleEntry extends PayoutScheduleAmounts {
+  date: string | null
+  date_note: string
+  paid: string
+  remaining: string
+  status: PayoutScheduleStatus
+  status_display: string
+  official_due: string
+  not_yet_official: string
+  fully_official: boolean
+  items: PayoutScheduleItem[]
+}
+
+export interface NotIncludedEarnings extends PayoutScheduleAmounts {
+  note: string
+  items: PayoutScheduleItem[]
+}
+
+export interface PayoutCalendarByDate extends PayoutScheduleAmounts {
+  date: string | null
+  date_note: string
+  paid: string
+  remaining: string
+  status: PayoutScheduleStatus
+  status_display: string
+  employees: (PayoutScheduleEntry & { employee: number; employee_name: string })[]
+}
+
+export interface PayoutScheduleResponse {
+  as_of: string
+  dates: PayoutCalendarByDate[]
+  not_included: (NotIncludedEarnings & { employee: number; employee_name: string })[]
+  not_included_total: PayoutScheduleAmounts
+}
+
 export interface Earnings {
   as_of: string
+  /** Выплаты по плановым датам (15-е / 1-е); каждая сумма — в одной дате. */
+  schedule: PayoutScheduleEntry[]
+  /** Заработок по незавершённым блокам — ещё не включён ни в одну выплату. */
+  not_included: NotIncludedEarnings
   earned: EarningsAmounts
   official: EarningsAmounts
   paid: string

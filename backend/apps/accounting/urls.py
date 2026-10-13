@@ -37,6 +37,7 @@ urlpatterns = [
     path("analytics/summary/", views.AnalyticsSummaryView.as_view(), name="analytics-summary"),
     path("analytics/by-department/", views.AnalyticsByDepartmentView.as_view(), name="analytics-by-department"),
     path("earnings/", views.EarningsListView.as_view(), name="earnings"),
+    path("earnings/schedule/", views.PayoutScheduleView.as_view(), name="payout-schedule"),
     path("earnings/<int:employee_id>/", views.EarningsDetailView.as_view(), name="earnings-detail"),
     path("applied-deductions/", views.AppliedDeductionListView.as_view(), name="applied-deductions"),
     path("estimates/", views.EstimateListView.as_view(), name="estimates"),

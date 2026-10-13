@@ -19,6 +19,7 @@ import { useMySalary } from '@/hooks/useAccounting'
 import type { MyDeductionStatus, MySalaryFilters, MySalaryRow, MySalaryStatus, PeriodType } from '@/types/accounting'
 
 import { EarningsBreakdown } from './EarningsBreakdown'
+import { PayoutSchedule } from './PayoutSchedule'
 import { MONTHS, Section, formatDate, som, today, useRunner } from './shared'
 
 const STATUS_TONE: Record<MySalaryStatus, BadgeTone> = {
@@ -103,6 +104,10 @@ export function MySalaryPage() {
           hint={!e.next_payment_date ? 'нет начислений к выплате'
             : e.next_payment_date < today() ? 'плановая дата прошла — выплата ожидается' : 'плановая дата, не факт перевода'} />
       </StatGrid>
+
+      <Section title="График выплат">
+        <PayoutSchedule schedule={e.schedule} notIncluded={e.not_included} />
+      </Section>
 
       <Section title="Из чего сложился заработок">
         <EarningsBreakdown data={e} />

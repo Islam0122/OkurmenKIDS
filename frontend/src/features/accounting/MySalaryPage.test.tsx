@@ -25,7 +25,8 @@ const EMPTY: MySalary = {
   totals: { accrued: '0.00', deducted: '0.00', net: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00', estimated_deductions: null, estimated_deductions_note: '' },
   deductions: [],
   earnings: {
-    as_of: '2026-10-10', earned: { gross: '0.00', tax: '0.00', other_deductions: '0.00', net: '0.00' },
+    as_of: '2026-10-10', schedule: [], not_included: { gross: '0.00', tax: '0.00', other_deductions: '0.00', net: '0.00', note: '', items: [] },
+    earned: { gross: '0.00', tax: '0.00', other_deductions: '0.00', net: '0.00' },
     official: { gross: '0.00', tax: '0.00', other_deductions: '0.00', net: '0.00' }, paid: '0.00', company_owes: '0.00',
     earned_unpaid: '0.00', next_payment_date: null, difference: '0.00', difference_reasons: [], items: [], deductions: [],
   },
@@ -162,5 +163,43 @@ describe('MySalaryPage — налоги и удержания', () => {
     const payroll = screen.getByText('01.10.2026–31.10.2026').closest('tr')!
     await user.click(payroll)
     expect(screen.getByText('−3 000 сом')).toBeInTheDocument()
+  })
+})
+
+describe('MySalaryPage — график выплат', () => {
+  it('shows amounts per payout date and keeps open blocks separate', async () => {
+    const entry = (date: string, gross: string, tax: string, net: string, paid: string, remaining: string,
+      status: 'SCHEDULED' | 'PARTIALLY_PAID' | 'PAID', status_display: string) => ({
+      date, date_note: '', gross, tax, other_deductions: '0.00', net, paid, remaining, status, status_display,
+      official_due: remaining, not_yet_official: '0.00', fully_official: true,
+      items: [{ source: 'ACCRUAL_PENDING' as const, source_display: 'Блок завершён', official: false, gross, period_label: '', payroll_id: null,
+        subject_name: 'Python', group_name: 'Group A', cycle_number: 1, lessons_taught: 12, required_lessons: 12, completed_on: '2026-10-10' }],
+    })
+    vi.mocked(accountingApi.mySalary).mockResolvedValue({
+      ...EMPTY,
+      earnings: {
+        ...EMPTY.earnings,
+        schedule: [
+          entry('2026-10-15', '10000.00', '3000.00', '7000.00', '4000.00', '3000.00', 'PARTIALLY_PAID', 'Частично выплачено'),
+          entry('2026-11-01', '20000.00', '0.00', '20000.00', '0.00', '20000.00', 'SCHEDULED', 'Запланировано'),
+        ],
+        not_included: { gross: '7500.00', tax: '0.00', other_deductions: '0.00', net: '7500.00', note: 'Работа по незавершённым блокам',
+          items: [{ source: 'OPEN_BLOCK', source_display: 'Блок идёт', official: false, gross: '7500.00', period_label: '', payroll_id: null,
+            subject_name: 'English', group_name: 'Group B', cycle_number: 2, lessons_taught: 9, required_lessons: 12, completed_on: null }] },
+      },
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<MySalaryPage />)
+    expect(await screen.findByText('График выплат')).toBeInTheDocument()
+    const oct = screen.getByText('15.10.2026').closest('tr')!
+    for (const v of ['10 000 сом', '3 000 сом', '7 000 сом', '4 000 сом', 'Частично выплачено']) expect(oct).toHaveTextContent(v)
+    const nov = screen.getByText('01.11.2026').closest('tr')!
+    expect(nov).toHaveTextContent('Запланировано')
+    expect(nov).toHaveTextContent('20 000 сом')
+    await user.click(oct)
+    expect(screen.getByText(/Python · Group A · блок 1/)).toBeInTheDocument()
+    expect(screen.getByText(/завершён 10\.10\.2026/)).toBeInTheDocument()
+    expect(screen.getByText(/Ещё не включено в выплату: заработано 7\s500\sсом/)).toBeInTheDocument()
+    expect(screen.getByText(/English · Group B · блок 2/)).toBeInTheDocument()
   })
 })
