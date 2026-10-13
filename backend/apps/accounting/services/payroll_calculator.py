@@ -44,7 +44,7 @@ from ..models import (
     SalaryRule,
     SalaryType,
 )
-from . import AccountingError, audit
+from . import AccountingError, audit, deductions
 from .cycles import ensure_accruals, sync_all
 from .money import ZERO, money, plain
 
@@ -316,15 +316,18 @@ def compute(period: PayrollPeriod, profile: EmployeeSalaryProfile, *, payroll_id
 # ---------------------------------------------------------------------------
 
 def refresh_totals(payroll: Payroll) -> Payroll:
-    """Итоги расчёта — всегда из записей (строки, корректировки, выплаты)."""
+    """Итоги расчёта — всегда из записей (строки, корректировки, удержания, выплаты)."""
     payroll.total_accrued = payroll.lines.aggregate(s=Sum("amount"))["s"] or ZERO
     payroll.total_adjustments = (
         payroll.adjustments.filter(status=PayrollAdjustment.Status.APPLIED).aggregate(s=Sum("amount"))["s"] or ZERO
     )
+    payroll.total_deductions = payroll.deduction_allocations.aggregate(s=Sum("amount"))["s"] or ZERO
     payroll.total_paid = (
         payroll.payments.filter(status=PayrollPayment.Status.CONFIRMED).aggregate(s=Sum("amount"))["s"] or ZERO
     )
-    payroll.amount_due = payroll.total_accrued + payroll.total_adjustments - payroll.total_paid
+    payroll.amount_due = (
+        payroll.total_accrued + payroll.total_adjustments - payroll.total_deductions - payroll.total_paid
+    )
     return payroll
 
 
@@ -376,7 +379,7 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
                 "добавьте корректировку или переоткройте его через директора.",
                 code="locked",
             )
-        old = audit.snapshot(payroll, ("status", "total_accrued", "total_adjustments", "amount_due"))
+        old = audit.snapshot(payroll, ("status", "total_accrued", "total_adjustments", "total_deductions", "amount_due"))
         result = compute(period, profile, payroll_id=payroll.pk)
         CycleAccrual.objects.filter(payroll=payroll, status=CycleAccrual.Status.ACCRUED).update(
             payroll=None, line=None,
@@ -391,6 +394,8 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
             )
             if d.accrual is not None:
                 CycleAccrual.objects.filter(pk=d.accrual.pk).update(payroll=payroll, line=line)
+        # Налоги и удержания — внутри этого же расчёта (один раз за месяц на сотрудника).
+        deductions.apply_to_payroll(payroll, actor)
         refresh_totals(payroll)
         warnings = list(result.warnings)
         previous = _previous_total(payroll)
@@ -410,7 +415,7 @@ def calculate_payroll(period: PayrollPeriod, employee, actor, *, sync: bool = Tr
         payroll.save()
         audit.log(
             actor, payroll, "calculate" if created or old["status"] == Payroll.Status.DRAFT else "recalculate",
-            old=old, new=audit.snapshot(payroll, ("status", "total_accrued", "total_adjustments", "amount_due")),
+            old=old, new=audit.snapshot(payroll, ("status", "total_accrued", "total_adjustments", "total_deductions", "amount_due")),
             payroll=payroll,
         )
         if period.status == PayrollPeriod.Status.DRAFT or period.status == PayrollPeriod.Status.APPROVED:

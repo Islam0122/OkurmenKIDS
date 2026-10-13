@@ -8,11 +8,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from ..models import CycleAccrual, Payroll, PayrollAdjustment, PayrollPayment, PayrollPeriod
-from . import AccountingError, audit
+from . import AccountingError, audit, deductions
 from .payroll_calculator import refresh_totals
 from .periods import sync_period_status
 
-TOTALS = ("status", "total_accrued", "total_adjustments", "total_paid", "amount_due")
+TOTALS = ("status", "total_accrued", "total_adjustments", "total_deductions", "total_paid", "amount_due")
 
 
 def _locked(payroll: Payroll) -> Payroll:
@@ -168,7 +168,15 @@ def _signed(kind: str, amount: Decimal) -> Decimal:
     return -amount if kind == PayrollAdjustment.Kind.DEDUCTION else amount
 
 
-def _apply(payroll: Payroll, adjustment: PayrollAdjustment):
+def _redistribute_deductions(payroll: Payroll, actor) -> None:
+    """В черновике корректировка меняет доступную сумму — удержания месяца
+    перераспределяются (не больше доступного, без повторного удержания)."""
+    if payroll.is_editable:
+        deductions.apply_to_payroll(payroll, actor)
+
+
+def _apply(payroll: Payroll, adjustment: PayrollAdjustment, actor=None):
+    _redistribute_deductions(payroll, actor)
     refresh_totals(payroll)
     if payroll.amount_due < 0:
         raise AccountingError(
@@ -196,7 +204,7 @@ def create_adjustment(payroll: Payroll, *, kind: str, amount: Decimal, reason: s
             payroll=payroll, kind=kind, amount=signed, reason=reason, status=status, created_by=actor,
         )
         if status == PayrollAdjustment.Status.APPLIED:
-            _apply(payroll, adjustment)
+            _apply(payroll, adjustment, actor)
         audit.log(actor, adjustment, "create", new={"kind": kind, "amount": signed, "status": status},
                   reason=reason, payroll=payroll)
     return adjustment
@@ -216,7 +224,7 @@ def decide_adjustment(adjustment: PayrollAdjustment, *, approve: bool, actor, re
         adjustment.decided_by, adjustment.decided_at = actor, timezone.now()
         adjustment.save()
         if approve:
-            _apply(payroll, adjustment)
+            _apply(payroll, adjustment, actor)
         else:
             # Директор отклонил автоматическое сторно — начисление за цикл остаётся в силе.
             CycleAccrual.objects.filter(adjustment=adjustment).update(
@@ -245,6 +253,7 @@ def void_adjustment(adjustment: PayrollAdjustment, *, actor, reason: str) -> Pay
         adjustment.status = PayrollAdjustment.Status.VOID
         adjustment.decided_by, adjustment.decided_at = actor, timezone.now()
         adjustment.save()
+        _redistribute_deductions(payroll, actor)
         refresh_totals(payroll)
         payroll.save()
         audit.log(actor, adjustment, "void", old={"status": old_status}, new={"status": adjustment.status},

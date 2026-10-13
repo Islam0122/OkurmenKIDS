@@ -62,6 +62,8 @@ export interface Dashboard {
   total_accrued: string
   total_lines: string
   total_adjustments: string
+  /** Удержания по правилам «Налоги и удержания» за выбранный период. */
+  total_deductions: string
   total_paid: string
   total_due: string
   employees_with_accruals: number
@@ -265,6 +267,7 @@ export interface PayrollListItem {
   planned_payment_date: string | null
   total_accrued: string
   total_adjustments: string
+  total_deductions: string
   total: string
   total_paid: string
   amount_due: string
@@ -286,6 +289,24 @@ export interface PayrollDetail extends PayrollListItem {
   return_reason: string
   /** Незавершённые циклы групп сотрудника — процент за них ещё не начисляется. */
   open_cycles: { id: number; group_name: string; course_name: string; number: number; lessons_done: number; required_lessons: number }[]
+  deductions: PayrollDeduction[]
+}
+
+/** Удержание месяца в детализации расчёта: за месяц полагается `month_amount`,
+ * из этого расчёта взято `amount`, из других расчётов месяца — `other_payrolls`. */
+export interface PayrollDeduction {
+  id: number
+  rule: number
+  name: string
+  kind: DeductionKind
+  kind_display: string
+  frequency_display: string
+  year: number
+  month: number
+  month_amount: string
+  amount: string
+  other_payrolls: string
+  remaining: string
 }
 
 export interface CalculationResult {
@@ -436,6 +457,8 @@ export interface MySalaryRow {
   due: string | null
   lines: { description: string; amount: string }[]
   adjustments: { kind: string; reason: string; amount: string }[]
+  deducted: string | null
+  deductions: { name: string; kind_display: string; amount: string; month_amount: string; remaining: string }[]
   planned_payment_date: string | null
 }
 
@@ -448,7 +471,7 @@ export interface MySalary {
     position: string
     rates: { rule_type: string; label: string; amount: string | null; percentage: string | null; scope: string; effective_from: string }[]
   } | null
-  totals: { accrued: string; paid: string; due: string; pending_approval: string; estimated: string }
+  totals: { accrued: string; deducted: string; paid: string; due: string; pending_approval: string; estimated: string }
   next_planned_payment_date: string | null
   estimates: MyEstimate[]
   last_payment: { payment_date: string; amount: string } | null
@@ -716,6 +739,8 @@ export interface PayoutPlanLine {
   year: number
   month: number
   accrued: string
+  /** Удержания расчёта — уже внутри остатка, план их повторно не вычитает. */
+  deductions: string
   paid_before: string
   planned_amount: string
   paid_by_plan: string
@@ -807,4 +832,60 @@ export interface MyPlannedPayout {
   planned_amount: string
   paid: string
   remaining: string
+}
+
+// ---------------------------------------------------------------------------
+// Налоги и удержания
+// ---------------------------------------------------------------------------
+
+export type DeductionKind = 'TAX' | 'CONTRIBUTION' | 'OTHER'
+export type DeductionFrequency = 'MONTHLY' | 'PERIOD' | 'ONCE'
+export type DeductionScope = 'EMPLOYEE' | 'DEPARTMENT' | 'ALL'
+
+export interface DeductionRule {
+  id: number
+  series: string
+  name: string
+  kind: DeductionKind
+  kind_display: string
+  calc_type: 'FIXED'
+  calc_type_display: string
+  amount: string
+  frequency: DeductionFrequency
+  frequency_display: string
+  scope: DeductionScope
+  scope_display: string
+  employee: number | null
+  employee_name: string
+  department: string
+  department_display: string
+  effective_from: string
+  effective_to: string | null
+  is_active: boolean
+  description: string
+  previous_version: number | null
+  next_version: number | null
+  usage: { locked_payrolls: number; draft_payrolls: number; used_until: string | null; can_correct: boolean }
+  created_by_name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface DeductionRuleBody {
+  name: string
+  kind: DeductionKind
+  amount: string
+  frequency: DeductionFrequency
+  scope: DeductionScope
+  employee: number | null
+  department: string
+  effective_from: string
+  effective_to: string | null
+  is_active: boolean
+  description: string
+}
+
+export interface DeductionEffects {
+  payrolls_recalculated: number[]
+  payrolls_failed: { payroll_id: number; error: string }[]
 }

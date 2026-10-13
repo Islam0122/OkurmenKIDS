@@ -9,11 +9,14 @@ from django.urls import reverse
 
 from apps.academy.models import Course, Group, Lesson, Student
 from apps.accounting.models import (
+    AppliedDeduction,
     CourseCycle,
     CoursePayrollSettings,
     CoursePriceVersion,
     CycleAccrual,
     CycleLesson,
+    DeductionAllocation,
+    DeductionRule,
     EmployeeSalaryProfile,
     PayoutPlan,
     PayoutPlanLine,
@@ -27,7 +30,7 @@ from apps.accounting.models import (
     SalaryType,
     StudentPayment,
 )
-from apps.accounting.services import AccountingError, maintenance, payout_plans
+from apps.accounting.services import AccountingError, deductions, maintenance, payout_plans
 from apps.accounting.services.approval_service import approve_payroll, create_adjustment
 from apps.accounting.services.payment_service import register_payment
 from apps.accounting.services.pricing import set_price
@@ -38,10 +41,10 @@ from apps.users.models import Subject, Teacher, User
 R = SalaryRule.RuleType
 URL = reverse("admin:accounting_maintenance_purge")
 
-PAYROLL_MODELS = (CycleAccrual, PayrollAuditLog, PayrollPayment, PayoutPlanLine, PayoutPlan, PayrollAdjustment, PayrollLine,
-                  Payroll, PayrollPeriod)
+PAYROLL_MODELS = (CycleAccrual, PayrollAuditLog, PayrollPayment, PayoutPlanLine, PayoutPlan, DeductionAllocation,
+                  AppliedDeduction, PayrollAdjustment, PayrollLine, Payroll, PayrollPeriod)
 KEPT_IN_A = (SalaryRule, EmployeeSalaryProfile, CourseCycle, CoursePayrollSettings, StudentPayment, CycleLesson,
-             CoursePriceVersion)
+             CoursePriceVersion, DeductionRule)
 
 
 def n(model) -> int:
@@ -63,6 +66,8 @@ class PurgeFixture(AccountingFixture):
         kids = [self.student(self.group_a) for _ in range(5)]
         with self.captureOnCommitCallbacks(execute=True):
             self.lessons(self.group_a, [day(9, d) for d in range(1, 13)])
+        deductions.create_rule(actor=self.accountant, name="Налог", kind="TAX", amount=D("100"), frequency="MONTHLY",
+                               scope="EMPLOYEE", employee=self.trainer_user, effective_from=day(1, 1))
         payroll = approve_payroll(self.calc(FIRST), self.director)
         register_payment(payroll, amount=D("1000"), payment_date=day(9, 20), actor=self.accountant)
         plan = payout_plans.approve_plan(payout_plans.create_plan(

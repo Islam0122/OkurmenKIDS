@@ -56,11 +56,11 @@ def render_period_xlsx(report: PayrollReport) -> bytes:
     _sheet(
         ws, report.title, f"Период: {report.range_label} · KGS · сформировано {report.generated_at:%d.%m.%Y %H:%M}",
         [("Сотрудник", 30), ("Должность", 20), ("Тип оплаты", 26), ("Период", 24), ("Начислено", 14),
-         ("Корректировки", 14), ("Итого", 14), ("Выплачено", 14), ("Остаток", 14), ("Статус", 20)],
-        [[r.employee, r.position, r.salary_type, r.period, r.accrued, r.adjustments, r.total, r.paid, r.due, r.status]
-         for r in report.rows],
-        {5, 6, 7, 8, 9},
-        ["Итого", "", "", "", t.accrued, t.adjustments, t.total, t.paid, t.due, ""],
+         ("Корректировки", 14), ("Итого", 14), ("Удержания", 14), ("Выплачено", 14), ("Остаток", 14), ("Статус", 20)],
+        [[r.employee, r.position, r.salary_type, r.period, r.accrued, r.adjustments, r.total, r.deductions, r.paid,
+          r.due, r.status] for r in report.rows],
+        {5, 6, 7, 8, 9, 10},
+        ["Итого", "", "", "", t.accrued, t.adjustments, t.total, t.deductions, t.paid, t.due, ""],
     )
     if report.by_group:
         groups = wb.create_sheet("По группам")
@@ -92,6 +92,11 @@ def render_individual_xlsx(report: IndividualReport) -> bytes:
     _sheet(adj, "Корректировки", sub, [("Тип", 22), ("Причина", 60), ("Сумма", 14)],
            [[a.get_kind_display(), a.reason, a.amount] for a in report.adjustments], {3},
            ["Итого", "", report.adjustments_total])
+    ded = wb.create_sheet("Удержания")
+    _sheet(ded, "Налоги и удержания", sub, [("Удержание", 36), ("Вид", 22), ("За месяц по правилу", 16),
+                                            ("Удержано в расчёте", 16), ("Не удержано", 14)],
+           [[d["name"], d["kind_display"], d["month_amount"], d["amount"], d["remaining"]] for d in report.deductions],
+           {3, 4, 5}, ["Итого", "", None, report.deductions_total, None])
     pay = wb.create_sheet("Выплаты")
     _sheet(pay, "Выплаты", sub, [("Дата", 14), ("Способ", 22), ("Аванс", 8), ("Документ", 20), ("Сумма", 14)],
            [[p.payment_date, p.get_payment_method_display(), "да" if p.is_advance else "", p.reference, p.amount]

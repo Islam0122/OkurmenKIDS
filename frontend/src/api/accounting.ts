@@ -8,6 +8,9 @@ import type {
   BlockEstimate,
   CoursePriceVersion,
   CycleAccrual,
+  DeductionEffects,
+  DeductionRule,
+  DeductionRuleBody,
   DepartmentTotals,
   MyEstimate,
   TeacherReport,
@@ -175,6 +178,15 @@ export const accountingApi = {
     get<TeacherReport>('/reports/teachers/', { ...filters }),
   downloadTeacherReport: (format: 'pdf' | 'xlsx', filters: AnalyticsFilters) =>
     download(`/reports/teachers.${format}`, { ...filters }, `teachers.${format}`),
+
+  /** Налоги и удержания: правило не удаляется; изменение — с причиной (новая версия, если уже утверждено). */
+  deductionRules: (params: Params = {}) => get<Paginated<DeductionRule>>('/deduction-rules/', { page_size: 200, ...params }),
+  createDeductionRule: (body: DeductionRuleBody) =>
+    post<{ rule: DeductionRule; effects: DeductionEffects }>('/deduction-rules/', body),
+  changeDeductionRule: (id: number, body: Partial<DeductionRuleBody> & { reason: string }) =>
+    post<{ rule: DeductionRule; effects: DeductionEffects }>(`/deduction-rules/${id}/change/`, body),
+  deductionRuleHistory: (id: number) =>
+    get<{ versions: DeductionRule[]; audit: AuditEntry[] }>(`/deduction-rules/${id}/history/`),
 
   /** План выплат. Подготовленные средства — не выплаты; фактическая выплата —
    * `payPlanLine` (тот же механизм выплат, что и в карточке начисления). */

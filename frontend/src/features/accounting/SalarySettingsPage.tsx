@@ -13,10 +13,12 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Modal } from '@/components/ui/Modal'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
+import { Tabs } from '@/components/ui/Tabs'
 import { useAccountingMutation, useAccountingOptions, useSalaryProfiles } from '@/hooks/useAccounting'
 import { Field } from '@/features/worklog/formUi'
 import type { AccountingOptions, RuleType, SalaryProfile, SalaryRule } from '@/types/accounting'
 
+import { DeductionRulesSection } from './DeductionRulesSection'
 import { RuleCorrectionModal } from './RuleCorrectionModal'
 import { formatDate, som, today, useRunner } from './shared'
 
@@ -33,6 +35,7 @@ export function SalarySettingsPage() {
   const profiles = useSalaryProfiles(search)
   const options = useAccountingOptions()
   const [dialog, setDialog] = useState<Dialog>(null)
+  const [tab, setTab] = useState<'salary' | 'deductions'>('salary')
   const canEdit = options.data?.can_operate ?? false
   const close = () => setDialog(null)
   const { save } = useSave()
@@ -44,8 +47,13 @@ export function SalarySettingsPage() {
       <PageHeader
         title="Зарплатные правила"
         description="Схема оплаты каждого сотрудника. Изменение ставки создаёт новую версию правила — уже рассчитанные периоды не меняются."
-        actions={canEdit ? <Button leftIcon={<Plus className="size-4" />} onClick={() => setDialog({ kind: 'profile' })}>Добавить сотрудника</Button> : null}
+        actions={canEdit && tab === 'salary' ? <Button leftIcon={<Plus className="size-4" />} onClick={() => setDialog({ kind: 'profile' })}>Добавить сотрудника</Button> : null}
       />
+      <Tabs aria-label="Раздел настроек" value={tab} onChange={setTab}
+        items={[{ key: 'salary', label: 'Ставки сотрудников' }, { key: 'deductions', label: 'Налоги и удержания' }]} />
+      {tab === 'deductions' ? (
+        options.data ? <DeductionRulesSection options={options.data} canEdit={canEdit} /> : <LoadingState />
+      ) : (<>
       <FilterBar>
         <FilterField size="lg"><SearchInput value={search} onChange={setSearch} placeholder="Поиск по ФИО" /></FilterField>
       </FilterBar>
@@ -125,6 +133,7 @@ export function SalarySettingsPage() {
             ))}
           </div>
         )}
+      </>)}
 
       {options.data && dialog?.kind === 'profile' ? <ProfileModal options={options.data} onClose={close} /> : null}
       {options.data && dialog?.kind === 'rule' ? <RuleModal options={options.data} profile={dialog.profile} onClose={close} /> : null}

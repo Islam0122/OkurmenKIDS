@@ -15,7 +15,16 @@ from django.utils import timezone
 
 from apps.academy.models import Group
 
-from ..models import Payroll, PayrollAdjustment, PayrollLine, PayrollPayment, PayrollPeriod, SalaryType
+from ..models import (
+    DeductionAllocation,
+    Payroll,
+    PayrollAdjustment,
+    PayrollLine,
+    PayrollPayment,
+    PayrollPeriod,
+    SalaryType,
+)
+from .deductions import payroll_deductions
 from .money import ZERO
 
 _DEC = DecimalField(max_digits=14, decimal_places=2)
@@ -35,25 +44,28 @@ def with_totals(queryset):
         r_accrued=_sum_of(PayrollLine, Q()),
         r_adjustments=_sum_of(PayrollAdjustment, Q(status=PayrollAdjustment.Status.APPLIED)),
         r_paid=_sum_of(PayrollPayment, Q(status=PayrollPayment.Status.CONFIRMED)),
+        r_deductions=_sum_of(DeductionAllocation, Q()),
     )
 
 
 def dashboard(periods) -> dict:
     payrolls = with_totals(Payroll.objects.filter(period__in=periods).exclude(status=Payroll.Status.VOID))
-    accrued = adjustments = paid = ZERO
+    accrued = adjustments = paid = deducted = ZERO
     employees = set()
     for p in payrolls:
         accrued += p.r_accrued
         adjustments += p.r_adjustments
         paid += p.r_paid
+        deducted += p.r_deductions
         if p.r_accrued + p.r_adjustments:
             employees.add(p.employee_id)
     return {
         "total_accrued": accrued + adjustments,
         "total_lines": accrued,
         "total_adjustments": adjustments,
+        "total_deductions": deducted,
         "total_paid": paid,
-        "total_due": accrued + adjustments - paid,
+        "total_due": accrued + adjustments - deducted - paid,
         "employees_with_accruals": len(employees),
         "pending_approval": payrolls.filter(status=Payroll.Status.CALCULATED).count(),
         "pending_adjustments": PayrollAdjustment.objects.filter(
@@ -66,7 +78,7 @@ def dashboard(periods) -> dict:
 def outstanding_debt() -> Decimal:
     """Общая задолженность перед сотрудниками по всем утверждённым начислениям."""
     rows = with_totals(Payroll.objects.filter(status__in=Payroll.LOCKED_STATUSES))
-    return sum((p.r_accrued + p.r_adjustments - p.r_paid for p in rows), ZERO)
+    return sum((p.r_accrued + p.r_adjustments - p.r_deductions - p.r_paid for p in rows), ZERO)
 
 
 @dataclass
@@ -81,6 +93,7 @@ class Row:
     paid: Decimal
     due: Decimal
     status: str
+    deductions: Decimal = ZERO
 
     @property
     def total(self) -> Decimal:
@@ -91,6 +104,7 @@ class Row:
 class Totals:
     accrued: Decimal = ZERO
     adjustments: Decimal = ZERO
+    deductions: Decimal = ZERO
     paid: Decimal = ZERO
     due: Decimal = ZERO
 
@@ -139,14 +153,16 @@ def build_report(periods, *, label: str, payrolls=None) -> PayrollReport:
     report = PayrollReport("Сводная ведомость начислений", label, generated_at=timezone.localtime())
     types = dict(SalaryType.choices)
     for p in qs:
-        due = p.r_accrued + p.r_adjustments - p.r_paid
+        due = p.r_accrued + p.r_adjustments - p.r_deductions - p.r_paid
         report.rows.append(Row(
             p, p.employee.get_full_name() or p.employee.username, p.position, types.get(p.salary_type, ""),
             period_label(p.period), p.r_accrued, p.r_adjustments, p.r_paid, due, p.get_status_display(),
+            p.r_deductions,
         ))
         t = report.totals
         t.accrued += p.r_accrued
         t.adjustments += p.r_adjustments
+        t.deductions += p.r_deductions
         t.paid += p.r_paid
         t.due += due
 
@@ -180,6 +196,8 @@ class IndividualReport:
     paid: Decimal
     due: Decimal
     generated_at: object
+    deductions: list = field(default_factory=list)
+    deductions_total: Decimal = ZERO
 
 
 def build_individual(payroll: Payroll) -> IndividualReport:
@@ -196,6 +214,8 @@ def build_individual(payroll: Payroll) -> IndividualReport:
         accrued=p.r_accrued,
         adjustments_total=p.r_adjustments,
         paid=p.r_paid,
-        due=p.r_accrued + p.r_adjustments - p.r_paid,
+        due=p.r_accrued + p.r_adjustments - p.r_deductions - p.r_paid,
         generated_at=timezone.localtime(),
+        deductions=[d for d in payroll_deductions(p) if d["amount"] > 0],
+        deductions_total=p.r_deductions,
     )

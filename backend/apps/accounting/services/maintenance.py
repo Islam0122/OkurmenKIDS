@@ -35,11 +35,14 @@ from dataclasses import dataclass
 from django.db import transaction
 
 from ..models import (
+    AppliedDeduction,
     CourseCycle,
     CoursePayrollSettings,
     CoursePriceVersion,
     CycleAccrual,
     CycleLesson,
+    DeductionAllocation,
+    DeductionRule,
     EmployeeSalaryProfile,
     PayoutPlan,
     PayoutPlanLine,
@@ -84,6 +87,8 @@ PAYROLL_TABLES = (
     Table("payrollpayment", PayrollPayment, "Выплаты сотрудникам"),
     Table("payoutplanline", PayoutPlanLine, "Строки планов выплат"),
     Table("payoutplan", PayoutPlan, "Планы выплат"),
+    Table("deductionallocation", DeductionAllocation, "Удержания в расчётах"),
+    Table("applieddeduction", AppliedDeduction, "Применённые удержания"),
     Table("payrolladjustment", PayrollAdjustment, "Корректировки"),
     Table("payrollline", PayrollLine, "Строки расчётов"),
     Table("payroll", Payroll, "Расчёты зарплаты"),
@@ -93,6 +98,7 @@ FULL_EXTRA_TABLES = (
     Table("cyclelesson", CycleLesson, "Уроки циклов", "зависимая таблица: ссылается на циклы (PROTECT)"),
     Table("coursecycle", CourseCycle, "Циклы курсов"),
     Table("salaryrule", SalaryRule, "Правила зарплат"),
+    Table("deductionrule", DeductionRule, "Правила налогов и удержаний"),
     Table("employeesalaryprofile", EmployeeSalaryProfile, "Зарплатные профили сотрудников"),
     Table("coursepayrollsettings_subjects", _SUBJECTS_THROUGH, "Учитываемые предметы курсов",
           "связь M2M, удаляется вместе с настройками"),

@@ -17,6 +17,7 @@ router.register("periods", views.PayrollPeriodViewSet, basename="period")
 router.register("payrolls", views.PayrollViewSet, basename="payroll")
 router.register("payments", views.PaymentViewSet, basename="payment")
 router.register("adjustments", views.AdjustmentViewSet, basename="adjustment")
+router.register("deduction-rules", views.DeductionRuleViewSet, basename="deduction-rule")
 router.register("payout-plans", views.PayoutPlanViewSet, basename="payout-plan")
 router.register("audit-log", views.AuditLogViewSet, basename="audit-log")
 router.register("my/payrolls", views.MyPayrollViewSet, basename="my-payroll")
@@ -35,6 +36,7 @@ urlpatterns = [
     path("reports/teachers.pdf", views.TeacherReportPdfView.as_view(), name="report-teachers-pdf"),
     path("analytics/summary/", views.AnalyticsSummaryView.as_view(), name="analytics-summary"),
     path("analytics/by-department/", views.AnalyticsByDepartmentView.as_view(), name="analytics-by-department"),
+    path("applied-deductions/", views.AppliedDeductionListView.as_view(), name="applied-deductions"),
     path("estimates/", views.EstimateListView.as_view(), name="estimates"),
     # «Моя зарплата» — собственные начисления и выплаты, только чтение.
     path("my/salary/", views.MySalaryView.as_view(), name="my-salary"),

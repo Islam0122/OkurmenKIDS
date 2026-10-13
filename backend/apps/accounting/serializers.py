@@ -13,6 +13,8 @@ from .models import (
     CoursePayrollSettings,
     CoursePriceVersion,
     CycleAccrual,
+    DeductionRule,
+    Department,
     EmployeeSalaryProfile,
     PayoutPlan,
     Payroll,
@@ -364,7 +366,8 @@ class PayrollListSerializer(serializers.ModelSerializer):
         fields = (
             "id", "period", "period_label", "period_type", "employee", "employee_name", "position", "salary_type",
             "salary_type_display", "department", "department_display", "status", "status_display",
-            "active_students", "total_accrued", "total_adjustments", "total", "total_paid", "amount_due",
+            "active_students", "total_accrued", "total_adjustments", "total", "total_deductions", "total_paid",
+            "amount_due",
             "planned_payment_date", "warnings", "errors", "has_errors", "calculated_at", "approved_at",
         )
 
@@ -390,12 +393,19 @@ class PayrollDetailSerializer(PayrollListSerializer):
     period_detail = PayrollPeriodSerializer(source="period", read_only=True)
     rules = serializers.SerializerMethodField()
     audit = serializers.SerializerMethodField()
+    deductions = serializers.SerializerMethodField()
 
     class Meta(PayrollListSerializer.Meta):
         fields = PayrollListSerializer.Meta.fields + (
             "lines", "payments", "adjustments", "approved_by_name", "period_detail", "rules", "audit",
-            "return_reason", "open_cycles",
+            "return_reason", "open_cycles", "deductions",
         )
+
+    def get_deductions(self, obj) -> list:
+        from .services.deductions import payroll_deductions
+
+        return [{k: str(v) if isinstance(v, Decimal) else v for k, v in row.items()}
+                for row in payroll_deductions(obj)]
 
     def get_open_cycles(self, obj) -> list:
         """Незавершённые циклы — отдельно: за них процент ещё не начисляется."""
@@ -741,3 +751,77 @@ class PayoutPlanPaySerializer(serializers.Serializer):
     reference = serializers.CharField(required=False, allow_blank=True, max_length=100, default="")
     comment = serializers.CharField(required=False, allow_blank=True, default="")
     idempotency_key = serializers.CharField(required=False, allow_blank=True, max_length=64)
+
+
+# ---------------------------------------------------------------------------
+# Налоги и удержания
+# ---------------------------------------------------------------------------
+
+class DeductionRuleSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    calc_type_display = serializers.CharField(source="get_calc_type_display", read_only=True)
+    frequency_display = serializers.CharField(source="get_frequency_display", read_only=True)
+    scope_display = serializers.CharField(source="get_scope_display", read_only=True)
+    department_display = serializers.CharField(source="get_department_display", read_only=True)
+    employee_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    next_version = serializers.SerializerMethodField()
+    usage = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeductionRule
+        fields = (
+            "id", "series", "name", "kind", "kind_display", "calc_type", "calc_type_display", "amount", "frequency",
+            "frequency_display", "scope", "scope_display", "employee", "employee_name", "department",
+            "department_display", "effective_from", "effective_to", "is_active", "description", "previous_version",
+            "next_version", "usage", "created_by_name", "created_at", "updated_at",
+        )
+
+    def get_employee_name(self, obj) -> str:
+        return _name(obj.employee)
+
+    def get_created_by_name(self, obj) -> str:
+        return _name(obj.created_by)
+
+    def get_next_version(self, obj) -> int | None:
+        nxt = getattr(obj, "next_version", None)
+        return nxt.pk if nxt else None
+
+    def get_usage(self, obj) -> dict:
+        from .services.deductions import usage
+
+        data = usage(obj)
+        data["used_until"] = data["used_until"].isoformat() if data["used_until"] else None
+        return data
+
+
+class DeductionRuleInputSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    kind = serializers.ChoiceField(choices=DeductionRule.Kind.choices, default=DeductionRule.Kind.OTHER)
+    calc_type = serializers.ChoiceField(choices=DeductionRule.CalcType.choices, default=DeductionRule.CalcType.FIXED)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    frequency = serializers.ChoiceField(choices=DeductionRule.Frequency.choices, default=DeductionRule.Frequency.MONTHLY)
+    scope = serializers.ChoiceField(choices=DeductionRule.Scope.choices, default=DeductionRule.Scope.EMPLOYEE)
+    employee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    department = serializers.ChoiceField(choices=Department.choices, required=False, allow_blank=True, default="")
+    effective_from = serializers.DateField()
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False, default=True)
+    description = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+
+
+class DeductionRuleChangeSerializer(serializers.Serializer):
+    """Изменение правила: только переданные поля + обязательная причина."""
+
+    reason = serializers.CharField()
+    name = serializers.CharField(max_length=100, required=False)
+    kind = serializers.ChoiceField(choices=DeductionRule.Kind.choices, required=False)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"), required=False)
+    frequency = serializers.ChoiceField(choices=DeductionRule.Frequency.choices, required=False)
+    scope = serializers.ChoiceField(choices=DeductionRule.Scope.choices, required=False)
+    employee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    department = serializers.ChoiceField(choices=Department.choices, required=False, allow_blank=True)
+    effective_from = serializers.DateField(required=False)
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False)
+    description = serializers.CharField(max_length=255, required=False, allow_blank=True)

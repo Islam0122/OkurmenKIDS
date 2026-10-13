@@ -12,8 +12,9 @@
 
 Формулы
 * Остаток начисления = подтверждённая сумма (строки + применённые
-  корректировки; удержание — отрицательная корректировка) − действительные
-  выплаты = `Payroll.amount_due`.
+  корректировки) − удержания по правилам «Налоги и удержания» −
+  действительные выплаты = `Payroll.amount_due`. Удержания уже внутри
+  `amount_due`: план их повторно не вычитает.
 * Остаток строки = min(запланировано − выплачено по строке, остаток начисления):
   если начисление погасили вне плана, план это видит.
 * Резерв начисления = сумма остатков строк в активных (не отменённых) планах;
@@ -166,7 +167,8 @@ def explain_line(line: PayoutPlanLine) -> dict:
         "position": payroll.position, "department": department, "department_display": Department(department).label,
         "subjects": subjects, "salary_type": payroll.salary_type, "salary_type_display": payroll.get_salary_type_display(),
         "period_label": period_label(payroll.period), "year": payroll.period.year, "month": payroll.period.month,
-        "accrued": accrued, "paid_before": paid_before, "planned_amount": line.planned_amount,
+        "accrued": accrued, "deductions": payroll.total_deductions, "paid_before": paid_before,
+        "planned_amount": line.planned_amount,
         "paid_by_plan": paid_here, "remaining_in_plan": remaining,
         "due_after_plan": max(ZERO, payroll.amount_due - remaining),
         "payroll_status": payroll.status, "payroll_status_display": payroll.get_status_display(),
@@ -424,6 +426,7 @@ def candidates(*, year=None, month=None, employee=None, department=None) -> list
             "payroll": p.pk, "employee": p.employee_id, "employee_name": p.employee.get_full_name() or p.employee.username,
             "department": dep, "department_display": Department(dep).label, "period_label": period_label(p.period),
             "salary_type_display": p.get_salary_type_display(), "accrued": p.total_accrued + p.total_adjustments,
+            "deductions": p.total_deductions,
             "paid": p.total_paid, "due": p.amount_due, "reserved": p.amount_due - free, "available": free,
             "planned_payment_date": planned_date_for_period(p.period), "status_display": p.get_status_display(),
         })

@@ -90,7 +90,8 @@ export function MySalaryPage() {
       <StatGrid className={d.estimates.length ? 'mt-3 sm:mt-4' : undefined}>
         <StatCard label="Начислено" value={som(d.totals.accrued)}
           hint={Number(d.totals.pending_approval) ? `ещё ${som(d.totals.pending_approval)} ожидает утверждения` : 'утверждённые начисления'} />
-        <StatCard label="Выплачено" value={som(d.totals.paid)} />
+        <StatCard label="Выплачено" value={som(d.totals.paid)}
+          hint={Number(d.totals.deducted) > 0 ? `удержано (налоги и др.): ${som(d.totals.deducted)}` : undefined} />
         <StatCard label="Остаток к выплате" value={som(d.totals.due)} tone={Number(d.totals.due) > 0 ? 'warning' : 'default'} />
         <StatCard label="Последняя выплата" icon={Wallet}
           value={d.last_payment ? som(d.last_payment.amount) : '—'}
@@ -198,12 +199,12 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
     <div className="card overflow-x-auto">
       <table className="data-table">
         <thead>
-          <tr><th>Период</th><th>Статус</th><th className="text-right">Начислено</th><th className="text-right">Выплачено</th><th className="text-right">Остаток</th><th>Плановая выплата</th></tr>
+          <tr><th>Период</th><th>Статус</th><th className="text-right">Начислено</th><th className="text-right">Удержано</th><th className="text-right">Выплачено</th><th className="text-right">Остаток</th><th>Плановая выплата</th></tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             const key = row.payroll_id ?? 0
-            const details = row.lines.length + row.adjustments.length > 0
+            const details = row.lines.length + row.adjustments.length + row.deductions.length > 0
             return (
               <Fragment key={key}>
                 <tr onClick={details ? () => setOpen(open === key ? null : key) : undefined} className={details ? 'cursor-pointer' : undefined}>
@@ -213,13 +214,14 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
                   </td>
                   <td><StatusBadge row={row} /></td>
                   <td className="text-right">{som(row.accrued)}</td>
+                  <td className="text-right">{row.deducted !== null && Number(row.deducted) > 0 ? som(row.deducted) : '—'}</td>
                   <td className="text-right">{som(row.paid)}</td>
                   <td className="text-right">{som(row.due)}</td>
                   <td className="whitespace-nowrap">{formatDate(row.planned_payment_date)}</td>
                 </tr>
                 {open === key ? (
                   <tr>
-                    <td colSpan={6} className="bg-surface-muted text-sm">
+                    <td colSpan={7} className="bg-surface-muted text-sm">
                       <ul className="space-y-1">
                         {row.lines.map((l) => (
                           <li key={l.description} className="flex justify-between gap-3"><span>{l.description}</span><span className="whitespace-nowrap">{som(l.amount)}</span></li>
@@ -227,6 +229,15 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
                         {row.adjustments.map((a) => (
                           <li key={`${a.kind}-${a.reason}`} className="flex justify-between gap-3 text-ink-secondary">
                             <span>{a.kind}: {a.reason}</span><span className="whitespace-nowrap">{som(a.amount)}</span>
+                          </li>
+                        ))}
+                        {row.deductions.map((x) => (
+                          <li key={`d-${x.name}`} className="flex justify-between gap-3 text-ink-secondary">
+                            <span>
+                              Удержание «{x.name}» ({x.kind_display.toLowerCase()}, за месяц {som(x.month_amount)})
+                              {Number(x.remaining) > 0 ? ` — не удержано ${som(x.remaining)}` : ''}
+                            </span>
+                            <span className="whitespace-nowrap">−{som(x.amount)}</span>
                           </li>
                         ))}
                       </ul>

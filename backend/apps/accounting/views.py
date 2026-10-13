@@ -28,7 +28,9 @@ from .models import (
     CourseCycle,
     CoursePayrollSettings,
     CoursePriceVersion,
+    AppliedDeduction,
     CycleAccrual,
+    DeductionRule,
     Department,
     EmployeeSalaryProfile,
     PayoutPlan,
@@ -46,7 +48,7 @@ from .services import AccountingError
 from .services import approval_service, cycles, payment_service, payroll_calculator, report_service, salary_rules
 from .services import student_payments as student_payment_service
 from .services.periods import close_period, get_or_create_period
-from .services import analytics, estimates, my_salary, payout_plans, pricing
+from .services import analytics, deductions, estimates, my_salary, payout_plans, pricing
 from .services.report_pdf import (
     render_individual_pdf,
     render_my_salary_pdf,
@@ -973,6 +975,106 @@ class AuditLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
         if q.get("date_to"):
             qs = qs.filter(created_at__date__lte=q["date_to"])
         return qs
+
+
+# ---------------------------------------------------------------------------
+# Налоги и удержания
+# ---------------------------------------------------------------------------
+
+def _effects(data: dict) -> dict:
+    return {"payrolls_recalculated": data["payrolls_recalculated"], "payrolls_failed": data["payrolls_failed"]}
+
+
+@extend_schema(tags=TAG, parameters=[
+    OpenApiParameter("employee", int), OpenApiParameter("kind", str), OpenApiParameter("is_active", bool),
+    OpenApiParameter("current", bool, description="Только последние версии правил"),
+])
+class DeductionRuleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Правила удержаний (налоги, взносы, другие). Создание и изменение —
+    бухгалтер; директор и администратор — только просмотр. Удалять нельзя:
+    правило отключается или закрывается датой, история версий сохраняется."""
+
+    pagination_class = AccountingPagination
+    permission_classes = [AccountingAccess]
+    serializer_class = s.DeductionRuleSerializer
+
+    def get_queryset(self):
+        qs = DeductionRule.objects.select_related("employee", "created_by", "next_version")
+        q = self.request.query_params
+        if q.get("employee"):
+            qs = qs.filter(Q(scope=DeductionRule.Scope.EMPLOYEE, employee_id=_int(q["employee"], "employee"))
+                           | ~Q(scope=DeductionRule.Scope.EMPLOYEE))
+        if q.get("kind"):
+            qs = qs.filter(kind=q["kind"])
+        if q.get("is_active") in ("true", "1"):
+            qs = qs.filter(is_active=True)
+        if q.get("current") in ("true", "1"):
+            qs = qs.filter(next_version__isnull=True)
+        return qs
+
+    @extend_schema(request=s.DeductionRuleInputSerializer, responses=OpenApiTypes.OBJECT)
+    def create(self, request, *args, **kwargs):
+        data = _valid(s.DeductionRuleInputSerializer, request)
+        try:
+            rule, effects = deductions.create_rule(actor=request.user, **data)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response({"rule": s.DeductionRuleSerializer(rule).data, "effects": _effects(effects)},
+                        status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=s.DeductionRuleChangeSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"])
+    def change(self, request, pk=None):
+        data = dict(_valid(s.DeductionRuleChangeSerializer, request))
+        reason = data.pop("reason")
+        try:
+            rule, effects = deductions.change_rule(self.get_object(), actor=request.user, changes=data, reason=reason)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response({"rule": s.DeductionRuleSerializer(rule).data, "effects": _effects(effects)})
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        rule = self.get_object()
+        chain = deductions.versions(rule)
+        log = PayrollAuditLog.objects.filter(entity_type="deductionrule", entity_id__in=[r.pk for r in chain]) \
+            .select_related("actor").order_by("-created_at", "-id")
+        return Response({"versions": s.DeductionRuleSerializer(chain, many=True).data,
+                         "audit": s.PayrollAuditLogSerializer(log, many=True).data})
+
+
+@extend_schema(tags=TAG, parameters=[
+    OpenApiParameter("employee", int), OpenApiParameter("year", int), OpenApiParameter("month", int),
+])
+class AppliedDeductionListView(APIView):
+    """Журнал применённых удержаний: одна запись на правило, сотрудника и
+    месяц; сколько удержано по расчётам и сколько осталось не удержанным."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        q = request.query_params
+        qs = AppliedDeduction.objects.select_related("employee", "rule").prefetch_related("allocations__payroll__period")
+        for name in ("year", "month"):
+            if q.get(name):
+                qs = qs.filter(**{name: _int(q[name], name)})
+        if q.get("employee"):
+            qs = qs.filter(employee_id=_int(q["employee"], "employee"))
+        rows = []
+        for h in qs:
+            allocations = [a for a in h.allocations.all() if a.payroll.status != Payroll.Status.VOID]
+            withheld = sum((a.amount for a in allocations), Decimal("0"))
+            rows.append({
+                "id": h.pk, "rule": h.rule_id, "name": h.name, "kind": h.kind,
+                "kind_display": DeductionRule.Kind(h.kind).label, "employee": h.employee_id,
+                "employee_name": h.employee.get_full_name() or h.employee.username, "year": h.year, "month": h.month,
+                "amount": h.amount, "withheld": withheld, "remaining": max(Decimal("0"), h.amount - withheld),
+                "payrolls": [{"payroll": a.payroll_id, "period_label": report_service.period_label(a.payroll.period),
+                              "status": a.payroll.status, "amount": a.amount} for a in allocations],
+            })
+        return _paginate_list(request, rows, self)
 
 
 # ---------------------------------------------------------------------------

@@ -38,16 +38,20 @@ def run() -> dict:
         lines = p.lines.aggregate(s=Sum("amount"))["s"] or ZERO
         adj = p.adjustments.filter(status=PayrollAdjustment.Status.APPLIED).aggregate(s=Sum("amount"))["s"] or ZERO
         paid = p.payments.filter(status=PayrollPayment.Status.CONFIRMED).aggregate(s=Sum("amount"))["s"] or ZERO
-        due = lines + adj - paid
+        ded = p.deduction_allocations.aggregate(s=Sum("amount"))["s"] or ZERO
+        due = lines + adj - ded - paid
         grand["accrued"] += lines
         grand["adjustments"] += adj
         grand["paid"] += paid
         grand["due"] += due
-        if (p.total_accrued, p.total_adjustments, p.total_paid, p.amount_due) != (lines, adj, paid, due):
+        if (p.total_accrued, p.total_adjustments, p.total_deductions, p.total_paid, p.amount_due) != (
+                lines, adj, ded, paid, due):
             totals_mismatch.append({**_payroll_ref(p), "stored": {
-                "accrued": str(p.total_accrued), "adjustments": str(p.total_adjustments), "paid": str(p.total_paid),
+                "accrued": str(p.total_accrued), "adjustments": str(p.total_adjustments),
+                "deductions": str(p.total_deductions), "paid": str(p.total_paid),
                 "due": str(p.amount_due)}, "records": {
-                "accrued": str(lines), "adjustments": str(adj), "paid": str(paid), "due": str(due)}})
+                "accrued": str(lines), "adjustments": str(adj), "deductions": str(ded), "paid": str(paid),
+                "due": str(due)}})
         if due < 0:
             overpaid.append({**_payroll_ref(p), "due": str(due)})
         expected = None

@@ -15,14 +15,14 @@ import { accountingApi } from '@/api/accounting'
 const awaiting = (period_type: 'FIRST_HALF' | 'SECOND_HALF'): MySalaryRow => ({
   payroll_id: null, year: 2026, month: 10, period_type, period_label: '', status: 'AWAITING',
   status_display: 'Ожидает расчёта', is_final: false, accrued: null, paid: null, due: null, lines: [], adjustments: [],
-  planned_payment_date: null,
+  deducted: null, deductions: [], planned_payment_date: null,
 })
 
 const EMPTY: MySalary = {
   employee_name: 'Asya Test',
   has_profile: false,
   profile: null,
-  totals: { accrued: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00' },
+  totals: { accrued: '0.00', deducted: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00' },
   next_planned_payment_date: null,
   estimates: [],
   last_payment: null,
@@ -39,7 +39,7 @@ const WITH_DATA: MySalary = {
     salary_type: 'FIXED', salary_type_display: 'Фиксированный оклад', position: 'Ассистент',
     rates: [{ rule_type: 'FIXED', label: 'Оклад', amount: '40000.00', percentage: null, scope: '', effective_from: '2026-01-01' }],
   },
-  totals: { accrued: '20000.00', paid: '15000.00', due: '5000.00', pending_approval: '20000.00', estimated: '0.00' },
+  totals: { accrued: '20000.00', deducted: '0.00', paid: '15000.00', due: '5000.00', pending_approval: '20000.00', estimated: '0.00' },
   last_payment: { payment_date: '2026-09-20', amount: '15000.00' },
   history: [
     {
@@ -123,5 +123,28 @@ describe('MySalaryPage', () => {
     vi.mocked(accountingApi.mySalary).mockRejectedValue(new Error('boom'))
     renderWithProviders(<MySalaryPage />)
     expect(await screen.findByRole('button', { name: /повтор/i })).toBeInTheDocument()
+  })
+})
+
+describe('MySalaryPage — удержания', () => {
+  it('shows own deductions per payroll with a clear breakdown', async () => {
+    vi.mocked(accountingApi.mySalary).mockResolvedValue({
+      ...WITH_DATA,
+      totals: { ...WITH_DATA.totals, deducted: '3000.00', due: '2000.00' },
+      history: [{
+        ...awaiting('FIRST_HALF'), payroll_id: 1, year: 2026, month: 10, period_label: '01.10.2026–31.10.2026',
+        status: 'APPROVED', status_display: 'Утверждено', is_final: true, accrued: '20000.00', paid: '15000.00', due: '2000.00',
+        deducted: '3000.00', lines: [{ description: 'Оклад', amount: '20000.00' }],
+        deductions: [{ name: 'Налог', kind_display: 'Налог', amount: '3000.00', month_amount: '3000.00', remaining: '0.00' }],
+      }],
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<MySalaryPage />)
+    expect(await screen.findByText('удержано (налоги и др.): 3 000 сом')).toBeInTheDocument()
+    const row = screen.getByText('01.10.2026–31.10.2026').closest('tr')!
+    expect(row).toHaveTextContent('3 000 сом')
+    await user.click(row)
+    expect(screen.getByText(/Удержание «Налог»/)).toBeInTheDocument()
+    expect(screen.getByText('−3 000 сом')).toBeInTheDocument()
   })
 })

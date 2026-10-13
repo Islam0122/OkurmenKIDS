@@ -94,17 +94,20 @@ def render_period_pdf(report: PayrollReport) -> bytes:
         Paragraph(f"Период: {report.range_label} · Валюта: KGS · Дата формирования: {report.generated_at:%d.%m.%Y %H:%M}", styles["sub"]),
         Spacer(1, 6),
         _table(
-            ["Начислено", "Корректировки", "Итого к выплате", "Выплачено", "Задолженность", "Сотрудников"],
-            [[som(t.accrued), som(t.adjustments), som(t.total), som(t.paid), som(t.due), len(report.rows)]],
-            [44 * mm] * 6, styles=styles,
+            ["Начислено", "Корректировки", "Итого начислено", "Удержания", "Выплачено", "Задолженность", "Сотрудников"],
+            [[som(t.accrued), som(t.adjustments), som(t.total), som(t.deductions), som(t.paid), som(t.due),
+              len(report.rows)]],
+            [38 * mm] * 7, styles=styles,
         ),
         Paragraph("Сотрудники", styles["h"]),
         _table(
-            ["Сотрудник", "Должность", "Тип оплаты", "Период", "Начислено", "Корр.", "Выплачено", "Остаток", "Статус"],
-            [[r.employee, r.position, r.salary_type, r.period, som(r.accrued), som(r.adjustments), som(r.paid),
-              som(r.due), r.status] for r in report.rows],
-            [40 * mm, 26 * mm, 30 * mm, 38 * mm, 27 * mm, 22 * mm, 27 * mm, 27 * mm, 28 * mm],
-            total_row=["Итого", "", "", "", som(t.accrued), som(t.adjustments), som(t.paid), som(t.due), ""],
+            ["Сотрудник", "Должность", "Тип оплаты", "Период", "Начислено", "Корр.", "Удерж.", "Выплачено", "Остаток",
+             "Статус"],
+            [[r.employee, r.position, r.salary_type, r.period, som(r.accrued), som(r.adjustments), som(r.deductions),
+              som(r.paid), som(r.due), r.status] for r in report.rows],
+            [36 * mm, 22 * mm, 27 * mm, 34 * mm, 25 * mm, 20 * mm, 22 * mm, 25 * mm, 25 * mm, 25 * mm],
+            total_row=["Итого", "", "", "", som(t.accrued), som(t.adjustments), som(t.deductions), som(t.paid),
+                       som(t.due), ""],
             styles=styles,
         ),
     ]
@@ -150,6 +153,15 @@ def render_individual_pdf(report: IndividualReport) -> bytes:
             _table(["Тип", "Причина", "Сумма"], [[a.get_kind_display(), a.reason, som(a.amount)] for a in report.adjustments],
                    [36 * mm, 110 * mm, 36 * mm], total_row=["Итого", "", som(report.adjustments_total)], styles=styles),
         ]
+    if report.deductions:
+        story += [
+            Paragraph("Налоги и удержания", styles["h"]),
+            _table(["Удержание", "Вид", "За месяц", "Удержано", "Не удержано"],
+                   [[d["name"], d["kind_display"], som(d["month_amount"]), som(d["amount"]), som(d["remaining"])]
+                    for d in report.deductions],
+                   [56 * mm, 36 * mm, 30 * mm, 30 * mm, 30 * mm],
+                   total_row=["Итого", "", "", som(report.deductions_total), ""], styles=styles),
+        ]
     story += [
         Paragraph("Выплаты", styles["h"]),
         _table(
@@ -160,9 +172,10 @@ def render_individual_pdf(report: IndividualReport) -> bytes:
         ),
         Spacer(1, 8),
         _table(
-            ["Начислено", "Корректировки", "Выплачено", "Остаток к выплате"],
-            [[som(report.accrued), som(report.adjustments_total), som(report.paid), som(report.due)]],
-            [45.5 * mm] * 4, styles=styles,
+            ["Начислено", "Корректировки", "Удержания", "Выплачено", "Остаток к выплате"],
+            [[som(report.accrued), som(report.adjustments_total), som(report.deductions_total), som(report.paid),
+              som(report.due)]],
+            [36.4 * mm] * 5, styles=styles,
         ),
     ]
     doc.build(story, onFirstPage=_footer(report.generated_at), onLaterPages=_footer(report.generated_at))
