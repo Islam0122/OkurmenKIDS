@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MySalaryPage } from '@/features/accounting/MySalaryPage'
 import { renderWithProviders } from '@/test/testUtils'
-import type { MyEstimate, MySalary, MySalaryRow } from '@/types/accounting'
+import type { MySalary, MySalaryRow } from '@/types/accounting'
 
 vi.mock('@/api/accounting', () => ({
   accountingApi: { mySalary: vi.fn(), downloadMySalaryPdf: vi.fn(), myPayoutPlan: vi.fn().mockResolvedValue({ results: [] }) },
@@ -24,6 +24,11 @@ const EMPTY: MySalary = {
   profile: null,
   totals: { accrued: '0.00', deducted: '0.00', net: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00', estimated_deductions: null, estimated_deductions_note: '' },
   deductions: [],
+  earnings: {
+    as_of: '2026-10-10', earned: { gross: '0.00', tax: '0.00', other_deductions: '0.00', net: '0.00' },
+    official: { gross: '0.00', tax: '0.00', other_deductions: '0.00', net: '0.00' }, paid: '0.00', company_owes: '0.00',
+    earned_unpaid: '0.00', next_payment_date: null, difference: '0.00', difference_reasons: [], items: [], deductions: [],
+  },
   next_planned_payment_date: null,
   estimates: [],
   last_payment: null,
@@ -73,7 +78,7 @@ describe('MySalaryPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<MySalaryPage />)
     expect(await screen.findByText('Рассчитано, ожидает утверждения')).toBeInTheDocument()
-    for (const label of ['Начислено', 'Выплачено', 'Остаток к выплате', 'Последняя выплата']) {
+    for (const label of ['Официально начислено', 'Фактически выплачено', 'Остаток к выплате', 'Ближайшая дата выплаты']) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0)
     }
     expect(screen.getByText(/40\s000\sсом в месяц/)).toBeInTheDocument()
@@ -87,37 +92,6 @@ describe('MySalaryPage', () => {
     }
     await user.click(screen.getByRole('button', { name: 'Скачать PDF' }))
     expect(accountingApi.downloadMySalaryPdf).toHaveBeenCalledWith({ month: 9 })
-  })
-
-  it('shows the preliminary salary of blocks in progress separately from accruals', async () => {
-    const block = (done: number, total: number, group: string): MyEstimate => ({
-      cycle_id: total, cycle_number: 1, group_name: group, course_name: 'Prog SOFT', subjects: ['Python'], subject_name: 'IT',
-      share_label: `${total} из ${total} уроков`, student_count: 10,
-      price_per_student: '10000.00', percentage: '10.00', expected_amount: '10000.00', lessons_done: done,
-      required_lessons: total, lessons_remaining: total - done, projected_completion_date: '2026-10-19',
-      expected_payment_date: '2026-11-01', status: 'BLOCK_IN_PROGRESS', status_display: 'Блок в процессе', warnings: [],
-      note: 'Предварительный расчёт — не начисление и не задолженность.',
-    })
-    vi.mocked(accountingApi.mySalary).mockResolvedValue({
-      ...EMPTY, has_profile: true,
-      totals: { ...EMPTY.totals, estimated: '20000.00' },
-      estimates: [block(8, 12, 'Python A'), block(8, 20, 'Python B')],
-    })
-    renderWithProviders(<MySalaryPage />)
-    expect((await screen.findAllByText('Предварительная зарплата')).length).toBe(3) // карточка KPI + 2 блока
-    expect(screen.getByText('8 из 12 уроков')).toBeInTheDocument()
-    expect(screen.getByText('8 из 20 уроков')).toBeInTheDocument()
-    expect(screen.getByText('Осталось провести: 4')).toBeInTheDocument()
-    expect(screen.getByText('Осталось провести: 12')).toBeInTheDocument()
-    expect(screen.getAllByText('Блок в процессе')).toHaveLength(2)
-    expect(screen.getAllByRole('progressbar')).toHaveLength(2)
-    // Оценка не попадает в «Начислено»: там по-прежнему 0.
-    expect(screen.getByText(/20\s000\sсом/)).toBeInTheDocument()
-    expect(screen.getAllByText(/20\s000\sсом/)).toHaveLength(1)
-    expect(screen.getAllByText(/^0\sсом$/).length).toBeGreaterThanOrEqual(3) // начислено, выплачено, остаток
-    expect(screen.getAllByText(/ожидаемая выплата 01\.11\.2026/)).toHaveLength(2)
-    // Сотруднику не предлагается регистрировать выплату.
-    expect(screen.queryByRole('button', { name: /выплат/i })).not.toBeInTheDocument()
   })
 
   it('offers a retry when the API fails', async () => {
@@ -143,15 +117,37 @@ describe('MySalaryPage — налоги и удержания', () => {
     }],
   }
 
-  it('shows before/after deductions cards exactly as the API returns them', async () => {
-    vi.mocked(accountingApi.mySalary).mockResolvedValue(TAXED)
+  it('shows earned, tax, other deductions, net, official, paid and debt from the API', async () => {
+    vi.mocked(accountingApi.mySalary).mockResolvedValue({
+      ...TAXED,
+      earnings: {
+        ...EMPTY.earnings,
+        earned: { gross: '57500.00', tax: '3000.00', other_deductions: '500.00', net: '54000.00' },
+        official: { gross: '50000.00', tax: '3000.00', other_deductions: '500.00', net: '46500.00' },
+        paid: '20000.00', company_owes: '26500.00', earned_unpaid: '34000.00', next_payment_date: '2026-11-01',
+        difference: '7500.00', difference_reasons: [{ source: 'OPEN_BLOCK', label: 'Блок идёт — официальное начисление после завершения блока', amount: '7500.00' }],
+        items: [{
+          source: 'OPEN_BLOCK', source_display: '', official: false, year: 2026, month: 10, period_label: 'Октябрь 2026',
+          gross: '7500.00', planned_payment_date: null, payroll_id: null, cycle_id: 3, cycle_number: 2, group_name: 'Group A',
+          course_name: 'Prog SOFT', subject_name: 'Python', lessons_taught: 9, lessons_done: 9, required_lessons: 12,
+          student_count: 10, price_per_student: '10000.00', percentage: '10.00', formula: '10 студ. × 10000 сом × 10% × 9/12 ур.',
+        }],
+      },
+    })
     renderWithProviders(<MySalaryPage />)
-    const card = async (label: string) => (await screen.findByText(label)).closest('div.card, [class*="card"]') as HTMLElement
-    expect(await card('Начислено до удержаний')).toHaveTextContent('50 000 сом')
-    expect(await card('Налог и удержания')).toHaveTextContent('3 000 сом')
-    expect(await card('К выплате после удержаний')).toHaveTextContent('47 000 сом')
-    expect(screen.getAllByText('Выплачено').length).toBeGreaterThan(0)
-    expect(await card('Остаток к выплате')).toHaveTextContent('27 000 сом')
+    const card = async (label: string) => (await screen.findAllByText(label))[0].closest('[class*="card"]') as HTMLElement
+    expect(await card('Заработано на текущий момент')).toHaveTextContent('57 500 сом')
+    expect(await card('Налог')).toHaveTextContent('3 000 сом')
+    expect(await card('Другие удержания')).toHaveTextContent('500 сом')
+    expect(await card('Ожидаемая сумма на руки')).toHaveTextContent('54 000 сом')
+    expect(await card('Официально начислено')).toHaveTextContent('50 000 сом')
+    expect(await card('Фактически выплачено')).toHaveTextContent('20 000 сом')
+    expect(await card('Остаток к выплате')).toHaveTextContent('26 500 сом')
+    expect(await card('Ближайшая дата выплаты')).toHaveTextContent('01.11.2026')
+    expect(screen.getByText('9 из 12 уроков проведено вами')).toBeInTheDocument()
+    expect(screen.getByText(/Блок идёт — официальное начисление после завершения блока: 7 500 сом/)).toBeInTheDocument()
+    expect(screen.queryByText(/Предварительная зарплата/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/прогноз/i)).not.toBeInTheDocument()
   })
 
   it('lists own deductions with period, amount, status and date', async () => {
@@ -166,24 +162,5 @@ describe('MySalaryPage — налоги и удержания', () => {
     const payroll = screen.getByText('01.10.2026–31.10.2026').closest('tr')!
     await user.click(payroll)
     expect(screen.getByText('−3 000 сом')).toBeInTheDocument()
-  })
-
-  it('preliminary salary stays separate and says tax will be calculated later', async () => {
-    vi.mocked(accountingApi.mySalary).mockResolvedValue({
-      ...EMPTY,
-      totals: { ...EMPTY.totals, estimated: '47160.00', estimated_deductions: null, estimated_deductions_note: 'Будет рассчитано после начисления' },
-      estimates: [{
-        cycle_id: 1, cycle_number: 1, group_name: 'Group A', course_name: 'Prog', subjects: ['Python'], subject_name: 'Python',
-        share_label: '', student_count: 10, price_per_student: '10000.00', percentage: '10', expected_amount: '47160.00',
-        lessons_done: 5, required_lessons: 12, lessons_remaining: 7, projected_completion_date: null, expected_payment_date: null,
-        status: 'ON_TRACK', status_display: 'Идёт', warnings: [], note: '',
-      }] as unknown as MySalary['estimates'],
-    })
-    renderWithProviders(<MySalaryPage />)
-    const card = (await screen.findAllByText('Предварительная зарплата'))[0].closest('[class*="card"]') as HTMLElement
-    expect(card).toHaveTextContent('47 160 сом')
-    expect(card).toHaveTextContent('может измениться')
-    expect(card).toHaveTextContent('будет рассчитано после начисления')
-    expect(screen.getByText('Начислено до удержаний').closest('[class*="card"]')).toHaveTextContent('0 сом')
   })
 })
