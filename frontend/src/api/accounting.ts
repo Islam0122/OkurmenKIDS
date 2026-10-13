@@ -9,6 +9,8 @@ import type {
   CoursePriceVersion,
   CycleAccrual,
   DeductionEffects,
+  Earnings,
+  EarningsRow,
   DeductionRule,
   DeductionRuleBody,
   DepartmentTotals,
@@ -178,6 +180,10 @@ export const accountingApi = {
     get<TeacherReport>('/reports/teachers/', { ...filters }),
   downloadTeacherReport: (format: 'pdf' | 'xlsx', filters: AnalyticsFilters) =>
     download(`/reports/teachers.${format}`, { ...filters }, `teachers.${format}`),
+
+  /** Заработано на текущий момент: по проведённым урокам и правилам; ничего не начисляет. */
+  earnings: (params: Params = {}) => get<Paginated<EarningsRow>>('/earnings/', { page_size: 200, ...params }),
+  employeeEarnings: (employeeId: number) => get<Earnings & { employee: number; employee_name: string }>(`/earnings/${employeeId}/`),
 
   /** Налоги и удержания: правило не удаляется; изменение — с причиной (новая версия, если уже утверждено). */
   deductionRules: (params: Params = {}) => get<Paginated<DeductionRule>>('/deduction-rules/', { page_size: 200, ...params }),

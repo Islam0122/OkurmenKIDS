@@ -486,6 +486,8 @@ export interface MySalary {
     estimated_deductions_note: string
   }
   deductions: MyDeduction[]
+  /** Заработано на текущий момент — тот же расчёт, что у бухгалтера. */
+  earnings: Earnings
   next_planned_payment_date: string | null
   estimates: MyEstimate[]
   last_payment: { payment_date: string; amount: string } | null
@@ -921,4 +923,91 @@ export interface MyDeduction {
   status: MyDeductionStatus
   status_display: string
   applied_at: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Заработок на текущий момент (единый расчёт для сотрудника и бухгалтера)
+// ---------------------------------------------------------------------------
+
+export type EarningsSource = 'OPEN_BLOCK' | 'ACCRUAL_PENDING' | 'PAYROLL_DRAFT' | 'PAYROLL_OFFICIAL' | 'REVIEW'
+
+export interface EarningsAmounts {
+  gross: string
+  tax: string
+  other_deductions: string
+  net: string
+}
+
+export interface EarningsItem {
+  source: EarningsSource
+  source_display: string
+  official: boolean
+  year: number
+  month: number
+  period_label: string
+  gross: string
+  planned_payment_date: string | null
+  payroll_id: number | null
+  // блоки
+  cycle_id?: number
+  cycle_number?: number
+  group_name?: string
+  course_name?: string
+  subject_name?: string
+  lessons_taught?: number | null
+  lessons_done?: number
+  required_lessons?: number
+  student_count?: number
+  price_per_student?: string
+  percentage?: string
+  formula?: string
+  // расчёты
+  payroll_status_display?: string
+  deductions?: string
+  paid?: string
+  due?: string | null
+  lines?: { description: string; amount: string }[]
+}
+
+export interface EarningsDeduction {
+  name: string
+  kind: DeductionKind
+  kind_display: string
+  year: number
+  month: number
+  period_label: string
+  month_amount: string
+  amount: string
+  remaining: string
+}
+
+export interface Earnings {
+  as_of: string
+  earned: EarningsAmounts
+  official: EarningsAmounts
+  paid: string
+  company_owes: string
+  earned_unpaid: string
+  next_payment_date: string | null
+  difference: string
+  difference_reasons: { source: EarningsSource; label: string; amount: string }[]
+  items: EarningsItem[]
+  deductions: EarningsDeduction[]
+}
+
+export interface EarningsRow {
+  employee: number
+  employee_name: string
+  position: string
+  salary_type: string
+  salary_type_display: string
+  department: string
+  earned: EarningsAmounts
+  official: EarningsAmounts
+  paid: string
+  company_owes: string
+  earned_unpaid: string
+  next_payment_date: string | null
+  difference: string
+  difference_reasons: { source: EarningsSource; label: string; amount: string }[]
 }

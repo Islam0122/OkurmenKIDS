@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react'
-import { ArrowLeft, Banknote, BarChart3, BookOpenCheck, CalendarClock, Calculator, FileText, History, LayoutDashboard, LogOut, Menu, Settings2, Tags } from 'lucide-react'
+import { ArrowLeft, Banknote, BarChart3, BookOpenCheck, CalendarClock, Calculator, Coins, FileText, History, LayoutDashboard, LogOut, Menu, Settings2, Tags } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -20,6 +20,7 @@ interface NavItem {
 /** Бухгалтерия: сводка и начисления, зарплатные правила, платежи студентов, журнал. */
 export const ACCOUNTING_NAV: NavItem[] = [
   { to: '/accounting', label: 'Начисления', icon: LayoutDashboard, end: true },
+  { to: '/accounting/earnings', label: 'Заработок сотрудников', icon: Coins },
   { to: '/accounting/payout-plan', label: 'План выплат', icon: CalendarClock },
   { to: '/accounting/settings', label: 'Зарплатные правила', icon: Settings2 },
   { to: '/accounting/courses', label: 'Курсы и блоки', icon: BookOpenCheck },

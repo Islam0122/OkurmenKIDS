@@ -35,6 +35,7 @@ from ..models import (
     PayrollPeriod,
 )
 from . import estimates as estimates_service
+from . import earnings as earnings_service
 from .deductions import payroll_deductions
 from .money import ZERO
 from .payout import planned_date_for_period
@@ -223,6 +224,8 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
             "estimated_deductions_note": ESTIMATE_DEDUCTIONS_NOTE if estimates else "",
         },
         "deductions": deductions_for(employee, year=year, month=month),
+        # Заработано на текущий момент — тот же расчёт, что видит бухгалтер.
+        "earnings": earnings_service.as_json(earnings_service.summary(employee, today=today)),
         "next_planned_payment_date": next_planned.isoformat() if next_planned else None,
         "estimates": [_estimate(e) for e in estimates],
         "last_payment": None if last is None else {

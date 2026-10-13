@@ -48,7 +48,7 @@ from .services import AccountingError
 from .services import approval_service, cycles, payment_service, payroll_calculator, report_service, salary_rules
 from .services import student_payments as student_payment_service
 from .services.periods import close_period, get_or_create_period
-from .services import analytics, deductions, estimates, my_salary, payout_plans, pricing
+from .services import analytics, deductions, earnings, estimates, my_salary, payout_plans, pricing
 from .services.report_pdf import (
     render_individual_pdf,
     render_my_salary_pdf,
@@ -975,6 +975,40 @@ class AuditLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
         if q.get("date_to"):
             qs = qs.filter(created_at__date__lte=q["date_to"])
         return qs
+
+
+# ---------------------------------------------------------------------------
+# Заработок сотрудников (единый расчёт с «Моей зарплатой»)
+# ---------------------------------------------------------------------------
+
+@extend_schema(tags=TAG, parameters=[OpenApiParameter("department", str), OpenApiParameter("search", str)])
+class EarningsListView(APIView):
+    """Заработано / удержания / на руки / официально начислено / выплачено /
+    остаток — по каждому сотруднику. Только чтение; ничего не начисляет."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        q = request.query_params
+        rows = earnings.employees_summary(department=q.get("department") or None, search=q.get("search") or "")
+        return _paginate_list(request, earnings.as_json(rows), self)
+
+
+@extend_schema(tags=TAG)
+class EarningsDetailView(APIView):
+    """Детали заработка сотрудника: предметы, группы, блоки, расчёты,
+    удержания и причины расхождения с официальным начислением."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request, employee_id: int):
+        employee = get_object_or_404(User, pk=employee_id)
+        data = earnings.summary(employee)
+        data["employee"] = employee.pk
+        data["employee_name"] = employee.get_full_name() or employee.username
+        return Response(earnings.as_json(data))
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMySalary } from '@/hooks/useAccounting'
 import type { MyDeductionStatus, MySalaryFilters, MySalaryRow, MySalaryStatus, PeriodType } from '@/types/accounting'
 
-import { EstimateCard } from './EstimateCard'
+import { EarningsBreakdown } from './EarningsBreakdown'
 import { MONTHS, Section, formatDate, som, today, useRunner } from './shared'
 
 const STATUS_TONE: Record<MySalaryStatus, BadgeTone> = {
@@ -65,6 +65,7 @@ export function MySalaryPage() {
   if (salary.isLoading) return <LoadingState label="Загружаем вашу зарплату…" />
   if (salary.isError || !salary.data) return <ErrorState onRetry={() => salary.refetch()} />
   const d = salary.data
+  const e = d.earnings
   const filtered = Boolean(filters.year || filters.month || filters.period_type)
 
   return (
@@ -82,31 +83,30 @@ export function MySalaryPage() {
         }
       />
 
-      {d.estimates.length ? (
-        <StatGrid>
-          <StatCard label="Предварительная зарплата" icon={Hourglass} value={som(d.totals.estimated)}
-            hint={`прогноз по незавершённым блокам — ещё не начислено, сумма может измениться · налог и удержания: ${
-              d.totals.estimated_deductions !== null ? som(d.totals.estimated_deductions) : d.totals.estimated_deductions_note.toLowerCase() || 'будет рассчитано после начисления'}`} />
-          <StatCard label="Ближайшая плановая выплата" icon={CalendarClock}
-            value={d.next_planned_payment_date ? formatDate(d.next_planned_payment_date) : '—'}
-            tone={d.next_planned_payment_date && d.next_planned_payment_date < today() ? 'warning' : 'default'}
-            hint={!d.next_planned_payment_date ? 'нет утверждённого остатка'
-              : d.next_planned_payment_date < today() ? 'плановая дата прошла — выплата ожидается' : 'плановая дата, не факт перевода'} />
-        </StatGrid>
-      ) : null}
-
-      <StatGrid columns={3} className={d.estimates.length ? 'mt-3 sm:mt-4' : undefined}>
-        <StatCard label="Начислено до удержаний" value={som(d.totals.accrued)}
-          hint={Number(d.totals.pending_approval) ? `ещё ${som(d.totals.pending_approval)} ожидает утверждения` : 'утверждённые начисления'} />
-        <StatCard label="Налог и удержания" icon={Receipt} value={som(d.totals.deducted)}
-          hint={Number(d.totals.deducted) > 0 ? 'по утверждённым начислениям, подробности ниже' : 'удержаний нет'} />
-        <StatCard label="К выплате после удержаний" value={som(d.totals.net)} />
-        <StatCard label="Выплачено" value={som(d.totals.paid)} />
-        <StatCard label="Остаток к выплате" value={som(d.totals.due)} tone={Number(d.totals.due) > 0 ? 'warning' : 'default'} />
-        <StatCard label="Последняя выплата" icon={Wallet}
-          value={d.last_payment ? som(d.last_payment.amount) : '—'}
-          hint={d.last_payment ? formatDate(d.last_payment.payment_date) : 'выплат ещё не было'} />
+      <StatGrid>
+        <StatCard label="Заработано на текущий момент" icon={Hourglass} value={som(e.earned.gross)}
+          hint={`по проведённым урокам и действующим правилам на ${formatDate(e.as_of)}`} />
+        <StatCard label="Налог" icon={Receipt} value={som(e.earned.tax)} hint="один раз за месяц, не за каждый урок или блок" />
+        <StatCard label="Другие удержания" value={som(e.earned.other_deductions)} />
+        <StatCard label="Ожидаемая сумма на руки" value={som(e.earned.net)} hint="за выполненную работу после налога и удержаний" />
       </StatGrid>
+      <StatGrid className="mt-3 sm:mt-4">
+        <StatCard label="Официально начислено" value={som(e.official.gross)}
+          hint={Number(d.totals.pending_approval) ? `ещё ${som(d.totals.pending_approval)} ожидает утверждения` : 'утверждено бухгалтерией'} />
+        <StatCard label="Фактически выплачено" icon={Wallet} value={som(e.paid)}
+          hint={d.last_payment ? `последняя выплата ${som(d.last_payment.amount)} · ${formatDate(d.last_payment.payment_date)}` : 'выплат ещё не было'} />
+        <StatCard label="Остаток к выплате" value={som(e.company_owes)} tone={Number(e.company_owes) > 0 ? 'warning' : 'default'}
+          hint="по утверждённым начислениям, после удержаний" />
+        <StatCard label="Ближайшая дата выплаты" icon={CalendarClock}
+          value={e.next_payment_date ? formatDate(e.next_payment_date) : '—'}
+          tone={e.next_payment_date && e.next_payment_date < today() ? 'warning' : 'default'}
+          hint={!e.next_payment_date ? 'нет начислений к выплате'
+            : e.next_payment_date < today() ? 'плановая дата прошла — выплата ожидается' : 'плановая дата, не факт перевода'} />
+      </StatGrid>
+
+      <Section title="Из чего сложился заработок">
+        <EarningsBreakdown data={e} />
+      </Section>
 
       {d.profile ? (
         <Section title="Условия оплаты">
@@ -118,15 +118,6 @@ export function MySalaryPage() {
                 <span className="text-ink-muted"> · с {formatDate(r.effective_from)}</span>
               </p>
             )) : <p className="text-ink-muted">Действующая ставка не указана.</p>}
-          </div>
-        </Section>
-      ) : null}
-
-      {d.estimates.length ? (
-        <Section title="Блоки в процессе — предварительный расчёт">
-          <p className="mb-3 text-sm text-ink-secondary">{d.estimates[0].note}</p>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {d.estimates.map((e) => <EstimateCard key={e.cycle_id} estimate={e} />)}
           </div>
         </Section>
       ) : null}
