@@ -11,6 +11,7 @@ import type {
   DeductionEffects,
   Earnings,
   EarningsRow,
+  PayoutScheduleResponse,
   DeductionRule,
   DeductionRuleBody,
   DepartmentTotals,
@@ -183,6 +184,7 @@ export const accountingApi = {
 
   /** Заработано на текущий момент: по проведённым урокам и правилам; ничего не начисляет. */
   earnings: (params: Params = {}) => get<Paginated<EarningsRow>>('/earnings/', { page_size: 200, ...params }),
+  payoutSchedule: (params: Params = {}) => get<PayoutScheduleResponse>('/earnings/schedule/', params),
   employeeEarnings: (employeeId: number) => get<Earnings & { employee: number; employee_name: string }>(`/earnings/${employeeId}/`),
 
   /** Налоги и удержания: правило не удаляется; изменение — с причиной (новая версия, если уже утверждено). */

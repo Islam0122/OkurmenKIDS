@@ -133,6 +133,7 @@ def _accrual_rows(employee) -> tuple[list[dict], list[dict]]:
             "formula": (f"{a.student_count} студ. × {a.course_price} сом × {a.percentage}% × "
                         f"{a.lessons_taught or a.lessons}/{a.lessons} ур."),
             "planned_payment_date": planned_date_for_completion(a.completed_on), "payroll_id": None,
+            "completed_on": a.completed_on,
         }
         (pending if source == ACCRUAL_PENDING else review).append(row)
     return pending, review
@@ -151,8 +152,23 @@ def _payroll_rows(employee) -> list[dict]:
             "paid": p.total_paid, "due": p.amount_due if official else None,
             "planned_payment_date": planned_date_for_period(p.period),
             "lines": [{"description": line.description, "amount": line.amount} for line in p.lines.all()],
+            "blocks": [_line_block(line) for line in p.lines.all()],
+            "tax": _allocated(p, tax=True), "other_deductions": _allocated(p, tax=False),
         })
     return rows
+
+
+def _allocated(payroll: Payroll, *, tax: bool) -> Decimal:
+    qs = payroll.deduction_allocations.all()
+    qs = qs.filter(applied__kind=TAX) if tax else qs.exclude(applied__kind=TAX)
+    return qs.aggregate(s=Sum("amount"))["s"] or ZERO
+
+
+def _line_block(line) -> dict:
+    meta = line.metadata or {}
+    return {"description": line.description, "subject_name": meta.get("subject", ""),
+            "group_name": meta.get("group", ""), "cycle_number": meta.get("cycle_number"),
+            "completed_on": meta.get("completed_on"), "amount": line.amount}
 
 
 def _month_deductions(employee, year: int, month: int, gross: Decimal) -> list[dict]:
@@ -225,8 +241,11 @@ def summary(employee, *, today: dt.date | None = None) -> dict:
         {"source": s, "label": SOURCE_LABELS[s], "amount": total(s)}
         for s in (OPEN_BLOCK, ACCRUAL_PENDING, PAYROLL_DRAFT, REVIEW) if total(s)
     ]
+    schedule, not_included = _schedule(employee, payrolls + pending, open_blocks, deductions)
     return {
         "as_of": today,
+        "schedule": schedule,
+        "not_included": not_included,
         "earned": {"gross": earned_gross, "tax": earned_tax, "other_deductions": earned_other, "net": earned_net},
         "official": {"gross": official_gross, "tax": official_tax, "other_deductions": official_other,
                      "net": official_gross - official_tax - official_other},
@@ -275,3 +294,148 @@ def as_json(value):
     if isinstance(value, (list, tuple)):
         return [as_json(v) for v in value]
     return value
+
+
+# ---------------------------------------------------------------------------
+# График выплат по датам
+# ---------------------------------------------------------------------------
+
+SCHEDULED, PARTIALLY_PAID, PAID = "SCHEDULED", "PARTIALLY_PAID", "PAID"
+SCHEDULE_STATUS = {SCHEDULED: "Запланировано", PARTIALLY_PAID: "Частично выплачено", PAID: "Выплачено"}
+NO_DATE_NOTE = "Календарь выплат оклада не настроен — дату выплаты определяет бухгалтер."
+
+
+def _schedule(employee, dated_rows: list[dict], open_blocks: list[dict], deductions: list[dict]):
+    """Выплаты по плановым датам (15-е / 1-е по `services.payout`).
+
+    Каждая сумма — ровно в одной дате: расчёт половины месяца относится к
+    дате своего периода, завершённый блок вне расчёта — к дате по дню его
+    завершения. Незавершённые блоки ни в одну дату не входят (см.
+    `not_included`).
+
+    Удержания: в утверждённых расчётах — фактически взятые. Остаток
+    ежемесячного удержания (по правилам, не больше заработанного в месяце)
+    распределяется по неутверждённым суммам месяца по порядку дат, а затем —
+    на заработок по незавершённым блокам; поэтому сумма удержаний месяца не
+    превышает применимую и не повторяется за каждый блок.
+    """
+    buckets: dict = {}
+    for row in dated_rows:
+        key = row["planned_payment_date"]
+        b = buckets.setdefault(key, {"date": key, "rows": [], "gross": ZERO, "tax": ZERO, "other_deductions": ZERO,
+                                     "paid": ZERO, "official_due": ZERO, "unofficial_gross": ZERO})
+        b["rows"].append(row)
+        b["gross"] += row["gross"]
+        if row["official"]:
+            b["tax"] += row["tax"]
+            b["other_deductions"] += row["other_deductions"]
+            b["paid"] += row["paid"]
+            b["official_due"] += row["due"]
+        else:
+            b["unofficial_gross"] += row["gross"]
+    open_bucket = {"rows": open_blocks, "gross": sum((r["gross"] for r in open_blocks), ZERO),
+                   "tax": ZERO, "other_deductions": ZERO}
+
+    # Остаток удержаний месяца → неутверждённые суммы месяца, затем незавершённые блоки.
+    expected = defaultdict(lambda: {"tax": ZERO, "other_deductions": ZERO})
+    for d in deductions:
+        expected[(d["year"], d["month"])]["tax" if d["kind"] == TAX else "other_deductions"] += d["amount"]
+    for (year, month), amounts in expected.items():
+        official = {"tax": ZERO, "other_deductions": ZERO}
+        targets = []  # (ключ, доступная валовая сумма)
+        for key in sorted(buckets, key=lambda k: (k is None, k or dt.date.max)):
+            rows = [r for r in buckets[key]["rows"] if (r["year"], r["month"]) == (year, month)]
+            for r in rows:
+                if r["official"]:
+                    official["tax"] += r["tax"]
+                    official["other_deductions"] += r["other_deductions"]
+            free = sum((r["gross"] for r in rows if not r["official"]), ZERO)
+            if free > 0:
+                targets.append((buckets[key], free))
+        month_open = sum((r["gross"] for r in open_blocks if (r["year"], r["month"]) == (year, month)), ZERO)
+        if month_open > 0:
+            targets.append((open_bucket, month_open))
+        capacity = {id(t): free for t, free in targets}
+        for kind in ("tax", "other_deductions"):
+            left = max(ZERO, amounts[kind] - official[kind])
+            for target, _free in targets:
+                take = min(left, capacity[id(target)])
+                if take <= 0:
+                    continue
+                target[kind] += take
+                capacity[id(target)] -= take
+                left -= take
+
+    schedule = []
+    for key in sorted(buckets, key=lambda k: (k is None, k or dt.date.max)):
+        b = buckets[key]
+        net = b["gross"] - b["tax"] - b["other_deductions"]
+        remaining = max(ZERO, net - b["paid"])
+        status = PAID if remaining == 0 and b["paid"] > 0 else PARTIALLY_PAID if b["paid"] > 0 else SCHEDULED
+        schedule.append({
+            "date": key, "date_note": "" if key else NO_DATE_NOTE,
+            "gross": b["gross"], "tax": b["tax"], "other_deductions": b["other_deductions"], "net": net,
+            "paid": b["paid"], "remaining": remaining, "status": status, "status_display": SCHEDULE_STATUS[status],
+            "official_due": b["official_due"], "not_yet_official": b["unofficial_gross"],
+            "fully_official": b["unofficial_gross"] == 0,
+            "items": [_schedule_item(r) for r in b["rows"]],
+        })
+    not_included = {
+        "gross": open_bucket["gross"], "tax": open_bucket["tax"], "other_deductions": open_bucket["other_deductions"],
+        "net": open_bucket["gross"] - open_bucket["tax"] - open_bucket["other_deductions"],
+        "note": "Работа по незавершённым блокам: заработано по проведённым урокам, в выплату войдёт после "
+                "завершения блока — 15-го числа, если блок завершится 1–15-го, или 1-го числа следующего месяца.",
+        "items": [_schedule_item(r) for r in open_blocks],
+    }
+    return schedule, not_included
+
+
+def _schedule_item(row: dict) -> dict:
+    base = {"source": row["source"], "source_display": row["source_display"], "official": row["official"],
+            "gross": row["gross"], "period_label": row["period_label"], "payroll_id": row.get("payroll_id")}
+    if row.get("payroll_id"):
+        return {**base, "payroll_status_display": row["payroll_status_display"], "paid": row["paid"],
+                "due": row["due"], "blocks": row["blocks"]}
+    return {**base, "subject_name": row["subject_name"], "group_name": row["group_name"],
+            "cycle_number": row["cycle_number"], "lessons_taught": row["lessons_taught"],
+            "required_lessons": row["required_lessons"], "completed_on": row.get("completed_on")}
+
+
+def payout_calendar(*, today: dt.date | None = None, date_from=None, date_to=None, department=None,
+                    search: str = "") -> dict:
+    """График выплат для бухгалтерии: по каждой дате — кому и сколько, из тех
+    же расчётов сотрудников (`summary`), без новых начислений."""
+    today = today or timezone.localdate()
+    profiles = EmployeeSalaryProfile.objects.select_related("employee").order_by(
+        "employee__last_name", "employee__first_name")
+    if search:
+        profiles = profiles.filter(Q(employee__first_name__icontains=search) | Q(employee__last_name__icontains=search))
+    dates: dict = {}
+    open_rows = []
+    keys = ("gross", "tax", "other_deductions", "net", "paid", "remaining")
+    for profile in profiles:
+        if department and profile.effective_department != department:
+            continue
+        employee = profile.employee
+        name = employee.get_full_name() or employee.username
+        data = summary(employee, today=today)
+        for entry in data["schedule"]:
+            date = entry["date"]
+            if date and ((date_from and date < date_from) or (date_to and date > date_to)):
+                continue
+            day = dates.setdefault(date, {"date": date, "date_note": entry["date_note"], "employees": [],
+                                          **{k: ZERO for k in keys}})
+            for k in keys:
+                day[k] += entry[k]
+            day["employees"].append({"employee": employee.pk, "employee_name": name, **entry})
+        if data["not_included"]["items"]:
+            open_rows.append({"employee": employee.pk, "employee_name": name, **data["not_included"]})
+    days = []
+    for key in sorted(dates, key=lambda k: (k is None, k or dt.date.max)):
+        day = dates[key]
+        status = (PAID if day["remaining"] == 0 and day["paid"] > 0 else PARTIALLY_PAID if day["paid"] > 0
+                  else SCHEDULED)
+        days.append({**day, "status": status, "status_display": SCHEDULE_STATUS[status]})
+    return {"as_of": today, "dates": days, "not_included": open_rows,
+            "not_included_total": {k: sum((r[k] for r in open_rows), ZERO)
+                                   for k in ("gross", "tax", "other_deductions", "net")}}

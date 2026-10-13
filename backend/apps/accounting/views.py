@@ -995,6 +995,32 @@ class EarningsListView(APIView):
         return _paginate_list(request, earnings.as_json(rows), self)
 
 
+@extend_schema(tags=TAG, parameters=[
+    OpenApiParameter("date_from", OpenApiTypes.DATE), OpenApiParameter("date_to", OpenApiTypes.DATE),
+    OpenApiParameter("department", str), OpenApiParameter("search", str),
+])
+class PayoutScheduleView(APIView):
+    """График выплат по датам (15-е / 1-е): кому и сколько, удержания,
+    выплачено, остаток; отдельно — заработок по незавершённым блокам, ещё не
+    включённый в выплату. Только чтение."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        q = request.query_params
+        bounds = {}
+        for name in ("date_from", "date_to"):
+            if q.get(name):
+                try:
+                    bounds[name] = timezone.datetime.fromisoformat(q[name]).date()
+                except ValueError:
+                    raise ValidationError({name: "Ожидается дата ГГГГ-ММ-ДД."})
+        data = earnings.payout_calendar(department=q.get("department") or None, search=q.get("search") or "",
+                                        **bounds)
+        return Response(earnings.as_json(data))
+
+
 @extend_schema(tags=TAG)
 class EarningsDetailView(APIView):
     """Детали заработка сотрудника: предметы, группы, блоки, расчёты,
