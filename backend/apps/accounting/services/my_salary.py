@@ -18,8 +18,15 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-from ..models import EmployeeSalaryProfile, Payroll, PayrollAdjustment, PayrollPayment, PayrollPeriod
+from ..models import (
+    EmployeeSalaryProfile,
+    Payroll,
+    PayrollAdjustment,
+    PayrollPayment,
+    PayrollPeriod,
+)
 from . import estimates as estimates_service
+from .deductions import payroll_deductions
 from .money import ZERO
 from .payout import planned_date_for_period
 from .report_service import period_label
@@ -87,6 +94,13 @@ def _row(payroll: Payroll) -> dict:
         "due": _money(payroll.amount_due) if shown else None,
         "lines": [{"description": l.description, "amount": _money(l.amount)} for l in payroll.lines.all()] if shown else [],
         "adjustments": [{"kind": a.get_kind_display(), "reason": a.reason, "amount": _money(a.amount)} for a in adjustments],
+        # Свои удержания (налоги, взносы, другие) — только из этого расчёта.
+        "deducted": _money(payroll.total_deductions) if shown else None,
+        "deductions": [
+            {"name": d["name"], "kind_display": d["kind_display"], "amount": _money(d["amount"]),
+             "month_amount": _money(d["month_amount"]), "remaining": _money(d["remaining"])}
+            for d in payroll_deductions(payroll) if d["amount"] > 0 or d["remaining"] > 0
+        ] if shown else [],
     }
 
 
@@ -130,6 +144,7 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
     locked = own.filter(status__in=Payroll.LOCKED_STATUSES)
 
     accrued = sum((p.total_accrued + p.total_adjustments for p in locked), ZERO)
+    deducted = sum((p.total_deductions for p in locked), ZERO)
     paid = sum((p.total_paid for p in locked), ZERO)
     pending = sum((p.total_accrued + p.total_adjustments for p in own.filter(status=Payroll.Status.CALCULATED)), ZERO)
     last = (
@@ -150,7 +165,7 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
             "payroll_id": None, "year": today.year, "month": today.month, "period_type": half,
             "period_label": f"{start:%d.%m.%Y}–{end:%d.%m.%Y}", "status": AWAITING,
             "status_display": STATUS_LABELS[AWAITING], "is_final": False, "accrued": None, "paid": None,
-            "due": None, "lines": [], "adjustments": [],
+            "due": None, "lines": [], "adjustments": [], "deducted": None, "deductions": [],
             "planned_payment_date": (lambda d: d.isoformat() if d else None)(
                 planned_date_for_period(PayrollPeriod(year=today.year, month=today.month, period_type=half,
                                                       start_date=start, end_date=end))),
@@ -187,7 +202,8 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
             "rates": _rates(profile, today),
         },
         "totals": {
-            "accrued": _money(accrued), "paid": _money(paid), "due": _money(accrued - paid),
+            "accrued": _money(accrued), "deducted": _money(deducted), "paid": _money(paid),
+            "due": _money(accrued - deducted - paid),
             "pending_approval": _money(pending), "estimated": _money(estimated),
         },
         "next_planned_payment_date": next_planned.isoformat() if next_planned else None,

@@ -259,8 +259,9 @@ class ReportTests(AccountingFixture):
         total = rows[-1]
         self.assertEqual(total[0], "Итого")
         self.assertEqual(D(str(total[4])), D("23000"))  # 20000 оклад + 3000 процент
-        self.assertEqual(D(str(total[7])), D("5000"))  # отменённая выплата 7000 не учтена
-        self.assertEqual(D(str(total[8])), D("18000"))
+        self.assertEqual(D(str(total[7])), D("0"))  # удержаний нет
+        self.assertEqual(D(str(total[8])), D("5000"))  # отменённая выплата 7000 не учтена
+        self.assertEqual(D(str(total[9])), D("18000"))
         self.assertIsNotNone(ws.auto_filter.ref)
         self.assertIsInstance(rows[4][4], (int, float))
 

@@ -51,7 +51,7 @@ const PLAN: PayoutPlan = {
 const LINE: PayoutPlanLine = {
   id: 11, payroll: 21, employee: 9, employee_name: 'Айбек Оклад', position: 'Ассистент', department: 'IT', department_display: 'IT',
   subjects: [], salary_type: 'FIXED', salary_type_display: 'Оклад', period_label: 'Сентябрь 2026', year: 2026, month: 9,
-  accrued: '250000.00', paid_before: '0.00', planned_amount: '250000.00', paid_by_plan: '0.00', remaining_in_plan: '250000.00',
+  accrued: '250000.00', deductions: '0.00', paid_before: '0.00', planned_amount: '250000.00', paid_by_plan: '0.00', remaining_in_plan: '250000.00',
   due_after_plan: '0.00', payroll_status: 'APPROVED', payroll_status_display: 'Утверждён', planned_payment_date: null,
   basis: [{ description: 'Оклад за месяц', amount: '250000.00' }], comment: '', status: 'PLANNED', status_display: 'Запланировано',
 }

@@ -31,7 +31,7 @@ class MySalaryTests(AccountingFixture):
         data = self.get(self.assistant)
         self.assertEqual(data["profile"]["salary_type"], "FIXED")
         self.assertEqual(data["profile"]["rates"][0]["amount"], "20000.00")
-        self.assertEqual(data["totals"], {"accrued": "20000.00", "paid": "0.00", "due": "20000.00",
+        self.assertEqual(data["totals"], {"accrued": "20000.00", "deducted": "0.00", "paid": "0.00", "due": "20000.00",
                                           "pending_approval": "0.00", "estimated": "0.00"})
         self.assertEqual([r["status"] for r in data["history"]], ["APPROVED"])
         self.assertEqual(data["history"][0]["lines"][0]["amount"], "20000.00")
@@ -101,7 +101,7 @@ class MySalaryTests(AccountingFixture):
         payroll = approve_payroll(self.calc(MONTH, self.assistant), self.director)
         register_payment(payroll, amount=D("15000"), payment_date=day(9, 20), actor=self.accountant)
         data = self.get(self.assistant)
-        self.assertEqual(data["totals"], {"accrued": "20000.00", "paid": "15000.00", "due": "5000.00",
+        self.assertEqual(data["totals"], {"accrued": "20000.00", "deducted": "0.00", "paid": "15000.00", "due": "5000.00",
                                           "pending_approval": "0.00", "estimated": "0.00"})
         self.assertEqual(data["history"][0]["status"], "PARTIALLY_PAID")
         self.assertEqual(data["last_payment"], {"payment_date": "2026-09-20", "amount": "15000.00"})

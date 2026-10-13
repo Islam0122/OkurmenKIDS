@@ -92,18 +92,20 @@ def _month_payrolls(year: int, month: int, filters: dict):
 
 
 def _aggregate(rows) -> dict:
-    accrued = paid = pending = ZERO
+    accrued = paid = pending = deducted = ZERO
     employees = set()
     for p in rows:
         total = p.r_accrued + p.r_adjustments
         if p.status in LOCKED:
             accrued += total
             paid += p.r_paid
+            deducted += p.r_deductions
             if total:
                 employees.add(p.employee_id)
         elif p.status in PENDING:
             pending += total
-    return {"accrued": accrued, "paid": paid, "outstanding": accrued - paid, "awaiting_approval_amount": pending,
+    return {"accrued": accrued, "deductions": deducted, "paid": paid, "outstanding": accrued - deducted - paid,
+            "awaiting_approval_amount": pending,
             "employees": len(employees)}
 
 
@@ -117,17 +119,18 @@ def cash_paid(year: int, month: int, filters: dict) -> Decimal:
 
 
 def by_department(rows) -> list[dict]:
-    sums = {d.value: {"accrued": ZERO, "paid": ZERO, "employees": set()} for d in Department}
+    sums = {d.value: {"accrued": ZERO, "paid": ZERO, "deductions": ZERO, "employees": set()} for d in Department}
     for p in rows:
         if p.status not in LOCKED:
             continue
         bucket = sums[department_of(p)]
         bucket["accrued"] += p.r_accrued + p.r_adjustments
         bucket["paid"] += p.r_paid
+        bucket["deductions"] += p.r_deductions
         bucket["employees"].add(p.employee_id)
     return [
         {"department": d.value, "label": d.label, "accrued": sums[d.value]["accrued"], "paid": sums[d.value]["paid"],
-         "outstanding": sums[d.value]["accrued"] - sums[d.value]["paid"], "employees": len(sums[d.value]["employees"])}
+         "outstanding": sums[d.value]["accrued"] - sums[d.value]["deductions"] - sums[d.value]["paid"], "employees": len(sums[d.value]["employees"])}
         for d in Department
     ]
 
@@ -142,7 +145,7 @@ def upcoming_payments(filters: dict | None = None, *, today: dt.date | None = No
     ).select_related("employee__salary_profile", "period")
     rows = []
     for p in with_totals(qs):
-        due = p.r_accrued + p.r_adjustments - p.r_paid
+        due = p.r_accrued + p.r_adjustments - p.r_deductions - p.r_paid
         if due <= 0:
             continue
         if (filters or {}).get("department") and department_of(p) != filters["department"]:
@@ -215,14 +218,15 @@ def teacher_report(year: int, month: int, filters: dict | None = None) -> dict:
         lines_by_payroll[line.payroll_id].append(line)
     types = dict(SalaryType.choices)
     labels = dict(Department.choices)
-    groups, totals = [], {"accrued": ZERO, "adjustments": ZERO, "total": ZERO, "paid": ZERO, "due": ZERO}
+    groups, totals = [], {"accrued": ZERO, "adjustments": ZERO, "total": ZERO, "deductions": ZERO, "paid": ZERO,
+                          "due": ZERO}
     dep_totals = {d.value: {"accrued": ZERO, "paid": ZERO, "due": ZERO} for d in Department}
     group_totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
     for p in payrolls:
         dep = department_of(p)
         planned = planned_date_for_period(p.period)
         total = p.r_accrued + p.r_adjustments
-        due = total - p.r_paid
+        due = total - p.r_deductions - p.r_paid
         lines = []
         for line in lines_by_payroll[p.pk]:
             meta = line.metadata or {}
@@ -251,11 +255,13 @@ def teacher_report(year: int, month: int, filters: dict | None = None) -> dict:
             "salary_type": p.salary_type, "salary_type_display": types.get(p.salary_type, ""),
             "status": p.status, "status_display": p.get_status_display(),
             "planned_payment_date": planned, "lines": lines,
-            "accrued": p.r_accrued, "adjustments": p.r_adjustments, "total": total, "paid": p.r_paid, "due": due,
+            "accrued": p.r_accrued, "adjustments": p.r_adjustments, "total": total, "deductions": p.r_deductions,
+            "paid": p.r_paid, "due": due,
         })
         totals["accrued"] += p.r_accrued
         totals["adjustments"] += p.r_adjustments
         totals["total"] += total
+        totals["deductions"] += p.r_deductions
         totals["paid"] += p.r_paid
         totals["due"] += due
         dep_totals[dep]["accrued"] += total

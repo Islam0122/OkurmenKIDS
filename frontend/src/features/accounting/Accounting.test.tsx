@@ -43,7 +43,7 @@ const PERIOD = {
 }
 
 const DASHBOARD: Dashboard = {
-  total_accrued: '16500.00', total_lines: '16500.00', total_adjustments: '0.00', total_paid: '6500.00',
+  total_accrued: '16500.00', total_lines: '16500.00', total_adjustments: '0.00', total_deductions: '0.00', total_paid: '6500.00',
   total_due: '10000.00', employees_with_accruals: 1, pending_approval: 1, pending_adjustments: 0, with_errors: 0,
   outstanding_debt_all_periods: '10000.00', open_cycles: 2, range_label: '01.09.2026–15.09.2026', periods: [PERIOD],
 }

@@ -20,6 +20,7 @@ from __future__ import annotations
 import calendar
 import contextvars
 import datetime as dt
+import uuid
 from contextlib import contextmanager
 from decimal import Decimal
 
@@ -485,9 +486,10 @@ class Payroll(models.Model):
     """Расчёт зарплаты одного сотрудника за один период.
 
     `total_accrued` — сумма строк расчёта (замораживается утверждением);
-    `total_adjustments` — сумма применённых корректировок; `total_paid` —
-    сумма подтверждённых выплат; `amount_due` = начислено + корректировки −
-    выплачено. Итоги пересчитываются только сервисами из записей.
+    `total_adjustments` — сумма применённых корректировок; `total_deductions` —
+    удержания по правилам (налоги, взносы, другие), взятые из этого расчёта;
+    `total_paid` — сумма подтверждённых выплат; `amount_due` = начислено +
+    корректировки − удержания − выплачено. Итоги пересчитываются только сервисами из записей.
     """
 
     class Status(models.TextChoices):
@@ -507,6 +509,9 @@ class Payroll(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
     total_accrued = models.DecimalField(**MONEY, default=ZERO)
     total_adjustments = models.DecimalField(**MONEY, default=ZERO)
+    total_deductions = models.DecimalField(
+        **MONEY, default=ZERO, help_text="Удержания по правилам «Налоги и удержания», взятые из этого расчёта.",
+    )
     total_paid = models.DecimalField(**MONEY, default=ZERO)
     amount_due = models.DecimalField(**MONEY, default=ZERO)
     warnings = models.JSONField(default=list, blank=True, help_text="Предупреждения последнего расчёта.")
@@ -1196,3 +1201,152 @@ class PayoutPlanLine(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Строку плана нельзя удалить — исключите её из черновика.")
+
+
+# ---------------------------------------------------------------------------
+# Налоги и удержания
+# ---------------------------------------------------------------------------
+
+class DeductionRule(models.Model):
+    """Одна версия правила удержания из зарплаты (налог, взнос, другое).
+
+    Размер задаёт бухгалтер — в коде сумм нет. Пока версия не попала в
+    утверждённые расчёты, её можно исправить на месте; после — изменение
+    суммы, периодичности или круга сотрудников создаёт новую версию с даты
+    (старая закрывается днём раньше). Версии одного правила связаны общим
+    `series`: журнал применения уникален по нему, поэтому две версии одного
+    правила не могут удержать сумму за один месяц дважды.
+    """
+
+    class Kind(models.TextChoices):
+        TAX = "TAX", "Налог"
+        CONTRIBUTION = "CONTRIBUTION", "Обязательный взнос"
+        OTHER = "OTHER", "Другое удержание"
+
+    class CalcType(models.TextChoices):
+        FIXED = "FIXED", "Фиксированная сумма"
+        # Процентный тип с базой расчёта можно добавить отдельно, не меняя FIXED.
+
+    class Frequency(models.TextChoices):
+        MONTHLY = "MONTHLY", "Ежемесячно"
+        PERIOD = "PERIOD", "Ежемесячно в указанный период"
+        ONCE = "ONCE", "Однократно"
+
+    class Scope(models.TextChoices):
+        EMPLOYEE = "EMPLOYEE", "Сотрудник"
+        DEPARTMENT = "DEPARTMENT", "Направление"
+        ALL = "ALL", "Все сотрудники"
+
+    series = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True,
+                              help_text="Общий идентификатор всех версий одного правила.")
+    name = models.CharField(max_length=100, verbose_name="Название")
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.OTHER, verbose_name="Вид")
+    calc_type = models.CharField(max_length=10, choices=CalcType.choices, default=CalcType.FIXED,
+                                 verbose_name="Способ расчёта")
+    amount = models.DecimalField(**MONEY, validators=[MinValueValidator(Decimal("0.01"))],
+                                 verbose_name="Сумма, сом")
+    frequency = models.CharField(max_length=10, choices=Frequency.choices, default=Frequency.MONTHLY,
+                                 verbose_name="Периодичность")
+    scope = models.CharField(max_length=12, choices=Scope.choices, default=Scope.EMPLOYEE,
+                             verbose_name="Кому применяется")
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                 related_name="deduction_rules", verbose_name="Сотрудник")
+    department = models.CharField(max_length=20, choices=Department.choices, blank=True,
+                                  verbose_name="Направление")
+    effective_from = models.DateField(verbose_name="Действует с")
+    effective_to = models.DateField(null=True, blank=True, verbose_name="Действует по (включительно)")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Включено")
+    description = models.CharField(max_length=255, blank=True, verbose_name="Комментарий")
+    previous_version = models.OneToOneField(
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="next_version",
+        verbose_name="Предыдущая версия",
+    )
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Правило удержания"
+        verbose_name_plural = "Налоги и удержания"
+        ordering = ["kind", "name", "-effective_from", "-id"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="deduction_rule_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")),
+                name="deduction_rule_dates_ordered",
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(scope="EMPLOYEE", employee__isnull=False)
+                           | models.Q(scope="DEPARTMENT", employee__isnull=True) & ~models.Q(department="")
+                           | models.Q(scope="ALL", employee__isnull=True)),
+                name="deduction_rule_scope_consistent",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(frequency="PERIOD") | models.Q(effective_to__isnull=False),
+                name="deduction_rule_period_has_end",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} · {self.amount} сом"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Правило удержания нельзя удалить — отключите его или закройте датой.")
+
+
+class AppliedDeduction(models.Model):
+    """Удержание по правилу за месяц у сотрудника — ровно одна запись на
+    (правило, сотрудник, месяц), сколько бы расчётов у него ни было в этом
+    месяце и сколько бы раз их ни пересчитывали. Сумма — снимок суммы правила;
+    по расчётам месяца она распределяется записями `DeductionAllocation`."""
+
+    rule = models.ForeignKey(DeductionRule, on_delete=models.PROTECT, related_name="applications",
+                             help_text="Версия правила, по которой удержание применено.")
+    series = models.UUIDField(db_index=True)
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="deductions")
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
+    name = models.CharField(max_length=100, help_text="Снимок названия правила.")
+    kind = models.CharField(max_length=20, choices=DeductionRule.Kind.choices)
+    amount = models.DecimalField(**MONEY, help_text="Сколько полагается удержать за месяц по правилу.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Применённое удержание"
+        verbose_name_plural = "Применённые удержания"
+        ordering = ["-year", "-month", "employee", "kind", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["series", "employee", "year", "month"],
+                                    name="unique_deduction_per_employee_month"),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="applied_deduction_amount_positive"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} · {self.employee} · {self.month:02d}.{self.year}"
+
+
+class DeductionAllocation(models.Model):
+    """Сколько из удержания месяца взято из конкретного расчёта. Сумма по
+    записям ≤ сумме удержания, и каждая ≤ доступного в расчёте, поэтому
+    остаток к выплате не становится отрицательным."""
+
+    applied = models.ForeignKey(AppliedDeduction, on_delete=models.PROTECT, related_name="allocations")
+    payroll = models.ForeignKey(Payroll, on_delete=models.PROTECT, related_name="deduction_allocations")
+    amount = models.DecimalField(**MONEY, validators=[MinValueValidator(Decimal("0.01"))])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Удержание в расчёте"
+        verbose_name_plural = "Удержания в расчётах"
+        ordering = ["payroll", "applied__kind", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["applied", "payroll"], name="unique_deduction_allocation"),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="deduction_allocation_positive"),
+        ]
+
+    def __str__(self):
+        return f"{self.applied.name}: {self.amount}"

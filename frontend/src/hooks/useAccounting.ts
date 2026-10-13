@@ -168,3 +168,11 @@ export function usePayoutCandidates(params: { year?: number; month?: number; emp
     enabled,
   })
 }
+
+export function useDeductionRules(params: Record<string, string | number | boolean | undefined> = {}) {
+  return useQuery({
+    queryKey: ['accounting', 'deduction-rules', params],
+    queryFn: () => accountingApi.deductionRules(params),
+    placeholderData: keepPreviousData,
+  })
+}

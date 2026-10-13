@@ -127,8 +127,9 @@ export function PayrollDetailPage() {
 
       <div className="mt-4">
         <StatGrid>
-          <StatCard label="Начислено" value={som(p.total_accrued)} />
-          <StatCard label="Корректировки" value={som(p.total_adjustments)} />
+          <StatCard label="Начислено до удержаний" value={som(p.total)}
+            hint={Number(p.total_adjustments) !== 0 ? `строки ${som(p.total_accrued)}, корректировки ${som(p.total_adjustments)}` : undefined} />
+          <StatCard label="Удержания" value={som(p.total_deductions)} hint={`итого к выплате ${som((Number(p.total) - Number(p.total_deductions)).toFixed(2))}`} />
           <StatCard label="Выплачено" value={som(p.total_paid)} />
           <StatCard label="Остаток к выплате" value={som(p.amount_due)} tone={Number(p.amount_due) > 0 ? 'warning' : 'default'}
             hint={p.planned_payment_date ? `плановая выплата ${formatDate(p.planned_payment_date)} (не факт перевода)` : undefined} />
@@ -140,6 +141,35 @@ export function PayrollDetailPage() {
 
       <Section title="Детализация начисления">
         <Lines lines={p.lines} />
+      </Section>
+
+      <Section title="Налоги и удержания">
+        {p.deductions.length === 0 ? <p className="text-sm text-ink-muted">Удержаний нет.</p> : (
+          <div className="card overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr><th>Удержание</th><th>Периодичность</th><th className="text-right">За месяц по правилу</th>
+                  <th className="text-right">Удержано в этом расчёте</th><th className="text-right">В других расчётах месяца</th><th className="text-right">Не удержано</th></tr>
+              </thead>
+              <tbody>
+                {p.deductions.map((d) => (
+                  <tr key={d.id}>
+                    <td>{d.name}<p className="text-xs text-ink-muted">{d.kind_display} · {String(d.month).padStart(2, '0')}.{d.year}</p></td>
+                    <td className="text-sm">{d.frequency_display}</td>
+                    <td className="whitespace-nowrap text-right">{som(d.month_amount)}</td>
+                    <td className="whitespace-nowrap text-right">{som(d.amount)}</td>
+                    <td className="whitespace-nowrap text-right">{Number(d.other_payrolls) > 0 ? som(d.other_payrolls) : '—'}</td>
+                    <td className={`whitespace-nowrap text-right ${Number(d.remaining) > 0 ? 'text-warning' : ''}`}>{Number(d.remaining) > 0 ? som(d.remaining) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="px-4 py-2 text-xs text-ink-muted">
+              Ежемесячное удержание берётся один раз за месяц на сотрудника. Если начисления не хватает, остаток удержания
+              показывается здесь и в долг не переносится; сумма к выплате не бывает отрицательной.
+            </p>
+          </div>
+        )}
       </Section>
 
       {p.open_cycles.length ? (

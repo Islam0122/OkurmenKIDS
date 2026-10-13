@@ -150,7 +150,8 @@ export function PayoutPlanDetailPage() {
                             {line.basis.map((b, i) => <li key={i}>{b.description}: {som(b.amount)}</li>)}
                             <li>Подтверждённое начисление (с корректировками): {som(line.accrued)}</li>
                             <li>Выплачено ранее (вне этого плана): {som(line.paid_before)}</li>
-                            <li>Остаток до плана = начислено − выплачено ранее: {som((Number(line.accrued) - Number(line.paid_before)).toFixed(2))}; в план включено {som(line.planned_amount)}{Number(line.due_after_plan) > 0 ? `, после плана останется ${som(line.due_after_plan)}` : ''}</li>
+                            {Number(line.deductions) > 0 ? <li>Налоги и удержания (уже учтены в начислении, повторно не вычитаются): −{som(line.deductions)}</li> : null}
+                            <li>Остаток до плана = начислено − удержания − выплачено ранее: {som((Number(line.accrued) - Number(line.deductions) - Number(line.paid_before)).toFixed(2))}; в план включено {som(line.planned_amount)}{Number(line.due_after_plan) > 0 ? `, после плана останется ${som(line.due_after_plan)}` : ''}</li>
                             <li>Статус начисления: {line.payroll_status_display}{line.planned_payment_date ? ` · плановая дата по правилу ${formatDate(line.planned_payment_date)}` : ''}</li>
                             {line.comment ? <li>Комментарий: {line.comment}</li> : null}
                           </ul>
