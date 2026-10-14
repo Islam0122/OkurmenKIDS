@@ -29,6 +29,8 @@ urlpatterns = [
     path("api/v1/", include("apps.training.urls")),
     path("api/v1/", include("apps.testing.monitoring_urls")),
     path("api/v1/", include("apps.worklog.urls")),
+    # Public leaderboard (no login, GET only) — see apps.leaderboard.
+    path("api/v1/", include("apps.leaderboard.urls")),
     # Assistant Workspace — the Assistant's operational API (see apps.assistant).
     path("api/v1/assistant/", include("apps.assistant.urls")),
     # Бухгалтерия и зарплаты (см. apps.accounting).

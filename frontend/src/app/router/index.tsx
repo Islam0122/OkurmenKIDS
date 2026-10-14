@@ -347,5 +347,19 @@ export const router = createBrowserRouter([
       { path: '*', element: <Navigate to="/schedule" replace /> },
     ],
   },
+  {
+    // «OkurmenKIDS Leaderboard» — the PUBLIC leaderboard site: no login, its
+    // own layout, only the public read-only API (/api/v1/public/leaderboard/ —
+    // public names, opaque keys and XP; no personal data). Never behind
+    // ProtectedRoute.
+    path: '/leaderboard',
+    errorElement: <RouteErrorPage />,
+    lazy: async () => ({ Component: (await import('@/features/leaderboardSite/SiteLayout')).SiteLayout }),
+    children: [
+      { index: true, lazy: async () => ({ Component: (await import('@/features/leaderboardSite/LeaderboardPages')).StudentsLeaderboardPage }) },
+      { path: 'groups', lazy: async () => ({ Component: (await import('@/features/leaderboardSite/LeaderboardPages')).GroupsLeaderboardPage }) },
+      { path: '*', element: <Navigate to="/leaderboard" replace /> },
+    ],
+  },
   { path: '*', element: <NotFoundPage /> },
 ])

@@ -65,3 +65,15 @@ this repo, root directory `frontend`, the same `vercel.json`, with
 `VITE_APP_MODE=schedule` (so `/` opens the schedule) and the same
 `VITE_API_BASE_URL`. On the backend add the domain to `SCHEDULE_SITE_ORIGINS`
 (CORS). No second backend or database.
+
+## OkurmenKIDS Leaderboard (public leaderboard site)
+
+A public, read-only leaderboard — **no login**: `/leaderboard` (top students)
+and `/leaderboard/groups` (top groups), each for a year, a month or a week
+(`?period=month&year=2026&month=10`, `?period=week&week=2026-10-12`). It reads
+only `/api/v1/public/leaderboard/*` (see `backend/docs/leaderboard.md` for the
+XP rules and the group methodology).
+
+**Own domain** (e.g. `leaderboard.okurmenkids.com`): a Vercel project on this
+repo, root directory `frontend`, with `VITE_APP_MODE=leaderboard` and the same
+`VITE_API_BASE_URL`; add the domain to `LEADERBOARD_SITE_ORIGINS` on the backend.
