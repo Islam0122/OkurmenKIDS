@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, CalendarRange, Clock, Search, Users, X } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, Crown, ListOrdered, Search, Users, X } from 'lucide-react'
 
 import { useGroupBoard, useLeaderboardMeta, useStudentBoard } from '@/hooks/usePublicLeaderboard'
-import type { LeaderboardMeta, LeaderboardPeriod } from '@/types/leaderboard'
+import type { LeaderboardPeriod, LeaderboardStudent } from '@/types/leaderboard'
+import { cn } from '@/utils/cn'
 
-import { formatDateTime, formatNumber, periodRange, periodTitle, plural } from './format'
+import { formatNumber, periodTitle, plural } from './format'
 import { GroupList, MemberStack } from './GroupList'
-import { PeriodSwitcher } from './PeriodSwitcher'
+import { Hero } from './Hero'
+import { PeriodSwitcher, selectClass } from './PeriodSwitcher'
 import { Podium } from './Podium'
 import type { PodiumEntry } from './Podium'
-import { GroupMethodCard, RulesCard, TopGroupsCard, TopStudentsCard } from './SideCards'
+import { HighlightsCard, RulesCard, TeamCard, TopGroupsCard, TopStudentsCard } from './SideCards'
 import { StudentTable } from './StudentTable'
-import { EmptyState, ErrorState, LoadMoreButton, Panel, PodiumSkeleton, RowsSkeleton, Skeleton } from './ui'
+import { EmptyState, ErrorState, InfoHint, LoadMoreButton, Panel, PodiumSkeleton, RowsSkeleton } from './ui'
 import { usePeriodParams } from './usePeriodParams'
 
 function useDebounced<T>(value: T, delay = 300): T {
@@ -24,14 +26,10 @@ function useDebounced<T>(value: T, delay = 300): T {
   return debounced
 }
 
-const controlClass =
-  'h-9 w-full min-w-0 rounded-lg border border-lb-line bg-white px-3 text-sm text-ink placeholder:text-ink-muted ' +
-  'hover:border-lb-purple-100 focus-visible:border-lb-purple focus-visible:outline-lb-purple'
-
 function SearchBox({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
   return (
-    <div className="relative min-w-0 flex-1 sm:max-w-xs">
-      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-muted" aria-hidden />
+    <div className="relative min-w-0 flex-1 sm:min-w-[13rem]">
+      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-lb-muted" aria-hidden />
       <input
         type="search"
         value={value}
@@ -39,14 +37,14 @@ function SearchBox({ value, onChange, label }: { value: string; onChange: (value
         placeholder={label}
         aria-label={label}
         maxLength={100}
-        className={`${controlClass} pl-9 pr-8 [&::-webkit-search-cancel-button]:hidden`}
+        className="h-10 w-full min-w-0 rounded-xl border-0 bg-lb-bg pl-9 pr-8 text-sm text-lb-ink placeholder:text-lb-muted transition focus:bg-white focus-visible:shadow-[0_0_0_2px_rgba(59,22,141,0.35)] focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
         <button
           type="button"
           onClick={() => onChange('')}
           aria-label="Очистить поиск"
-          className="absolute right-2 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-ink-muted hover:bg-lb-bg"
+          className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-lb-muted hover:bg-lb-line"
         >
           <X className="size-3.5" aria-hidden />
         </button>
@@ -62,7 +60,12 @@ function FilterSelect({ label, value, onChange, options }: {
   options: { value: string; label: string }[]
 }) {
   return (
-    <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className={`${controlClass} sm:w-auto sm:max-w-[14rem]`}>
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(selectClass, 'w-full sm:w-auto sm:max-w-[13rem]', value && 'text-lb-purple shadow-[0_0_0_1.5px_rgba(59,22,141,0.45)]')}
+    >
       <option value="">{label}: все</option>
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -78,7 +81,10 @@ function OrderToggle({ order, onChange }: { order: 'desc' | 'asc'; onChange: (or
       onClick={() => onChange(desc ? 'asc' : 'desc')}
       aria-label={desc ? 'Сортировка: больше XP сначала' : 'Сортировка: меньше XP сначала'}
       title={desc ? 'Больше XP сначала' : 'Меньше XP сначала'}
-      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-lb-line bg-white px-3 text-sm font-medium text-ink-secondary transition-colors hover:border-lb-purple-100 hover:text-lb-purple focus-visible:outline-lb-purple"
+      className={cn(
+        'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition focus-visible:outline-lb-purple',
+        desc ? 'bg-lb-bg text-lb-muted hover:text-lb-purple' : 'bg-lb-purple-50 text-lb-purple',
+      )}
     >
       <Icon className="size-4" aria-hidden />
       XP
@@ -86,66 +92,37 @@ function OrderToggle({ order, onChange }: { order: 'desc' | 'asc'; onChange: (or
   )
 }
 
-function Stat({ icon, label, value, loading }: { icon: ReactNode; label: string; value: ReactNode; loading?: boolean }) {
+/** A section card's head: an icon, a title, an optional chip and controls. */
+function SectionHead({ icon, title, chip, children }: { icon: ReactNode; title: ReactNode; chip?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl bg-white/10 px-3 py-2.5 ring-1 ring-white/15">
-      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15 text-lb-gold">{icon}</span>
-      <span className="min-w-0">
-        <span className="block text-xs text-white/70">{label}</span>
-        {loading ? <Skeleton className="mt-1 h-4 w-24 bg-white/25" /> : <span className="block truncate text-sm font-semibold text-white">{value}</span>}
-      </span>
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-3 pt-4 sm:px-5">
+      <h2 className="flex min-w-0 items-center gap-2 text-lg font-black tracking-tight text-lb-deep">
+        <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl bg-lb-purple text-lb-gold">{icon}</span>
+        {title}
+        {chip}
+      </h2>
+      {children}
     </div>
   )
 }
 
-/** The page head: title, what is ranked, participants, period, freshness. */
-function Hero({ title, description, participants, participantsLabel, period, meta, generatedAt }: {
-  title: string
-  description: string
-  participants: number | undefined
-  participantsLabel: [string, string, string]
-  period: LeaderboardPeriod | undefined
-  meta: LeaderboardMeta | undefined
-  generatedAt: string | undefined
-}) {
+function PeriodChip({ period }: { period: LeaderboardPeriod | undefined }) {
+  if (!period) return null
   return (
-    <section className="relative overflow-hidden rounded-2xl bg-lb-deep px-5 py-6 text-white sm:px-8 sm:py-8">
-      <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full bg-lb-purple/70 blur-2xl" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-24 right-24 size-48 rounded-full bg-lb-gold/20 blur-3xl" />
-      <div className="relative">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-lb-gold">OkurmenKIDS · Leaderboard</p>
-        <h1 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-3xl">{title}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-white/80">{description}</p>
-        <div className="mt-5 grid gap-2 sm:grid-cols-3">
-          <Stat
-            icon={<Users className="size-4" aria-hidden />}
-            label="Участников в рейтинге"
-            loading={participants === undefined}
-            value={participants === undefined ? '' : `${formatNumber(participants)} ${plural(participants, participantsLabel)}`}
-          />
-          <Stat
-            icon={<CalendarRange className="size-4" aria-hidden />}
-            label={period ? periodTitle(period) : 'Период'}
-            loading={!period}
-            value={period ? periodRange(period) : ''}
-          />
-          <Stat
-            icon={<Clock className="size-4" aria-hidden />}
-            label="Данные обновлены"
-            loading={!meta && !generatedAt}
-            value={formatDateTime(meta?.last_activity ?? generatedAt)}
-          />
-        </div>
-      </div>
-    </section>
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-lb-gold-soft px-2.5 py-1 text-xs font-bold text-lb-gold-dark">
+      {period.is_current ? <span className="size-1.5 animate-pulse rounded-full bg-lb-success" aria-hidden /> : null}
+      {periodTitle(period)}
+    </span>
   )
 }
 
-function SectionHead({ title, children }: { title: string; children?: ReactNode }) {
+/** The podium sits on a soft purple/gold glow — the visual centre of the page. */
+function PodiumStage({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-lb-line px-4 py-3 sm:px-5">
-      <h2 className="text-base font-bold text-lb-deep">{title}</h2>
-      {children}
+    <div className="relative px-3 pt-6 sm:px-8 sm:pt-7">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 top-6 bg-[radial-gradient(ellipse_at_50%_100%,rgba(246,184,47,0.18),transparent_60%),radial-gradient(ellipse_at_50%_20%,rgba(59,22,141,0.07),transparent_55%)]" />
+      <div className="relative mx-auto max-w-2xl">{children}</div>
+      <div aria-hidden className="relative h-2 rounded-t-sm bg-gradient-to-r from-transparent via-lb-line to-transparent" />
     </div>
   )
 }
@@ -168,10 +145,17 @@ function PeriodBar({ state }: { state: ReturnType<typeof useLeaderboardPeriod> }
   )
 }
 
-function periodNote(period: LeaderboardPeriod | undefined): string | null {
-  if (!period) return null
-  return period.is_current ? 'Период ещё идёт — рейтинг обновляется по мере новых результатов.' : null
+/** The biggest climb among the loaded rows (real `change` values only). */
+function biggestClimb(rows: LeaderboardStudent[]) {
+  let best: LeaderboardStudent | null = null
+  for (const row of rows) {
+    if (row.hidden || row.change?.status !== 'up') continue
+    if (!best || row.change.value > (best.change?.value ?? 0)) best = row
+  }
+  return best
 }
+
+const layoutClass = 'grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]'
 
 // ---------------------------------------------------------------------------
 // Топ студентов
@@ -187,51 +171,54 @@ export function StudentsLeaderboardPage() {
   const filtered = Boolean(search || group || course || order === 'asc')
 
   const board = useStudentBoard({ ...state.params, q: search, group, course, order }, state.ready)
+  const groupsTop = useGroupBoard({ ...state.params, page_size: 5 }, state.ready)
   const first = board.data?.pages[0]
   const rows = board.data?.pages.flatMap((page) => page.results) ?? []
   const meta = state.meta.data
   const groups = (meta?.groups ?? []).filter((g) => !course || g.course === course)
+  const topGroups = groupsTop.data?.pages[0]
 
   const podium: PodiumEntry[] = (first?.podium ?? []).map((row) => ({
     key: row.key, rank: row.rank, title: row.name, subtitle: row.group?.name, detail: row.course?.name,
-    value: `${formatNumber(row.xp)} XP`, initials: row.initials, hidden: row.hidden,
+    value: `${formatNumber(row.xp)} XP`, valueCaption: 'за период', initials: row.initials, hidden: row.hidden,
     valueHint: `Посещаемость ${row.breakdown.attendance} · ДЗ ${row.breakdown.homework} · Тесты ${row.breakdown.tests}`,
   }))
   const loading = !state.ready || board.isPending
+  const leader = first?.podium[0]
+  const climber = !filtered ? biggestClimb(rows) : null
+  const bestGroup = topGroups?.podium[0]
 
   return (
     <div className="space-y-5">
       <Hero
-        title="Топ студентов"
-        description="Лучшие ученики академии за выбранный период. XP начисляются за посещение занятий, сданные домашние задания и результаты тестов — по одинаковым правилам для всех."
-        participants={first?.participants}
-        participantsLabel={['студент', 'студента', 'студентов']}
+        description="Лучшие ученики академии за выбранный период. XP — за посещение занятий, сданные домашние задания и тесты, по одинаковым правилам для всех."
+        students={first?.participants}
+        groups={topGroups?.participants}
         period={first?.period}
-        meta={meta}
-        generatedAt={first?.generated_at}
+        updatedAt={meta ? meta.last_activity ?? first?.generated_at ?? null : undefined}
       />
       <PeriodBar state={state} />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className={layoutClass}>
         <div className="min-w-0 space-y-5">
-          <Panel aria-label="Пьедестал">
-            <SectionHead title={first ? `Топ-3 · ${periodTitle(first.period)}` : 'Топ-3'} />
-            <div className="px-3 pb-0 pt-8 sm:px-8">
+          <Panel aria-label="Пьедестал" className="overflow-hidden">
+            <SectionHead icon={<Crown className="size-4" aria-hidden />} title="Топ студентов" chip={<PeriodChip period={first?.period} />} />
+            <PodiumStage>
               {loading ? <PodiumSkeleton /> : board.isError && !first ? null : podium.length ? (
                 <Podium entries={podium} label="Три лучших студента" />
               ) : (
                 <EmptyState title="Пока нет результатов" description="За этот период ещё нет начисленных XP. Выберите другой период или загляните позже." />
               )}
-            </div>
+            </PodiumStage>
           </Panel>
 
-          <Panel aria-label="Рейтинг студентов">
-            <SectionHead title="Рейтинг">
-              {first && filtered ? (
-                <span className="text-xs text-ink-secondary">Найдено: {formatNumber(first.count)}</span>
-              ) : null}
-            </SectionHead>
-            <div className="flex flex-col gap-2 border-b border-lb-line px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+          <Panel aria-label="Рейтинг студентов" className="overflow-hidden">
+            <SectionHead
+              icon={<ListOrdered className="size-4" aria-hidden />}
+              title="Рейтинг"
+              chip={first && filtered ? <span className="text-xs font-semibold text-lb-muted">Найдено: {formatNumber(first.count)}</span> : null}
+            />
+            <div className="flex flex-col gap-2 px-4 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
               <SearchBox value={q} onChange={setQ} label="Поиск студента" />
               <FilterSelect label="Направление" value={course} onChange={(v) => { setCourse(v); setGroup('') }}
                 options={(meta?.courses ?? []).map((c) => ({ value: c.key, label: c.name }))} />
@@ -239,13 +226,12 @@ export function StudentsLeaderboardPage() {
                 options={groups.map((g) => ({ value: g.key, label: g.name }))} />
               <OrderToggle order={order} onChange={setOrder} />
             </div>
-            {periodNote(first?.period) ? <p className="px-4 pt-3 text-xs text-ink-muted sm:px-5">{periodNote(first?.period)}</p> : null}
-            <div aria-live="polite" aria-busy={board.isFetching}>
+            <div aria-live="polite" aria-busy={board.isFetching} className={cn('border-t border-lb-line transition-opacity', board.isFetching && !board.isFetchingNextPage && 'opacity-70')}>
               {loading ? <RowsSkeleton /> : board.isError && !first ? (
                 <ErrorState onRetry={() => void board.refetch()} />
               ) : rows.length === 0 ? (
                 filtered ? (
-                  <EmptyState title="Никого не нашли" description="Попробуйте изменить поиск или сбросить фильтры." />
+                  <EmptyState kind="search" title="Никого не нашли" description="Попробуйте изменить поиск или сбросить фильтры." />
                 ) : (
                   <EmptyState title="Рейтинг пуст" description="За этот период ещё нет начисленных XP." />
                 )
@@ -262,7 +248,13 @@ export function StudentsLeaderboardPage() {
         </div>
 
         <aside className="min-w-0 space-y-5" aria-label="Дополнительно">
-          {state.ready ? <TopGroupsCard period={state.params} /> : null}
+          <HighlightsCard
+            leader={leader && !leader.hidden ? { name: leader.name, detail: leader.group?.name ?? '', value: `${formatNumber(leader.xp)} XP` } : null}
+            climber={climber && climber.change ? { name: climber.name, detail: climber.group?.name ?? '', value: climber.change.value } : null}
+            group={bestGroup ? { name: bestGroup.name, value: formatNumber(bestGroup.average_xp) } : null}
+          />
+          <TopGroupsCard rows={topGroups?.results} isError={groupsTop.isError} />
+          <TeamCard />
           <RulesCard rules={meta?.rules} />
         </aside>
       </div>
@@ -283,65 +275,73 @@ export function GroupsLeaderboardPage() {
   const filtered = Boolean(search || course || order === 'asc')
 
   const board = useGroupBoard({ ...state.params, q: search, course, order }, state.ready)
+  const studentsTop = useStudentBoard({ ...state.params, page_size: 5 }, state.ready)
   const first = board.data?.pages[0]
   const rows = board.data?.pages.flatMap((page) => page.results) ?? []
   const meta = state.meta.data
   const loading = !state.ready || board.isPending
+  const topStudents = studentsTop.data?.pages[0]
 
   const podium: PodiumEntry[] = (first?.podium ?? []).map((group) => ({
     key: group.key, rank: group.rank, title: group.name, subtitle: group.course?.name,
     detail: `${group.members} ${plural(group.members, ['студент', 'студента', 'студентов'])} · Σ ${formatNumber(group.total_xp)} XP`,
-    value: `${formatNumber(group.average_xp)} XP/чел.`, valueHint: 'Средний XP на студента', initials: '',
+    value: `${formatNumber(group.average_xp)} XP`, valueCaption: 'в среднем на студента', valueHint: 'Средний XP на студента', initials: '',
     avatar: (
-      <span className="flex min-h-14 items-center justify-center sm:min-h-20">
+      <span className="flex h-14 items-center justify-center sm:h-[4.5rem]">
         <MemberStack members={group.top_members} groupKey={group.key} size="md" max={3} />
       </span>
     ),
   }))
+  const leader = topStudents?.podium[0]
+  const bestGroup = first?.podium[0]
 
   return (
     <div className="space-y-5">
       <Hero
-        title="Топ групп"
-        description="Рейтинг учебных групп за выбранный период. Группы сравниваются по среднему XP на одного студента, чтобы маленькие и большие группы были в равных условиях."
-        participants={first?.participants}
-        participantsLabel={['группа', 'группы', 'групп']}
+        description="Рейтинг учебных групп за выбранный период. Группы сравниваются по среднему XP на одного студента — маленькие и большие группы в равных условиях."
+        students={first?.students_ranked}
+        groups={first?.participants}
         period={first?.period}
-        meta={meta}
-        generatedAt={first?.generated_at}
+        updatedAt={meta ? meta.last_activity ?? first?.generated_at ?? null : undefined}
       />
       <PeriodBar state={state} />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className={layoutClass}>
         <div className="min-w-0 space-y-5">
-          <Panel aria-label="Пьедестал групп">
-            <SectionHead title={first ? `Топ-3 групп · ${periodTitle(first.period)}` : 'Топ-3 групп'} />
-            <div className="px-3 pb-0 pt-8 sm:px-8">
+          <Panel aria-label="Пьедестал групп" className="overflow-hidden">
+            <SectionHead
+              icon={<Crown className="size-4" aria-hidden />}
+              title={<>Топ групп <InfoHint label="Как считается рейтинг групп">Средний XP = сумма XP текущих студентов группы за период ÷ их число (включая студентов без баллов). Сумма XP показана справочно.</InfoHint></>}
+              chip={<PeriodChip period={first?.period} />}
+            />
+            <PodiumStage>
               {loading ? <PodiumSkeleton /> : board.isError && !first ? null : podium.length ? (
                 <Podium entries={podium} label="Три лучшие группы" />
               ) : (
                 <EmptyState title="Пока нет результатов" description="За этот период у групп ещё нет начисленных XP." />
               )}
-            </div>
+            </PodiumStage>
           </Panel>
 
-          <Panel aria-label="Рейтинг групп">
-            <SectionHead title="Все группы">
-              {first && filtered ? <span className="text-xs text-ink-secondary">Найдено: {formatNumber(first.count)}</span> : null}
-            </SectionHead>
-            <div className="flex flex-col gap-2 border-b border-lb-line px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+          <Panel aria-label="Рейтинг групп" className="overflow-hidden">
+            <SectionHead
+              icon={<Users className="size-4" aria-hidden />}
+              title="Все группы"
+              chip={first && filtered ? <span className="text-xs font-semibold text-lb-muted">Найдено: {formatNumber(first.count)}</span> : null}
+            />
+            <div className="flex flex-col gap-2 px-4 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
               <SearchBox value={q} onChange={setQ} label="Поиск группы" />
               <FilterSelect label="Направление" value={course} onChange={setCourse}
                 options={(meta?.courses ?? []).map((c) => ({ value: c.key, label: c.name }))} />
               <OrderToggle order={order} onChange={setOrder} />
             </div>
-            <p className="px-4 pt-3 text-xs text-ink-muted sm:px-5">Нажмите на группу, чтобы увидеть её студентов за этот период.</p>
-            <div aria-live="polite" aria-busy={board.isFetching} className="pt-1">
+            <p className="border-t border-lb-line bg-lb-bg/60 px-4 py-2 text-xs text-lb-muted sm:px-5">Нажмите на группу, чтобы увидеть её студентов за этот период.</p>
+            <div aria-live="polite" aria-busy={board.isFetching} className={cn('transition-opacity', board.isFetching && !board.isFetchingNextPage && 'opacity-70')}>
               {loading ? <RowsSkeleton /> : board.isError && !first ? (
                 <ErrorState onRetry={() => void board.refetch()} />
               ) : rows.length === 0 ? (
                 filtered ? (
-                  <EmptyState title="Ничего не нашли" description="Попробуйте изменить поиск или фильтр." />
+                  <EmptyState kind="search" title="Ничего не нашли" description="Попробуйте изменить поиск или фильтр." />
                 ) : (
                   <EmptyState title="Рейтинг пуст" description="За этот период ещё нет начисленных XP." />
                 )
@@ -358,8 +358,13 @@ export function GroupsLeaderboardPage() {
         </div>
 
         <aside className="min-w-0 space-y-5" aria-label="Дополнительно">
-          <GroupMethodCard />
-          {state.ready ? <TopStudentsCard period={state.params} /> : null}
+          <TeamCard link={false} />
+          <HighlightsCard
+            leader={leader && !leader.hidden ? { name: leader.name, detail: leader.group?.name ?? '', value: `${formatNumber(leader.xp)} XP` } : null}
+            climber={null}
+            group={bestGroup ? { name: bestGroup.name, value: formatNumber(bestGroup.average_xp) } : null}
+          />
+          <TopStudentsCard rows={topStudents?.results} isError={studentsTop.isError} />
           <RulesCard rules={meta?.rules} />
         </aside>
       </div>
