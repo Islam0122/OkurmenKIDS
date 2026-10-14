@@ -78,3 +78,55 @@ Attendance, HomeworkResult, Homework, Lesson, Student, Group, Course и
 (топ студентов) и `/leaderboard/groups`. Отдельный домен: тот же фронтенд с
 `VITE_APP_MODE=leaderboard`; на бэкенде добавьте домен в
 `LEADERBOARD_SITE_ORIGINS` (CORS).
+
+## Тестирование
+
+### Автотесты
+
+```bash
+# backend — расчёт XP, периоды, часовой пояс, группы, приватность, API, демо-команда
+cd backend && DJANGO_ENV=testing python manage.py test apps.leaderboard
+
+# frontend — страницы /leaderboard и /leaderboard/groups (API замокан)
+cd frontend && npx vitest run src/features/leaderboardSite
+npm run build   # production-сборка
+```
+
+### Вручную на демо-данных
+
+```bash
+cd backend
+python manage.py migrate
+python manage.py seed_leaderboard_demo        # 6 групп «[DEMO-LB] …», 39 студентов, данные с 1 января прошлого года по сегодня
+python manage.py runserver                    # API на :8000
+
+cd frontend && npm run dev                    # http://localhost:5173/leaderboard
+```
+
+Команда работает только вне production (`DJANGO_ENV=production` — отказ),
+при повторном запуске пересоздаёт демо-данные, а
+`python manage.py seed_leaderboard_demo --clear` удаляет только их (группы,
+курсы и тест с пометкой «[DEMO-LB]» и их студентов) — реальные данные не
+затрагиваются.
+
+Что проверить:
+
+| Что | Где / как | Ожидается |
+|---|---|---|
+| Период | Год / Месяц / Неделя, стрелки недели, выбор месяца и года | пьедестал, таблица, число участников и даты периода меняются; будущие периоды недоступны |
+| Динамика | месяц или неделя | ▲ / ▼ / — 0; последний студент группы «Python Start» появился на этой неделе → NEW |
+| Приватность | рейтинг за год | одна строка «Скрытый участник» без имени и группы |
+| Поиск и фильтры | поиск по имени, «Направление», «Группа», кнопка XP | список сужается, места остаются общими; «Показать ещё» догружает |
+| Топ групп | `/leaderboard/groups`, клик по группе | ранжирование по среднему XP на студента; раскрывается список студентов группы |
+| Исправление результата | в админке поменять отметку посещаемости демо-студента | рейтинг меняется при следующем запросе (кэш сбрасывается) |
+| Ошибки | остановить backend и обновить страницу | сообщение «Не удалось загрузить рейтинг» и кнопка «Повторить» |
+| Адаптивность | 1440 / 1024 / 768 / 390 px (DevTools) | без горизонтальной прокрутки, на телефоне карточки вместо таблицы |
+
+Проверка API напрямую:
+
+```bash
+curl "http://localhost:8000/api/v1/public/leaderboard/meta/"
+curl "http://localhost:8000/api/v1/public/leaderboard/students/?period=month&year=2026&month=10&page_size=5"
+curl "http://localhost:8000/api/v1/public/leaderboard/groups/?period=week&week_start=2026-10-12"
+curl -X POST "http://localhost:8000/api/v1/public/leaderboard/students/"   # → 405, только чтение
+```

@@ -368,3 +368,37 @@ class PublicApiTests(LeaderboardFixture):
         self.attend(self.alice, dt.date(2025, 3, 14))
         second = self.get("public-leaderboard-students", **self.params).json()
         self.assertEqual(second["results"][0]["xp"], 30)
+
+
+class DemoSeedCommandTests(TestCase):
+    def test_seed_fills_every_period_and_clear_removes_only_demo_data(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        real = Group.objects.create(name="Real group", course=Course.objects.create(name="Real", count_lesson=1),
+                                    start_date=dt.date(2025, 1, 1))
+        call_command("seed_leaderboard_demo", stdout=StringIO())
+        today = services.timezone.localdate()
+        for period in (services.year_period(today.year), services.month_period(today.year, today.month),
+                       services.week_period(today)):
+            board = services.compute(period, today=today)
+            self.assertTrue(board["students"], period)
+            self.assertTrue(board["groups"], period)
+        board = services.compute(services.year_period(today.year), today=today)
+        self.assertTrue(any(r["hidden"] for r in board["students"]))
+        self.assertTrue(any(r["change"] for r in board["students"]))
+
+        call_command("seed_leaderboard_demo", "--clear", stdout=StringIO())
+        self.assertFalse(Group.objects.filter(name__startswith="[DEMO-LB]").exists())
+        self.assertFalse(Student.objects.exists())
+        self.assertTrue(Group.objects.filter(pk=real.pk).exists())
+
+    def test_refuses_in_production(self):
+        from unittest import mock
+
+        from django.core.management import CommandError, call_command
+
+        with mock.patch.dict("os.environ", {"DJANGO_ENV": "production"}), self.assertRaises(CommandError):
+            call_command("seed_leaderboard_demo")
+        self.assertFalse(Group.objects.exists())
