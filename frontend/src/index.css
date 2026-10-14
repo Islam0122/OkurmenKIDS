@@ -28,6 +28,21 @@
   --color-info: #2563a8;
   --color-info-soft: #e7f0fa;
 
+  /* Public leaderboard site (features/leaderboardSite) — the OkurmenKIDS
+     logo colors: deep purple + gold on a light, cool background. */
+  --color-lb-purple: #321783;
+  --color-lb-deep: #24105e;
+  --color-lb-purple-50: #f1eefb;
+  --color-lb-purple-100: #e3dcf6;
+  --color-lb-gold: #f5b52e;
+  --color-lb-gold-soft: #fdf3dc;
+  --color-lb-silver: #a7b0c2;
+  --color-lb-bronze: #c97f45;
+  --color-lb-bg: #f8f9fc;
+  --color-lb-line: #e7e8f0;
+  --color-lb-success: #16a34a;
+  --color-lb-danger: #ef4444;
+
   /* Caption for the phone bottom bar only: five labels must fit in 320px. */
   --text-2xs: 0.6875rem; /* 11px */
   --text-2xs--line-height: 1rem;

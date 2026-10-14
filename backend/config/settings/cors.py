@@ -10,6 +10,10 @@ CORS_ALLOWED_ORIGINS = [
     # VITE_APP_MODE=schedule), e.g. https://schedule.okurmenkids.com —
     # comma-separated. Public, read-only: it calls GET /api/v1/public/schedule/* only.
     *[o.strip().rstrip("/") for o in os.getenv("SCHEDULE_SITE_ORIGINS", "").split(",") if o.strip()],
+    # The public «OkurmenKIDS Leaderboard» site (VITE_APP_MODE=leaderboard),
+    # e.g. https://leaderboard.okurmenkids.com — comma-separated. Public,
+    # read-only: it calls GET /api/v1/public/leaderboard/* only.
+    *[o.strip().rstrip("/") for o in os.getenv("LEADERBOARD_SITE_ORIGINS", "").split(",") if o.strip()],
 ]
 
 CORS_ALLOW_METHODS = [

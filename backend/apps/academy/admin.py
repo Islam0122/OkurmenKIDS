@@ -509,6 +509,7 @@ class StudentAdmin(SuperuserOnlyDeleteMixin, admin.ModelAdmin):
     fieldsets = (
         ("Основная информация", {"fields": ("first_name", "last_name", "group", "enrollment_date", "is_active", "status")}),
         ("Контакты", {"fields": ("phone", "parent_phone")}),
+        ("Публичный рейтинг", {"fields": ("show_in_leaderboard",)}),
         ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 

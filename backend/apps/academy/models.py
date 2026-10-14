@@ -259,6 +259,16 @@ class Student(models.Model):
         help_text="Фактическая дата начала обучения. Используется для расчёта права на стипендию.",
     )
 
+    # Privacy switch for the public leaderboard (apps.leaderboard): a parent
+    # may ask for their child not to be listed. Only the leaderboard reads
+    # it; the student keeps earning XP and still counts towards the group.
+    show_in_leaderboard = models.BooleanField(
+        default=True,
+        verbose_name="Показывать в публичном рейтинге",
+        help_text="Если выключено, имя студента не показывается на публичном сайте рейтинга "
+        "(баллы группы при этом учитываются).",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 

@@ -56,6 +56,7 @@ LOCAL_APPS = [
     "apps.worklog.apps.WorklogConfig",
     "apps.assistant.apps.AssistantConfig",
     "apps.accounting.apps.AccountingConfig",
+    "apps.leaderboard.apps.LeaderboardConfig",
 
 ]
 
@@ -216,6 +217,7 @@ REST_FRAMEWORK = {
         "training_write": "3000/hour",
         # Public schedule site (apps/academy/public_schedule_views, per IP, no login).
         "public_schedule": env("PUBLIC_SCHEDULE_RATE", default="1200/hour"),
+        "public_leaderboard": env("PUBLIC_LEADERBOARD_RATE", default="1200/hour"),
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -578,3 +580,8 @@ PUBLIC_SCHEDULE_SHOW_ROOMS = env.bool("PUBLIC_SCHEDULE_SHOW_ROOMS", default=True
 PUBLIC_SCHEDULE_PAST_DAYS = env.int("PUBLIC_SCHEDULE_PAST_DAYS", default=31)
 PUBLIC_SCHEDULE_FUTURE_DAYS = env.int("PUBLIC_SCHEDULE_FUTURE_DAYS", default=120)
 PUBLIC_SCHEDULE_CACHE_SECONDS = env.int("PUBLIC_SCHEDULE_CACHE_SECONDS", default=60)
+
+# ---------------------------------------------------------------------------
+# Public leaderboard site (leaderboard.okurmenkids.com) — see apps.leaderboard.
+# ---------------------------------------------------------------------------
+PUBLIC_LEADERBOARD_CACHE_SECONDS = env.int("PUBLIC_LEADERBOARD_CACHE_SECONDS", default=120)
