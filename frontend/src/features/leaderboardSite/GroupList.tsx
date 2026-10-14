@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Users } from 'lucide-react'
 
 import type { PeriodParams } from '@/api/publicLeaderboard'
 import { useStudentBoard } from '@/hooks/usePublicLeaderboard'
@@ -19,7 +19,13 @@ export function MemberStack({ members, groupKey, size = 'sm', max = 4 }: {
   return (
     <span className="flex -space-x-2" aria-label={`Лидеры группы: ${members.map((m) => m.name).join(', ')}`}>
       {members.slice(0, max).map((member) => (
-        <Avatar key={member.name} initials={size === 'sm' ? member.initials.slice(0, 1) : member.initials} seed={`${groupKey}:${member.name}`} size={size} className="ring-2 ring-white" />
+        <Avatar
+          key={member.name}
+          initials={size === 'sm' ? member.initials.slice(0, 1) : member.initials}
+          seed={`${groupKey}:${member.name}`}
+          size={size}
+          className="ring-2 ring-white"
+        />
       ))}
     </span>
   )
@@ -32,15 +38,15 @@ function GroupMembers({ group, period }: { group: LeaderboardGroup; period: Peri
   if (query.isPending) return <RowsSkeleton rows={3} />
   if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
   const rows = query.data.pages.flatMap((page) => page.results)
-  if (!rows.length) return <p className="px-4 py-4 text-sm text-ink-secondary">В этом периоде у группы нет участников с XP.</p>
+  if (!rows.length) return <p className="px-5 py-4 text-sm text-lb-muted">В этом периоде у группы нет участников с XP.</p>
   return (
-    <ol className="divide-y divide-lb-line" aria-label={`Студенты группы ${group.name}`}>
+    <ol className="grid gap-x-6 px-3 py-2 sm:grid-cols-2 sm:px-5" aria-label={`Студенты группы ${group.name}`}>
       {rows.map((row) => (
-        <li key={row.key} className="flex items-center gap-3 px-4 py-2">
-          <span className="w-12 shrink-0 text-xs tabular-nums text-ink-secondary">#{row.rank}</span>
+        <li key={row.key} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-white">
+          <span className="w-10 shrink-0 text-xs font-semibold tabular-nums text-lb-muted">#{row.rank}</span>
           <Avatar initials={row.initials} seed={row.key} hidden={row.hidden} size="sm" />
-          <span className={cn('min-w-0 flex-1 truncate text-sm', row.hidden ? 'italic text-ink-secondary' : 'text-ink')}>{row.name}</span>
-          <span className="text-sm font-semibold tabular-nums text-lb-deep">{formatNumber(row.xp)} XP</span>
+          <span className={cn('min-w-0 flex-1 truncate text-sm', row.hidden ? 'italic text-lb-muted' : 'font-medium text-lb-ink')}>{row.name}</span>
+          <span className="text-sm font-bold tabular-nums text-lb-deep">{formatNumber(row.xp)} <span className="text-[11px] text-lb-gold-dark">XP</span></span>
         </li>
       ))}
     </ol>
@@ -51,39 +57,39 @@ function GroupRow({ group, period }: { group: LeaderboardGroup; period: PeriodPa
   const [open, setOpen] = useState(false)
   const panelId = `group-${group.key}`
   return (
-    <li>
+    <li className={cn('transition-colors', open && 'bg-lb-bg/60')}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-lb-purple-50/50 focus-visible:outline-lb-purple"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-lb-purple-50/60 focus-visible:outline-lb-purple sm:gap-4 sm:px-5"
       >
         <RankNumber rank={group.rank} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-semibold text-ink">{group.name}</span>
-          <span className="flex items-center gap-2 text-xs text-ink-secondary">
+          <span className="block truncate font-bold text-lb-ink">{group.name}</span>
+          <span className="flex items-center gap-1.5 text-xs text-lb-muted">
             <span className="min-w-0 truncate">{group.course?.name ?? '—'}</span>
             <span aria-hidden>·</span>
+            <Users className="size-3 shrink-0" aria-hidden />
             <span className="whitespace-nowrap">
               {group.active_students} из {group.members} {plural(group.members, ['студента', 'студентов', 'студентов'])}
             </span>
           </span>
         </span>
-        <span className="hidden sm:block"><MemberStack members={group.top_members} groupKey={group.key} /></span>
+        <span className="hidden lg:block"><MemberStack members={group.top_members} groupKey={group.key} /></span>
         <span className="flex shrink-0 flex-col items-end">
-          <span className="text-sm font-bold tabular-nums text-lb-deep" title="Средний XP на студента">
-            {formatNumber(group.average_xp)} <span className="text-xs font-medium text-ink-secondary">XP/чел.</span>
+          <span className="inline-flex items-baseline gap-1 whitespace-nowrap" title="Средний XP на студента">
+            <span className="text-base font-extrabold tabular-nums text-lb-deep">{formatNumber(group.average_xp)}</span>
+            <span className="text-[11px] font-bold text-lb-gold-dark">XP/чел.</span>
           </span>
-          <span className="text-xs tabular-nums text-ink-muted" title="Сумма XP группы">Σ {formatNumber(group.total_xp)}</span>
+          <span className="text-[11px] tabular-nums text-lb-muted" title="Сумма XP группы">Σ {formatNumber(group.total_xp)} XP</span>
         </span>
-        <span className="flex shrink-0 items-center gap-1">
-          <span className="hidden sm:inline"><RankChangeBadge change={group.change} /></span>
-          <ChevronDown className={cn('size-4 text-ink-muted transition-transform', open && 'rotate-180')} aria-hidden />
-        </span>
+        <span className="hidden w-16 justify-end sm:flex"><RankChangeBadge change={group.change} /></span>
+        <ChevronDown className={cn('size-4 shrink-0 text-lb-muted transition-transform duration-200', open && 'rotate-180 text-lb-purple')} aria-hidden />
       </button>
       {open ? (
-        <div id={panelId} className="border-t border-lb-line bg-lb-bg/60">
+        <div id={panelId} className="lb-rise border-t border-lb-line">
           <GroupMembers group={group} period={period} />
         </div>
       ) : null}

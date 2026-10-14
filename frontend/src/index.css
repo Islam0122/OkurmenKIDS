@@ -30,17 +30,22 @@
 
   /* Public leaderboard site (features/leaderboardSite) — the OkurmenKIDS
      logo colors: deep purple + gold on a light, cool background. */
-  --color-lb-purple: #321783;
-  --color-lb-deep: #24105e;
-  --color-lb-purple-50: #f1eefb;
-  --color-lb-purple-100: #e3dcf6;
-  --color-lb-gold: #f5b52e;
-  --color-lb-gold-soft: #fdf3dc;
-  --color-lb-silver: #a7b0c2;
-  --color-lb-bronze: #c97f45;
-  --color-lb-bg: #f8f9fc;
-  --color-lb-line: #e7e8f0;
-  --color-lb-success: #16a34a;
+  --color-lb-purple: #3b168d;
+  --color-lb-deep: #291064;
+  --color-lb-purple-50: #f3f0fc;
+  --color-lb-purple-100: #e6defa;
+  --color-lb-gold: #f6b82f;
+  --color-lb-gold-dark: #8a5a00;
+  --color-lb-gold-soft: #fff3d3;
+  --color-lb-silver: #a9b2c6;
+  --color-lb-silver-soft: #eef1f6;
+  --color-lb-bronze: #cd8346;
+  --color-lb-bronze-soft: #fbeadb;
+  --color-lb-bg: #f7f8fc;
+  --color-lb-line: #eceaf3;
+  --color-lb-ink: #21164d;
+  --color-lb-muted: #777b91;
+  --color-lb-success: #16a36a;
   --color-lb-danger: #ef4444;
 
   /* Caption for the phone bottom bar only: five labels must fit in 320px. */
@@ -147,5 +152,47 @@
   }
   .data-table :where(thead + tbody) {
     @apply border-t border-border;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Public leaderboard micro-animations — subtle, and off for anyone who asked
+   the OS for reduced motion.
+   --------------------------------------------------------------------------- */
+@keyframes lb-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lb-shine {
+  0%, 70% { transform: translateX(-120%) skewX(-18deg); }
+  100% { transform: translateX(220%) skewX(-18deg); }
+}
+@keyframes lb-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@utility lb-rise {
+  animation: lb-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@utility lb-float {
+  animation: lb-float 4s ease-in-out infinite;
+}
+/* A soft light sweep across the gold pedestal, every few seconds. */
+@utility lb-shine {
+  position: relative;
+  overflow: hidden;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+    animation: lb-shine 5s ease-in-out infinite;
+    pointer-events: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-rise, .lb-float, .lb-shine::after {
+    animation: none !important;
   }
 }
