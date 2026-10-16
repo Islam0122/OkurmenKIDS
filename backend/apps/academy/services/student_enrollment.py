@@ -100,7 +100,11 @@ def transfer_student(
     preconditions re-checked against it, so a double submit can never write
     two transfer events."""
     with transaction.atomic():
-        locked = Student.objects.select_for_update().select_related("group").get(pk=student.pk)
+        # Lock the student row only. `Student.group` is nullable, so a
+        # select_related("group") becomes a LEFT OUTER JOIN, and PostgreSQL
+        # refuses FOR UPDATE on the nullable side of an outer join. The
+        # current group is read lazily below (`locked.group`), after the lock.
+        locked = Student.objects.select_for_update().get(pk=student.pk)
         if locked.status not in TRANSFERABLE_STATUSES:
             raise ValidationError(
                 f"Студент «{locked}» {locked.get_status_display().lower()} — сначала активируйте его."
