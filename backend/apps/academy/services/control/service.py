@@ -131,6 +131,8 @@ class ControlService:
         lessons = list(
             lessons_qs.select_related(
                 "group", "subject", "teacher__user", "group_teacher__teacher__user", "completed_by",
+                # rules.evaluate_lesson reads the plan's homework_title (no extra queries).
+                "plan", "individual_plan",
             ).order_by("date", "start_time", "id")
         )
         if not lessons:
@@ -222,6 +224,18 @@ class ControlService:
             issues.append(f"Посещаемость не отмечена: {_lessons_word(attendance['total'] - attendance['completed'])}")
         missing_hw = sum(1 for c in due if c.homework_state == rules.COMPONENT_MISSING)
         unchecked_hw = sum(1 for c in due if c.homework_state == rules.COMPONENT_UNCHECKED)
+        # Where every held lesson stands on homework — the four cases Control
+        # tells apart. `completed`/`total` above stay "checked of the lessons
+        # whose checking is due"; not-required lessons are in neither.
+        homework.update({
+            "required": sum(1 for c in due if c.homework_required),
+            "assigned": sum(1 for c in due if c.homework_id is not None),
+            "missing": missing_hw,
+            "awaiting_review": unchecked_hw,
+            "awaiting_deadline": sum(1 for c in due if c.homework_state == rules.COMPONENT_WAITING),
+            "checked": sum(1 for c in due if c.homework_state == rules.COMPONENT_OK),
+            "not_required": sum(1 for c in due if not c.homework_required),
+        })
         if missing_hw:
             issues.append(f"ДЗ не выдано: {_lessons_word(missing_hw)}")
         if unchecked_hw:
@@ -560,6 +574,7 @@ def lesson_payload(check: LessonCheck) -> dict:
             "id": check.homework_id,
             "given": check.homework_id is not None,
             "not_required": lesson.homework_not_required,
+            "required": check.homework_required,
             "deadline": check.homework_deadline,
             "pending_check": check.pending_check,
         },

@@ -7,7 +7,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import type { ControlDetailParams } from '@/api/control'
 import { useControlDetail } from '@/hooks/useControl'
-import type { ControlLesson, ControlRow } from '@/types/control'
+import type { ControlHomeworkComponent, ControlLesson, ControlRow } from '@/types/control'
 import { cn } from '@/utils/cn'
 import { formatDateShort } from '@/utils/format'
 
@@ -20,6 +20,16 @@ export interface ControlRowDrawerProps {
   params: Omit<ControlDetailParams, 'group' | 'teacher'>
   periodLabel: string
   onClose: () => void
+}
+
+/** One line of the backend's own homework counts — never re-derived here. */
+function homeworkBreakdown(hw: ControlHomeworkComponent): string {
+  const parts = [`ДЗ: требуется на ${hw.required}`, `выдано ${hw.assigned}`, `проверено ${hw.checked}`]
+  if (hw.awaiting_review > 0) parts.push(`ждут проверки ${hw.awaiting_review}`)
+  if (hw.awaiting_deadline > 0) parts.push(`срок не наступил ${hw.awaiting_deadline}`)
+  if (hw.missing > 0) parts.push(`не выдано ${hw.missing}`)
+  if (hw.not_required > 0) parts.push(`без ДЗ ${hw.not_required}`)
+  return `${parts.join(' · ')}.`
 }
 
 function LessonSummaryLine({ lesson }: { lesson: ControlLesson }) {
@@ -109,6 +119,12 @@ export function ControlRowDrawer({ row, params, periodLabel, onClose }: ControlR
               <dd><ComponentCell component={current.grades} /></dd>
             </div>
           </dl>
+
+          {current.homework.required > 0 || current.homework.not_required > 0 ? (
+            <p className="text-xs text-ink-muted">
+              {homeworkBreakdown(current.homework)}
+            </p>
+          ) : null}
 
           {current.lessons.upcoming > 0 || current.lessons.cancelled > 0 ? (
             <p className="text-xs text-ink-muted">

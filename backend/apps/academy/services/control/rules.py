@@ -19,6 +19,11 @@ project already has:
 * **Closed** — `Lesson.status == COMPLETED` (services.lesson_lifecycle).
 * **Attendance filled** — `lesson_lifecycle.attendance_completed`: every
   *active* student of the group has an Attendance record.
+* **Homework required** — `lesson_lifecycle.homework_expected`: a Homework
+  row exists, or the lesson's plan declares one. A lesson whose plan has no
+  homework, or that is explicitly marked "ДЗ не требуется", has nothing to
+  give: it is "not required", never "ДЗ не выдано", and is left out of the
+  homework counts (the same rule that lets such a lesson be completed).
 * **Homework given** — `lesson_lifecycle.homework_satisfied`: a Homework
   row exists, or the lesson is explicitly marked "ДЗ не требуется".
 * **Homework checked** — the Lesson list's operational status
@@ -40,6 +45,7 @@ import dataclasses
 import datetime as dt
 
 from apps.academy.models import HomeworkResult, Lesson
+from apps.academy.services.lesson_lifecycle import plan_declares_homework
 
 # -- lesson states ----------------------------------------------------------
 STATE_DUE = "due"
@@ -214,7 +220,15 @@ class LessonCheck:
         return f"Отмечено {self.attendance_marked} из {self.students_total}"
 
     @property
+    def homework_required(self) -> bool:
+        """The lesson has a homework step: a Homework row, or a plan that
+        declares one and no «ДЗ не требуется» flag."""
+        return self.homework_state != COMPONENT_NOT_REQUIRED
+
+    @property
     def homework_label(self) -> str:
+        if self.homework_state == COMPONENT_NOT_REQUIRED and not self.lesson.homework_not_required:
+            return "Не предусмотрено планом"
         return {
             COMPONENT_OK: "Проверено",
             COMPONENT_MISSING: "Не выдано",
@@ -289,8 +303,12 @@ def evaluate_lesson(
     active_results = [r for r in results if r.student_id in student_ids]
     pending_check = sum(1 for r in active_results if r.status in PENDING_CHECK)
 
+    # No Homework row: missing only when the plan declares homework and the
+    # trainer didn't mark «ДЗ не требуется» (lesson_lifecycle.homework_expected).
+    homework_planned = bool(homeworks) or plan_declares_homework(lesson)
     if not homeworks:
-        homework_state = COMPONENT_NOT_REQUIRED if lesson.homework_not_required else COMPONENT_MISSING
+        missing = homework_planned and not lesson.homework_not_required
+        homework_state = COMPONENT_MISSING if missing else COMPONENT_NOT_REQUIRED
     elif not checking_due:
         homework_state = COMPONENT_WAITING
     elif pending_check:
@@ -301,7 +319,7 @@ def evaluate_lesson(
     # -- scores ---------------------------------------------------------------
     grades_missing: list[StudentRef] = []
     if not homeworks:
-        grades_state = COMPONENT_NOT_REQUIRED if lesson.homework_not_required else COMPONENT_NO_HOMEWORK
+        grades_state = COMPONENT_NO_HOMEWORK if homework_state == COMPONENT_MISSING else COMPONENT_NOT_REQUIRED
     elif not students:
         grades_state = COMPONENT_NO_STUDENTS
     elif not checking_due:
@@ -371,7 +389,8 @@ def evaluate_lesson(
         if homework_state == COMPONENT_WAITING and deadline is not None:
             notes.append(f"Срок сдачи ДЗ — {_fmt(deadline)}, проверка ещё не требуется")
         if homework_state == COMPONENT_NOT_REQUIRED:
-            notes.append("Отмечено «ДЗ не требуется»")
+            notes.append("Отмечено «ДЗ не требуется»" if lesson.homework_not_required
+                         else "ДЗ не предусмотрено планом занятия")
 
     if (
         lesson.teacher_id
