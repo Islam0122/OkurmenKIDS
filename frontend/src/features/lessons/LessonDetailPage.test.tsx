@@ -303,6 +303,43 @@ describe('LessonDetailPage', () => {
       expect(screen.queryByRole('button', { name: 'Дополнительные действия' })).not.toBeInTheDocument()
     })
 
+    it('offers the owning trainer «Исправить посещаемость» and opens the attendance editor', async () => {
+      vi.mocked(lessonsApi.get).mockResolvedValue(
+        buildLesson({
+          id: 7,
+          status: 'completed',
+          can_start: false,
+          can_complete: false,
+          can_cancel: false,
+          attendance_editable: true,
+        }),
+      )
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+
+      const user = userEvent.setup()
+      renderLessonDetail(7)
+
+      const button = await screen.findByRole('button', { name: 'Исправить посещаемость' })
+      expect(screen.queryByRole('button', { name: 'Посмотреть посещаемость' })).not.toBeInTheDocument()
+      await user.click(button)
+      expect(await screen.findByText('Attendance page')).toBeInTheDocument()
+    })
+
+    it('never offers a correction to a read-only Team Lead', async () => {
+      mockRole.role = 'team_lead'
+      vi.mocked(lessonsApi.get).mockResolvedValue(
+        buildLesson({ id: 7, status: 'completed', can_start: false, can_complete: false, can_cancel: false, attendance_editable: true }),
+      )
+      vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([])
+      vi.mocked(homeworkApi.list).mockResolvedValue(paginated([]))
+
+      renderLessonDetail(7)
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Посмотреть посещаемость' })).toBeInTheDocument())
+      expect(screen.queryByRole('button', { name: 'Исправить посещаемость' })).not.toBeInTheDocument()
+    })
+
     it('omits the homework view action when no homework was ever added', async () => {
       vi.mocked(lessonsApi.get).mockResolvedValue(
         buildLesson({

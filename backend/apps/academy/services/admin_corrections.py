@@ -3,9 +3,11 @@ and the homework itself — from Django Admin, also after the lesson is
 completed.
 
 A completed (or cancelled) lesson is locked for its Trainer: the API refuses
-any change (views._assert_lesson_editable / lesson_lifecycle
-.lesson_editing_locked). That lock stays exactly as it is. These functions
-are the one trusted server-side path around it, for Admin only:
+new homework (views._assert_lesson_editable / lesson_lifecycle
+.lesson_editing_locked) and any attendance change on a cancelled lesson
+(views._assert_attendance_editable). The owning Trainer may still correct
+attendance of a completed lesson through the regular API. These functions
+are the trusted Django-admin path, for Admin only:
 
 * the caller must be an administrator — a superuser or the ADMIN role, the
   project's own rule (apps.users.permissions.is_admin_user; access comes

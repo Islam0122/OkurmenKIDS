@@ -882,13 +882,13 @@ class LessonSerializer(_RequestAwareSerializer):
         return lesson_summary.homework_summary(obj)
 
     def get_attendance_editable(self, obj: Lesson) -> bool:
-        """Mirrors views._assert_lesson_editable — never a second,
+        """Mirrors views._assert_attendance_editable — never a second,
         frontend-only definition of "is this lesson locked" that could
         drift from the backend's own enforcement. Always False for a Team
         Lead, who only reads (see IsAdminOrOwningTeacher)."""
         if is_team_lead(self._request_user()):
             return False
-        return not lesson_lifecycle.lesson_editing_locked(obj)
+        return not lesson_lifecycle.attendance_editing_locked(obj)
 
     def validate(self, attrs):
         start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))
@@ -1035,6 +1035,17 @@ class AttendanceSerializer(_RequestAwareSerializer):
             self.fields["student"].queryset = Student.objects.filter(group_id__in=_teacher_group_ids(user))
 
     def validate(self, attrs):
+        if self.instance is not None:
+            # A saved mark is corrected in place (status/comment) — it is
+            # never re-pointed at another lesson or student, so an update can
+            # neither move a record into someone else's group nor around the
+            # lesson's own editing lock.
+            for name in ("lesson", "student"):
+                if name in attrs and attrs[name] != getattr(self.instance, name):
+                    raise serializers.ValidationError(
+                        {name: "Нельзя менять занятие или студента у существующей отметки."}
+                    )
+
         student = attrs.get("student", getattr(self.instance, "student", None))
         lesson = attrs.get("lesson", getattr(self.instance, "lesson", None))
 

@@ -76,14 +76,19 @@ class TrainerStaysLockedTests(CorrectionFixture):
         self.api = APIClient()
         self.api.force_authenticate(self.trainer.user)
 
-    def test_trainer_cannot_change_attendance_of_a_completed_lesson(self):
+    def test_trainer_corrects_own_attendance_of_a_completed_lesson_via_api(self):
+        # The owning trainer corrects attendance through the regular API
+        # (views._assert_attendance_editable); the lesson itself stays
+        # completed. The Django-admin correction below stays admin-only.
         bulk = self.api.post(f"/api/v1/lessons/{self.lesson.pk}/attendance/",
-                             [{"student": self.s1.pk, "status": "present"}], format="json")
-        self.assertEqual(bulk.status_code, 403)
+                             [{"student": self.s1.pk, "status": "late"}], format="json")
+        self.assertEqual(bulk.status_code, 200, bulk.data)
         direct = self.api.patch(f"/api/v1/attendance/{self.a1.pk}/", {"status": "present"}, format="json")
-        self.assertEqual(direct.status_code, 403)
+        self.assertEqual(direct.status_code, 200, direct.data)
         self.a1.refresh_from_db()
-        self.assertEqual(self.a1.status, Attendance.Status.ABSENT)
+        self.assertEqual(self.a1.status, Attendance.Status.PRESENT)
+        self.lesson.refresh_from_db()
+        self.assertEqual(self.lesson.status, Lesson.Status.COMPLETED)
 
     def test_trainer_cannot_add_homework_to_a_completed_lesson(self):
         response = self.api.post("/api/v1/homework/", {"lesson": self.lesson.pk, "title": "Новое"}, format="json")

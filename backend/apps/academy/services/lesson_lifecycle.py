@@ -192,11 +192,23 @@ def set_homework_not_required(lesson: Lesson, value: bool) -> Lesson:
 
 def lesson_editing_locked(lesson: Lesson) -> bool:
     """A lesson that's no longer open — COMPLETED (graded and closed) or
-    CANCELLED (never happened) — accepts no new Attendance or Homework rows
-    from a Teacher. Grading existing Homework (HomeworkResult status/score/
-    comment) is deliberately *not* locked: a teacher checks homework after
-    the lesson it was set in, so completion never freezes grades. Mirrors the frontend's own `isReadOnly` definition (completed OR
-    cancelled), so the "immutable historical record" rule is identical on
-    both sides for every write path — bulk attendance marking, direct
-    Attendance CRUD, and Homework creation alike."""
+    CANCELLED (never happened) — accepts no new Homework from a Teacher, and
+    no Attendance deletion. Grading existing Homework (HomeworkResult status/
+    score/comment) is deliberately *not* locked: a teacher checks homework
+    after the lesson it was set in, so completion never freezes grades.
+    Marking/correcting Attendance has its own, narrower lock — see
+    `attendance_editing_locked`."""
     return lesson.status in (Lesson.Status.COMPLETED, Lesson.Status.CANCELLED)
+
+
+def attendance_editing_locked(lesson: Lesson) -> bool:
+    """Attendance has its own, narrower lock than `lesson_editing_locked`:
+    only a CANCELLED lesson (it never happened) is frozen. A COMPLETED
+    lesson's attendance stays open to the Teacher who gave it, so a mistake
+    («отметил не того студента») can be corrected after the lesson is
+    closed — the completion checklist only needs every student marked, and
+    a correction never un-marks anyone (statuses change, rows stay; see
+    services.attendance_service). New Homework on a completed lesson is
+    still refused (`lesson_editing_locked`). Ownership is checked
+    separately (IsAdminOrOwningTeacher / views._assert_teacher_owns_lesson)."""
+    return lesson.status == Lesson.Status.CANCELLED

@@ -1,3 +1,4 @@
+import { AxiosError, AxiosHeaders } from 'axios'
 import { Route, Routes } from 'react-router-dom'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -137,8 +138,28 @@ describe('AttendancePage', () => {
     expect(screen.queryByText('Lesson detail page')).not.toBeInTheDocument()
   })
 
-  it('becomes read-only once the lesson is completed — no save button, no editable controls', async () => {
-    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status: 'completed', attendance_editable: false }))
+  it('lets the trainer correct attendance of a completed lesson and confirms the save', async () => {
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status: 'completed', attendance_editable: true }))
+    vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([
+      buildAttendanceRecord({ student: 1, student_name: 'Иванов Пётр', status: 'present' }),
+    ])
+    vi.mocked(lessonsApi.saveAttendance).mockResolvedValue([])
+
+    const user = userEvent.setup()
+    renderAttendance('/app/attendance?lesson=7&returnTo=%2Fapp%2Flessons%2F7')
+
+    await waitFor(() => expect(screen.getByText('Иванов Пётр')).toBeInTheDocument())
+    expect(screen.getByText(/Занятие уже проведено — вы можете исправить отметки/)).toBeInTheDocument()
+    const row = screen.getByText('Иванов Пётр').closest('li') as HTMLElement
+    await user.click(within(row).getByRole('radio', { name: 'Опоздал' }))
+    await user.click(screen.getByRole('button', { name: 'Сохранить посещаемость' }))
+
+    await waitFor(() => expect(lessonsApi.saveAttendance).toHaveBeenCalledWith(7, [{ student: 1, status: 'late' }]))
+    expect(await screen.findByText('Посещаемость успешно сохранена')).toBeInTheDocument()
+  })
+
+  it('becomes read-only once the lesson is cancelled — no save button, no editable controls', async () => {
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status: 'cancelled', attendance_editable: false }))
     vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([
       buildAttendanceRecord({ student: 1, student_name: 'Иванов Пётр', status: 'present' }),
     ])
@@ -150,6 +171,43 @@ describe('AttendancePage', () => {
     expect(screen.getByText(/больше нельзя редактировать/)).toBeInTheDocument()
     const row = screen.getByText('Иванов Пётр').closest('li') as HTMLElement
     expect(within(row).getByRole('radio', { name: 'Был' })).toBeDisabled()
+  })
+
+  it('stays read-only whenever the backend says so (e.g. a Team Lead viewing a completed lesson)', async () => {
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7, status: 'completed', attendance_editable: false }))
+    vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([
+      buildAttendanceRecord({ student: 1, student_name: 'Иванов Пётр', status: 'present' }),
+    ])
+
+    renderAttendance('/app/attendance?lesson=7&returnTo=%2Fapp%2Flessons%2F7')
+
+    await waitFor(() => expect(screen.getByText('Иванов Пётр')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Сохранить посещаемость' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Режим просмотра/)).toBeInTheDocument()
+  })
+
+  it('shows the backend error message when the save is refused', async () => {
+    vi.mocked(lessonsApi.get).mockResolvedValue(buildLesson({ id: 7 }))
+    vi.mocked(lessonsApi.getAttendanceRoster).mockResolvedValue([
+      buildAttendanceRecord({ student: 1, student_name: 'Иванов Пётр', status: 'present' }),
+    ])
+    vi.mocked(lessonsApi.saveAttendance).mockRejectedValue(
+      new AxiosError('Forbidden', '403', undefined, undefined, {
+        status: 403,
+        statusText: 'Forbidden',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { detail: 'Вы можете работать только со своими занятиями.' },
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderAttendance('/app/attendance?lesson=7')
+
+    await waitFor(() => expect(screen.getByText('Иванов Пётр')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Сохранить посещаемость' }))
+
+    expect(await screen.findByText('Вы можете работать только со своими занятиями.')).toBeInTheDocument()
   })
 
   it('shows an error toast and stays put when saving fails', async () => {
