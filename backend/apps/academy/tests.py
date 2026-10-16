@@ -5220,14 +5220,9 @@ class HomeworkGradingAfterCompletionTests(AcademyTestBase):
         self.assertFalse(HomeworkResult.objects.filter(homework=self.homework, student=self.student2).exists())
 
     def test_completed_lesson_itself_stays_locked(self):
-        # Grading is open, but the lesson record isn't: no attendance
-        # changes, no new homework, status can't be moved back or cancelled.
-        response = self.teacher1_client.post(
-            f"/api/v1/lessons/{self.lesson1.id}/attendance/",
-            [{"student": self.student1.id, "status": "absent"}],
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        # Grading (and attendance correction, see
+        # TeacherAttendanceCorrectionTests) is open, but the lesson record
+        # isn't: no new homework, status can't be moved back or cancelled.
         response = self.teacher1_client.post(
             "/api/v1/homework/", {"lesson": self.lesson1.id, "title": "Ещё ДЗ"}, format="json"
         )
@@ -5242,10 +5237,12 @@ class HomeworkGradingAfterCompletionTests(AcademyTestBase):
 
 class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
     """Once a lesson is COMPLETED or CANCELLED, a Teacher can no longer
-    attach new Attendance or Homework to it — the broader "immutable
-    historical record" rule (views._assert_lesson_editable /
-    services.lesson_lifecycle.lesson_editing_locked), on top of the
-    grading of its existing Homework, which stays open (tested above)."""
+    attach new Homework to it (views._assert_lesson_editable /
+    services.lesson_lifecycle.lesson_editing_locked). Attendance has its own,
+    narrower lock: a completed lesson's attendance stays correctable by the
+    Teacher who gave it, only a cancelled lesson's is frozen
+    (views._assert_attendance_editable / lesson_lifecycle
+    .attendance_editing_locked) — see TeacherAttendanceCorrectionTests."""
 
     def setUp(self):
         super().setUp()
@@ -5260,45 +5257,44 @@ class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
         self.lesson1.refresh_from_db()
         self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)
 
-    def test_teacher_cannot_bulk_mark_attendance_after_completion(self):
+    def test_teacher_can_correct_attendance_after_completion_in_bulk(self):
         response = self.teacher1_client.post(
             f"/api/v1/lessons/{self.lesson1.id}/attendance/",
             [{"student": self.student1.id, "status": "absent"}],
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         attendance = Attendance.objects.get(student=self.student1, lesson=self.lesson1)
-        self.assertEqual(attendance.status, Attendance.Status.PRESENT)  # untouched
+        self.assertEqual(attendance.status, Attendance.Status.ABSENT)
+        self.lesson1.refresh_from_db()
+        self.assertEqual(self.lesson1.status, Lesson.Status.COMPLETED)  # correction never reopens it
 
-    def test_teacher_cannot_create_attendance_directly_after_completion(self):
-        response = self.teacher1_client.post(
-            "/api/v1/attendance/",
-            {"student": self.student1.id, "lesson": self.other_lesson.id, "status": "present"},
-            format="json",
-        )
-        # other_lesson is still SCHEDULED — sanity check the direct-create
-        # path itself works before proving it's blocked once completed.
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-
-        # Remove student2's existing record first so the attempt below hits
-        # the completion lock (403), not the serializer's own "already
-        # marked" uniqueness check (400) — the two are independent guards.
+    def test_teacher_can_create_attendance_directly_after_completion(self):
+        # A student missed in the roster (e.g. no mark yet) can still be
+        # marked on the completed lesson.
         Attendance.objects.filter(student=self.student2, lesson=self.lesson1).delete()
         response = self.teacher1_client.post(
             "/api/v1/attendance/",
-            {"student": self.student2.id, "lesson": self.lesson1.id, "status": "present"},
+            {"student": self.student2.id, "lesson": self.lesson1.id, "status": "late"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
-    def test_teacher_cannot_update_existing_attendance_after_completion(self):
+    def test_teacher_can_update_existing_attendance_after_completion(self):
         record = Attendance.objects.get(student=self.student1, lesson=self.lesson1)
         response = self.teacher1_client.patch(
-            f"/api/v1/attendance/{record.id}/", {"status": "absent"}, format="json"
+            f"/api/v1/attendance/{record.id}/", {"status": "excused", "comment": "Справка"}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         record.refresh_from_db()
-        self.assertEqual(record.status, Attendance.Status.PRESENT)
+        self.assertEqual(record.status, Attendance.Status.EXCUSED)
+        self.assertEqual(record.comment, "Справка")
+
+    def test_teacher_cannot_delete_attendance_after_completion(self):
+        record = Attendance.objects.get(student=self.student1, lesson=self.lesson1)
+        response = self.teacher1_client.delete(f"/api/v1/attendance/{record.id}/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Attendance.objects.filter(pk=record.pk).exists())
 
     def test_teacher_cannot_add_homework_after_completion(self):
         response = self.teacher1_client.post(
@@ -5309,6 +5305,9 @@ class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_teacher_cannot_edit_attendance_or_homework_after_cancellation(self):
+        record = Attendance.objects.create(
+            student=self.student2, lesson=self.other_lesson, status=Attendance.Status.PRESENT
+        )
         lesson_lifecycle.cancel_lesson(self.other_lesson, self.teacher1.user)
 
         attendance_response = self.teacher1_client.post(
@@ -5317,6 +5316,20 @@ class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
             format="json",
         )
         self.assertEqual(attendance_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        create_response = self.teacher1_client.post(
+            "/api/v1/attendance/",
+            {"student": self.student1.id, "lesson": self.other_lesson.id, "status": "present"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        patch_response = self.teacher1_client.patch(
+            f"/api/v1/attendance/{record.id}/", {"status": "absent"}, format="json"
+        )
+        self.assertEqual(patch_response.status_code, status.HTTP_403_FORBIDDEN)
+        record.refresh_from_db()
+        self.assertEqual(record.status, Attendance.Status.PRESENT)
 
         homework_response = self.teacher1_client.post(
             "/api/v1/homework/",
@@ -5338,10 +5351,160 @@ class LessonEditingLockedAfterCompletionOrCancellationTests(AcademyTestBase):
         read-only switch for the attendance page — must never drift from
         what the backend actually enforces above."""
         completed_response = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/")
-        self.assertFalse(completed_response.data["attendance_editable"])
+        self.assertTrue(completed_response.data["attendance_editable"])
 
         scheduled_response = self.teacher1_client.get(f"/api/v1/lessons/{self.other_lesson.id}/")
         self.assertTrue(scheduled_response.data["attendance_editable"])
+
+        lesson_lifecycle.cancel_lesson(self.other_lesson, self.teacher1.user)
+        cancelled_response = self.teacher1_client.get(f"/api/v1/lessons/{self.other_lesson.id}/")
+        self.assertFalse(cancelled_response.data["attendance_editable"])
+
+
+class TeacherAttendanceCorrectionTests(AcademyTestBase):
+    """A Teacher marks and corrects attendance of their own groups' lessons —
+    and only theirs: every read/write path is scoped, however the request is
+    built (bulk lesson action, direct /attendance/ CRUD, crafted ids)."""
+
+    def setUp(self):
+        super().setUp()
+        self.lesson1 = Lesson.objects.filter(group=self.group1).order_by("lesson_number").first()
+        self.foreign_lesson = Lesson.objects.filter(group=self.group2).order_by("lesson_number").first()
+        self.foreign_record = Attendance.objects.create(
+            student=self.student3, lesson=self.foreign_lesson, status=Attendance.Status.PRESENT
+        )
+
+    def _bulk(self, client, lesson, items):
+        return client.post(f"/api/v1/lessons/{lesson.id}/attendance/", items, format="json")
+
+    # 1. Own group
+    def test_teacher_marks_attendance_of_own_group(self):
+        response = self._bulk(self.teacher1_client, self.lesson1, [
+            {"student": self.student1.id, "status": "present"},
+            {"student": self.student2.id, "status": "absent", "comment": "Болеет"},
+        ])
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Attendance.objects.get(lesson=self.lesson1, student=self.student2).status, "absent")
+
+        roster = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/attendance/")
+        self.assertEqual(roster.status_code, status.HTTP_200_OK)
+        self.assertEqual({row["student"]: row["status"] for row in roster.data},
+                         {self.student1.id: "present", self.student2.id: "absent"})
+
+    # 2. Correcting a saved record, also on a completed lesson
+    def test_teacher_corrects_previously_saved_attendance(self):
+        self._bulk(self.teacher1_client, self.lesson1, [
+            {"student": self.student1.id, "status": "present"},
+            {"student": self.student2.id, "status": "present"},
+        ])
+        lesson_lifecycle.start_lesson(self.lesson1, self.teacher1.user)
+        self.lesson1.homework_not_required = True
+        self.lesson1.save(update_fields=["homework_not_required"])
+        lesson_lifecycle.complete_lesson(self.lesson1, self.teacher1.user)
+
+        response = self._bulk(self.teacher1_client, self.lesson1, [{"student": self.student2.id, "status": "late"}])
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Attendance.objects.filter(lesson=self.lesson1).count(), 2)  # updated, not duplicated
+        self.assertEqual(Attendance.objects.get(lesson=self.lesson1, student=self.student2).status, "late")
+
+        listing = self.teacher1_client.get("/api/v1/attendance/", {"lesson": self.lesson1.id})
+        statuses = {row["student"]: row["status"] for row in listing.data["results"]}
+        self.assertEqual(statuses[self.student2.id], "late")
+
+    # 3. Foreign group
+    def test_teacher_cannot_mark_attendance_of_foreign_group(self):
+        response = self._bulk(self.teacher1_client, self.foreign_lesson, [{"student": self.student3.id, "status": "absent"}])
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.foreign_record.refresh_from_db()
+        self.assertEqual(self.foreign_record.status, "present")
+
+    def test_teacher_cannot_read_or_patch_foreign_record(self):
+        self.assertEqual(
+            self.teacher1_client.get(f"/api/v1/attendance/{self.foreign_record.id}/").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        response = self.teacher1_client.patch(
+            f"/api/v1/attendance/{self.foreign_record.id}/", {"status": "absent"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.foreign_record.refresh_from_db()
+        self.assertEqual(self.foreign_record.status, "present")
+
+    # 4. Crafted direct API requests
+    def test_teacher_cannot_create_record_on_foreign_lesson_directly(self):
+        Attendance.objects.filter(pk=self.foreign_record.pk).delete()
+        response = self.teacher1_client.post(
+            "/api/v1/attendance/",
+            {"student": self.student3.id, "lesson": self.foreign_lesson.id, "status": "present"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Attendance.objects.filter(lesson=self.foreign_lesson).exists())
+
+    def test_teacher_cannot_push_foreign_student_through_own_lesson(self):
+        response = self._bulk(self.teacher1_client, self.lesson1, [{"student": self.student3.id, "status": "present"}])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Attendance.objects.filter(student=self.student3, lesson=self.lesson1).exists())
+
+    def test_teacher_cannot_repoint_own_record_to_another_lesson_or_student(self):
+        own = Attendance.objects.create(student=self.student1, lesson=self.lesson1, status="present")
+        other_own_lesson = Lesson.objects.filter(group=self.group1).order_by("lesson_number")[1]
+        for payload in (
+            {"lesson": self.foreign_lesson.id},
+            {"lesson": other_own_lesson.id},
+            {"student": self.student2.id},
+        ):
+            response = self.teacher1_client.patch(f"/api/v1/attendance/{own.id}/", payload, format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, payload)
+        own.refresh_from_db()
+        self.assertEqual((own.lesson_id, own.student_id), (self.lesson1.id, self.student1.id))
+
+    def test_teacher_cannot_manage_groups_or_students(self):
+        """Attendance rights grant nothing administrative."""
+        response = self.teacher1_client.patch(f"/api/v1/groups/{self.group1.id}/", {"name": "X"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.teacher1_client.patch(f"/api/v1/students/{self.student1.id}/", {"first_name": "X"}, format="json")
+        self.assertIn(response.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_405_METHOD_NOT_ALLOWED))
+
+    # 5. Admin
+    def test_admin_can_mark_and_correct_any_group(self):
+        response = self._bulk(self.admin_client, self.foreign_lesson, [{"student": self.student3.id, "status": "absent"}])
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        response = self.admin_client.patch(
+            f"/api/v1/attendance/{self.foreign_record.id}/", {"status": "excused"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.foreign_record.refresh_from_db()
+        self.assertEqual(self.foreign_record.status, "excused")
+
+    # 6. Anonymous
+    def test_anonymous_cannot_read_or_write_attendance(self):
+        self.assertIn(
+            self._bulk(self.anon_client, self.lesson1, [{"student": self.student1.id, "status": "present"}]).status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+        self.assertIn(
+            self.anon_client.patch(f"/api/v1/attendance/{self.foreign_record.id}/", {"status": "absent"}, format="json").status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+        self.assertIn(
+            self.anon_client.get("/api/v1/attendance/").status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+        self.foreign_record.refresh_from_db()
+        self.assertEqual(self.foreign_record.status, "present")
+        self.assertFalse(Attendance.objects.filter(lesson=self.lesson1).exists())
+
+    # 7. Journal / reporting stay consistent
+    def test_correction_shows_in_lesson_summary(self):
+        self._bulk(self.teacher1_client, self.lesson1, [
+            {"student": self.student1.id, "status": "present"},
+            {"student": self.student2.id, "status": "present"},
+        ])
+        self._bulk(self.teacher1_client, self.lesson1, [{"student": self.student2.id, "status": "absent"}])
+        summary = self.teacher1_client.get(f"/api/v1/lessons/{self.lesson1.id}/").data["attendance_summary"]
+        self.assertEqual((summary["present"], summary["absent"]), (1, 1))
+        self.assertEqual(summary["attendance_rate"], 50.0)
 
 
 class LessonSummaryFieldsTests(AcademyTestBase):

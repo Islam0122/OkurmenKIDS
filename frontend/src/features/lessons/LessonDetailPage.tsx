@@ -173,7 +173,11 @@ export function LessonDetailPage() {
             )}
           </div>
 
-          <AttendanceStatsCard summary={lesson.attendance_summary} onView={() => void handleAction('view_attendance')} />
+          <AttendanceStatsCard
+            summary={lesson.attendance_summary}
+            onView={() => void handleAction('view_attendance')}
+            editable={lesson.attendance_editable && !isReadOnlyViewer}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

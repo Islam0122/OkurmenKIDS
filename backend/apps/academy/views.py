@@ -219,6 +219,19 @@ def _assert_lesson_editable(request, lesson) -> None:
         )
 
 
+def _assert_attendance_editable(request, lesson) -> None:
+    """The attendance counterpart of `_assert_lesson_editable`: a Teacher may
+    mark and correct attendance of their own lesson also after it is
+    completed — only a cancelled lesson (it never happened) is frozen (see
+    services.lesson_lifecycle.attendance_editing_locked). Ownership is not
+    relaxed here: it is still enforced by the for_teacher-scoped querysets,
+    IsAdminOrOwningTeacher and `_assert_teacher_owns_lesson`."""
+    if _is_admin(request.user):
+        return
+    if lesson is not None and lesson_lifecycle.attendance_editing_locked(lesson):
+        raise PermissionDenied("Занятие отменено — посещаемость нельзя изменять.")
+
+
 # ---------------------------------------------------------------------------
 # Course catalogue
 # ---------------------------------------------------------------------------
@@ -1131,7 +1144,8 @@ class LessonViewSet(
                     )
             return Response(payload)
 
-        _assert_lesson_editable(request, lesson)
+        _assert_teacher_owns_lesson(request, lesson)
+        _assert_attendance_editable(request, lesson)
 
         item_serializer = BulkAttendanceItemSerializer(data=request.data, many=True)
         item_serializer.is_valid(raise_exception=True)
@@ -1306,12 +1320,25 @@ class AttendanceViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         lesson = serializer.validated_data.get("lesson")
         _assert_teacher_owns_lesson(self.request, lesson)
-        _assert_lesson_editable(self.request, lesson)
+        _assert_attendance_editable(self.request, lesson)
         serializer.save()
 
     def perform_update(self, serializer):
-        _assert_lesson_editable(self.request, serializer.instance.lesson)
+        # A correction changes the status/comment only — `lesson`/`student`
+        # are immutable on update (AttendanceSerializer.validate), so a
+        # record can never be moved onto another lesson or group.
+        lesson = serializer.instance.lesson
+        _assert_teacher_owns_lesson(self.request, lesson)
+        _assert_attendance_editable(self.request, lesson)
         serializer.save()
+
+    def perform_destroy(self, instance):
+        # Deleting a mark is not a correction: on a completed lesson it would
+        # silently break «attendance fully marked». A Teacher may only remove
+        # a record while the lesson is still open; Admin keeps full access.
+        _assert_teacher_owns_lesson(self.request, instance.lesson)
+        _assert_lesson_editable(self.request, instance.lesson)
+        instance.delete()
 
 
 # ---------------------------------------------------------------------------

@@ -113,8 +113,9 @@ function AttendanceEditor({
   const [localStatus, setLocalStatus] = useState<Record<number, AttendanceStatus>>({})
 
   // Mirrors the backend's own enforcement (LessonSerializer.attendance_editable
-  // / views._assert_lesson_editable) — never re-derived from the lesson
-  // status here, so the two can't drift apart.
+  // / views._assert_attendance_editable) — never re-derived from the lesson
+  // status here, so the two can't drift apart. A completed lesson stays
+  // editable for its trainer (corrections); a cancelled one doesn't.
   const isReadOnly = lesson ? !lesson.attendance_editable : false
 
   useEffect(() => {
@@ -176,7 +177,15 @@ function AttendanceEditor({
 
       {isReadOnly ? (
         <div className="mb-6 rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-secondary">
-          Занятие завершено или отменено — посещаемость больше нельзя редактировать.
+          {lesson?.status === 'cancelled'
+            ? 'Занятие отменено — посещаемость больше нельзя редактировать.'
+            : 'Режим просмотра — посещаемость изменяет тренер занятия или администратор.'}
+        </div>
+      ) : null}
+
+      {!isReadOnly && lesson?.status === 'completed' ? (
+        <div className="mb-6 rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-secondary">
+          Занятие уже проведено — вы можете исправить отметки. Изменения сразу попадут в журнал, KPI и отчёты.
         </div>
       ) : null}
 

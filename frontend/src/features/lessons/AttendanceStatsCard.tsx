@@ -1,4 +1,4 @@
-import { Eye } from 'lucide-react'
+import { Eye, Pencil } from 'lucide-react'
 
 import type { BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -8,9 +8,12 @@ import { ATTENDANCE_SUMMARY_LABELS } from '@/types/attendance'
 export interface AttendanceStatsCardProps {
   summary: LessonAttendanceSummary
   /** Only a completed/cancelled lesson's card offers a way into the full
-   * (read-only) attendance screen — active-lesson callers simply omit this
+   * attendance screen — active-lesson callers simply omit this
    * and get the stats alone, same as before. */
   onView?: () => void
+  /** The viewer may still correct this lesson's attendance
+   * (Lesson.attendance_editable) — the button then reads «Исправить». */
+  editable?: boolean
 }
 
 /**
@@ -18,7 +21,7 @@ export interface AttendanceStatsCardProps {
  * services.lesson_summary.attendance_summary on LessonSerializer) — never a
  * second, roster-derived count kept in sync by hand.
  */
-export function AttendanceStatsCard({ summary, onView }: AttendanceStatsCardProps) {
+export function AttendanceStatsCard({ summary, onView, editable = false }: AttendanceStatsCardProps) {
   return (
     <div className="card card-body">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -30,8 +33,13 @@ export function AttendanceStatsCard({ summary, onView }: AttendanceStatsCardProp
           </span>
         </div>
         {onView ? (
-          <Button variant="secondary" size="sm" leftIcon={<Eye className="size-4" aria-hidden />} onClick={onView}>
-            Посмотреть посещаемость
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={editable ? <Pencil className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+            onClick={onView}
+          >
+            {editable ? 'Исправить посещаемость' : 'Посмотреть посещаемость'}
           </Button>
         ) : null}
       </div>

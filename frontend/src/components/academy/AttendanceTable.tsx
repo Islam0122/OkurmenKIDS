@@ -19,9 +19,10 @@ export interface AttendanceRow {
 export interface AttendanceTableProps {
   rows: AttendanceRow[]
   onStatusChange: (studentId: number, status: AttendanceStatus) => void
-  /** True once the lesson is completed or cancelled — attendance is frozen
-   * (see LessonSerializer.attendance_editable, enforced on the backend too
-   * via views._assert_lesson_editable), so every control here becomes
+  /** True when the viewer may not change this lesson's attendance (a
+   * cancelled lesson, or a read-only role) — see
+   * LessonSerializer.attendance_editable, enforced on the backend too via
+   * views._assert_attendance_editable — so every control here becomes
    * inert rather than merely styled differently. */
   readOnly?: boolean
 }
