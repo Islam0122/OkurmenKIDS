@@ -14,6 +14,7 @@ from django.test import TestCase
 from apps.academy.models import (
     Attendance,
     Course,
+    CourseLessonPlan,
     Group,
     GroupTeacher,
     Homework,
@@ -65,8 +66,16 @@ class ControlTestBase(TestCase):
 
     _n = 0
 
-    def lesson(self, gt, date, lesson_status=Lesson.Status.COMPLETED, **extra) -> Lesson:
+    def lesson(self, gt, date, lesson_status=Lesson.Status.COMPLETED, *, homework_planned=True, **extra) -> Lesson:
+        """A lesson generated from a course plan row. `homework_planned`:
+        whether that row declares homework (Lesson's homework step — see
+        lesson_lifecycle.homework_expected)."""
         self._n += 1
+        if "plan" not in extra:
+            extra["plan"] = CourseLessonPlan.objects.create(
+                course=gt.group.course, lesson_number=self._n, subject=gt.subject, topic=f"Тема {self._n}",
+                homework_title="ДЗ по теме" if homework_planned else "",
+            )
         extra.setdefault("teacher", gt.teacher)
         extra.setdefault("start_time", dt.time(10))
         extra.setdefault("end_time", dt.time(11))
@@ -286,6 +295,141 @@ class ControlRulesTests(ControlTestBase):
         # The summary still describes the whole scope, not just the filtered rows.
         self.assertEqual(by_status["summary"]["total_lessons"], 3)
         self.assertEqual(self.build(period="custom", start_date="2026-08-01", end_date="2026-08-31")["summary"]["total_lessons"], 1)
+
+
+class ControlHomeworkRequirementTests(ControlTestBase):
+    """Control tells apart the four homework cases of a held lesson —
+    required but not given, given and awaiting review, given and checked,
+    not required — with the same rule the trainer's lesson checklist uses
+    (lesson_lifecycle.homework_expected): a lesson whose plan declares no
+    homework, or that is marked «ДЗ не требуется», has none to give."""
+
+    def check(self, lesson):
+        from apps.academy.services.control import lesson_check
+
+        return lesson_check(lesson, today=TODAY, now_time=NOON)
+
+    def test_required_but_not_assigned_is_flagged(self):
+        lesson = self.lesson(self.gt1_soft, dt.date(2026, 9, 28))
+        self.fill(lesson, homework=False)
+        payload = self.check(lesson)
+        self.assertEqual(payload["homework"]["state"], "missing")
+        self.assertTrue(payload["homework"]["required"])
+        self.assertIn("ДЗ не выдано", payload["problems"])
+
+        row = self.row(self.build(), self.aizhan, self.g1)
+        self.assertEqual((row["homework"]["completed"], row["homework"]["total"]), (0, 1))
+        self.assertEqual((row["homework"]["required"], row["homework"]["missing"]), (1, 1))
+        self.assertIn("ДЗ не выдано: 1 занятие", row["issues"])
+        self.assertEqual(row["status"], "attention")
+
+    def test_lesson_without_planned_homework_is_not_an_error(self):
+        lesson = self.lesson(self.gt1_soft, dt.date(2026, 9, 28), homework_planned=False)
+        self.fill(lesson, homework=False)
+        payload = self.check(lesson)
+        self.assertEqual(payload["homework"]["state"], "not_required")
+        self.assertFalse(payload["homework"]["required"])
+        self.assertFalse(payload["homework"]["given"])
+        self.assertEqual(payload["homework"]["label"], "Не предусмотрено планом")
+        self.assertEqual(payload["grades"]["state"], "not_required")
+        self.assertNotIn("ДЗ не выдано", payload["problems"])
+        self.assertIn("ДЗ не предусмотрено планом занятия", payload["notes"])
+        self.assertEqual(payload["status"], "ok")
+
+        row = self.row(self.build(), self.aizhan, self.g1)
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["issues"], [])
+        self.assertEqual((row["homework"]["total"], row["homework"]["level"]), (0, "none"))
+        self.assertEqual((row["homework"]["required"], row["homework"]["not_required"]), (0, 1))
+
+    def test_lesson_without_any_plan_follows_the_same_rule(self):
+        # A lesson created by hand, outside the plan: no homework step either.
+        lesson = self.lesson(self.gt1, dt.date(2026, 9, 28), plan=None)
+        self.fill(lesson, homework=False)
+        self.assertEqual(self.check(lesson)["homework"]["state"], "not_required")
+
+    def test_explicit_not_required_flag_wins_over_the_plan(self):
+        lesson = self.lesson(self.gt1, dt.date(2026, 9, 28), homework_not_required=True)
+        self.fill(lesson, homework=False)
+        payload = self.check(lesson)
+        self.assertEqual((payload["homework"]["state"], payload["homework"]["label"]), ("not_required", "Не требуется"))
+        self.assertIn("Отмечено «ДЗ не требуется»", payload["notes"])
+
+    def test_assigned_homework_is_required_even_without_a_plan(self):
+        # Homework given on a lesson whose plan declares none is still checked.
+        lesson = self.lesson(self.gt1, dt.date(2026, 9, 28), homework_planned=False)
+        hw = self.fill(lesson, grades=False)
+        HomeworkResult.objects.create(homework=hw, student=self.s1, status=HomeworkResult.Status.SUBMITTED)
+        payload = self.check(lesson)
+        self.assertEqual(payload["homework"]["state"], "unchecked")
+        self.assertTrue(payload["homework"]["required"])
+
+    def test_assigned_awaiting_review(self):
+        lesson = self.lesson(self.gt1, dt.date(2026, 9, 28))
+        hw = self.fill(lesson, grades=False)
+        HomeworkResult.objects.create(homework=hw, student=self.s1, status=HomeworkResult.Status.SUBMITTED)
+        HomeworkResult.objects.create(homework=hw, student=self.s2, status=HomeworkResult.Status.LATE)
+        payload = self.check(lesson)
+        self.assertEqual((payload["homework"]["state"], payload["homework"]["pending_check"]), ("unchecked", 2))
+        self.assertIn("ДЗ не проверено: 2 ждут проверки", payload["problems"])
+        row = self.row(self.build(), self.aizhan, self.g1)
+        self.assertEqual((row["homework"]["assigned"], row["homework"]["awaiting_review"]), (1, 1))
+        self.assertEqual((row["homework"]["completed"], row["homework"]["total"]), (0, 1))
+        self.assertIn("ДЗ не проверено: 1 занятие", row["issues"])
+
+    def test_assigned_before_deadline_awaits_the_deadline(self):
+        lesson = self.lesson(self.gt1, dt.date(2026, 9, 28))
+        self.fill(lesson, grades=False, deadline=dt.date(2026, 10, 3))
+        row = self.row(self.build(), self.aizhan, self.g1)
+        self.assertEqual((row["homework"]["awaiting_deadline"], row["homework"]["total"]), (1, 0))
+        self.assertEqual(row["issues"], [])
+
+    def test_assigned_and_reviewed(self):
+        lesson = self.lesson(self.gt1, dt.date(2026, 9, 28))
+        self.fill(lesson)
+        payload = self.check(lesson)
+        self.assertEqual((payload["homework"]["state"], payload["homework"]["label"]), ("ok", "Проверено"))
+        row = self.row(self.build(), self.aizhan, self.g1)
+        self.assertEqual((row["homework"]["checked"], row["homework"]["completed"], row["homework"]["total"]), (1, 1, 1))
+
+    def test_mixed_period_counts_and_percentages(self):
+        """The reported case: every lesson closed and marked, homework checked
+        on every lesson that has homework, plus one lesson whose plan has
+        none — 100 %, no «ДЗ не выдано»."""
+        for day in range(1, 7):
+            self.fill(self.lesson(self.gt1, dt.date(2026, 9, day)))
+        soft = self.lesson(self.gt1_soft, dt.date(2026, 9, 15), homework_planned=False)
+        self.fill(soft, homework=False)
+
+        data = self.build()
+        row = self.row(data, self.aizhan, self.g1)
+        self.assertEqual((row["lessons"]["completed"], row["lessons"]["total"]), (7, 7))
+        self.assertEqual((row["attendance"]["completed"], row["attendance"]["total"]), (7, 7))
+        self.assertEqual(row["homework"], {
+            "completed": 6, "total": 6, "percent": 100.0, "level": "ok",
+            "required": 6, "assigned": 6, "missing": 0, "awaiting_review": 0,
+            "awaiting_deadline": 0, "checked": 6, "not_required": 1,
+        })
+        self.assertEqual(row["issues"], [])
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(data["summary"]["homework_completion"], 100.0)
+
+        # The same period where that lesson's plan *does* declare homework:
+        # the warning stays until it is given.
+        planned = self.lesson(self.gt1_soft, dt.date(2026, 9, 16))
+        self.fill(planned, homework=False)
+        data = self.build()
+        row = self.row(data, self.aizhan, self.g1)
+        self.assertEqual((row["homework"]["completed"], row["homework"]["total"]), (6, 7))
+        self.assertEqual((row["homework"]["missing"], row["homework"]["not_required"]), (1, 1))
+        self.assertEqual(row["homework"]["level"], "warning")
+        self.assertEqual(row["issues"], ["ДЗ не выдано: 1 занятие"])
+        self.assertEqual(data["summary"]["homework_completion"], 85.7)
+
+    def test_trainer_view_is_still_scoped(self):
+        self.fill(self.lesson(self.gt2, dt.date(2026, 9, 28), homework_planned=False), homework=False)
+        data = self.build(restrict=self.aizhan)
+        self.assertEqual(data["items"], [])
 
 
 class ControlApiTests(ControlTestBase):

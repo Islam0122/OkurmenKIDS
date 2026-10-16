@@ -95,8 +95,10 @@ export function ControlLessonCheck({ lesson }: { lesson: ControlLesson }) {
               />
               Домашнее задание
             </p>
-            {lesson.homework.not_required && !lesson.homework.given ? (
-              <p className="mt-1 text-sm text-ink-secondary">Отмечено «ДЗ не требуется»</p>
+            {!lesson.homework.required ? (
+              <p className="mt-1 text-sm text-ink-secondary">
+                {lesson.homework.not_required ? 'Отмечено «ДЗ не требуется»' : 'ДЗ не предусмотрено планом занятия'}
+              </p>
             ) : (
               <dl className="mt-1 space-y-0.5 text-sm text-ink-secondary">
                 <div>

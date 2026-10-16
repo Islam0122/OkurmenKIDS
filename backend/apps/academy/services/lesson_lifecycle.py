@@ -61,8 +61,14 @@ def homework_expected(lesson: Lesson) -> bool:
     the lesson's Homework from. A lesson whose plan declares no homework and
     that has none simply has no homework step: no checklist line, no
     «ДЗ не требуется», and it doesn't hold up completion."""
-    if homework_added(lesson):
-        return True
+    return homework_added(lesson) or plan_declares_homework(lesson)
+
+
+def plan_declares_homework(lesson: Lesson) -> bool:
+    """The plan half of `homework_expected`, without any Homework query:
+    the lesson's own program plan row, else its course plan row, declares a
+    `homework_title`. Control (services.control.rules) combines it with the
+    Homework rows it already loaded, so both apply the very same rule."""
     plan = lesson.individual_plan if lesson.individual_plan_id else lesson.plan if lesson.plan_id else None
     return bool(plan and plan.homework_title)
 

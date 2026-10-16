@@ -32,7 +32,16 @@ function buildRow(overrides: Partial<ControlRow> = {}): ControlRow {
     subjects: [{ id: 1, name: 'Python' }],
     lessons: { ...component(8, 8, 'ok'), not_closed: 0, upcoming: 1, cancelled: 0 },
     attendance: component(8, 8, 'ok'),
-    homework: component(5, 7, 'warning'),
+    homework: {
+      ...component(5, 7, 'warning'),
+      required: 7,
+      assigned: 6,
+      missing: 1,
+      awaiting_review: 1,
+      awaiting_deadline: 0,
+      checked: 5,
+      not_required: 1,
+    },
     grades: { ...component(4, 8, 'danger'), students_missing: 3 },
     status: 'attention',
     status_label: 'Внимание',
@@ -112,7 +121,7 @@ function buildLesson(overrides: Partial<ControlLesson> = {}): ControlLesson {
     status_label: 'Внимание',
     students_total: 20,
     attendance: { state: 'ok', label: 'Заполнено', marked: 20, total: 20, missing_students: [] },
-    homework: { state: 'ok', label: 'Проверено', id: 3, given: true, not_required: false, deadline: null, pending_check: 0 },
+    homework: { state: 'ok', label: 'Проверено', id: 3, given: true, not_required: false, required: true, deadline: null, pending_check: 0 },
     grades: {
       state: 'partial',
       label: 'Выставлено 17 из 20',
@@ -193,6 +202,38 @@ describe('ControlPage', () => {
     expect(within(dialog).getByText(/Выставлено: 17 \/ 20/)).toBeInTheDocument()
     expect(within(dialog).getByText('• Камалидинова Сумая')).toBeInTheDocument()
     expect(within(dialog).getByRole('link', { name: /Перейти к уроку/ })).toHaveAttribute('href', '/app/lessons/28')
+  })
+
+  it('shows the backend homework breakdown and a lesson without planned homework as not required', async () => {
+    const user = userEvent.setup()
+    vi.mocked(controlApi.overview).mockResolvedValue(buildOverview([buildRow()]))
+    const noHomework = buildLesson({
+      id: 41,
+      date: '2026-10-15',
+      subject: { id: 2, name: 'Soft Skills' },
+      status: 'ok',
+      status_label: 'OK',
+      problems: [],
+      notes: ['ДЗ не предусмотрено планом занятия'],
+      homework: { state: 'not_required', label: 'Не предусмотрено планом', id: null, given: false, not_required: false, required: false, deadline: null, pending_check: 0 },
+      grades: { state: 'not_required', label: 'Не требуются', given: 0, total: 0, missing: 0, missing_students: [] },
+    })
+    vi.mocked(controlApi.detail).mockResolvedValue({ filters: buildOverview([]).filters, row: buildRow(), lessons: [noHomework] })
+
+    renderWithProviders(<ControlPage />, { route: '/app/control' })
+    await user.click(await screen.findByRole('cell', { name: 'Айжан' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(
+      await within(dialog).findByText(
+        'ДЗ: требуется на 7 · выдано 6 · проверено 5 · ждут проверки 1 · не выдано 1 · без ДЗ 1.',
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(within(dialog).getByText('15.10.2026'))
+    expect(within(dialog).getAllByText('ДЗ не предусмотрено планом занятия').length).toBeGreaterThan(0)
+    expect(within(dialog).queryByText(/Выдано:/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('ДЗ не выдано')).not.toBeInTheDocument()
   })
 
   it('hides the trainer filter from a trainer', async () => {

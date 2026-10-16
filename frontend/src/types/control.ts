@@ -29,6 +29,19 @@ export interface ControlComponent {
   level: ControlLevel
 }
 
+/** Where the row's held lessons stand on homework. `completed`/`total` are
+ * "checked of the lessons whose checking is due"; lessons without homework
+ * (none in the plan, or «ДЗ не требуется») are counted only in `not_required`. */
+export interface ControlHomeworkComponent extends ControlComponent {
+  required: number
+  assigned: number
+  missing: number
+  awaiting_review: number
+  awaiting_deadline: number
+  checked: number
+  not_required: number
+}
+
 export interface ControlRow {
   key: string
   /** The responsible trainer (`Lesson.effective_teacher`) — null for lessons nobody is assigned to. */
@@ -37,7 +50,7 @@ export interface ControlRow {
   subjects: ControlRef[]
   lessons: ControlComponent & { not_closed: number; upcoming: number; cancelled: number }
   attendance: ControlComponent
-  homework: ControlComponent
+  homework: ControlHomeworkComponent
   grades: ControlComponent & { students_missing: number }
   status: ControlStatus
   status_label: string
@@ -128,6 +141,8 @@ export interface ControlLesson {
     id: number | null
     given: boolean
     not_required: boolean
+    /** The lesson has a homework step (homework given, or declared by its plan and not marked «ДЗ не требуется»). */
+    required: boolean
     deadline: string | null
     pending_check: number
   }
