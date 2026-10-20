@@ -95,8 +95,10 @@ class HistoryOnDateTests(RetentionBase):
         transfer_student(self.s1, group=self.g2, event_date=TODAY)
         roster = {r.student.pk: r for r in roster_on(P_END)}
         self.assertEqual(roster[self.s1.pk].group_id, self.g1.pk)
-        rows = self.report()["attendance"]["groups"]
-        self.assertEqual([g["group"]["name"] for g in rows], ["PRO-01"])
+        rows = {g["group"]["name"]: g for g in self.report()["attendance"]["groups"]}
+        # Every group of the month is listed; the lesson stays with the old group.
+        self.assertEqual((rows["PRO-01"]["lessons"], rows["PRO-01"]["marked"]), (1, 1))
+        self.assertEqual((rows["PRO-02"]["lessons"], rows["PRO-02"]["percent"]), (0, None))
 
 
 class DepartureRecordTests(RetentionBase):
