@@ -39,6 +39,15 @@ def pct(value) -> str:
 
 
 @register.filter
+def metric_pct(value):
+    """A KPI criterion that may have no data in the period (e.g. no tests
+    were held): `72,1%`, or a muted «Нет данных» — never a fabricated 0%."""
+    if value is None:
+        return format_html('<span class="okr-muted">{}</span>', LEVEL_LABELS["no_data"])
+    return _fmt(value)
+
+
+@register.filter
 def kpi_badge(value):
     """`94,4%` plus a text level ("Хороший" / "Требует внимания" / "Низкий")
     — color is only a secondary cue."""

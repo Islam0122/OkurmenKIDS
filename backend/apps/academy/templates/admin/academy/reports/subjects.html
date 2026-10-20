@@ -27,6 +27,7 @@
           <th scope="col" class="num">{% sort_link "homework" "ДЗ" True %}</th>
           <th scope="col" class="num">{% sort_link "activity" "Проведено занятий" True %}</th>
           <th scope="col" class="num">{% sort_link "progress" "Прогресс" True %}</th>
+          <th scope="col" class="num">{% sort_link "tests" "Результаты тестов" True %}</th>
           <th scope="col" class="num okr-col-kpi">{% sort_link "kpi" "KPI / уровень" True %}</th>
           <th scope="col"><span class="okr-visually-hidden">Действия</span></th>
         </tr>
@@ -45,6 +46,7 @@
           <td class="num">{{ s.homework_rate|pct }}</td>
           <td class="num">{{ s.activity_rate|pct }}{% if s.lessons.due %}<div class="okr-sub-line">{{ s.lessons.held }} из {{ s.lessons.due }}</div>{% endif %}</td>
           <td class="num">{{ s.progress_rate|pct }}</td>
+          <td class="num">{{ s.test_score_rate|metric_pct }}</td>
           <td class="num okr-col-kpi">{{ s.kpi|kpi_badge }}</td>
           <td class="num"><a class="okr-btn okr-btn-icon okr-btn-ghost" href="{% url 'admin:academy_reports_subject_detail' s.id %}?{{ filter_query }}" data-okr-loading title="Подробный отчёт по предмету" aria-label="Подробный отчёт по предмету {{ s.name }}">{% icon "eye" 16 %}</a></td>
         </tr>

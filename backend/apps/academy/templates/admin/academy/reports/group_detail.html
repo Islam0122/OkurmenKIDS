@@ -76,11 +76,11 @@
   <div class="okr-panel-head"><span class="okr-panel-title">{% icon "graduation-cap" %}Эффективность по тренерам группы</span></div>
   <div class="okr-table-wrap"><table class="okr-table">
     <thead><tr><th scope="col">Тренер</th><th scope="col" class="num">Занятия</th><th scope="col" class="num">Посещаемость</th><th scope="col" class="num">ДЗ</th>
-      <th scope="col" class="num">Активность</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">KPI</th></tr></thead>
+      <th scope="col" class="num">Активность</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">Тесты</th><th scope="col" class="num">KPI</th></tr></thead>
     <tbody>
     {% for t in d.teacher_breakdown %}
       <tr><td>{{ t.name }}</td><td class="num">{{ t.lessons.held }} из {{ t.lessons.total }}</td><td class="num">{{ t.attendance_rate|pct }}</td>
-        <td class="num">{{ t.homework_rate|pct }}</td><td class="num">{{ t.activity_rate|pct }}</td><td class="num">{{ t.progress_rate|pct }}</td><td class="num">{{ t.kpi|kpi_badge }}</td></tr>
+        <td class="num">{{ t.homework_rate|pct }}</td><td class="num">{{ t.activity_rate|pct }}</td><td class="num">{{ t.progress_rate|pct }}</td><td class="num">{{ t.test_score_rate|metric_pct }}</td><td class="num">{{ t.kpi|kpi_badge }}</td></tr>
     {% endfor %}
     </tbody>
   </table></div>

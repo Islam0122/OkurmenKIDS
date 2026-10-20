@@ -74,6 +74,12 @@
     <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.metrics.progress|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.metrics.progress|level_label }}</span>ср. балл {% if ov.homework.average_score is not None %}{{ ov.homework.average_score }}/10{% else %}—{% endif %}</span>
   </div>
   <div class="okr-stat">
+    <span class="okr-stat-icon is-{{ ov.metrics.test_score|level_class }}">{% icon "clipboard-check" 18 %}</span>
+    <span class="okr-stat-label">Результаты тестов</span>
+    <span class="okr-stat-value">{{ ov.metrics.test_score|metric_pct }}</span>
+    <span class="okr-stat-foot"><span class="okr-status-badge is-{{ ov.metrics.test_score|level_class }}"><span class="okr-dot" aria-hidden="true"></span>{{ ov.metrics.test_score|level_label }}</span>сдали {{ ov.metrics.test_pass_rate|pct }}</span>
+  </div>
+  <div class="okr-stat">
     <span class="okr-stat-icon is-{{ ov.kpi.total|level_class }}">{% icon "trending-up" 18 %}</span>
     <span class="okr-stat-label">Общий KPI</span>
     <span class="okr-stat-value">{{ ov.kpi.total|pct }}</span>
@@ -93,7 +99,7 @@
   <div class="okr-table-wrap"><table class="okr-table">
     <thead><tr><th scope="col">Предмет</th><th scope="col" class="num">Тренеры</th><th scope="col" class="num">Группы</th>
       <th scope="col" class="num">Студенты</th><th scope="col" class="num">Посещ.</th><th scope="col" class="num">ДЗ</th>
-      <th scope="col" class="num">Проведено</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">KPI</th></tr></thead>
+      <th scope="col" class="num">Проведено</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">Тесты</th><th scope="col" class="num">KPI</th></tr></thead>
     <tbody>
     {% for s in ov.subjects.rows|slice:":10" %}
       <tr>
@@ -105,6 +111,7 @@
         <td class="num">{{ s.homework_rate|pct }}</td>
         <td class="num">{{ s.activity_rate|pct }}</td>
         <td class="num">{{ s.progress_rate|pct }}</td>
+        <td class="num">{{ s.test_score_rate|metric_pct }}</td>
         <td class="num">{{ s.kpi|kpi_badge }}</td>
       </tr>
     {% endfor %}

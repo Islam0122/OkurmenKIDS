@@ -54,7 +54,7 @@
   {% if d.group_performance %}
   <div class="okr-table-wrap"><table class="okr-table">
     <thead><tr><th scope="col">Группа</th><th scope="col">Программа</th><th scope="col" class="num">Студенты</th><th scope="col" class="num">Ушли</th><th scope="col" class="num">Занятия</th>
-      <th scope="col" class="num">Посещаемость</th><th scope="col" class="num">ДЗ</th><th scope="col" class="num">Активность</th><th scope="col" class="num">KPI</th></tr></thead>
+      <th scope="col" class="num">Посещаемость</th><th scope="col" class="num">ДЗ</th><th scope="col" class="num">Прогресс</th><th scope="col" class="num">Активность</th><th scope="col" class="num">Тесты</th><th scope="col" class="num">KPI</th></tr></thead>
     <tbody>
     {% for g in d.group_performance %}
       <tr>
@@ -65,7 +65,9 @@
         <td class="num">{{ g.lessons.held }} из {{ g.lessons.total }}</td>
         <td class="num">{{ g.attendance_rate|pct }}</td>
         <td class="num">{{ g.homework_rate|pct }}</td>
+        <td class="num">{{ g.progress_rate|pct }}</td>
         <td class="num">{{ g.activity_rate|pct }}</td>
+        <td class="num">{{ g.test_score_rate|metric_pct }}</td>
         <td class="num">{{ g.kpi|kpi_badge }}</td>
       </tr>
     {% endfor %}
