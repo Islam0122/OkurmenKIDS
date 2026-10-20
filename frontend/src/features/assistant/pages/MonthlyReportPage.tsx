@@ -186,12 +186,12 @@ function InactiveSection({ index, report }: { index: number; report: MonthlyRepo
 function DeparturesSection({ index, report, filterBar }: { index: number; report: MonthlyReport; filterBar: ReactNode }) {
   const d = report.departures
   return (
-    <Section index={index} title="Деактивированные студенты" hint="Ушли за месяц. Завершение обучения и пауза — отдельно; неактивные, но не ушедшие — не здесь">
+    <Section index={index} title="Деактивированные студенты" hint="Только деактивации с датой в выбранном периоде (включительно); ушедшие до или после периода не входят. Завершение обучения и пауза — отдельно; неактивные, но не ушедшие — не здесь">
       {filterBar}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi label="Ушли за месяц" value={d.total} tone={d.total ? 'text-danger' : undefined} />
-        <Kpi label="Уже вернулись" value={d.returned} tone={d.returned ? 'text-brand-700' : undefined} />
-        <Kpi label="Доля вернувшихся" value={<Percent value={d.returned_percent} />} />
+        <Kpi label="Деактивированы за месяц" value={d.total} tone={d.total ? 'text-danger' : undefined} />
+        <Kpi label="Из них уже вернулись" value={d.returned} tone={d.returned ? 'text-brand-700' : undefined} />
+        <Kpi label="Доля вернувшихся из деактивированных за месяц" value={<Percent value={d.returned_percent} />} />
         <Kpi label="Причина не указана" value={d.unknown} tone={d.unknown ? 'text-warning' : undefined} />
         <Kpi label="Завершили обучение" value={d.completed} />
         <Kpi label="Ушли на паузу" value={d.paused} />
@@ -224,7 +224,7 @@ function ReasonsSection({ index, report }: { index: number; report: MonthlyRepor
   return (
     <Section index={index} title="Причины ухода" hint="Почему студенты уходят">
       <p className="text-sm text-ink-secondary">
-        Ушли за месяц: <b className="text-ink">{d.month_total}</b>
+        Деактивированы за месяц: <b className="text-ink">{d.month_total}</b>
         {d.previous_total !== null ? <> · в прошлом месяце {d.previous_total} ({change && change > 0 ? '+' : ''}{change})</> : null}
         {d.filters_label ? <> · по фильтрам ({d.filters_label}): <b className="text-ink">{d.total}</b></> : null}
         {' '}· вернулись {d.returned} ({d.returned_percent ?? '—'}%) · причина не указана: {d.unknown}
@@ -305,12 +305,12 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
             <Kpi label="Всего студентов" value={o.students_total} />
             <Kpi label="Активных" value={o.students_active} tone="text-brand-700" />
             <Kpi label="На паузе" value={o.students_paused} />
-            <Kpi label="Деактивированы" value={o.students_withdrawn} />
+            <Kpi label="В статусе «Деактивирован» (на дату)" value={o.students_withdrawn} />
             <Kpi label="Завершили обучение" value={o.students_completed} />
           </KpiGroup>
           <KpiGroup title="Движение за месяц">
             <Kpi label="Новых за месяц" value={o.students_new} />
-            <Kpi label="Деактивировано за месяц" value={o.students_deactivated} tone={o.students_deactivated ? 'text-warning' : undefined} />
+            <Kpi label="Деактивированы за месяц" value={o.students_deactivated} tone={o.students_deactivated ? 'text-warning' : undefined} />
             <Kpi label="Активных без группы" value={o.students_without_group} tone={o.students_without_group ? 'text-warning' : undefined} />
           </KpiGroup>
           <KpiGroup title="Учебная активность">

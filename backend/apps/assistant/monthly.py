@@ -118,8 +118,9 @@ def _overview(start: dt.date, end: dt.date, state: dict) -> dict:
         "students_without_group": sum(1 for r in roster if r.status == Student.Status.ACTIVE and not r.group_id),
         # Enrolled within the month (no enrollment date: created in it) — a part of students_total.
         "students_new": history.new_count(roster, start),
-        # Students deactivated during the month (each once, even if they left twice) — a flow.
-        "students_deactivated": retention.departed_count(start, end),
+        # Deactivated within the period: a deactivation event dated from `start`
+        # to `until` inclusive, each student once — never today's status.
+        "students_deactivated": retention.departed_count(start, state["until"]),
     }
 
 
@@ -142,6 +143,7 @@ def month_state(start: dt.date, until: dt.date, today: dt.date) -> dict:
     rows = [r for r in rows if r.lessons or r.homework_due]  # had a lesson or a due homework this month
     without_group = sum(1 for r in status_active if not r.group_id)
     return {
+        "until": until,
         "roster": roster,
         "groups": groups,
         "month_groups": list(month_groups(start, until).order_by("name")),
@@ -569,7 +571,7 @@ def monthly_report(year: int, month: int, *, filters: dict | None = None) -> dic
         "surveys": _surveys(start, until),
         "scholarships": _scholarships(start, until),
         "inactive": retention.inactivity(state["activity_rows"], state["roster"], until, trainers),
-        "departures": retention.departures(start, end, filters),
+        "departures": retention.departures(start, until, filters),
     }
     report["overview"].update({
         "attendance_percent": report["attendance"]["percent"],
@@ -595,7 +597,6 @@ def monthly_report(year: int, month: int, *, filters: dict | None = None) -> dic
     previous = retention.month_core(prev_start, prev_end, today) if prev_start.year >= 2000 else None
     report["inactive"]["previous"] = previous and {"inactive": previous["inactive"], "risk": previous["risk"]}
     # Month over month compares all departures; a filter only narrows the tables.
-    report["departures"]["month_total"] = report["overview"]["students_deactivated"]
     report["departures"]["previous_total"] = previous["departed"] if previous else None
     report["departures"]["change"] = (
         report["overview"]["students_deactivated"] - previous["departed"] if previous else None)

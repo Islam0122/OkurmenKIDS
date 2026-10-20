@@ -9,10 +9,15 @@ Kept apart on purpose:
   no attended lesson (present / late) and no handed-in homework for N days,
   while marked absent from lessons held meanwhile (an unmarked lesson or a
   group without lessons is no inactivity). Inactive is not «ушёл».
-* **Departed** — a DEACTIVATED event dated in the month (one per student
-  even if they left twice). Completion (COMPLETED) and pause are counted
-  separately — a graduate or a paused student did not churn.
-* **Returned** — a later REACTIVATED event of the same student.
+* **Departed** — a DEACTIVATED event whose `event_date` falls in the period,
+  both ends included (one per student even if they left twice). Never
+  today's status: a student who left before the month, or after it, is not
+  the month's departure, and one who left in it counts even after returning.
+  Completion (COMPLETED) and pause are counted separately — a graduate or a
+  paused student did not churn. A WITHDRAWN student without a DEACTIVATED
+  event has no known date and belongs to no month (`undated_withdrawn`).
+* **Returned** — a REACTIVATED event of the same student on or after that
+  departure, up to today.
 
 Day thresholds: `settings.ASSISTANT_INACTIVITY_DAYS` (default 7 / 14 / 30).
 """
@@ -25,7 +30,7 @@ from django.conf import settings
 from django.db.models import Max, OuterRef, Q, Subquery
 from django.utils import timezone
 
-from apps.academy.models import Attendance, GroupTeacher, HomeworkResult, Lesson, StudentStatusEvent
+from apps.academy.models import Attendance, GroupTeacher, HomeworkResult, Lesson, Student, StudentStatusEvent
 from apps.academy.services.lesson_status import held_q
 
 from . import activity, history
@@ -229,9 +234,32 @@ def departure_events(start: dt.date, end: dt.date) -> list[StudentStatusEvent]:
     return sorted(unique, key=lambda e: (e.event_date, str(e.student)))
 
 
+def _reason_shares(reasons: list[str]) -> list[dict]:
+    total = len(reasons)
+    return [{"key": k, "label": reason_label("" if k == "unknown" else k), "count": c, "percent": _pct(c, total)}
+            for k, c in Counter(reasons).most_common()]
+
+
+def undated_withdrawn_count() -> int:
+    """Withdrawn students with no DEACTIVATED event — when they left is not recorded."""
+    return Student.objects.filter(status=Student.Status.WITHDRAWN).exclude(
+        status_events__event_type=E.DEACTIVATED).count()
+
+
 def departures(start: dt.date, end: dt.date, filters: dict) -> dict:
-    """Sections «Деактивированные студенты» and «Причины ухода»."""
+    """Sections «Деактивированные студенты» and «Причины ухода»: the
+    departures dated in [start, end]. The `month_*` keys are the whole
+    period, whatever the filters — summary and advice read those."""
     events = departure_events(start, end)
+    month = {
+        "month_total": len(events),
+        "month_returned": sum(1 for e in events if e.returned_on),
+        "month_by_reason": _reason_shares([e.reason or "unknown" for e in events]),
+        "month_by_group": [
+            {"key": k, "label": k, "count": c, "percent": _pct(c, len(events))}
+            for k, c in Counter(e.group.name if e.group_id else NO_GROUP for e in events).most_common()
+        ],
+    }
     group_ids = {e.group_id for e in events if e.group_id}
     # The group's trainers around the month (its held lessons), one query for all groups.
     trainers = trainers_by_group(group_ids, end, start - dt.timedelta(days=60)) if group_ids else {}
@@ -290,17 +318,20 @@ def departures(start: dt.date, end: dt.date, filters: dict) -> dict:
         "returned": returned,
         "returned_percent": _pct(returned, total),
         "unknown": by_reason.get("unknown", 0),
-        "by_reason": [{"key": k, "label": reason_label("" if k == "unknown" else k), "count": c, "percent": _pct(c, total)}
-                      for k, c in by_reason.most_common()],
+        "by_reason": _reason_shares([r["reason"] for r in rows]),
         "by_group": share(by_group),
         "by_trainer": share(by_trainer),
         "completed": completed,
         "paused": paused,
         "group_ids": sorted(group_ids),
+        **month,
+        "month_returned_percent": _pct(month["month_returned"], month["month_total"]),
+        "undated_withdrawn": undated_withdrawn_count(),
     }
 
 
 def departed_count(start: dt.date, end: dt.date) -> int:
+    """Unique students with a deactivation dated in [start, end] — the same set as departure_events()."""
     return StudentStatusEvent.objects.filter(event_type=E.DEACTIVATED, event_date__gte=start, event_date__lte=end) \
         .values("student_id").distinct().count()
 
@@ -315,7 +346,7 @@ COMPARE = (
     ("homework", "Выполнение ДЗ, %", True),
     ("active", "Активные студенты на конец месяца", True),
     ("new", "Новые студенты", True),
-    ("departed", "Ушли (деактивированы)", False),
+    ("departed", "Деактивированы за месяц", False),
     ("risk", "В зоне риска", False),
     ("inactive", "Неактивны 14+ дней", False),
     ("survey", "Средняя оценка в опросах", True),
@@ -384,7 +415,8 @@ def recommendations(report: dict) -> list[str]:
     if inactive["counts"]["long_inactive"]:
         advice.append(f"Уточнить, продолжают ли обучение: {_students_word(inactive['counts']['long_inactive'])} "
                       f"без активности {long_days}+ дней.")
-    for row in report["departures"]["by_reason"]:
+    # The whole month's departures — a filter of the departure tables never narrows the advice.
+    for row in report["departures"]["month_by_reason"]:
         tip = REASON_ADVICE.get(row["key"])
         if tip:
             advice.append(f"«{row['label']}» ({row['count']}): {tip}")
@@ -404,10 +436,10 @@ def management_summary(report: dict) -> dict:
     improved = [f"{r['label']}: {r['previous']} → {r['current']}{tail}" for r in comp if r["trend"] == "better"]
     worsened = [f"{r['label']}: {r['previous']} → {r['current']}{tail}" for r in comp if r["trend"] == "worse"]
     groups = list(report["conclusions"]["groups"])
-    for row in report["departures"]["by_group"]:
+    for row in report["departures"]["month_by_group"]:
         if row["count"] >= 2 and row["label"] not in groups and row["label"] != NO_GROUP:
-            groups.append(f"{row['label']} (ушли за месяц: {row['count']})")
-    reasons = [f"{r['label']} — {r['count']}" for r in report["departures"]["by_reason"][:3]]
+            groups.append(f"{row['label']} (деактивированы за месяц: {row['count']})")
+    reasons = [f"{r['label']} — {r['count']}" for r in report["departures"]["month_by_reason"][:3]]
     return {
         "improved": improved,
         "worsened": worsened,
@@ -433,7 +465,7 @@ def month_core(start: dt.date, end: dt.date, today: dt.date) -> dict:
         "attendance": att["percent"], "homework": hw["percent"],
         "active": state["active_count"],
         "new": history.new_count(state["roster"].values(), start),
-        "departed": departed_count(start, end),
+        "departed": departed_count(start, until),
         "risk": sum(1 for r in rows if r.status == activity.STATUS_RISK),
         "inactive": insights["counts"]["inactive"],
         "survey": surveys["average"],
