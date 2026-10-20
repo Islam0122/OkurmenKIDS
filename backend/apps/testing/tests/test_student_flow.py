@@ -74,14 +74,16 @@ class StudentFlowTests(StudentFlowFixture):
         self.assertRedirects(response, reverse("testing_public_result", args=[attempt.pk]))
         attempt.refresh_from_db()
         self.assertEqual(attempt.status, AttemptStatus.FINISHED)
-        # 2 + 1 + 1 of 5 points (code waits for a teacher) → 80%.
-        self.assertEqual(attempt.score, 80.0)
+        # 2 + 1 of 5 points (text and code wait for review) → 60%.
+        self.assertEqual(attempt.score, 60.0)
+        text_answer = Answer.objects.get(question=self.q_text)
+        self.assertEqual((text_answer.grading_status, text_answer.is_correct), (GradingStatus.PENDING, None))
         code_answer = Answer.objects.get(question=self.q_code)
         self.assertEqual(code_answer.grading_status, GradingStatus.PENDING)
         self.assertIn("return a + b", code_answer.answer_text)
 
         result = self.client.get(reverse("testing_public_result", args=[attempt.pk]))
-        self.assertContains(result, "80%")
+        self.assertContains(result, "60%")
         self.assertContains(result, "Часть ответов на проверке")
 
     def test_wrong_answers_and_pass_mark(self):
@@ -93,10 +95,10 @@ class StudentFlowTests(StudentFlowFixture):
             f"answer_{self.q_code.pk}": "",
         }))
         attempt.refresh_from_db()
-        self.assertEqual(attempt.score, 40.0)  # 2 of 5
+        self.assertEqual(attempt.score, 20.0)  # 1 of 5, the text answer waits for review
         self.assertFalse(attempts.is_passed(attempt))
         result = self.client.get(reverse("testing_public_result", args=[attempt.pk]))
-        self.assertContains(result, "Тест не сдан")
+        self.assertContains(result, "Часть ответов на проверке")  # no verdict until the text answer is reviewed
 
     def test_required_questions_block_finishing_but_not_a_timeout(self):
         self.join()

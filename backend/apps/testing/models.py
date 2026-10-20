@@ -1320,6 +1320,18 @@ class Answer(models.Model):
     ai_confidence = models.FloatField(null=True, blank=True, verbose_name="Уверенность AI (0–1)")
     ai_suggestion = models.TextField(blank=True, verbose_name="Подсказка AI")
 
+    # Manual review in the admin (services.review): points out of the
+    # question's own points. Empty → full points when is_correct, else 0.
+    points_awarded = models.FloatField(
+        null=True, blank=True, validators=[MinValueValidator(0)], verbose_name="Балл за ответ",
+    )
+    review_comment = models.TextField(blank=True, verbose_name="Комментарий проверяющего")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="reviewed_test_answers", verbose_name="Проверил",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name="Проверено")
+
     answered_at = models.DateTimeField(auto_now_add=True, verbose_name="Отвечено")
 
     class Meta:
@@ -1354,6 +1366,25 @@ class Answer(models.Model):
         self.is_correct = is_correct
         self.grading_status = GradingStatus.MANUAL
         self.save(update_fields=["is_correct", "grading_status"])
+
+
+class TextAnswerReviewManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            question__question_type=QuestionType.TEXT, attempt__status=AttemptStatus.FINISHED,
+        )
+
+
+class TextAnswerReview(Answer):
+    """«Проверка текстовых ответов» in the admin: answers to text questions
+    of finished attempts. A proxy — the review is stored on the Answer."""
+
+    objects = TextAnswerReviewManager()
+
+    class Meta:
+        proxy = True
+        verbose_name = "Проверка текстового ответа"
+        verbose_name_plural = "Проверка текстовых ответов"
 
 
 # ---------------------------------------------------------------------------

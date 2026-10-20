@@ -162,7 +162,7 @@ class AdminTakesTestTests(TeamLeadSessionFixture):
         self.assertRedirects(response, reverse("testing_public_result", args=[attempt.pk]))
         attempt.refresh_from_db()
         self.assertEqual(attempt.status, AttemptStatus.FINISHED)
-        self.assertEqual(attempt.score, 80.0)
+        self.assertEqual(attempt.score, 60.0)  # the text answer waits for review
 
         # Own result, in the LMS.
         mine = self.taker.get("/api/v1/teacher/my-attempts/")
@@ -170,11 +170,11 @@ class AdminTakesTestTests(TeamLeadSessionFixture):
         self.assertEqual(len(mine.data), 1)
         result = mine.data[0]
         self.assertEqual(result["status"], AttemptStatus.FINISHED)
-        self.assertEqual(result["score"]["percent"], 80.0)
-        self.assertEqual(result["score"]["earned"], 4)
+        self.assertEqual(result["score"]["percent"], 60.0)
+        self.assertEqual(result["score"]["earned"], 3)
         self.assertEqual(result["score"]["possible"], 5)
-        self.assertEqual(result["score"]["correct"], 3)
-        self.assertEqual(result["score"]["pending"], 1)  # the code answer waits for review
+        self.assertEqual(result["score"]["correct"], 2)
+        self.assertEqual(result["score"]["pending"], 2)  # the text and code answers wait for review
         self.assertTrue(result["result_url"])
         result_page = self.open_handoff(result["result_url"], web=self.client_class())
         self.assertEqual(result_page.status_code, 302)

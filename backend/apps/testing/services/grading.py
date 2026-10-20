@@ -1,20 +1,24 @@
 """Answer checking and attempt scoring.
 
 Choice questions are checked exactly as in the legacy app (the selected set
-must equal the set of correct options). Text questions are checked against
-the accepted answers (exact or case-insensitive, whitespace-normalised);
-legacy text questions without accepted answers, and every code question,
-stay «На проверке» for a teacher — the project has no code execution engine.
+must equal the set of correct options). check_answer() checks text questions
+against the accepted answers (exact or case-insensitive, whitespace-
+normalised) — that is the training portal's instant feedback and the
+reviewer's hint. A stored LMS test result (grade_answer) sends every non-empty
+text answer to manual review in the admin (services.review). Legacy text
+questions without accepted answers, and every code question, stay «На
+проверке» for a teacher — the project has no code execution engine.
 
 Score of an attempt with its own question list = earned points / possible
-points · 100, where a pending answer earns nothing until it is graded.
+points · 100, where a pending answer earns nothing until it is graded and a
+reviewed answer earns the points the reviewer gave (Answer.points_awarded).
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-from ..models import AnswerMatch, GradingStatus, QuestionType, REVIEW_GRADING_STATUSES
+from ..models import AnswerMatch, GradingStatus, QuestionType, REVIEW_GRADING_STATUSES, SessionType
 
 _SPACES = re.compile(r"\s+")
 
@@ -48,9 +52,33 @@ def check_answer(question, answer_text: str = "", selected_options=()) -> tuple[
     return None, GradingStatus.PENDING
 
 
+def reviews_text_manually(session) -> bool:
+    """Text answers of LMS sessions are graded by hand in the admin. The
+    public training portal (anonymous practice with instant feedback) keeps
+    checking them against the accepted answers."""
+    return not (session.is_public and session.session_type == SessionType.TRAINING)
+
+
+def grade_answer(question, answer_text: str = "", selected_options=(), manual_text: bool = True) -> tuple[bool | None, str]:
+    """(is_correct, grading_status) stored for a submitted answer: as
+    check_answer(), except that with ``manual_text`` a non-empty text answer
+    waits for manual review."""
+    if manual_text and question.question_type == QuestionType.TEXT and (answer_text or "").strip():
+        return None, GradingStatus.PENDING
+    return check_answer(question, answer_text, selected_options)
+
+
+def answer_points(answer, max_points: int) -> float:
+    """Points one graded answer earns: the reviewer's score (capped at the
+    question's points), else all or nothing by is_correct."""
+    if answer.points_awarded is not None:
+        return min(max(answer.points_awarded, 0.0), float(max_points))
+    return max_points if answer.is_correct else 0
+
+
 @dataclass
 class AttemptScore:
-    earned: int
+    earned: float
     possible: int
     correct: int
     answered: int
@@ -79,11 +107,12 @@ def attempt_score(attempt) -> AttemptScore:
         answered += 1
         if answer.grading_status in REVIEW_GRADING_STATUSES:
             pending += 1
-        elif answer.is_correct:
-            correct += 1
-            earned += points.get(question_id, 0)
+        else:
+            correct += bool(answer.is_correct)
+            earned += answer_points(answer, points.get(question_id, 0))
+    earned = round(earned, 2)
     return AttemptScore(
-        earned=earned,
+        earned=int(earned) if earned == int(earned) else earned,
         possible=sum(points.get(i, 0) for i in ids),
         correct=correct,
         answered=answered,

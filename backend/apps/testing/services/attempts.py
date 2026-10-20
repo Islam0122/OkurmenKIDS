@@ -27,7 +27,7 @@ from ..models import (
     normalize_session_key,
 )
 from . import participants as participant_events
-from .grading import AttemptScore, attempt_score, check_answer
+from .grading import AttemptScore, attempt_score, grade_answer, reviews_text_manually
 
 # A submit that arrives just after the deadline (network, the auto-submit
 # timer itself) is still accepted.
@@ -242,6 +242,7 @@ def grade_and_finish(attempt: StudentAttempt, answers: dict[str, SubmittedAnswer
     """Grade and store ``answers`` (only valid options of the attempt's own
     questions), then finish the attempt. The caller has checked that the
     attempt may still be submitted and runs this inside a transaction."""
+    manual_text = reviews_text_manually(attempt.session)
     for question in questions if questions is not None else attempt_questions(attempt):
         given = answers.get(str(question.pk))
         if given is None or given.is_empty:
@@ -250,7 +251,7 @@ def grade_and_finish(attempt: StudentAttempt, answers: dict[str, SubmittedAnswer
         options = [o for o in given.options if o in valid_ids]
         if question.question_type == QuestionType.SINGLE_CHOICE:
             options = options[:1]
-        is_correct, grading_status = check_answer(question, given.text, options)
+        is_correct, grading_status = grade_answer(question, given.text, options, manual_text)
         Answer.objects.update_or_create(
             attempt=attempt,
             question=question,

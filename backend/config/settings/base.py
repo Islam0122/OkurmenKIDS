@@ -407,6 +407,7 @@ JAZZMIN_SETTINGS = {
             {"name": "Тесты", "model": "testing.test", "icon": "bi bi-clipboard2-check"},
             {"name": "Сессии", "model": "testing.testsession", "icon": "bi bi-broadcast"},
             {"name": "Результаты тестов", "model": "testing.testresult", "icon": "bi bi-clipboard-data"},
+            {"name": "Проверка текстовых ответов", "model": "testing.textanswerreview", "icon": "bi bi-pencil-square"},
             {"name": "Мониторинг экзаменов", "url": "admin:testing_exam_monitoring", "icon": "bi bi-shield-check"},
         ],
 
@@ -528,6 +529,7 @@ JAZZMIN_SETTINGS = {
         "testing.test": "bi bi-clipboard2-check",
         "testing.testsession": "bi bi-broadcast",
         "testing.testresult": "bi bi-clipboard-data",
+        "testing.textanswerreview": "bi bi-pencil-square",
         "training.portalsettings": "bi bi-sliders",
         "training.trainer": "bi bi-controller",
         "training.trainingattempt": "bi bi-person-lines-fill",
