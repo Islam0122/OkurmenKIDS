@@ -127,6 +127,12 @@ def _teachers_breakdown(scope: AnalyticsScope, date_range: DateRange, year: int,
                 "lessons_completed": stats["lessons_completed"],
                 "students_count": stats["students_count"],
                 "attendance_rate": stats["attendance"]["rate"],
+                # The five KPI criteria of this teacher (services.kpi_engine) —
+                # None = no data for that criterion this month.
+                "homework_rate": stats["kpi"]["homework"],
+                "progress_rate": stats["kpi"]["student_progress"],
+                "activity_rate": stats["kpi"]["lessons"],
+                "test_score_rate": stats["kpi"]["test_score"],
                 # No comparative ranking (spec: never "best/worst teacher") —
                 # a plain per-teacher figure, `None` only when this teacher
                 # genuinely has no data this month.

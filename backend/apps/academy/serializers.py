@@ -1576,6 +1576,10 @@ class AcademyReportTeacherRowSerializer(serializers.Serializer):
     lessons_completed = serializers.IntegerField()
     students_count = serializers.IntegerField()
     attendance_rate = serializers.FloatField()
+    homework_rate = serializers.FloatField(allow_null=True)
+    progress_rate = serializers.FloatField(allow_null=True)
+    activity_rate = serializers.FloatField(allow_null=True)
+    test_score_rate = serializers.FloatField(allow_null=True)
     kpi_total = serializers.FloatField(allow_null=True)
 
 

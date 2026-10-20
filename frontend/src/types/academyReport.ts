@@ -58,6 +58,11 @@ export interface AcademyReportTeacherRow {
   lessons_completed: number
   students_count: number
   attendance_rate: number
+  homework_rate: number | null
+  progress_rate: number | null
+  activity_rate: number | null
+  /** Average test result — the 5th KPI criterion; null = no tests this month. */
+  test_score_rate: number | null
   kpi_total: number | null
 }
 

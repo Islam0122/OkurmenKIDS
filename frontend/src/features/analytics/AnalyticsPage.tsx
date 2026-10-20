@@ -56,6 +56,7 @@ const TEACHER_COLUMNS: DataTableColumn<ReportTeacherRow>[] = [
   { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
   { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
   { key: 'progress', header: 'Прогресс', render: (row) => pct(row.progress_rate) },
+  { key: 'activity', header: 'Активность', render: (row) => pct(row.activity_rate) },
   { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
   { key: 'load', header: 'Нагрузка (занятий)', render: (row) => `${row.lessons.held} / ${row.lessons.total}` },
   { key: 'kpi', header: 'KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
