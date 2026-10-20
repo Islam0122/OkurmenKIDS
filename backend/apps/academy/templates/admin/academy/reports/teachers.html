@@ -22,7 +22,9 @@
           <th scope="col">Предметы</th>
           <th scope="col" class="num">{% sort_link "attendance" "Посещаемость" True %}</th>
           <th scope="col" class="num">{% sort_link "homework" "ДЗ" True %}</th>
+          <th scope="col" class="num">{% sort_link "progress" "Прогресс" True %}</th>
           <th scope="col" class="num">{% sort_link "activity" "Активность" True %}</th>
+          <th scope="col" class="num">{% sort_link "tests" "Результаты тестов" True %}</th>
           <th scope="col" class="num okr-col-kpi">{% sort_link "kpi" "KPI" True %}</th>
           <th scope="col"><span class="okr-visually-hidden">Действия</span></th>
         </tr>
@@ -39,7 +41,9 @@
           <td>{% for s in t.subjects %}<span class="okr-chip">{{ s }}</span>{% empty %}<span class="okr-muted">—</span>{% endfor %}</td>
           <td class="num">{{ t.attendance_rate|pct }}</td>
           <td class="num">{{ t.homework_rate|pct }}</td>
+          <td class="num">{{ t.progress_rate|pct }}</td>
           <td class="num">{{ t.activity_rate|pct }}</td>
+          <td class="num">{{ t.test_score_rate|metric_pct }}</td>
           <td class="num okr-col-kpi">{{ t.kpi|kpi_badge }}</td>
           <td class="num"><a class="okr-btn okr-btn-icon okr-btn-ghost" href="{% url 'admin:academy_reports_teacher_detail' t.id %}?{{ filter_query }}" data-okr-loading title="Подробный отчёт тренера" aria-label="Подробный отчёт тренера {{ t.name }}">{% icon "eye" 16 %}</a></td>
         </tr>

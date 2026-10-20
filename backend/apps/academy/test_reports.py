@@ -608,6 +608,10 @@ class ReportsAdminPageTests(ReportsTestBase):
         self.assertIn("PRO-01", body)
         self.assertIn("66,7%", body)
         self.assertIn("Не назначен", body)
+        body = self.web.get(pages["teachers"], SEPT).content.decode()
+        for header in ("Посещаемость", "ДЗ", "Прогресс", "Активность", "Результаты тестов"):
+            self.assertIn(header, body)
+        self.assertIn("Нет данных", body)  # no test attempts in this fixture — not 0%
         body = self.web.get(pages["teacher"], SEPT).content.decode()
         self.assertIn("ENG-01", body)
         self.assertIn("English", body)
