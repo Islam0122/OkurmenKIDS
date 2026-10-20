@@ -52,7 +52,7 @@ const COLUMNS: Record<View, DataTableColumn<ReportTeacherRow>[]> = {
   kpi: [
     nameColumn,
     { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
-    { key: 'homework', header: 'Домашние задания', render: (row) => pct(row.homework_rate) },
+    { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
     { key: 'progress', header: 'Прогресс', render: (row) => pct(row.progress_rate) },
     { key: 'activity', header: 'Активность', render: (row) => pct(row.activity_rate) },
     { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
