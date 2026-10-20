@@ -106,6 +106,8 @@ def _overview_sheet(wb, report: dict, filter_labels: str) -> None:
         ["KPI: домашние задания", _pct(ov["metrics"]["homework"]), PCT],
         ["KPI: проведённые занятия", _pct(ov["metrics"]["lesson_completion"]), PCT],
         ["KPI: прогресс", _pct(ov["metrics"]["progress"]), PCT],
+        ["KPI: результаты тестов", _pct(ov["metrics"]["test_score"]), PCT],
+        ["Сдали тесты (не входит в KPI)", _pct(ov["metrics"]["test_pass_rate"]), PCT],
         ["Нагрузка тренеров (не входит в KPI)", _pct(ov["metrics"]["teacher_workload"]), PCT],
         ["Общий KPI", _pct(ov["kpi"]["total"]), PCT],
     ]
@@ -127,17 +129,18 @@ def _groups_sheet(wb, report: dict) -> None:
         ("Статус", 13, None), ("Дата начала", 13, DATE), ("Всего", 9, None), ("Активные", 10, None),
         ("Ушли", 8, None), ("Новые", 8, None), ("Вернулись", 10, None), ("Занятий", 9, None),
         ("Проведено", 10, None), ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT), ("Активность", 12, PCT),
-        ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Уровень KPI", 18, None),
+        ("Прогресс", 11, PCT), ("Результаты тестов", 14, PCT), ("KPI", 10, PCT), ("Уровень KPI", 18, None),
     ]
     rows = [
         [g["name"], g["program"], g["teacher_names"], ", ".join(g["subjects"]), g["status_display"], g["start_date"],
          g["students"]["total"], g["students"]["active"], g["students"]["left"], g["students"]["new"],
          g["students"]["returned"], g["lessons"]["total"], g["lessons"]["held"], _pct(g["attendance_rate"]),
-         _pct(g["homework_rate"]), _pct(g["activity_rate"]), _pct(g["progress_rate"]), _pct(g["kpi"]),
+         _pct(g["homework_rate"]), _pct(g["activity_rate"]), _pct(g["progress_rate"]),
+         _pct(g["test_score_rate"]), _pct(g["kpi"]),
          LEVEL_LABELS[g["kpi_level"]]]
         for g in report["groups"]
     ]
-    _write_table(ws, 4, headers, rows, level_col=18, levels=[g["kpi_level"] for g in report["groups"]])
+    _write_table(ws, 4, headers, rows, level_col=19, levels=[g["kpi_level"] for g in report["groups"]])
     ws.freeze_panes = "B5"
 
 
@@ -147,16 +150,16 @@ def _subjects_sheet(wb, report: dict) -> None:
         ("Предмет", 26, None), ("Тренеров", 10, None), ("Тренеры", 36, None), ("Групп", 8, None),
         ("Группы", 40, None), ("Студентов", 10, None), ("Занятий", 9, None), ("Проведено", 10, None),
         ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT), ("Проведено занятий", 14, PCT), ("Прогресс", 11, PCT),
-        ("KPI", 10, PCT), ("Уровень KPI", 18, None),
+        ("Результаты тестов", 14, PCT), ("KPI", 10, PCT), ("Уровень KPI", 18, None),
     ]
     rows = [
         [s["name"], s["teachers_count"], ", ".join(t["name"] for t in s["teachers"]), s["groups_count"],
          ", ".join(g["name"] for g in s["groups"]), s["students"]["total"], s["lessons"]["total"],
          s["lessons"]["held"], _pct(s["attendance_rate"]), _pct(s["homework_rate"]), _pct(s["activity_rate"]),
-         _pct(s["progress_rate"]), _pct(s["kpi"]), LEVEL_LABELS[s["kpi_level"]]]
+         _pct(s["progress_rate"]), _pct(s["test_score_rate"]), _pct(s["kpi"]), LEVEL_LABELS[s["kpi_level"]]]
         for s in report["subjects"]
     ]
-    _write_table(ws, 4, headers, rows, level_col=13, levels=[s["kpi_level"] for s in report["subjects"]])
+    _write_table(ws, 4, headers, rows, level_col=14, levels=[s["kpi_level"] for s in report["subjects"]])
     ws.freeze_panes = "B5"
 
 
@@ -166,16 +169,18 @@ def _teachers_sheet(wb, report: dict) -> None:
         ("Тренер", 26, None), ("Должность", 22, None), ("Групп", 8, None), ("Группы", 40, None),
         ("Предметы", 26, None), ("Студентов", 10, None), ("Активные", 10, None), ("Ушли", 8, None),
         ("Занятий", 9, None), ("Проведено", 10, None), ("Посещаемость", 13, PCT), ("ДЗ", 10, PCT),
-        ("Активность", 12, PCT), ("Прогресс", 11, PCT), ("KPI", 10, PCT), ("Уровень KPI", 18, None),
+        ("Активность", 12, PCT), ("Прогресс", 11, PCT), ("Результаты тестов", 14, PCT), ("KPI", 10, PCT),
+        ("Уровень KPI", 18, None),
     ]
     rows = [
         [t["name"], t["position"], t["groups_count"], ", ".join(g["name"] for g in t["groups"]) or "Нет групп",
          ", ".join(t["subjects"]), t["students"]["total"], t["students"]["active"], t["students"]["left"],
          t["lessons"]["total"], t["lessons"]["held"], _pct(t["attendance_rate"]), _pct(t["homework_rate"]),
-         _pct(t["activity_rate"]), _pct(t["progress_rate"]), _pct(t["kpi"]), LEVEL_LABELS[t["kpi_level"]]]
+         _pct(t["activity_rate"]), _pct(t["progress_rate"]), _pct(t["test_score_rate"]), _pct(t["kpi"]),
+         LEVEL_LABELS[t["kpi_level"]]]
         for t in report["teachers"]
     ]
-    _write_table(ws, 4, headers, rows, level_col=15, levels=[t["kpi_level"] for t in report["teachers"]])
+    _write_table(ws, 4, headers, rows, level_col=16, levels=[t["kpi_level"] for t in report["teachers"]])
     ws.freeze_panes = "B5"
 
 
@@ -259,16 +264,18 @@ def _kpi_sheet(wb, report: dict) -> None:
     headers = [
         ("Группа / тренер", 36, None), ("Тип", 10, None), (COMPONENT_LABELS["attendance"], 14, PCT),
         (COMPONENT_LABELS["homework"], 14, PCT), (COMPONENT_LABELS["lesson_completion"], 16, PCT),
-        (COMPONENT_LABELS["progress"], 16, PCT), ("Общий KPI", 12, PCT), ("Уровень KPI", 18, None),
+        (COMPONENT_LABELS["progress"], 16, PCT), (COMPONENT_LABELS["test_score"], 16, PCT), ("Общий KPI", 12, PCT),
+        ("Уровень KPI", 18, None),
     ]
     rows, levels = [], []
     for kind, items in (("Группа", report["groups"]), ("Тренер", report["teachers"])):
         for item in items:
             rows.append([item["name"], kind, _pct(item["attendance_rate"]), _pct(item["homework_rate"]),
-                         _pct(item["activity_rate"]), _pct(item["progress_rate"]), _pct(item["kpi"]),
+                         _pct(item["activity_rate"]), _pct(item["progress_rate"]), _pct(item["test_score_rate"]),
+                         _pct(item["kpi"]),
                          LEVEL_LABELS[item["kpi_level"]]])
             levels.append(item["kpi_level"])
-    _write_table(ws, next_row, headers, rows, level_col=7, levels=levels)
+    _write_table(ws, next_row, headers, rows, level_col=8, levels=levels)
 
 
 def build_reports_excel(report: dict, filter_labels: str) -> bytes:

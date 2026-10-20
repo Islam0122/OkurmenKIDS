@@ -378,6 +378,7 @@ def _draw_kpi_breakdown(doc: _Doc, stats: dict) -> None:
         ("Домашние задания", kpi["homework"]),
         ("Проведённые занятия", kpi["lessons"]),
         ("Прогресс студентов", kpi["student_progress"]),
+        ("Результаты тестов", kpi["test_score"]),
     ]
     cols = 2
     gap_x = 24

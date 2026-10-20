@@ -5,6 +5,11 @@ attributed by its historical snapshot (group / teacher / subject at the
 time of the attempt), dated by when it was finished. Scope follows
 AnalyticsScope: the groups in scope, the selected teacher (the result's
 teacher) and subject.
+
+Not results (yet): active or expired attempts, and finished attempts whose
+answers still wait for review (their score is provisional — a pending
+answer earns nothing until graded). Every attempt is one row, counted once;
+a student's retakes are separate attempts, each counted once.
 """
 from __future__ import annotations
 
@@ -16,13 +21,13 @@ from .scope import AnalyticsScope
 
 
 def results_qs(scope: AnalyticsScope, date_range: DateRange):
-    from apps.testing.models import AttemptStatus, StudentAttempt
+    from apps.testing.models import REVIEW_GRADING_STATUSES, AttemptStatus, StudentAttempt
 
     qs = StudentAttempt.objects.filter(
         status=AttemptStatus.FINISHED, student__isnull=False, user__isnull=True,
         group__in=scope.groups_qs(),
         finished_at__date__gte=date_range.start, finished_at__date__lte=date_range.end,
-    )
+    ).exclude(answers__grading_status__in=REVIEW_GRADING_STATUSES)
     if scope.teacher_id is not None:
         qs = qs.filter(teacher_id=scope.teacher_id)
     if scope.subject_id is not None:

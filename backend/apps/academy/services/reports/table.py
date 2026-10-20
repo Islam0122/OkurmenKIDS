@@ -23,6 +23,7 @@ GROUP_SORTS = {
     "homework": lambda r: r["homework_rate"],
     "activity": lambda r: r["activity_rate"],
     "progress": lambda r: r["progress_rate"],
+    "tests": lambda r: r["test_score_rate"],
     "kpi": lambda r: r["kpi"],
 }
 GROUP_SEARCH = ("name", "program", "teacher_names")
@@ -37,6 +38,7 @@ TEACHER_SORTS = {
     "homework": lambda r: r["homework_rate"],
     "activity": lambda r: r["activity_rate"],
     "progress": lambda r: r["progress_rate"],
+    "tests": lambda r: r["test_score_rate"],
     "kpi": lambda r: r["kpi"],
 }
 
@@ -50,6 +52,7 @@ SUBJECT_SORTS = {
     "homework": lambda r: r["homework_rate"],
     "activity": lambda r: r["activity_rate"],
     "progress": lambda r: r["progress_rate"],
+    "tests": lambda r: r["test_score_rate"],
     "kpi": lambda r: r["kpi"],
 }
 

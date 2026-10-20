@@ -43,6 +43,10 @@ interface Rates {
   homework_rate: number | null
   activity_rate: number | null
   progress_rate: number | null
+  /** Average test result (0–100) — the 5th KPI criterion; null = no tests in the period. */
+  test_score_rate: number | null
+  /** Share of test results at/above the passing score — shown alongside, not in the KPI. */
+  test_pass_rate: number | null
   kpi: number | null
   kpi_level: KpiLevel
   has_data: boolean

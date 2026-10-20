@@ -3,15 +3,16 @@ filters, aggregates, export), the KPI engine's test metrics, the student
 portal pages and the admin section."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.academy.models import Group, Student
+from apps.academy.models import Group, Lesson, Student
 from apps.academy.services.kpi_engine import KPIEngine
-from apps.testing.models import AttemptStatus
+from apps.academy.services.reports import ReportFilters, build_teacher_detail, build_teacher_rows
+from apps.testing.models import Answer, AttemptStatus, GradingStatus, StudentAttempt
 from apps.users.models import Subject, User
 
 from .test_monitoring import MonitoringFixture
@@ -116,6 +117,91 @@ class KpiTests(ResultsFixture):
         self.assertEqual(dashboard["tests"]["average_score"]["value"], 60.0)
         self.assertEqual(dashboard["tests"]["students_below_passing"]["value"], 1)
         self.assertEqual(dashboard["metrics"]["test_pass_rate"], 50.0)
+
+
+class FiveCriteriaKpiTests(ResultsFixture):
+    """«Результаты тестов» — the 5th KPI criterion, from real attempts."""
+
+    SEPT_START, SEPT_END, TODAY = date(2026, 9, 1), date(2026, 9, 30), date(2026, 9, 30)
+
+    def setUp(self):
+        super().setUp()
+        StudentAttempt.objects.filter(pk__in=[self.passed.pk, self.foreign.pk]).update(finished_at=self.at(10))
+        # The trainer's only lesson of September is held -> «Активность» 100%.
+        Lesson.objects.filter(pk=self.lesson.pk).update(status=Lesson.Status.COMPLETED)
+
+    @staticmethod
+    def at(day: int, month: int = 9):
+        return timezone.make_aware(datetime(2026, month, day, 12))
+
+    def finished(self, score: float, day: int = 12, month: int = 9, **fields):
+        return self.attempt(self.mine, self.student, status=AttemptStatus.FINISHED, score=score,
+                            finished_at=self.at(day, month), **fields)
+
+    def engine(self, start=SEPT_START, end=SEPT_END):
+        return KPIEngine.calculate(start=start, end=end, teacher_id=self.teacher.pk, today=self.TODAY)
+
+    def row(self, start=SEPT_START, end=SEPT_END):
+        filters = ReportFilters.from_query(
+            {"period": "custom", "start_date": str(start), "end_date": str(end)}, today=self.TODAY,
+        )
+        return next(r for r in build_teacher_rows(filters) if r["id"] == self.teacher.pk), filters
+
+    def test_all_criteria_available_and_the_same_kpi_everywhere(self):
+        row, filters = self.row()
+        self.assertEqual((row["activity_rate"], row["test_score_rate"], row["test_pass_rate"]), (100.0, 100.0, 100.0))
+        self.assertEqual(row["kpi"], 100.0)
+        self.finished(40.0)
+        row, filters = self.row()
+        self.assertEqual((row["test_score_rate"], row["kpi"]), (70.0, 85.0))
+        engine = self.engine()
+        detail = build_teacher_detail(self.teacher, filters)
+        self.assertEqual((engine.metrics["test_score"], engine.total), (70.0, 85.0))
+        self.assertEqual((detail["metrics"]["test_score"], detail["kpi"]["total"]), (70.0, 85.0))
+
+    def test_unfinished_and_unreviewed_attempts_are_not_results(self):
+        self.attempt(self.mine, self.student, status=AttemptStatus.EXPIRED, score=0.0, finished_at=self.at(12))
+        pending = self.finished(0.0)
+        answer = Answer.objects.create(attempt=pending, question=self.q1, selected_options=[],
+                                       grading_status=GradingStatus.PENDING)
+        # self.active (ACTIVE), the expired one and the one waiting for review are left out.
+        engine = self.engine()
+        self.assertEqual((engine.counts.test_attempts, engine.metrics["test_score"]), (1, 100.0))
+        self.assertEqual(self.row()[0]["test_score_rate"], 100.0)
+        # Once reviewed, it is a result.
+        Answer.objects.filter(pk=answer.pk).update(grading_status=GradingStatus.MANUAL)
+        StudentAttempt.objects.filter(pk=pending.pk).update(score=60.0)
+        engine = self.engine()
+        self.assertEqual((engine.counts.test_attempts, engine.metrics["test_score"]), (2, 80.0))
+
+    def test_retakes_are_separate_attempts_each_counted_once(self):
+        self.finished(40.0)
+        self.finished(70.0, day=20)
+        engine = self.engine()
+        # self.passed has two answers: the join must not count it twice.
+        self.assertEqual((engine.counts.test_attempts, engine.counts.test_passed), (3, 2))
+        self.assertEqual(engine.metrics["test_score"], 70.0)  # (100 + 40 + 70) / 3
+        self.assertEqual(engine.metrics["test_pass_rate"], 66.7)
+        row = self.row()[0]
+        self.assertEqual((row["test_score_rate"], row["test_pass_rate"]), (70.0, 66.7))
+
+    def test_selected_period(self):
+        self.finished(30.0, day=5, month=10)
+        self.assertEqual(self.engine().metrics["test_score"], 100.0)
+        october = self.engine(date(2026, 10, 1), date(2026, 10, 31))
+        self.assertEqual(october.metrics["test_score"], 30.0)
+        self.assertEqual(self.engine(date(2026, 9, 1), date(2026, 10, 31)).metrics["test_score"], 65.0)
+        august = self.engine(date(2026, 8, 1), date(2026, 8, 31))
+        self.assertIsNone(august.metrics["test_score"])
+        self.assertIsNone(august.total)
+
+    def test_no_tests_in_the_period_is_no_data_not_zero(self):
+        StudentAttempt.objects.all().delete()
+        row = self.row()[0]
+        self.assertIsNone(row["test_score_rate"])
+        self.assertIsNone(row["test_pass_rate"])
+        self.assertEqual(row["kpi"], 100.0)  # only «Активность» has data — not (100 + 0) / 2
+        self.assertIsNone(self.engine().metrics["test_score"])
 
 
 class AdminTests(ResultsFixture):

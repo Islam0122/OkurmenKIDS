@@ -31,8 +31,10 @@ from apps.academy.services.analytics import get_dashboard
 from apps.academy.services.kpi_engine import (
     KPICounts,
     KPIEngine,
+    KPIResult,
     from_counts,
     kpi_status,
+    kpi_weights,
     total_kpi,
 )
 from apps.academy.services.monthly_report import compute_monthly_stats
@@ -87,6 +89,48 @@ class KPIEngineUnitTests(ReportsTestBase):
     def test_weights_come_from_settings(self):
         metrics = {"attendance": 90, "homework": 80, "lesson_completion": 100, "progress": 70}
         self.assertAlmostEqual(total_kpi(metrics), 90 * 0.4 + 80 * 0.3 + 100 * 0.2 + 70 * 0.1)
+
+    def test_five_criteria_with_equal_weights(self):
+        # P 83.1, H 80.9, G 77.7, A 95.5, T 72.1 -> (P + H + G + A + T) / 5 = 81.86 -> 81.9
+        result = from_counts(KPICounts(
+            attendance_total=1000, attendance_attended=831, homework_results=1000, homework_submitted=809,
+            lessons_due=1000, lessons_held=955, avg_score=7.77, test_attempts=3, test_passed=2, test_avg_score=72.1,
+        ))
+        self.assertEqual(result.total, 81.9)
+        self.assertAlmostEqual(result.total_exact, (83.1 + 80.9 + 77.7 + 95.5 + 72.1) / 5)
+        self.assertEqual([(w["key"], w["weight"]) for w in result.as_contract()["kpi"]["weights"]],
+                         [("attendance", 20.0), ("homework", 20.0), ("lesson_completion", 20.0), ("progress", 20.0),
+                          ("test_score", 20.0)])
+
+    def test_missing_test_results_do_not_lower_the_kpi(self):
+        # No tests in the period: «Нет данных», not 0% — the other four share the weight.
+        metrics = {"attendance": 90, "homework": 80, "lesson_completion": 100, "progress": 70, "test_score": None}
+        self.assertEqual(total_kpi(metrics), (90 + 80 + 100 + 70) / 4)
+        result = from_counts(KPICounts(attendance_total=10, attendance_attended=9, lessons_due=2, lessons_held=2))
+        self.assertIsNone(result.metrics["test_score"])
+        self.assertIsNone(result.metrics["test_pass_rate"])
+        self.assertEqual(result.total, 95.0)
+
+    def test_missing_other_criterion_renormalises_the_weights(self):
+        metrics = {"attendance": 90, "homework": None, "lesson_completion": 100, "progress": 70, "test_score": 60}
+        self.assertEqual(total_kpi(metrics), (90 + 100 + 70 + 60) / 4)
+
+    def test_no_data_at_all(self):
+        result = from_counts(KPICounts())
+        self.assertIsNone(result.total)
+        self.assertEqual(result.status, "no_data")
+        self.assertEqual(result.as_contract()["kpi"]["status_label"], "Нет данных")
+
+    def test_five_criteria_total_is_rounded_once(self):
+        # Rounding each criterion first: (10.0 × 4 + 10.2) / 5 = 10.04 -> 10.0.
+        # The exact values: (10.04 × 4 + 10.24) / 5 = 10.08 -> 10.1.
+        metrics = {"attendance": 10.04, "homework": 10.04, "lesson_completion": 10.04, "progress": 10.04,
+                   "test_score": 10.24}
+        result = KPIResult(counts=KPICounts(), metrics_exact=metrics, total_exact=total_kpi(metrics),
+                           weights=kpi_weights())
+        self.assertEqual(result.metrics, {"attendance": 10.0, "homework": 10.0, "lesson_completion": 10.0,
+                                          "progress": 10.0, "test_score": 10.2})
+        self.assertEqual(result.total, 10.1)
 
     def test_status_thresholds(self):
         self.assertEqual([kpi_status(v) for v in (90, 89.9, 75, 74.9, None)],

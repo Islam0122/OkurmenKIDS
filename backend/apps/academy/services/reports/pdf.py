@@ -38,7 +38,7 @@ from apps.academy.services.monthly_report_pdf import (
     _truncate_text,
     _wrap_text,
 )
-from .kpi import COMPONENT_LABELS, LEVEL_LABELS, kpi_level
+from .kpi import COMPONENT_LABELS, COMPONENTS, LEVEL_LABELS, kpi_level
 from .service import describe_filters
 
 PAGE_W, PAGE_H = A4
@@ -235,14 +235,14 @@ def _kpi_block(doc: _Doc, overview: dict) -> None:
     # Components (right)
     x = MARGIN + box_w + 34
     bar_w = CONTENT_W - box_w - 34 - 70
-    y = top - 30
-    for key in ("attendance", "homework", "lesson_completion", "progress"):
+    y = top - 24
+    for key in COMPONENTS:
         value = metrics[key]
         doc.text(x, y, f"{COMPONENT_LABELS[key]}  ·  вес {weights.get(key, 0):g}%", size=8.3, color=INK_SECONDARY)
         doc.text(PAGE_W - MARGIN - 14, y, _pct(value), font=_BOLD, size=10, color=INK, align="right")
         color, _soft = LEVEL_COLORS[_level(value)]
-        _progress_bar(c, x, y - 12, bar_w + 50, 6, value or 0, color)
-        y -= 30
+        _progress_bar(c, x, y - 11, bar_w + 50, 6, value or 0, color)
+        y -= 25
     doc.y = top - height - 12
     doc.text(MARGIN, doc.y,
              "Общий KPI — взвешенное среднее показателей, по которым есть данные; показатель без данных («—») не учитывается.",

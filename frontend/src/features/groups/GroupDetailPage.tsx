@@ -422,11 +422,15 @@ function AnalyticsTab({ groupId }: { groupId: number }) {
 
       {data ? (
         <>
-          <dl className="grid grid-cols-2 gap-4 card card-body sm:grid-cols-5">
+          <dl className="grid grid-cols-2 gap-4 card card-body sm:grid-cols-3 lg:grid-cols-6">
             <Field label="Посещаемость" value={pct(data.metrics.attendance ?? null)} />
-            <Field label="ДЗ" value={pct(data.metrics.homework ?? null)} />
-            <Field label="Результаты" value={pct(data.metrics.progress ?? null)} />
+            <Field label="Домашние задания" value={pct(data.metrics.homework ?? null)} />
+            <Field label="Прогресс" value={pct(data.metrics.progress ?? null)} />
             <Field label="Активность" value={pct(data.metrics.lesson_completion ?? null)} />
+            <Field
+              label="Результаты тестов"
+              value={data.metrics.test_score == null ? 'Нет данных' : pct(data.metrics.test_score)}
+            />
             <div>
               <dt className="text-xs text-ink-secondary">KPI</dt>
               <dd className="mt-1">

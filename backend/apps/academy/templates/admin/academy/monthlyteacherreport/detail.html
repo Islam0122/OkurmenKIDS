@@ -168,6 +168,16 @@
             <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.student_progress|unlocalize }}%;"></div></div>
           {% endif %}
         </div>
+        <div>
+          <p class="ok-kpi-mini-label">Результаты тестов</p>
+          {% if stats.kpi.test_score is None %}
+            <p class="ok-kpi-mini-value">Нет данных</p>
+            <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:0%;"></div></div>
+          {% else %}
+            <p class="ok-kpi-mini-value">{{ stats.kpi.test_score|ru_percent }}</p>
+            <div class="ok-kpi-mini-track"><div class="ok-kpi-mini-fill" style="width:{{ stats.kpi.test_score|unlocalize }}%;"></div></div>
+          {% endif %}
+        </div>
       </div>
       <div class="ok-kpi-total">
         <span class="ok-kpi-total-label">Итоговый KPI</span>

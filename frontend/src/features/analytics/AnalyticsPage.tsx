@@ -33,7 +33,7 @@ import type {
 } from '@/types/reports'
 
 import { TestPerformanceReport } from '@/features/results/TestPerformanceReport'
-import { KPI_LEVEL_LABEL, KpiBadge, PeriodSelect, ReportExportButtons, ReportPagination, pct, periodCaption } from './reportUi'
+import { KPI_LEVEL_LABEL, KpiBadge, MetricValue, PeriodSelect, ReportExportButtons, ReportPagination, pct, periodCaption } from './reportUi'
 
 type Section = 'teachers' | 'groups' | 'students' | 'subjects' | 'tests'
 
@@ -55,7 +55,8 @@ const TEACHER_COLUMNS: DataTableColumn<ReportTeacherRow>[] = [
   { key: 'students', header: 'Студентов', render: (row) => row.students.active },
   { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
   { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
-  { key: 'progress', header: 'Результаты', render: (row) => pct(row.progress_rate) },
+  { key: 'progress', header: 'Прогресс', render: (row) => pct(row.progress_rate) },
+  { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
   { key: 'load', header: 'Нагрузка (занятий)', render: (row) => `${row.lessons.held} / ${row.lessons.total}` },
   { key: 'kpi', header: 'KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
 ]
@@ -77,6 +78,7 @@ const GROUP_COLUMNS: DataTableColumn<ReportGroupRow>[] = [
   { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
   { key: 'progress', header: 'Средний результат', render: (row) => pct(row.progress_rate) },
   { key: 'activity', header: 'Активность', render: (row) => pct(row.activity_rate) },
+  { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
   { key: 'kpi', header: 'KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
 ]
 
@@ -98,6 +100,7 @@ const SUBJECT_COLUMNS: DataTableColumn<ReportSubjectRow>[] = [
   { key: 'activity', header: 'Активность', render: (row) => pct(row.activity_rate) },
   { key: 'score', header: 'Средний балл', render: (row) => row.average_score ?? '—' },
   { key: 'progress', header: 'Результаты', render: (row) => pct(row.progress_rate) },
+  { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
   { key: 'kpi', header: 'KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
 ]
 

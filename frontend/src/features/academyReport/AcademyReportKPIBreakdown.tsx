@@ -14,7 +14,7 @@ function KPICell({ label, percent }: { label: string; percent: number | null }) 
   )
 }
 
-/** A compact 2x2 grid, not four bars stretched across the full card width —
+/** A compact two-column grid, not five bars stretched across the full card width —
  * mirrors the Monthly Teacher Report's own KPI breakdown layout. */
 export function AcademyReportKPIBreakdown({ kpi }: { kpi: AcademyReportKPI }) {
   return (
@@ -24,6 +24,7 @@ export function AcademyReportKPIBreakdown({ kpi }: { kpi: AcademyReportKPI }) {
         <KPICell label="Домашние задания" percent={kpi.homework} />
         <KPICell label="Проведённые занятия" percent={kpi.lessons} />
         <KPICell label="Прогресс студентов" percent={kpi.student_progress} />
+        <KPICell label="Результаты тестов" percent={kpi.test_score} />
       </div>
 
       <div className="mt-5 flex items-center justify-between rounded-xl bg-brand-50 px-4 py-3.5">

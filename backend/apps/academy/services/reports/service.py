@@ -43,6 +43,8 @@ from collections import defaultdict
 
 from django.db.models import Avg, Count, Q
 
+from apps.academy.services.analytics import assessments
+
 from apps.users.models import Subject, Teacher
 
 from apps.academy.models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
@@ -83,6 +85,10 @@ class PeriodStats:
     homework_not_submitted: int = 0
     homework_late: int = 0
     avg_score: float | None = None
+    # Finished, fully graded test attempts of the period (analytics.assessments).
+    test_attempts: int = 0
+    test_passed: int = 0
+    test_avg_score: float | None = None
 
     @property
     def attendance_rate(self) -> float | None:
@@ -107,8 +113,18 @@ class PeriodStats:
         return round(self.avg_score / 10 * 100, 1) if self.avg_score is not None else None
 
     @property
+    def test_score_rate(self) -> float | None:
+        """Average test result (0–100) — the KPI's «Результаты тестов»."""
+        return round(self.test_avg_score, 1) if self.test_avg_score is not None else None
+
+    @property
+    def test_pass_rate(self) -> float | None:
+        """Share of the attempts at/above the passing score — not in the KPI."""
+        return rate(self.test_passed, self.test_attempts)
+
+    @property
     def has_data(self) -> bool:
-        return bool(self.lessons_total or self.attendance_total or self.homework_results)
+        return bool(self.lessons_total or self.attendance_total or self.homework_results or self.test_attempts)
 
     def kpi_result(self, weights: dict | None = None) -> KPIResult:
         """This row's KPI through the one engine formula (exact values in,
@@ -122,6 +138,9 @@ class PeriodStats:
                 lessons_due=self.lessons_due,
                 lessons_held=self.lessons_held,
                 avg_score=self.avg_score,
+                test_attempts=self.test_attempts,
+                test_passed=self.test_passed,
+                test_avg_score=self.test_avg_score,
             ),
             weights,
         )
@@ -157,6 +176,12 @@ class PeriodStats:
                 "completion_rate": self.homework_rate,
                 "average_score": round(self.avg_score, 1) if self.avg_score is not None else None,
             },
+            "tests": {
+                "attempts": self.test_attempts,
+                "passed": self.test_passed,
+                "average_score": self.test_score_rate,
+                "pass_rate": self.test_pass_rate,
+            },
             **_contract(self.kpi_result(weights)),
             "has_data": self.has_data,
         }
@@ -180,10 +205,14 @@ _KEYS = {
               "result": "homework__lesson__group_id"},
     "teacher": {"lesson": _eff_teacher(), "attendance": _eff_teacher("lesson__"), "homework": _eff_teacher("lesson__"),
                 "result": _eff_teacher("homework__lesson__")},
-    "student": {"attendance": "student_id", "result": "student_id"},
+    "student": {"attendance": "student_id", "result": "student_id", "test": "student_id"},
     "subject": {"lesson": "subject_id", "attendance": "lesson__subject_id", "homework": "lesson__subject_id",
-                "result": "homework__lesson__subject_id"},
+                "result": "homework__lesson__subject_id", "test": "subject_id"},
 }
+# Test attempts are attributed by their own snapshot (group / teacher /
+# subject at the time of the attempt — services.result_snapshot), not by a lesson.
+_KEYS["group"]["test"] = "group_id"
+_KEYS["teacher"]["test"] = "teacher_id"
 
 
 def _grouped(qs, key_expr, **aggregates) -> dict:
@@ -200,8 +229,8 @@ def _grouped(qs, key_expr, **aggregates) -> dict:
 
 def _period_stats(filters: ReportFilters, key: str | None, *, lessons=None, only_keys=None) -> dict:
     """PeriodStats per `key` ("group"/"teacher"/"student"/"subject", or None for one
-    scope-wide total) over the lessons in scope — 4 queries (3 for
-    students), whatever the number of keys."""
+    scope-wide total) over the lessons in scope, plus the test results of the
+    scope's period — 5 queries (4 for students), whatever the number of keys."""
     lessons = lessons if lessons is not None else filters.scope().lessons_qs()
     paths = _KEYS.get(key, {}) if key else {}
     stats: dict = defaultdict(PeriodStats)
@@ -260,6 +289,18 @@ def _period_stats(filters: ReportFilters, key: str | None, *, lessons=None, only
             s.homework_results, s.homework_submitted = row["total"] or 0, row["submitted"] or 0
             s.homework_checked, s.homework_not_submitted = row["checked"] or 0, row["not_submitted"] or 0
             s.homework_late, s.avg_score = row["late"] or 0, row["avg_score"]
+
+    scope = filters.scope()
+    tests_qs = assessments.results_qs(scope, scope.date_range)
+    if key == "student" and only_keys is not None:
+        tests_qs = tests_qs.filter(student_id__in=only_keys)
+    for k, row in _grouped(
+        tests_qs, paths.get("test"),
+        attempts=Count("pk"), passed=Count("pk", filter=assessments.PASSED), average=Avg("score"),
+    ).items():
+        if keep(k) and row["attempts"]:
+            s = stats[k]
+            s.test_attempts, s.test_passed, s.test_avg_score = row["attempts"], row["passed"] or 0, row["average"]
 
     return stats
 
@@ -415,6 +456,8 @@ def _group_row(group: Group, programs, counts: dict, left: set, returned: set, s
         "homework_rate": stats.homework_rate,
         "activity_rate": stats.activity_rate,
         "progress_rate": stats.progress_rate,
+        "test_score_rate": stats.test_score_rate,
+        "test_pass_rate": stats.test_pass_rate,
         "kpi": kpi["total"],
         "kpi_level": kpi["status"],
         "has_data": stats.has_data,
@@ -518,6 +561,8 @@ def build_teacher_rows(filters: ReportFilters, group_ids: list[int] | None = Non
                 "homework_rate": s.homework_rate,
                 "activity_rate": s.activity_rate,
                 "progress_rate": s.progress_rate,
+                "test_score_rate": s.test_score_rate,
+                "test_pass_rate": s.test_pass_rate,
                 "kpi": kpi["total"],
                 "kpi_level": kpi["status"],
                 "has_data": s.has_data,
@@ -845,6 +890,8 @@ def _rates(s: PeriodStats, weights) -> dict:
         "homework_rate": s.homework_rate,
         "activity_rate": s.activity_rate,
         "progress_rate": s.progress_rate,
+        "test_score_rate": s.test_score_rate,
+        "test_pass_rate": s.test_pass_rate,
         "kpi": kpi["total"],
         "kpi_level": kpi["status"],
         "has_data": s.has_data,
