@@ -315,15 +315,15 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
           </KpiGroup>
           <KpiGroup title="Учебная активность">
             <Kpi label="Средняя посещаемость" value={<Percent value={o.attendance_percent} />} />
-            <Kpi label="Среднее выполнение ДЗ" value={<Percent value={o.homework_percent} />} />
+            <Kpi label="Выполнение ДЗ" value={<Percent value={o.homework_percent} />} />
             <Kpi label="В зоне риска" value={o.students_at_risk} tone={o.students_at_risk ? 'text-danger' : undefined} />
           </KpiGroup>
         </div>
       </Section>
 
-      <Section index={next()} title="Посещаемость" hint="Только проведённые занятия, отменённые не учитываются">
+      <Section index={next()} title="Посещаемость" hint="Только проведённые занятия, отменённые не учитываются. Посещаемость = присутствовали (вовремя + опоздали) / все отметки (присутствовали + пропуски + уважительные)">
         <Headline label="Посещаемость" value={att.percent}>
-          <Totals items={[['Проведено занятий', att.lessons], ['Присутствовали', att.attended, 'text-brand-700'],
+          <Totals items={[['Проведено занятий', att.lessons], ['Присутствовали', att.attended, 'text-brand-700'], ['из них опоздали', att.late],
             ['Пропустили', att.absent, att.absent ? 'text-danger' : undefined], ['Уважительная причина', att.excused], ['Всего отметок', att.marked]]} />
         </Headline>
         <Table empty={att.groups.length === 0 && 'В этом месяце занятий не было.'} head={
@@ -359,14 +359,14 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
         </Table>
       </Section>
 
-      <Section index={next()} title="Домашние задания" hint="Выполнение — по заданиям, чей дедлайн уже прошёл">
+      <Section index={next()} title="Домашние задания" hint="Задания (выдаются группе) и работы (сдача студента) считаются отдельно. Выполнение = сданные работы / ожидаемые работы по заданиям, срок которых прошёл">
         <Headline label="Выполнение ДЗ" value={hw.percent}>
-          <Totals items={[['Выдано заданий', hw.given], ['Выполнено работ', hw.done, 'text-brand-700'],
-            ['Не выполнено', hw.not_done, hw.not_done ? 'text-danger' : undefined], ['На проверке', hw.pending, hw.pending ? 'text-info' : undefined]]} />
+          <Totals items={[['Выдано заданий', hw.given], ['Срок прошёл', hw.due], ['Ожидалось работ', hw.expected], ['Выполнено работ', hw.done, 'text-brand-700'],
+            ['Не выполнено работ', hw.not_done, hw.not_done ? 'text-danger' : undefined], ['Ждут проверки', hw.pending, hw.pending ? 'text-info' : undefined]]} />
         </Headline>
         <Table empty={hw.groups.length === 0 && 'В этом месяце ДЗ не выдавали.'} head={
-          <tr><th className={th}>Группа</th><th className={cn(th, num)}>ДЗ</th><th className={cn(th, num)}>Выполнено</th>
-            <th className={cn(th, num)}>Не выполнено</th><th className={cn(th, num)}>На проверке</th><th className={cn(th, 'w-40')}>Выполнение</th></tr>
+          <tr><th className={th}>Группа</th><th className={cn(th, num)}>Выдано заданий</th><th className={cn(th, num)}>Выполнено работ</th>
+            <th className={cn(th, num)}>Не выполнено работ</th><th className={cn(th, num)}>Ждут проверки</th><th className={cn(th, 'w-40')}>Выполнение</th></tr>
         }>
           {hw.groups.map((g) => (
             <tr key={g.group.id}>
@@ -494,13 +494,19 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
         </Table>
       </Section>
 
-      <Section index={next()} title="Активность студентов" hint={`Активные студенты начавших обучение групп: ${act.analysed}`}>
+      <Section index={next()} title="Активность студентов" hint={`Проанализировано: ${act.analysed} — активные студенты работающих групп, у которых в месяце были занятия или ДЗ со сроком`}>
+        <p className="text-xs text-ink-muted">
+          Статус «Активен»: {report.active_scope.status_active} − без группы {report.active_scope.without_group}
+          {' '}− группа отменена или не начала обучение {report.active_scope.group_not_running}
+          {' '}− без занятий и ДЗ в месяце {report.active_scope.no_lessons} = проанализировано {report.active_scope.analysed};
+          {' '}из них без признаков неактивности ({'<'}{report.active_scope.inactive_days} дн.): {report.active_scope.engaged}.
+        </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <Kpi label="Активные (норма)" value={act.normal} tone="text-brand-700" />
+          <Kpi label="Норма" value={act.normal} tone="text-brand-700" />
           <Kpi label="Требуют внимания" value={act.attention} tone={act.attention ? 'text-warning' : undefined} />
-          <Kpi label="Низкая активность" value={act.low} tone={act.low ? 'text-danger' : undefined} />
-          <Kpi label="Не посещают" value={act.not_attending} tone={act.not_attending ? 'text-danger' : undefined} />
-          <Kpi label="Не сдают ДЗ" value={act.no_homework} tone={act.no_homework ? 'text-danger' : undefined} />
+          <Kpi label="Низкая активность (вкл. зону риска)" value={act.low} tone={act.low ? 'text-danger' : undefined} />
+          <Kpi label="Плохая посещаемость" value={act.not_attending} tone={act.not_attending ? 'text-danger' : undefined} />
+          <Kpi label="Не выполняют ДЗ" value={act.no_homework} tone={act.no_homework ? 'text-danger' : undefined} />
           <Kpi label="Без активности" value={act.no_activity} tone={act.no_activity ? 'text-danger' : undefined} />
         </div>
         {st.no_activity.length ? (
@@ -534,10 +540,19 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
           </div>
         </div>
         <p className="text-sm text-ink-secondary">
-          Группы, требующие внимания: <b className="font-semibold text-ink">{conclusions.groups.length ? conclusions.groups.join(', ') : 'нет'}</b>
+          Группы, требующие внимания (посещаемость ниже {conclusions.criteria.attention_attendance_below}% или ДЗ ниже {conclusions.criteria.attention_homework_below}%):{' '}
+          <b className="font-semibold text-ink">{conclusions.groups.length ? conclusions.groups.join(', ') : 'нет'}</b>
         </p>
-        <Table empty={conclusions.students.length === 0 && 'Студентов, требующих внимания, нет.'} head={
-          <tr><th className={th}>Студент, требующий внимания</th><th className={th}>Группа</th><th className={th}>Причина</th></tr>
+        {conclusions.groups_watch.length ? (
+          <p className="text-sm text-ink-secondary">
+            Ниже уровня «хорошо» ({conclusions.criteria.good_attendance}% / {conclusions.criteria.good_homework}%): {conclusions.groups_watch.join(', ')}
+          </p>
+        ) : null}
+        {conclusions.groups_no_data.length ? (
+          <p className="text-sm text-ink-muted">Без данных за период: {conclusions.groups_no_data.join(', ')}</p>
+        ) : null}
+        <Table empty={conclusions.students.length === 0 && 'Студентов для связи нет.'} head={
+          <tr><th className={th}>Студент для связи</th><th className={th}>Группа</th><th className={th}>Причины</th></tr>
         }>
           {conclusions.students.map((x) => (
             <tr key={x.student_id}>
@@ -634,8 +649,8 @@ export function AssistantMonthlyReportPage() {
             <div className="min-w-0">
               <h2 className="text-2xl font-semibold text-ink">{data.title}</h2>
               <span className="text-sm text-ink-secondary">
-                {format(parseISO(data.start), 'dd.MM.yyyy')} — {format(parseISO(data.end), 'dd.MM.yyyy')}
-                {!data.is_complete ? ` · месяц идёт, данные по ${format(parseISO(data.until), 'd MMMM', { locale: ru })}` : ''}
+                Период данных: {format(parseISO(data.start), 'dd.MM.yyyy')} — {format(parseISO(data.until), 'dd.MM.yyyy')}
+                {!data.is_complete ? ' · предварительный отчёт: месяц ещё не завершён' : ''}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">

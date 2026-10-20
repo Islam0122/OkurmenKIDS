@@ -518,21 +518,31 @@ export interface MonthlyReport {
   attendance: {
     lessons: number
     marked: number
+    /** present + late */
     attended: number
+    present: number
+    late: number
     absent: number
     excused: number
+    /** attended / marked; marked = attended + absent + excused */
     percent: number | null
-    groups: { group: Ref; students: number; lessons: number; attended: number; absent: number; marked: number; percent: number | null }[]
+    groups_with_data: number
+    groups: { group: Ref; students: number; lessons: number; attended: number; present: number; late: number; absent: number; excused: number; marked: number; percent: number | null }[]
   }
   homework: {
     given: number
     due: number
     done: number
     not_done: number
+    /** Handed in, not checked yet — of every homework of the month. */
     pending: number
+    /** The part of `done` not checked yet. */
+    pending_due: number
+    /** Students' works expected on the homeworks past their deadline: done + not_done. */
     expected: number
     percent: number | null
-    groups: { group: Ref; homeworks: number; due: number; done: number; not_done: number; pending: number; expected: number; percent: number | null }[]
+    groups_with_data: number
+    groups: { group: Ref; homeworks: number; due: number; done: number; not_done: number; pending: number; pending_due: number; expected: number; percent: number | null }[]
   }
   students: {
     attendance_attention: ReportStudent[]
@@ -656,6 +666,20 @@ export interface MonthlyReport {
     previous_title: string
     available: boolean
     rows: { key: string; label: string; current: number | null; previous: number | null; delta: number | null; trend: 'better' | 'worse' | 'same' | null }[]
+    /** The current month is not over: its numbers so far vs a whole previous month. */
+    partial: boolean
+  }
+  /** How the «active students» numbers of the sections narrow one another. */
+  active_scope: {
+    status_active: number
+    without_group: number
+    group_not_running: number
+    in_running_groups: number
+    no_lessons: number
+    analysed: number
+    inactive: number
+    engaged: number
+    inactive_days: number
   }
   recommendations: string[]
   summary: {
@@ -669,8 +693,14 @@ export interface MonthlyReport {
   conclusions: {
     good: string[]
     attention: string[]
+    /** Below the attention thresholds. */
     groups: string[]
-    students: { student_id: number; name: string; group: string; reason: string }[]
+    /** Between the attention thresholds and «хорошо». */
+    groups_watch: string[]
+    groups_no_data: string[]
+    criteria: { attention_attendance_below: number; attention_homework_below: number; good_attendance: number; good_homework: number }
+    /** «Студенты для связи» — each student once, with every reason. */
+    students: { student_id: number; name: string; group: string; reason: string; reasons: string[] }[]
   }
 }
 

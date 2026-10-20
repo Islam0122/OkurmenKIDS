@@ -61,8 +61,16 @@ def pdf_filename(year: int, month: int) -> str:
     return f"monthly_report_{MONTH_SLUGS[month - 1]}_{year}.pdf"
 
 
+NO_DATA = "Нет данных"
+
+
 def _pct(value) -> str:
-    return "—" if value is None else f"{value}%"
+    """A percent that cannot be computed (nothing to divide by) is «Нет данных», never 0%."""
+    return NO_DATA if value is None else f"{value}%"
+
+
+def _report_title(report: dict) -> str:
+    return report["title"] if report["is_complete"] else f"{report['title']} · предварительный"
 
 
 def _date(value) -> str:
@@ -192,7 +200,7 @@ def _section(doc: _Doc, title: str, hint: str | None = None) -> None:
     """Sections are numbered in the order they are drawn — never by hand."""
     doc.section_no += 1
     index = doc.section_no
-    doc.ensure(70)  # a title never sits alone at the bottom of a page
+    doc.ensure(110)  # a title (and its hint) never sits alone at the bottom of a page
     doc.y -= 6
     number = f"{index}."
     doc.text(MARGIN, doc.y - 13, number, font=_BOLD, size=13, color=BRAND)
@@ -227,20 +235,32 @@ def _cards(doc: _Doc, cards: list[tuple[str, str, colors.Color | None]], per_row
 
 
 def _headline(doc: _Doc, label: str, value, totals: list[tuple[str, str]]) -> None:
-    height = 52
+    """The totals flow onto a second line rather than running past the card."""
+    lines, line, width = [], [], 0.0
+    for name, number in totals:
+        w = pdfmetrics.stringWidth(f"{name}: ", _REGULAR, 8) + pdfmetrics.stringWidth(number, _BOLD, 8) + 14
+        if line and width + w > CONTENT_W - 24:
+            lines.append(line)
+            line, width = [], 0.0
+        line.append((name, number))
+        width += w
+    lines.append(line)
+    height = 40 + len(lines) * 12
     doc.ensure(height + 8)
     top = doc.y
     _rounded_rect(doc.c, MARGIN, top - height, CONTENT_W, height, 6, fill=WHITE, stroke=BORDER, line_width=0.7)
     doc.text(MARGIN + 12, top - 18, label, font=_BOLD, size=10)
-    doc.text(PAGE_W - MARGIN - 12, top - 19, _pct(value), font=_BOLD, size=16, color=_tone(value), align="right")
+    doc.text(PAGE_W - MARGIN - 12, top - 19, _pct(value), font=_BOLD, size=16 if value is not None else 11,
+             color=_tone(value), align="right")
     _progress_bar(doc.c, MARGIN + 12, top - 30, CONTENT_W - 24, 5, value or 0, _tone(value))
-    x = MARGIN + 12
-    for name, number in totals:
-        chunk = f"{name}: "
-        doc.text(x, top - 44, chunk, size=8, color=INK_SECONDARY)
-        x += pdfmetrics.stringWidth(chunk, _REGULAR, 8)
-        doc.text(x, top - 44, number, font=_BOLD, size=8)
-        x += pdfmetrics.stringWidth(number, _BOLD, 8) + 14
+    for i, items in enumerate(lines):
+        x, y = MARGIN + 12, top - 44 - i * 12
+        for name, number in items:
+            chunk = f"{name}: "
+            doc.text(x, y, chunk, size=8, color=INK_SECONDARY)
+            x += pdfmetrics.stringWidth(chunk, _REGULAR, 8)
+            doc.text(x, y, number, font=_BOLD, size=8)
+            x += pdfmetrics.stringWidth(number, _BOLD, 8) + 14
     doc.y = top - height - 10
 
 
@@ -363,13 +383,20 @@ def _cover(doc: _Doc, report: dict, generated: str) -> None:
     doc.text(MARGIN, top, "ОТЧЁТ ПО АКАДЕМИИ · OKURMENKIDS", font=_BOLD, size=9, color=colors.HexColor("#bfe3cd"))
     doc.text(MARGIN, top - 26, "Месячный отчёт", font=_BOLD, size=22, color=WHITE)
     doc.text(MARGIN, top - 48, report["title"], font=_BOLD, size=14, color=colors.HexColor("#d7ecdf"))
-    doc.text(MARGIN, top - 72, f"Период: {_date(report['start'])} — {_date(report['end'])}", size=9.5, color=WHITE)
+    # The period is the one the data covers: a month still running ends today, not on its last day.
+    doc.text(MARGIN, top - 72, f"Период данных: {_date(report['start'])} — {_date(report['until'])}", size=9.5, color=WHITE)
     doc.text(PAGE_W - MARGIN, top - 72, f"Сформирован: {generated}", size=8.5, color=colors.HexColor("#d7ecdf"), align="right")
+    if not report["is_complete"]:
+        badge = "ПРЕДВАРИТЕЛЬНЫЙ ОТЧЁТ"
+        w = pdfmetrics.stringWidth(badge, _BOLD, 8) + 16
+        _rounded_rect(c, PAGE_W - MARGIN - w, top - 52, w, 16, 4, fill=WARN_SOFT)
+        doc.text(PAGE_W - MARGIN - w / 2, top - 47, badge, font=_BOLD, size=8, color=WARN, align="center")
     doc.y = PAGE_H - band - 18
     note = "Сводный отчёт по студентам и группам: посещаемость, домашние задания, активность, опросы и стипендии."
     if not report["is_complete"]:
-        note += f" Месяц ещё идёт — данные по {_date(report['until'])}."
-    doc.paragraph(note, size=8.3, color=INK_SECONDARY)
+        note += (f" Месяц ещё не завершён ({_date(report['start'])} — {_date(report['end'])}): в отчёт вошли данные "
+                 f"по {_date(report['until'])} включительно, итоговые значения изменятся до конца месяца.")
+    doc.paragraph(note, size=8.3, color=WARN if not report["is_complete"] else INK_SECONDARY)
     doc.y -= 4
 
 
@@ -383,7 +410,7 @@ def _overview(doc: _Doc, r: dict) -> None:
         (str(o["students_active"]), "Активных студентов", BRAND_DARK),
         (str(o["students_new"]), "Новых студентов за месяц", None),
         (_pct(o["attendance_percent"]), "Средняя посещаемость", _tone(o["attendance_percent"])),
-        (_pct(o["homework_percent"]), "Среднее выполнение ДЗ", _tone(o["homework_percent"])),
+        (_pct(o["homework_percent"]), "Выполнение ДЗ", _tone(o["homework_percent"])),
         (str(o["students_at_risk"]), "Студентов в зоне риска", BAD if o["students_at_risk"] else None),
     ])
     # The total split by status on the month's last day — the parts add up to «Всего студентов».
@@ -391,22 +418,42 @@ def _overview(doc: _Doc, r: dict) -> None:
         f"Студенты на конец месяца: активных {o['students_active']} · на паузе {o['students_paused']} · "
         f"деактивированы {o['students_withdrawn']} · завершили обучение {o['students_completed']}"
         f" · всего {o['students_total']}. Деактивировано за месяц: {o['students_deactivated']}."
-        + (f" Неактивных групп: {o['groups_inactive']}." if o["groups_inactive"] else ""),
+        + (f" Активных без группы: {o['students_without_group']}." if o["students_without_group"] else ""),
+        size=7.8, color=INK_SECONDARY)
+    a, h = r["attendance"], r["homework"]
+    doc.paragraph(
+        f"Группы месяца — начавшие обучение до {_date(r['until'])} и не завершённые до его начала: {o['groups_total']}"
+        f" (активных {o['groups_active']}, прочих {o['groups_inactive']}). С отметками посещаемости: {a['groups_with_data']}, "
+        f"с ДЗ, срок сдачи которых прошёл: {h['groups_with_data']}; остальные показаны в таблицах как «{NO_DATA}».",
         size=7.8, color=INK_SECONDARY)
     doc.y -= 4
 
 
+def _group_name(g: dict) -> str:
+    group = g["group"]
+    return group["name"] if group.get("status") in (None, "active") else f"{group['name']} · {group['status_display'].lower()}"
+
+
+def _count(value: int, has_data: bool) -> str:
+    return str(value) if has_data else "—"
+
+
 def _attendance(doc: _Doc, r: dict) -> None:
     a = r["attendance"]
-    _section(doc, "Посещаемость", "Только проведённые занятия; отменённые и будущие не учитываются.")
+    _section(doc, "Посещаемость", "Только проведённые занятия; отменённые и будущие не учитываются. "
+             "Посещаемость = присутствовали (вовремя + опоздали) / все отметки; все отметки = присутствовали + "
+             "пропуски + уважительные. Занятие без отметки студента не учитывается.")
     _headline(doc, "Общая посещаемость", a["percent"], [
-        ("Проведено занятий", str(a["lessons"])), ("Присутствовали", str(a["attended"])),
-        ("Пропустили", str(a["absent"])), ("Уважительная", str(a["excused"])), ("Всего отметок", str(a["marked"])),
+        ("Проведено занятий", str(a["lessons"])), ("Присутствовали", f"{a['attended']} (вовремя {a['present']}, опоздали {a['late']})"),
+        ("Пропуски", str(a["absent"])), ("Уважительные", str(a["excused"])), ("Всего отметок", str(a["marked"])),
     ])
-    _table(doc, [("Группа", 0.34, "left"), ("Студенты", 0.14, "right"), ("Занятий", 0.14, "right"),
-                 ("Пропуски", 0.16, "right"), ("Посещаемость", 0.22, "right")],
-           [[g["group"]["name"], g["students"], g["lessons"], g["absent"], _pct_cell(g["percent"])] for g in a["groups"]],
-           empty="В этом месяце занятий не было.")
+    _table(doc, [("Группа", 0.27, "left"), ("Студенты", 0.1, "right"), ("Занятий", 0.09, "right"),
+                 ("Отметок", 0.1, "right"), ("Присутствия", 0.12, "right"), ("Пропуски", 0.1, "right"),
+                 ("Уважит.", 0.09, "right"), ("Посещаемость", 0.13, "right")],
+           [[_group_name(g), g["students"], g["lessons"], _count(g["marked"], g["lessons"]),
+             _count(g["attended"], g["marked"]), _count(g["absent"], g["marked"]), _count(g["excused"], g["marked"]),
+             _pct_cell(g["percent"])] for g in a["groups"]],
+           empty="В этом месяце групп и занятий не было.")
 
 
 def _students_table(doc: _Doc, rows: list[dict], *, kind: str, empty: str) -> None:
@@ -425,15 +472,23 @@ def _students_table(doc: _Doc, rows: list[dict], *, kind: str, empty: str) -> No
 
 def _homework(doc: _Doc, r: dict) -> None:
     h = r["homework"]
-    _section(doc, "Домашние задания", "Выполнение считается по заданиям, чей дедлайн уже прошёл.")
-    _headline(doc, "Среднее выполнение ДЗ", h["percent"], [
-        ("Выдано заданий", str(h["given"])), ("Выполнено работ", str(h["done"])),
-        ("Не выполнено", str(h["not_done"])), ("На проверке", str(h["pending"])),
+    _section(doc, "Домашние задания",
+             "Задания и работы считаются отдельно: задание выдаётся группе, работа — сдача одного студента. "
+             "Выполнение = сданные работы / ожидаемые работы по заданиям, срок сдачи которых прошёл; "
+             "ожидаемые = выполнено + не выполнено. «Ждут проверки» — сданные, но ещё не проверенные работы "
+             "по всем заданиям месяца, в том числе со сроком впереди.")
+    _headline(doc, "Выполнение ДЗ", h["percent"], [
+        ("Выдано заданий", f"{h['given']} (срок прошёл: {h['due']})"), ("Ожидалось работ", str(h["expected"])),
+        ("Выполнено работ", f"{h['done']} (из них на проверке {h['pending_due']})"),
+        ("Не выполнено работ", str(h["not_done"])), ("Ждут проверки по всем заданиям", str(h["pending"])),
     ])
-    _table(doc, [("Группа", 0.3, "left"), ("ДЗ", 0.1, "right"), ("Выполнено", 0.15, "right"),
-                 ("Не выполнено", 0.16, "right"), ("На проверке", 0.14, "right"), ("Выполнение", 0.15, "right")],
-           [[g["group"]["name"], g["homeworks"], g["done"], g["not_done"], g["pending"], _pct_cell(g["percent"])] for g in h["groups"]],
-           empty="В этом месяце ДЗ не выдавали.")
+    _table(doc, [("Группа", 0.25, "left"), ("Выдано заданий", 0.1, "right"), ("Срок прошёл", 0.09, "right"),
+                 ("Ожидалось работ", 0.11, "right"), ("Выполнено", 0.11, "right"), ("Не выполнено", 0.11, "right"),
+                 ("Ждут проверки", 0.1, "right"), ("Выполнение", 0.13, "right")],
+           [[_group_name(g), g["homeworks"], _count(g["due"], g["homeworks"]), _count(g["expected"], g["due"]),
+             _count(g["done"], g["expected"]), _count(g["not_done"], g["expected"]), _count(g["pending"], g["homeworks"]),
+             _pct_cell(g["percent"])] for g in h["groups"]],
+           empty="В этом месяце групп и ДЗ не было.")
 
 
 def _risk(doc: _Doc, r: dict) -> None:
@@ -462,13 +517,13 @@ def _surveys(doc: _Doc, r: dict) -> None:
         (str(s["surveys"]), "Опросов", None),
         (str(s["participants"]), "Участников (ответов)", None),
         (_pct(s["participation"]), "Участие", None),
-        (f"{s['average']} / 5" if s["average"] is not None else "—", "Средняя оценка", None),
+        (f"{s['average']} / 5" if s["average"] is not None else NO_DATA, "Средняя оценка", None),
     ])
     _table(doc, [("Опрос", 0.34, "left"), ("Группа", 0.17, "left"), ("Участников", 0.17, "right"),
                  ("Средняя оценка", 0.16, "right"), ("Низкие оценки", 0.16, "right")],
            [[f"{x['title']} ({x['audience_display']})", (x["group"] or {}).get("name", "Все"),
              f"{x['participants']}/{x['expected']} · {x['participation']}%" if x["expected"] else str(x["participants"]),
-             str(x["average"]) if x["average"] is not None else "—",
+             str(x["average"]) if x["average"] is not None else NO_DATA,
              (str(x["low_ratings"]), BAD if x["low_ratings"] else INK)] for x in s["rows"]],
            empty="")
     doc.paragraph("Средняя оценка — по вопросам с числовой шкалой (1–5, 1–10), приведена к 5. Участие — для опросов группы, "
@@ -516,21 +571,41 @@ def _scholarships(doc: _Doc, r: dict) -> None:
 def _activity(doc: _Doc, r: dict) -> None:
     st = r["students"]
     a = st["activity"]
-    _section(doc, "Активность студентов", f"Активные студенты начавших обучение групп: {a['analysed']}.")
+    _section(doc, "Активность студентов",
+             f"Проанализировано: {a['analysed']} — активные студенты работающих групп, у которых в месяце были занятия "
+             f"или ДЗ со сроком. Норма + требуют внимания + низкая активность + мало данных = {a['analysed']}.")
     _cards(doc, [
-        (str(a["normal"]), "Активные (норма)", GOOD),
+        (str(a["normal"]), "Норма", GOOD),
         (str(a["attention"]), "Требуют внимания", WARN if a["attention"] else None),
-        (str(a["low"]), "Низкая активность", BAD if a["low"] else None),
+        (str(a["low"]), "Низкая активность (вкл. зону риска)", BAD if a["low"] else None),
         (str(a["no_activity"]), "Без активности", BAD if a["no_activity"] else None),
         (str(a["risk"]), "В зоне риска", BAD if a["risk"] else None),
-        (str(a["not_attending"]), "Не посещают", None),
-        (str(a["no_homework"]), "Не сдают ДЗ", None),
+        (str(a["not_attending"]), "Плохая посещаемость (раздел выше)", None),
+        (str(a["no_homework"]), "Не выполняют ДЗ (раздел выше)", None),
         (str(a["no_data"]), "Мало данных для оценки", INK_MUTED),
     ])
     if st["no_activity"]:
         names = ", ".join(f"{x['name']} ({(x['group'] or {}).get('name', '—')})" for x in st["no_activity"])
         doc.paragraph(f"Без активности за месяц (ни одного посещения и сданного ДЗ): {names}.", size=8.3, color=INK_SECONDARY)
         doc.y -= 4
+    _active_scope(doc, r)
+
+
+def _active_scope(doc: _Doc, r: dict) -> None:
+    """The «active» numbers of the sections are different questions; each row narrows the one above."""
+    sc = r["active_scope"]
+    doc.ensure(200)  # the eight rows stay on one page
+    _sub(doc, "Почему число активных студентов в разделах разное")
+    _table(doc, [("Показатель", 0.62, "left"), ("Студентов", 0.14, "right"), ("Где используется", 0.24, "left")], [
+        [f"Статус «Активен» на {_date(r['until'])}", sc["status_active"], "Общая статистика"],
+        ["  − без группы", sc["without_group"], ""],
+        ["  − группа отменена или ещё не начала обучение", sc["group_not_running"], ""],
+        ["= в работающих группах", sc["in_running_groups"], "Посещаемость, ДЗ (колонка «Студенты»)"],
+        ["  − в месяце не было ни занятий, ни ДЗ со сроком", sc["no_lessons"], ""],
+        ["= проанализировано", sc["analysed"], "Активность, неактивные"],
+        [f"  − неактивны {sc['inactive_days']}+ дней", sc["inactive"], ""],
+        ["= без признаков неактивности", sc["engaged"], "Неактивные студенты"],
+    ], empty="—")
 
 
 def _summary(doc: _Doc, r: dict) -> None:
@@ -538,12 +613,26 @@ def _summary(doc: _Doc, r: dict) -> None:
     _section(doc, "Итоги месяца")
     _bullets(doc, "Хорошие показатели", cons["good"], GOOD, BRAND_SOFT, "Нет показателей выше нормы.")
     _bullets(doc, "Требует внимания", cons["attention"], WARN, WARN_SOFT, "Проблем не найдено.")
-    _bullets(doc, "Группы, требующие внимания", cons["groups"], WARN, SURFACE_MUTED, "Нет.")
-    doc.ensure(40)
-    doc.text(MARGIN, doc.y - 10, "Студенты, требующие внимания", font=_BOLD, size=9.5, color=WARN)
+    k = cons["criteria"]
+    _bullets(doc, "Группы, требующие внимания", cons["groups"], WARN, SURFACE_MUTED,
+             f"Нет групп с посещаемостью ниже {k['attention_attendance_below']}% или выполнением ДЗ ниже "
+             f"{k['attention_homework_below']}%.")
+    if cons["groups_watch"]:
+        _bullets(doc, f"Ниже уровня «хорошо» (посещаемость < {k['good_attendance']}% или ДЗ < {k['good_homework']}%)",
+                 cons["groups_watch"], INK_SECONDARY, SURFACE_MUTED, "")
+    if cons["groups_no_data"]:
+        _bullets(doc, "Группы без данных за период", cons["groups_no_data"], INK_SECONDARY, SURFACE_MUTED, "")
+    doc.paragraph(f"Группа требует внимания, если посещаемость ниже {k['attention_attendance_below']}% или выполнение ДЗ "
+                  f"ниже {k['attention_homework_below']}%; «хорошо» — от {k['good_attendance']}% и {k['good_homework']}%.",
+                  size=7.3, color=INK_MUTED)
+    doc.y -= 4
+    doc.ensure(80)
+    doc.text(MARGIN, doc.y - 10, f"Студенты для связи: {len(cons['students'])}", font=_BOLD, size=9.5, color=WARN)
     doc.y -= 18
-    _table(doc, [("Студент", 0.4, "left"), ("Группа", 0.2, "left"), ("Причина", 0.4, "left")],
+    _table(doc, [("Студент", 0.34, "left"), ("Группа", 0.22, "left"), ("Причины", 0.44, "left")],
            [[x["name"], x["group"] or "—", x["reason"]] for x in cons["students"]], empty="Нет.")
+    doc.paragraph("Каждый студент — один раз: зона риска, неактивность, ни одного посещения или сданного ДЗ, "
+                  "низкая посещаемость, невыполнение ДЗ.", size=7.3, color=INK_MUTED)
     doc.paragraph("Все показатели рассчитаны по данным учебной системы за выбранный месяц. KPI тренеров — в отчёте Team Lead.",
                   size=7.3, color=INK_MUTED)
     doc.y -= 6
@@ -600,10 +689,10 @@ def _inactive(doc: _Doc, r: dict) -> None:
              f"Студенты, активные на конец месяца. Неактивность — дни без посещения и сданного ДЗ, когда занятия проходили. "
              f"Пороги: {short} / {mid} / {long} дней.")
     _cards(doc, [
-        (str(c["active"]), "Активные", GOOD),
+        (str(c["active"]), f"Без признаков неактивности (<{mid} дн.)", GOOD),
         (str(c["inactive"]), f"Неактивные ({mid}+ дней)", WARN if c["inactive"] else None),
         (str(c["no_attendance"]), "Без посещений за месяц", BAD if c["no_attendance"] else None),
-        (str(c["no_homework"]), "Не сдают ДЗ", BAD if c["no_homework"] else None),
+        (str(c["no_homework"]), "Ни одного сданного ДЗ", BAD if c["no_homework"] else None),
         (str(c["risk"]), "В зоне риска", BAD if c["risk"] else None),
         (str(c["long_inactive"]), f"Давно не активны ({long}+ дней)", BAD if c["long_inactive"] else None),
     ], per_row=3)
@@ -684,17 +773,21 @@ def _reasons(doc: _Doc, r: dict) -> None:
 
 def _comparison(doc: _Doc, r: dict) -> None:
     comp = r["comparison"]
-    _section(doc, "Сравнение с предыдущим месяцем", f"{comp['previous_title']} → {r['title']}.")
+    hint = f"{comp['previous_title']} → {r['title']}."
+    if comp.get("partial"):
+        hint += (f" Текущий месяц не завершён: данные по {_date(r['until'])} сравниваются с полным прошлым месяцем — "
+                 "количества (новые, ушли) ещё вырастут, проценты предварительные.")
+    _section(doc, "Сравнение с предыдущим месяцем", hint)
     arrows = {"better": ("▲ лучше", GOOD), "worse": ("▼ хуже", BAD), "same": ("без изменений", INK_MUTED)}
 
     def fmt(v):
-        return "—" if v is None else f"{v:g}" if isinstance(v, float) else str(v)
+        return NO_DATA if v is None else f"{v:g}" if isinstance(v, float) else str(v)
 
     _table(doc, [("Показатель", 0.4, "left"), (comp["previous_title"], 0.17, "right"), (r["title"], 0.17, "right"),
                  ("Изменение", 0.26, "right")],
            [[x["label"], fmt(x["previous"]), fmt(x["current"]),
              (f"{'+' if (x['delta'] or 0) > 0 else ''}{fmt(x['delta'])} · {arrows[x['trend']][0]}", arrows[x["trend"]][1])
-             if x["trend"] else ("нет данных", INK_MUTED)] for x in comp["rows"]],
+             if x["trend"] else (NO_DATA, INK_MUTED)] for x in comp["rows"]],
            empty="—")
 
 
@@ -708,9 +801,9 @@ def _management(doc: _Doc, r: dict) -> None:
     _sub(doc, "Управленческое резюме")
     _bullets(doc, "Что улучшилось", m["improved"], GOOD, BRAND_SOFT, "Нет показателей, которые улучшились.")
     _bullets(doc, "Что ухудшилось", m["worsened"], BAD, BAD_SOFT, "Нет показателей, которые ухудшились.")
-    _bullets(doc, "Группы, требующие внимания", m["groups"], WARN, SURFACE_MUTED, "Нет.")
+    _bullets(doc, "Группы, требующие внимания (по показателям и по уходам)", m["groups"], WARN, SURFACE_MUTED, "Нет.")
     _bullets(doc, "Частые причины ухода", m["top_reasons"], WARN, SURFACE_MUTED, "Уходов за месяц не было.")
-    _note(doc, f"Потенциально нуждаются в контакте: {m['contacts']} студ.", color=INK, fill=WARN_SOFT)
+    _note(doc, f"Потенциально нуждаются в контакте: {m['contacts']} студ. (список — «Студенты для связи»).", color=INK, fill=WARN_SOFT)
     _bullets(doc, "Действия на следующий месяц", m["next_month"], BRAND_DARK, BRAND_SOFT, "Нет данных для рекомендаций.")
 
 
@@ -718,7 +811,7 @@ def build_monthly_pdf(report: dict) -> bytes:
     _ensure_fonts()
     buffer = io.BytesIO()
     generated = timezone.localtime(report["generated_at"]).strftime("%d.%m.%Y %H:%M")
-    doc = _Doc(buffer, report["title"], generated)
+    doc = _Doc(buffer, _report_title(report), generated)
     st = report["students"]
     _cover(doc, report, generated)
     _overview(doc, report)

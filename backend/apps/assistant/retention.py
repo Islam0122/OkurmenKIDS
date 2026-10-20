@@ -65,7 +65,6 @@ def _students_word(n: int) -> str:
 
 
 NO_GROUP = "Без группы"
-WATCH_ONLY = ("Наблюдать", "Наблюдать, напомнить о занятиях")
 
 
 def reason_label(code: str) -> str:
@@ -337,15 +336,51 @@ def comparison(current: dict, previous: dict | None, previous_title: str) -> dic
     return {"previous_title": previous_title, "available": previous is not None, "rows": rows}
 
 
+def contacts(report: dict) -> list[dict]:
+    """«Студенты для связи» — every student any section asks to contact, once,
+    with all their reasons: the risk zone, no activity for `mid`+ days, no
+    attended lesson or no handed-in homework in the month, low attendance,
+    not doing homework. Watching only (a short silence) is not a contact."""
+    inactive = report["inactive"]
+    mid = inactive["thresholds"][1]
+    st = report["students"]
+    found: dict[int, dict] = {}
+
+    def add(row: dict, reason: str) -> None:
+        entry = found.setdefault(row["student_id"], {
+            "student_id": row["student_id"], "name": row["name"],
+            "group": (row["group"] or {}).get("name", ""), "reasons": [],
+        })
+        if reason not in entry["reasons"]:
+            entry["reasons"].append(reason)
+
+    for row in st["risk"]:
+        add(row, "В зоне риска")
+    for row in inactive["students"]:
+        if (row["days_inactive"] or 0) >= mid:
+            add(row, f"Нет активности {row['days_inactive']} дн.")
+        if row["no_attendance"]:
+            add(row, "Ни одного посещения за месяц")
+        if row["no_homework"]:
+            add(row, "Ни одного сданного ДЗ")
+    # «Низкая» is implied by «ни одного» — the stronger reason only.
+    for row in st["attendance_attention"]:
+        if "Ни одного посещения за месяц" not in found.get(row["student_id"], {}).get("reasons", ()):
+            add(row, "Низкая посещаемость")
+    for row in st["homework_attention"]:
+        if "Ни одного сданного ДЗ" not in found.get(row["student_id"], {}).get("reasons", ()):
+            add(row, "Не выполняет ДЗ")
+    return [{**e, "reason": "; ".join(e["reasons"])} for e in found.values()]
+
+
 def recommendations(report: dict) -> list[str]:
     advice = []
     inactive = report["inactive"]
     long_days = inactive["thresholds"][2]
-    contacts = [s for s in inactive["students"] if (s["days_inactive"] or 0) >= inactive["thresholds"][1]
-                or s["activity_status"] == activity.STATUS_RISK]
-    if contacts:
-        advice.append(f"Связаться с семьями: {_students_word(len(contacts))} без активности {inactive['thresholds'][1]}+ дней "
-                      f"или в зоне риска (список — в разделе «Неактивные студенты»).")
+    to_contact = report["conclusions"]["students"]
+    if to_contact:
+        advice.append(f"Связаться с семьями: {_students_word(len(to_contact))} — зона риска, неактивность, "
+                      f"пропуски или несданные ДЗ (список — «Студенты для связи» в итогах месяца).")
     if inactive["counts"]["long_inactive"]:
         advice.append(f"Уточнить, продолжают ли обучение: {_students_word(inactive['counts']['long_inactive'])} "
                       f"без активности {long_days}+ дней.")
@@ -364,21 +399,21 @@ def recommendations(report: dict) -> list[str]:
 
 def management_summary(report: dict) -> dict:
     comp = report["comparison"]["rows"]
-    improved = [f"{r['label']}: {r['previous']} → {r['current']}" for r in comp if r["trend"] == "better"]
-    worsened = [f"{r['label']}: {r['previous']} → {r['current']}" for r in comp if r["trend"] == "worse"]
+    # A month still running: its counts are so far, not the month's result.
+    tail = f" (данные по {report['until']:%d.%m.%Y})" if report["comparison"].get("partial") else ""
+    improved = [f"{r['label']}: {r['previous']} → {r['current']}{tail}" for r in comp if r["trend"] == "better"]
+    worsened = [f"{r['label']}: {r['previous']} → {r['current']}{tail}" for r in comp if r["trend"] == "worse"]
     groups = list(report["conclusions"]["groups"])
     for row in report["departures"]["by_group"]:
         if row["count"] >= 2 and row["label"] not in groups and row["label"] != NO_GROUP:
-            groups.append(f"{row['label']} (ушли {row['count']})")
+            groups.append(f"{row['label']} (ушли за месяц: {row['count']})")
     reasons = [f"{r['label']} — {r['count']}" for r in report["departures"]["by_reason"][:3]]
-    contact_ids = {s["student_id"] for s in report["inactive"]["students"] if s["action"] not in WATCH_ONLY}
-    contact_ids |= {s["student_id"] for s in report["students"]["risk"]}
     return {
         "improved": improved,
         "worsened": worsened,
         "groups": groups,
         "top_reasons": reasons,
-        "contacts": len(contact_ids),
+        "contacts": len(report["conclusions"]["students"]),
         "next_month": report["recommendations"][:6],
     }
 

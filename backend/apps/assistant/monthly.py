@@ -77,17 +77,27 @@ def _ref(obj) -> dict | None:
     return {"id": obj.pk, "name": str(obj)} if obj is not None else None
 
 
+def _group_ref(group: Group) -> dict:
+    return {"id": group.pk, "name": group.name, "status": group.status, "status_display": group.get_status_display()}
+
+
+def month_groups(start: dt.date, until: dt.date):
+    """The groups of the month: started (or, without a start date, created)
+    by its last counted day and not finished before it began. A group that
+    starts after today is not part of a month that is still running."""
+    return Group.objects.filter(
+        Q(start_date__lte=until) | Q(start_date__isnull=True, created_at__date__lte=until),
+    ).exclude(end_date__lt=start)
+
+
 # ---------------------------------------------------------------------------
 # Sections
 # ---------------------------------------------------------------------------
 
 def _overview(start: dt.date, end: dt.date, state: dict) -> dict:
-    # Existed in the month: started (or, without a start date, created) by its end, not finished before it.
-    groups = Group.objects.filter(
-        Q(start_date__lte=end) | Q(start_date__isnull=True, created_at__date__lte=end),
-    ).exclude(end_date__lt=start)
-    active_groups = groups.filter(status=Group.Status.ACTIVE).count()
-    total_groups = groups.count()
+    groups = state["month_groups"]
+    active_groups = sum(1 for g in groups if g.status == Group.Status.ACTIVE)
+    total_groups = len(groups)
     roster = state["roster"].values()
     # Students on the month's last day — rebuilt from the status history, not
     # today's status; one row per student, so nobody is counted twice.
@@ -119,9 +129,10 @@ def month_state(start: dt.date, until: dt.date, today: dt.date) -> dict:
     over the month and the month's held lessons."""
     roster = {r.student.pk: r for r in history.roster_on(until)}
     groups = history.groups_by_id(list(roster.values()))
+    status_active = [r for r in roster.values() if r.status == Student.Status.ACTIVE]
     active = [
-        r for r in roster.values()
-        if r.status == Student.Status.ACTIVE and r.group_id in groups
+        r for r in status_active
+        if r.group_id in groups
         and groups[r.group_id].status != Group.Status.CANCELLED and history.started_by(groups[r.group_id], until, start)
     ]
     rows, _ = activity.analyse_students(
@@ -129,12 +140,23 @@ def month_state(start: dt.date, until: dt.date, today: dt.date) -> dict:
         groups={r.student.pk: groups[r.group_id] for r in active},
     )
     rows = [r for r in rows if r.lessons or r.homework_due]  # had a lesson or a due homework this month
+    without_group = sum(1 for r in status_active if not r.group_id)
     return {
         "roster": roster,
         "groups": groups,
-        "active_count": sum(1 for r in roster.values() if r.status == Student.Status.ACTIVE),
+        "month_groups": list(month_groups(start, until).order_by("name")),
+        "active_count": len(status_active),
         "roster_counts": dict(Counter(r.group_id for r in active)),
         "activity_rows": rows,
+        # Why the «active» counts of the sections differ: each step narrows the one before.
+        "active_scope": {
+            "status_active": len(status_active),
+            "without_group": without_group,
+            "group_not_running": len(status_active) - without_group - len(active),
+            "in_running_groups": len(active),
+            "no_lessons": len(active) - len(rows),
+            "analysed": len(rows),
+        },
         "lessons": _held_lessons(start, until, today),
     }
 
@@ -155,13 +177,26 @@ def _active_counts(group_ids) -> dict[int, int]:
     return dict(counts)
 
 
-def _attendance(lessons: list[Lesson], roster: dict[int, int]) -> dict:
-    per_group: dict[int, dict] = {}
+ATTENDANCE_KEYS = ("lessons", "marked", "attended", "present", "late", "absent", "excused")
+HOMEWORK_KEYS = ("homeworks", "due", "expected", "done", "not_done", "pending", "pending_due")
+
+
+def _by_percent(rows) -> list[dict]:
+    """Weakest first; a group without data («Нет данных») last, never as 0%."""
+    return sorted(rows, key=lambda r: (r["percent"] is None, r["percent"] or 0, r["group"]["name"]))
+
+
+def _attendance(lessons: list[Lesson], roster: dict[int, int], groups: list[Group] = ()) -> dict:
+    """Every mark of the month's held lessons, one formula for a group and the
+    total: attendance = attended (present + late) / marked, where
+    marked = attended + absent + excused. A lesson without a mark is not
+    counted; a group of the month without lessons stays listed with no percent."""
+    def blank(group):
+        return {"group": _group_ref(group), "students": roster.get(group.pk, 0), **dict.fromkeys(ATTENDANCE_KEYS, 0)}
+
+    per_group: dict[int, dict] = {g.pk: blank(g) for g in groups}
     for lesson in lessons:
-        row = per_group.setdefault(lesson.group_id, {
-            "group": _ref(lesson.group), "students": roster.get(lesson.group_id, 0), "lessons": 0,
-            "attended": 0, "absent": 0, "excused": 0, "marked": 0,
-        })
+        row = per_group.setdefault(lesson.group_id, blank(lesson.group))
         row["lessons"] += 1
     totals = Counter()
     for group_id, status in Attendance.objects.filter(lesson__in=lessons).values_list("lesson__group_id", "status"):
@@ -169,52 +204,59 @@ def _attendance(lessons: list[Lesson], roster: dict[int, int]) -> dict:
         row["marked"] += 1
         if status in ATTENDED:
             row["attended"] += 1
+            row["late" if status == Attendance.Status.LATE else "present"] += 1
         elif status == Attendance.Status.ABSENT:
             row["absent"] += 1
         else:
             row["excused"] += 1
     for row in per_group.values():
         row["percent"] = _pct(row["attended"], row["marked"])
-        totals.update({k: row[k] for k in ("lessons", "attended", "absent", "excused", "marked")})
-    groups = sorted(per_group.values(), key=lambda r: (r["percent"] if r["percent"] is not None else 101, r["group"]["name"]))
+        totals.update({k: row[k] for k in ATTENDANCE_KEYS})
     return {
-        "lessons": totals["lessons"], "marked": totals["marked"], "attended": totals["attended"],
-        "absent": totals["absent"], "excused": totals["excused"],
+        **{k: totals[k] for k in ATTENDANCE_KEYS},
         "percent": _pct(totals["attended"], totals["marked"]),
-        "groups": groups,
+        "groups_with_data": sum(1 for r in per_group.values() if r["marked"]),
+        "groups": _by_percent(per_group.values()),
     }
 
 
-def _homework(lessons: list[Lesson], roster: dict[int, int]) -> dict:
+def _homework(lessons: list[Lesson], roster: dict[int, int], groups: list[Group] = ()) -> dict:
+    """Two different counts, never mixed: `given` / `due` are assignments
+    (one per homework), `expected` / `done` / `not_done` are students' works.
+    Only an assignment past its deadline is judged: expected = done + not_done,
+    completion = done / expected. `pending` — handed in, not checked yet, of
+    every assignment (what trainers still have to check); `pending_due` — the
+    part of `done` that is not checked yet."""
     homeworks = list(Homework.objects.filter(lesson__in=lessons).select_related("lesson", "lesson__group"))
     results = defaultdict(list)
     for result in HomeworkResult.objects.filter(homework__in=homeworks):
         results[result.homework_id].append(result)
-    per_group: dict[int, dict] = {}
+
+    def blank(group):
+        return {"group": _group_ref(group), **dict.fromkeys(HOMEWORK_KEYS, 0)}
+
+    per_group: dict[int, dict] = {g.pk: blank(g) for g in groups}
     totals = Counter()
     for hw in homeworks:
         row = homework_row(hw, roster.get(hw.lesson.group_id, 0), results[hw.pk])
-        group = per_group.setdefault(hw.lesson.group_id, {
-            "group": _ref(hw.lesson.group), "homeworks": 0, "due": 0, "done": 0, "not_done": 0, "pending": 0,
-            "expected": 0,
-        })
+        group = per_group.setdefault(hw.lesson.group_id, blank(hw.lesson.group))
         group["homeworks"] += 1
         group["pending"] += row["pending"]
         if row["due"]:
-            # Only a homework past its deadline is judged: done vs not handed in.
             group["due"] += 1
             group["done"] += row["done"]
             group["not_done"] += row["not_done"]
             group["expected"] += row["expected"]
+            group["pending_due"] += row["pending"]
     for group in per_group.values():
         group["percent"] = _pct(group["done"], group["expected"])
-        totals.update({k: group[k] for k in ("homeworks", "due", "done", "not_done", "pending", "expected")})
-    groups = sorted(per_group.values(), key=lambda r: (r["percent"] if r["percent"] is not None else 101, r["group"]["name"]))
+        totals.update({k: group[k] for k in HOMEWORK_KEYS})
     return {
         "given": totals["homeworks"], "due": totals["due"], "done": totals["done"], "not_done": totals["not_done"],
-        "pending": totals["pending"], "expected": totals["expected"],
+        "pending": totals["pending"], "pending_due": totals["pending_due"], "expected": totals["expected"],
         "percent": _pct(totals["done"], totals["expected"]),
-        "groups": groups,
+        "groups_with_data": sum(1 for r in per_group.values() if r["expected"]),
+        "groups": _by_percent(per_group.values()),
     }
 
 
@@ -431,13 +473,13 @@ def _conclusions(report: dict) -> dict:
     act = st["activity"]
     if att["percent"] is not None:
         if att["percent"] >= GOOD_ATTENDANCE:
-            good.append(f"Средняя посещаемость {att['percent']}% — выше {GOOD_ATTENDANCE}%.")
+            good.append(f"Средняя посещаемость {att['percent']}% — не ниже {GOOD_ATTENDANCE}%.")
         for g in att["groups"]:
             if g["percent"] is not None and g["percent"] < LOW_GROUP_ATTENDANCE:
                 attention.append(f"В {g['group']['name']} низкая посещаемость — {g['percent']}%.")
     if hw["percent"] is not None:
         if hw["percent"] >= GOOD_HOMEWORK:
-            good.append(f"Высокое выполнение ДЗ — {hw['percent']}%.")
+            good.append(f"Высокое выполнение ДЗ — {hw['percent']}% (не ниже {GOOD_HOMEWORK}%).")
         for g in hw["groups"]:
             if g["percent"] is not None and g["percent"] < LOW_GROUP_HOMEWORK:
                 attention.append(f"В {g['group']['name']} ДЗ выполняют на {g['percent']}%.")
@@ -465,16 +507,37 @@ def _conclusions(report: dict) -> dict:
         attention.append(f"Низких оценок в опросах: {sv['low_ratings']}.")
     if hw["pending"]:
         attention.append(f"Ждут проверки тренера: {hw['pending']} {_plural(hw['pending'], 'работа', 'работы', 'работ')} по ДЗ.")
-    # Who exactly: the groups below the group thresholds and the flagged students.
-    groups = sorted({g["group"]["name"] for g in att["groups"] if g["percent"] is not None and g["percent"] < LOW_GROUP_ATTENDANCE}
-                    | {g["group"]["name"] for g in hw["groups"] if g["percent"] is not None and g["percent"] < LOW_GROUP_HOMEWORK})
-    flagged, students = set(), []
-    for row in st["risk"] + st["attendance_attention"] + st["homework_attention"]:
-        if row["student_id"] not in flagged:
-            flagged.add(row["student_id"])
-            students.append({"student_id": row["student_id"], "name": row["name"],
-                             "group": (row["group"] or {}).get("name", ""), "reason": row["reason"]})
-    return {"good": good, "attention": attention, "groups": groups, "students": students}
+    groups = _groups_by_rule(att, hw)
+    students = retention.contacts(report)
+    if students:
+        attention.append(f"Нуждаются в контакте (без повторов): {_students_word(len(students))}.")
+    return {
+        "good": good, "attention": attention, "students": students,
+        # «Требуют внимания» — below the LOW_GROUP_* thresholds; «ниже уровня
+        # «хорошо»» — between them and GOOD_*; «нет данных» — nothing to judge.
+        "groups": groups["attention"], "groups_watch": groups["watch"], "groups_no_data": groups["no_data"],
+        "criteria": {
+            "attention_attendance_below": LOW_GROUP_ATTENDANCE, "attention_homework_below": LOW_GROUP_HOMEWORK,
+            "good_attendance": GOOD_ATTENDANCE, "good_homework": GOOD_HOMEWORK,
+        },
+    }
+
+
+def _groups_by_rule(att: dict, hw: dict) -> dict[str, list[str]]:
+    """Each group of the month in one bucket, by its attendance and homework percent."""
+    names = {g["group"]["id"]: g["group"]["name"] for g in att["groups"] + hw["groups"]}
+    att_of = {g["group"]["id"]: g["percent"] for g in att["groups"]}
+    hw_of = {g["group"]["id"]: g["percent"] for g in hw["groups"]}
+    buckets = {"attention": [], "watch": [], "no_data": []}
+    for group_id, name in sorted(names.items(), key=lambda item: item[1]):
+        a, h = att_of.get(group_id), hw_of.get(group_id)
+        if a is None and h is None:
+            buckets["no_data"].append(name)
+        elif (a is not None and a < LOW_GROUP_ATTENDANCE) or (h is not None and h < LOW_GROUP_HOMEWORK):
+            buckets["attention"].append(name)
+        elif (a is not None and a < GOOD_ATTENDANCE) or (h is not None and h < GOOD_HOMEWORK):
+            buckets["watch"].append(name)
+    return buckets
 
 
 def previous_month(start: dt.date) -> tuple[dt.date, dt.date]:
@@ -492,18 +555,19 @@ def monthly_report(year: int, month: int, *, filters: dict | None = None) -> dic
     filters = {k: v for k, v in (filters or {}).items() if v}
     until = min(end, today)
     state = month_state(start, until, today)
-    lessons, counts = state["lessons"], state["roster_counts"]
+    lessons, counts, groups = state["lessons"], state["roster_counts"], state["month_groups"]
     trainers = retention.trainers_by_group(state["groups"].keys(), until, start) if state["groups"] else {}
     report = {
         "year": year, "month": month, "title": f"{MONTHS[month - 1]} {year}",
+        # The data runs from `start` to `until`; a month that is not over yet is a preliminary report.
         "start": start, "end": end, "until": until, "is_complete": end < today,
         "generated_at": timezone.now(),
         "overview": _overview(start, end, state),
-        "attendance": _attendance(lessons, counts),
-        "homework": _homework(lessons, counts),
+        "attendance": _attendance(lessons, counts, groups),
+        "homework": _homework(lessons, counts, groups),
         "students": _students(state["activity_rows"]),
-        "surveys": _surveys(start, end),
-        "scholarships": _scholarships(start, end),
+        "surveys": _surveys(start, until),
+        "scholarships": _scholarships(start, until),
         "inactive": retention.inactivity(state["activity_rows"], state["roster"], until, trainers),
         "departures": retention.departures(start, end, filters),
     }
@@ -512,6 +576,13 @@ def monthly_report(year: int, month: int, *, filters: dict | None = None) -> dic
         "homework_percent": report["homework"]["percent"],
         "students_at_risk": len(report["students"]["risk"]),
     })
+    inactive = report["inactive"]["counts"]
+    report["active_scope"] = {
+        **state["active_scope"],
+        "inactive": inactive["inactive"],
+        "engaged": inactive["active"],
+        "inactive_days": report["inactive"]["thresholds"][1],
+    }
     report["conclusions"] = _conclusions(report)
 
     prev_start, prev_end = previous_month(start)
@@ -529,6 +600,8 @@ def monthly_report(year: int, month: int, *, filters: dict | None = None) -> dic
     report["departures"]["change"] = (
         report["overview"]["students_deactivated"] - previous["departed"] if previous else None)
     report["comparison"] = retention.comparison(current, previous, f"{MONTHS[prev_start.month - 1]} {prev_start.year}")
+    # A month still running is compared by its first days with a whole previous month.
+    report["comparison"]["partial"] = not report["is_complete"]
     report["recommendations"] = retention.recommendations(report)
     report["summary"] = retention.management_summary(report)
     return report
