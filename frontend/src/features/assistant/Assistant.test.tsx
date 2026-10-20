@@ -263,7 +263,7 @@ describe('Assistant Workspace', () => {
     vi.mocked(assistantApi.monthlyReport).mockResolvedValue({
       year: 2026, month: 9, title: 'Сентябрь 2026', start: '2026-09-01', end: '2026-09-30', until: '2026-09-30', is_complete: true,
       generated_at: '2026-10-06T07:00:00Z',
-      overview: { groups_total: 3, groups_active: 3, groups_inactive: 0, students_total: 32, students_active: 30, students_new: 4,
+      overview: { groups_total: 3, groups_active: 3, groups_inactive: 0, students_total: 32, students_active: 30, students_paused: 0, students_withdrawn: 2, students_completed: 0, students_without_group: 0, students_new: 4,
         students_deactivated: 1, attendance_percent: 87, homework_percent: 81, students_at_risk: 1 },
       attendance: { lessons: 33, marked: 968, attended: 842, absent: 126, excused: 0, percent: 87,
         groups: [{ group: { id: 1, name: 'PRO-01' }, students: 10, lessons: 12, attended: 100, absent: 6, marked: 106, percent: 94 }] },

@@ -386,10 +386,14 @@ def _overview(doc: _Doc, r: dict) -> None:
         (_pct(o["homework_percent"]), "Среднее выполнение ДЗ", _tone(o["homework_percent"])),
         (str(o["students_at_risk"]), "Студентов в зоне риска", BAD if o["students_at_risk"] else None),
     ])
-    if o["groups_inactive"] or o["students_deactivated"]:
-        doc.paragraph(f"Неактивных групп: {o['groups_inactive']} · деактивировано студентов за месяц: {o['students_deactivated']}.",
-                      size=7.8, color=INK_SECONDARY)
-        doc.y -= 4
+    # The total split by status on the month's last day — the parts add up to «Всего студентов».
+    doc.paragraph(
+        f"Студенты на конец месяца: активных {o['students_active']} · на паузе {o['students_paused']} · "
+        f"деактивированы {o['students_withdrawn']} · завершили обучение {o['students_completed']}"
+        f" · всего {o['students_total']}. Деактивировано за месяц: {o['students_deactivated']}."
+        + (f" Неактивных групп: {o['groups_inactive']}." if o["groups_inactive"] else ""),
+        size=7.8, color=INK_SECONDARY)
+    doc.y -= 4
 
 
 def _attendance(doc: _Doc, r: dict) -> None:

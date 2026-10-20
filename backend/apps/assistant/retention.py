@@ -25,10 +25,10 @@ from django.conf import settings
 from django.db.models import Max, OuterRef, Q, Subquery
 from django.utils import timezone
 
-from apps.academy.models import Attendance, GroupTeacher, HomeworkResult, Lesson, Student, StudentStatusEvent
+from apps.academy.models import Attendance, GroupTeacher, HomeworkResult, Lesson, StudentStatusEvent
 from apps.academy.services.lesson_status import held_q
 
-from . import activity
+from . import activity, history
 from .history import StudentOn
 
 E = StudentStatusEvent.EventType
@@ -397,7 +397,7 @@ def month_core(start: dt.date, end: dt.date, today: dt.date) -> dict:
     return {
         "attendance": att["percent"], "homework": hw["percent"],
         "active": state["active_count"],
-        "new": Student.objects.filter(enrollment_date__gte=start, enrollment_date__lte=end).count(),
+        "new": history.new_count(state["roster"].values(), start),
         "departed": departed_count(start, end),
         "risk": sum(1 for r in rows if r.status == activity.STATUS_RISK),
         "inactive": insights["counts"]["inactive"],

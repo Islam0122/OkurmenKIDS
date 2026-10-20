@@ -34,6 +34,8 @@ from apps.academy.services.group_schedule_conflicts import overlapping_groups
 from apps.academy.services.trainer_assignment import available_trainers
 from apps.scholarships.models import ScholarshipAward
 
+from .history import student_counts
+
 OPEN_GROUP_STATUSES = (Group.Status.ACTIVE, Group.Status.PAUSED)
 ARCHIVED_GROUP_STATUSES = (Group.Status.COMPLETED, Group.Status.CANCELLED)
 ATTENDED = (Attendance.Status.PRESENT, Attendance.Status.LATE)
@@ -706,10 +708,8 @@ def dashboard() -> dict:
     ]
 
     open_groups = Group.objects.filter(status__in=OPEN_GROUP_STATUSES)
-    students = Student.objects.aggregate(
-        total=Count("id", filter=~Q(status=Student.Status.COMPLETED)),
-        active=Count("id", filter=Q(status=Student.Status.ACTIVE)),
-    )
+    # The same rule as the monthly report (history.student_counts): every student, one status each.
+    students = student_counts(Student.objects.values_list("status", flat=True))
     return {
         "date": today,
         "cards": {

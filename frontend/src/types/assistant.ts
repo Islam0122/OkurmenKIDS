@@ -499,9 +499,17 @@ export interface MonthlyReport {
     groups_total: number
     groups_active: number
     groups_inactive: number
+    /** Every student enrolled by the month's end: active + paused + withdrawn + completed. */
     students_total: number
     students_active: number
+    students_paused: number
+    /** Deactivated (status «Деактивирован») on the month's last day. */
+    students_withdrawn: number
+    students_completed: number
+    /** Active on the month's last day but in no group. */
+    students_without_group: number
     students_new: number
+    /** Deactivated during the month (unique students). */
     students_deactivated: number
     attendance_percent: number | null
     homework_percent: number | null
