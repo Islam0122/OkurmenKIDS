@@ -25,7 +25,7 @@ import type { StudentProgressParams } from '@/types/studentProgress'
 import { useAuth } from '@/hooks/useAuth'
 import { useReportGroup } from '@/hooks/useReports'
 import { seesWholeAcademy } from '@/lib/roles'
-import { KpiBadge, PeriodSelect, pct, periodCaption } from '@/features/analytics/reportUi'
+import { KpiBadge, MetricValue, PeriodSelect, pct, periodCaption } from '@/features/analytics/reportUi'
 import type { ReportPeriodKey } from '@/types/reports'
 import { useGroup, useGroupSchedule } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
@@ -453,6 +453,9 @@ function AnalyticsTab({ groupId }: { groupId: number }) {
                   { key: 'lessons', header: 'Занятий', render: (row) => `${row.lessons.held} / ${row.lessons.total}` },
                   { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
                   { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
+                  { key: 'progress', header: 'Прогресс', render: (row) => pct(row.progress_rate) },
+                  { key: 'activity', header: 'Активность', render: (row) => pct(row.activity_rate) },
+                  { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
                   { key: 'kpi', header: 'KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
                 ]}
               />

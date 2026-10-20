@@ -171,6 +171,16 @@ class SameKPIEverywhereTests(ReportsTestBase):
         academy = self.academy_contract()
         return reports, analytics, academy
 
+    def test_academy_report_teacher_rows_carry_all_five_criteria(self):
+        rows = {row["id"]: row for row in compute_academy_monthly_stats(2026, 9)["teachers"]}
+        own = compute_monthly_stats(self.aziza, 2026, 9)["kpi"]
+        row = rows[self.aziza.id]
+        self.assertEqual(
+            (row["homework_rate"], row["progress_rate"], row["activity_rate"], row["test_score_rate"], row["kpi_total"]),
+            (own["homework"], own["student_progress"], own["lessons"], own["test_score"], own["total"]),
+        )
+        self.assertIsNone(row["test_score_rate"])  # no tests in the fixture — «Нет данных», not 0
+
     # 1. One data set -> one KPI (Reports = Analytics = Academy Report)
     def test_whole_academy_same_kpi_in_all_three_reports(self):
         reports, analytics, academy = self.all_three()
