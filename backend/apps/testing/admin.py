@@ -4,19 +4,28 @@ Only Test is registered: its list, add and change pages are replaced by the
 section's own pages (admin_views.py), and every question URL is nested under
 its test (/admin/testing/test/<id>/questions/...). Questions and options
 have no admin of their own — a question only exists inside a test.
+
+Besides it: sessions, «Результаты тестов» and «Проверка текстовых ответов»
+(manual review of text answers — the only place they are graded by hand).
 """
 from __future__ import annotations
 
 import uuid
 
-from django.contrib import admin
+from django import forms
+from django.contrib import admin, messages
 from django.http import Http404
 from django.shortcuts import redirect
+from django.template.defaultfilters import linebreaksbr
 from django.urls import path, reverse
+from django.utils.html import format_html
+from django.utils.text import Truncator
 
 from . import admin_views, analytics_admin_views, io_admin_views, session_admin_views
 from .admin_views import is_admin_user
-from .models import Test, TestResult, TestSession
+from .models import REVIEW_GRADING_STATUSES, GradingStatus, Test, TestResult, TestSession, TextAnswerReview
+from .services.grading import answer_points, check_answer
+from .services.review import reset_review, review_answer
 
 
 @admin.register(Test)
@@ -247,3 +256,178 @@ class TestResultAdmin(AdminRoleOnly, admin.ModelAdmin):
         from django.utils.html import format_html
 
         return format_html('<a href="{}">Подробнее</a>', reverse("admin:testing_attempt_detail", args=[obj.pk]))
+
+
+# ---------------------------------------------------------------------------
+# «Проверка текстовых ответов» — manual review of text answers (proxy
+# TextAnswerReview). The only place text answers are graded by hand;
+# saving goes through services.review, which recalculates the attempt.
+# ---------------------------------------------------------------------------
+
+REVIEW_PENDING = "pending_review"
+REVIEW_DONE = "reviewed"
+
+
+class ReviewStatusFilter(admin.SimpleListFilter):
+    title = "статус проверки"
+    parameter_name = "review"
+
+    def lookups(self, request, model_admin):
+        return ((REVIEW_PENDING, "Ожидает проверки"), (REVIEW_DONE, "Проверен"))
+
+    def queryset(self, request, queryset):
+        if self.value() == REVIEW_PENDING:
+            return queryset.filter(grading_status__in=REVIEW_GRADING_STATUSES)
+        if self.value() == REVIEW_DONE:
+            return queryset.exclude(grading_status__in=REVIEW_GRADING_STATUSES)
+        return queryset
+
+
+class TextAnswerReviewForm(forms.ModelForm):
+    class Meta:
+        model = TextAnswerReview
+        fields = ("points_awarded", "review_comment")
+        widgets = {"review_comment": forms.Textarea(attrs={"rows": 4})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        max_points = self.instance.question.points
+        field = self.fields["points_awarded"]
+        field.required = True
+        field.min_value, field.max_value = 0, max_points
+        field.widget.attrs.update({"min": 0, "max": max_points, "step": "0.5"})
+        field.help_text = f"От 0 до {max_points}."
+
+    def clean_points_awarded(self):
+        points = self.cleaned_data["points_awarded"]
+        max_points = self.instance.question.points
+        if points is None or not 0 <= points <= max_points:
+            raise forms.ValidationError(f"Балл должен быть от 0 до {max_points}.")
+        return points
+
+
+@admin.register(TextAnswerReview)
+class TextAnswerReviewAdmin(AdminRoleOnly, admin.ModelAdmin):
+    form = TextAnswerReviewForm
+    list_display = ("student_column", "group_column", "test_column", "question_column", "answer_column",
+                    "max_points_column", "points_column", "review_status_column", "answered_at")
+    list_display_links = ("student_column", "question_column")
+    list_filter = (
+        ReviewStatusFilter,
+        ("attempt__group", admin.RelatedOnlyFieldListFilter),
+        ("question__test", admin.RelatedOnlyFieldListFilter),
+        ("attempt__session", admin.RelatedOnlyFieldListFilter),
+    )
+    search_fields = ("attempt__student_name", "attempt__student__first_name", "attempt__student__last_name")
+    date_hierarchy = "answered_at"
+    list_select_related = ("attempt__student", "attempt__group", "attempt__session__test", "question")
+    ordering = ("-answered_at",)
+    actions = ("give_max_points", "give_zero_points", "send_back_to_review")
+    readonly_fields = ("student_column", "group_column", "session_column", "question_full", "reference_column",
+                       "answer_full", "max_points_column", "review_status_column", "answered_at",
+                       "reviewed_by", "reviewed_at", "attempt_score_column")
+    fieldsets = (
+        ("Ответ", {"fields": ("student_column", "group_column", "session_column", "answered_at")}),
+        ("Вопрос и ответ студента", {"fields": ("question_full", "reference_column", "answer_full")}),
+        ("Проверка", {"fields": ("max_points_column", "points_awarded", "review_comment", "review_status_column",
+                                 "reviewed_by", "reviewed_at", "attempt_score_column")}),
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        review_answer(obj, form.cleaned_data["points_awarded"], form.cleaned_data["review_comment"], request.user)
+
+    # -- columns ------------------------------------------------------------
+
+    @admin.display(description="Студент", ordering="attempt__student_name")
+    def student_column(self, obj):
+        return str(obj.attempt.student) if obj.attempt.student_id else obj.attempt.student_name
+
+    @admin.display(description="Группа", ordering="attempt__group__name")
+    def group_column(self, obj):
+        return obj.attempt.group or "—"
+
+    @admin.display(description="Тест / сессия", ordering="attempt__session__test__title")
+    def test_column(self, obj):
+        session = obj.attempt.session
+        title = obj.attempt.test_title or session.test.title
+        return f"{title} / {session.title}" if session.title else title
+
+    @admin.display(description="Тест / сессия")
+    def session_column(self, obj):
+        return format_html('{} — <a href="{}">попытка</a>', self.test_column(obj),
+                           reverse("admin:testing_attempt_detail", args=[obj.attempt_id]))
+
+    @admin.display(description="Вопрос")
+    def question_column(self, obj):
+        return Truncator(obj.question.text).chars(80)
+
+    @admin.display(description="Ответ студента")
+    def answer_column(self, obj):
+        return Truncator(obj.answer_text).chars(120) or "—"
+
+    @admin.display(description="Текст вопроса")
+    def question_full(self, obj):
+        return linebreaksbr(obj.question.text)
+
+    @admin.display(description="Эталонные ответы")
+    def reference_column(self, obj):
+        accepted = obj.question.correct_answers or []
+        if not accepted:
+            return "—"
+        matches, _ = check_answer(obj.question, obj.answer_text)
+        hint = "совпадает с эталоном" if matches else "не совпадает с эталоном"
+        return format_html("{}<br><small>Подсказка: ответ {}.</small>", "; ".join(map(str, accepted)), hint)
+
+    @admin.display(description="Ответ студента")
+    def answer_full(self, obj):
+        return format_html('<div style="white-space: pre-wrap">{}</div>', obj.answer_text or "—")
+
+    @admin.display(description="Макс. балл", ordering="question__points")
+    def max_points_column(self, obj):
+        return obj.question.points
+
+    @admin.display(description="Текущий балл", ordering="points_awarded")
+    def points_column(self, obj):
+        if obj.grading_status in REVIEW_GRADING_STATUSES:
+            return "—"
+        return answer_points(obj, obj.question.points)
+
+    @admin.display(description="Статус проверки", ordering="grading_status")
+    def review_status_column(self, obj):
+        if obj.grading_status in REVIEW_GRADING_STATUSES:
+            return format_html('<span class="badge bg-warning text-dark">{}</span>', "Ожидает проверки")
+        label = "Проверен" if obj.grading_status == GradingStatus.MANUAL else "Проверен автоматически"
+        return format_html('<span class="badge bg-success">{}</span>', label)
+
+    @admin.display(description="Итог попытки, %")
+    def attempt_score_column(self, obj):
+        return f"{round(obj.attempt.score, 2)}%"
+
+    # -- bulk actions ---------------------------------------------------------
+
+    def _bulk(self, request, queryset, apply, message):
+        done = 0
+        for answer in queryset.select_related("question"):
+            apply(answer)
+            done += 1
+        self.message_user(request, f"{message}: {done}.", messages.SUCCESS)
+
+    @admin.action(description="Выставить максимальный балл")
+    def give_max_points(self, request, queryset):
+        self._bulk(request, queryset, lambda a: review_answer(a, a.question.points, a.review_comment, request.user),
+                   "Оценено на максимум")
+
+    @admin.action(description="Выставить 0 баллов")
+    def give_zero_points(self, request, queryset):
+        self._bulk(request, queryset, lambda a: review_answer(a, 0, a.review_comment, request.user),
+                   "Оценено в 0 баллов")
+
+    @admin.action(description="Вернуть на проверку")
+    def send_back_to_review(self, request, queryset):
+        self._bulk(request, queryset, reset_review, "Возвращено на проверку")

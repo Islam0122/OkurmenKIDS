@@ -20,6 +20,7 @@ from apps.testing.models import (
     AttemptStatus,
     ExamEventType,
     FinishReason,
+    GradingStatus,
     QuestionType,
     SessionParticipant,
     SessionType,
@@ -309,7 +310,10 @@ class ResultTests(ExamApiFixture):
     def test_result_payload(self):
         self.put_answer(self.attempt, self.q_text, {"text": "nope"})
         result = self.call("post", self.attempt, "submit/").data
-        self.assertEqual((result["percentage"], result["passed"], result["correct"]), (75.0, True, 2))
+        # The text answer waits for manual review: no pass/fail verdict yet.
+        self.assertEqual((result["percentage"], result["passed"], result["correct"]), (75.0, None, 2))
+        self.assertEqual(Answer.objects.get(attempt=self.attempt, question=self.q_text).grading_status,
+                         GradingStatus.PENDING)
         self.assertEqual(Answer.objects.filter(attempt=self.attempt).count(), 3)
 
     def test_hidden_result(self):
