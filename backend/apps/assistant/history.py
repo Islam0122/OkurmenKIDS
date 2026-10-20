@@ -13,9 +13,12 @@ Two queries, no per-student lookups.
 from __future__ import annotations
 
 import datetime as dt
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.academy.models import Group, Student, StudentStatusEvent
 
@@ -40,6 +43,31 @@ class StudentOn:
 
 def enrolled_by(day: dt.date) -> Q:
     return Q(enrollment_date__lte=day) | Q(enrollment_date__isnull=True, created_at__date__lte=day)
+
+
+def enrolled_on(student: Student) -> dt.date:
+    """The day a student counts from — the same rule as enrolled_by()."""
+    return student.enrollment_date or timezone.localdate(student.created_at)
+
+
+def new_count(roster: Iterable[StudentOn], start: dt.date) -> int:
+    """Of a roster_on(day), the students enrolled on or after `start`."""
+    return sum(1 for r in roster if enrolled_on(r.student) >= start)
+
+
+def student_counts(statuses: Iterable[str]) -> dict:
+    """Unique students by learning status. Every student has exactly one
+    status, so total = active + paused + withdrawn + completed — a group
+    (or its absence) never adds or removes anyone. «Деактивирован» is the
+    WITHDRAWN status only: a student without a group is not deactivated."""
+    by_status = Counter(statuses)
+    return {
+        "total": sum(by_status.values()),
+        "active": by_status[Student.Status.ACTIVE],
+        "paused": by_status[Student.Status.PAUSED],
+        "withdrawn": by_status[Student.Status.WITHDRAWN],
+        "completed": by_status[Student.Status.COMPLETED],
+    }
 
 
 def roster_on(day: dt.date) -> list[StudentOn]:

@@ -88,18 +88,27 @@ def _overview(start: dt.date, end: dt.date, state: dict) -> dict:
     ).exclude(end_date__lt=start)
     active_groups = groups.filter(status=Group.Status.ACTIVE).count()
     total_groups = groups.count()
-    statuses = Counter(r.status for r in state["roster"].values())
+    roster = state["roster"].values()
+    # Students on the month's last day — rebuilt from the status history, not
+    # today's status; one row per student, so nobody is counted twice.
+    counts = history.student_counts(r.status for r in roster)
     return {
         "groups_total": total_groups,
         "groups_active": active_groups,
         "groups_inactive": total_groups - active_groups,
-        # Students on the month's last day — rebuilt from the status history, not today's status.
-        "students_total": sum(statuses.values()) - statuses[Student.Status.COMPLETED],
-        "students_active": statuses[Student.Status.ACTIVE],
-        "students_paused": statuses[Student.Status.PAUSED],
-        "students_withdrawn": statuses[Student.Status.WITHDRAWN],
-        "students_completed": statuses[Student.Status.COMPLETED],
-        "students_new": Student.objects.filter(enrollment_date__gte=start, enrollment_date__lte=end).count(),
+        # Everyone enrolled by the month's end, whatever their status or group:
+        # total = active + paused + withdrawn + completed.
+        "students_total": counts["total"],
+        "students_active": counts["active"],
+        "students_paused": counts["paused"],
+        # Deactivated (WITHDRAWN) on the month's last day — a stock, unlike students_deactivated below.
+        "students_withdrawn": counts["withdrawn"],
+        "students_completed": counts["completed"],
+        # Active, but in no group on the month's last day — why «Группы» may show fewer.
+        "students_without_group": sum(1 for r in roster if r.status == Student.Status.ACTIVE and not r.group_id),
+        # Enrolled within the month (no enrollment date: created in it) — a part of students_total.
+        "students_new": history.new_count(roster, start),
+        # Students deactivated during the month (each once, even if they left twice) — a flow.
         "students_deactivated": retention.departed_count(start, end),
     }
 

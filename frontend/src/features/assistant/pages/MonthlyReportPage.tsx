@@ -54,7 +54,7 @@ function KpiGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
       <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">{title}</h3>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{children}</div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">{children}</div>
     </div>
   )
 }
@@ -304,8 +304,14 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
           <KpiGroup title="Студенты">
             <Kpi label="Всего студентов" value={o.students_total} />
             <Kpi label="Активных" value={o.students_active} tone="text-brand-700" />
+            <Kpi label="На паузе" value={o.students_paused} />
+            <Kpi label="Деактивированы" value={o.students_withdrawn} />
+            <Kpi label="Завершили обучение" value={o.students_completed} />
+          </KpiGroup>
+          <KpiGroup title="Движение за месяц">
             <Kpi label="Новых за месяц" value={o.students_new} />
-            <Kpi label="Деактивировано" value={o.students_deactivated} tone={o.students_deactivated ? 'text-warning' : undefined} />
+            <Kpi label="Деактивировано за месяц" value={o.students_deactivated} tone={o.students_deactivated ? 'text-warning' : undefined} />
+            <Kpi label="Активных без группы" value={o.students_without_group} tone={o.students_without_group ? 'text-warning' : undefined} />
           </KpiGroup>
           <KpiGroup title="Учебная активность">
             <Kpi label="Средняя посещаемость" value={<Percent value={o.attendance_percent} />} />
