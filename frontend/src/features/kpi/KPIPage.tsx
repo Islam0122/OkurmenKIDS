@@ -77,7 +77,7 @@ const METRIC_LABELS: Record<keyof KPIMetrics, string> = {
   progress: 'Прогресс',
   retention: 'Удержание студентов',
   teacher_workload: 'Нагрузка тренеров',
-  test_score: 'Средний результат тестов',
+  test_score: 'Результаты тестов',
   test_pass_rate: 'Сдали тесты',
 }
 
@@ -86,9 +86,9 @@ const METRIC_ORDER: (keyof KPIMetrics)[] = [
   'homework',
   'lesson_completion',
   'progress',
+  'test_score',
   'retention',
   'teacher_workload',
-  'test_score',
   'test_pass_rate',
 ]
 

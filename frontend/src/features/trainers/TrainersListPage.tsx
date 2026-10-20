@@ -12,7 +12,7 @@ import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Tabs } from '@/components/ui/Tabs'
-import { KpiBadge, PeriodSelect, ReportPagination, pct, periodCaption } from '@/features/analytics/reportUi'
+import { KpiBadge, MetricValue, PeriodSelect, ReportPagination, pct, periodCaption } from '@/features/analytics/reportUi'
 import { useReportTeachers } from '@/hooks/useReports'
 import type { ReportPeriodKey, ReportTeacherRow } from '@/types/reports'
 
@@ -52,9 +52,10 @@ const COLUMNS: Record<View, DataTableColumn<ReportTeacherRow>[]> = {
   kpi: [
     nameColumn,
     { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
-    { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
-    { key: 'progress', header: 'Результаты', render: (row) => pct(row.progress_rate) },
+    { key: 'homework', header: 'Домашние задания', render: (row) => pct(row.homework_rate) },
+    { key: 'progress', header: 'Прогресс', render: (row) => pct(row.progress_rate) },
     { key: 'activity', header: 'Активность', render: (row) => pct(row.activity_rate) },
+    { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
     { key: 'kpi', header: 'Общий KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
   ],
   load: [

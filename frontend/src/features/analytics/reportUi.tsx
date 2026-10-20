@@ -35,6 +35,13 @@ export function pct(value: number | null | undefined): string {
   return formatRuPercent(value ?? null)
 }
 
+/** A KPI criterion that may have no data in the period (e.g. no tests were
+ * held) — «Нет данных», never a fabricated 0%. */
+export function MetricValue({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined) return <span className="text-ink-muted">Нет данных</span>
+  return <>{pct(value)}</>
+}
+
 export function KpiBadge({ value, level }: { value: number | null; level: KpiLevel }) {
   return <Badge tone={KPI_STATUS_BADGE_TONE[level]}>{value === null ? KPI_LEVEL_LABEL[level] : pct(value)}</Badge>
 }

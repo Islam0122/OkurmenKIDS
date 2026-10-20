@@ -167,9 +167,12 @@ SERVE_MEDIA = False
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # KPI weights — the one place they are defined (services.kpi_engine).
-# Equal weights = the project's existing KPI formula. Retention and teacher
-# workload are reported alongside but are not part of the total.
-KPI_WEIGHTS = {"attendance": 0.25, "homework": 0.25, "lesson_completion": 0.25, "progress": 0.25}
+# Five equal criteria, 20% each: attendance, homework, lesson completion
+# («Активность»), progress and test results. Retention, teacher workload and
+# the test pass rate are reported alongside but are not part of the total.
+KPI_WEIGHTS = {
+    "attendance": 0.2, "homework": 0.2, "lesson_completion": 0.2, "progress": 0.2, "test_score": 0.2,
+}
 
 AUTH_USER_MODEL = "users.User"
 

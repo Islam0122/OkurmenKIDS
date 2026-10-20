@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BookOpen, CalendarCheck, ClipboardCheck, GraduationCap, NotebookPen, Users } from 'lucide-react'
+import { BookOpen, CalendarCheck, ClipboardCheck, FileCheck2, GraduationCap, NotebookPen, Users } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -13,7 +13,7 @@ import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { StatCard } from '@/components/ui/StatCard'
 import { StatGrid } from '@/components/ui/StatGrid'
-import { KpiBadge, PeriodSelect, pct, periodCaption } from '@/features/analytics/reportUi'
+import { KpiBadge, MetricValue, PeriodSelect, pct, periodCaption } from '@/features/analytics/reportUi'
 import { KPI_STATUS_CARD_TONE } from '@/features/kpi/kpiStatus'
 import { useReportTeacher } from '@/hooks/useReports'
 import type { ReportPeriodKey } from '@/types/reports'
@@ -52,11 +52,17 @@ export function TrainerDetailPage() {
 
       <div className="space-y-6">
         <section aria-label="KPI тренера">
-          <StatGrid columns={4}>
+          <StatGrid columns={3}>
             <StatCard label="Посещаемость" value={pct(metric('attendance'))} icon={CalendarCheck} />
-            <StatCard label="Выполнение ДЗ" value={pct(metric('homework'))} icon={NotebookPen} />
-            <StatCard label="Результаты студентов" value={pct(metric('progress'))} icon={GraduationCap} />
+            <StatCard label="Домашние задания" value={pct(metric('homework'))} icon={NotebookPen} />
+            <StatCard label="Прогресс" value={pct(metric('progress'))} icon={GraduationCap} />
             <StatCard label="Активность (проведено занятий)" value={pct(metric('lesson_completion'))} icon={ClipboardCheck} />
+            <StatCard
+              label="Результаты тестов"
+              value={metric('test_score') === null ? 'Нет данных' : pct(metric('test_score'))}
+              hint={metric('test_pass_rate') === null ? undefined : `Сдали: ${pct(metric('test_pass_rate'))}`}
+              icon={FileCheck2}
+            />
           </StatGrid>
           <div className="mt-4 card card-body flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -108,7 +114,8 @@ export function TrainerDetailPage() {
                   { key: 'students', header: 'Студентов', render: (row) => row.students.active },
                   { key: 'attendance', header: 'Посещаемость', render: (row) => pct(row.attendance_rate) },
                   { key: 'homework', header: 'ДЗ', render: (row) => pct(row.homework_rate) },
-                  { key: 'progress', header: 'Результаты', render: (row) => pct(row.progress_rate) },
+                  { key: 'progress', header: 'Прогресс', render: (row) => pct(row.progress_rate) },
+                  { key: 'tests', header: 'Результаты тестов', render: (row) => <MetricValue value={row.test_score_rate} /> },
                   { key: 'kpi', header: 'KPI', render: (row) => <KpiBadge value={row.kpi} level={row.kpi_level} /> },
                 ]}
               />

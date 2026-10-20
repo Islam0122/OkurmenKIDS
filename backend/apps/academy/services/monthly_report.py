@@ -176,6 +176,7 @@ def compute_monthly_stats(teacher: Teacher, year: int, month: int) -> dict:
             "homework": metrics["homework"],
             "lessons": metrics["lesson_completion"],
             "student_progress": metrics["progress"],
+            "test_score": metrics["test_score"],
             "total": engine.total,
             "status": engine.status,
         },

@@ -10,10 +10,15 @@ weights live in settings.KPI_WEIGHTS):
 
     total_kpi = Σ(metric × weight) / Σ(weight of metrics that have data)
 
-    attendance         25%   (present + late) / every attendance record
-    homework           25%   (submitted + checked + late) / every homework result
-    lesson_completion  25%   completed lessons / lessons already due (date ≤ today)
-    progress           25%   average homework score (0–10) × 10
+    attendance         20%   (present + late) / every attendance record
+    homework           20%   (submitted + checked + late) / every homework result
+    lesson_completion  20%   completed lessons / lessons already due (date ≤ today)
+                             («Активность» тренера)
+    progress           20%   average homework score (0–10) × 10
+    test_score         20%   average result (0–100) of LMS students' finished
+                             and fully graded test attempts in the period
+                             (analytics.assessments) — every attempt counted
+                             once; «Результаты тестов»
 
 Reported alongside, but NOT part of the total:
 
@@ -22,10 +27,9 @@ Reported alongside, but NOT part of the total:
                        groups in scope
     teacher_workload   active teachers in scope who gave ≥1 lesson in the
                        period / active teachers in scope
-    test_score         average result (0–100) of LMS students' finished
-                       tests in the period (analytics.assessments)
-    test_pass_rate     share of those results at or above the test's
-                       passing score
+    test_pass_rate     share of the test results at or above the test's
+                       passing score — a different metric from the average
+                       result, shown in the detailed analytics only
 
 A metric with no underlying data is None ("no data", never a fabricated
 0%) and is left out of the total, the remaining weights renormalised. The
@@ -52,9 +56,11 @@ from apps.academy.models import Attendance, HomeworkResult, Lesson, Student, Stu
 if TYPE_CHECKING:  # the analytics package imports this module — import lazily at runtime
     from apps.academy.services.analytics.scope import AnalyticsScope
 
-COMPONENTS = ("attendance", "homework", "lesson_completion", "progress")
-METRICS = COMPONENTS + ("retention", "teacher_workload", "test_score", "test_pass_rate")
-DEFAULT_WEIGHTS = {"attendance": 0.25, "homework": 0.25, "lesson_completion": 0.25, "progress": 0.25}
+COMPONENTS = ("attendance", "homework", "lesson_completion", "progress", "test_score")
+METRICS = COMPONENTS + ("retention", "teacher_workload", "test_pass_rate")
+DEFAULT_WEIGHTS = {
+    "attendance": 0.2, "homework": 0.2, "lesson_completion": 0.2, "progress": 0.2, "test_score": 0.2,
+}
 
 METRIC_LABELS = {
     "attendance": "Посещаемость",
@@ -63,7 +69,7 @@ METRIC_LABELS = {
     "progress": "Прогресс (средний балл ДЗ)",
     "retention": "Удержание студентов",
     "teacher_workload": "Нагрузка тренеров",
-    "test_score": "Средний результат тестов",
+    "test_score": "Результаты тестов",
     "test_pass_rate": "Сдали тесты",
 }
 

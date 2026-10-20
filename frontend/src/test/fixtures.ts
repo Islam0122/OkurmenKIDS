@@ -260,10 +260,11 @@ export function buildAnalyticsDashboard(overrides: Partial<AnalyticsDashboard> =
       status: 'attention',
       status_label: 'Требует внимания',
       weights: [
-        { key: 'attendance', label: 'Посещаемость', weight: 25 },
-        { key: 'homework', label: 'Домашние задания', weight: 25 },
-        { key: 'lesson_completion', label: 'Проведённые занятия', weight: 25 },
-        { key: 'progress', label: 'Прогресс (средний балл ДЗ)', weight: 25 },
+        { key: 'attendance', label: 'Посещаемость', weight: 20 },
+        { key: 'homework', label: 'Домашние задания', weight: 20 },
+        { key: 'lesson_completion', label: 'Проведённые занятия', weight: 20 },
+        { key: 'progress', label: 'Прогресс (средний балл ДЗ)', weight: 20 },
+        { key: 'test_score', label: 'Результаты тестов', weight: 20 },
       ],
     },
     students: {

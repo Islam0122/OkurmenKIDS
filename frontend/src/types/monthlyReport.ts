@@ -46,6 +46,8 @@ export interface MonthlyReportKPI {
   homework: number | null
   lessons: number | null
   student_progress: number | null
+  /** Average test result — the 5th KPI criterion. */
+  test_score: number | null
   total: number | null
   /** Backend-computed status — never derive it from `total` on the frontend. */
   status: KPIStatus

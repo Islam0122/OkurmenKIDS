@@ -25,6 +25,7 @@ COMPONENT_SHORT_LABELS = {
     "homework": "Домашние задания",
     "lesson_completion": "Активность",
     "progress": "Прогресс",
+    "test_score": "Результаты тестов",
 }
 
 LEVEL_LABELS = STATUS_LABELS

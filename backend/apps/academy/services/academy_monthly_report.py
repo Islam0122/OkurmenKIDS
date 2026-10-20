@@ -458,6 +458,7 @@ def compute_academy_monthly_stats(year: int, month: int) -> dict:
             "homework": metrics["homework"],
             "lessons": metrics["lesson_completion"],
             "student_progress": metrics["progress"],
+            "test_score": metrics["test_score"],
             "total": engine.total,
             "status": engine.status,
         },

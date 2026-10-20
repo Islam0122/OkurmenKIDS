@@ -1344,8 +1344,9 @@ class KPIMetricsSerializer(serializers.Serializer):
     progress = serializers.FloatField(allow_null=True)
     retention = serializers.FloatField(allow_null=True)
     teacher_workload = serializers.FloatField(allow_null=True)
-    # Test results — reported alongside, not part of the total KPI.
+    # Average test result — the 5th KPI criterion («Результаты тестов»).
     test_score = serializers.FloatField(allow_null=True)
+    # Share of results at/above the passing score — not part of the total KPI.
     test_pass_rate = serializers.FloatField(allow_null=True)
 
 
@@ -1449,6 +1450,7 @@ class MonthlyReportKPISerializer(serializers.Serializer):
     homework = serializers.FloatField(allow_null=True)
     lessons = serializers.FloatField(allow_null=True)
     student_progress = serializers.FloatField(allow_null=True)
+    test_score = serializers.FloatField(allow_null=True)
     total = serializers.FloatField(allow_null=True)
     status = serializers.ChoiceField(choices=["good", "attention", "low", "no_data"])
 
@@ -1604,6 +1606,7 @@ class AcademyReportKPISerializer(serializers.Serializer):
     homework = serializers.FloatField(allow_null=True)
     lessons = serializers.FloatField(allow_null=True)
     student_progress = serializers.FloatField(allow_null=True)
+    test_score = serializers.FloatField(allow_null=True)
     total = serializers.FloatField(allow_null=True)
     status = serializers.ChoiceField(choices=["good", "attention", "low", "no_data"])
 
