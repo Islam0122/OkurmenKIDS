@@ -27,7 +27,7 @@ export const ACCOUNTING_NAV: NavItem[] = [
   { to: '/accounting/pricing', label: 'Стоимость курсов', icon: Tags },
   { to: '/accounting/analytics', label: 'Аналитика', icon: BarChart3 },
   { to: '/accounting/reports', label: 'Отчёт по сотрудникам', icon: FileText },
-  { to: '/accounting/billing', label: 'Оплата обучения', icon: ReceiptText },
+  { to: '/finance', label: 'Финансы студентов', icon: ReceiptText },
   { to: '/accounting/student-payments', label: 'Платежи студентов', icon: Banknote },
   { to: '/accounting/audit', label: 'Журнал изменений', icon: History },
 ]

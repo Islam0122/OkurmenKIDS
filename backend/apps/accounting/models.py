@@ -140,6 +140,7 @@ class StudentPayment(models.Model):
     class Purpose(models.TextChoices):
         TUITION = "tuition", "Оплата обучения"
         RESERVATION = "reservation", "Бронь"
+        PREPAYMENT = "prepayment", "Предоплата / аванс"
 
     purpose = models.CharField(max_length=20, choices=Purpose.choices, blank=True, verbose_name="Назначение")
     created_by = models.ForeignKey(

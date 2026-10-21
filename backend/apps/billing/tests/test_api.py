@@ -85,9 +85,12 @@ class ManagerRestrictionTests(BillingFixture):
         change_id = response.data["id"]
         self.assertEqual(api.post(BASE + f"terms-changes/{change_id}/decide/", {"approve": True},
                                   format="json").status_code, 403)
-        director = self.client_for(self.director)
+        director = self.client_for(self.director)  # директор — только просмотр
         self.assertEqual(director.post(BASE + f"terms-changes/{change_id}/decide/", {"approve": True},
-                                       format="json").status_code, 200)
+                                       format="json").status_code, 403)
+        accountant = self.client_for(self.accountant)
+        self.assertEqual(accountant.post(BASE + f"terms-changes/{change_id}/decide/", {"approve": True},
+                                         format="json").status_code, 200)
 
 
 class AccountantApiTests(BillingFixture):
@@ -272,9 +275,9 @@ class PermissionHelpersTests(BillingFixture):
 
         self.assertTrue(is_billing_accountant(self.accountant))
         self.assertFalse(is_billing_accountant(self.manager))
-        self.assertTrue(is_billing_admin(self.director))
+        self.assertFalse(is_billing_admin(self.director))
         self.assertTrue(is_billing_admin(self.admin))
-        self.assertFalse(is_billing_admin(self.accountant))
+        self.assertTrue(is_billing_admin(self.accountant))
         self.assertTrue(is_manager(self.manager))
         other = make_user("other_buh", User.Role.ACCOUNTANT)
         other.groups.clear()

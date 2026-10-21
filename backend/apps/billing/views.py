@@ -6,7 +6,9 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Prefetch, Q, Sum
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
@@ -32,11 +34,38 @@ from .models import (
     LessonConsumption,
     LessonPackage,
     PaymentAllocation,
+    PaymentMode,
+    Receipt,
     Reservation,
+    ReservationAllocation,
     StudentBillingProfile,
 )
-from .permissions import BillingAccess, MoneyAccess, can_view_money, capabilities, is_manager
-from .services import BillingError, contacts, invoices, lessons, payments, pricing, profiles, reports, reservations
+from .permissions import (
+    BillingAccess,
+    MoneyAccess,
+    can_view_money,
+    capabilities,
+    is_billing_accountant,
+    is_manager,
+)
+from .services import (
+    BillingError,
+    analytics,
+    contacts,
+    contracts,
+    invoices,
+    lessons,
+    payments,
+    pricing,
+    profiles,
+    queues,
+    receipts,
+    reports,
+    reservations,
+)
+from .services import settings as billing_settings
+
+from apps.accounting.services.money import money
 
 TAG = ["Billing"]
 
@@ -179,9 +208,58 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
 
     @extend_schema(request=s.ProfileCreateSerializer, responses=s.ProfileSerializer)
     def create(self, request):
+        """Оформить договор. Бухгалтер может сразу провести полученные деньги
+        (оплату брони и первый платёж) — в одной транзакции с договором."""
         data = dict(_valid(s.ProfileCreateSerializer, request))
-        profile = _call(profiles.create_student_billing_profile, actor=request.user, **data)
+        key = _idempotency_key(request, data)
+        data.pop("idempotency_key", None)
+        reservation_received = data.pop("reservation_received")
+        initial_payment = data.pop("initial_payment", None)
+        method, payer = data.pop("payment_method"), data.pop("payer_name")
+        if (reservation_received or initial_payment) and not is_billing_accountant(request.user):
+            raise PermissionDenied({"detail": "Деньги регистрирует бухгалтер.", "code": "forbidden"})
+        if reservation_received and not data.get("reservation_amount"):
+            raise ValidationError({"reservation_amount": "Укажите сумму брони."})
+        today = timezone.localdate()
+        try:
+            with transaction.atomic():
+                profile = profiles.create_student_billing_profile(actor=request.user, **data)
+                if reservation_received:
+                    reservations.record_reservation_payment(
+                        profile.reservations.get(status=Reservation.Status.PENDING), actor=request.user,
+                        amount=data["reservation_amount"], received_date=today, method=method, payer_name=payer,
+                        idempotency_key=f"{key}:res" if key else None,
+                    )
+                if initial_payment:
+                    payments.record_payment(
+                        profile=profile, amount=initial_payment, received_date=today, actor=request.user,
+                        method=method, payer_name=payer, idempotency_key=f"{key}:pay" if key else None,
+                    )
+        except BillingError as exc:
+            _fail(exc)
         return Response(s.ProfileSerializer(_profile_qs().get(pk=profile.pk)).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["get"])
+    def card(self, request, pk=None):
+        """Карточка договора: условия, учебные месяцы, начисления, деньги,
+        чеки, бронь, контакты. Менеджер — без денежных операций."""
+        profile = self.get_object()
+        return Response(contract_card(profile, with_money=can_view_money(request.user)))
+
+    @extend_schema(request=s.CourseTermsSerializer, responses=s.TermsChangeSerializer)
+    @action(detail=True, methods=["post"], url_path="course-terms")
+    def course_terms(self, request, pk=None):
+        data = _valid(s.CourseTermsSerializer, request)
+        change = _call(profiles.request_course_terms_change, self.get_object(), actor=request.user, **data)
+        return Response(s.TermsChangeSerializer(change).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=s.PaymentModeSerializer, responses=s.ProfileSerializer)
+    @action(detail=True, methods=["post"], url_path="payment-mode")
+    def payment_mode(self, request, pk=None):
+        data = _valid(s.PaymentModeSerializer, request)
+        _call(profiles.change_payment_mode, self.get_object(), actor=request.user, **data)
+        return Response(s.ProfileSerializer(_profile_qs().get(pk=pk)).data)
 
     @extend_schema(request=s.ProfileUpdateSerializer, responses=s.ProfileSerializer)
     def partial_update(self, request, pk=None):
@@ -262,11 +340,12 @@ def _profile_summary(profile) -> dict:
     package = next((p for p in profile.packages.all() if p.status == LessonPackage.Status.ACTIVE), None)
     return {
         "id": profile.pk, "status": profile.status, "subject_name": profile.subject.name if profile.subject_id else None,
-        "plan_name": profile.plan.name, "payment_state": state, "debt": str(debt),
-        "unpaid_invoices": len(unpaid), "credit": str(profile.credit or Decimal("0.00")),
-        "next_due": min((i.due_date for i in unpaid), default=None),
+        "plan_name": profile.plan.name, "payment_state": state, "debt": str(money(debt)),
+        "unpaid_invoices": len(unpaid), "credit": str(money(profile.credit or Decimal("0.00"))),
+        "next_due": min((i.due_date for i in unpaid if not i.due_lesson), default=None),
         "package": None if package is None else {
-            "number": package.number, "used": package.lessons_used, "total": package.lessons_total,
+            "number": package.number, "month_number": package.month_number, "used": package.lessons_used,
+            "total": package.lessons_total,
         },
     }
 
@@ -293,18 +372,18 @@ class StudentsView(APIView):
             qs = qs.filter(group_id=_int(q["group"], "group"))
         for part in (q.get("search") or "").split():
             qs = qs.filter(Q(first_name__icontains=part) | Q(last_name__icontains=part) | Q(parent_phone__icontains=part))
-        live = ~Q(billing_profiles__status=StudentBillingProfile.Status.INACTIVE)
+        live_ids = StudentBillingProfile.objects.exclude(
+            status__in=StudentBillingProfile.CLOSED_STATUSES).values("student_id")
         if q.get("registered") == "yes":
-            qs = qs.filter(billing_profiles__isnull=False).filter(live).distinct()
+            qs = qs.filter(pk__in=live_ids)
         elif q.get("registered") == "no":
-            qs = qs.exclude(pk__in=StudentBillingProfile.objects.exclude(
-                status=StudentBillingProfile.Status.INACTIVE).values("student_id"))
+            qs = qs.exclude(pk__in=live_ids)
         if q.get("state") == "debt":
             qs = qs.filter(billing_profiles__invoices__status__in=Invoice.UNPAID_STATUSES).distinct()
         elif q.get("state") == "overdue":
             qs = qs.filter(billing_profiles__invoices__status=Invoice.Status.OVERDUE).distinct()
         profiles = (
-            StudentBillingProfile.objects.exclude(status=StudentBillingProfile.Status.INACTIVE)
+            StudentBillingProfile.objects.exclude(status__in=StudentBillingProfile.CLOSED_STATUSES)
             .select_related("plan", "subject")
             .annotate(credit=Sum("credit_entries__amount"))
             .prefetch_related("invoices", "packages")
@@ -447,7 +526,9 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
 
     def get_queryset(self):
         f = filters_from(self.request, invoice_status=False)
-        qs = StudentPayment.objects.filter(billing_profile__isnull=False).select_related("student", "created_by")
+        qs = StudentPayment.objects.filter(billing_profile__isnull=False).select_related(
+            "student", "created_by", "group", "course", "receipt",
+        )
         qs = reports.filter_profiles(qs, f, "billing_profile__").prefetch_related(
             Prefetch("billing_allocations", queryset=PaymentAllocation.objects.select_related("invoice")),
         )
@@ -455,6 +536,8 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             qs = qs.filter(received_date__gte=f["date_from"])
         if f["date_to"]:
             qs = qs.filter(received_date__lte=f["date_to"])
+        if self.request.query_params.get("program"):
+            qs = qs.filter(billing_profile__plan__course_id=_int(self.request.query_params["program"], "program"))
         return qs.order_by("-received_date", "-id")
 
     @extend_schema(request=s.PaymentCreateSerializer, responses=s.BillingPaymentSerializer,
@@ -464,6 +547,16 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         key = _idempotency_key(request, data)
         data.pop("idempotency_key", None)
         items = [(row["invoice"], row["amount"]) for row in data.pop("allocations", None) or []]
+        mode, invoice = data.pop("mode"), data.pop("invoice", None)
+        if mode == "advance":
+            data["auto_allocate"] = False
+            data.setdefault("purpose", StudentPayment.Purpose.PREPAYMENT)
+        elif mode == "invoice":
+            if invoice is None:
+                raise ValidationError({"invoice": "Выберите начисление."})
+            items = [(invoice, min(data["amount"], invoice.balance))] if invoice.balance > 0 else []
+            if not items:
+                raise ValidationError({"invoice": "Начисление уже оплачено."})
         payment, created = _call(
             payments.record_payment, profile=data.pop("profile"), actor=request.user, idempotency_key=key,
             allocations=items or None, **data,
@@ -471,6 +564,22 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         payment = self.get_queryset().get(pk=payment.pk)
         return Response(s.BillingPaymentSerializer(payment).data,
                         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    @extend_schema(request=s.PaymentPreviewSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["post"])
+    def preview(self, request):
+        """Что будет после сохранения — без записи (обязательство, оплачено,
+        остаток после платежа, аванс после операции)."""
+        data = _valid(s.PaymentPreviewSerializer, request)
+        return Response(_call(payments.preview_payment, data["profile"], amount=data["amount"],
+                              invoice=data.get("invoice"), mode=data["mode"]))
+
+    @extend_schema(request=None, responses=s.ReceiptSerializer)
+    @action(detail=True, methods=["post"])
+    def receipt(self, request, pk=None):
+        """Чек операции (если его нет — выдать; повтор возвращает тот же)."""
+        receipt = _call(receipts.ensure_receipt, self.get_object(), actor=request.user)
+        return Response(s.ReceiptSerializer(receipt).data)
 
     @extend_schema(request=s.AllocateSerializer, responses=s.AllocationSerializer(many=True))
     @action(detail=True, methods=["post"])
@@ -549,6 +658,7 @@ class ReservationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         reservation, _payment, created = _call(
             reservations.record_reservation_payment, self.get_object(), actor=request.user, idempotency_key=key, **data,
         )
+        reservation.refresh_from_db()
         return Response(s.ReservationSerializer(reservation).data,
                         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
@@ -681,11 +791,21 @@ class OptionsView(APIView):
     permission_classes = [BillingAccess]
 
     def get(self, request):
-        from apps.academy.models import Group
+        from apps.academy.models import Course, Group
         from apps.users.models import Subject, User
 
         return Response({
-            "plans": [{"id": p.pk, "name": p.name, "subject": p.subject_id} for p in BillingPlan.objects.filter(is_active=True)],
+            "plans": [
+                {"id": p.pk, "name": p.name, "subject": p.subject_id, "course": p.course_id,
+                 "duration_months": p.duration_months, "allow_monthly": p.allow_monthly,
+                 "allow_full_prepay": p.allow_full_prepay}
+                for p in BillingPlan.objects.filter(is_active=True)
+            ],
+            "programs": [{"id": c.pk, "name": c.name} for c in Course.objects.only("id", "name").order_by("name")],
+            "payment_methods": [{"value": v, "label": label} for v, label in StudentPayment.Method.choices],
+            "payment_modes": [{"value": v, "label": label} for v, label in PaymentMode.choices],
+            "reservation_modes": [{"value": v, "label": label} for v, label in ReservationAllocation.choices],
+            "contract_statuses": [{"value": v, "label": label} for v, label in StudentBillingProfile.Status.choices],
             "subjects": [{"id": x.pk, "name": x.name} for x in Subject.objects.filter(is_active=True)],
             "groups": [{"id": g.pk, "name": g.name} for g in Group.objects.only("id", "name").order_by("name")]
             if (is_manager(request.user) or can_view_money(request.user)) else [],
@@ -707,6 +827,17 @@ class AuditView(APIView):
 
     def get(self, request):
         qs = PayrollAuditLog.objects.filter(action__startswith="billing_").select_related("actor")
+        q = request.query_params
+        if q.get("action"):
+            qs = qs.filter(action=q["action"])
+        if q.get("actor"):
+            qs = qs.filter(actor_id=_int(q["actor"], "actor"))
+        if q.get("date_from"):
+            qs = qs.filter(created_at__date__gte=_date(q["date_from"], "date_from"))
+        if q.get("date_to"):
+            qs = qs.filter(created_at__date__lte=_date(q["date_to"], "date_to"))
+        if q.get("search"):
+            qs = qs.filter(Q(reason__icontains=q["search"]) | Q(action__icontains=q["search"]))
         if request.query_params.get("entity_type"):
             qs = qs.filter(entity_type=request.query_params["entity_type"])
         if request.query_params.get("entity_id"):
@@ -714,8 +845,188 @@ class AuditView(APIView):
         paginator = BillingPagination()
         page = paginator.paginate_queryset(qs, request, view=self)
         return paginator.get_paginated_response([
-            {"id": r.pk, "created_at": r.created_at.isoformat(), "actor": str(r.actor) if r.actor_id else None,
+            {"id": r.pk, "created_at": r.created_at.isoformat(),
+             "actor": (r.actor.get_full_name() or r.actor.username) if r.actor_id else "Система",
+             "action_display": AUDIT_LABELS.get(r.action, r.action),
              "entity_type": r.entity_type, "entity_id": r.entity_id, "action": r.action, "old_values": r.old_values,
              "new_values": r.new_values, "reason": r.reason}
             for r in page
         ])
+
+
+AUDIT_LABELS = {
+    "billing_plan_create": "Создана программа / тариф", "billing_plan_update": "Изменены настройки тарифа",
+    "billing_plan_price": "Новая цена тарифа", "billing_profile_create": "Оформлен договор",
+    "billing_profile_update": "Изменены данные договора", "billing_profile_stop": "Начисления остановлены",
+    "billing_profile_pause": "Договор приостановлен", "billing_profile_resume": "Договор возобновлён",
+    "billing_contract_complete": "Курс завершён", "billing_terms_apply": "Применены условия / скидка",
+    "billing_terms_request": "Скидка на согласовании", "billing_terms_decide": "Решение по скидке",
+    "billing_payment_mode": "Изменён способ оплаты", "billing_month_create": "Начат учебный месяц",
+    "billing_package_complete": "Учебный месяц завершён", "billing_invoice_create": "Начисление",
+    "billing_invoice_issue": "Начисление выставлено", "billing_invoice_void": "Начисление аннулировано",
+    "billing_adjustment": "Корректировка начисления", "billing_adjustment_void": "Отмена корректировки",
+    "billing_payment": "Платёж", "billing_payment_reverse": "Сторно платежа", "billing_allocate": "Распределение",
+    "billing_allocation_reverse": "Сторно распределения", "billing_refund": "Возврат",
+    "billing_refund_reverse": "Отмена возврата", "billing_reservation_create": "Бронь",
+    "billing_reservation_paid": "Оплата брони", "billing_reservation_cancel": "Отмена брони",
+    "billing_consumption_reverse": "Сторно списания урока", "billing_contact": "Контакт с родителем",
+    "billing_receipt_issue": "Выдан чек", "billing_receipt_print": "Печать чека",
+    "billing_receipt_cancel": "Чек аннулирован", "billing_settings_update": "Изменены настройки",
+}
+
+
+def _paginate(request, rows: list) -> dict:
+    page = max(_int(request.query_params.get("page"), "page") or 1, 1)
+    size = min(max(_int(request.query_params.get("page_size"), "page_size") or 25, 1), 200)
+    start = (page - 1) * size
+    return {"count": len(rows), "page": page, "page_size": size, "results": rows[start:start + size]}
+
+
+def queue_filters(request) -> dict:
+    q = request.query_params
+    return {
+        "search": (q.get("search") or "").strip(), "group": _int(q.get("group"), "group"),
+        "plan": _int(q.get("plan"), "plan"), "program": _int(q.get("program"), "program"),
+        "accountant": _int(q.get("accountant"), "accountant"), "ordering": q.get("ordering") or None,
+        "contract_status": q.get("contract_status") or None,
+    }
+
+
+def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
+    from .services.ledger import credit_balance
+
+    profile = queues.base_queryset().get(pk=profile.pk)
+    summary = contracts.money_summary(profile)
+    months = [s.PackageSerializer(p).data for p in profile.packages.all().prefetch_related("invoices")]
+    data = {
+        "contract": s.ProfileSerializer(_profile_qs().get(pk=profile.pk)).data,
+        "row": queues.contract_row(profile, with_next=True),
+        "summary": {k: (None if v is None else str(v)) for k, v in summary.items()},
+        "months": months,
+        "invoices": s.InvoiceSerializer(profile.invoices.exclude(status=Invoice.Status.VOID)
+                                        .select_related("package", "profile__student__group", "profile__subject"),
+                                        many=True).data,
+        "reservations": s.ReservationSerializer(profile.reservations.select_related("payment", "profile__student"),
+                                                many=True).data,
+    }
+    if with_money:
+        payments_qs = StudentPayment.objects.filter(billing_profile=profile).select_related(
+            "student", "created_by", "group", "course", "receipt").prefetch_related(
+            Prefetch("billing_allocations", queryset=PaymentAllocation.objects.select_related("invoice")))
+        data.update({
+            "payments": s.BillingPaymentSerializer(payments_qs.order_by("-received_date", "-id"), many=True).data,
+            "contacts": s.ContactSerializer(BillingContactLog.objects.filter(profile=profile)
+                                            .select_related("student", "staff", "invoice")[:100], many=True).data,
+            "credit": str(credit_balance(profile.pk)),
+        })
+    return data
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT, parameters=[
+    OpenApiParameter("search", str), OpenApiParameter("group", int), OpenApiParameter("program", int),
+    OpenApiParameter("plan", int), OpenApiParameter("ordering", str), OpenApiParameter("page", int),
+])
+class QueueView(APIView):
+    """Рабочие списки: to_pay («К оплате»), soon («Скоро оплата»), overdue
+    («Просроченные»), all (все договоры). Денежные — бухгалтер и директор;
+    «all» — также менеджеру (статусы без денежных операций)."""
+
+    permission_classes = [BillingAccess]
+
+    def get(self, request, queue: str):
+        if queue not in queues.QUEUES:
+            raise ValidationError({"queue": "Неизвестный список."})
+        if queue != "all" and not can_view_money(request.user):
+            raise PermissionDenied({"detail": "Финансовые списки доступны только бухгалтерии.", "code": "forbidden"})
+        return Response(_paginate(request, queues.queue_rows(queue, queue_filters(request))))
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)
+class QueueCountsView(APIView):
+    """Бейджи sidebar: сколько студентов в «К оплате», «Скоро», «Просроченные»."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        return Response(queues.counts(queue_filters(request)))
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT, parameters=[
+    OpenApiParameter("date_from", str), OpenApiParameter("date_to", str), OpenApiParameter("program", int),
+    OpenApiParameter("group", int), OpenApiParameter("method", str), OpenApiParameter("status", str),
+])
+class AnalyticsView(APIView):
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        q = request.query_params
+        today = timezone.localdate()
+        date_from = _date(q.get("date_from"), "date_from") or today.replace(day=1)
+        date_to = _date(q.get("date_to"), "date_to") or today
+        if date_from > date_to:
+            raise ValidationError({"date_from": "Начало периода позже конца."})
+        if q.get("status") and q["status"] not in Invoice.Status.values:
+            raise ValidationError({"status": "Неизвестный статус начисления."})
+        if q.get("method") and q["method"] not in StudentPayment.Method.values:
+            raise ValidationError({"method": "Неизвестный способ оплаты."})
+        f = {"program": _int(q.get("program"), "program"), "group": _int(q.get("group"), "group"),
+             "plan": _int(q.get("plan"), "plan"), "method": q.get("method") or None, "status": q.get("status") or None}
+        return Response(analytics.finance_analytics(f, date_from=date_from, date_to=date_to))
+
+
+@extend_schema(tags=TAG)
+class ReceiptViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Чеки: список, просмотр, PDF (A4 или компактный). Повторная печать не
+    создаёт ни платежа, ни чека."""
+
+    permission_classes = [MoneyAccess]
+    serializer_class = s.ReceiptSerializer
+    pagination_class = BillingPagination
+    filterset_fields = ("profile", "kind", "status")
+    search_fields = ("number", "payment__student__first_name", "payment__student__last_name", "payer_name")
+
+    def get_queryset(self):
+        qs = Receipt.objects.select_related("payment__student", "issued_by", "profile")
+        q = self.request.query_params
+        if q.get("date_from"):
+            qs = qs.filter(issued_at__date__gte=_date(q["date_from"], "date_from"))
+        if q.get("date_to"):
+            qs = qs.filter(issued_at__date__lte=_date(q["date_to"], "date_to"))
+        return qs
+
+    @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY},
+                   parameters=[OpenApiParameter("format", str, description="a4 | compact")])
+    @action(detail=True, methods=["get"])
+    def pdf(self, request, pk=None):
+        from .services.receipt_pdf import render_receipt_pdf
+
+        receipt = self.get_object()
+        compact = request.query_params.get("size") == "compact"
+        content = render_receipt_pdf(receipt, compact=compact)
+        receipts.mark_printed(receipt, actor=request.user)
+        response = HttpResponse(content, content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="receipt-{receipt.number}.pdf"'
+        return response
+
+    @extend_schema(request=None, responses=s.ReceiptSerializer)
+    @action(detail=True, methods=["post"])
+    def printed(self, request, pk=None):
+        """Отметить печать HTML-версии (счётчик и журнал)."""
+        return Response(s.ReceiptSerializer(receipts.mark_printed(self.get_object(), actor=request.user)).data)
+
+
+@extend_schema(tags=TAG, request=s.BillingSettingsSerializer, responses=s.BillingSettingsSerializer)
+class SettingsView(APIView):
+    """Настройки оплаты: читать — бухгалтер и директор, менять — бухгалтер."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        from .models import BillingSettings
+
+        return Response(s.BillingSettingsSerializer(BillingSettings.load()).data)
+
+    def patch(self, request):
+        data = _valid(s.BillingSettingsSerializer, request, partial=True)
+        obj = _call(billing_settings.update_settings, actor=request.user, **data)
+        return Response(s.BillingSettingsSerializer(obj).data)

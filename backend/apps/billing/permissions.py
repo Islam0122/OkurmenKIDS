@@ -1,18 +1,22 @@
 """Права доступа к оплате обучения — по `User.Role`, как во всём проекте.
 
-Проверяются дважды: DRF-классами в API и `authorize()` в каждом сервисе,
-поэтому скрытая кнопка или прямой вызов сервиса не обходят ограничений.
+Проверяются трижды: DRF-классами в API, `authorize()` в каждом сервисе и
+Django permissions (группы `Accountant` и `BillingDirector`, admin модуля —
+только просмотр), поэтому скрытая кнопка, прямой запрос к API или вызов
+сервиса не обходят ограничений.
 
-* Менеджер (роль `assistant`, ведёт студентов и группы) — регистрирует
-  платёжный профиль, назначает тариф, бронь и скидку в пределах
-  `BILLING_MANAGER_MAX_DISCOUNT_PERCENT`; видит статус оплаты. Не вносит
-  платежи, не распределяет деньги, ничего не отменяет.
-* Бухгалтер (`accountant`) — начисления, долги, платежи, распределение,
-  авансы, возвраты (в пределах `BILLING_ACCOUNTANT_REFUND_LIMIT`), контакты
-  с родителями.
-* Администратор оплаты (`BILLING_ADMIN_ROLES`, по умолчанию директор и
-  администратор) — тарифы, согласование скидок сверх полномочий
-  менеджера, корректировки и аннулирование начислений, отчёты и аудит.
+* Бухгалтер (`accountant`) — полные полномочия финансового модуля: платежи,
+  распределение авансов, начисления в рамках правил (корректировки,
+  аннулирование не начатых), чеки, возвраты, сторно, контакты, тарифы и
+  программы, согласование скидок сверх лимита менеджера, настройки.
+* Менеджер (роль `assistant`) — регистрирует договор: программа, условия,
+  итоговая стоимость (скидка сверх `manager_max_discount_percent` — на
+  согласование), бронь (ожидаемая сумма); видит статусы оплаты. Не вносит и
+  не меняет платежи, не видит денежных операций, не меняет настройки.
+* Директор (`director`) — только просмотр: панель, аналитика, отчёты,
+  студенты и статусы, поступления, долги, скидки, журнал. Любая запись —
+  403 на уровне API и `forbidden` в сервисе.
+* Администратор системы (`admin` / суперпользователь) — как бухгалтер.
 * Системные операции (`actor=None`: списание уроков, начисления, просрочки
   из сигналов и Celery) разрешены только для действий из SYSTEM_ACTIONS.
 """
@@ -33,33 +37,47 @@ class BillingPermissionError(BillingError):
         super().__init__(message, code="forbidden")
 
 
-def admin_roles() -> tuple[str, ...]:
-    return tuple(getattr(settings, "BILLING_ADMIN_ROLES", (User.Role.DIRECTOR, User.Role.ADMIN)))
+def _active(user) -> bool:
+    return bool(getattr(user, "is_authenticated", False) and user.is_active)
+
+
+def is_system_admin(user) -> bool:
+    return _active(user) and is_admin_user(user)
 
 
 def is_billing_accountant(user) -> bool:
+    """Бухгалтер (с правами группы `Accountant`) или администратор системы."""
+    if is_system_admin(user):
+        return True
     return _is_accountant(user) and user.has_perm("billing.add_paymentallocation")
 
 
 def is_billing_admin(user) -> bool:
-    if not getattr(user, "is_authenticated", False) or not user.is_active:
-        return False
-    if getattr(user, "role", None) in admin_roles():
-        return True
-    return User.Role.ADMIN in admin_roles() and is_admin_user(user)
+    """Тарифы, настройки, согласование скидок, корректировки начислений —
+    бухгалтер (директор только просматривает)."""
+    return is_billing_accountant(user)
+
+
+def is_director(user) -> bool:
+    return _active(user) and getattr(user, "role", None) == User.Role.DIRECTOR and not is_admin_user(user)
 
 
 def is_manager(user) -> bool:
-    return is_assistant(user) or is_admin_user(user)
+    return is_assistant(user) or is_system_admin(user)
 
 
 def can_view(user) -> bool:
-    return is_billing_accountant(user) or is_billing_admin(user) or is_manager(user)
+    return is_billing_accountant(user) or is_director(user) or is_manager(user)
 
 
 def can_view_money(user) -> bool:
-    """Платежи, распределения, аванс, контакты, отчёты — не менеджеру."""
-    return is_billing_accountant(user) or is_billing_admin(user)
+    """Платежи, распределения, аванс, контакты, отчёты: бухгалтер и директор
+    (только чтение), не менеджер."""
+    return is_billing_accountant(user) or is_director(user)
+
+
+def is_read_only(user) -> bool:
+    return is_director(user)
 
 
 ACTIONS = {
@@ -68,7 +86,7 @@ ACTIONS = {
     "change_terms": lambda u: is_manager(u) or is_billing_admin(u),
     "approve_terms": is_billing_admin,
     "create_reservation": lambda u: is_manager(u) or is_billing_admin(u),
-    "stop_profile": lambda u: is_manager(u) or is_billing_admin(u) or is_billing_accountant(u),
+    "stop_profile": lambda u: is_manager(u) or is_billing_accountant(u),
     # Деньги — только бухгалтер
     "record_payment": is_billing_accountant,
     "allocate": is_billing_accountant,
@@ -77,9 +95,11 @@ ACTIONS = {
     "cancel_reservation": is_billing_accountant,
     "reverse_consumption": is_billing_accountant,
     "contact": is_billing_accountant,
-    "assign": lambda u: is_billing_accountant(u) or is_billing_admin(u),
-    # Администратор оплаты
+    "assign": is_billing_accountant,
+    "issue_receipt": is_billing_accountant,
+    # Тарифы, настройки, согласования, корректировки — бухгалтер
     "manage_plans": is_billing_admin,
+    "manage_settings": is_billing_admin,
     "adjust_invoice": is_billing_admin,
     "void_invoice": is_billing_admin,
     "view_reports": can_view_money,
@@ -99,14 +119,31 @@ def authorize(actor, action: str) -> None:
         raise BillingPermissionError()
 
 
-def check_manager_discount(actor, *, base_price, custom_price, discount_type, discount_value) -> bool:
-    """True — условия в пределах полномочий актора (применяются сразу),
-    False — нужно согласование администратора оплаты."""
+def manager_discount_limit():
+    from .models import BillingSettings
+
+    return BillingSettings.load().manager_max_discount_percent
+
+
+def check_course_discount(actor, *, standard_price, final_price) -> bool:
+    """Итоговая стоимость курса в пределах полномочий актора? Бухгалтер —
+    всегда; менеджер — скидка ≤ лимита из настроек, иначе согласование."""
     from decimal import Decimal
 
     if is_billing_admin(actor):
         return True
-    limit = Decimal(str(getattr(settings, "BILLING_MANAGER_MAX_DISCOUNT_PERCENT", 10)))
+    standard = Decimal(standard_price)
+    return standard - Decimal(final_price) <= standard * manager_discount_limit() / 100
+
+
+def check_manager_discount(actor, *, base_price, custom_price, discount_type, discount_value) -> bool:
+    """True — условия в пределах полномочий актора (применяются сразу),
+    False — нужно согласование бухгалтера."""
+    from decimal import Decimal
+
+    if is_billing_admin(actor):
+        return True
+    limit = manager_discount_limit()
     from .services.pricing import discount_for
 
     price = Decimal(custom_price) if custom_price is not None else Decimal(base_price)
@@ -120,6 +157,8 @@ class BillingAccess(BasePermission):
     message = "Доступ к оплате обучения запрещён."
 
     def has_permission(self, request, view) -> bool:
+        if request.method not in SAFE_METHODS and is_read_only(request.user):
+            return False  # директор — только просмотр, независимо от эндпоинта
         return can_view(request.user)
 
 
@@ -132,17 +171,25 @@ class MoneyAccess(BasePermission):
     def has_permission(self, request, view) -> bool:
         if request.method in SAFE_METHODS:
             return can_view_money(request.user)
-        return is_billing_accountant(request.user) or is_billing_admin(request.user)
+        return is_billing_accountant(request.user)
 
 
 def capabilities(user) -> dict:
+    role = ("accountant" if is_billing_accountant(user) else "director" if is_director(user)
+            else "manager" if is_manager(user) else None)
     return {
+        "role": role,
+        "read_only": is_read_only(user),
         "can_view": can_view(user),
         "can_view_money": can_view_money(user),
         "is_manager": is_manager(user),
         "is_accountant": is_billing_accountant(user),
+        "is_director": is_director(user),
         "is_billing_admin": is_billing_admin(user),
         "can_record_payments": is_billing_accountant(user),
+        "can_register": is_manager(user) or is_billing_accountant(user),
         "can_manage_plans": is_billing_admin(user),
-        "max_manager_discount_percent": str(getattr(settings, "BILLING_MANAGER_MAX_DISCOUNT_PERCENT", 10)),
+        "can_manage_settings": is_billing_admin(user),
+        "can_view_audit": can_view_money(user),
+        "max_manager_discount_percent": str(manager_discount_limit()),
     }

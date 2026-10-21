@@ -35,6 +35,6 @@ export function isAccountingRole(role: UserRole | undefined): boolean {
 /** Where a role lands after sign-in. The Accountant lives only in /accounting
  * (backend: apps.accounting.access — every LMS URL answers it 403). */
 export function homeFor(role: UserRole | undefined, target: string): string {
-  if (role === 'accountant' && !target.startsWith('/accounting')) return '/accounting'
+  if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance')) return '/accounting'
   return target
 }

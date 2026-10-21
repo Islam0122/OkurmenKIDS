@@ -1,4 +1,10 @@
-"""Платёжный профиль студента: регистрация, условия оплаты, остановка.
+"""Платёжный профиль (договор) студента: регистрация, условия, остановка.
+
+Договор по программе (`plan.duration_months`): при оформлении фиксируется
+снимок условий программы (цена месяца, уроков в месяце, месяцев, срок
+оплаты) и итоговая стоимость курса — скидка задаётся не процентом, а
+итоговой суммой (`contracts.course_terms`). Способ оплаты — помесячно или
+предоплата за весь курс; бронь — в первый месяц или в общую стоимость.
 
 Менеджер при регистрации указывает тариф, цену, скидку, бронь и особые
 условия — профиль создаётся с первым пакетом и начислением автоматически,
@@ -31,9 +37,12 @@ from ..models import (
     DiscountType,
     Invoice,
     LessonPackage,
+    PaymentMode,
+    ReservationAllocation,
     StudentBillingProfile,
 )
 from . import BillingError
+from .contracts import course_quote, course_terms, invoiced_total
 from .invoices import create_first_package, issue_drafts, lock_profile, void_invoice
 from .notifications import notify
 from .pricing import plan_version_on, validate_terms
@@ -47,6 +56,9 @@ def _terms(profile) -> dict:
         "custom_price": None if profile.custom_price is None else str(profile.custom_price),
         "discount_type": profile.discount_type, "discount_value": str(profile.discount_value),
         "discount_reason": profile.discount_reason,
+        "discount_enabled": profile.discount_enabled,
+        "final_course_price": None if profile.final_course_price is None else str(profile.final_course_price),
+        "discount_amount": str(profile.discount_amount),
     }
 
 
@@ -55,6 +67,13 @@ def _is_standard(custom_price, discount_type) -> bool:
 
 
 def _apply_terms(profile, change: BillingTermsChange, *, assigned_by, approved_by) -> None:
+    if profile.is_course:
+        profile.discount_enabled = change.discount_enabled
+        profile.final_course_price, profile.discount_amount = change.final_course_price, change.discount_amount
+        profile.discount_reason = change.reason if change.discount_enabled else ""
+        profile.discount_assigned_by, profile.discount_approved_by = assigned_by, approved_by
+        profile.save()
+        return
     profile.custom_price = change.custom_price
     profile.discount_type, profile.discount_value = change.discount_type, change.discount_value
     profile.discount_reason = change.reason
@@ -100,14 +119,59 @@ def _submit_terms(profile, *, actor, custom_price, discount_type, discount_value
     return change
 
 
+def _submit_course_terms(profile, *, actor, discount_enabled: bool, final_course_price, reason: str,
+                         initial: bool = False) -> BillingTermsChange | None:
+    """Итоговая стоимость курса: в пределах полномочий — сразу, иначе — на
+    согласование бухгалтеру (начисления до решения — черновики). Уже
+    выставленные начисления не меняются: новая цена — на будущие месяцы,
+    поэтому итоговая не может быть меньше уже начисленного."""
+    from ..permissions import check_course_discount, is_billing_admin
+
+    final, discount = course_terms(standard_price=profile.standard_course_price, discount_enabled=discount_enabled,
+                                   final_price=final_course_price, reason=reason)
+    if initial and not discount_enabled:
+        return None
+    if not initial and final < invoiced_total(profile):
+        raise BillingError(
+            f"Итоговая стоимость меньше уже начисленного ({invoiced_total(profile)} сом) — оформите корректировку.",
+            code="below_invoiced",
+        )
+    if BillingTermsChange.objects.filter(profile=profile, status=BillingTermsChange.Status.PENDING).exists():
+        raise BillingError("Предыдущее изменение условий ещё ждёт согласования.", code="pending_terms")
+    within = check_course_discount(actor, standard_price=profile.standard_course_price, final_price=final)
+    change = BillingTermsChange.objects.create(
+        profile=profile, discount_enabled=bool(discount_enabled), final_course_price=final, discount_amount=discount,
+        reason=(reason or "").strip() or "Стандартная стоимость", previous_terms=_terms(profile),
+        status=BillingTermsChange.Status.APPROVED if within else BillingTermsChange.Status.PENDING,
+        requested_by=actor, decided_by=actor if within else None, decided_at=timezone.now() if within else None,
+    )
+    if within:
+        _apply_terms(profile, change, assigned_by=actor, approved_by=actor if is_billing_admin(actor) else None)
+        audit.log(actor, profile, "billing_terms_apply", old=change.previous_terms, new=_terms(profile),
+                  reason=change.reason)
+    else:
+        audit.log(actor, change, "billing_terms_request", new={
+            "profile": profile.pk, "final_course_price": final, "discount_amount": discount,
+        }, reason=change.reason)
+        notify(
+            BillingNotification.Kind.DISCOUNT_APPROVAL, f"terms:{change.pk}",
+            f"Скидка ждёт согласования: {profile.student}",
+            f"Итоговая стоимость курса {final} сом вместо {profile.standard_course_price} (скидка {discount}). "
+            f"Основание: {change.reason}", profile=profile,
+        )
+    return change
+
+
 def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor, start_date: dt.date | None = None,
                                    subject=None, parent_name: str = "", parent_phone: str = "",
                                    custom_price=None, discount_type: str = DiscountType.NONE, discount_value=0,
                                    discount_reason: str = "", special_terms: str = "", responsible_accountant=None,
                                    reservation_amount=None, reserved_until: dt.date | None = None,
-                                   reservation_comment: str = "") -> StudentBillingProfile:
-    """Регистрация студента в оплате: профиль, условия, первый пакет с
-    начислением и (если указана) бронь."""
+                                   reservation_comment: str = "", payment_mode: str = PaymentMode.MONTHLY,
+                                   reservation_allocation: str = ReservationAllocation.FIRST_MONTH,
+                                   discount_enabled: bool = False, final_course_price=None) -> StudentBillingProfile:
+    """Регистрация студента в оплате: договор, условия, первый учебный месяц
+    (пакет) с начислением и (если указана) бронь."""
     from ..permissions import authorize
     from .reservations import create_reservation
 
@@ -123,6 +187,26 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
         raise BillingError("Ответственным может быть только бухгалтер.", code="bad_accountant")
     start_date = start_date or student.enrollment_date or timezone.localdate()
     plan_version_on(plan, start_date)  # тариф с ценой — иначе понятная ошибка
+    course = {}
+    if plan.is_course:
+        if payment_mode not in PaymentMode.values or reservation_allocation not in ReservationAllocation.values:
+            raise BillingError("Неизвестный способ оплаты или учёта брони.", code="invalid")
+        if payment_mode == PaymentMode.MONTHLY and not plan.allow_monthly:
+            raise BillingError("Программа не допускает помесячную оплату.", code="invalid_mode")
+        if payment_mode == PaymentMode.FULL_PREPAY and not plan.allow_full_prepay:
+            raise BillingError("Программа не допускает предоплату за весь курс.", code="invalid_mode")
+        if custom_price not in (None, "") or (discount_type or DiscountType.NONE) != DiscountType.NONE:
+            raise BillingError("Для программы скидка задаётся итоговой стоимостью курса.", code="invalid_discount")
+        quote = course_quote(plan, start_date)
+        # Проверка до создания: ошибка ввода не оставляет полузаписанный договор.
+        course_terms(standard_price=quote.standard_course_price, discount_enabled=discount_enabled,
+                     final_price=final_course_price, reason=discount_reason)
+        course = {
+            "payment_mode": payment_mode, "reservation_allocation": reservation_allocation,
+            "duration_months": quote.duration_months, "lessons_per_month": quote.lessons_per_month,
+            "deadline_lessons": quote.deadline_lessons, "month_price": quote.month_price,
+            "standard_course_price": quote.standard_course_price, "final_course_price": quote.standard_course_price,
+        }
     with transaction.atomic():
         Student.objects.select_for_update().get(pk=student.pk)
         try:
@@ -132,14 +216,19 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
                     parent_name=(parent_name or "").strip(),
                     parent_phone=(parent_phone or student.parent_phone or "").strip(),
                     special_terms=special_terms or "", responsible_accountant=responsible_accountant, created_by=actor,
+                    **course,
                 )
         except IntegrityError:
             raise BillingError("У студента уже есть действующий профиль оплаты по этому направлению.", code="duplicate")
         audit.log(actor, profile, "billing_profile_create", new={
             "student": student.pk, "plan": plan.pk, "subject": getattr(subject, "pk", None), "start_date": start_date,
+            **course,
         })
         profile = lock_profile(profile)
-        if custom_price not in (None, "") or (discount_type or DiscountType.NONE) != DiscountType.NONE:
+        if profile.is_course:
+            _submit_course_terms(profile, actor=actor, discount_enabled=discount_enabled,
+                                 final_course_price=final_course_price, reason=discount_reason, initial=True)
+        elif custom_price not in (None, "") or (discount_type or DiscountType.NONE) != DiscountType.NONE:
             _submit_terms(profile, actor=actor, custom_price=custom_price, discount_type=discount_type,
                           discount_value=discount_value, reason=discount_reason)
         # Срок оплаты первого пакета — от даты начала обучения, если она впереди.
@@ -182,7 +271,7 @@ def register_students(*, actor, plan: BillingPlan, students, start_date: dt.date
         if student.status != Student.Status.ACTIVE:
             skip("Студент не активен")
             continue
-        live = StudentBillingProfile.objects.filter(student=student).exclude(status=Status.INACTIVE)
+        live = StudentBillingProfile.objects.filter(student=student).exclude(status__in=StudentBillingProfile.CLOSED_STATUSES)
         if live.filter(subject=subject).exists() if subject else live.filter(subject__isnull=True).exists():
             skip("Уже подключён к оплате по этому направлению")
             continue
@@ -203,6 +292,70 @@ def register_students(*, actor, plan: BillingPlan, students, start_date: dt.date
     return result
 
 
+def request_course_terms_change(profile: StudentBillingProfile, *, actor, discount_enabled: bool,
+                                final_course_price=None, reason: str = "") -> BillingTermsChange:
+    """Новая итоговая стоимость курса (действует на будущие месяцы)."""
+    from ..permissions import authorize
+
+    authorize(actor, "change_terms")
+    with transaction.atomic():
+        profile = lock_profile(profile)
+        if not profile.is_course:
+            raise BillingError("Договор без программы — меняется цена пакета.", code="not_course")
+        if profile.status in StudentBillingProfile.CLOSED_STATUSES:
+            raise BillingError("Договор закрыт.", code="profile_inactive")
+        return _submit_course_terms(profile, actor=actor, discount_enabled=discount_enabled,
+                                    final_course_price=final_course_price, reason=reason)
+
+
+def change_payment_mode(profile: StudentBillingProfile, *, actor, payment_mode: str, reason: str = "") -> StudentBillingProfile:
+    """Сменить способ оплаты курса — только до начала обучения (ни одного
+    зачтённого урока, ни одной оплаты на начислениях): начисление месяца 1
+    аннулируется и выставляется заново по новому способу. После начала —
+    помесячно с оплатой вперёд (аванс закрывает будущие месяцы)."""
+    from ..permissions import authorize
+    from ..models import PaymentAllocation
+    from .invoices import _after_invoice_created, _create_invoice
+    from .contracts import month_charge
+
+    authorize(actor, "change_terms")
+    if payment_mode not in PaymentMode.values:
+        raise BillingError("Неизвестный способ оплаты.", code="invalid")
+    with transaction.atomic():
+        profile = lock_profile(profile)
+        if not profile.is_course:
+            raise BillingError("Способ оплаты задаётся только для программы.", code="not_course")
+        if profile.payment_mode == payment_mode:
+            return profile
+        allowed = profile.plan.allow_monthly if payment_mode == PaymentMode.MONTHLY else profile.plan.allow_full_prepay
+        if not allowed:
+            raise BillingError("Программа не допускает этот способ оплаты.", code="invalid_mode")
+        packages = list(profile.packages.exclude(status=LessonPackage.Status.CANCELLED))
+        if any(p.lessons_used for p in packages) or len(packages) > 1:
+            raise BillingError("Обучение уже началось — способ оплаты не меняется.", code="already_started")
+        if PaymentAllocation.objects.filter(profile=profile, status=PaymentAllocation.Status.ACTIVE).exists():
+            raise BillingError("По начислению уже есть оплата — сначала сторнируйте распределение.", code="has_payments")
+        old = {"payment_mode": profile.payment_mode}
+        reason = (reason or "").strip() or "Смена способа оплаты до начала обучения"
+        for invoice in profile.invoices.exclude(status=Invoice.Status.VOID):
+            void_invoice(invoice, actor=actor, reason=reason, system=True, cancel_package=False)
+        profile.payment_mode = payment_mode
+        profile.save(update_fields=["payment_mode", "updated_at"])
+        if packages:
+            package = packages[0]
+            amount, kind = month_charge(profile, package.month_number)
+            package.final_price = amount
+            package.pricing_snapshot = {**package.pricing_snapshot, "payment_mode": payment_mode, "charge": str(amount)}
+            package.save(update_fields=["final_price", "pricing_snapshot", "updated_at"])
+            if amount > 0:
+                created = _create_invoice(profile, package, amount=amount, kind=kind, on_date=timezone.localdate(),
+                                          actor=actor,
+                                          snapshot={**package.pricing_snapshot, "package_number": package.number})
+                _after_invoice_created(profile, created, actor=actor)
+        audit.log(actor, profile, "billing_payment_mode", old=old, new={"payment_mode": payment_mode}, reason=reason)
+    return profile
+
+
 def request_terms_change(profile: StudentBillingProfile, *, actor, custom_price=None,
                          discount_type: str = DiscountType.NONE, discount_value=0, reason: str = "") -> BillingTermsChange:
     from ..permissions import authorize
@@ -210,8 +363,10 @@ def request_terms_change(profile: StudentBillingProfile, *, actor, custom_price=
     authorize(actor, "change_terms")
     with transaction.atomic():
         profile = lock_profile(profile)
-        if profile.status == Status.INACTIVE:
+        if profile.status in StudentBillingProfile.CLOSED_STATUSES:
             raise BillingError("Начисления по профилю остановлены.", code="profile_inactive")
+        if profile.is_course:
+            raise BillingError("Для программы скидка задаётся итоговой стоимостью курса.", code="invalid_discount")
         return _submit_terms(profile, actor=actor, custom_price=custom_price, discount_type=discount_type,
                              discount_value=discount_value, reason=reason)
 
@@ -285,7 +440,7 @@ def deactivate_billing_profile(profile: StudentBillingProfile, *, actor, on_date
     on_date = on_date or timezone.localdate()
     with transaction.atomic():
         profile = lock_profile(profile)
-        if profile.status == Status.INACTIVE:
+        if profile.status in StudentBillingProfile.CLOSED_STATUSES:
             return profile
         old = {"status": profile.status}
         profile.status = Status.INACTIVE
@@ -337,12 +492,12 @@ def resume_billing_profile(profile, *, actor, reason: str = "", system: bool = F
         authorize(actor, "stop_profile")
     with transaction.atomic():
         profile = lock_profile(profile)
-        if profile.status == Status.ACTIVE:
-            return profile
+        if profile.status in (Status.ACTIVE, Status.COMPLETED):
+            return profile  # завершённый курс не возобновляется — новый договор
         if profile.status == Status.INACTIVE:
             clash = StudentBillingProfile.objects.filter(
                 student_id=profile.student_id, subject_id=profile.subject_id,
-            ).exclude(pk=profile.pk).exclude(status=Status.INACTIVE).exists()
+            ).exclude(pk=profile.pk).exclude(status__in=StudentBillingProfile.CLOSED_STATUSES).exists()
             if clash:
                 raise BillingError("У студента уже есть другой действующий профиль.", code="duplicate")
         old = {"status": profile.status, "stopped_on": profile.stopped_on}
@@ -373,7 +528,7 @@ def on_student_status_event(event_id: int) -> None:
     profiles = StudentBillingProfile.objects.filter(student_id=event.student_id)
     reason = f"{event.get_event_type_display()} ({event.event_date:%d.%m.%Y})"
     if event.event_type in STOP_EVENTS:
-        for profile in profiles.exclude(status=Status.INACTIVE):
+        for profile in profiles.exclude(status__in=StudentBillingProfile.CLOSED_STATUSES):
             deactivate_billing_profile(profile, actor=event.performed_by, on_date=event.event_date, reason=reason,
                                        source=StudentBillingProfile.StopSource.STUDENT_STATUS, system=True)
     elif event.event_type == StudentStatusEvent.EventType.PAUSED:

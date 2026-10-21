@@ -24,7 +24,6 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -65,11 +64,11 @@ def _payment_group(profile: StudentBillingProfile):
 
 
 def unpaid_invoices(profile) -> list[Invoice]:
-    """Открытые начисления профиля в порядке оплаты: по сроку, затем по
-    номеру пакета (сначала текущий долг, потом будущие пакеты)."""
+    """Открытые начисления профиля в порядке оплаты: по номеру месяца
+    (пакета), затем по сроку — сначала текущий долг, потом будущие месяцы."""
     return list(
         Invoice.objects.select_for_update().filter(profile=profile, status__in=Invoice.UNPAID_STATUSES)
-        .select_related("package").order_by("due_date", "package__number", "pk")
+        .select_related("package").order_by("package__number", "due_date", "pk")
     )
 
 
@@ -105,7 +104,11 @@ def _allocate_locked(payment: StudentPayment, invoice: Invoice, amount: Decimal,
 
 
 def _distribute_locked(profile, payments, *, actor, source: str) -> list[PaymentAllocation]:
-    """FIFO: деньги платежей (по дате поступления) — на начисления по порядку."""
+    """FIFO: деньги платежей (по дате поступления) — на начисления по порядку.
+    Бронь в режиме «в общую стоимость курса» идёт только на последний месяц
+    (`contracts.may_fund`)."""
+    from .contracts import may_fund
+
     allocations = []
     pool = [[p, payment_unallocated(p.pk)] for p in payments]
     pool = [item for item in pool if item[1] > 0]
@@ -115,7 +118,7 @@ def _distribute_locked(profile, payments, *, actor, source: str) -> list[Payment
             if need <= 0:
                 break
             payment, free = item
-            if free <= 0:
+            if free <= 0 or not may_fund(profile, payment, invoice):
                 continue
             part = min(need, free)
             allocations.append(_allocate_locked(payment, invoice, part, actor=actor, source=source))
@@ -203,7 +206,8 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
                    method: str = StudentPayment.Method.CASH, reference: str = "", comment: str = "",
                    idempotency_key: str | None = None, purpose: str = StudentPayment.Purpose.TUITION,
                    auto_allocate: bool = True, prepay_packages: int = 0,
-                   allocations: list[tuple[Invoice, Decimal]] | None = None, reservation=None):
+                   allocations: list[tuple[Invoice, Decimal]] | None = None, reservation=None,
+                   payer_name: str = ""):
     """Зарегистрировать фактически полученные деньги. Возвращает (платёж,
     создан). Сумма зачисляется в аванс и (по умолчанию) сразу распределяется
     по неоплаченным начислениям; остаток — аванс."""
@@ -218,6 +222,8 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
             if existing.billing_profile_id != profile.pk or existing.amount != amount:
                 raise BillingError("Ключ запроса уже использован для другого платежа.", code="idempotency_conflict")
             return existing, False
+    if purpose not in StudentPayment.Purpose.values:
+        raise BillingError("Неизвестное назначение платежа.", code="invalid")
     if method not in StudentPayment.Method.values:
         raise BillingError("Неизвестный способ оплаты.", code="invalid_method")
     if received_date > timezone.localdate():
@@ -239,6 +245,8 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
                 amount=amount, received_date=received_date, method=method, reference=reference, comment=comment,
                 idempotency_key=key, created_by=actor, billing_profile=profile, purpose=purpose,
             )
+            if profile.status in StudentBillingProfile.CLOSED_STATUSES and purpose != StudentPayment.Purpose.TUITION:
+                raise BillingError("Договор закрыт — принимается только погашение долга.", code="profile_inactive")
             add_entry(profile, Kind.PAYMENT_IN, amount, payment=payment, actor=actor, reservation=reservation,
                       comment="Бронь" if purpose == StudentPayment.Purpose.RESERVATION else "Поступление")
             audit.log(actor, payment, "billing_payment", new=audit.snapshot(payment, PAYMENT_FIELDS))
@@ -249,6 +257,9 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
                     _allocate_locked(payment, invoice, _amount(part), actor=actor, source=PaymentAllocation.Source.PAYMENT)
             elif auto_allocate:
                 _distribute_locked(profile, [payment], actor=actor, source=PaymentAllocation.Source.PAYMENT)
+            from .receipts import issue_receipt
+
+            issue_receipt(payment, actor=actor, payer_name=payer_name)
     except IntegrityError:
         if key:
             existing = StudentPayment.objects.filter(idempotency_key=key).first()
@@ -284,6 +295,9 @@ def reverse_payment(payment: StudentPayment, *, actor, reason: str) -> StudentPa
             raise BillingError("Часть платежа удержана по брони — отмена невозможна.", code="has_retention")
         for allocation in payment.billing_allocations.filter(status=PaymentAllocation.Status.ACTIVE):
             reverse_allocation_locked(allocation, actor=actor, reason=f"Отмена платежа: {reason}")
+        from .receipts import cancel_receipt
+
+        cancel_receipt(payment, actor=actor, reason=reason)
         left = payment_unallocated(payment.pk)
         if left > 0:
             add_entry(profile, Kind.PAYMENT_VOID, left, payment=payment, actor=actor, comment=reason)
@@ -303,16 +317,18 @@ def refund_payment(payment: StudentPayment, *, actor, amount, reason: str, refun
     Оформляется как `StudentPayment(kind=REFUND, refund_of=…)`, аванс
     уменьшается записью REFUND. Ограничение бухгалтера —
     `BILLING_ACCOUNTANT_REFUND_LIMIT` (пусто — без ограничения)."""
-    from ..permissions import authorize, is_billing_admin
+    from ..permissions import authorize, is_system_admin
 
     authorize(actor, "refund")
     amount = _amount(amount)
     reason = (reason or "").strip()
     if not reason:
         raise BillingError("Укажите основание возврата.", code="reason_required")
-    limit = getattr(settings, "BILLING_ACCOUNTANT_REFUND_LIMIT", None)
-    if limit not in (None, "") and amount > Decimal(str(limit)) and not is_billing_admin(actor):
-        raise BillingError(f"Возврат больше {limit} сом — нужно решение администратора.", code="refund_limit")
+    from ..models import BillingSettings
+
+    limit = BillingSettings.load().accountant_refund_limit
+    if limit is not None and amount > limit and not is_system_admin(actor):
+        raise BillingError(f"Возврат больше {limit} сом — нужно решение администратора системы.", code="refund_limit")
     if payment.billing_profile_id is None:
         raise BillingError("Платёж не относится к оплате обучения по пакетам.", code="not_billing")
     refund_date = refund_date or timezone.localdate()
@@ -343,6 +359,9 @@ def refund_payment(payment: StudentPayment, *, actor, amount, reason: str, refun
         add_entry(profile, Kind.REFUND, amount, payment=payment, actor=actor, reservation=reservation, refund=refund,
                   comment=reason)
         audit.log(actor, refund, "billing_refund", new={"refund_of": payment.pk, "amount": amount}, reason=reason)
+        from .receipts import issue_receipt
+
+        issue_receipt(refund, actor=actor)
     return refund
 
 
@@ -365,5 +384,60 @@ def reverse_refund(refund: StudentPayment, *, actor, reason: str) -> StudentPaym
         # Компенсирующая запись: возврат отменён — деньги снова в авансе.
         add_entry(profile, Kind.REFUND_REVERSAL, refund.amount, payment=refund.refund_of, refund=refund, actor=actor,
                   comment=f"Отмена возврата: {reason}")
+        from .receipts import cancel_receipt
+
+        cancel_receipt(refund, actor=actor, reason=reason)
         audit.log(actor, refund, "billing_refund_reverse", reason=reason)
     return refund
+
+
+# ---------------------------------------------------------------------------
+# Предпросмотр платежа (без записи)
+# ---------------------------------------------------------------------------
+
+def preview_payment(profile: StudentBillingProfile, *, amount, invoice: Invoice | None = None,
+                    mode: str = "auto") -> dict:
+    """Что произойдёт при сохранении платежа — ничего не записывая.
+
+    `mode`: auto — на начисления по порядку; invoice — на выбранное
+    начисление (остаток — аванс); advance — весь платёж в аванс."""
+    from .contracts import money_summary
+
+    amount = _amount(amount)
+    summary = money_summary(profile)
+    unpaid = list(
+        Invoice.objects.filter(profile=profile, status__in=Invoice.UNPAID_STATUSES)
+        .select_related("package").order_by("package__number", "due_date", "pk")
+    )
+    if mode == "invoice":
+        if invoice is None or invoice.profile_id != profile.pk:
+            raise BillingError("Выберите начисление этого студента.", code="wrong_profile")
+        targets = [invoice] if invoice.status in Invoice.UNPAID_STATUSES else []
+    elif mode == "advance":
+        targets = []
+    else:
+        targets = unpaid
+    left, rows = amount, []
+    for inv in targets:
+        if left <= 0:
+            break
+        part = min(left, inv.balance)
+        left -= part
+        rows.append({
+            "invoice": inv.pk, "number": inv.number, "kind": inv.kind,
+            "month_number": inv.package.month_number, "package_number": inv.package.number,
+            "obligation": str(inv.amount), "paid_before": str(inv.amount_paid + inv.amount_adjusted),
+            "payment": str(part), "balance_after": str(inv.balance - part),
+        })
+    obligation = sum((inv.amount for inv in targets), ZERO) if targets else ZERO
+    paid_before = sum((inv.amount_paid + inv.amount_adjusted for inv in targets), ZERO) if targets else ZERO
+    due_after = summary["due_now"] - (amount - left)
+    outstanding_after = summary["outstanding"] - amount if summary["final_course_price"] is not None else due_after
+    return {
+        "amount": str(amount), "mode": mode, "obligation": str(obligation), "paid_before": str(paid_before),
+        "obligation_balance_after": str(max(obligation - paid_before - (amount - left), ZERO)),
+        "allocations": rows, "to_credit": str(left),
+        "due_now_before": str(summary["due_now"]), "due_now_after": str(max(due_after, ZERO)),
+        "credit_before": str(summary["credit"]), "credit_after": str(summary["credit"] + left),
+        "outstanding_before": str(summary["outstanding"]), "outstanding_after": str(max(outstanding_after, ZERO)),
+    }

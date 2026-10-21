@@ -41,6 +41,8 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
     items: [
       { to: '/assistant/groups', label: 'Группы', icon: Users },
       { to: '/assistant/students', label: 'Студенты', icon: GraduationCap },
+      // Договоры и статусы оплаты — отдельный раздел «Финансы» (/finance).
+      { to: '/finance/students', label: 'Оплата студентов', icon: Wallet },
       { to: '/assistant/schedule', label: 'Расписание', icon: CalendarDays },
     ],
   },
