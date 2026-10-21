@@ -106,13 +106,13 @@ def _overview(start: dt.date, end: dt.date, state: dict) -> dict:
         "groups_total": total_groups,
         "groups_active": active_groups,
         "groups_inactive": total_groups - active_groups,
-        # Everyone enrolled by the month's end, whatever their status or group:
-        # total = active + paused + withdrawn + completed.
-        "students_total": counts["total"],
+        # «Всего студентов» — the students active on the report's last day
+        # (today, for a running month), each once: a student who left and came
+        # back is active once; a deactivated one is never in it, whenever they
+        # left. Paused and completed students are shown apart, not in the total.
+        "students_total": counts["active"],
         "students_active": counts["active"],
         "students_paused": counts["paused"],
-        # Deactivated (WITHDRAWN) on the month's last day — a stock, unlike students_deactivated below.
-        "students_withdrawn": counts["withdrawn"],
         "students_completed": counts["completed"],
         # Active, but in no group on the month's last day — why «Группы» may show fewer.
         "students_without_group": sum(1 for r in roster if r.status == Student.Status.ACTIVE and not r.group_id),

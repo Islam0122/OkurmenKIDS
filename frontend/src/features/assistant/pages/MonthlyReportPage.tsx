@@ -305,7 +305,6 @@ function Report({ report, filterBar }: { report: MonthlyReport; filterBar: React
             <Kpi label="Всего студентов" value={o.students_total} />
             <Kpi label="Активных" value={o.students_active} tone="text-brand-700" />
             <Kpi label="На паузе" value={o.students_paused} />
-            <Kpi label="В статусе «Деактивирован» (на дату)" value={o.students_withdrawn} />
             <Kpi label="Завершили обучение" value={o.students_completed} />
           </KpiGroup>
           <KpiGroup title="Движение за месяц">

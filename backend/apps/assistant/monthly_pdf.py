@@ -416,9 +416,9 @@ def _overview(doc: _Doc, r: dict) -> None:
     ], per_row=3)
     # The total split by status on the month's last day — the parts add up to «Всего студентов».
     doc.paragraph(
-        f"Статусы на {_date(r['until'])}: активных {o['students_active']} · на паузе {o['students_paused']} · "
-        f"в статусе «Деактивирован» {o['students_withdrawn']} (включая ушедших в прошлые месяцы) · "
-        f"завершили обучение {o['students_completed']} · всего {o['students_total']}. "
+        f"Всего студентов — активные на {_date(r['until'])}: {o['students_total']}; деактивированные не входят, "
+        f"вернувшийся студент учтён один раз. Отдельно, не входят во «Всего»: на паузе {o['students_paused']}, "
+        f"завершили обучение {o['students_completed']}. "
         f"Деактивированы за месяц — по дате деактивации с {_date(r['start'])} по {_date(r['until'])} включительно: "
         f"{o['students_deactivated']}."
         + (f" Активных без группы: {o['students_without_group']}." if o["students_without_group"] else ""),
