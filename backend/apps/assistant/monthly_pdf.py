@@ -409,15 +409,18 @@ def _overview(doc: _Doc, r: dict) -> None:
         (str(o["students_total"]), "Всего студентов", None),
         (str(o["students_active"]), "Активных студентов", BRAND_DARK),
         (str(o["students_new"]), "Новых студентов за месяц", None),
+        (str(o["students_deactivated"]), "Деактивированы за месяц", BAD if o["students_deactivated"] else None),
         (_pct(o["attendance_percent"]), "Средняя посещаемость", _tone(o["attendance_percent"])),
         (_pct(o["homework_percent"]), "Выполнение ДЗ", _tone(o["homework_percent"])),
         (str(o["students_at_risk"]), "Студентов в зоне риска", BAD if o["students_at_risk"] else None),
-    ])
+    ], per_row=3)
     # The total split by status on the month's last day — the parts add up to «Всего студентов».
     doc.paragraph(
-        f"Студенты на конец месяца: активных {o['students_active']} · на паузе {o['students_paused']} · "
-        f"деактивированы {o['students_withdrawn']} · завершили обучение {o['students_completed']}"
-        f" · всего {o['students_total']}. Деактивировано за месяц: {o['students_deactivated']}."
+        f"Статусы на {_date(r['until'])}: активных {o['students_active']} · на паузе {o['students_paused']} · "
+        f"в статусе «Деактивирован» {o['students_withdrawn']} (включая ушедших в прошлые месяцы) · "
+        f"завершили обучение {o['students_completed']} · всего {o['students_total']}. "
+        f"Деактивированы за месяц — по дате деактивации с {_date(r['start'])} по {_date(r['until'])} включительно: "
+        f"{o['students_deactivated']}."
         + (f" Активных без группы: {o['students_without_group']}." if o["students_without_group"] else ""),
         size=7.8, color=INK_SECONDARY)
     a, h = r["attendance"], r["homework"]
@@ -718,14 +721,18 @@ def _inactive(doc: _Doc, r: dict) -> None:
 def _departures(doc: _Doc, r: dict) -> None:
     d = r["departures"]
     _section(doc, "Деактивированные студенты",
-             "Ушедшие за месяц (деактивация). Завершившие обучение и пауза — отдельно, это не уход. "
+             f"Только деактивации с датой с {_date(r['start'])} по {_date(r['until'])} включительно; ушедшие до или после "
+             "периода сюда не входят, вернувшиеся — входят. Завершившие обучение и пауза — отдельно, это не уход. "
              "Неактивные, но не деактивированные студенты сюда не входят.")
+    if d["undated_withdrawn"]:
+        doc.paragraph(f"В статусе «Деактивирован» без сохранённой даты деактивации: {d['undated_withdrawn']} — "
+                      "не отнесены ни к одному месяцу.", size=7.8, color=WARN)
     if d["filters"]:
         doc.paragraph("Фильтры: " + d["filters_label"], size=7.8, color=INK_SECONDARY)
     _cards(doc, [
-        (str(d["total"]), "Ушли за месяц", BAD if d["total"] else None),
-        (str(d["returned"]), "Уже вернулись", GOOD if d["returned"] else None),
-        (_pct(d["returned_percent"]), "Доля вернувшихся", None),
+        (str(d["total"]), "Деактивированы за месяц", BAD if d["total"] else None),
+        (str(d["returned"]), "Из них уже вернулись", GOOD if d["returned"] else None),
+        (_pct(d["returned_percent"]), "Доля вернувшихся из деактивированных за месяц", None),
         (str(d["unknown"]), "Причина не указана", WARN if d["unknown"] else None),
         (str(d["completed"]), "Завершили обучение", None),
         (str(d["paused"]), "Ушли на паузу", None),
@@ -744,10 +751,11 @@ def _departures(doc: _Doc, r: dict) -> None:
 
 def _reasons(doc: _Doc, r: dict) -> None:
     d = r["departures"]
-    _section(doc, "Причины ухода — почему студенты уходят")
+    _section(doc, "Причины ухода — почему студенты уходят",
+             f"По деактивациям с {_date(r['start'])} по {_date(r['until'])} включительно.")
     change = d.get("change")
     prev = d.get("previous_total")
-    line = f"Ушли за месяц: {d['month_total']}."
+    line = f"Деактивированы за месяц: {d['month_total']}."
     if prev is not None:
         sign = "+" if change and change > 0 else ""
         line += f" В прошлом месяце: {prev} ({sign}{change})."

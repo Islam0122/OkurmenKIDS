@@ -635,7 +635,14 @@ export interface MonthlyReport {
     total: number
     total_unfiltered: number
     /** All departures of the month, whatever the filters. */
+    /** Unique students with a deactivation dated in the period (inclusive), whatever the filters. */
     month_total: number
+    month_returned: number
+    month_returned_percent: number | null
+    month_by_reason: ReportShare[]
+    month_by_group: ReportShare[]
+    /** Withdrawn without a recorded deactivation date — in no month. */
+    undated_withdrawn: number
     returned: number
     returned_percent: number | null
     unknown: number
