@@ -139,7 +139,10 @@ class AccountantGroupTests(AccountingFixture):
         group = Group.objects.get(name=ACCOUNTANT_GROUP)
         codenames = set(group.permissions.values_list("content_type__app_label", "codename"))
         self.assertTrue(codenames)
-        self.assertTrue(all(app == "accounting" for app, _ in codenames))
+        # Бухгалтерия и оплата обучения (apps.billing) — других приложений нет.
+        self.assertTrue(all(app in ("accounting", "billing") for app, _ in codenames))
+        self.assertIn(("billing", "add_paymentallocation"), codenames)
+        self.assertNotIn(("billing", "change_billingplan"), codenames)
         self.assertFalse(any(code.startswith("delete_") for _, code in codenames))
         self.assertIn(("accounting", "view_payrollauditlog"), codenames)
         self.assertNotIn(("accounting", "change_payrollauditlog"), codenames)

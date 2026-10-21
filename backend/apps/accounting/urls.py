@@ -47,5 +47,7 @@ urlpatterns = [
     path("my/summary/", views.MySalaryView.as_view(), name="my-summary"),
     path("my/payout-plan/", views.MyPayoutPlanView.as_view(), name="my-payout-plan"),
     path("my/estimates/", views.MyEstimatesView.as_view(), name="my-estimates"),
+    # Оплата обучения по пакетам уроков (apps.billing).
+    path("billing/", include("apps.billing.urls")),
     path("", include(router.urls)),
 ]

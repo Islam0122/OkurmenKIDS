@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.db.models import Q
 from django.http import HttpResponseForbidden, JsonResponse
 
 ACCOUNTANT_GROUP = "Accountant"
@@ -32,6 +33,19 @@ _WRITE = ("studentpayment", "employeesalaryprofile", "salaryrule", "payrollperio
           "payoutplan", "payoutplanline", "deductionrule")
 ACCOUNTANT_PERMISSIONS = tuple(
     [f"view_{m}" for m in _VIEW] + [f"add_{m}" for m in _WRITE] + [f"change_{m}" for m in _WRITE]
+)
+
+# Оплата обучения (apps.billing): просмотр всего, операции с деньгами,
+# контактами и задачами. Ни одного `delete_*`; тарифы и версии тарифов —
+# только просмотр (ими управляет администратор оплаты).
+_BILLING_VIEW = ("billingplan", "billingplanversion", "studentbillingprofile", "billingtermschange", "lessonpackage",
+                 "lessonconsumption", "invoice", "invoiceadjustment", "paymentallocation", "creditledgerentry",
+                 "reservation", "billingtask", "billingcontactlog", "billingnotification", "billingevent")
+_BILLING_WRITE = ("lessonconsumption", "paymentallocation", "creditledgerentry", "reservation", "billingtask",
+                  "billingcontactlog", "billingnotification")
+BILLING_ACCOUNTANT_PERMISSIONS = tuple(
+    [f"view_{m}" for m in _BILLING_VIEW] + [f"add_{m}" for m in _BILLING_WRITE]
+    + [f"change_{m}" for m in _BILLING_WRITE]
 )
 
 # Что изолированной роли можно открыть. Всё остальное — 403.
@@ -57,7 +71,10 @@ def ensure_accountant_group():
     from django.contrib.auth.models import Group, Permission
 
     group, _ = Group.objects.get_or_create(name=ACCOUNTANT_GROUP)
-    perms = Permission.objects.filter(content_type__app_label="accounting", codename__in=ACCOUNTANT_PERMISSIONS)
+    perms = Permission.objects.filter(
+        Q(content_type__app_label="accounting", codename__in=ACCOUNTANT_PERMISSIONS)
+        | Q(content_type__app_label="billing", codename__in=BILLING_ACCOUNTANT_PERMISSIONS)
+    )
     group.permissions.set(perms)
     return group
 

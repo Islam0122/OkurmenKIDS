@@ -56,6 +56,7 @@ LOCAL_APPS = [
     "apps.worklog.apps.WorklogConfig",
     "apps.assistant.apps.AssistantConfig",
     "apps.accounting.apps.AccountingConfig",
+    "apps.billing.apps.BillingConfig",
     "apps.leaderboard.apps.LeaderboardConfig",
 
 ]
@@ -272,6 +273,37 @@ ACCOUNTING_FIXED_PAYDAY_NEXT_MONTH = env.bool("ACCOUNTING_FIXED_PAYDAY_NEXT_MONT
 ACCOUNTING_REVIEW_REPEATED_MONTHLY_CYCLES = env.bool("ACCOUNTING_REVIEW_REPEATED_MONTHLY_CYCLES", default=True)
 # Роли, которым доступна только бухгалтерия (apps.accounting.access).
 ACCOUNTING_ISOLATED_ROLES = ("accountant",)
+
+# Оплата обучения по пакетам уроков (apps.billing, docs/billing.md).
+# Скидка, которую менеджер назначает без согласования (% от цены тарифа).
+BILLING_MANAGER_MAX_DISCOUNT_PERCENT = env.int("BILLING_MANAGER_MAX_DISCOUNT_PERCENT", default=10)
+# Роли администратора оплаты: тарифы, согласование скидок, корректировки.
+BILLING_ADMIN_ROLES = ("director", "admin")
+# Возврат больше этой суммы — только администратор оплаты (пусто — без лимита).
+BILLING_ACCOUNTANT_REFUND_LIMIT = env("BILLING_ACCOUNTANT_REFUND_LIMIT", default=None)
+# «Скоро срок оплаты» на панели бухгалтера — за столько дней.
+BILLING_DUE_SOON_DAYS = env.int("BILLING_DUE_SOON_DAYS", default=3)
+# Сколько пакетов можно оплатить вперёд одним платежом.
+BILLING_MAX_PREPAID_PACKAGES = env.int("BILLING_MAX_PREPAID_PACKAGES", default=12)
+# Фоновая пересинхронизация уроков — за столько последних дней.
+BILLING_SYNC_LOOKBACK_DAYS = env.int("BILLING_SYNC_LOOKBACK_DAYS", default=14)
+# Канал доставки уведомлений (путь к функции); пусто — только лог и раздел оплаты.
+BILLING_NOTIFICATION_BACKEND = env("BILLING_NOTIFICATION_BACKEND", default="")
+
+# Celery (config/celery.py). Без брокера задачи выполняются синхронно.
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="")
+CELERY_TASK_ALWAYS_EAGER = not CELERY_BROKER_URL
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TIMEZONE = "Asia/Bishkek"
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BEAT_SCHEDULE = {
+    # Beat только инициирует проверки; дубли исключают блокировки и
+    # уникальные ключи в сервисах (повторный запуск безопасен).
+    "billing-lessons": {"task": "billing.process_completed_lessons", "schedule": 60 * 30},
+    "billing-notify": {"task": "billing.notify_accountants", "schedule": 60 * 10},
+    "billing-daily": {"task": "billing.run_daily", "schedule": 60 * 60 * 6},
+}
 
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",

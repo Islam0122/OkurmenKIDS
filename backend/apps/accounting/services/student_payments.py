@@ -56,6 +56,11 @@ def record_payment(
         raise AccountingError("Неизвестный способ оплаты.")
 
     if refund_of is not None:
+        if refund_of.billing_profile_id is not None:
+            raise AccountingError(
+                "Возврат по оплате пакетов оформляется в разделе «Оплата обучения» (аванс и начисления).",
+                code="billing_payment",
+            )
         if refund_of.kind != StudentPayment.Kind.PAYMENT or refund_of.status != StudentPayment.Status.CONFIRMED:
             raise AccountingError("Возврат оформляется только по подтверждённому платежу.")
         if refund_of.student_id != student.pk:
@@ -113,6 +118,20 @@ def void_student_payment(payment: StudentPayment, *, actor, reason: str) -> tupl
     reason = (reason or "").strip()
     if not reason:
         raise AccountingError("Укажите причину отмены.", code="reason_required")
+    if payment.billing_profile_id is not None:
+        # Платёж по пакетам уроков отменяется сторно в apps.billing: там же
+        # сторнируются его распределения по начислениям и запись аванса.
+        from apps.billing.services import BillingError
+        from apps.billing.services.payments import reverse_payment, reverse_refund
+
+        try:
+            if payment.kind == StudentPayment.Kind.REFUND:
+                payment = reverse_refund(payment, actor=actor, reason=reason)
+            else:
+                payment = reverse_payment(payment, actor=actor, reason=reason)
+        except BillingError as exc:
+            raise AccountingError(exc.message, code=exc.code)
+        return payment, []
     with transaction.atomic():
         payment = StudentPayment.objects.select_for_update().get(pk=payment.pk)
         if payment.status == StudentPayment.Status.VOID:

@@ -112,8 +112,11 @@ class StudentPayment(models.Model):
     )
     currency = models.CharField(max_length=3, default=CURRENCY, editable=False, verbose_name="Валюта")
     received_date = models.DateField(db_index=True, verbose_name="Дата поступления / возврата")
-    service_start = models.DateField(verbose_name="Обучение с")
-    service_end = models.DateField(verbose_name="Обучение по")
+    # Период обучения обязателен для платежей, внесённых здесь; у платежа по
+    # пакетам уроков (apps.billing) его нет — оплата привязана к начислениям
+    # за пакеты через billing.PaymentAllocation, а не к календарю.
+    service_start = models.DateField(null=True, blank=True, verbose_name="Обучение с")
+    service_end = models.DateField(null=True, blank=True, verbose_name="Обучение по")
     refund_of = models.ForeignKey(
         "self", on_delete=models.PROTECT, null=True, blank=True, related_name="refunds",
         verbose_name="Возврат по платежу",
@@ -126,6 +129,19 @@ class StudentPayment(models.Model):
     )
     void_reason = models.TextField(blank=True, verbose_name="Причина отмены")
     idempotency_key = models.CharField(max_length=64, null=True, blank=True, unique=True, editable=False)
+    # Оплата обучения по пакетам уроков (apps.billing): профиль, на аванс
+    # которого поступили деньги, и назначение платежа. Пусто — платёж внесён
+    # в бухгалтерии вне пакетного учёта.
+    billing_profile = models.ForeignKey(
+        "billing.StudentBillingProfile", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="payments", verbose_name="Платёжный профиль",
+    )
+
+    class Purpose(models.TextChoices):
+        TUITION = "tuition", "Оплата обучения"
+        RESERVATION = "reservation", "Бронь"
+
+    purpose = models.CharField(max_length=20, choices=Purpose.choices, blank=True, verbose_name="Назначение")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+", verbose_name="Кто внёс",
     )
@@ -154,6 +170,15 @@ class StudentPayment(models.Model):
             models.CheckConstraint(
                 condition=(models.Q(kind="refund", refund_of__isnull=False) | models.Q(kind="payment", refund_of__isnull=True)),
                 name="student_payment_refund_link",
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(service_start__isnull=True, service_end__isnull=True)
+                           | models.Q(service_start__isnull=False, service_end__isnull=False)),
+                name="student_payment_service_both_or_none",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(billing_profile__isnull=False) | models.Q(service_start__isnull=False),
+                name="student_payment_service_or_billing",
             ),
         ]
 
