@@ -468,3 +468,21 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 class ReverseConsumptionSerializer(BillingReasonSerializer):
     pass
+
+
+class BulkRegisterSerializer(serializers.Serializer):
+    plan = serializers.PrimaryKeyRelatedField(queryset=BillingPlan.objects.filter(is_active=True))
+    students = serializers.PrimaryKeyRelatedField(queryset=Student.objects.all(), many=True, required=False)
+    group = serializers.IntegerField(required=False, allow_null=True)
+    all_active = serializers.BooleanField(required=False, default=False)
+    start_date = serializers.DateField(required=False, allow_null=True)
+    responsible_accountant = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role=User.Role.ACCOUNTANT, is_active=True), required=False, allow_null=True,
+    )
+    prepaid_first_package = serializers.BooleanField(required=False, default=False)
+    prepaid_reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if not attrs.get("students") and not attrs.get("group") and not attrs.get("all_active"):
+            raise serializers.ValidationError({"students": "Выберите студентов, группу или «все активные»."})
+        return attrs

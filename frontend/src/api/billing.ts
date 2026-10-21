@@ -7,11 +7,14 @@ import type {
   BillingFilters,
   BillingOptions,
   BillingPayment,
+  BillingStudent,
+  BulkRegisterBody,
   ContactBody,
   ContactRow,
   DebtorRow,
   Invoice,
   PaymentBody,
+  PlanCreateBody,
   TermsChange,
 } from '@/types/billing'
 
@@ -38,6 +41,11 @@ export const billingApi = {
     post<BillingPayment>('/payments/', body, { 'Idempotency-Key': idempotencyKey }),
   reversePayment: (id: number, reason: string) => post<BillingPayment>(`/payments/${id}/reverse/`, { reason }),
   addContact: (body: ContactBody) => post<ContactRow>('/contacts/', body),
+  students: (params: { group?: number; search?: string; registered?: string; state?: string; page?: number }) =>
+    get<Paginated<BillingStudent>>('/students/', params),
+  bulkRegister: (body: BulkRegisterBody) =>
+    post<{ created: number; skipped: { student: number; student_name: string; reason: string }[] }>('/profiles/bulk/', body),
+  createPlan: (body: PlanCreateBody) => post<{ id: number; name: string }>('/plans/', body),
   decideTerms: (id: number, approve: boolean, comment = '') =>
     post<TermsChange>(`/terms-changes/${id}/decide/`, { approve, comment }),
 }

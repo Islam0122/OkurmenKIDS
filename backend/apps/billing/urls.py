@@ -26,6 +26,7 @@ urlpatterns = [
     path("me/", views.MeView.as_view(), name="me"),
     path("options/", views.OptionsView.as_view(), name="options"),
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
+    path("students/", views.StudentsView.as_view(), name="students"),
     path("debts/", views.DebtorsView.as_view(), name="debts"),
     path("reports/summary/", views.FinancialReportView.as_view(), name="report-summary"),
     path("audit-log/", views.AuditView.as_view(), name="audit-log"),

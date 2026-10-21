@@ -151,6 +151,58 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
     return profile
 
 
+def register_students(*, actor, plan: BillingPlan, students, start_date: dt.date | None = None,
+                      responsible_accountant=None, prepaid_first_package: bool = False,
+                      prepaid_reason: str = "") -> dict:
+    """Массовое подключение уже учащихся студентов к оплате по тарифу.
+
+    Каждый студент — отдельная операция (ошибка одного не откатывает
+    остальных). Уже подключённые к этому направлению, неактивные и из
+    другой программы пропускаются с причиной. Дата начала по умолчанию —
+    сегодня: прошлые уроки не списываются.
+
+    `prepaid_first_package` — первый пакет уже оплачен до внедрения учёта:
+    начисление закрывается корректировкой с основанием (сумма начисления не
+    меняется, фиктивного платежа нет). Только администратор оплаты."""
+    from ..permissions import authorize
+    from .invoices import adjust_invoice
+
+    authorize(actor, "create_profile")
+    if prepaid_first_package:
+        authorize(actor, "adjust_invoice")
+        if not (prepaid_reason or "").strip():
+            raise BillingError("Укажите основание: где и когда оплачен первый пакет.", code="reason_required")
+    start_date = start_date or timezone.localdate()
+    subject = plan.subject
+    result = {"created": [], "skipped": []}
+    for student in students:
+        def skip(reason):
+            result["skipped"].append({"student": student.pk, "student_name": str(student), "reason": reason})
+
+        if student.status != Student.Status.ACTIVE:
+            skip("Студент не активен")
+            continue
+        live = StudentBillingProfile.objects.filter(student=student).exclude(status=Status.INACTIVE)
+        if live.filter(subject=subject).exists() if subject else live.filter(subject__isnull=True).exists():
+            skip("Уже подключён к оплате по этому направлению")
+            continue
+        try:
+            profile = create_student_billing_profile(
+                student=student, plan=plan, actor=actor, start_date=start_date,
+                responsible_accountant=responsible_accountant,
+            )
+            if prepaid_first_package:
+                invoice = profile.invoices.exclude(status="VOID").get()
+                if invoice.amount > 0:
+                    adjust_invoice(invoice, actor=actor, amount=invoice.amount,
+                                   reason=f"Оплачено до подключения учёта: {prepaid_reason.strip()}")
+        except BillingError as exc:
+            skip(exc.message)
+            continue
+        result["created"].append(profile.pk)
+    return result
+
+
 def request_terms_change(profile: StudentBillingProfile, *, actor, custom_price=None,
                          discount_type: str = DiscountType.NONE, discount_value=0, reason: str = "") -> BillingTermsChange:
     from ..permissions import authorize

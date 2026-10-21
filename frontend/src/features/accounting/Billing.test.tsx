@@ -9,7 +9,7 @@ import type { BillingCapabilities, BillingDashboard, BillingOptions, InvoiceRow 
 vi.mock('@/api/billing', () => ({
   billingApi: {
     me: vi.fn(), options: vi.fn(), dashboard: vi.fn(), debts: vi.fn(), invoices: vi.fn(), payments: vi.fn(),
-    contacts: vi.fn(), termsChanges: vi.fn(), recordPayment: vi.fn(), reversePayment: vi.fn(), addContact: vi.fn(),
+    contacts: vi.fn(), termsChanges: vi.fn(), students: vi.fn(), bulkRegister: vi.fn(), createPlan: vi.fn(), recordPayment: vi.fn(), reversePayment: vi.fn(), addContact: vi.fn(),
     decideTerms: vi.fn(),
   },
 }))
@@ -44,10 +44,31 @@ describe('BillingPage', () => {
     } as BillingOptions)
     vi.mocked(billingApi.dashboard).mockResolvedValue(DASHBOARD)
     vi.mocked(billingApi.recordPayment).mockResolvedValue({} as never)
+    vi.mocked(billingApi.students).mockResolvedValue({
+      count: 2, next: null, previous: null, results: [
+        { id: 3, name: 'Айбек Test', group: 1, group_name: 'Group A', status: 'active', status_display: 'Активен',
+          parent_phone: '+996', profiles: [{ id: 5, status: 'ACTIVE', subject_name: 'IT', plan_name: 'IT 12',
+            payment_state: 'overdue', debt: '1500.00', unpaid_invoices: 1, credit: '0.00', next_due: '2026-10-23',
+            package: { number: 2, used: 9, total: 12 } }] },
+        { id: 4, name: 'Нурай Test', group: 1, group_name: 'Group A', status: 'active', status_display: 'Активен',
+          parent_phone: '', profiles: [] },
+      ],
+    })
+  })
+
+  it('lists every student, connected to billing or not', async () => {
+    renderWithProviders(<BillingPage />)
+    const row = (await screen.findByText('Айбек Test')).closest('tr')!
+    expect(row).toHaveTextContent('№2: 9 из 12')
+    expect(row).toHaveTextContent('1 500 сом')
+    expect(row).toHaveTextContent('Просрочено')
+    expect(screen.getByText('Нурай Test').closest('tr')).toHaveTextContent('Не подключён к оплате')
   })
 
   it('separates students, invoices and debt on the dashboard', async () => {
+    const user = userEvent.setup()
     renderWithProviders(<BillingPage />)
+    await user.click(await screen.findByRole('tab', { name: 'Обзор' }))
     expect(await screen.findByText('Студентов ожидают оплаты')).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.getByText(/9 начисл\. · активных студентов 40/)).toBeInTheDocument()
@@ -59,6 +80,7 @@ describe('BillingPage', () => {
   it('records a payment with one idempotency key per open form', async () => {
     const user = userEvent.setup()
     renderWithProviders(<BillingPage />)
+    await user.click(await screen.findByRole('tab', { name: 'Обзор' }))
     const row = (await screen.findAllByText('INV-2026-000011'))[0].closest('tr')!
     await user.click(row.querySelector('button')!)
     await user.type(screen.getByLabelText(/Сумма, сом/), '1500')
@@ -71,7 +93,9 @@ describe('BillingPage', () => {
 
   it('hides money actions from a manager', async () => {
     vi.mocked(billingApi.me).mockResolvedValue({ ...CAPS, can_record_payments: false, is_accountant: false, is_manager: true })
+    const user = userEvent.setup()
     renderWithProviders(<BillingPage />)
+    await user.click(await screen.findByRole('tab', { name: 'Обзор' }))
     const row = (await screen.findAllByText('INV-2026-000011'))[0].closest('tr')!
     expect(row.querySelector('button')).toBeNull()
   })

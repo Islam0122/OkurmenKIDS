@@ -24,11 +24,13 @@ import { Textarea } from '@/components/ui/Textarea'
 import { Field } from '@/features/worklog/formUi'
 import type { BillingFilters, BillingOptions, DebtorRow, InvoiceRow, InvoiceStatus } from '@/types/billing'
 
+import { BillingStudents } from './BillingStudents'
 import { ReasonModal, Section, formatDate, formatDateTime, som, today, useRunner } from './shared'
 
-type Tab = 'overview' | 'debts' | 'invoices' | 'payments' | 'contacts' | 'approvals'
+type Tab = 'students' | 'overview' | 'debts' | 'invoices' | 'payments' | 'contacts' | 'approvals'
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: 'students', label: 'Студенты' },
   { key: 'overview', label: 'Обзор' },
   { key: 'debts', label: 'Должники' },
   { key: 'invoices', label: 'Начисления' },
@@ -57,7 +59,7 @@ function useBillingMe() {
 
 /** Отдельный раздел «Оплата обучения»: деньги по пакетам уроков, долги и работа с родителями. */
 export function BillingPage() {
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>('students')
   const [filters, setFilters] = useState<BillingFilters>({})
   const [paying, setPaying] = useState<{ profile: number; student: string } | null>(null)
   const [contacting, setContacting] = useState<{ profile: number; student: string; invoice?: number } | null>(null)
@@ -74,6 +76,10 @@ export function BillingPage() {
       <BillingFilterBar filters={filters} onChange={setFilters} options={options.data} />
       <Tabs aria-label="Разделы оплаты" items={TABS} value={tab} onChange={setTab} />
       <div className="mt-4">
+        {tab === 'students' ? (
+          <BillingStudents filters={filters} options={options.data} caps={me.data}
+            onPay={canOperate ? setPaying : undefined} onContact={canOperate ? setContacting : undefined} />
+        ) : null}
         {tab === 'overview' ? (
           <Overview filters={filters} onPay={canOperate ? setPaying : undefined} onContact={canOperate ? setContacting : undefined} />
         ) : null}

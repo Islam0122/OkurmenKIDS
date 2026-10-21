@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
@@ -188,6 +189,25 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         profile = _call(profiles.update_profile, self.get_object(), actor=request.user, **data)
         return Response(s.ProfileSerializer(_profile_qs().get(pk=profile.pk)).data)
 
+    @extend_schema(request=s.BulkRegisterSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["post"])
+    def bulk(self, request):
+        """Подключить к оплате выбранных студентов, группу или всех активных."""
+        from apps.academy.models import Student
+
+        data = _valid(s.BulkRegisterSerializer, request)
+        if data.get("students"):
+            students = data["students"]
+        else:
+            qs = Student.objects.filter(status=Student.Status.ACTIVE).order_by("last_name", "first_name")
+            students = list(qs.filter(group_id=data["group"]) if data.get("group") else qs)
+        result = _call(
+            profiles.register_students, actor=request.user, plan=data["plan"], students=students,
+            start_date=data.get("start_date"), responsible_accountant=data.get("responsible_accountant"),
+            prepaid_first_package=data["prepaid_first_package"], prepaid_reason=data["prepaid_reason"],
+        )
+        return Response({"created": len(result["created"]), "skipped": result["skipped"]})
+
     @extend_schema(request=s.TermsChangeInputSerializer, responses=s.TermsChangeSerializer)
     @action(detail=True, methods=["post"])
     def terms(self, request, pk=None):
@@ -225,6 +245,81 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
 
         return Response({"balance": str(credit_balance(profile.pk)),
                          "entries": s.CreditEntrySerializer(entries[:500], many=True).data})
+
+
+def _profile_summary(profile) -> dict:
+    invoices_all = list(profile.invoices.all())
+    unpaid = [i for i in invoices_all if i.status in Invoice.UNPAID_STATUSES]
+    debt = sum((i.balance for i in unpaid), Decimal("0"))
+    if any(i.status == Invoice.Status.OVERDUE for i in unpaid):
+        state = "overdue"
+    elif unpaid:
+        state = "awaiting"
+    elif any(i.status == Invoice.Status.DRAFT for i in invoices_all):
+        state = "draft"
+    else:
+        state = "paid"
+    package = next((p for p in profile.packages.all() if p.status == LessonPackage.Status.ACTIVE), None)
+    return {
+        "id": profile.pk, "status": profile.status, "subject_name": profile.subject.name if profile.subject_id else None,
+        "plan_name": profile.plan.name, "payment_state": state, "debt": str(debt),
+        "unpaid_invoices": len(unpaid), "credit": str(profile.credit or Decimal("0.00")),
+        "next_due": min((i.due_date for i in unpaid), default=None),
+        "package": None if package is None else {
+            "number": package.number, "used": package.lessons_used, "total": package.lessons_total,
+        },
+    }
+
+
+@extend_schema(tags=TAG, parameters=[
+    OpenApiParameter("group", int), OpenApiParameter("search", str), OpenApiParameter("registered", str),
+    OpenApiParameter("state", str), OpenApiParameter("all", bool),
+], responses=OpenApiTypes.OBJECT)
+class StudentsView(APIView):
+    """Все студенты LMS (по умолчанию активные) и их оплата: подключён ли
+    к учёту, долг, аванс, текущий пакет. Для бухгалтера — только то, что
+    нужно для работы с оплатой (ФИО, группа, телефон родителя)."""
+
+    permission_classes = [BillingAccess]
+
+    def get(self, request):
+        from apps.academy.models import Student
+
+        q = request.query_params
+        qs = Student.objects.select_related("group").order_by("last_name", "first_name", "pk")
+        if q.get("all") not in ("1", "true"):
+            qs = qs.filter(status=Student.Status.ACTIVE)
+        if q.get("group"):
+            qs = qs.filter(group_id=_int(q["group"], "group"))
+        for part in (q.get("search") or "").split():
+            qs = qs.filter(Q(first_name__icontains=part) | Q(last_name__icontains=part) | Q(parent_phone__icontains=part))
+        live = ~Q(billing_profiles__status=StudentBillingProfile.Status.INACTIVE)
+        if q.get("registered") == "yes":
+            qs = qs.filter(billing_profiles__isnull=False).filter(live).distinct()
+        elif q.get("registered") == "no":
+            qs = qs.exclude(pk__in=StudentBillingProfile.objects.exclude(
+                status=StudentBillingProfile.Status.INACTIVE).values("student_id"))
+        if q.get("state") == "debt":
+            qs = qs.filter(billing_profiles__invoices__status__in=Invoice.UNPAID_STATUSES).distinct()
+        elif q.get("state") == "overdue":
+            qs = qs.filter(billing_profiles__invoices__status=Invoice.Status.OVERDUE).distinct()
+        profiles = (
+            StudentBillingProfile.objects.exclude(status=StudentBillingProfile.Status.INACTIVE)
+            .select_related("plan", "subject")
+            .annotate(credit=Sum("credit_entries__amount"))
+            .prefetch_related("invoices", "packages")
+        )
+        qs = qs.prefetch_related(Prefetch("billing_profiles", queryset=profiles, to_attr="live_profiles"))
+        paginator = BillingPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response([
+            {
+                "id": st.pk, "name": str(st), "group": st.group_id, "group_name": st.group.name if st.group_id else None,
+                "status": st.status, "status_display": st.get_status_display(), "parent_phone": st.parent_phone,
+                "profiles": [_profile_summary(p) for p in st.live_profiles],
+            }
+            for st in page
+        ])
 
 
 @extend_schema(tags=TAG)

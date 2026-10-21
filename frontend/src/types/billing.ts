@@ -192,3 +192,50 @@ export interface PaymentBody {
   comment?: string
   prepay_packages?: number
 }
+
+export type PaymentState = 'paid' | 'awaiting' | 'overdue' | 'draft'
+
+export interface StudentProfileSummary {
+  id: number
+  status: 'ACTIVE' | 'PAUSED' | 'INACTIVE'
+  subject_name: string | null
+  plan_name: string
+  payment_state: PaymentState
+  debt: string
+  unpaid_invoices: number
+  credit: string
+  next_due: string | null
+  package: { number: number; used: number; total: number } | null
+}
+
+export interface BillingStudent {
+  id: number
+  name: string
+  group: number | null
+  group_name: string | null
+  status: string
+  status_display: string
+  parent_phone: string
+  profiles: StudentProfileSummary[]
+}
+
+export interface BulkRegisterBody {
+  plan: number
+  students?: number[]
+  group?: number | null
+  all_active?: boolean
+  start_date?: string | null
+  responsible_accountant?: number | null
+  prepaid_first_package?: boolean
+  prepaid_reason?: string
+}
+
+export interface PlanCreateBody {
+  name: string
+  subject?: number | null
+  lessons_per_package: number
+  package_price: string
+  effective_from: string
+  payment_due_days?: number
+  warn_before_end_lessons?: number
+}
