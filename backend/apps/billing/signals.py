@@ -48,6 +48,7 @@ def student_status_changed(sender, instance, created=False, raw=False, **kwargs)
 @receiver(post_migrate)
 def accountant_billing_permissions(sender, **kwargs):
     if getattr(sender, "label", None) == "billing":
-        from apps.accounting.access import ensure_accountant_group
+        from apps.accounting.access import ensure_accountant_group, ensure_billing_director_group
 
         ensure_accountant_group()
+        ensure_billing_director_group()

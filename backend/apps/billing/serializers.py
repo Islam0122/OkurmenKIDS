@@ -24,7 +24,10 @@ from .models import (
     LessonConsumption,
     LessonPackage,
     PaymentAllocation,
+    PaymentMode,
+    Receipt,
     Reservation,
+    ReservationAllocation,
     StudentBillingProfile,
 )
 from .services.ledger import credit_balance
@@ -62,6 +65,7 @@ class PlanSerializer(serializers.ModelSerializer):
         model = BillingPlan
         fields = ("id", "name", "subject", "subject_name", "course", "course_name", "payment_due_days",
                   "warn_before_end_lessons", "early_invoice_enabled", "early_invoice_after_lessons", "absence_policy",
+                  "duration_months", "payment_deadline_lessons", "allow_monthly", "allow_full_prepay", "currency",
                   "is_active", "current", "versions", "created_at")
 
     def get_current(self, obj) -> dict | None:
@@ -74,7 +78,9 @@ class PlanSerializer(serializers.ModelSerializer):
         except Exception:  # noqa: BLE001
             return None
         return {"lessons_per_package": version.lessons_per_package, "package_price": str(version.package_price),
-                "effective_from": version.effective_from.isoformat()}
+                "effective_from": version.effective_from.isoformat(),
+                "standard_course_price": (str(version.package_price * obj.duration_months)
+                                          if obj.duration_months else None)}
 
 
 class PlanCreateSerializer(serializers.Serializer):
@@ -91,6 +97,10 @@ class PlanCreateSerializer(serializers.Serializer):
     early_invoice_after_lessons = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     absence_policy = serializers.ChoiceField(choices=BillingPlan._meta.get_field("absence_policy").choices,
                                              required=False, default="ALL_HELD")
+    duration_months = serializers.IntegerField(min_value=1, max_value=60, required=False, allow_null=True)
+    payment_deadline_lessons = serializers.IntegerField(min_value=1, max_value=500, required=False)
+    allow_monthly = serializers.BooleanField(required=False)
+    allow_full_prepay = serializers.BooleanField(required=False)
 
 
 class PlanUpdateSerializer(serializers.Serializer):
@@ -102,6 +112,11 @@ class PlanUpdateSerializer(serializers.Serializer):
     absence_policy = serializers.ChoiceField(choices=BillingPlan._meta.get_field("absence_policy").choices,
                                              required=False)
     is_active = serializers.BooleanField(required=False)
+    duration_months = serializers.IntegerField(min_value=1, max_value=60, required=False, allow_null=True)
+    payment_deadline_lessons = serializers.IntegerField(min_value=1, max_value=500, required=False)
+    allow_monthly = serializers.BooleanField(required=False)
+    allow_full_prepay = serializers.BooleanField(required=False)
+
 
 
 class PlanVersionCreateSerializer(serializers.Serializer):
@@ -141,6 +156,30 @@ class ProfileCreateSerializer(TermsInputMixin):
     reservation_amount = serializers.DecimalField(**MONEY, required=False, allow_null=True, min_value=Decimal("0.01"))
     reserved_until = serializers.DateField(required=False, allow_null=True)
     reservation_comment = serializers.CharField(required=False, allow_blank=True, default="")
+    # Договор по программе
+    payment_mode = serializers.ChoiceField(choices=PaymentMode.choices, required=False, default=PaymentMode.MONTHLY)
+    reservation_allocation = serializers.ChoiceField(choices=ReservationAllocation.choices, required=False,
+                                                     default=ReservationAllocation.FIRST_MONTH)
+    discount_enabled = serializers.BooleanField(required=False, default=False)
+    final_course_price = serializers.DecimalField(**MONEY, required=False, allow_null=True, min_value=Decimal("0"))
+    # Деньги, полученные при зачислении (только бухгалтер): бронь и/или первый платёж.
+    reservation_received = serializers.BooleanField(required=False, default=False)
+    initial_payment = serializers.DecimalField(**MONEY, required=False, allow_null=True, min_value=Decimal("0.01"))
+    payment_method = serializers.ChoiceField(choices=StudentPayment.Method.choices, required=False,
+                                             default=StudentPayment.Method.CASH)
+    payer_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    idempotency_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
+
+
+class CourseTermsSerializer(serializers.Serializer):
+    discount_enabled = serializers.BooleanField()
+    final_course_price = serializers.DecimalField(**MONEY, required=False, allow_null=True, min_value=Decimal("0"))
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PaymentModeSerializer(serializers.Serializer):
+    payment_mode = serializers.ChoiceField(choices=PaymentMode.choices)
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class TermsChangeInputSerializer(TermsInputMixin):
@@ -172,8 +211,8 @@ class TermsChangeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BillingTermsChange
-        fields = ("id", "profile", "student_name", "custom_price", "discount_type", "discount_value", "reason",
-                  "previous_terms", "status", "requested_by_name", "requested_at", "decided_by_name", "decided_at",
+        fields = ("id", "profile", "student_name", "custom_price", "discount_type", "discount_value",
+                  "discount_enabled", "final_course_price", "discount_amount", "reason", "previous_terms", "status", "requested_by_name", "requested_at", "decided_by_name", "decided_at",
                   "decision_comment")
 
     def get_requested_by_name(self, obj) -> str | None:
@@ -194,15 +233,16 @@ class PackageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LessonPackage
-        fields = ("id", "profile", "number", "status", "lessons_total", "lessons_used", "lessons_remaining",
-                  "base_price", "custom_price", "discount_type", "discount_value", "discount_amount", "final_price",
-                  "started_on", "completed_on", "invoice", "created_at")
+        fields = ("id", "profile", "number", "month_number", "status", "lessons_total", "lessons_used",
+                  "lessons_remaining", "base_price", "custom_price", "discount_type", "discount_value",
+                  "discount_amount", "final_price", "started_on", "completed_on", "invoice", "created_at")
 
     def get_invoice(self, obj) -> dict | None:
         inv = next((i for i in obj.invoices.all() if i.status != Invoice.Status.VOID), None)
         if inv is None:
             return None
-        return {"id": inv.pk, "number": inv.number, "status": inv.status, "balance": str(inv.balance)}
+        return {"id": inv.pk, "number": inv.number, "status": inv.status, "balance": str(inv.balance),
+                "amount": str(inv.amount), "kind": inv.kind}
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -213,6 +253,12 @@ class ProfileSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source="student.group.name", read_only=True, default=None)
     subject_name = serializers.CharField(source="subject.name", read_only=True, default=None)
     plan_name = serializers.CharField(source="plan.name", read_only=True)
+    program_name = serializers.CharField(source="plan.course.name", read_only=True, default=None)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    payment_mode_display = serializers.CharField(source="get_payment_mode_display", read_only=True)
+    reservation_allocation_display = serializers.CharField(source="get_reservation_allocation_display",
+                                                           read_only=True)
+    is_course = serializers.BooleanField(read_only=True)
     responsible_accountant_name = serializers.SerializerMethodField()
     discount_assigned_by_name = serializers.SerializerMethodField()
     discount_approved_by_name = serializers.SerializerMethodField()
@@ -223,7 +269,11 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentBillingProfile
         fields = ("id", "student", "student_name", "group", "group_name", "subject", "subject_name", "plan",
-                  "plan_name", "status", "start_date", "parent_name", "parent_phone", "custom_price", "discount_type",
+                  "plan_name", "program_name", "status", "status_display", "start_date", "parent_name", "parent_phone",
+                  "payment_mode", "payment_mode_display", "reservation_allocation", "reservation_allocation_display",
+                  "duration_months", "lessons_per_month", "deadline_lessons", "month_price", "standard_course_price",
+                  "final_course_price", "discount_enabled", "discount_amount", "is_course", "custom_price",
+                  "discount_type",
                   "discount_value", "discount_reason", "discount_assigned_by_name", "discount_approved_by_name",
                   "special_terms", "responsible_accountant", "responsible_accountant_name", "stopped_on",
                   "stop_reason", "payment_status", "current_package", "pending_terms", "created_at")
@@ -246,13 +296,14 @@ class ProfileSerializer(serializers.ModelSerializer):
             state = "draft" if not unpaid else state
         return {"state": state, "debt": str(debt), "unpaid_invoices": len(unpaid),
                 "credit": str(credit_balance(obj.pk)),
-                "next_due": min((i.due_date for i in unpaid), default=None)}
+                "next_due": min((i.due_date for i in unpaid if not i.due_lesson), default=None)}
 
     def get_current_package(self, obj) -> dict | None:
         package = next((p for p in obj.packages.all() if p.status == LessonPackage.Status.ACTIVE), None)
         if package is None:
             return None
-        return {"id": package.pk, "number": package.number, "lessons_used": package.lessons_used,
+        return {"id": package.pk, "number": package.number, "month_number": package.month_number,
+                "lessons_used": package.lessons_used,
                 "lessons_total": package.lessons_total, "lessons_remaining": package.lessons_remaining}
 
     def get_pending_terms(self, obj) -> dict | None:
@@ -281,13 +332,25 @@ class InvoiceSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source="profile.student.group.name", read_only=True, default=None)
     subject_name = serializers.CharField(source="profile.subject.name", read_only=True, default=None)
     package_number = serializers.IntegerField(source="package.number", read_only=True)
+    month_number = serializers.IntegerField(source="package.month_number", read_only=True, default=None)
+    lessons_used = serializers.IntegerField(source="package.lessons_used", read_only=True)
+    lessons_total = serializers.IntegerField(source="package.lessons_total", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    stage = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
         fields = ("id", "number", "profile", "student", "student_name", "group_name", "subject_name", "package",
-                  "package_number", "amount", "amount_paid", "amount_adjusted", "balance", "currency", "status",
-                  "status_display", "issue_date", "due_date", "snapshot", "paid_at", "void_reason", "created_at")
+                  "package_number", "month_number", "lessons_used", "lessons_total", "kind", "kind_display",
+                  "amount", "amount_paid", "amount_adjusted", "balance", "currency", "status", "status_display",
+                  "stage", "issue_date", "due_date", "due_lesson", "due_reached_on", "overdue_since", "snapshot",
+                  "paid_at", "void_reason", "created_at")
+
+    def get_stage(self, obj) -> str:
+        from .services.contracts import payment_stage
+
+        return payment_stage(obj)
 
 
 class AllocationSerializer(serializers.ModelSerializer):
@@ -323,19 +386,31 @@ class BillingPaymentSerializer(serializers.ModelSerializer):
     unallocated = serializers.SerializerMethodField()
     allocations = AllocationSerializer(source="billing_allocations", many=True, read_only=True)
     created_by_name = serializers.SerializerMethodField()
+    group_name = serializers.CharField(source="group.name", read_only=True)
+    program_name = serializers.CharField(source="course.name", read_only=True)
+    method_display = serializers.CharField(source="get_method_display", read_only=True)
+    purpose_display = serializers.CharField(source="get_purpose_display", read_only=True)
+    receipt = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentPayment
-        fields = ("id", "billing_profile", "student", "student_name", "kind", "purpose", "amount", "currency",
-                  "received_date", "method", "reference", "comment", "status", "void_reason", "refund_of",
-                  "unallocated", "allocations", "created_by_name", "created_at")
+        fields = ("id", "billing_profile", "student", "student_name", "group_name", "program_name", "kind",
+                  "purpose", "purpose_display", "amount", "currency", "received_date", "method", "method_display",
+                  "reference", "comment", "status", "void_reason", "refund_of", "unallocated", "allocations",
+                  "receipt", "created_by_name", "created_at")
+
+    def get_receipt(self, obj) -> dict | None:
+        receipt = getattr(obj, "receipt", None)
+        return None if receipt is None else {"id": receipt.pk, "number": receipt.number, "status": receipt.status}
 
     def get_unallocated(self, obj) -> str | None:
         from .services.ledger import payment_unallocated
 
+        from apps.accounting.services.money import money
+
         if obj.kind != StudentPayment.Kind.PAYMENT:
             return None
-        return str(payment_unallocated(obj.pk))
+        return str(money(payment_unallocated(obj.pk)))
 
     def get_created_by_name(self, obj) -> str | None:
         return _name(obj.created_by)
@@ -357,6 +432,18 @@ class PaymentCreateSerializer(serializers.Serializer):
     auto_allocate = serializers.BooleanField(required=False, default=True)
     allocations = AllocationItemSerializer(many=True, required=False)
     idempotency_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    # Назначение: auto — по начислениям по порядку; invoice — на выбранное
+    # начисление (остаток — аванс); advance — предоплата / аванс целиком.
+    mode = serializers.ChoiceField(choices=("auto", "invoice", "advance"), required=False, default="auto")
+    invoice = serializers.PrimaryKeyRelatedField(queryset=Invoice.objects.all(), required=False, allow_null=True)
+    payer_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+
+
+class PaymentPreviewSerializer(serializers.Serializer):
+    profile = serializers.PrimaryKeyRelatedField(queryset=StudentBillingProfile.objects.all())
+    amount = serializers.DecimalField(**MONEY, min_value=Decimal("0.01"))
+    mode = serializers.ChoiceField(choices=("auto", "invoice", "advance"), required=False, default="auto")
+    invoice = serializers.PrimaryKeyRelatedField(queryset=Invoice.objects.all(), required=False, allow_null=True)
 
 
 class AllocateSerializer(serializers.Serializer):
@@ -407,6 +494,7 @@ class ReservationPaySerializer(serializers.Serializer):
     method = serializers.ChoiceField(choices=StudentPayment.Method.choices, default=StudentPayment.Method.CASH)
     reference = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     idempotency_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    payer_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
 
 
 class ReservationCancelSerializer(serializers.Serializer):
@@ -486,3 +574,53 @@ class BulkRegisterSerializer(serializers.Serializer):
         if not attrs.get("students") and not attrs.get("group") and not attrs.get("all_active"):
             raise serializers.ValidationError({"students": "Выберите студентов, группу или «все активные»."})
         return attrs
+
+
+# ---------------------------------------------------------------------------
+# Чеки и настройки
+# ---------------------------------------------------------------------------
+
+class ReceiptSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    issued_by_name = serializers.SerializerMethodField()
+    student_name = serializers.CharField(source="payment.student.__str__", read_only=True)
+    amount = serializers.DecimalField(source="payment.amount", **MONEY, read_only=True)
+    received_date = serializers.DateField(source="payment.received_date", read_only=True)
+    payment_status = serializers.CharField(source="payment.status", read_only=True)
+    rows = serializers.SerializerMethodField()
+    academy = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Receipt
+        fields = ("id", "number", "payment", "profile", "student_name", "kind", "kind_display", "status",
+                  "status_display", "amount", "received_date", "payment_status", "payer_name", "snapshot",
+                  "issued_at", "issued_by_name", "print_count", "last_printed_at", "cancelled_at", "cancel_reason",
+                  "rows", "academy")
+
+    def get_issued_by_name(self, obj) -> str | None:
+        return _name(obj.issued_by)
+
+    def get_rows(self, obj) -> list:
+        from .services.receipt_pdf import receipt_rows
+
+        return [{"label": k, "value": v} for k, v in receipt_rows(obj)]
+
+    def get_academy(self, obj) -> dict:
+        from .models import BillingSettings
+
+        cfg = BillingSettings.load()
+        return {"name": cfg.academy_name, "details": cfg.academy_details, "footer": cfg.receipt_footer}
+
+
+class BillingSettingsSerializer(serializers.Serializer):
+    manager_max_discount_percent = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal("0"),
+                                                            max_value=Decimal("100"), required=False)
+    due_soon_lessons = serializers.IntegerField(min_value=0, max_value=100, required=False)
+    default_deadline_lessons = serializers.IntegerField(min_value=1, max_value=100, required=False)
+    accountant_refund_limit = serializers.DecimalField(**MONEY, required=False, allow_null=True,
+                                                       min_value=Decimal("0"))
+    academy_name = serializers.CharField(max_length=150, required=False)
+    academy_details = serializers.CharField(required=False, allow_blank=True)
+    receipt_footer = serializers.CharField(required=False, allow_blank=True)
+    updated_at = serializers.DateTimeField(read_only=True)

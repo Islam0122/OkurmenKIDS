@@ -321,13 +321,49 @@ export const router = createBrowserRouter([
               { path: 'payout-plan/:id', lazy: async () => ({ Component: (await import('@/features/accounting/PayoutPlanDetailPage')).PayoutPlanDetailPage }) },
               { path: 'settings', lazy: async () => ({ Component: (await import('@/features/accounting/SalarySettingsPage')).SalarySettingsPage }) },
               { path: 'courses', lazy: async () => ({ Component: (await import('@/features/accounting/CoursesPage')).CoursesPage }) },
-              { path: 'billing', lazy: async () => ({ Component: (await import('@/features/accounting/BillingPage')).BillingPage }) },
+              { path: 'billing', element: <Navigate to="/finance" replace /> },
               { path: 'student-payments', lazy: async () => ({ Component: (await import('@/features/accounting/StudentPaymentsPage')).StudentPaymentsPage }) },
               { path: 'audit', lazy: async () => ({ Component: (await import('@/features/accounting/AuditPage')).AuditPage }) },
               { path: 'pricing', lazy: async () => ({ Component: (await import('@/features/accounting/PricingPage')).PricingPage }) },
               { path: 'analytics', lazy: async () => ({ Component: (await import('@/features/accounting/AnalyticsPage')).AnalyticsPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/accounting/ReportsPage')).ReportsPage }) },
               { path: '*', element: <Navigate to="/accounting" replace /> },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Финансы студентов: договоры по программам, учебные месяцы, оплаты, чеки
+    // (backend: apps.billing). Бухгалтер — всё; Директор — только просмотр;
+    // Менеджер (ассистент) — договоры и статусы. Права проверяет backend.
+    path: '/finance',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['accountant', 'director', 'admin', 'assistant']} />,
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/finance/FinanceLayout')).FinanceLayout }),
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/finance/DashboardPage')).FinanceDashboardPage }) },
+              { path: 'to-pay', lazy: async () => ({ Component: (await import('@/features/finance/QueuePage')).ToPayPage }) },
+              { path: 'soon', lazy: async () => ({ Component: (await import('@/features/finance/QueuePage')).SoonPage }) },
+              { path: 'overdue', lazy: async () => ({ Component: (await import('@/features/finance/QueuePage')).OverduePage }) },
+              { path: 'students', lazy: async () => ({ Component: (await import('@/features/finance/StudentsPage')).StudentsPage }) },
+              { path: 'students/:profileId', lazy: async () => ({ Component: (await import('@/features/finance/StudentCardPage')).StudentCardPage }) },
+              { path: 'contracts/new', lazy: async () => ({ Component: (await import('@/features/finance/NewContractPage')).NewContractPage }) },
+              { path: 'payments', lazy: async () => ({ Component: (await import('@/features/finance/PaymentsPage')).PaymentsPage }) },
+              { path: 'payments/new', lazy: async () => ({ Component: (await import('@/features/finance/AddPaymentPage')).AddPaymentPage }) },
+              { path: 'receipts', lazy: async () => ({ Component: (await import('@/features/finance/ReceiptPage')).ReceiptsPage }) },
+              { path: 'receipts/:receiptId', lazy: async () => ({ Component: (await import('@/features/finance/ReceiptPage')).ReceiptPage }) },
+              { path: 'analytics', lazy: async () => ({ Component: (await import('@/features/finance/AnalyticsPage')).AnalyticsPage }) },
+              { path: 'plans', lazy: async () => ({ Component: (await import('@/features/finance/AdminPages')).PlansPage }) },
+              { path: 'audit', lazy: async () => ({ Component: (await import('@/features/finance/AdminPages')).AuditPage }) },
+              { path: 'settings', lazy: async () => ({ Component: (await import('@/features/finance/AdminPages')).SettingsPage }) },
+              { path: '*', element: <Navigate to="/finance" replace /> },
             ],
           },
         ],

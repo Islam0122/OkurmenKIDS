@@ -166,7 +166,11 @@ def create_early_invoices(on=None) -> dict:
             profile = package.profile
             if not is_continuing(profile) or next_planned_package(profile) is not None:
                 continue
-            _package, _invoice, was_created = create_next_package_invoice(profile, on_date=on, activate=False)
+            try:
+                _package, _invoice, was_created = create_next_package_invoice(profile, on_date=on, activate=False)
+            except BillingError as exc:
+                logger.warning("billing: early invoice for profile %s: %s", profile.pk, exc.message)
+                continue
             created += int(was_created)
         return {"created": created}
 

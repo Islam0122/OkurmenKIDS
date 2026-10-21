@@ -12,7 +12,9 @@
    блокировки;
 5. доступный аванс сразу применяется к начислению: покрыл полностью —
    статус «Оплачено», частично — остаток долга на том же начислении;
-6. срок оплаты — `plan.payment_due_days` от даты начисления;
+6. срок оплаты — договор по программе: не позднее `deadline_lessons`-го
+   зачтённого урока приоритетного предмета этого месяца (со следующего —
+   просрочка); тариф без срока — `plan.payment_due_days` от даты;
 7. неоплаченное начисление — задача ответственному бухгалтеру;
 8. уведомление — через outbox, доставка после коммита.
 """
@@ -23,10 +25,11 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Max, Q, Sum
+from django.db.models import F, Max, Q, Sum
 from django.utils import timezone
 
 from apps.accounting.services import audit
+from apps.accounting.services.money import money
 
 from ..models import (
     BillingNotification,
@@ -73,7 +76,11 @@ def status_for(invoice: Invoice, balance: Decimal, paid: Decimal, adjusted: Deci
         return invoice.status
     if balance <= 0:
         return Status.PAID
-    if invoice.due_date < on:
+    if invoice.due_lesson:
+        # Срок в уроках: урок № due_lesson — последний срок, дальше просрочка.
+        if invoice.package.lessons_used > invoice.due_lesson:
+            return Status.OVERDUE
+    elif invoice.due_date < on:
         return Status.OVERDUE
     if paid > 0 or adjusted > 0:
         return Status.PARTIALLY_PAID
@@ -83,16 +90,35 @@ def status_for(invoice: Invoice, balance: Decimal, paid: Decimal, adjusted: Deci
 def refresh_invoice(invoice: Invoice, *, on: dt.date | None = None) -> Invoice:
     """Пересчитать кеш сумм и статус по записям. Вызывается под блокировкой
     профиля. Оплачено — задачи закрываются, бухгалтер получает уведомление."""
-    invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+    invoice = Invoice.objects.select_for_update().select_related("package").get(pk=invoice.pk)
+    on = on or today()
     sums = calculate_invoice_balance(invoice)
     previous = invoice.status
     invoice.amount_paid, invoice.amount_adjusted = sums["paid"], sums["adjusted"]
-    invoice.status = status_for(invoice, sums["balance"], sums["paid"], sums["adjusted"], on or today())
+    invoice.status = status_for(invoice, sums["balance"], sums["paid"], sums["adjusted"], on)
     if invoice.status == Status.PAID and invoice.paid_at is None:
         invoice.paid_at = timezone.now()
     elif invoice.status != Status.PAID:
         invoice.paid_at = None
-    invoice.save(update_fields=["amount_paid", "amount_adjusted", "status", "paid_at", "updated_at"])
+    if invoice.due_lesson and invoice.status != Status.DRAFT:
+        # Даты наступления срока и просрочки — история: фиксируются один раз.
+        if invoice.due_reached_on is None and invoice.package.lessons_used >= invoice.due_lesson:
+            invoice.due_reached_on = on
+        if invoice.overdue_since is None and invoice.status == Status.OVERDUE:
+            invoice.overdue_since = on
+    elif invoice.due_reached_on is None and invoice.status != Status.DRAFT and invoice.due_date <= on:
+        invoice.due_reached_on = invoice.due_date
+    if invoice.status == Status.OVERDUE and invoice.overdue_since is None:
+        invoice.overdue_since = on
+    invoice.save(update_fields=["amount_paid", "amount_adjusted", "status", "paid_at", "due_reached_on",
+                                "overdue_since", "updated_at"])
+    if invoice.status == Status.OVERDUE and previous != Status.OVERDUE:
+        notify(
+            BillingNotification.Kind.OVERDUE, f"overdue:{invoice.pk}",
+            f"Просрочено: {invoice.profile.student} — {invoice.number}",
+            f"Остаток {invoice.balance} сом.", recipient=invoice.profile.responsible_accountant,
+            profile=invoice.profile, invoice=invoice,
+        )
     if invoice.status == Status.PAID and previous != Status.PAID:
         close_tasks(invoice, "Начисление оплачено")
         notify(
@@ -114,7 +140,7 @@ def ensure_task(invoice: Invoice) -> BillingTask:
     if task is None:
         task = BillingTask.objects.create(
             invoice=invoice, profile=invoice.profile, assignee=invoice.profile.responsible_accountant,
-            next_contact_date=invoice.due_date,
+            next_contact_date=today() if invoice.due_lesson else invoice.due_date,
         )
     return task
 
@@ -139,6 +165,10 @@ def _has_pending_terms(profile) -> bool:
 
 
 def _create_package(profile: StudentBillingProfile, *, status: str, on_date: dt.date, actor) -> tuple:
+    """Новый пакет (учебный месяц) и его начисление. Начисления может не
+    быть (None): месяц договора уже оплачен предоплатой за весь курс."""
+    if profile.is_course:
+        return _create_study_month(profile, status=status, on_date=on_date, actor=actor)
     number = (profile.packages.aggregate(m=Max("number"))["m"] or 0) + 1
     quote = quote_for_profile(profile, on_date)
     package = LessonPackage.objects.create(
@@ -147,12 +177,24 @@ def _create_package(profile: StudentBillingProfile, *, status: str, on_date: dt.
         discount_value=quote.discount_value, discount_amount=quote.discount_amount, final_price=quote.final_price,
         pricing_snapshot=quote.snapshot(), created_by=actor if getattr(actor, "is_authenticated", False) else None,
     )
+    invoice = _create_invoice(profile, package, amount=quote.final_price, kind=Invoice.Kind.PACKAGE, on_date=on_date,
+                              actor=actor, snapshot={**quote.snapshot(), "package_number": number})
+    return package, invoice
+
+
+def _create_invoice(profile, package, *, amount, kind, on_date, actor, snapshot: dict) -> Invoice:
     draft = _has_pending_terms(profile)
+    course = profile.is_course
+    # Ключ — пакет; перевыставление после аннулирования получает свой номер.
+    reissue = Invoice.objects.filter(package=package, status=Status.VOID).count()
+    key = f"package:{package.pk}" + (f":r{reissue}" if reissue else "")
     invoice = Invoice.objects.create(
-        profile=profile, package=package, business_key=f"package:{package.pk}", amount=quote.final_price,
+        profile=profile, package=package, kind=kind, business_key=key, amount=amount,
         status=Status.DRAFT if draft else Status.OPEN, issue_date=on_date,
-        due_date=_due_date(profile, on_date, first=number == 1), snapshot={
-            **quote.snapshot(), "package_number": number, "student": str(profile.student),
+        due_date=on_date if course else _due_date(profile, on_date, first=package.number == 1),
+        due_lesson=profile.deadline_lessons if course else None,
+        snapshot={
+            **snapshot, "student": str(profile.student),
             "subject": str(profile.subject) if profile.subject_id else None,
             "discount_reason": profile.discount_reason,
         },
@@ -161,24 +203,64 @@ def _create_package(profile: StudentBillingProfile, *, status: str, on_date: dt.
     invoice.number = f"INV-{on_date:%Y}-{invoice.pk:06d}"
     invoice.save(update_fields=["number"])
     audit.log(actor, invoice, "billing_invoice_create", new={
-        "profile": profile.pk, "package": package.pk, "number": number, "amount": invoice.amount,
-        "status": invoice.status, "due_date": invoice.due_date,
+        "profile": profile.pk, "package": package.pk, "number": package.number, "kind": kind, "amount": invoice.amount,
+        "status": invoice.status, "due_date": invoice.due_date, "due_lesson": invoice.due_lesson,
     })
+    return invoice
+
+
+def _create_study_month(profile: StudentBillingProfile, *, status: str, on_date: dt.date, actor) -> tuple:
+    from .contracts import month_charge, months_created
+    from .pricing import plan_version_on
+
+    month_number = months_created(profile) + 1
+    if month_number > profile.duration_months:
+        raise BillingError("Все учебные месяцы договора уже созданы — курс завершается.", code="course_finished")
+    number = (profile.packages.aggregate(m=Max("number"))["m"] or 0) + 1
+    amount, kind = month_charge(profile, month_number)
+    month_price = money(profile.month_price)
+    snapshot = {
+        "contract": profile.pk, "plan": profile.plan.name, "plan_id": profile.plan_id, "month_number": month_number,
+        "duration_months": profile.duration_months, "lessons": profile.lessons_per_month,
+        "month_price": str(month_price), "standard_course_price": str(profile.standard_course_price),
+        "final_course_price": str(profile.final_course_price), "discount_amount": str(profile.discount_amount),
+        "payment_mode": profile.payment_mode, "charge": str(amount), "kind": kind,
+    }
+    if kind == Invoice.Kind.COURSE:
+        discount = money(profile.discount_amount)
+    else:
+        discount = max(month_price - amount, ZERO) if amount else ZERO
+    package = LessonPackage.objects.create(
+        profile=profile, number=number, month_number=month_number, status=status,
+        lessons_total=profile.lessons_per_month, plan_version=plan_version_on(profile.plan, on_date),
+        base_price=month_price, discount_amount=discount, final_price=amount, pricing_snapshot=snapshot,
+        created_by=actor if getattr(actor, "is_authenticated", False) else None,
+    )
+    audit.log(actor, package, "billing_month_create", new={
+        "profile": profile.pk, "month_number": month_number, "lessons": package.lessons_total, "status": status,
+    })
+    if amount <= 0:
+        return package, None
+    invoice = _create_invoice(profile, package, amount=amount, kind=kind, on_date=on_date, actor=actor,
+                              snapshot={**snapshot, "package_number": number})
     return package, invoice
 
 
 def _after_invoice_created(profile, invoice: Invoice, *, actor) -> Invoice:
     from .payments import apply_available_credit
 
-    if invoice.status == Status.DRAFT:
+    if invoice is None or invoice.status == Status.DRAFT:
         return invoice
     apply_available_credit(profile, actor=actor, locked=True, system=True)
     invoice = refresh_invoice(invoice)
+    due = (f"срок — {invoice.due_lesson}-й урок месяца" if invoice.due_lesson
+           else f"срок {invoice.due_date:%d.%m.%Y}")
+    what = (f"Учебный месяц №{invoice.package.month_number}" if invoice.package.month_number
+            else f"Пакет №{invoice.package.number}")
     notify(
         BillingNotification.Kind.INVOICE_CREATED, f"invoice:{invoice.pk}",
         f"Начисление {invoice.number}: {profile.student}",
-        f"Пакет №{invoice.package.number}, {invoice.amount} сом, срок {invoice.due_date:%d.%m.%Y}. "
-        f"Статус: {invoice.get_status_display()}.",
+        f"{what}, {invoice.amount} сом, {due}. Статус: {invoice.get_status_display()}.",
         recipient=profile.responsible_accountant, profile=profile, invoice=invoice,
     )
     return invoice
@@ -231,10 +313,18 @@ def create_next_package_invoice(profile: StudentBillingProfile, *, actor=None, o
             return planned, planned.invoices.exclude(status=Status.VOID).first(), False
         if not for_held_lesson and not is_continuing(profile):
             raise BillingError("Студент не продолжает обучение — следующий пакет не выставляется.", code="not_continuing")
+        if profile.is_course and course_finished(profile):
+            raise BillingError("Все учебные месяцы договора пройдены.", code="course_finished")
         status = PackageStatus.ACTIVE if activate and not has_active else PackageStatus.PLANNED
         package, invoice = _create_package(profile, status=status, on_date=on_date, actor=actor)
         invoice = _after_invoice_created(profile, invoice, actor=actor)
     return package, invoice, True
+
+
+def course_finished(profile) -> bool:
+    from .contracts import months_created
+
+    return bool(profile.is_course and months_created(profile) >= profile.duration_months)
 
 
 def activate_package(package: LessonPackage) -> LessonPackage:
@@ -256,8 +346,11 @@ def ensure_future_packages(profile: StudentBillingProfile, count: int, *, actor,
     if count > max_ahead:
         raise BillingError(f"Оплатить вперёд можно не больше {max_ahead} пакетов.", code="too_many_packages")
     while profile.packages.filter(status=PackageStatus.PLANNED).count() < count:
+        if course_finished(profile):
+            raise BillingError("Больше месяцев, чем осталось в договоре.", code="too_many_packages")
         package, invoice = _create_package(profile, status=PackageStatus.PLANNED, on_date=on_date or today(), actor=actor)
-        created.append(invoice)
+        if invoice is not None:
+            created.append(invoice)
     return created
 
 
@@ -271,7 +364,9 @@ def mark_overdue_invoices(on: dt.date | None = None) -> list[int]:
     уведомления (ключ — начисление)."""
     on = on or today()
     ids = list(
-        Invoice.objects.filter(status__in=(Status.OPEN, Status.PARTIALLY_PAID), due_date__lt=on)
+        Invoice.objects.filter(status__in=(Status.OPEN, Status.PARTIALLY_PAID))
+        .filter(Q(due_lesson__isnull=True, due_date__lt=on)
+                | Q(due_lesson__isnull=False, package__lessons_used__gt=F("due_lesson")))
         .values_list("pk", "profile_id")
     )
     marked = []
@@ -280,13 +375,7 @@ def mark_overdue_invoices(on: dt.date | None = None) -> list[int]:
             profile = lock_profile(profile_id)
             invoice = refresh_invoice(Invoice.objects.get(pk=invoice_id), on=on)
             if invoice.status == Status.OVERDUE:
-                marked.append(invoice.pk)
-                notify(
-                    BillingNotification.Kind.OVERDUE, f"overdue:{invoice.pk}",
-                    f"Просрочено: {profile.student} — {invoice.number}",
-                    f"Остаток {invoice.balance} сом, срок был {invoice.due_date:%d.%m.%Y}.",
-                    recipient=profile.responsible_accountant, profile=profile, invoice=invoice,
-                )
+                marked.append(invoice.pk)  # уведомление — в refresh_invoice (одно на начисление)
     return marked
 
 
@@ -334,7 +423,7 @@ def void_adjustment(adjustment: InvoiceAdjustment, *, actor, reason: str) -> Inv
     return adjustment
 
 
-def void_invoice(invoice: Invoice, *, actor, reason: str, system: bool = False) -> Invoice:
+def void_invoice(invoice: Invoice, *, actor, reason: str, system: bool = False, cancel_package: bool = True) -> Invoice:
     """Аннулировать начисление. Оплата по нему сначала возвращается в аванс
     (сторно распределений). Не начатый пакет отменяется вместе с ним; у
     начатого пакета уроки уже списаны — аннулирование не разрешено,
@@ -369,8 +458,9 @@ def void_invoice(invoice: Invoice, *, actor, reason: str, system: bool = False) 
         invoice.amount_paid = ZERO
         invoice.save()
         close_tasks(invoice, "Начисление аннулировано", status=BillingTask.Status.CANCELLED)
-        package.status = PackageStatus.CANCELLED
-        package.save(update_fields=["status", "updated_at"])
+        if cancel_package:
+            package.status = PackageStatus.CANCELLED
+            package.save(update_fields=["status", "updated_at"])
         audit.log(actor, invoice, "billing_invoice_void", old=old, new={"status": invoice.status}, reason=reason)
     return invoice
 
@@ -381,6 +471,23 @@ def issue_drafts(profile: StudentBillingProfile, *, actor) -> list[Invoice]:
     issued = []
     for invoice in profile.invoices.filter(status=Status.DRAFT).select_related("package").order_by("package__number"):
         package = invoice.package
+        if profile.is_course:
+            from .contracts import month_charge
+
+            old = {"amount": invoice.amount, "status": invoice.status}
+            amount, kind = month_charge(profile, package.month_number, exclude_invoice_id=invoice.pk)
+            package.final_price = amount
+            package.pricing_snapshot = {**package.pricing_snapshot, "charge": str(amount),
+                                        "final_course_price": str(profile.final_course_price),
+                                        "discount_amount": str(profile.discount_amount)}
+            package.save()
+            invoice.amount, invoice.kind, invoice.status = amount, kind, Status.OPEN
+            invoice.snapshot = {**invoice.snapshot, **package.pricing_snapshot, "discount_reason": profile.discount_reason}
+            invoice.save()
+            audit.log(actor, invoice, "billing_invoice_issue", old=old,
+                      new={"amount": invoice.amount, "status": invoice.status})
+            issued.append(_after_invoice_created(profile, invoice, actor=actor))
+            continue
         quote = quote_for_profile(profile, invoice.issue_date)
         old = {"amount": invoice.amount, "status": invoice.status}
         for field in ("base_price", "custom_price", "discount_type", "discount_value", "discount_amount", "final_price"):

@@ -4,7 +4,6 @@ from __future__ import annotations
 import datetime as dt
 
 from django.db import IntegrityError, transaction
-from django.test import override_settings
 
 from apps.academy.models import Student
 from apps.academy.services.student_status import deactivate_student, pause_student, continue_student
@@ -203,24 +202,24 @@ class DiscountTests(BillingFixture):
         with self.assertRaises(BillingError):
             profiles.decide_terms_change(change, actor=self.manager, approve=True)
         with self.assertRaises(BillingError):
-            profiles.decide_terms_change(change, actor=self.accountant, approve=True)
-        profiles.decide_terms_change(change, actor=self.director, approve=True, comment="Согласовано")
+            profiles.decide_terms_change(change, actor=self.director, approve=True)
+        profiles.decide_terms_change(change, actor=self.accountant, approve=True, comment="Согласовано")
         invoice.refresh_from_db()
         profile.refresh_from_db()
         self.assertEqual((invoice.status, invoice.amount), (Invoice.Status.OPEN, D("2800")))
-        self.assertEqual((profile.discount_assigned_by, profile.discount_approved_by), (self.manager, self.director))
+        self.assertEqual((profile.discount_assigned_by, profile.discount_approved_by), (self.manager, self.accountant))
 
     def test_rejected_discount_issues_standard_price(self):
         profile = self.profile(discount_type=DiscountType.PERCENT, discount_value="50", discount_reason="Просьба")
         change = BillingTermsChange.objects.get(profile=profile)
-        profiles.decide_terms_change(change, actor=self.director, approve=False, comment="Нет оснований")
+        profiles.decide_terms_change(change, actor=self.accountant, approve=False, comment="Нет оснований")
         invoice = self.invoices(profile)[0]
         self.assertEqual((invoice.status, invoice.amount), (Invoice.Status.OPEN, D("4000")))
 
     def test_plan_price_change_does_not_touch_existing_invoices(self):
         profile = self.profile()
         self.hold(12)
-        pricing.add_plan_version(self.it_plan, actor=self.director, lessons_per_package=12, package_price="4500",
+        pricing.add_plan_version(self.it_plan, actor=self.accountant, lessons_per_package=12, package_price="4500",
                                  effective_from=self.today, reason="Индексация")
         invs = self.invoices(profile)
         self.assertEqual([i.amount for i in invs], [D("4000"), D("4000")])
@@ -232,7 +231,7 @@ class DiscountTests(BillingFixture):
 
     def test_terms_change_affects_only_future_packages(self):
         profile = self.profile()
-        profiles.request_terms_change(profile, actor=self.director, discount_type=DiscountType.FIXED,
+        profiles.request_terms_change(profile, actor=self.accountant, discount_type=DiscountType.FIXED,
                                       discount_value="1000", reason="Олимпиадник")
         self.assertEqual(self.invoices(profile)[0].amount, D("4000"))
         self.hold(12)
@@ -360,8 +359,10 @@ class RefundAndReversalTests(BillingFixture):
         self.assertEqual(self.credit(profile), D("4000"))
         self.assertEqual(self.invoices(profile)[0].status, Invoice.Status.OPEN)
 
-    @override_settings(BILLING_ACCOUNTANT_REFUND_LIMIT="500")
     def test_refund_limit(self):
+        from apps.billing.models import BillingSettings
+
+        BillingSettings.objects.filter(pk=BillingSettings.load().pk).update(accountant_refund_limit=D("500"))
         profile = self.profile()
         payment, _ = payments.record_payment(profile=profile, amount="1000", received_date=self.today,
                                              actor=self.accountant, auto_allocate=False)
@@ -373,14 +374,15 @@ class RefundAndReversalTests(BillingFixture):
         profile = self.profile()
         payments.record_payment(profile=profile, amount="1000", received_date=self.today, actor=self.accountant)
         invoice = self.invoices(profile)[0]
-        with self.assertRaises(BillingError):
-            invoices.adjust_invoice(invoice, actor=self.accountant, amount="100", reason="x")
-        invoices.adjust_invoice(invoice, actor=self.director, amount="500", reason="Компенсация пропусков")
+        for forbidden in (self.director, self.manager):
+            with self.assertRaises(BillingError):
+                invoices.adjust_invoice(invoice, actor=forbidden, amount="100", reason="x")
+        invoices.adjust_invoice(invoice, actor=self.accountant, amount="500", reason="Компенсация пропусков")
         invoice.refresh_from_db()
         self.assertEqual((invoice.amount, invoice.balance), (D("4000"), D("2500")))
         self.hold(1)
         with self.assertRaises(BillingError):
-            invoices.void_invoice(invoice, actor=self.director, reason="x")
+            invoices.void_invoice(invoice, actor=self.accountant, reason="x")
 
     def test_financial_records_cannot_be_deleted(self):
         profile = self.profile()

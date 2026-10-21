@@ -46,11 +46,11 @@ class BillingMixin:
         self.group = self.make_group("Group A")
         self.group_b = self.make_group("Group B")
         self.it_plan = pricing.create_plan(
-            actor=self.director, name="IT 12", subject=self.it, lessons_per_package=12, package_price=D("4000"),
+            actor=self.accountant, name="IT 12", subject=self.it, lessons_per_package=12, package_price=D("4000"),
             effective_from=self.start - dt.timedelta(days=30), payment_due_days=5, warn_before_end_lessons=3,
         )
         self.en_plan = pricing.create_plan(
-            actor=self.director, name="English 20", subject=self.english, lessons_per_package=20,
+            actor=self.accountant, name="English 20", subject=self.english, lessons_per_package=20,
             package_price=D("5000"), effective_from=self.start - dt.timedelta(days=30),
         )
 

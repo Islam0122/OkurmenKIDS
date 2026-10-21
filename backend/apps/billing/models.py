@@ -98,6 +98,22 @@ class BillingPlan(models.Model):
         max_length=20, choices=AbsencePolicy.choices, default=AbsencePolicy.ALL_HELD,
         verbose_name="Списание при отсутствии",
     )
+    # Программа с фиксированной продолжительностью (Kid's Club Standard,
+    # Next…): курс = `duration_months` учебных месяцев, месяц = «уроков в
+    # пакете» приоритетного предмета (`subject`, обычно IT), стандартная
+    # стоимость курса = цена месяца × месяцев. Пусто — тариф без срока
+    # (пакеты идут, пока студент учится).
+    duration_months = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(60)],
+        verbose_name="Продолжительность, учебных месяцев",
+    )
+    payment_deadline_lessons = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1)], verbose_name="Срок оплаты — урок № месяца",
+        help_text="Оплата месяца — не позднее этого зачтённого урока приоритетного предмета; со следующего — просрочка.",
+    )
+    allow_monthly = models.BooleanField(default=True, verbose_name="Помесячная оплата")
+    allow_full_prepay = models.BooleanField(default=True, verbose_name="Предоплата за весь курс")
+    currency = models.CharField(max_length=3, default=CURRENCY, editable=False)
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="Действует")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
@@ -114,10 +130,17 @@ class BillingPlan(models.Model):
                 condition=Q(early_invoice_enabled=False) | Q(early_invoice_after_lessons__isnull=False),
                 name="billing_plan_early_invoice_lesson",
             ),
+            models.CheckConstraint(
+                condition=Q(allow_monthly=True) | Q(allow_full_prepay=True), name="billing_plan_some_payment_mode",
+            ),
         ]
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_course(self) -> bool:
+        return bool(self.duration_months)
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Тариф нельзя удалить — отключите его.")
@@ -195,15 +218,48 @@ def _discount_constraints(prefix: str) -> list:
     ]
 
 
+class PaymentMode(models.TextChoices):
+    MONTHLY = "MONTHLY", "Помесячная оплата"
+    FULL_PREPAY = "FULL_PREPAY", "Предоплата за весь курс"
+
+
+class ReservationAllocation(models.TextChoices):
+    FIRST_MONTH = "FIRST_MONTH", "Бронь засчитывается в первый месяц"
+    COURSE_TOTAL = "COURSE_TOTAL", "Бронь засчитывается в общую стоимость курса"
+
+
+def _course_price_constraints(prefix: str) -> list:
+    return [
+        models.CheckConstraint(
+            condition=Q(final_course_price__isnull=True) | Q(final_course_price__gte=0),
+            name=f"{prefix}_final_non_negative",
+        ),
+        models.CheckConstraint(condition=Q(discount_amount__gte=0), name=f"{prefix}_course_discount_non_negative"),
+        models.CheckConstraint(
+            condition=Q(discount_enabled=True) | Q(discount_amount=0), name=f"{prefix}_no_discount_zero",
+        ),
+    ]
+
+
 class StudentBillingProfile(models.Model):
-    """Условия оплаты одного студента по одному направлению. Содержит
-    действующие (согласованные) условия; их история — `BillingTermsChange`.
-    Аванс и долг профиля — по `CreditLedgerEntry` и `Invoice`."""
+    """Договор студента (платёжный профиль): условия оплаты по программе.
+
+    У программы с продолжительностью (`plan.duration_months`) договор хранит
+    снимок условий на момент оформления: стандартную и итоговую стоимость
+    курса, цену и длину учебного месяца, срок оплаты. Изменение тарифа
+    программы договор не меняет. Скидка — не процент: академия задаёт
+    итоговую стоимость курса, скидка = стандартная − итоговая.
+
+    Действующие условия — здесь, их история — `BillingTermsChange`. Аванс
+    и долг — по `CreditLedgerEntry` и `Invoice` (не хранятся отдельно)."""
 
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "Обучается"
         PAUSED = "PAUSED", "Приостановлен"
         INACTIVE = "INACTIVE", "Начисления остановлены"
+        COMPLETED = "COMPLETED", "Курс завершён"
+
+    CLOSED_STATUSES = (Status.INACTIVE, Status.COMPLETED)
 
     class StopSource(models.TextChoices):
         MANUAL = "MANUAL", "Вручную"
@@ -237,6 +293,24 @@ class StudentBillingProfile(models.Model):
         verbose_name="Согласовал",
     )
     special_terms = models.TextField(blank=True, verbose_name="Особые условия оплаты")
+    # Условия договора по программе с продолжительностью (снимок).
+    payment_mode = models.CharField(
+        max_length=12, choices=PaymentMode.choices, default=PaymentMode.MONTHLY, verbose_name="Способ оплаты курса",
+    )
+    reservation_allocation = models.CharField(
+        max_length=12, choices=ReservationAllocation.choices, default=ReservationAllocation.FIRST_MONTH,
+        verbose_name="Учёт брони",
+    )
+    duration_months = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Учебных месяцев")
+    lessons_per_month = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Уроков в месяце")
+    deadline_lessons = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Срок оплаты — урок №")
+    month_price = models.DecimalField(**MONEY, null=True, blank=True, verbose_name="Стандартная цена месяца")
+    standard_course_price = models.DecimalField(
+        **MONEY, null=True, blank=True, verbose_name="Стандартная стоимость курса",
+    )
+    final_course_price = models.DecimalField(**MONEY, null=True, blank=True, verbose_name="Итоговая стоимость курса")
+    discount_enabled = models.BooleanField(default=False, verbose_name="Скидка предоставлена")
+    discount_amount = models.DecimalField(**MONEY, default=ZERO, verbose_name="Размер скидки, сом")
     responsible_accountant = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="billing_profiles",
         verbose_name="Ответственный бухгалтер",
@@ -258,18 +332,24 @@ class StudentBillingProfile(models.Model):
             *_discount_constraints("billing_profile"),
             # Один действующий профиль на студента и направление.
             models.UniqueConstraint(
-                fields=["student", "subject"], condition=~Q(status="INACTIVE"),
-                name="unique_live_billing_profile_subject",
+                fields=["student", "subject"], condition=~Q(status__in=("INACTIVE", "COMPLETED")),
+                name="unique_live_billing_contract_subject",
             ),
             models.UniqueConstraint(
-                fields=["student"], condition=Q(subject__isnull=True) & ~Q(status="INACTIVE"),
-                name="unique_live_billing_profile_no_subject",
+                fields=["student"], condition=Q(subject__isnull=True) & ~Q(status__in=("INACTIVE", "COMPLETED")),
+                name="unique_live_billing_contract_no_subject",
             ),
+            *_course_price_constraints("billing_contract"),
         ]
         indexes = [models.Index(fields=["status", "responsible_accountant"], name="ix_bprofile_status_acc")]
 
     def __str__(self):
         return f"{self.student} · {self.subject or self.plan}"
+
+    @property
+    def is_course(self) -> bool:
+        """Договор по программе с продолжительностью (учебные месяцы)."""
+        return bool(self.duration_months)
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Платёжный профиль нельзя удалить — остановите начисления.")
@@ -291,6 +371,10 @@ class BillingTermsChange(_NoDelete, models.Model):
     custom_price = models.DecimalField(**MONEY, null=True, blank=True)
     discount_type = models.CharField(max_length=10, choices=DiscountType.choices, default=DiscountType.NONE)
     discount_value = models.DecimalField(**MONEY, default=ZERO)
+    # Условия курса (договор по программе с продолжительностью).
+    final_course_price = models.DecimalField(**MONEY, null=True, blank=True)
+    discount_enabled = models.BooleanField(default=False)
+    discount_amount = models.DecimalField(**MONEY, default=ZERO)
     reason = models.TextField(verbose_name="Основание")
     previous_terms = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, db_index=True)
@@ -310,6 +394,7 @@ class BillingTermsChange(_NoDelete, models.Model):
         ordering = ["-requested_at", "-id"]
         constraints = [
             *_discount_constraints("billing_terms"),
+            *_course_price_constraints("billing_terms"),
             models.UniqueConstraint(
                 fields=["profile"], condition=Q(status="PENDING"), name="unique_pending_terms_change",
             ),
@@ -322,6 +407,9 @@ class BillingTermsChange(_NoDelete, models.Model):
 
 class LessonPackage(_NoDelete, models.Model):
     """Пакет уроков студента со снимком цены и условий на момент создания.
+    В договоре по программе — учебный месяц №`number`: `lessons_total`
+    уроков приоритетного предмета (IT), `lessons_used` — зачтено; история
+    переходов — `started_on` / `completed_on` и журнал аудита.
 
     PLANNED — создан заранее (выставлено начисление или оплачено вперёд),
     ACTIVE — текущий, уроки списываются в него, COMPLETED — все уроки
@@ -337,6 +425,10 @@ class LessonPackage(_NoDelete, models.Model):
         StudentBillingProfile, on_delete=models.PROTECT, related_name="packages", verbose_name="Профиль",
     )
     number = models.PositiveIntegerField(verbose_name="№ пакета")
+    month_number = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="Учебный месяц №",
+        help_text="Номер учебного месяца договора по программе (пусто — тариф без срока).",
+    )
     status = models.CharField(max_length=10, choices=Status.choices, db_index=True)
     lessons_total = models.PositiveSmallIntegerField(verbose_name="Уроков в пакете")
     lessons_used = models.PositiveSmallIntegerField(default=0, verbose_name="Использовано уроков")
@@ -365,6 +457,11 @@ class LessonPackage(_NoDelete, models.Model):
         ordering = ["profile", "number"]
         constraints = [
             models.UniqueConstraint(fields=["profile", "number"], name="unique_billing_package_number"),
+            # Один действующий учебный месяц с номером на договор.
+            models.UniqueConstraint(
+                fields=["profile", "month_number"], condition=Q(month_number__isnull=False) & ~Q(status="CANCELLED"),
+                name="unique_billing_study_month",
+            ),
             models.UniqueConstraint(
                 fields=["profile"], condition=Q(status="ACTIVE"), name="unique_active_billing_package",
             ),
@@ -460,7 +557,19 @@ class Invoice(models.Model):
 
     UNPAID_STATUSES = (Status.OPEN, Status.PARTIALLY_PAID, Status.OVERDUE)
 
+    class Kind(models.TextChoices):
+        PACKAGE = "PACKAGE", "Пакет уроков"
+        MONTH = "MONTH", "Учебный месяц"
+        COURSE = "COURSE", "Весь курс (предоплата)"
+
     profile = models.ForeignKey(StudentBillingProfile, on_delete=models.PROTECT, related_name="invoices")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.PACKAGE, verbose_name="Назначение")
+    # Срок оплаты в уроках: начисление должно быть оплачено не позднее
+    # `due_lesson`-го зачтённого урока своего месяца; со следующего —
+    # просрочка. Пусто — срок по дате (`due_date`, тарифы без программы).
+    due_lesson = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Срок — урок №")
+    due_reached_on = models.DateField(null=True, blank=True, db_index=True, verbose_name="Срок наступил")
+    overdue_since = models.DateField(null=True, blank=True, verbose_name="Просрочено с")
     package = models.ForeignKey(LessonPackage, on_delete=models.PROTECT, related_name="invoices")
     number = models.CharField(max_length=30, unique=True, null=True, blank=True, verbose_name="Номер")
     business_key = models.CharField(
@@ -502,6 +611,9 @@ class Invoice(models.Model):
                 condition=Q(amount__gte=F("amount_paid") + F("amount_adjusted")), name="billing_invoice_no_overpay",
             ),
             models.CheckConstraint(condition=Q(due_date__gte=F("issue_date")), name="billing_invoice_due_after_issue"),
+            models.CheckConstraint(
+                condition=Q(due_lesson__isnull=True) | Q(due_lesson__gt=0), name="billing_invoice_due_lesson_positive",
+            ),
         ]
         indexes = [
             models.Index(fields=["status", "due_date"], name="ix_binvoice_status_due"),
@@ -835,6 +947,7 @@ class BillingNotification(models.Model):
         INVOICE_CREATED = "INVOICE_CREATED", "Новое начисление"
         INVOICE_PAID = "INVOICE_PAID", "Начисление оплачено"
         OVERDUE = "OVERDUE", "Просрочка"
+        PAYMENT_DEADLINE = "PAYMENT_DEADLINE", "Последний срок оплаты"
         FOLLOW_UP = "FOLLOW_UP", "Повторный контакт"
         DISCOUNT_APPROVAL = "DISCOUNT_APPROVAL", "Скидка ждёт согласования"
         REPORT = "REPORT", "Финансовый отчёт"
@@ -895,3 +1008,108 @@ class BillingEvent(models.Model):
         verbose_name = "Событие обработки"
         verbose_name_plural = "Журнал обработки событий"
         ordering = ["-updated_at", "-id"]
+
+
+# ---------------------------------------------------------------------------
+# Чеки
+# ---------------------------------------------------------------------------
+
+class Receipt(_NoDelete, models.Model):
+    """Внутренний чек Okurmen Kids на зарегистрированную операцию (платёж или
+    возврат) — не фискальный документ. Создаётся в той же транзакции, что и
+    платёж; суммы на момент операции хранятся в `snapshot`, поэтому повторная
+    печать показывает ровно ту операцию и не создаёт ни платежа, ни чека.
+    Отмена платежа помечает чек «Аннулирован», запись остаётся."""
+
+    class Kind(models.TextChoices):
+        PAYMENT = "PAYMENT", "Приём оплаты"
+        REFUND = "REFUND", "Возврат"
+
+    class Status(models.TextChoices):
+        ISSUED = "ISSUED", "Выдан"
+        CANCELLED = "CANCELLED", "Аннулирован"
+
+    payment = models.OneToOneField(
+        "accounting.StudentPayment", on_delete=models.PROTECT, related_name="receipt", verbose_name="Операция",
+    )
+    profile = models.ForeignKey(StudentBillingProfile, on_delete=models.PROTECT, related_name="receipts")
+    number = models.CharField(max_length=30, unique=True, null=True, blank=True, verbose_name="Номер чека")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.PAYMENT)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ISSUED, db_index=True)
+    payer_name = models.CharField(max_length=150, blank=True, verbose_name="Плательщик")
+    snapshot = models.JSONField(default=dict, blank=True, verbose_name="Данные чека на момент операции")
+    issued_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    issued_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    print_count = models.PositiveIntegerField(default=0)
+    last_printed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.TextField(blank=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Чек"
+        verbose_name_plural = "Чеки"
+        ordering = ["-issued_at", "-id"]
+
+    def __str__(self):
+        return self.number or f"Чек #{self.pk}"
+
+
+# ---------------------------------------------------------------------------
+# Настройки финансового модуля
+# ---------------------------------------------------------------------------
+
+class BillingSettings(models.Model):
+    """Глобальные настройки оплаты (одна запись, id=1). Меняет бухгалтер;
+    каждое изменение — в журнале аудита. Пусто — значения из settings.py."""
+
+    manager_max_discount_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("10.00"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        verbose_name="Скидка менеджера без согласования, %",
+    )
+    due_soon_lessons = models.PositiveSmallIntegerField(
+        default=3, verbose_name="«Скоро оплата» — за N уроков до конца месяца",
+    )
+    default_deadline_lessons = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1)], verbose_name="Срок оплаты для новых программ — урок №",
+    )
+    accountant_refund_limit = models.DecimalField(
+        **MONEY, null=True, blank=True, verbose_name="Возврат без согласования — до, сом",
+    )
+    academy_name = models.CharField(max_length=150, default="Okurmen Kids", verbose_name="Название в чеке")
+    academy_details = models.TextField(blank=True, verbose_name="Реквизиты / адрес / телефон для чека")
+    receipt_footer = models.TextField(
+        blank=True, default="Спасибо за оплату! Сохраните чек до конца обучения.", verbose_name="Подпись в чеке",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Настройки оплаты"
+        verbose_name_plural = "Настройки оплаты"
+        constraints = [models.CheckConstraint(condition=Q(id=1), name="billing_settings_singleton")]
+
+    def __str__(self):
+        return "Настройки оплаты"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Настройки нельзя удалить.")
+
+    @classmethod
+    def load(cls) -> "BillingSettings":
+        obj = cls.objects.filter(pk=1).first()
+        if obj is None:
+            obj, _ = cls.objects.get_or_create(pk=1, defaults={
+                "manager_max_discount_percent": Decimal(str(getattr(settings, "BILLING_MANAGER_MAX_DISCOUNT_PERCENT", 10))),
+                "accountant_refund_limit": (
+                    Decimal(str(settings.BILLING_ACCOUNTANT_REFUND_LIMIT))
+                    if getattr(settings, "BILLING_ACCOUNTANT_REFUND_LIMIT", None) not in (None, "") else None
+                ),
+            })
+        return obj

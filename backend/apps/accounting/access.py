@@ -35,18 +35,24 @@ ACCOUNTANT_PERMISSIONS = tuple(
     [f"view_{m}" for m in _VIEW] + [f"add_{m}" for m in _WRITE] + [f"change_{m}" for m in _WRITE]
 )
 
-# Оплата обучения (apps.billing): просмотр всего, операции с деньгами,
-# контактами и задачами. Ни одного `delete_*`; тарифы и версии тарифов —
-# только просмотр (ими управляет администратор оплаты).
+# Оплата обучения (apps.billing): бухгалтер — полные полномочия модуля
+# (деньги, начисления в рамках правил, чеки, тарифы, настройки). Ни одного
+# `delete_*`: ошибки исправляются корректирующими операциями.
 _BILLING_VIEW = ("billingplan", "billingplanversion", "studentbillingprofile", "billingtermschange", "lessonpackage",
                  "lessonconsumption", "invoice", "invoiceadjustment", "paymentallocation", "creditledgerentry",
-                 "reservation", "billingtask", "billingcontactlog", "billingnotification", "billingevent")
-_BILLING_WRITE = ("lessonconsumption", "paymentallocation", "creditledgerentry", "reservation", "billingtask",
-                  "billingcontactlog", "billingnotification")
+                 "reservation", "billingtask", "billingcontactlog", "billingnotification", "billingevent", "receipt",
+                 "billingsettings")
+_BILLING_WRITE = ("billingplan", "billingplanversion", "studentbillingprofile", "billingtermschange",
+                  "lessonconsumption", "invoice", "invoiceadjustment", "paymentallocation", "creditledgerentry",
+                  "reservation", "billingtask", "billingcontactlog", "billingnotification", "receipt", "billingsettings")
 BILLING_ACCOUNTANT_PERMISSIONS = tuple(
     [f"view_{m}" for m in _BILLING_VIEW] + [f"add_{m}" for m in _BILLING_WRITE]
     + [f"change_{m}" for m in _BILLING_WRITE]
 )
+
+# Директор в оплате обучения — только просмотр (группа `BillingDirector`).
+BILLING_DIRECTOR_GROUP = "BillingDirector"
+BILLING_DIRECTOR_PERMISSIONS = tuple(f"view_{m}" for m in _BILLING_VIEW)
 
 # Что изолированной роли можно открыть. Всё остальное — 403.
 ALLOWED_PREFIXES = (
@@ -79,6 +85,18 @@ def ensure_accountant_group():
     return group
 
 
+def ensure_billing_director_group():
+    """Группа директора: только `view_*` моделей оплаты — ни добавления, ни
+    изменения, ни удаления (Django permissions, admin и API согласованы)."""
+    from django.contrib.auth.models import Group, Permission
+
+    group, _ = Group.objects.get_or_create(name=BILLING_DIRECTOR_GROUP)
+    group.permissions.set(Permission.objects.filter(
+        content_type__app_label="billing", codename__in=BILLING_DIRECTOR_PERMISSIONS,
+    ))
+    return group
+
+
 def sync_accountant_access(user) -> None:
     """Права бухгалтера — только группа `Accountant`; у остальных её нет."""
     from django.contrib.auth.models import Group
@@ -93,6 +111,11 @@ def sync_accountant_access(user) -> None:
             user.user_permissions.clear()
     else:
         user.groups.remove(*user.groups.filter(name=ACCOUNTANT_GROUP))
+    if user.role == user.Role.DIRECTOR:
+        group = Group.objects.filter(name=BILLING_DIRECTOR_GROUP).first() or ensure_billing_director_group()
+        user.groups.add(group)
+    else:
+        user.groups.remove(*user.groups.filter(name=BILLING_DIRECTOR_GROUP))
 
 
 def _request_user(request):

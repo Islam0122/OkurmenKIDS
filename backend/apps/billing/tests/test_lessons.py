@@ -164,7 +164,7 @@ class AbsenceTests(BillingFixture):
         self.assertEqual(self.packages(profile)[0].lessons_used, 1)
 
     def test_excused_absence_policy(self):
-        pricing.update_plan_settings(self.it_plan, actor=self.director, absence_policy=AbsencePolicy.EXCEPT_EXCUSED)
+        pricing.update_plan_settings(self.it_plan, actor=self.accountant, absence_policy=AbsencePolicy.EXCEPT_EXCUSED)
         profile = self.profile()
         lesson = self.lesson(day=self.start)
         lessons.sync_lesson(lesson.pk)
@@ -175,7 +175,7 @@ class AbsenceTests(BillingFixture):
         self.assertEqual(self.packages(profile)[0].lessons_used, 0)
 
     def test_attended_only_policy(self):
-        pricing.update_plan_settings(self.it_plan, actor=self.director, absence_policy=AbsencePolicy.ATTENDED_ONLY)
+        pricing.update_plan_settings(self.it_plan, actor=self.accountant, absence_policy=AbsencePolicy.ATTENDED_ONLY)
         profile = self.profile()
         absent, present = self.lesson(day=self.start), self.lesson(day=self.start + dt.timedelta(days=1))
         self.mark(absent, profile.student, Attendance.Status.ABSENT)
@@ -215,7 +215,7 @@ class NoDuplicateInvoiceTests(BillingFixture):
         self.hold(9)
         self.assertEqual(len(self.invoices(profile)), 1)
 
-        pricing.update_plan_settings(self.it_plan, actor=self.director, early_invoice_enabled=True,
+        pricing.update_plan_settings(self.it_plan, actor=self.accountant, early_invoice_enabled=True,
                                      early_invoice_after_lessons=9)
         other = self.profile()
         self.hold(9, start_day=self.start + dt.timedelta(days=30))
@@ -228,7 +228,7 @@ class NoDuplicateInvoiceTests(BillingFixture):
 
     def test_early_invoice_threshold_must_be_below_package(self):
         with self.assertRaises(BillingError):
-            pricing.update_plan_settings(self.it_plan, actor=self.director, early_invoice_enabled=True,
+            pricing.update_plan_settings(self.it_plan, actor=self.accountant, early_invoice_enabled=True,
                                          early_invoice_after_lessons=12)
 
 

@@ -21,8 +21,8 @@ class StudentsListTests(BillingFixture):
         rows = {r["id"]: r for r in data["results"]}
         self.assertEqual(set(rows), {connected.pk, plain.pk})
         summary = rows[connected.pk]["profiles"][0]
-        self.assertEqual((summary["payment_state"], summary["debt"], summary["credit"]), ("paid", "0", "1000.00"))
-        self.assertEqual(summary["package"], {"number": 1, "used": 0, "total": 12})
+        self.assertEqual((summary["payment_state"], summary["debt"], summary["credit"]), ("paid", "0.00", "1000.00"))
+        self.assertEqual(summary["package"], {"number": 1, "month_number": None, "used": 0, "total": 12})
         self.assertEqual(rows[plain.pk]["profiles"], [])
 
         api = self.client_for(self.accountant)
@@ -37,7 +37,7 @@ class BulkRegisterTests(BillingFixture):
         a, b = self.student(), self.student()
         self.student(group=self.group_b)
         self.profile(student=a)
-        response = self.client_for(self.director).post(BASE + "profiles/bulk/", {
+        response = self.client_for(self.accountant).post(BASE + "profiles/bulk/", {
             "plan": self.it_plan.pk, "group": self.group.pk,
         }, format="json")
         self.assertEqual(response.status_code, 200, response.data)
@@ -49,7 +49,7 @@ class BulkRegisterTests(BillingFixture):
 
     def test_prepaid_first_package_closes_invoice_by_adjustment(self):
         students = [self.student(), self.student()]
-        response = self.client_for(self.director).post(BASE + "profiles/bulk/", {
+        response = self.client_for(self.accountant).post(BASE + "profiles/bulk/", {
             "plan": self.it_plan.pk, "all_active": True, "prepaid_first_package": True,
             "prepaid_reason": "Оплачено наличными в сентябре",
         }, format="json")
@@ -60,7 +60,7 @@ class BulkRegisterTests(BillingFixture):
 
     def test_permissions(self):
         self.student()
-        api = self.client_for(self.accountant)
+        api = self.client_for(self.director)  # директор — только просмотр
         self.assertEqual(api.post(BASE + "profiles/bulk/", {"plan": self.it_plan.pk, "all_active": True},
                                   format="json").status_code, 403)
         manager = self.client_for(self.manager)

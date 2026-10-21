@@ -4,7 +4,12 @@
 2. Бухгалтер регистрирует фактически полученную сумму
    (`record_reservation_payment`) — это платёж с назначением «Бронь»,
    сумма становится авансом профиля. Пакет обучения бронь не оплачивает.
-3. Аванс применяется к начислению при платёжном событии: создании
+3. Договор по программе: бронь сразу засчитывается по условию договора —
+   «в первый месяц» (уменьшает доплату за месяц 1) или «в общую стоимость
+   курса» (депозит, закрывает последний месяц); одни и те же деньги — один
+   платёж брони, поэтому вычесть их дважды невозможно (распределения
+   платежа ≤ его суммы). Тариф без срока: аванс применяется к начислению
+   при платёжном событии: создании
    начисления, наступлении срока оплаты (фоновая задача) или по решению
    бухгалтера. Остаток аванса сохраняется для будущих пакетов.
 4. Отмена брони: неиспользованная часть возвращается и/или удерживается
@@ -40,7 +45,7 @@ def create_reservation(profile: StudentBillingProfile, *, actor, expected_amount
     try:
         with transaction.atomic():
             profile = lock_profile(profile)
-            if profile.status == StudentBillingProfile.Status.INACTIVE:
+            if profile.status in StudentBillingProfile.CLOSED_STATUSES:
                 raise BillingError("Начисления по профилю остановлены.", code="profile_inactive")
             reservation = Reservation.objects.create(
                 profile=profile, group=group or profile.student.group, expected_amount=amount,
@@ -56,7 +61,7 @@ def create_reservation(profile: StudentBillingProfile, *, actor, expected_amount
 
 def record_reservation_payment(reservation: Reservation, *, actor, amount, received_date: dt.date,
                                method: str = StudentPayment.Method.CASH, reference: str = "",
-                               idempotency_key: str | None = None):
+                               idempotency_key: str | None = None, payer_name: str = ""):
     """Регистрация фактически полученной суммы брони → аванс профиля.
     Возвращает (бронь, платёж, создан)."""
     from ..permissions import authorize
@@ -75,7 +80,8 @@ def record_reservation_payment(reservation: Reservation, *, actor, amount, recei
         payment, created = record_payment(
             profile=reservation.profile, amount=amount, received_date=received_date, actor=actor, method=method,
             reference=reference, comment="Оплата брони", idempotency_key=idempotency_key,
-            purpose=StudentPayment.Purpose.RESERVATION, auto_allocate=False, reservation=reservation,
+            purpose=StudentPayment.Purpose.RESERVATION, auto_allocate=reservation.profile.is_course,
+            reservation=reservation, payer_name=payer_name,
         )
         reservation.payment, reservation.status = payment, Reservation.Status.PAID
         reservation.save(update_fields=["payment", "status", "updated_at"])

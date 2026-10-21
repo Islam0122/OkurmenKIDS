@@ -22,7 +22,8 @@ from . import BillingError
 ZERO = Decimal("0.00")
 PLAN_SETTINGS = (
     "name", "subject", "course", "payment_due_days", "warn_before_end_lessons", "early_invoice_enabled",
-    "early_invoice_after_lessons", "absence_policy", "is_active",
+    "early_invoice_after_lessons", "absence_policy", "is_active", "duration_months", "payment_deadline_lessons",
+    "allow_monthly", "allow_full_prepay",
 )
 
 
@@ -133,6 +134,13 @@ def quote_for_profile(profile, on_date: dt.date) -> PriceQuote:
 # ---------------------------------------------------------------------------
 
 def _validate_plan_settings(data: dict, lessons: int | None = None):
+    if data.get("allow_monthly") is False and data.get("allow_full_prepay") is False:
+        raise BillingError("Разрешите хотя бы один способ оплаты.", code="invalid_plan")
+    deadline = data.get("payment_deadline_lessons")
+    if deadline is not None and lessons and int(deadline) > lessons:
+        raise BillingError("Срок оплаты — номер урока внутри месяца (не больше уроков в месяце).", code="invalid_plan")
+    if data.get("duration_months") is not None and int(data["duration_months"]) < 1:
+        raise BillingError("Продолжительность — от 1 месяца.", code="invalid_plan")
     if data.get("early_invoice_enabled") and not data.get("early_invoice_after_lessons"):
         raise BillingError("Укажите, после какого урока выставлять начисление заранее.", code="invalid_plan")
     after = data.get("early_invoice_after_lessons")
@@ -145,6 +153,10 @@ def create_plan(*, actor, name: str, lessons_per_package: int, package_price, ef
     from ..permissions import authorize
 
     authorize(actor, "manage_plans")
+    if settings.get("payment_deadline_lessons") is None:
+        from ..models import BillingSettings
+
+        settings["payment_deadline_lessons"] = BillingSettings.load().default_deadline_lessons
     _validate_plan_settings(settings, lessons_per_package)
     with transaction.atomic():
         try:
@@ -195,6 +207,8 @@ def add_plan_version(plan: BillingPlan, *, actor, lessons_per_package: int, pack
         after = plan.early_invoice_after_lessons
         if plan.early_invoice_enabled and after and after >= int(lessons_per_package):
             raise BillingError("Порог раннего начисления должен быть меньше уроков в пакете.", code="invalid_plan")
+        if plan.payment_deadline_lessons > int(lessons_per_package):
+            raise BillingError("Срок оплаты (урок №) больше числа уроков в месяце.", code="invalid_plan")
         latest = BillingPlanVersion.objects.filter(plan=plan).order_by("-effective_from").first()
         if latest is not None and effective_from <= latest.effective_from:
             raise BillingError(

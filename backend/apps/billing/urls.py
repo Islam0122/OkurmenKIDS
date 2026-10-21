@@ -21,6 +21,7 @@ router.register("reservations", views.ReservationViewSet, basename="reservation"
 router.register("tasks", views.TaskViewSet, basename="task")
 router.register("contacts", views.ContactViewSet, basename="contact")
 router.register("notifications", views.NotificationViewSet, basename="notification")
+router.register("receipts", views.ReceiptViewSet, basename="receipt")
 
 urlpatterns = [
     path("me/", views.MeView.as_view(), name="me"),
@@ -30,5 +31,9 @@ urlpatterns = [
     path("debts/", views.DebtorsView.as_view(), name="debts"),
     path("reports/summary/", views.FinancialReportView.as_view(), name="report-summary"),
     path("audit-log/", views.AuditView.as_view(), name="audit-log"),
+    path("queues/counts/", views.QueueCountsView.as_view(), name="queue-counts"),
+    path("queues/<str:queue>/", views.QueueView.as_view(), name="queue"),
+    path("analytics/", views.AnalyticsView.as_view(), name="analytics"),
+    path("settings/", views.SettingsView.as_view(), name="settings"),
     path("", include(router.urls)),
 ]
