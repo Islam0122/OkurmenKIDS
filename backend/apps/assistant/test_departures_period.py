@@ -43,8 +43,8 @@ class DeparturePeriodTests(RetentionBase):
 
     def test_status_on_the_month_end_is_not_the_month_count(self):
         o = self.report()["overview"]
-        # Withdrawn on the last day: the one who left before the month and the two who left in it.
-        self.assertEqual(o["students_withdrawn"], 3)
+        # «Всего» is the active students only: s1, s2 and After (left after the month).
+        self.assertEqual((o["students_total"], o["students_active"]), (3, 3))
         self.assertEqual(o["students_deactivated"], 2)
         # Today all four are withdrawn — today's status decides nothing about the month.
         self.assertEqual(Student.objects.filter(status=Student.Status.WITHDRAWN).count(), 4)

@@ -83,7 +83,7 @@ class HistoryOnDateTests(RetentionBase):
         self.assertEqual(StudentStatusEvent.objects.filter(student=self.s1, event_type=E.DEACTIVATED).count(), 1)
         report = self.report()
         self.assertEqual(report["overview"]["students_active"], 1)  # on the month's last day they were gone
-        self.assertEqual(report["overview"]["students_withdrawn"], 1)
+        self.assertEqual(report["overview"]["students_total"], 1)  # the deactivated one is not in «Всего»
         row = report["departures"]["rows"][0]
         self.assertEqual((row["student_id"], row["reason_label"], row["returned_on"]), (self.s1.pk, "Финансовые трудности", TODAY))
         self.assertEqual((report["departures"]["returned"], report["departures"]["returned_percent"]), (1, 100))
