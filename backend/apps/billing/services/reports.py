@@ -268,6 +268,14 @@ def reconcile() -> list[dict]:
         problems.append({"type": "negative_credit", "profile": row["profile"]})
     for row in CreditLedgerEntry.objects.values("payment").annotate(s=Sum("amount")).filter(s__lt=0):
         problems.append({"type": "payment_overallocated", "payment": row["payment"]})
+    # Проведённые уроки, которые по правилам договора должны быть в учебном
+    # месяце, но не списаны (договор оформлен позже уроков и т.п.).
+    from .lessons import lesson_breakdown
+
+    for profile in StudentBillingProfile.objects.filter(status=StudentBillingProfile.Status.ACTIVE).select_related("plan"):
+        missing = lesson_breakdown(profile)["totals"].get("not_processed", 0)
+        if missing:
+            problems.append({"type": "lessons_not_consumed", "profile": profile.pk, "lessons": missing})
     used = LessonPackage.objects.annotate(
         live=Count("consumptions", filter=Q(consumptions__kind="CONSUME", consumptions__status="ACTIVE")),
     ).exclude(live=F("lessons_used"))

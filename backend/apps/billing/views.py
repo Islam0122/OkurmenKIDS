@@ -247,6 +247,13 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         profile = self.get_object()
         return Response(contract_card(profile, with_money=can_view_money(request.user)))
 
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["get"])
+    def lessons(self, request, pk=None):
+        """Посещения студента и какие из них засчитаны в учебные месяцы — с
+        причиной для каждого незасчитанного урока (только чтение)."""
+        return Response(lessons.lesson_breakdown(self.get_object()))
+
     @extend_schema(request=s.CourseTermsSerializer, responses=s.TermsChangeSerializer)
     @action(detail=True, methods=["post"], url_path="course-terms")
     def course_terms(self, request, pk=None):

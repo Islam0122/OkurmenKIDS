@@ -458,3 +458,14 @@ export interface FinanceDashboard {
   credit_total: string
   received: { amount: string; count: number; refunds: string; net: string }
 }
+
+/** Посещения студента и какие из них засчитаны в учебные месяцы (с причиной). */
+export interface LessonBreakdown {
+  attended: number
+  marked: number
+  counted: number
+  priority_subject: string | null
+  totals: Record<string, number>
+  lessons: { lesson: number; date: string; group: string; subject: string | null; lesson_status: string
+    attendance: string | null; reason: string; reason_display: string; month_number: number | null }[]
+}

@@ -132,6 +132,8 @@ function Card360({ card }: { card: ContractCard }) {
         </Card>
       </div>
 
+      <LessonCount profile={c.id} />
+
       <Section title="Учебные месяцы">
         {card.months.length === 0 ? <EmptyState title="Месяцев пока нет" /> : (
           <DataTable rows={card.months} getRowKey={(m) => m.id} columns={[
@@ -288,5 +290,37 @@ function ReservationPayModal({ reservation, onClose }: { reservation: Reservatio
         }}>Принять</Button>
       </div>
     </Modal>
+  )
+}
+
+/** Почему посещений больше, чем засчитано уроков: учебный месяц считается только
+ * по проведённым урокам приоритетного предмета с даты начала договора. */
+function LessonCount({ profile }: { profile: number }) {
+  const [open, setOpen] = useState(false)
+  const query = useQuery({ queryKey: [...FINANCE_KEY, 'lessons', profile], queryFn: () => financeApi.lessonBreakdown(profile) })
+  const data = query.data
+  if (!data) return null
+  const notCounted = data.lessons.filter((l) => l.reason !== 'counted')
+  const reasons = Object.entries(data.totals).filter(([key]) => key !== 'counted')
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-surface p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p>
+          Посещений (присутствовал / опоздал): <b>{data.attended}</b> · засчитано в учебные месяцы
+          {data.priority_subject ? ` (${data.priority_subject})` : ''}: <b>{data.counted}</b>
+          {reasons.map(([key, n]) => (
+            <span key={key} className="text-ink-secondary"> · {data.lessons.find((l) => l.reason === key)?.reason_display}: {n}</span>
+          ))}
+        </p>
+        {notCounted.length ? <Button size="sm" variant="ghost" onClick={() => setOpen(!open)}>{open ? 'Скрыть' : 'Почему не засчитано'}</Button> : null}
+      </div>
+      {open ? (
+        <ul className="mt-2 space-y-1 text-ink-secondary">
+          {notCounted.map((l) => (
+            <li key={l.lesson}>{formatDate(l.date)} · {l.group} · {l.subject ?? 'без предмета'} — {l.reason_display}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   )
 }

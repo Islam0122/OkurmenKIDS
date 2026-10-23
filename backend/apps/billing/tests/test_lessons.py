@@ -217,7 +217,8 @@ class NoDuplicateInvoiceTests(BillingFixture):
 
         pricing.update_plan_settings(self.it_plan, actor=self.accountant, early_invoice_enabled=True,
                                      early_invoice_after_lessons=9)
-        other = self.profile()
+        # Второй студент начинает через 30 дней (уроки группы до этого — не его).
+        other = self.profile(start_date=self.start + dt.timedelta(days=30))
         self.hold(9, start_day=self.start + dt.timedelta(days=30))
         self.assertEqual(len(self.invoices(other)), 2)
         self.assertEqual([p.status for p in self.packages(other)], ["ACTIVE", "PLANNED"])
