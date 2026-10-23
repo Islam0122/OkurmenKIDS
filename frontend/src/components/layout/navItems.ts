@@ -5,6 +5,7 @@ import {
   Calculator,
   CalendarDays,
   ClipboardCheck,
+  ClipboardList,
   FileQuestion,
   FileText,
   GraduationCap,
@@ -14,6 +15,7 @@ import {
   Megaphone,
   MonitorCheck,
   NotebookPen,
+  ScanLine,
   School,
   ScrollText,
   ShieldCheck,
@@ -78,6 +80,10 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },
   // «Моя зарплата»: свои начисления и выплаты (backend: /accounting/my/salary/).
   { to: '/app/my-salary', label: 'Моя зарплата', shortLabel: 'Зарплата', icon: Wallet, roles: ['teacher', 'team_lead'] },
+  // Свой приход и уход по QR-коду офиса (backend: apps.staff_attendance).
+  { to: '/attendance', label: 'Приход и уход', shortLabel: 'Отметка', icon: ScanLine },
+  // Учёт посещаемости сотрудников: Admin — все, Team Lead — тренеры (backend-scoped).
+  { to: '/admin/attendance', label: 'Учёт сотрудников', icon: ClipboardList, roles: ['admin', 'team_lead'] },
   // The Team Lead's own journal, tasks and reports (Admin reads them).
   { to: '/app/worklog', label: 'Рабочий журнал', shortLabel: 'Журнал', icon: ScrollText, roles: ['admin', 'team_lead'] },
   { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'Отчёты' } },

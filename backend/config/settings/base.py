@@ -58,7 +58,7 @@ LOCAL_APPS = [
     "apps.accounting.apps.AccountingConfig",
     "apps.billing.apps.BillingConfig",
     "apps.leaderboard.apps.LeaderboardConfig",
-
+    "apps.staff_attendance.apps.StaffAttendanceConfig",
 ]
 
 INSTALLED_APPS = (
@@ -222,6 +222,8 @@ REST_FRAMEWORK = {
         # Public schedule site (apps/academy/public_schedule_views, per IP, no login).
         "public_schedule": env("PUBLIC_SCHEDULE_RATE", default="1200/hour"),
         "public_leaderboard": env("PUBLIC_LEADERBOARD_RATE", default="1200/hour"),
+        # Отметка прихода/ухода сотрудника (apps.staff_attendance, на пользователя).
+        "staff_attendance_mark": env("STAFF_ATTENDANCE_MARK_RATE", default="30/hour"),
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -303,6 +305,8 @@ CELERY_BEAT_SCHEDULE = {
     "billing-lessons": {"task": "billing.process_completed_lessons", "schedule": 60 * 30},
     "billing-notify": {"task": "billing.notify_accountants", "schedule": 60 * 10},
     "billing-daily": {"task": "billing.run_daily", "schedule": 60 * 60 * 6},
+    # Открытые сессии прошлых дней → «Нет ухода» (apps.staff_attendance).
+    "staff-attendance-close-stale": {"task": "staff_attendance.close_stale_sessions", "schedule": 60 * 60},
 }
 
 FRONTEND_BASE_URL = env(
@@ -622,3 +626,14 @@ PUBLIC_SCHEDULE_CACHE_SECONDS = env.int("PUBLIC_SCHEDULE_CACHE_SECONDS", default
 # Public leaderboard site (leaderboard.okurmenkids.com) — see apps.leaderboard.
 # ---------------------------------------------------------------------------
 PUBLIC_LEADERBOARD_CACHE_SECONDS = env.int("PUBLIC_LEADERBOARD_CACHE_SECONDS", default=120)
+
+# ---------------------------------------------------------------------------
+# Учёт прихода и ухода сотрудников по QR-коду (apps.staff_attendance).
+# ---------------------------------------------------------------------------
+# Начало ссылки в QR-коде офиса (<base>/attendance/scan?office=<код>). Пусто —
+# LMS_FRONTEND_URL. Должен быть HTTPS-адрес LMS: камера и геолокация в
+# браузере работают только по HTTPS.
+ATTENDANCE_QR_BASE_URL = env("ATTENDANCE_QR_BASE_URL", default="")
+# Брать IP клиента из X-Forwarded-For (только за доверенным прокси, который
+# перезаписывает заголовок) — нужно для проверки офисной сети.
+ATTENDANCE_TRUST_X_FORWARDED_FOR = env.bool("ATTENDANCE_TRUST_X_FORWARDED_FOR", default=False)

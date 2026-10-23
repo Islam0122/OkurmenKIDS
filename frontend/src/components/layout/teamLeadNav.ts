@@ -23,6 +23,8 @@ import {
   BookOpen,
   FileQuestion,
   Wallet,
+  ScanLine,
+  UserCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -78,6 +80,8 @@ export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
     children: [
       { label: 'Все тренеры', to: '/app/trainers', icon: IdCard /* person-badge */ },
       { label: 'Контроль', to: '/app/control', icon: ShieldCheck /* shield-check */ },
+      // Приход и уход тренеров по QR-коду офиса (backend: apps.staff_attendance, только тренеры).
+      { label: 'Приход и уход тренеров', to: '/admin/attendance', icon: UserCheck /* person-check */ },
     ],
   },
   {
@@ -111,6 +115,7 @@ export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
       { label: 'Еженедельные', to: '/app/worklog?tab=reports&kind=weekly', icon: CalendarRange /* calendar-week */ },
       { label: 'Ежемесячные', to: '/app/worklog?tab=reports&kind=monthly', icon: Calendar /* calendar-month */ },
       { label: 'Рабочий журнал', to: '/app/worklog', icon: ScrollText /* journal */ },
+      { label: 'Мой приход и уход', to: '/attendance', icon: ScanLine /* qr-code-scan */ },
     ],
   },
   // Свои начисления и выплаты — только чтение (backend: /accounting/my/salary/).

@@ -35,6 +35,8 @@ urlpatterns = [
     path("api/v1/assistant/", include("apps.assistant.urls")),
     # Бухгалтерия и зарплаты (см. apps.accounting).
     path("api/v1/accounting/", include("apps.accounting.urls")),
+    # Учёт прихода и ухода сотрудников по QR-коду офиса (см. apps.staff_attendance).
+    path("api/v1/staff-attendance/", include("apps.staff_attendance.urls")),
 
     # Public feedback survey links (no login) — /feedback/s/<token>/
     path("feedback/", include("apps.feedback.public_urls")),

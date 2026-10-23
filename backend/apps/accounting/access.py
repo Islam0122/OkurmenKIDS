@@ -60,6 +60,9 @@ ALLOWED_PREFIXES = (
     "/api/v1/auth/login/",
     "/api/v1/auth/refresh/",
     "/api/v1/auth/me/",
+    # Личная отметка прихода/ухода бухгалтера (только свои данные; отчёты
+    # посещаемости — admin/… — остаются закрыты).
+    "/api/v1/staff-attendance/me/",
 )
 
 
