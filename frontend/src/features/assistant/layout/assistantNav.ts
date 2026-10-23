@@ -6,6 +6,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   MessageSquareText,
+  ScanLine,
   ShieldAlert,
   User,
   Users,
@@ -62,7 +63,11 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
   {
     // Свои начисления и выплаты — только чтение (backend: /accounting/my/salary/).
     title: 'Личное',
-    items: [{ to: '/assistant/my-salary', label: 'Моя зарплата', icon: Wallet }],
+    items: [
+      { to: '/assistant/my-salary', label: 'Моя зарплата', icon: Wallet },
+      // Свой приход и уход по QR-коду офиса (backend: apps.staff_attendance).
+      { to: '/attendance/assistant', label: 'Приход и уход', icon: ScanLine },
+    ],
   },
 ]
 

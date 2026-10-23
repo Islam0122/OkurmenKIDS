@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react'
-import { ArrowLeft, Banknote, ReceiptText, BarChart3, BookOpenCheck, CalendarClock, Calculator, Coins, FileText, History, LayoutDashboard, LogOut, Menu, Settings2, Tags } from 'lucide-react'
+import { ArrowLeft, Banknote, ReceiptText, BarChart3, BookOpenCheck, CalendarClock, Calculator, Coins, FileText, History, LayoutDashboard, LogOut, Menu, ScanLine, Settings2, Tags } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -30,6 +30,8 @@ export const ACCOUNTING_NAV: NavItem[] = [
   { to: '/finance', label: 'Финансы студентов', icon: ReceiptText },
   { to: '/accounting/student-payments', label: 'Платежи студентов', icon: Banknote },
   { to: '/accounting/audit', label: 'Журнал изменений', icon: History },
+  // Свой приход и уход по QR-коду офиса (/attendance ведёт на страницу своей роли).
+  { to: '/attendance', label: 'Приход и уход', icon: ScanLine },
 ]
 
 const ROW = 'flex h-9 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'

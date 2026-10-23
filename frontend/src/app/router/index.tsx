@@ -371,6 +371,60 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    // Учёт прихода и ухода сотрудников по QR-коду офиса (backend:
+    // apps.staff_attendance). Личная страница — у каждой категории своя;
+    // /attendance/scan — куда ведёт QR, отсканированный камерой телефона.
+    path: '/attendance',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        lazy: async () => ({ Component: (await import('@/features/staffAttendance/AttendanceLayout')).AttendanceLayout }),
+        children: [
+          { index: true, lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).AttendanceHomeRedirect }) },
+          { path: 'scan', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).ScanLandingPage }) },
+          {
+            element: <RequireRoles roles={['teacher']} redirectTo="/attendance" />,
+            children: [{ path: 'teacher', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).TeacherAttendancePage }) }],
+          },
+          {
+            element: <RequireRoles roles={['accountant']} redirectTo="/attendance" />,
+            children: [{ path: 'accounting', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).AccountingAttendancePage }) }],
+          },
+          {
+            element: <RequireRoles roles={['assistant']} redirectTo="/attendance" />,
+            children: [{ path: 'assistant', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).AssistantAttendancePage }) }],
+          },
+          {
+            element: <RequireRoles roles={['admin', 'director', 'team_lead']} redirectTo="/attendance" />,
+            children: [{ path: 'office', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).OfficeAttendancePage }) }],
+          },
+          // Отчёты руководства/HR: доступ решает backend (admin/meta → 403 → назад в кабинет).
+          { path: 'management', lazy: async () => ({ Component: (await import('@/features/staffAttendance/AdminAttendancePage')).ManagementAttendancePage }) },
+          { path: '*', element: <Navigate to="/attendance" replace /> },
+        ],
+      },
+    ],
+  },
+  {
+    // Центральная панель учёта посещаемости, офисы с QR-кодами и настройки.
+    // Права (отчёты / исправления / управление) — с backend, см. admin/meta.
+    path: '/admin/attendance',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        lazy: async () => ({ Component: (await import('@/features/staffAttendance/AttendanceLayout')).AttendanceLayout }),
+        children: [
+          { index: true, lazy: async () => ({ Component: (await import('@/features/staffAttendance/AdminAttendancePage')).AdminAttendancePage }) },
+          { path: 'locations', lazy: async () => ({ Component: (await import('@/features/staffAttendance/LocationsPage')).LocationsPage }) },
+          { path: 'settings', lazy: async () => ({ Component: (await import('@/features/staffAttendance/SettingsPage')).SettingsPage }) },
+          { path: '*', element: <Navigate to="/admin/attendance" replace /> },
+        ],
+      },
+    ],
+  },
+  {
     // «OkurmenKIDS Schedule» — the PUBLIC schedule site: no login, its own
     // layout, only the public read-only API (/api/v1/public/schedule/ —
     // whitelisted fields, no personal data). Never behind ProtectedRoute.
