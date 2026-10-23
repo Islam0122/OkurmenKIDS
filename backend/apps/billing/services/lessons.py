@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from collections import defaultdict
 
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q
@@ -333,6 +334,112 @@ def reverse_consumption(consumption: LessonConsumption, *, actor, reason: str, s
             "lesson": consumption.lesson_ref, "package": consumption.package_id,
         }, reason=reason)
     return reversal
+
+
+def _student_group_ids(student_id: int) -> set[int]:
+    from apps.academy.models import Student, StudentStatusEvent
+
+    groups = set(Student.objects.filter(pk=student_id).values_list("group_id", flat=True))
+    for group_id, from_group_id in StudentStatusEvent.objects.filter(student_id=student_id).values_list(
+            "group_id", "from_group_id"):
+        groups |= {group_id, from_group_id}
+    groups.discard(None)
+    return groups
+
+
+def _profile_lessons(profile: StudentBillingProfile, until: dt.date):
+    """Проведённые уроки групп студента (текущей и из истории переводов) с
+    даты начала договора — по порядку проведения."""
+    qs = Lesson.objects.filter(
+        group_id__in=_student_group_ids(profile.student_id), date__gte=profile.start_date, date__lte=until,
+    )
+    if profile.stopped_on:
+        qs = qs.filter(date__lt=profile.stopped_on)
+    return qs.select_related("group", "subject").order_by("date", "start_time", "pk")
+
+
+def sync_profile_history(profile: StudentBillingProfile, *, until: dt.date | None = None) -> dict:
+    """Списать уроки, проведённые с даты начала договора, но не обработанные
+    (договор оформлен позже уроков, сигнал не сработал, урок вне окна фоновой
+    задачи). Правила те же, что при проведении урока (`chargeable_profiles`);
+    затрагивается только этот договор; уже списанные уроки не дублируются
+    (уникальный индекс), посещаемость не меняется. Идемпотентно."""
+    until = until or timezone.localdate()
+    consumed = 0
+    for lesson in _profile_lessons(profile, until).filter(status=Lesson.Status.COMPLETED):
+        if profile.pk not in chargeable_profiles(lesson):
+            continue
+        profile = StudentBillingProfile.objects.get(pk=profile.pk)
+        if profile.status == StudentBillingProfile.Status.COMPLETED:
+            break  # курс пройден — дальше не списывается
+        _consumption, created = consume_lesson(profile, lesson)
+        consumed += int(created)
+    return {"profile": profile.pk, "consumed": consumed}
+
+
+def lesson_breakdown(profile: StudentBillingProfile, *, until: dt.date | None = None) -> dict:
+    """Почему число засчитанных уроков отличается от посещений: каждый урок
+    групп студента с отметкой посещаемости или списанием — с причиной.
+    Только чтение."""
+    until = until or timezone.localdate()
+    attendance = dict(Attendance.objects.filter(student_id=profile.student_id).values_list("lesson_id", "status"))
+    consumed = {
+        c.lesson_ref: c.package for c in LessonConsumption.objects.filter(
+            profile=profile, kind=LessonConsumption.Kind.CONSUME, status=LessonConsumption.Status.ACTIVE,
+        ).select_related("package")
+    }
+    groups = _student_group_ids(profile.student_id)
+    lessons = (Lesson.objects.filter(Q(pk__in=list(attendance)) | Q(pk__in=list(consumed)))
+               .select_related("group", "subject").order_by("date", "start_time", "pk"))
+    rows, totals = [], defaultdict(int)
+    for lesson in lessons:
+        package = consumed.get(lesson.pk)
+        if package is not None:
+            reason = "counted"
+        elif profile.subject_id and lesson.subject_id != profile.subject_id:
+            reason = "other_subject"
+        elif lesson.status != Lesson.Status.COMPLETED:
+            reason = "not_completed"
+        elif lesson.date < profile.start_date:
+            reason = "before_contract"
+        elif profile.stopped_on and lesson.date >= profile.stopped_on:
+            reason = "after_stop"
+        elif lesson.group_id not in groups or lesson.date > until:
+            reason = "other_group"
+        elif profile.plan.course_id and lesson.group.course_id != profile.plan.course_id:
+            reason = "other_program"
+        elif profile.pk in chargeable_profiles(lesson):
+            reason = "not_processed"  # подлежит списанию, но не списан — исправляет sync_profile_history
+        elif profile.status == StudentBillingProfile.Status.COMPLETED:
+            reason = "course_completed"
+        else:
+            reason = "not_in_group_or_absence_rule"
+        totals[reason] += 1
+        rows.append({
+            "lesson": lesson.pk, "date": lesson.date.isoformat(), "group": lesson.group.name,
+            "subject": lesson.subject.name if lesson.subject_id else None, "lesson_status": lesson.status,
+            "attendance": attendance.get(lesson.pk), "reason": reason, "reason_display": REASONS[reason],
+            "month_number": (package.month_number or package.number) if package else None,
+        })
+    return {
+        "attended": sum(1 for v in attendance.values() if v in ATTENDED),
+        "marked": len(attendance), "counted": totals["counted"], "totals": dict(totals), "lessons": rows,
+        "priority_subject": profile.subject.name if profile.subject_id else None,
+    }
+
+
+REASONS = {
+    "counted": "Засчитан в учебный месяц",
+    "other_subject": "Другой предмет — учебный месяц считается по приоритетному предмету",
+    "not_completed": "Урок не отмечен как «Проведён»",
+    "before_contract": "До даты начала договора",
+    "after_stop": "После остановки начислений",
+    "other_group": "Урок другой группы / в будущем",
+    "other_program": "Группа другой программы, чем тариф договора",
+    "not_processed": "Подлежит списанию, но не обработан",
+    "course_completed": "Курс по договору уже пройден",
+    "not_in_group_or_absence_rule": "Студент не числился в группе в этот день или пропуск не списывается по тарифу",
+}
 
 
 def sync_recent_lessons(*, days: int = 14, on: dt.date | None = None) -> dict:

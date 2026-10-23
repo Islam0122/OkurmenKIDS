@@ -236,6 +236,11 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
         if reservation_amount not in (None, "", 0):
             create_reservation(profile, actor=actor, expected_amount=reservation_amount,
                                reserved_until=reserved_until, comment=reservation_comment, group=student.group)
+    # Уроки, проведённые с даты начала договора до его оформления, — в учебный
+    # месяц (сигналы урока сработали, когда договора ещё не было).
+    from .lessons import sync_profile_history
+
+    sync_profile_history(profile)
     profile.refresh_from_db()
     return profile
 
@@ -281,8 +286,8 @@ def register_students(*, actor, plan: BillingPlan, students, start_date: dt.date
                 responsible_accountant=responsible_accountant,
             )
             if prepaid_first_package:
-                invoice = profile.invoices.exclude(status="VOID").get()
-                if invoice.amount > 0:
+                invoice = profile.invoices.exclude(status="VOID").order_by("package__number", "pk").first()
+                if invoice is not None and invoice.amount > 0:
                     adjust_invoice(invoice, actor=actor, amount=invoice.amount,
                                    reason=f"Оплачено до подключения учёта: {prepaid_reason.strip()}")
         except BillingError as exc:
@@ -505,6 +510,9 @@ def resume_billing_profile(profile, *, actor, reason: str = "", system: bool = F
         profile.stopped_on, profile.stop_source = None, ""
         profile.save()
         audit.log(actor, profile, "billing_profile_resume", old=old, new={"status": profile.status}, reason=reason)
+    from .lessons import sync_profile_history
+
+    sync_profile_history(profile)  # уроки, проведённые, пока договор был приостановлен
     return profile
 
 

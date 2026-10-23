@@ -244,9 +244,10 @@ class BillingResetTests(PurgeFixture):
         pricing.add_plan_version(self.plan, actor=self.accountant, lessons_per_package=12, package_price="16000",
                                  effective_from=day(2, 1), reason="цепочка версий")
         student = self.student(self.group_a)
+        # Договор с октября: сентябрьские уроки группы (фикстура зарплат) — до его начала.
         self.contract = profiles.create_student_billing_profile(student=student, plan=self.plan, actor=self.accountant,
-                                                                start_date=day(9, 1))
-        paid, _ = billing_payments.record_payment(profile=self.contract, amount="20000", received_date=day(9, 2),
+                                                                start_date=day(10, 1))
+        paid, _ = billing_payments.record_payment(profile=self.contract, amount="20000", received_date=day(10, 1),
                                                   actor=self.accountant)
         billing_payments.refund_payment(paid, actor=self.accountant, amount="1000", reason="переплата")
         self.lms = {**self.lms, "students": Student.objects.count()}

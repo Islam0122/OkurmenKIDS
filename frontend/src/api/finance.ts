@@ -7,6 +7,7 @@ import type {
   Contract,
   ContractBody,
   ContractCard,
+  LessonBreakdown,
   FinanceDashboard,
   FinanceMe,
   FinanceOptions,
@@ -61,6 +62,7 @@ export const financeApi = {
   lmsStudents: (params: { search?: string; group?: number; registered?: string; page?: number }) =>
     get<Paginated<LmsStudent>>('/students/', params),
   card: (profile: number) => get<ContractCard>(`/profiles/${profile}/card/`),
+  lessonBreakdown: (profile: number) => get<LessonBreakdown>(`/profiles/${profile}/lessons/`),
   /** Двойной клик / повтор формы не создаёт второй договор и не проводит деньги дважды. */
   createContract: (body: ContractBody, idempotencyKey: string = newIdempotencyKey()) =>
     post<Contract>('/profiles/', { ...body, idempotency_key: idempotencyKey }),
