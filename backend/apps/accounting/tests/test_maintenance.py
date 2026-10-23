@@ -229,3 +229,83 @@ class AdminViewTests(PurgeFixture):
         self.assertContains(r, "Удалено записей")
         self.assertEqual((n(SalaryRule), n(StudentPayment), n(CoursePriceVersion)), (0, 0, 0))
         self.assert_lms_untouched()
+
+
+class BillingResetTests(PurgeFixture):
+    """Полная очистка включает оплату обучения (apps.billing) и не трогает LMS."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.billing.services import payments as billing_payments
+        from apps.billing.services import pricing, profiles
+
+        self.plan = pricing.create_plan(actor=self.accountant, name="Тариф по ошибке", lessons_per_package=12,
+                                        package_price="15000", effective_from=day(1, 1), course=self.course)
+        pricing.add_plan_version(self.plan, actor=self.accountant, lessons_per_package=12, package_price="16000",
+                                 effective_from=day(2, 1), reason="цепочка версий")
+        student = self.student(self.group_a)
+        self.contract = profiles.create_student_billing_profile(student=student, plan=self.plan, actor=self.accountant,
+                                                                start_date=day(9, 1))
+        paid, _ = billing_payments.record_payment(profile=self.contract, amount="20000", received_date=day(9, 2),
+                                                  actor=self.accountant)
+        billing_payments.refund_payment(paid, actor=self.accountant, amount="1000", reason="переплата")
+        self.lms = {**self.lms, "students": Student.objects.count()}
+
+    def billing_counts(self):
+        from apps.billing.models import BillingPlan, Invoice, Receipt, StudentBillingProfile
+
+        return (n(StudentBillingProfile), n(Invoice), n(Receipt), n(StudentPayment), n(BillingPlan))
+
+    def test_full_reset_removes_billing_and_keeps_lms_and_settings(self):
+        from apps.billing.models import BillingPlan, BillingPlanVersion, BillingSettings
+
+        BillingSettings.load()
+        self.assertTrue(all(self.billing_counts()))
+        deleted = maintenance.purge(maintenance.FULL, actor=self.superuser)
+        self.assertEqual(self.billing_counts()[:4], (0, 0, 0, 0))
+        self.assertEqual((n(BillingPlan), n(BillingPlanVersion)), (1, 2))  # тарифы — только по флажку
+        self.assertEqual(deleted["studentbillingprofile"], 1)
+        self.assertEqual(n(BillingSettings), 1)
+        self.assert_lms_untouched()
+        maintenance.purge(maintenance.FULL, actor=self.superuser, include_tariffs=True)
+        self.assertEqual((n(BillingPlan), n(BillingPlanVersion), n(CoursePriceVersion)), (0, 0, 0))
+        self.assert_lms_untouched()
+
+    def test_nothing_outside_accounting_references_it(self):
+        self.assertEqual(maintenance.external_references(), [])
+
+    def test_command_audit_changes_nothing_and_execute_needs_backup_and_phrase(self):
+        import io
+        import tempfile
+
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        before = (self.billing_counts(), maintenance.preview())
+        out = io.StringIO()
+        call_command("reset_accounting", stdout=out)
+        self.assertIn("только аудит", out.getvalue())
+        self.assertIn("Тариф по ошибке", out.getvalue())
+        self.assertEqual((self.billing_counts(), maintenance.preview()), before)
+        with self.assertRaises(CommandError):
+            call_command("reset_accounting", "--execute", "--actor", self.superuser.username, stdout=io.StringIO())
+        with self.assertRaises(CommandError):  # без копии — нельзя
+            call_command("reset_accounting", "--execute", "--actor", self.superuser.username,
+                         "--confirm", maintenance.CONFIRM_PHRASE, stdout=io.StringIO())
+        self.assertEqual(self.billing_counts(), before[0])
+        with tempfile.TemporaryDirectory() as folder:
+            backup = f"{folder}/db.dump"
+            with open(backup, "wb") as fh:
+                fh.write(b"existing full backup")
+            call_command("reset_accounting", "--execute", "--actor", self.superuser.username, "--confirm",
+                         maintenance.CONFIRM_PHRASE, "--backup-dir", folder, "--db-backup-file", backup,
+                         "--include-tariffs", stdout=io.StringIO())
+            import glob
+            import json as _json
+
+            [dump] = glob.glob(f"{folder}/accounting-billing-*.json")
+            labels = {row["model"] for row in _json.load(open(dump, encoding="utf-8"))}
+            self.assertIn("billing.studentbillingprofile", labels)
+        self.assertEqual(self.billing_counts(), (0, 0, 0, 0, 0))
+        self.assert_lms_untouched()
+        self.assertEqual(PayrollAuditLog.objects.get().action, "purge_full")

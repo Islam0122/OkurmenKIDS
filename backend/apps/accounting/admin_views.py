@@ -79,7 +79,7 @@ def _modes(counts: dict) -> list[dict]:
             "title": "Режим B — Полная очистка бухгалтерии",
             "delete": _rows(maintenance.tables_to_delete(maintenance.FULL), counts),
             "keep": _rows(maintenance.tables_kept(maintenance.FULL), counts),
-            "tariffs": _rows([maintenance.TARIFF_TABLE], counts)[0],
+            "tariffs": _rows(maintenance.TARIFF_TABLES, counts),
             "notes": [
                 "Пользователи, тренеры, группы, курсы, предметы, уроки и посещаемость не удаляются.",
             ],
