@@ -1,0 +1,98 @@
+{% extends "admin/base_site.html" %}
+{% comment %}Неправильные данные: поиск, исправление в два шага, аннулирование, журнал. Изменения — только сервисами.{% endcomment %}
+{% block content %}
+<div class="ok-form-container" style="max-width: 1200px; display:grid; gap:1.25rem;">
+  <p><a href="{{ home }}">Неправильные данные</a> · <a href="{% url 'admin:billing_correction_journal' %}">Журнал исправлений</a></p>
+
+  {% if mode == "search" %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Поиск ошибочных записей</span></div>
+    <div class="ok-card-body">
+      <form method="get" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:.5rem 1rem;">
+        {% for field in form %}<div><label for="{{ field.id_for_label }}">{{ field.label }}</label><br>{{ field }}</div>{% endfor %}
+        <div style="align-self:end;"><button type="submit" class="button default">Найти</button></div>
+      </form>
+    </div>
+  </div>
+  {% if results %}
+  <div class="ok-card"><div class="ok-card-header"><span>Платежи и чеки ({{ results.payments|length }})</span></div>
+    <div class="ok-card-body" style="overflow-x:auto;"><table class="table table-sm">
+      <thead><tr><th>№</th><th>Чек</th><th>Студент</th><th>Тип</th><th>Сумма</th><th>Поступление</th><th>Создан</th><th>Статус</th><th></th></tr></thead>
+      {% for p in results.payments %}<tr><td>{{ p.pk }}</td><td>{{ p.receipt.number|default:"—" }}</td><td>{{ p.student }}</td>
+        <td>{{ p.get_kind_display }} · {{ p.get_purpose_display|default:"" }}</td><td>{{ p.amount }}</td><td>{{ p.received_date|date:"d.m.Y" }}</td>
+        <td>{{ p.created_at|date:"d.m.Y" }}</td><td>{{ p.get_status_display }}</td>
+        <td style="white-space:nowrap;">{% if p.status == "confirmed" %}<a href="{% url 'admin:billing_correction_edit' 'payment' p.pk %}">Исправить</a> ·
+          <a href="{% url 'admin:billing_correction_void' 'payment' p.pk %}">Аннулировать ошибочную операцию</a>{% else %}аннулирован{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="9">Не найдено.</td></tr>{% endfor %}</table></div></div>
+  <div class="ok-card"><div class="ok-card-header"><span>Начисления ({{ results.invoices|length }})</span></div>
+    <div class="ok-card-body" style="overflow-x:auto;"><table class="table table-sm">
+      <thead><tr><th>Номер</th><th>Студент</th><th>Месяц</th><th>Сумма</th><th>Оплачено</th><th>Период</th><th>Срок</th><th>Статус</th><th></th></tr></thead>
+      {% for i in results.invoices %}<tr><td>{{ i.number }}</td><td>{{ i.profile.student }}</td><td>{{ i.package.month_number|default:i.package.number }}</td>
+        <td>{{ i.amount }}</td><td>{{ i.amount_paid }}</td><td>{{ i.period_date|date:"d.m.Y" }}</td>
+        <td>{% if i.due_lesson %}{{ i.due_lesson }}-й урок{% else %}{{ i.due_date|date:"d.m.Y" }}{% endif %}</td><td>{{ i.get_status_display }}</td>
+        <td style="white-space:nowrap;">{% if i.status != "VOID" %}<a href="{% url 'admin:billing_correction_edit' 'invoice' i.pk %}">Исправить</a> ·
+          <a href="{% url 'admin:billing_correction_void' 'invoice' i.pk %}">Аннулировать ошибочную операцию</a>{% else %}аннулировано{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="9">Не найдено.</td></tr>{% endfor %}</table></div></div>
+  <div class="ok-card"><div class="ok-card-header"><span>Брони ({{ results.reservations|length }})</span></div>
+    <div class="ok-card-body" style="overflow-x:auto;"><table class="table table-sm">
+      <thead><tr><th>#</th><th>Студент</th><th>Сумма</th><th>Статус</th><th>Платёж</th><th>Зачёт</th><th></th></tr></thead>
+      {% for r in results.reservations %}<tr><td>{{ r.pk }}</td><td>{{ r.profile.student }}</td><td>{{ r.expected_amount }}</td>
+        <td>{{ r.get_status_display }}</td><td>{% if r.payment_id %}№{{ r.payment_id }} от {{ r.payment.received_date|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+        <td>{{ r.profile.get_reservation_allocation_display }}</td>
+        <td style="white-space:nowrap;">{% if r.status != "CANCELLED" %}<a href="{% url 'admin:billing_correction_edit' 'reservation' r.pk %}">Исправить</a> ·
+          <a href="{% url 'admin:billing_correction_void' 'reservation' r.pk %}">Аннулировать ошибочную операцию</a>{% else %}отменена{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="7">Не найдено.</td></tr>{% endfor %}</table></div></div>
+  {% endif %}
+  {% endif %}
+
+  {% if mode == "correct" %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>{{ entity }}: {{ obj }}</span></div>
+    <div class="ok-card-body">
+      {% if step == "review" %}
+        <div class="ok-alert ok-alert-danger" role="alert">{{ impact }}</div>
+        <table class="table table-sm"><thead><tr><th>Поле</th><th>Было</th><th>Станет</th></tr></thead>
+          {% for label, old, new in changes %}<tr><td>{{ label }}</td><td>{{ old }}</td><td><strong>{{ new }}</strong></td></tr>{% endfor %}
+          <tr><td>Причина</td><td colspan="2">{{ form.cleaned_data.reason }}</td></tr>
+        </table>
+        <form method="post">{% csrf_token %}
+          {% for field in form %}{% if field.value is not None %}<input type="hidden" name="{{ field.html_name }}" value="{{ field.value|stringformat:'s' }}">{% endif %}{% endfor %}
+          <input type="hidden" name="step" value="confirm">
+          <button type="submit" class="button default">Сохранить исправление</button>
+          <a class="button" href="{{ home }}">Отмена</a>
+        </form>
+      {% else %}
+        <p class="ok-help-text">Заполните новые значения и причину — сначала будет показана проверка «было / станет», данные ещё не меняются.</p>
+        <form method="post">{% csrf_token %}{{ form.as_p }}<input type="hidden" name="step" value="review">
+          <button type="submit" class="button default">Проверить исправление</button> <a class="button" href="{{ home }}">Отмена</a></form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if mode == "void" %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Аннулировать ошибочную операцию — {{ entity }}: {{ obj }}</span></div>
+    <div class="ok-card-body">
+      <div class="ok-alert ok-alert-danger" role="alert">Запись не удаляется: платёж сторнируется (чек аннулируется), начисление
+        аннулируется, бронь отменяется; распределения возвращаются, долг и аванс пересчитываются. Повторно аннулировать нельзя. {{ impact }}</div>
+      <form method="post">{% csrf_token %}{{ form.as_p }}
+        <button type="submit" class="button" style="background:#ba2121;color:#fff;">Аннулировать</button> <a class="button" href="{{ home }}">Отмена</a></form>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if mode == "journal" %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Журнал исправлений (только чтение)</span></div>
+    <div class="ok-card-body" style="overflow-x:auto;">
+      <table class="table table-sm"><thead><tr><th>Когда</th><th>Кто</th><th>Операция</th><th>Запись</th><th>Было</th><th>Стало</th><th>Причина</th></tr></thead>
+        {% for r in rows %}<tr><td>{{ r.created_at|date:"d.m.Y H:i" }}</td><td>{{ r.actor|default:"система" }}</td><td>{{ r.action }}</td>
+          <td>{{ r.entity_type }} #{{ r.entity_id }}</td><td><code style="font-size:11px;">{{ r.old_values }}</code></td>
+          <td><code style="font-size:11px;">{{ r.new_values }}</code></td><td>{{ r.reason }}</td></tr>
+        {% empty %}<tr><td colspan="7">Исправлений ещё не было.</td></tr>{% endfor %}</table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

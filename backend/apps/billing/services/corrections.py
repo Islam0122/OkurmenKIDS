@@ -129,7 +129,7 @@ def correct_payment(payment: StudentPayment, *, actor, reason: str, received_dat
                     amount=None, method: str | None = None, reference: str | None = None, comment: str | None = None,
                     purpose: str | None = None, profile: StudentBillingProfile | None = None,
                     allocations: list[tuple[Invoice, Decimal]] | None = None,
-                    confirm_closed_period: bool = False) -> dict:
+                    confirm_closed_period: bool = False, with_reservation: bool = False) -> dict:
     """Исправить проведённый платёж (см. модуль). Возвращает
     {"payment", "changed": [поля], "warnings": [...], "audit": id | None}."""
     from ..permissions import authorize
@@ -235,7 +235,9 @@ def correct_payment(payment: StudentPayment, *, actor, reason: str, received_dat
 
         target = old_profile
         if transfer:
-            if getattr(payment, "reservation", None) is not None:
+            # Оплата брони переносится только вместе с бронью
+            # (`record_corrections.transfer_reservation` передаёт with_reservation).
+            if getattr(payment, "reservation", None) is not None and not with_reservation:
                 raise BillingError("Оплата брони переносится через бронь.", code="invalid")
             if profile.status in StudentBillingProfile.CLOSED_STATUSES:
                 raise BillingError("Новый договор закрыт.", code="profile_inactive")
