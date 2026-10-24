@@ -273,6 +273,16 @@ def reconcile() -> list[dict]:
         problems.append({"type": "negative_credit", "profile": row["profile"]})
     for row in CreditLedgerEntry.objects.values("payment").annotate(s=Sum("amount")).filter(s__lt=0):
         problems.append({"type": "payment_overallocated", "payment": row["payment"]})
+    # Свободный аванс рядом с неоплаченным начислением того же договора — одна
+    # сумма видна и долгом, и авансом (исправляет `billing_money_audit --apply`).
+    from .contracts import money_summary
+
+    with_credit = CreditLedgerEntry.objects.values("profile").annotate(s=Sum("amount")).filter(s__gt=0)
+    for profile in StudentBillingProfile.objects.filter(
+            pk__in=with_credit.values("profile"), invoices__status__in=UNPAID).distinct():
+        unapplied = money_summary(profile)["credit_unapplied"]
+        if unapplied > 0:
+            problems.append({"type": "credit_unapplied", "profile": profile.pk, "amount": _s(unapplied)})
     # Проведённые уроки, которые по правилам договора должны быть в учебном
     # месяце, но не списаны (договор оформлен позже уроков и т.п.).
     from .lessons import lesson_breakdown

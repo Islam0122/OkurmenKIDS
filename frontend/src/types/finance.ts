@@ -244,11 +244,23 @@ export interface MoneySummary {
   net_received: string
   reservation_received: string
   reservation_unused: string
+  /** Распределено на начисления = оплачено по начислениям. */
   allocated: string
   adjusted: string
+  /** Свободный аванс: получено − возвраты − распределено − удержания. */
   credit: string
+  /** Σ действующих начислений. */
+  invoiced: string
+  /** Σ остатков неоплаченных начислений (до учёта аванса). */
+  invoices_balance: string
+  /** Аванс, который правила договора разрешают направить на эти начисления. */
+  credit_applicable: string
+  /** Аванс лежит рядом с неоплаченным начислением — платёж не распределён. */
+  credit_unapplied: string
+  /** max(остаток начислений − применимый аванс, 0). */
   due_now: string
   overdue: string
+  /** Деньги по договору: распределено + свободный аванс. */
   paid_total: string
   standard_course_price: string | null
   final_course_price: string | null
@@ -472,8 +484,12 @@ export interface LessonBreakdown {
   counted: number
   priority_subject: string | null
   totals: Record<string, number>
+  contract_start: string
+  /** Проведённые уроки приоритетного предмета до даты начала договора. */
+  priority_before_contract: { count: number; first_date: string | null }
   lessons: { lesson: number; date: string; group: string; subject: string | null; lesson_status: string
-    attendance: string | null; reason: string; reason_display: string; month_number: number | null }[]
+    lesson_status_display: string; attendance: string | null; attendance_display: string; contract_start: string
+    reason: string; reason_display: string; month_number: number | null }[]
 }
 
 /** Выбранный финансовый период: месяц или произвольный диапазон дат. */

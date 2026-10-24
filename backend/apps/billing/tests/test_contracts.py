@@ -638,12 +638,14 @@ class RoleApiTests(ContractFixture):
         advance = api.post(BASE + "payments/", {
             "profile": profile.pk, "amount": "3000", "received_date": str(self.today), "mode": "advance",
         }, format="json")
-        self.assertEqual((advance.data["purpose"], advance.data["unallocated"]), ("prepayment", "3000.00"))
+        # Предоплата не лежит авансом рядом с неоплаченным месяцем 1: сначала
+        # закрывает выставленное начисление (остаток 10 000 → 7 000).
+        self.assertEqual((advance.data["purpose"], advance.data["unallocated"]), ("prepayment", "0.00"))
         targeted = api.post(BASE + "payments/", {
             "profile": profile.pk, "amount": "20000", "received_date": str(self.today), "mode": "invoice",
             "invoice": self.live_invoices(profile)[0].pk,
         }, format="json")
-        self.assertEqual(targeted.data["unallocated"], "10000.00")
+        self.assertEqual(targeted.data["unallocated"], "13000.00")  # 7 000 на месяц 1, остальное — аванс
         card = api.get(BASE + f"profiles/{profile.pk}/card/").data
         self.assertEqual(card["summary"]["outstanding"], "32000.00")
 

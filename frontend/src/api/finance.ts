@@ -68,6 +68,11 @@ export const financeApi = {
     get<Paginated<LmsStudent>>('/students/', params),
   card: (profile: number) => get<ContractCard>(`/profiles/${profile}/card/`),
   lessonBreakdown: (profile: number) => get<LessonBreakdown>(`/profiles/${profile}/lessons/`),
+  /** Исправить ошибочную дату начала договора (администратор оплаты, с основанием). */
+  changeStartDate: (profile: number, body: { start_date: string; reason: string }) =>
+    post<{ consumed: number; lessons: LessonBreakdown }>(`/profiles/${profile}/start-date/`, body),
+  /** Распределить свободный аванс на неоплаченные начисления договора. */
+  applyCredit: (profile: number) => post(`/profiles/${profile}/apply-credit/`),
   /** Двойной клик / повтор формы не создаёт второй договор и не проводит деньги дважды. */
   createContract: (body: ContractBody, idempotencyKey: string = newIdempotencyKey()) =>
     post<Contract>('/profiles/', { ...body, idempotency_key: idempotencyKey }),

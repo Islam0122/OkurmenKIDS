@@ -88,12 +88,27 @@ function Card360({ card }: { card: ContractCard }) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="К оплате сейчас" value={som(summary.due_now)} tone={summary.overdue !== '0.00' ? 'danger' : undefined}
           hint={summary.overdue !== '0.00' ? `из них просрочено ${som(summary.overdue)}` : 'наступившие начисления'} />
-        <Stat label="Оплачено по договору" value={som(summary.paid_total)} hint={`получено ${som(summary.received)}, возвраты ${som(summary.refunded)}`} />
+        <Stat label="Получено по договору" value={som(summary.net_received)}
+          hint={`оплачено по начислениям ${som(summary.allocated)}${summary.refunded !== '0.00' ? `, возвраты ${som(summary.refunded)}` : ''}`} />
         <Stat label="Свободный аванс" value={som(summary.credit)}
-          hint={summary.reservation_unused !== '0.00' ? `в т.ч. бронь ${som(summary.reservation_unused)}` : 'не распределено'} />
+          hint={summary.reservation_unused !== '0.00' ? `в т.ч. бронь ${som(summary.reservation_unused)}` : 'получено, но не распределено'} />
         <Stat label="Остаток по договору" value={som(summary.outstanding)} tone="brand"
           hint={summary.future ? `будущие периоды ${som(summary.future)}` : undefined} />
       </div>
+
+      {summary.credit_unapplied !== '0.00' ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/20 bg-warning-soft p-3 text-sm text-warning">
+          <span>
+            Свободный аванс {som(summary.credit_unapplied)} не распределён на неоплаченные начисления ({som(summary.invoices_balance)}).
+            «К оплате сейчас» уже учитывает этот аванс; распределите его, чтобы начисления получили статус «Оплачено».
+          </span>
+          {canPay ? (
+            <Button size="sm" onClick={() => run(async () => { await financeApi.applyCredit(c.id); invalidate() }, 'Аванс распределён')}>
+              Распределить аванс
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {c.pending_terms ? (
         <p className="mt-4 rounded-xl border border-warning/20 bg-warning-soft p-3 text-sm text-warning">
@@ -132,7 +147,7 @@ function Card360({ card }: { card: ContractCard }) {
         </Card>
       </div>
 
-      <LessonCount profile={c.id} />
+      <LessonCount profile={c.id} canFix={me.data?.can_manage_settings ?? false} />
 
       <Section title="Учебные месяцы">
         {card.months.length === 0 ? <EmptyState title="Месяцев пока нет" /> : (
@@ -295,13 +310,17 @@ function ReservationPayModal({ reservation, onClose }: { reservation: Reservatio
 
 /** Почему посещений больше, чем засчитано уроков: учебный месяц считается только
  * по проведённым урокам приоритетного предмета с даты начала договора. */
-function LessonCount({ profile }: { profile: number }) {
+const REASON_TONE: Record<string, string> = { counted: 'text-brand-700', before_contract: 'text-warning' }
+
+/** Каждое посещение — засчитано ли оно в учебные месяцы и почему (данные — backend `lesson_breakdown`). */
+function LessonCount({ profile, canFix }: { profile: number; canFix: boolean }) {
   const [open, setOpen] = useState(false)
+  const [fixing, setFixing] = useState(false)
   const query = useQuery({ queryKey: [...FINANCE_KEY, 'lessons', profile], queryFn: () => financeApi.lessonBreakdown(profile) })
   const data = query.data
   if (!data) return null
-  const notCounted = data.lessons.filter((l) => l.reason !== 'counted')
   const reasons = Object.entries(data.totals).filter(([key]) => key !== 'counted')
+  const before = data.priority_before_contract
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -312,15 +331,68 @@ function LessonCount({ profile }: { profile: number }) {
             <span key={key} className="text-ink-secondary"> · {data.lessons.find((l) => l.reason === key)?.reason_display}: {n}</span>
           ))}
         </p>
-        {notCounted.length ? <Button size="sm" variant="ghost" onClick={() => setOpen(!open)}>{open ? 'Скрыть' : 'Почему не засчитано'}</Button> : null}
+        {data.lessons.length ? <Button size="sm" variant="ghost" onClick={() => setOpen(!open)}>{open ? 'Скрыть' : 'Разбор посещений'}</Button> : null}
       </div>
-      {open ? (
-        <ul className="mt-2 space-y-1 text-ink-secondary">
-          {notCounted.map((l) => (
-            <li key={l.lesson}>{formatDate(l.date)} · {l.group} · {l.subject ?? 'без предмета'} — {l.reason_display}</li>
-          ))}
-        </ul>
+      {before.count ? (
+        <p className="mt-2 text-warning">
+          {before.count} проведённых уроков {data.priority_subject ?? ''} до даты начала договора ({formatDate(data.contract_start)}), первый — {formatDate(before.first_date)}.
+          Если дата начала указана ошибочно, исправьте её — уроки будут засчитаны по обычным правилам.
+          {canFix ? <Button size="sm" variant="ghost" className="ml-1" onClick={() => setFixing(true)}>Исправить дату начала</Button> : null}
+        </p>
       ) : null}
+      {open ? (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left">
+            <thead className="text-xs text-ink-secondary">
+              <tr><th className="py-1 pr-3">Дата</th><th className="pr-3">Предмет</th><th className="pr-3">Группа</th>
+                <th className="pr-3">Статус посещения</th><th className="pr-3">Дата договора</th><th>Причина учёта или исключения</th></tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {data.lessons.map((l) => (
+                <tr key={l.lesson}>
+                  <td className="py-1 pr-3 whitespace-nowrap">{formatDate(l.date)}</td>
+                  <td className="pr-3">{l.subject ?? '—'}</td>
+                  <td className="pr-3">{l.group}</td>
+                  <td className="pr-3">{l.attendance_display}{l.lesson_status !== 'completed' ? ` · урок: ${l.lesson_status_display}` : ''}</td>
+                  <td className="pr-3 whitespace-nowrap">{formatDate(l.contract_start)}</td>
+                  <td className={REASON_TONE[l.reason] ?? 'text-ink-secondary'}>
+                    {l.reason_display}{l.month_number ? ` (месяц ${l.month_number})` : ''}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {fixing ? <StartDateModal profile={profile} suggested={before.first_date} onClose={() => setFixing(false)} /> : null}
     </div>
+  )
+}
+
+function StartDateModal({ profile, suggested, onClose }: { profile: number; suggested: string | null; onClose: () => void }) {
+  const [date, setDate] = useState(suggested ?? '')
+  const [reason, setReason] = useState('')
+  const invalidate = useInvalidateFinance()
+  const { run, busy } = useRunner()
+  return (
+    <Modal isOpen onClose={onClose} title="Исправить дату начала договора">
+      <p className="mb-3 text-sm text-ink-secondary">
+        Посещаемость, платежи и суммы начислений не меняются. Уроки приоритетного предмета с новой даты засчитываются
+        в учебные месяцы; другие предметы и отменённые уроки — нет. Изменение записывается в журнал операций.
+      </p>
+      <Field label="Новая дата начала" htmlFor="sd-date" required>
+        <Input id="sd-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+      <Field label="Основание" htmlFor="sd-reason" required className="mt-3">
+        <Textarea id="sd-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </Field>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>Отмена</Button>
+        <Button isLoading={busy} disabled={!date || !reason.trim()} onClick={async () => {
+          const ok = await run(() => financeApi.changeStartDate(profile, { start_date: date, reason: reason.trim() }), 'Дата начала исправлена')
+          if (ok) { invalidate(); onClose() }
+        }}>Сохранить</Button>
+      </div>
+    </Modal>
   )
 }
