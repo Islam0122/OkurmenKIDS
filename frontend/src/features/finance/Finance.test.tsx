@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,6 +20,7 @@ vi.mock('@/api/finance', () => ({
     recordPayment: vi.fn(), receipt: vi.fn(), receiptPrinted: vi.fn(), downloadReceiptPdf: vi.fn(), plans: vi.fn(),
     lmsStudents: vi.fn(), createContract: vi.fn(), periods: vi.fn(), payments: vi.fn(), periodReport: vi.fn(),
     lessonBreakdown: vi.fn(), applyCredit: vi.fn(), changeStartDate: vi.fn(),
+    payment: vi.fn(), paymentHistory: vi.fn(), correctPayment: vi.fn(), reversePayment: vi.fn(),
   },
 }))
 
@@ -27,6 +28,7 @@ import { financeApi } from '@/api/finance'
 import { AddPaymentPage } from '@/features/finance/AddPaymentPage'
 import { FinanceLayout } from '@/features/finance/FinanceLayout'
 import { NewContractPage } from '@/features/finance/NewContractPage'
+import { PaymentDetailPage } from '@/features/finance/PaymentDetailPage'
 import { PaymentsPage } from '@/features/finance/PaymentsPage'
 import { StudentCardPage } from '@/features/finance/StudentCardPage'
 import { currentMonth, setFinancePeriod } from '@/features/finance/period'
@@ -302,5 +304,69 @@ describe('StudentCardPage', () => {
     expect(table).toHaveTextContent('До даты начала договора')
     await user.click(screen.getByRole('button', { name: 'Распределить аванс' }))
     expect(financeApi.applyCredit).toHaveBeenCalledWith(7)
+  })
+})
+
+const PAYMENT = {
+  id: 5, billing_profile: 7, student: 3, student_name: 'Абдыбеков Бекнур', group_name: 'KC-1', program_name: "Kid's Club",
+  kind: 'payment', purpose: 'tuition', purpose_display: 'Оплата обучения', amount: '53000.00', received_date: '2026-10-24',
+  method: 'cash', method_display: 'Наличные', reference: '', comment: '', status: 'confirmed', void_reason: '',
+  unallocated: '0.00', created_by_name: 'Демо Бухгалтер', created_at: '2026-10-24T08:00:00Z',
+  receipt: { id: 9, number: 'OK-2026-000008', status: 'ISSUED' },
+  allocations: [{ id: 1, invoice: 83, invoice_number: 'INV-2026-000083', invoice_period_date: '2026-09-01', amount: '53000.00', status: 'ACTIVE' }],
+} as unknown as Payment
+
+describe('PaymentDetailPage', () => {
+  const open = () => renderWithProviders(<Routes><Route path="/finance/payments/:paymentId" element={<PaymentDetailPage />} /></Routes>,
+    { route: '/finance/payments/5' })
+
+  beforeEach(() => {
+    vi.mocked(financeApi.payment).mockResolvedValue(PAYMENT)
+    vi.mocked(financeApi.paymentHistory).mockResolvedValue([{ id: 1, created_at: '2026-10-24T08:00:00Z', actor: 'buh',
+      action: 'billing_payment_correct', entity_type: 'studentpayment', entity_id: 5,
+      old_values: { received_date: '2026-10-24' }, new_values: { received_date: '2026-09-08' }, reason: 'Дата 08.09' }])
+  })
+
+  it('lets the accountant fix the received date sending only the changed field', async () => {
+    vi.mocked(financeApi.correctPayment).mockResolvedValue({ payment: PAYMENT, changed: ['received_date'], warnings: [], audit: 1 })
+    const user = userEvent.setup()
+    open()
+    expect(await screen.findByText(/OK-2026-000008/)).toBeInTheDocument()
+    expect(screen.getByText(/Повторная печать не создаёт/)).toBeInTheDocument()
+    expect(await screen.findByText('Исправление платежа')).toBeInTheDocument()  // история
+    await user.click(await screen.findByRole('button', { name: 'Исправить дату' }))
+    const date = screen.getByLabelText('Дата фактического поступления денег')
+    await user.clear(date)
+    await user.type(date, '2026-09-08')
+    expect(screen.getByText(/переедет из «Октябрь 2026» в «Сентябрь 2026»/)).toBeInTheDocument()
+    const save = screen.getByRole('button', { name: 'Сохранить' })
+    expect(save).toBeDisabled()  // без причины нельзя
+    await user.type(screen.getByLabelText(/Причина корректировки/), 'Деньги получены 08.09')
+    await user.click(save)
+    expect(financeApi.correctPayment).toHaveBeenCalledWith(5, { reason: 'Деньги получены 08.09', received_date: '2026-09-08',
+      confirm_closed_period: false })
+  })
+
+  it('confirms voiding with payment details and a reason', async () => {
+    vi.mocked(financeApi.reversePayment).mockResolvedValue(PAYMENT)
+    const user = userEvent.setup()
+    open()
+    await user.click(await screen.findByRole('button', { name: 'Аннулировать' }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('№5 · чек OK-2026-000008')
+    expect(dialog).toHaveTextContent('Абдыбеков Бекнур')
+    await user.type(screen.getByLabelText(/Причина/), 'Внесён дважды')
+    await user.click(within(dialog).getByRole('button', { name: 'Аннулировать' }))
+    expect(financeApi.reversePayment).toHaveBeenCalledWith(5, 'Внесён дважды')
+  })
+
+  it('shows the director a read-only payment', async () => {
+    vi.mocked(financeApi.me).mockResolvedValue(DIRECTOR)
+    open()
+    expect(await screen.findByText(/OK-2026-000008/)).toBeInTheDocument()
+    await waitFor(() => expect(financeApi.me).toHaveBeenCalled())
+    for (const name of ['Редактировать', 'Исправить дату', 'Аннулировать']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
   })
 })

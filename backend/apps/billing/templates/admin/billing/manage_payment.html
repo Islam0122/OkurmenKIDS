@@ -1,0 +1,89 @@
+{% extends "admin/base_site.html" %}
+{% comment %}Управление платежом оплаты обучения. Действия выполняют сервисы (права, блокировки, аудит).{% endcomment %}
+{% block content %}
+<div class="ok-form-container" style="max-width: 1100px; display:grid; gap:1.25rem;">
+  <p><a href="{{ list_url }}">← Все платежи</a></p>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Платёж №{{ payment.pk }} — {{ payment.student }}</span></div>
+    <div class="ok-card-body">
+      <table class="table table-sm">
+        <tr><th>Статус</th><td>{{ payment.get_status_display }}{% if payment.void_reason %} — {{ payment.void_reason }}{% endif %}</td></tr>
+        <tr><th>Тип / назначение</th><td>{{ payment.get_kind_display }} · {{ payment.get_purpose_display|default:"—" }}</td></tr>
+        <tr><th>Сумма</th><td>{{ payment.amount }} сом</td></tr>
+        <tr><th>Дата фактического поступления</th><td>{{ payment.received_date|date:"d.m.Y" }}</td></tr>
+        <tr><th>Запись создана</th><td>{{ payment.created_at|date:"d.m.Y H:i" }} ({{ payment.created_by }})</td></tr>
+        <tr><th>Способ / документ</th><td>{{ payment.get_method_display }} · {{ payment.reference|default:"—" }}</td></tr>
+        <tr><th>Договор</th><td>#{{ payment.billing_profile_id }} · {{ payment.billing_profile.plan }}</td></tr>
+        <tr><th>Комментарий</th><td>{{ payment.comment|default:"—" }}</td></tr>
+      </table>
+      <p class="ok-section-subtitle">Распределение на начисления</p>
+      <table class="table table-sm">
+        <thead><tr><th>Начисление</th><th>Период</th><th>Сумма</th><th>Статус</th><th>Создано</th><th>Сторно</th></tr></thead>
+        {% for a in allocations %}
+        <tr><td>{{ a.invoice.number }}</td><td>{{ a.invoice.period_date|date:"m.Y" }}</td><td>{{ a.amount }}</td>
+          <td>{{ a.get_status_display }}</td><td>{{ a.created_at|date:"d.m.Y H:i" }}</td><td>{{ a.reverse_reason }}</td></tr>
+        {% empty %}<tr><td colspan="6">Не распределён (аванс).</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Чек {{ receipt.number|default:"— нет" }}{% if receipt %} · {{ receipt.get_status_display }} · печатей: {{ receipt.print_count }}{% endif %}</span></div>
+    <div class="ok-card-body">
+      <p class="ok-help-text">Внутренний чек Okurmen Kids, не фискальный документ.</p>
+      {% if receipt %}
+      <table class="table table-sm">{% for label, value in receipt_rows %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+      <form method="post" target="_blank">{% csrf_token %}<input type="hidden" name="action" value="reprint">
+        <button type="submit" class="button">Повторно распечатать (PDF)</button></form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if can_edit and not is_void %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Исправить платёж</span></div>
+    <div class="ok-card-body">
+      <p class="ok-help-text">Заполните только то, что меняется. Дата поступления меняет месяц поступления в отчётах,
+        период начисления не меняется; номер чека при исправлении даты сохраняется. Изменение суммы или договора
+        перевыпускает чек (прежний номер и данные — в истории).</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="correct">
+        {{ forms.correct.as_p }}<button type="submit" class="button default">Сохранить исправление</button></form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Аннулировать платёж</span></div>
+    <div class="ok-card-body">
+      <div class="ok-alert ok-alert-danger">Платёж №{{ payment.pk }} · {{ payment.student }} · {{ payment.amount }} сом ·
+        {{ payment.received_date|date:"d.m.Y" }}. Распределения будут сторнированы, начисления снова станут долгом,
+        чек — аннулирован. Записи не удаляются; повторно аннулировать нельзя.</div>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="void">
+        {{ forms.void.as_p }}<button type="submit" class="button" style="background:#ba2121;color:#fff;">Аннулировать</button></form>
+    </div>
+  </div>
+
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Дата создания записи (административная корректировка)</span></div>
+    <div class="ok-card-body">
+      <p class="ok-help-text">Отчёты считают деньги по дате поступления; дату создания меняйте, только если она записана ошибочно.</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="created_at">
+        {{ forms.created_at.as_p }}<button type="submit" class="button">Исправить дату создания</button></form>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="ok-card">
+    <div class="ok-card-header"><span>История изменений</span></div>
+    <div class="ok-card-body" style="overflow-x:auto;">
+      <table class="table table-sm">
+        <thead><tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Было</th><th>Стало</th><th>Причина</th></tr></thead>
+        {% for h in history %}
+        <tr><td>{{ h.created_at|slice:":16" }}</td><td>{{ h.actor }}</td><td>{{ h.action }} ({{ h.entity_type }} #{{ h.entity_id }})</td>
+          <td><code style="font-size:11px;">{{ h.old_values }}</code></td><td><code style="font-size:11px;">{{ h.new_values }}</code></td><td>{{ h.reason }}</td></tr>
+        {% empty %}<tr><td colspan="6">Записей нет.</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -3,6 +3,7 @@ import { newIdempotencyKey } from '@/api/accounting'
 import type { Paginated } from '@/types/common'
 import type {
   Analytics,
+  AuditEntry,
   AuditRow,
   Contract,
   ContractBody,
@@ -15,6 +16,8 @@ import type {
   LmsStudent,
   Payment,
   PaymentBody,
+  PaymentCorrection,
+  PaymentCorrectionResult,
   PaymentPreview,
   PaymentTarget,
   PeriodReport,
@@ -85,6 +88,12 @@ export const financeApi = {
   recordPayment: (body: PaymentBody, idempotencyKey: string) =>
     post<Payment>('/payments/', body, { 'Idempotency-Key': idempotencyKey }),
   reversePayment: (id: number, reason: string) => post<Payment>(`/payments/${id}/reverse/`, { reason }),
+  payment: (id: number) => get<Payment>(`/payments/${id}/`),
+  /** Исправить проведённый платёж (причина обязательна; повтор той же формы ничего не меняет). */
+  correctPayment: (id: number, body: PaymentCorrection) => post<PaymentCorrectionResult>(`/payments/${id}/correct/`, body),
+  correctCreatedAt: (id: number, body: { created_at: string; reason: string }) =>
+    post<Payment>(`/payments/${id}/created-at/`, body),
+  paymentHistory: (id: number) => get<AuditEntry[]>(`/payments/${id}/history/`),
   refundPayment: (id: number, amount: string, reason: string, idempotencyKey: string) =>
     post<Payment>(`/payments/${id}/refund/`, { amount, reason }, { 'Idempotency-Key': idempotencyKey }),
   payReservation: (id: number, body: { amount: string; received_date: string; method: string; payer_name?: string },

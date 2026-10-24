@@ -174,6 +174,9 @@ export interface Allocation {
   id: number
   invoice: number
   invoice_number: string
+  created_at?: string
+  reversed_at?: string | null
+  reverse_reason?: string
   /** Период начисления, которое оплачено этой частью платежа. */
   invoice_period_date: string
   amount: string
@@ -533,4 +536,37 @@ export interface PeriodReport {
   debt: { opening: string; closing: string }
   debtors_at_end: { profile: number; student_name: string; group: string | null; subject: string | null
     parent_phone: string; debt: string; unpaid_now: string; oldest_period: string }[]
+}
+
+/** Исправление проведённого платежа: передаются только меняемые поля. */
+export interface PaymentCorrection {
+  reason: string
+  received_date?: string
+  amount?: string
+  method?: string
+  reference?: string
+  comment?: string
+  purpose?: 'tuition' | 'prepayment'
+  profile?: number
+  allocations?: { invoice: number; amount: string }[]
+  confirm_closed_period?: boolean
+}
+
+export interface PaymentCorrectionResult {
+  payment: Payment
+  changed: string[]
+  warnings: { date: string; period: string; status: string }[]
+  audit: number | null
+}
+
+export interface AuditEntry {
+  id: number
+  created_at: string
+  actor: string
+  action: string
+  entity_type: string
+  entity_id: number
+  old_values: Record<string, unknown>
+  new_values: Record<string, unknown>
+  reason: string
 }

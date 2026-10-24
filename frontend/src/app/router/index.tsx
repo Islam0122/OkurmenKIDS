@@ -357,6 +357,7 @@ export const router = createBrowserRouter([
               { path: 'contracts/new', lazy: async () => ({ Component: (await import('@/features/finance/NewContractPage')).NewContractPage }) },
               { path: 'payments', lazy: async () => ({ Component: (await import('@/features/finance/PaymentsPage')).PaymentsPage }) },
               { path: 'payments/new', lazy: async () => ({ Component: (await import('@/features/finance/AddPaymentPage')).AddPaymentPage }) },
+              { path: 'payments/:paymentId', lazy: async () => ({ Component: (await import('@/features/finance/PaymentDetailPage')).PaymentDetailPage }) },
               { path: 'receipts', lazy: async () => ({ Component: (await import('@/features/finance/ReceiptPage')).ReceiptsPage }) },
               { path: 'receipts/:receiptId', lazy: async () => ({ Component: (await import('@/features/finance/ReceiptPage')).ReceiptPage }) },
               { path: 'analytics', lazy: async () => ({ Component: (await import('@/features/finance/AnalyticsPage')).AnalyticsPage }) },

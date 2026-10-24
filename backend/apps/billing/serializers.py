@@ -474,6 +474,27 @@ class AllocateSerializer(serializers.Serializer):
     allocations = AllocationItemSerializer(many=True)
 
 
+class CorrectPaymentSerializer(serializers.Serializer):
+    """Исправление проведённого платежа: передаются только меняемые поля."""
+
+    reason = serializers.CharField()
+    received_date = serializers.DateField(required=False)
+    amount = serializers.DecimalField(**MONEY, min_value=Decimal("0.01"), required=False)
+    method = serializers.ChoiceField(choices=StudentPayment.Method.choices, required=False)
+    reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    comment = serializers.CharField(required=False, allow_blank=True)
+    purpose = serializers.ChoiceField(choices=(StudentPayment.Purpose.TUITION, StudentPayment.Purpose.PREPAYMENT),
+                                      required=False)
+    profile = serializers.PrimaryKeyRelatedField(queryset=StudentBillingProfile.objects.all(), required=False)
+    allocations = AllocationItemSerializer(many=True, required=False)
+    confirm_closed_period = serializers.BooleanField(required=False, default=False)
+
+
+class CreatedAtSerializer(serializers.Serializer):
+    created_at = serializers.DateTimeField()
+    reason = serializers.CharField()
+
+
 class RefundSerializer(serializers.Serializer):
     amount = serializers.DecimalField(**MONEY, min_value=Decimal("0.01"))
     reason = serializers.CharField()

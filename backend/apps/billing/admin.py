@@ -1,5 +1,6 @@
 """Django Admin оплаты обучения — только просмотр: все изменения идут
-через сервисы (API), иначе обходятся проверки, блокировки и журнал."""
+через сервисы (API, страница «Управление платежом» — `admin_views`), иначе
+обходятся проверки, блокировки и журнал."""
 from django.contrib import admin
 
 from . import models
@@ -50,3 +51,21 @@ for model in (models.BillingTermsChange, models.LessonConsumption, models.Invoic
               models.CreditLedgerEntry, models.Reservation, models.BillingTask, models.BillingContactLog,
               models.BillingNotification, models.BillingEvent):
     admin.site.register(model, ReadOnlyAdmin)
+
+
+@admin.register(models.Receipt)
+class ReceiptAdmin(ReadOnlyAdmin):
+    """Чеки (внутренние, не фискальные): просмотр, ссылка на платёж и
+    повторную печать (на странице платежа — без новой операции)."""
+
+    list_display = ("number", "kind", "status", "payment_link", "profile", "issued_at", "print_count")
+    list_filter = ("status", "kind")
+    search_fields = ("number", "profile__student__first_name", "profile__student__last_name")
+
+    @admin.display(description="Платёж")
+    def payment_link(self, obj):
+        from django.urls import reverse
+        from django.utils.html import format_html
+
+        return format_html('<a href="{}">№{}</a>', reverse("admin:billing_payment_manage", args=[obj.payment_id]),
+                           obj.payment_id)

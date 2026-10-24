@@ -59,6 +59,9 @@ def receipt_rows(receipt: Receipt) -> list[tuple[str, str]]:
         rows.append(("Плательщик", receipt.payer_name or snap.get("payer")))
     rows.append(("Назначение", "; ".join(snap.get("purpose_lines") or []) or snap.get("purpose") or ""))
     rows.append(("Сумма возврата" if refund else "Сумма платежа", som(snap.get("amount"))))
+    if snap.get("received_date"):
+        day = snap["received_date"].split("-")
+        rows.append(("Дата возврата" if refund else "Дата получения денег", ".".join(reversed(day))))
     if not snap.get("backfilled"):
         rows += [
             ("Уплачено ранее", som(snap.get("previously_paid"))),
