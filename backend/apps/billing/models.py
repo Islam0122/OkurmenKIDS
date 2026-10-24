@@ -581,6 +581,13 @@ class Invoice(models.Model):
     currency = models.CharField(max_length=3, default=CURRENCY, editable=False)
     status = models.CharField(max_length=20, choices=Status.choices, db_index=True)
     issue_date = models.DateField(verbose_name="Дата начисления")
+    # Учебный / финансовый период, к которому относится начисление: начало
+    # договора для первого месяца, дата урока, которым закончился предыдущий
+    # учебный месяц, — для следующих. Не дата создания записи (`created_at`)
+    # и не дата выставления: договор, оформленный в октябре задним числом с
+    # 1 сентября, начисляет сентябрь. Фиксируется при создании; исправляется
+    # только `invoices.correct_invoice_period` с основанием и аудитом.
+    period_date = models.DateField(db_index=True, verbose_name="Период начисления")
     due_date = models.DateField(db_index=True, verbose_name="Срок оплаты")
     snapshot = models.JSONField(default=dict, blank=True, verbose_name="Условия на момент начисления")
     paid_at = models.DateTimeField(null=True, blank=True)
@@ -643,6 +650,9 @@ class InvoiceAdjustment(_NoDelete, models.Model):
     amount = models.DecimalField(**MONEY, validators=[MinValueValidator(Decimal("0.01"))])
     reason = models.TextField()
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPLIED)
+    # Дата, на которую корректировка уменьшает долг (историческая задолженность
+    # считается по ней), — отдельно от времени записи в системе (`created_at`).
+    effective_date = models.DateField(db_index=True, verbose_name="Дата корректировки")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
     voided_by = models.ForeignKey(

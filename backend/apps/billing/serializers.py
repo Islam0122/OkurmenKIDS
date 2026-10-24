@@ -168,6 +168,9 @@ class ProfileCreateSerializer(TermsInputMixin):
     payment_method = serializers.ChoiceField(choices=StudentPayment.Method.choices, required=False,
                                              default=StudentPayment.Method.CASH)
     payer_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    # Когда деньги при зачислении фактически получены (по умолчанию — сегодня;
+    # договор, оформляемый задним числом, — прошлая дата).
+    payment_received_date = serializers.DateField(required=False, allow_null=True)
     idempotency_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
 
 
@@ -344,7 +347,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = ("id", "number", "profile", "student", "student_name", "group_name", "subject_name", "package",
                   "package_number", "month_number", "lessons_used", "lessons_total", "kind", "kind_display",
                   "amount", "amount_paid", "amount_adjusted", "balance", "currency", "status", "status_display",
-                  "stage", "issue_date", "due_date", "due_lesson", "due_reached_on", "overdue_since", "snapshot",
+                  "stage", "issue_date", "period_date", "due_date", "due_lesson", "due_reached_on", "overdue_since", "snapshot",
                   "paid_at", "void_reason", "created_at")
 
     def get_stage(self, obj) -> str:
@@ -355,17 +358,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
 class AllocationSerializer(serializers.ModelSerializer):
     invoice_number = serializers.CharField(source="invoice.number", read_only=True)
+    invoice_period_date = serializers.DateField(source="invoice.period_date", read_only=True)
 
     class Meta:
         model = PaymentAllocation
-        fields = ("id", "payment", "invoice", "invoice_number", "profile", "amount", "source", "status", "created_at",
-                  "reversed_at", "reverse_reason")
+        fields = ("id", "payment", "invoice", "invoice_number", "invoice_period_date", "profile", "amount", "source",
+                  "status", "created_at", "reversed_at", "reverse_reason")
 
 
 class AdjustmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = InvoiceAdjustment
-        fields = ("id", "invoice", "amount", "reason", "status", "created_at", "void_reason")
+        fields = ("id", "invoice", "amount", "reason", "status", "effective_date", "created_at", "void_reason")
 
 
 class InvoiceDetailSerializer(InvoiceSerializer):
@@ -379,6 +383,16 @@ class InvoiceDetailSerializer(InvoiceSerializer):
 class AdjustmentCreateSerializer(serializers.Serializer):
     amount = serializers.DecimalField(**MONEY, min_value=Decimal("0.01"))
     reason = serializers.CharField()
+    effective_date = serializers.DateField(required=False, allow_null=True)
+
+
+class InvoicePeriodSerializer(serializers.Serializer):
+    period_date = serializers.DateField()
+    reason = serializers.CharField()
+
+
+class PeriodReviewApplySerializer(serializers.Serializer):
+    invoices = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, allow_empty=False)
 
 
 class BillingPaymentSerializer(serializers.ModelSerializer):
@@ -424,8 +438,13 @@ class AllocationItemSerializer(serializers.Serializer):
 class PaymentCreateSerializer(serializers.Serializer):
     profile = serializers.PrimaryKeyRelatedField(queryset=StudentBillingProfile.objects.all())
     amount = serializers.DecimalField(**MONEY, min_value=Decimal("0.01"))
+    # Дата ФАКТИЧЕСКОГО поступления денег: можно прошлую (платёж, полученный в
+    # сентябре, вносится в октябре сентябрём); время записи — `created_at`.
     received_date = serializers.DateField()
     method = serializers.ChoiceField(choices=StudentPayment.Method.choices, default=StudentPayment.Method.CASH)
+    # Назначение: оплата обучения или предоплата / аванс (бронь — отдельной операцией брони).
+    purpose = serializers.ChoiceField(choices=(StudentPayment.Purpose.TUITION, StudentPayment.Purpose.PREPAYMENT),
+                                      required=False)
     reference = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     comment = serializers.CharField(required=False, allow_blank=True, default="")
     prepay_packages = serializers.IntegerField(min_value=0, max_value=24, required=False, default=0)

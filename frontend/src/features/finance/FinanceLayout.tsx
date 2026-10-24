@@ -29,6 +29,7 @@ import { ROLE_LABEL } from '@/lib/roles'
 import type { FinanceMe, QueueCounts } from '@/types/finance'
 import { cn } from '@/utils/cn'
 
+import { PeriodSwitcher } from './period'
 import { FINANCE_KEY, useFinanceMe } from './ui'
 
 type Access = 'money' | 'all' | 'settings' | 'audit'
@@ -181,6 +182,12 @@ export function FinanceLayout() {
 
         <main className="flex-1 pb-8">
           <div className="mx-auto w-full max-w-page px-4 pt-6 sm:px-6 lg:px-8">
+            {me.data?.can_view_money ? (
+              <div className="mb-4 flex flex-wrap items-center justify-end gap-2 print:hidden">
+                <span className="text-sm text-ink-secondary">Финансовый период:</span>
+                <PeriodSwitcher />
+              </div>
+            ) : null}
             <Suspense fallback={<LoadingState label="Загрузка страницы…" />}>
               <Outlet />
             </Suspense>

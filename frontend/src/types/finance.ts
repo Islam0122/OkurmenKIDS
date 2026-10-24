@@ -147,6 +147,8 @@ export interface Invoice {
   status_display: string
   stage: PaymentStage
   issue_date: string
+  /** Учебный / финансовый период начисления (не дата записи и не дата выставления). */
+  period_date: string
   due_date: string
   due_lesson: number | null
   due_reached_on: string | null
@@ -172,6 +174,8 @@ export interface Allocation {
   id: number
   invoice: number
   invoice_number: string
+  /** Период начисления, которое оплачено этой частью платежа. */
+  invoice_period_date: string
   amount: string
   status: 'ACTIVE' | 'REVERSED'
 }
@@ -302,8 +306,10 @@ export interface PaymentPreview {
 export interface PaymentBody {
   profile: number
   amount: string
+  /** Дата фактического поступления денег (можно прошлую). */
   received_date: string
   method: string
+  purpose?: 'tuition' | 'prepayment'
   mode: PaymentTarget
   invoice?: number | null
   reference?: string
@@ -468,4 +474,47 @@ export interface LessonBreakdown {
   totals: Record<string, number>
   lessons: { lesson: number; date: string; group: string; subject: string | null; lesson_status: string
     attendance: string | null; reason: string; reason_display: string; month_number: number | null }[]
+}
+
+/** Выбранный финансовый период: месяц или произвольный диапазон дат. */
+export type FinancePeriod =
+  | { kind: 'month'; month: string }
+  | { kind: 'range'; date_from: string; date_to: string }
+
+export interface PeriodMonth {
+  value: string
+  label: string
+  date_from: string
+  date_to: string
+  is_current: boolean
+}
+
+export interface PeriodsResponse {
+  today: string
+  current: string
+  months: PeriodMonth[]
+}
+
+interface MonthAmount { month: string; label: string; amount: string; count: number }
+
+/** Отчёт за период: поступления — по дате денег, начисления — по периоду начисления. */
+export interface PeriodReport {
+  date_from: string
+  date_to: string
+  label: string
+  basis: { received: string; accrued: string; debt: string }
+  received: {
+    gross: string; count: number; refunds: string; refunds_count: number; net: string
+    for_current_period: string; for_previous_periods: string; for_future_periods: string; to_credit: string
+    previous_by_period: MonthAmount[]
+    backdated: { amount: string; count: number }
+  }
+  accrued: {
+    amount: string; count: number; students: number
+    paid_in_advance: string; paid_in_period: string; adjusted_by_end: string; unpaid_at_end: string
+    paid_later: string; paid_later_by_month: MonthAmount[]; adjusted_later: string; unpaid_now: string
+  }
+  debt: { opening: string; closing: string }
+  debtors_at_end: { profile: number; student_name: string; group: string | null; subject: string | null
+    parent_phone: string; debt: string; unpaid_now: string; oldest_period: string }[]
 }

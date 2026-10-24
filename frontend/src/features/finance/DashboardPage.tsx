@@ -8,19 +8,23 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { LoadingState } from '@/components/ui/LoadingState'
 
-import { FINANCE_KEY, Loadable, Stat, StageBadge, som, today, useFinanceMe } from './ui'
+import { PeriodReportCard } from './PeriodReportCard'
+import { useFinancePeriod } from './period'
+import { FINANCE_KEY, Loadable, Stat, StageBadge, som, useFinanceMe } from './ui'
 
-/** Главная бухгалтера: что требует действия сегодня, деньги месяца, ссылки на очереди. */
+/** Главная бухгалтера: что требует действия сегодня, деньги выбранного
+ * периода (по умолчанию — текущий месяц; можно открыть прошлый), ссылки на очереди. */
 export function FinanceDashboardPage() {
   const me = useFinanceMe()
+  const period = useFinancePeriod()
   const navigate = useNavigate()
   const money = me.data?.can_view_money ?? false
   const counts = useQuery({ queryKey: [...FINANCE_KEY, 'counts'], queryFn: financeApi.counts, enabled: money })
   const dashboard = useQuery({ queryKey: [...FINANCE_KEY, 'dashboard'], queryFn: financeApi.dashboard, enabled: money })
   const overdue = useQuery({ queryKey: [...FINANCE_KEY, 'queue', 'overdue', 'top'], queryFn: () => financeApi.queue('overdue', { page_size: 5 }), enabled: money })
   const analytics = useQuery({
-    queryKey: [...FINANCE_KEY, 'analytics', 'month'],
-    queryFn: () => financeApi.analytics({ date_from: `${today().slice(0, 8)}01`, date_to: today() }), enabled: money,
+    queryKey: [...FINANCE_KEY, 'analytics', period.date_from, period.date_to],
+    queryFn: () => financeApi.analytics({ date_from: period.date_from, date_to: period.date_to }), enabled: money,
   })
 
   if (me.isLoading) return <LoadingState />
@@ -28,19 +32,19 @@ export function FinanceDashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Финансы — сегодня" description="Кому пора платить, у кого просрочка и сколько получено за месяц."
+      <PageHeader title="Финансы" description={`Кому пора платить и у кого просрочка — сейчас; деньги и начисления — за период «${period.label}».`}
         actions={me.data?.can_record_payments ? <Button leftIcon={<Plus className="size-4" />} onClick={() => navigate('/finance/payments/new')}>Добавить платёж</Button> : undefined} />
       <div className="grid gap-3 sm:grid-cols-3">
         <QueueTile to="/finance/to-pay" icon={<Wallet className="size-5" />} label="К оплате" count={counts.data?.to_pay} tone="text-brand-700" />
         <QueueTile to="/finance/soon" icon={<AlarmClock className="size-5" />} label="Скоро оплата" count={counts.data?.soon} tone="text-warning" />
         <QueueTile to="/finance/overdue" icon={<TriangleAlert className="size-5" />} label="Просроченные" count={counts.data?.overdue} tone="text-danger" />
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Получено в этом месяце" value={som(analytics.data?.received.gross)} hint={analytics.data ? `чистыми ${som(analytics.data.received.net)}` : undefined} tone="brand" />
-        <Stat label="Ожидалось в этом месяце" value={som(analytics.data?.expected.amount)} hint={analytics.data ? `не оплачено ${som(analytics.data.expected.unpaid)}` : undefined} />
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <Stat label={`Ожидалось: ${period.label}`} value={som(analytics.data?.expected.amount)} hint={analytics.data ? `срок оплаты в периоде; не оплачено ${som(analytics.data.expected.unpaid)}` : undefined} />
         <Stat label="Долг сейчас" value={som(dashboard.data?.total_debt)} hint={dashboard.data ? `просрочено ${som(dashboard.data.overdue_amount)}` : undefined} tone="danger" />
         <Stat label="Свободные авансы" value={som(dashboard.data?.credit_total)} hint="деньги, ещё не распределённые" />
       </div>
+      {money ? <div className="mt-4"><PeriodReportCard compact /></div> : null}
       <Card className="mt-4" title="Дольше всех просрочено" actions={<Link to="/finance/overdue" className="text-sm text-brand-700 hover:underline">Все просроченные</Link>}>
         <Loadable query={overdue} empty={(d) => d.count === 0} emptyTitle="Просрочек нет">
           {(data) => (

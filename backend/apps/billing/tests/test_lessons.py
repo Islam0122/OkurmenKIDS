@@ -207,7 +207,7 @@ class NoDuplicateInvoiceTests(BillingFixture):
         with self.assertRaises(IntegrityError), transaction.atomic():
             Invoice.objects.create(
                 profile=profile, package=invoice.package, business_key="dup", amount=D("1"), status="OPEN",
-                issue_date=self.today, due_date=self.today,
+                issue_date=self.today, period_date=self.today, due_date=self.today,
             )
 
     def test_early_invoice_only_with_setting(self):

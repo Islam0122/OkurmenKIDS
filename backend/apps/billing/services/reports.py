@@ -74,7 +74,8 @@ def _invoice_row(inv: Invoice) -> dict:
         "group": student.group.name if student.group_id else None,
         "subject": str(inv.profile.subject) if inv.profile.subject_id else None,
         "package_number": inv.package.number, "amount": _s(inv.amount), "paid": _s(inv.amount_paid),
-        "balance": _s(inv.balance), "due_date": inv.due_date.isoformat(), "status": inv.status,
+        "balance": _s(inv.balance), "due_date": inv.due_date.isoformat(), "period_date": inv.period_date.isoformat(),
+        "status": inv.status,
         "status_display": inv.get_status_display(), "parent_phone": inv.profile.parent_phone,
         "accountant": inv.profile.responsible_accountant_id,
     }
@@ -217,10 +218,13 @@ def debtors(filters: dict, *, on: dt.date | None = None) -> list[dict]:
 def financial_report(filters: dict, *, date_from: dt.date, date_to: dt.date) -> dict:
     """Отчёт за период: начислено, поступило, возвращено, долг на конец,
     аванс; по направлениям. Начислено — выставленные (не черновики и не
-    аннулированные) начисления с датой в периоде."""
-    issued = invoices_qs(filters).exclude(status__in=(Invoice.Status.DRAFT, Invoice.Status.VOID)).filter(
-        issue_date__gte=date_from, issue_date__lte=date_to,
-    )
+    аннулированные) начисления, ПЕРИОД которых (`period_date`) в отчётном
+    периоде — не дата выставления и не дата записи. Поступило — по дате
+    поступления денег. Долг на конец — как был на `date_to`."""
+    from .analytics import debt_as_of
+
+    live = invoices_qs(filters).exclude(status__in=(Invoice.Status.DRAFT, Invoice.Status.VOID))
+    issued = live.filter(period_date__gte=date_from, period_date__lte=date_to)
     payments = filter_profiles(
         StudentPayment.objects.filter(billing_profile__isnull=False, status=StudentPayment.Status.CONFIRMED,
                                       received_date__gte=date_from, received_date__lte=date_to),
@@ -246,6 +250,7 @@ def financial_report(filters: dict, *, date_from: dt.date, date_to: dt.date) -> 
         "invoiced": {"amount": _s(issued_totals["s"]), "invoices": issued_totals["n"], "students": issued_totals["st"]},
         "received": _s(received), "refunded": _s(refunded), "net_received": _s(received - refunded),
         "debt_now": {"amount": _s(debt["s"]), "invoices": debt["n"], "students": debt["st"]},
+        "debt_end": _s(debt_as_of(live.filter(period_date__lte=date_to), date_to)),
         "credit_now": _s(filter_profiles(CreditLedgerEntry.objects.all(), filters, "profile__")
                          .aggregate(s=Sum("amount"))["s"]),
         "by_subject": by_subject,

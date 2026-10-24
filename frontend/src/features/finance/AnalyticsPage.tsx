@@ -9,20 +9,22 @@ import { FilterBar, FilterField } from '@/components/ui/FilterBar'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 
-import { Amount, FINANCE_KEY, Loadable, Stat, som, today, useFinanceOptions } from './ui'
-
-function monthStart(): string {
-  return `${today().slice(0, 8)}01`
-}
+import { PeriodReportCard } from './PeriodReportCard'
+import { useFinancePeriod } from './period'
+import { Amount, FINANCE_KEY, Loadable, Stat, som, useFinanceOptions } from './ui'
 
 /** «Фактически получено» и «Ожидалось получить» — два независимых показателя:
- * деньги по дате поступления и начисления по сроку оплаты. */
+ * деньги по дате поступления и начисления по сроку оплаты. Период — общий
+ * переключатель раздела (месяц или произвольный диапазон); «С/По» здесь его меняют. */
 export function AnalyticsPage() {
   const options = useFinanceOptions()
-  const [f, setF] = useState({ date_from: monthStart(), date_to: today(), program: '', group: '', method: '', status: '' })
+  const period = useFinancePeriod()
+  const [f, setF] = useState({ program: '', group: '', method: '', status: '' })
+  const params = { ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '')),
+    date_from: period.date_from, date_to: period.date_to }
   const query = useQuery({
-    queryKey: [...FINANCE_KEY, 'analytics', f],
-    queryFn: () => financeApi.analytics(Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ''))),
+    queryKey: [...FINANCE_KEY, 'analytics', params],
+    queryFn: () => financeApi.analytics(params),
     placeholderData: keepPreviousData,
   })
   const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch })
@@ -30,8 +32,10 @@ export function AnalyticsPage() {
     <div>
       <PageHeader title="Аналитика" description="Полученные деньги и ожидаемые поступления считаются раздельно и не смешиваются." />
       <FilterBar>
-        <FilterField label="С" htmlFor="an-from"><Input id="an-from" type="date" value={f.date_from} onChange={(e) => set({ date_from: e.target.value })} /></FilterField>
-        <FilterField label="По" htmlFor="an-to"><Input id="an-to" type="date" value={f.date_to} onChange={(e) => set({ date_to: e.target.value })} /></FilterField>
+        <FilterField label="С" htmlFor="an-from"><Input id="an-from" type="date" value={period.date_from} max={period.date_to}
+          onChange={(e) => e.target.value && period.setPeriod({ kind: 'range', date_from: e.target.value, date_to: period.date_to })} /></FilterField>
+        <FilterField label="По" htmlFor="an-to"><Input id="an-to" type="date" value={period.date_to} min={period.date_from}
+          onChange={(e) => e.target.value && period.setPeriod({ kind: 'range', date_from: period.date_from, date_to: e.target.value })} /></FilterField>
         <FilterField>
           <Select aria-label="Программа" value={f.program} placeholder="Все программы" onChange={(e) => set({ program: e.target.value })}
             options={(options.data?.programs ?? []).map((p) => ({ value: String(p.id), label: p.name }))} />
@@ -49,7 +53,8 @@ export function AnalyticsPage() {
             options={options.data?.invoice_statuses ?? []} />
         </FilterField>
       </FilterBar>
-      <div className="mt-4">
+      <div className="mt-4 space-y-4">
+        <PeriodReportCard filters={{ group: f.group || undefined }} />
         <Loadable query={query}>
           {(a) => (
             <div className="space-y-4">

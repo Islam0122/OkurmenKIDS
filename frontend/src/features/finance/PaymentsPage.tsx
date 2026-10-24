@@ -14,22 +14,31 @@ import { Pagination } from '@/components/ui/Pagination'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
 
+import { periodMonth, useFinancePeriod } from './period'
 import { Amount, FINANCE_KEY, Loadable, formatDate, useFinanceMe, useFinanceOptions } from './ui'
 
 export function PaymentsPage() {
   const navigate = useNavigate()
   const me = useFinanceMe()
   const options = useFinanceOptions()
-  const [f, setF] = useState({ search: '', method: '', kind: '', status: '', program: '', group: '', date_from: '', date_to: '', page: 1 })
+  // Платежи периода — по дате ФАКТИЧЕСКОГО поступления денег (не по дате записи).
+  const period = useFinancePeriod()
+  const [f, setF] = useState({ search: '', method: '', kind: '', status: '', program: '', group: '', page: 1 })
   const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch, page: patch.page ?? 1 })
+  const params = { ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '')),
+    date_from: period.date_from, date_to: period.date_to }
   const query = useQuery({
-    queryKey: [...FINANCE_KEY, 'payments', f],
-    queryFn: () => financeApi.payments(Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ''))),
+    queryKey: [...FINANCE_KEY, 'payments', params],
+    queryFn: () => financeApi.payments(params),
     placeholderData: keepPreviousData,
   })
+  const setRange = (date_from: string, date_to: string) => {
+    if (date_from && date_to) period.setPeriod({ kind: 'range', date_from, date_to })
+    setF({ ...f, page: 1 })
+  }
   return (
     <div>
-      <PageHeader title="Платежи" description="Фактически полученные деньги и возвраты. Платёж не удаляется и не редактируется — только сторно с причиной."
+      <PageHeader title="Платежи" description={`Деньги, фактически полученные за период «${period.label}», и возвраты. Платёж не удаляется и не редактируется — только сторно с причиной.`}
         actions={me.data?.can_record_payments ? (
           <Button leftIcon={<Plus className="size-4" />} onClick={() => navigate('/finance/payments/new')}>Добавить платёж</Button>
         ) : undefined} />
@@ -55,19 +64,27 @@ export function PaymentsPage() {
           <Select aria-label="Статус" value={f.status} placeholder="Все статусы" onChange={(e) => set({ status: e.target.value })}
             options={[{ value: 'confirmed', label: 'Проведённые' }, { value: 'void', label: 'Сторнированные' }]} />
         </FilterField>
-        <FilterField label="С" htmlFor="pm-from"><Input id="pm-from" type="date" value={f.date_from} onChange={(e) => set({ date_from: e.target.value })} /></FilterField>
-        <FilterField label="По" htmlFor="pm-to"><Input id="pm-to" type="date" value={f.date_to} onChange={(e) => set({ date_to: e.target.value })} /></FilterField>
+        <FilterField label="Поступили с" htmlFor="pm-from"><Input id="pm-from" type="date" value={period.date_from} max={period.date_to} onChange={(e) => setRange(e.target.value, period.date_to)} /></FilterField>
+        <FilterField label="По" htmlFor="pm-to"><Input id="pm-to" type="date" value={period.date_to} min={period.date_from} onChange={(e) => setRange(period.date_from, e.target.value)} /></FilterField>
       </FilterBar>
       <div className="mt-4">
         <Loadable query={query} empty={(d) => d.count === 0} emptyTitle="Платежей не найдено">
           {(data) => (
             <>
               <DataTable rows={data.results} getRowKey={(p) => p.id} onRowClick={(p) => navigate(`/finance/students/${p.billing_profile}#payments`)} columns={[
-                { key: 'd', header: 'Дата', render: (p) => formatDate(p.received_date) },
+                { key: 'd', header: 'Получено', render: (p) => formatDate(p.received_date) },
                 { key: 's', header: 'Студент', render: (p) => (
                   <div><p className="font-medium">{p.student_name}</p><p className="text-xs text-ink-secondary">{p.group_name} · {p.program_name}</p></div>
                 ) },
-                { key: 'pur', header: 'Назначение', render: (p) => p.kind === 'refund' ? 'Возврат' : (p.purpose_display || 'Оплата обучения') },
+                { key: 'pur', header: 'Назначение', render: (p) => p.kind === 'refund' ? 'Возврат' : (
+                  <div>
+                    <p>{p.purpose_display || 'Оплата обучения'}</p>
+                    {p.allocations.filter((a) => a.status === 'ACTIVE').length ? (
+                      <p className="text-xs text-ink-secondary">за {[...new Set(p.allocations.filter((a) => a.status === 'ACTIVE')
+                        .map((a) => periodMonth(a.invoice_period_date)))].join(', ')}</p>
+                    ) : null}
+                  </div>
+                ) },
                 { key: 'a', header: 'Сумма', render: (p) => <Amount value={p.kind === 'refund' ? `-${p.amount}` : p.amount} /> },
                 { key: 'free', header: 'В аванс', render: (p) => <Amount value={p.unallocated} tone="muted" /> },
                 { key: 'm', header: 'Способ', render: (p) => p.method_display },
