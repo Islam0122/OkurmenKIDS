@@ -56,6 +56,7 @@ from .services import (
     invoices,
     lessons,
     payments,
+    periods,
     pricing,
     profiles,
     queues,
@@ -216,11 +217,14 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         reservation_received = data.pop("reservation_received")
         initial_payment = data.pop("initial_payment", None)
         method, payer = data.pop("payment_method"), data.pop("payer_name")
+        received_on = data.pop("payment_received_date", None)
         if (reservation_received or initial_payment) and not is_billing_accountant(request.user):
             raise PermissionDenied({"detail": "Деньги регистрирует бухгалтер.", "code": "forbidden"})
         if reservation_received and not data.get("reservation_amount"):
             raise ValidationError({"reservation_amount": "Укажите сумму брони."})
-        today = timezone.localdate()
+        # Дата поступления денег — выбранная бухгалтером (договор задним числом),
+        # иначе сегодня; будущая дата отклоняется сервисом платежей.
+        today = received_on or timezone.localdate()
         try:
             with transaction.atomic():
                 profile = profiles.create_student_billing_profile(actor=request.user, **data)
@@ -475,7 +479,7 @@ class InvoiceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     pagination_class = BillingPagination
     filterset_fields = ("profile", "package")
     search_fields = ("number", "profile__student__first_name", "profile__student__last_name")
-    ordering_fields = ("due_date", "issue_date", "amount")
+    ordering_fields = ("due_date", "issue_date", "period_date", "amount")
 
     def get_serializer_class(self):
         return s.InvoiceDetailSerializer if self.action == "retrieve" else s.InvoiceSerializer
@@ -483,11 +487,17 @@ class InvoiceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     def get_queryset(self):
         f = filters_from(self.request)
         qs = reports.invoices_qs(f).select_related("profile__student__group", "profile__subject", "package")
+        # Период — по периоду начисления (к какому месяцу относится долг), не по
+        # дате выставления; дата выставления — issue_from / issue_to.
         if f["date_from"]:
-            qs = qs.filter(issue_date__gte=f["date_from"])
+            qs = qs.filter(period_date__gte=f["date_from"])
         if f["date_to"]:
-            qs = qs.filter(issue_date__lte=f["date_to"])
+            qs = qs.filter(period_date__lte=f["date_to"])
         q = self.request.query_params
+        if q.get("issue_from"):
+            qs = qs.filter(issue_date__gte=_date(q["issue_from"], "issue_from"))
+        if q.get("issue_to"):
+            qs = qs.filter(issue_date__lte=_date(q["issue_to"], "issue_to"))
         if q.get("due_from"):
             qs = qs.filter(due_date__gte=_date(q["due_from"], "due_from"))
         if q.get("due_to"):
@@ -511,6 +521,14 @@ class InvoiceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         data = _valid(s.AdjustmentCreateSerializer, request)
         adjustment = _call(invoices.adjust_invoice, self.get_object(), actor=request.user, **data)
         return Response(s.AdjustmentSerializer(adjustment).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=s.InvoicePeriodSerializer, responses=s.InvoiceSerializer)
+    @action(detail=True, methods=["post"], permission_classes=[MoneyAccess])
+    def period(self, request, pk=None):
+        """Контролируемое исправление периода начисления (с основанием, в аудите)."""
+        data = _valid(s.InvoicePeriodSerializer, request)
+        invoice = _call(invoices.correct_invoice_period, self.get_object(), actor=request.user, **data)
+        return Response(s.InvoiceSerializer(invoice).data)
 
     @extend_schema(responses=OpenApiTypes.OBJECT)
     @action(detail=True, methods=["get"])
@@ -789,6 +807,71 @@ class FinancialReportView(APIView):
         return Response(reports.financial_report(
             f, date_from=f["date_from"] or today.replace(day=1), date_to=f["date_to"] or today,
         ))
+
+
+def _period_from(request) -> tuple[dt.date, dt.date]:
+    """Период запроса: `month=ГГГГ-ММ` или `date_from`/`date_to` (произвольный
+    диапазон); по умолчанию — текущий месяц целиком."""
+    q = request.query_params
+    if q.get("month"):
+        return _call(periods.month_bounds, q["month"])
+    date_from, date_to = _date(q.get("date_from"), "date_from"), _date(q.get("date_to"), "date_to")
+    if date_from is None and date_to is None:
+        return periods.month_bounds(f"{timezone.localdate():%Y-%m}")
+    if date_from is None or date_to is None:
+        raise ValidationError({"date_from": "Укажите начало и конец периода."})
+    if date_from > date_to:
+        raise ValidationError({"date_from": "Начало периода позже конца."})
+    return date_from, date_to
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)
+class PeriodsView(APIView):
+    """Месяцы для переключателя периода финансового раздела."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        return Response(periods.available_periods())
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT, parameters=[
+    OpenApiParameter("month", str), *FILTER_PARAMS,
+])
+class PeriodReportView(APIView):
+    """Отчёт за выбранный период: поступления по дате денег (и за какие
+    периоды), начисления по периоду начисления, долг на начало / конец и
+    погашение долгов периода позже."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        date_from, date_to = _period_from(request)
+        f = filters_from(request)
+        f.pop("date_from"), f.pop("date_to"), f.pop("status")
+        return Response(_call(periods.period_report, f, date_from=date_from, date_to=date_to))
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)
+class PeriodReviewView(APIView):
+    """Начисления, период которых требует проверки (записаны днём оформления
+    договора, а не его началом). POST — исправить те, у которых есть
+    проверяемое основание; каждое исправление — в журнале аудита."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        rows = periods.period_review()
+        return Response({"count": len(rows), "results": rows})
+
+    @extend_schema(request=s.PeriodReviewApplySerializer, responses=OpenApiTypes.OBJECT)
+    def post(self, request):
+        data = _valid(s.PeriodReviewApplySerializer, request)
+        from .permissions import authorize
+
+        _call(authorize, request.user, "adjust_invoice")
+        changed = _call(periods.apply_period_review, actor=request.user, invoice_ids=data.get("invoices"))
+        return Response({"changed": len(changed), "results": changed})
 
 
 @extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)

@@ -164,11 +164,14 @@ def _has_pending_terms(profile) -> bool:
     return BillingTermsChange.objects.filter(profile=profile, status=BillingTermsChange.Status.PENDING).exists()
 
 
-def _create_package(profile: StudentBillingProfile, *, status: str, on_date: dt.date, actor) -> tuple:
+def _create_package(profile: StudentBillingProfile, *, status: str, on_date: dt.date, actor,
+                    period_date: dt.date | None = None) -> tuple:
     """Новый пакет (учебный месяц) и его начисление. Начисления может не
-    быть (None): месяц договора уже оплачен предоплатой за весь курс."""
+    быть (None): месяц договора уже оплачен предоплатой за весь курс.
+    `on_date` — дата события (выставления), `period_date` — учебный период
+    начисления (по умолчанию — дата события)."""
     if profile.is_course:
-        return _create_study_month(profile, status=status, on_date=on_date, actor=actor)
+        return _create_study_month(profile, status=status, on_date=on_date, actor=actor, period_date=period_date)
     number = (profile.packages.aggregate(m=Max("number"))["m"] or 0) + 1
     quote = quote_for_profile(profile, on_date)
     package = LessonPackage.objects.create(
@@ -178,11 +181,13 @@ def _create_package(profile: StudentBillingProfile, *, status: str, on_date: dt.
         pricing_snapshot=quote.snapshot(), created_by=actor if getattr(actor, "is_authenticated", False) else None,
     )
     invoice = _create_invoice(profile, package, amount=quote.final_price, kind=Invoice.Kind.PACKAGE, on_date=on_date,
-                              actor=actor, snapshot={**quote.snapshot(), "package_number": number})
+                              actor=actor, snapshot={**quote.snapshot(), "package_number": number},
+                              period_date=period_date)
     return package, invoice
 
 
-def _create_invoice(profile, package, *, amount, kind, on_date, actor, snapshot: dict) -> Invoice:
+def _create_invoice(profile, package, *, amount, kind, on_date, actor, snapshot: dict,
+                    period_date: dt.date | None = None) -> Invoice:
     draft = _has_pending_terms(profile)
     course = profile.is_course
     # Ключ — пакет; перевыставление после аннулирования получает свой номер.
@@ -190,7 +195,7 @@ def _create_invoice(profile, package, *, amount, kind, on_date, actor, snapshot:
     key = f"package:{package.pk}" + (f":r{reissue}" if reissue else "")
     invoice = Invoice.objects.create(
         profile=profile, package=package, kind=kind, business_key=key, amount=amount,
-        status=Status.DRAFT if draft else Status.OPEN, issue_date=on_date,
+        status=Status.DRAFT if draft else Status.OPEN, issue_date=on_date, period_date=period_date or on_date,
         due_date=on_date if course else _due_date(profile, on_date, first=package.number == 1),
         due_lesson=profile.deadline_lessons if course else None,
         snapshot={
@@ -205,11 +210,13 @@ def _create_invoice(profile, package, *, amount, kind, on_date, actor, snapshot:
     audit.log(actor, invoice, "billing_invoice_create", new={
         "profile": profile.pk, "package": package.pk, "number": package.number, "kind": kind, "amount": invoice.amount,
         "status": invoice.status, "due_date": invoice.due_date, "due_lesson": invoice.due_lesson,
+        "issue_date": invoice.issue_date, "period_date": invoice.period_date,
     })
     return invoice
 
 
-def _create_study_month(profile: StudentBillingProfile, *, status: str, on_date: dt.date, actor) -> tuple:
+def _create_study_month(profile: StudentBillingProfile, *, status: str, on_date: dt.date, actor,
+                        period_date: dt.date | None = None) -> tuple:
     from .contracts import month_charge, months_created
     from .pricing import plan_version_on
 
@@ -242,7 +249,7 @@ def _create_study_month(profile: StudentBillingProfile, *, status: str, on_date:
     if amount <= 0:
         return package, None
     invoice = _create_invoice(profile, package, amount=amount, kind=kind, on_date=on_date, actor=actor,
-                              snapshot={**snapshot, "package_number": number})
+                              snapshot={**snapshot, "package_number": number}, period_date=period_date)
     return package, invoice
 
 
@@ -273,9 +280,13 @@ def is_continuing(profile: StudentBillingProfile) -> bool:
     return profile.status == StudentBillingProfile.Status.ACTIVE and profile.student.status == Student.Status.ACTIVE
 
 
-def create_first_package(profile: StudentBillingProfile, *, actor, on_date: dt.date | None = None):
-    """Первый пакет при регистрации: сразу текущий, с начислением."""
-    package, invoice = _create_package(profile, status=PackageStatus.ACTIVE, on_date=on_date or today(), actor=actor)
+def create_first_package(profile: StudentBillingProfile, *, actor, on_date: dt.date | None = None,
+                         period_date: dt.date | None = None):
+    """Первый пакет при регистрации: сразу текущий, с начислением. Период
+    начисления — начало договора (`period_date`), даже если договор
+    оформлен позже: сентябрьский месяц, внесённый в октябре, — сентябрьский."""
+    package, invoice = _create_package(profile, status=PackageStatus.ACTIVE, on_date=on_date or today(), actor=actor,
+                                       period_date=period_date)
     invoice = _after_invoice_created(profile, invoice, actor=actor)
     return package, invoice
 
@@ -285,7 +296,8 @@ def next_planned_package(profile) -> LessonPackage | None:
 
 
 def create_next_package_invoice(profile: StudentBillingProfile, *, actor=None, on_date: dt.date | None = None,
-                                activate: bool = False, for_held_lesson: bool = False):
+                                activate: bool = False, for_held_lesson: bool = False,
+                                period_date: dt.date | None = None):
     """Следующий пакет и начисление. Возвращает (пакет, начисление, создан).
 
     Идемпотентно: если следующий пакет уже есть (оплачен вперёд или
@@ -316,7 +328,8 @@ def create_next_package_invoice(profile: StudentBillingProfile, *, actor=None, o
         if profile.is_course and course_finished(profile):
             raise BillingError("Все учебные месяцы договора пройдены.", code="course_finished")
         status = PackageStatus.ACTIVE if activate and not has_active else PackageStatus.PLANNED
-        package, invoice = _create_package(profile, status=status, on_date=on_date, actor=actor)
+        package, invoice = _create_package(profile, status=status, on_date=on_date, actor=actor,
+                                           period_date=period_date)
         invoice = _after_invoice_created(profile, invoice, actor=actor)
     return package, invoice, True
 
@@ -379,9 +392,12 @@ def mark_overdue_invoices(on: dt.date | None = None) -> list[int]:
     return marked
 
 
-def adjust_invoice(invoice: Invoice, *, actor, amount, reason: str) -> InvoiceAdjustment:
+def adjust_invoice(invoice: Invoice, *, actor, amount, reason: str,
+                   effective_date: dt.date | None = None) -> InvoiceAdjustment:
     """Корректировка (списание долга / перерасчёт) — уменьшает остаток, не
-    меняя сумму начисления."""
+    меняя сумму начисления. `effective_date` — дата, с которой долг считается
+    уменьшенным (по умолчанию сегодня; можно прошлую), время записи
+    хранится отдельно."""
     from ..permissions import authorize
 
     authorize(actor, "adjust_invoice")
@@ -391,6 +407,9 @@ def adjust_invoice(invoice: Invoice, *, actor, amount, reason: str) -> InvoiceAd
     amount = Decimal(str(amount))
     if amount <= 0:
         raise BillingError("Сумма корректировки должна быть больше нуля.", code="invalid_amount")
+    effective_date = effective_date or today()
+    if effective_date > today():
+        raise BillingError("Дата корректировки не может быть в будущем.", code="bad_date")
     with transaction.atomic():
         lock_profile(invoice.profile_id)
         invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
@@ -398,10 +417,42 @@ def adjust_invoice(invoice: Invoice, *, actor, amount, reason: str) -> InvoiceAd
             raise BillingError("Корректировать можно только выставленное начисление.", code="bad_status")
         if amount > calculate_invoice_balance(invoice)["balance"]:
             raise BillingError("Корректировка больше остатка начисления.", code="exceeds_balance")
-        adjustment = InvoiceAdjustment.objects.create(invoice=invoice, amount=amount, reason=reason, created_by=actor)
-        audit.log(actor, adjustment, "billing_adjustment", new={"invoice": invoice.pk, "amount": amount}, reason=reason)
+        adjustment = InvoiceAdjustment.objects.create(invoice=invoice, amount=amount, reason=reason, created_by=actor,
+                                                      effective_date=effective_date)
+        audit.log(actor, adjustment, "billing_adjustment", new={
+            "invoice": invoice.pk, "amount": amount, "effective_date": effective_date,
+        }, reason=reason)
         refresh_invoice(invoice)
     return adjustment
+
+
+def correct_invoice_period(invoice: Invoice, *, actor, period_date: dt.date, reason: str,
+                           system: bool = False) -> Invoice:
+    """Контролируемое исправление периода начисления (например, договор
+    оформлен в октябре задним числом с сентября, а начисление записано
+    октябрём). Меняется только `period_date`: сумма, оплаты, даты выставления
+    и создания не трогаются; старое и новое значение — в журнале аудита."""
+    from ..permissions import authorize
+
+    if not system:
+        authorize(actor, "adjust_invoice")
+    reason = (reason or "").strip()
+    if not reason:
+        raise BillingError("Укажите основание исправления периода.", code="reason_required")
+    if not isinstance(period_date, dt.date):
+        raise BillingError("Укажите дату периода.", code="bad_date")
+    with transaction.atomic():
+        lock_profile(invoice.profile_id)
+        invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        if invoice.status == Status.VOID:
+            raise BillingError("Начисление аннулировано.", code="bad_status")
+        if invoice.period_date == period_date:
+            return invoice
+        old = {"period_date": invoice.period_date}
+        invoice.period_date = period_date
+        invoice.save(update_fields=["period_date", "updated_at"])
+        audit.log(actor, invoice, "billing_invoice_period", old=old, new={"period_date": period_date}, reason=reason)
+    return invoice
 
 
 def void_adjustment(adjustment: InvoiceAdjustment, *, actor, reason: str) -> InvoiceAdjustment:

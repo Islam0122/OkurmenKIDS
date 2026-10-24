@@ -15,6 +15,7 @@ import { Field, fieldErrors } from '@/features/worklog/formUi'
 import type { Payment, PaymentTarget, QueueRow } from '@/types/finance'
 import { cn } from '@/utils/cn'
 
+import { periodMonth, useFinancePeriod } from './period'
 import { FINANCE_KEY, Loadable, StageBadge, som, today, useFinanceOptions, useInvalidateFinance, useRunner } from './ui'
 
 /** 1. студент → 2. договор и долг → 3. назначение → 4–7. сумма, способ, дата
@@ -95,6 +96,9 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
   const [invoice, setInvoice] = useState<string>(initialInvoice ?? '')
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState('cash')
+  // Дата фактического получения денег: по умолчанию сегодня, можно прошлую
+  // (платёж, полученный в сентябре, вносится в октябре сентябрём).
+  const period = useFinancePeriod()
   const [date, setDate] = useState(today())
   const [reference, setReference] = useState('')
   const [payer, setPayer] = useState('')
@@ -138,6 +142,7 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
       try {
         result = await financeApi.recordPayment({
           profile, amount: amount.replace(',', '.'), received_date: date, method, mode,
+          purpose: mode === 'advance' ? 'prepayment' : 'tuition',
           invoice: mode === 'invoice' && invoice ? Number(invoice) : null, reference, payer_name: payer,
         }, key.current)
       } catch (error) {
@@ -199,7 +204,7 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
                   <Field label="Начисление" htmlFor="ap-invoice" className="mt-3" error={errors.invoice}>
                     <Select id="ap-invoice" value={invoice} placeholder="Выберите начисление" onChange={(e) => setInvoice(e.target.value)}
                       options={unpaid.map((i) => ({ value: String(i.id),
-                        label: `${i.kind === 'COURSE' ? 'Весь курс' : `Месяц №${i.month_number ?? i.package_number}`} — ${i.number}: начислено ${som(i.amount)}, остаток ${som(i.balance)}` }))} />
+                        label: `${i.kind === 'COURSE' ? 'Весь курс' : `Месяц №${i.month_number ?? i.package_number}`} (период: ${periodMonth(i.period_date)}) — ${i.number}: начислено ${som(i.amount)}, остаток ${som(i.balance)}` }))} />
                   </Field>
                 ) : null}
               </Card>
@@ -213,8 +218,15 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
                     <Select id="ap-method" value={method} onChange={(e) => setMethod(e.target.value)}
                       options={options.data?.payment_methods ?? [{ value: 'cash', label: 'Наличные' }]} />
                   </Field>
-                  <Field label="Дата получения" htmlFor="ap-date" error={errors.received_date}>
+                  <Field label="Дата фактического получения" htmlFor="ap-date" error={errors.received_date}>
                     <Input id="ap-date" type="date" max={today()} value={date} onChange={(e) => setDate(e.target.value)} />
+                    <p className="mt-1 text-xs text-ink-secondary">
+                      Поступление за {date ? periodMonth(date) : '—'}; время внесения записи сохранится отдельно.
+                      {period.isPast && date > period.date_to ? (
+                        <button type="button" className="ml-1 text-brand-700 hover:underline"
+                          onClick={() => setDate(period.date_to)}>Получено в периоде «{period.label}»?</button>
+                      ) : null}
+                    </p>
                   </Field>
                   <Field label="Плательщик (ФИО)" htmlFor="ap-payer">
                     <Input id="ap-payer" value={payer} onChange={(e) => setPayer(e.target.value)} />
@@ -244,7 +256,12 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
                     <Line label="Остаток по договору после" value={som(p.outstanding_after)} />
                     {p.allocations.length ? (
                       <div className="border-t border-border pt-2 text-xs text-ink-secondary">
-                        {p.allocations.map((a) => <p key={a.invoice}>{a.month_number ? `Месяц №${a.month_number}` : a.number}: {som(a.payment)}</p>)}
+                        <p className="mb-1">Поступление: {periodMonth(date)}. Гасит начисления:</p>
+                        {p.allocations.map((a) => {
+                          const inv = unpaid.find((i) => i.id === a.invoice)
+                          return <p key={a.invoice}>{a.month_number ? `Месяц №${a.month_number}` : a.number}
+                            {inv ? ` (за ${periodMonth(inv.period_date)})` : ''}: {som(a.payment)}</p>
+                        })}
                         {p.to_credit !== '0.00' ? <p>В аванс: {som(p.to_credit)}</p> : null}
                       </div>
                     ) : null}

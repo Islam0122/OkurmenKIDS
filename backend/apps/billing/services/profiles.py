@@ -231,8 +231,10 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
         elif custom_price not in (None, "") or (discount_type or DiscountType.NONE) != DiscountType.NONE:
             _submit_terms(profile, actor=actor, custom_price=custom_price, discount_type=discount_type,
                           discount_value=discount_value, reason=discount_reason)
-        # Срок оплаты первого пакета — от даты начала обучения, если она впереди.
-        create_first_package(profile, actor=actor, on_date=timezone.localdate())
+        # Дата выставления — сегодня (срок оплаты первого пакета — от даты
+        # начала, если она впереди); период начисления — начало договора, а не
+        # день оформления: договор с 1 сентября, внесённый в октябре, — сентябрь.
+        create_first_package(profile, actor=actor, on_date=timezone.localdate(), period_date=start_date)
         if reservation_amount not in (None, "", 0):
             create_reservation(profile, actor=actor, expected_amount=reservation_amount,
                                reserved_until=reserved_until, comment=reservation_comment, group=student.group)
@@ -288,7 +290,9 @@ def register_students(*, actor, plan: BillingPlan, students, start_date: dt.date
             if prepaid_first_package:
                 invoice = profile.invoices.exclude(status="VOID").order_by("package__number", "pk").first()
                 if invoice is not None and invoice.amount > 0:
+                    # Оплачено до подключения — долг закрыт с периода начисления, не с сегодняшнего дня.
                     adjust_invoice(invoice, actor=actor, amount=invoice.amount,
+                                   effective_date=min(invoice.period_date, timezone.localdate()),
                                    reason=f"Оплачено до подключения учёта: {prepaid_reason.strip()}")
         except BillingError as exc:
             skip(exc.message)
@@ -342,6 +346,9 @@ def change_payment_mode(profile: StudentBillingProfile, *, actor, payment_mode: 
             raise BillingError("По начислению уже есть оплата — сначала сторнируйте распределение.", code="has_payments")
         old = {"payment_mode": profile.payment_mode}
         reason = (reason or "").strip() or "Смена способа оплаты до начала обучения"
+        # Перевыставленное начисление остаётся в том же учебном периоде.
+        period = (profile.invoices.exclude(status=Invoice.Status.VOID).values_list("period_date", flat=True).first()
+                  or profile.start_date)
         for invoice in profile.invoices.exclude(status=Invoice.Status.VOID):
             void_invoice(invoice, actor=actor, reason=reason, system=True, cancel_package=False)
         profile.payment_mode = payment_mode
@@ -354,7 +361,7 @@ def change_payment_mode(profile: StudentBillingProfile, *, actor, payment_mode: 
             package.save(update_fields=["final_price", "pricing_snapshot", "updated_at"])
             if amount > 0:
                 created = _create_invoice(profile, package, amount=amount, kind=kind, on_date=timezone.localdate(),
-                                          actor=actor,
+                                          actor=actor, period_date=period,
                                           snapshot={**package.pricing_snapshot, "package_number": package.number})
                 _after_invoice_created(profile, created, actor=actor)
         audit.log(actor, profile, "billing_payment_mode", old=old, new={"payment_mode": payment_mode}, reason=reason)

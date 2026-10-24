@@ -138,8 +138,15 @@ def process_completed_packages(on=None) -> dict:
             packages__status=LessonPackage.Status.COMPLETED,
         ).exclude(live).distinct()
         for profile in profiles:
+            # Следующий учебный месяц начался, когда закончился предыдущий
+            # (по урокам), а не в день запуска задачи: пропущенный сигнал за
+            # сентябрь, обработанный в октябре, остаётся сентябрём.
+            last = (profile.packages.filter(status=LessonPackage.Status.COMPLETED, completed_on__isnull=False)
+                    .order_by("-number").values_list("completed_on", flat=True).first())
             try:
-                _package, _invoice, was_created = create_next_package_invoice(profile, on_date=on, activate=True)
+                _package, _invoice, was_created = create_next_package_invoice(
+                    profile, on_date=on, period_date=min(last, on) if last else None, activate=True,
+                )
             except BillingError as exc:
                 logger.warning("billing: next package for profile %s: %s", profile.pk, exc.message)
                 continue

@@ -13,8 +13,10 @@
 Скидка — не поступление (показывается отдельно как сумма предоставленных
 скидок по договорам, оформленным в периоде). Неоплаченное начисление — не
 полученные деньги. Задолженность на конец периода — по начислениям со
-сроком до конца периода минус оплаты и корректировки, действовавшие на эту
-дату (то есть «как было», а не «как сейчас»).
+сроком до конца периода минус оплаты деньгами, полученными до этой даты
+(по дате поступления, а не по дате записи), и корректировки с датой до неё —
+то есть «как было», а не «как сейчас». Период начисления
+(`Invoice.period_date`) и разбивка поступлений по периодам — `periods.py`.
 """
 from __future__ import annotations
 
@@ -72,18 +74,30 @@ def due_by(date_to: dt.date) -> Q:
     return Q(due_lesson__isnull=False, due_reached_on__lte=date_to) | Q(due_lesson__isnull=True, due_date__lte=date_to)
 
 
+def paid_as_of(invoices, on: dt.date) -> Decimal:
+    """Сколько по начислениям оплачено деньгами, ФАКТИЧЕСКИ полученными не
+    позже `on` (`StudentPayment.received_date`), а не по времени записи в
+    системе: платёж за сентябрь, внесённый в октябре задним числом, гасит
+    сентябрьский долг; октябрьские деньги за сентябрь — нет."""
+    return PaymentAllocation.objects.filter(
+        invoice_id__in=invoices.values("pk"), status=PaymentAllocation.Status.ACTIVE,
+        payment__received_date__lte=on,
+    ).aggregate(s=Sum("amount"))["s"] or ZERO
+
+
+def adjusted_as_of(invoices, on: dt.date) -> Decimal:
+    return InvoiceAdjustment.objects.filter(
+        invoice_id__in=invoices.values("pk"), status=InvoiceAdjustment.Status.APPLIED, effective_date__lte=on,
+    ).aggregate(s=Sum("amount"))["s"] or ZERO
+
+
 def debt_as_of(invoices, on: dt.date) -> Decimal:
-    """Долг на дату: сумма начислений − оплаты и корректировки, которые на
-    эту дату действовали (созданы до неё и не сторнированы до неё)."""
+    """Долг на дату: сумма начислений − оплаты деньгами, полученными до этой
+    даты, − корректировки с датой до неё. Сторнированные распределения и
+    отменённые корректировки — исправленные ошибки — не учитываются ни в
+    какую дату (иначе перенесённая оплата считалась бы дважды)."""
     total = invoices.aggregate(s=Sum("amount"))["s"] or ZERO
-    ids = invoices.values("pk")
-    paid = PaymentAllocation.objects.filter(invoice_id__in=ids, created_at__date__lte=on).filter(
-        Q(status=PaymentAllocation.Status.ACTIVE) | Q(reversed_at__date__gt=on),
-    ).aggregate(s=Sum("amount"))["s"] or ZERO
-    adjusted = InvoiceAdjustment.objects.filter(invoice_id__in=ids, created_at__date__lte=on).filter(
-        Q(status=InvoiceAdjustment.Status.APPLIED) | Q(voided_at__date__gt=on),
-    ).aggregate(s=Sum("amount"))["s"] or ZERO
-    return max(total - paid - adjusted, ZERO)
+    return max(total - paid_as_of(invoices, on) - adjusted_as_of(invoices, on), ZERO)
 
 
 def finance_analytics(f: dict, *, date_from: dt.date, date_to: dt.date) -> dict:

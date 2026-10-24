@@ -18,7 +18,7 @@ vi.mock('@/api/finance', () => ({
   financeApi: {
     me: vi.fn(), options: vi.fn(), counts: vi.fn(), queue: vi.fn(), card: vi.fn(), previewPayment: vi.fn(),
     recordPayment: vi.fn(), receipt: vi.fn(), receiptPrinted: vi.fn(), downloadReceiptPdf: vi.fn(), plans: vi.fn(),
-    lmsStudents: vi.fn(), createContract: vi.fn(),
+    lmsStudents: vi.fn(), createContract: vi.fn(), periods: vi.fn(), payments: vi.fn(), periodReport: vi.fn(),
   },
 }))
 
@@ -26,6 +26,8 @@ import { financeApi } from '@/api/finance'
 import { AddPaymentPage } from '@/features/finance/AddPaymentPage'
 import { FinanceLayout } from '@/features/finance/FinanceLayout'
 import { NewContractPage } from '@/features/finance/NewContractPage'
+import { PaymentsPage } from '@/features/finance/PaymentsPage'
+import { currentMonth, setFinancePeriod } from '@/features/finance/period'
 import { ToPayPage } from '@/features/finance/QueuePage'
 import { ReceiptSheet } from '@/features/finance/ReceiptPage'
 
@@ -68,6 +70,13 @@ beforeEach(() => {
   vi.mocked(financeApi.options).mockResolvedValue(OPTIONS)
   vi.mocked(financeApi.counts).mockResolvedValue({ to_pay: 4, soon: 2, overdue: 3 })
   vi.mocked(financeApi.queue).mockResolvedValue({ count: 1, page: 1, page_size: 25, results: [ROW] })
+  vi.mocked(financeApi.periods).mockResolvedValue({ today: '2026-10-24', current: '2026-10', months: [
+    { value: '2026-11', label: 'Ноябрь 2026', date_from: '2026-11-01', date_to: '2026-11-30', is_current: false },
+    { value: '2026-10', label: 'Октябрь 2026', date_from: '2026-10-01', date_to: '2026-10-31', is_current: true },
+    { value: '2026-09', label: 'Сентябрь 2026', date_from: '2026-09-01', date_to: '2026-09-30', is_current: false },
+  ] })
+  vi.mocked(financeApi.payments).mockResolvedValue({ count: 0, next: null, previous: null, results: [] })
+  setFinancePeriod({ kind: 'month', month: currentMonth() })
 })
 
 describe('FinanceLayout', () => {
@@ -80,6 +89,19 @@ describe('FinanceLayout', () => {
       expect(nav).toHaveTextContent(label)
     }
     expect(await screen.findByLabelText('3 студентов')).toHaveTextContent('3')
+  })
+
+  it('switches the finance period to a past month or a custom range', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<Routes><Route path="/finance/*" element={<FinanceLayout />} /></Routes>, { route: '/finance' })
+    const switcher = await screen.findByLabelText('Финансовый период')
+    await screen.findByRole('option', { name: 'Сентябрь 2026' })
+    expect(screen.getByRole('option', { name: 'Ноябрь 2026' })).toBeInTheDocument()
+    await user.selectOptions(switcher, '2026-09')
+    expect(switcher).toHaveValue('2026-09')
+    await user.selectOptions(switcher, 'range')
+    expect(screen.getByLabelText('Начало периода')).toHaveValue('2026-09-01')
+    expect(screen.getByLabelText('Конец периода')).toHaveValue('2026-09-30')
   })
 
   it('hides tariffs and settings from the read-only director', async () => {
@@ -101,6 +123,16 @@ describe('FinanceLayout', () => {
     await waitFor(() => expect(nav).toHaveTextContent('Все студенты'))
     expect(nav).not.toHaveTextContent('Платежи')
     expect(financeApi.counts).not.toHaveBeenCalled()
+  })
+})
+
+describe('PaymentsPage', () => {
+  it('lists payments received in the selected (past) period', async () => {
+    setFinancePeriod({ kind: 'month', month: '2026-09' })
+    renderWithProviders(<PaymentsPage />)
+    await waitFor(() => expect(financeApi.payments).toHaveBeenCalled())
+    expect(vi.mocked(financeApi.payments).mock.calls[0][0]).toMatchObject({ date_from: '2026-09-01', date_to: '2026-09-30' })
+    expect(await screen.findByText(/Сентябрь 2026/)).toBeInTheDocument()
   })
 })
 
@@ -133,7 +165,7 @@ const CARD = {
   row: ROW,
   summary: { due_now: '10000.00', overdue: '0.00', credit: '0.00', outstanding: '45000.00' },
   invoices: [{ id: 31, number: 'INV-2026-000031', kind: 'MONTH', month_number: 2, package_number: 2, status: 'PARTIALLY_PAID',
-    amount: '15000.00', balance: '10000.00' }],
+    amount: '15000.00', balance: '10000.00', period_date: '2026-09-01' }],
 } as unknown as ContractCard
 
 describe('AddPaymentPage', () => {
@@ -165,6 +197,30 @@ describe('AddPaymentPage', () => {
     for (const name of ['Печать чека', 'Скачать PDF', 'Добавить следующий платёж', 'Открыть карточку студента']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument()
     }
+  })
+
+  it('records a payment actually received in September with its own date and purpose', async () => {
+    vi.mocked(financeApi.card).mockResolvedValue(CARD)
+    vi.mocked(financeApi.previewPayment).mockResolvedValue({
+      amount: '10000.00', obligation: '15000.00', paid_before: '5000.00', obligation_balance_after: '0.00', to_credit: '0.00',
+      due_now_before: '10000.00', due_now_after: '0.00', credit_before: '0.00', credit_after: '0.00',
+      outstanding_before: '45000.00', outstanding_after: '35000.00',
+      allocations: [{ invoice: 31, number: 'INV-2026-000031', month_number: 2, payment: '10000.00', balance_after: '0.00' }],
+    })
+    vi.mocked(financeApi.recordPayment).mockResolvedValue({ id: 2, billing_profile: 7, student_name: 'Асанов Айбек',
+      amount: '10000.00', method_display: 'Наличные', receipt: null } as Payment)
+    const user = userEvent.setup()
+    renderWithProviders(<AddPaymentPage />, { route: '/finance/payments/new?profile=7' })
+    const date = await screen.findByLabelText('Дата фактического получения')
+    await user.clear(date)
+    await user.type(date, '2026-09-20')
+    expect(screen.getByText(/Поступление за Сентябрь 2026/)).toBeInTheDocument()
+    expect(await screen.findByText(/за Сентябрь 2026\)/)).toBeInTheDocument()  // гасит сентябрьское начисление
+    await user.click(screen.getByLabelText('Деньги фактически получены'))
+    await user.click(screen.getByRole('button', { name: 'Сохранить платёж' }))
+    expect(vi.mocked(financeApi.recordPayment).mock.calls[0][0]).toMatchObject({
+      received_date: '2026-09-20', purpose: 'tuition', mode: 'auto',
+    })
   })
 })
 

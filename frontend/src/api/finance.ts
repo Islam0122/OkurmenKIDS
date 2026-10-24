@@ -17,6 +17,8 @@ import type {
   PaymentBody,
   PaymentPreview,
   PaymentTarget,
+  PeriodReport,
+  PeriodsResponse,
   Plan,
   PlanBody,
   QueueCounts,
@@ -57,6 +59,9 @@ export const financeApi = {
   me: () => get<FinanceMe>('/me/'),
   options: () => get<FinanceOptions>('/options/'),
   dashboard: () => get<FinanceDashboard>('/dashboard/'),
+  periods: () => get<PeriodsResponse>('/periods/'),
+  /** `month=ГГГГ-ММ` или `date_from` + `date_to`. */
+  periodReport: (params: Params) => get<PeriodReport>('/reports/period/', params),
   counts: () => get<QueueCounts>('/queues/counts/'),
   queue: (queue: QueueKind, filters: QueueFilters) => get<QueuePage>(`/queues/${queue}/`, { ...filters }),
   lmsStudents: (params: { search?: string; group?: number; registered?: string; page?: number }) =>

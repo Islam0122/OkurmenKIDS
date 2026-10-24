@@ -207,7 +207,11 @@ class ReportTests(BillingFixture):
         payment, _ = payments.record_payment(profile=a, amount="5000", received_date=self.today, actor=self.accountant)
         payments.refund_payment(payment, actor=self.accountant, amount="1000", reason="Переплата")
         b = self.profile()
-        report = financial_report({}, date_from=self.today.replace(day=1), date_to=self.today)
+        # Начислено — по периоду начисления (начало договора, 60 дней назад), а
+        # не по дню оформления: текущий месяц его не содержит.
+        month = financial_report({}, date_from=self.today.replace(day=1), date_to=self.today)
+        self.assertEqual(month["invoiced"], {"amount": "0.00", "invoices": 0, "students": 0})
+        report = financial_report({}, date_from=self.start.replace(day=1), date_to=self.today)
         self.assertEqual(report["invoiced"], {"amount": "8000.00", "invoices": 2, "students": 2})
         self.assertEqual((report["received"], report["refunded"], report["net_received"]),
                          ("5000.00", "1000.00", "4000.00"))
