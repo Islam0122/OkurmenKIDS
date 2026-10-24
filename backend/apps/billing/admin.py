@@ -27,11 +27,46 @@ class BillingPlanVersionAdmin(ReadOnlyAdmin):
     list_display = ("plan", "lessons_per_package", "package_price", "effective_from", "effective_to")
 
 
+class ContractMonthPriceInline(admin.TabularInline):
+    model = models.ContractMonthPrice
+    extra = 0
+    can_delete = False
+    fields = ("month_number", "standard_price", "amount", "updated_by", "updated_at")
+    readonly_fields = fields
+    verbose_name_plural = "План стоимости учебных месяцев (изменяется на странице «План месяцев»)"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(models.StudentBillingProfile)
 class StudentBillingProfileAdmin(ReadOnlyAdmin):
-    list_display = ("student", "subject", "plan", "status", "start_date", "discount_type", "discount_value")
-    list_filter = ("status", "plan")
+    list_display = ("student", "plan", "status", "payment_mode", "standard_course_price", "final_course_price",
+                    "discount_amount", "month_plan_mode", "month_plan_link")
+    list_filter = ("status", "plan", "payment_mode", "month_plan_mode")
     search_fields = ("student__first_name", "student__last_name")
+    inlines = [ContractMonthPriceInline]
+
+    @admin.display(description="План месяцев")
+    def month_plan_link(self, obj):
+        from django.urls import reverse
+        from django.utils.html import format_html
+
+        if not obj.duration_months:
+            return "—"
+        return format_html('<a href="{}">План месяцев</a>', reverse("admin:billing_month_plan", args=[obj.pk]))
+
+    def get_urls(self):
+        from django.urls import path
+
+        from .admin_views import month_plan_view
+
+        return [
+            path("<int:pk>/month-plan/",
+                 self.admin_site.admin_view(lambda request, pk: month_plan_view(request, pk, self.admin_site)),
+                 name="billing_month_plan"),
+            *super().get_urls(),
+        ]
 
 
 @admin.register(models.LessonPackage)

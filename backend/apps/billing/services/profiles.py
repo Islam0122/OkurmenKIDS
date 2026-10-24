@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -67,6 +68,12 @@ def _is_standard(custom_price, discount_type) -> bool:
     return custom_price is None and discount_type == DiscountType.NONE
 
 
+def _can_manual_plan(actor) -> bool:
+    from ..permissions import is_billing_admin
+
+    return is_billing_admin(actor)
+
+
 def _apply_terms(profile, change: BillingTermsChange, *, assigned_by, approved_by) -> None:
     if profile.is_course:
         profile.discount_enabled = change.discount_enabled
@@ -74,6 +81,10 @@ def _apply_terms(profile, change: BillingTermsChange, *, assigned_by, approved_b
         profile.discount_reason = change.reason if change.discount_enabled else ""
         profile.discount_assigned_by, profile.discount_approved_by = assigned_by, approved_by
         profile.save()
+        # План месяцев с пропорциональной скидкой — оставшиеся месяцы по новой итоговой.
+        from .month_plan import redistribute_after_price_change
+
+        redistribute_after_price_change(profile, actor=approved_by or assigned_by)
         return
     profile.custom_price = change.custom_price
     profile.discount_type, profile.discount_value = change.discount_type, change.discount_value
@@ -132,6 +143,9 @@ def _submit_course_terms(profile, *, actor, discount_enabled: bool, final_course
                                    final_price=final_course_price, reason=reason)
     if initial and not discount_enabled:
         return None
+    if profile.month_plan_mode == "MANUAL" and not initial:
+        raise BillingError("Суммы месяцев заданы вручную — измените итоговую стоимость в плане месяцев.",
+                           code="manual_month_plan")
     if not initial and final < invoiced_total(profile):
         raise BillingError(
             f"Итоговая стоимость меньше уже начисленного ({invoiced_total(profile)} сом) — оформите корректировку.",
@@ -170,7 +184,9 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
                                    reservation_amount=None, reserved_until: dt.date | None = None,
                                    reservation_comment: str = "", payment_mode: str = PaymentMode.MONTHLY,
                                    reservation_allocation: str = ReservationAllocation.FIRST_MONTH,
-                                   discount_enabled: bool = False, final_course_price=None) -> StudentBillingProfile:
+                                   discount_enabled: bool = False, final_course_price=None,
+                                   month_prices=None, month_plan_mode: str = "",
+                                   month_amounts=None) -> StudentBillingProfile:
     """Регистрация студента в оплате: договор, условия, первый учебный месяц
     (пакет) с начислением и (если указана) бронь."""
     from ..permissions import authorize
@@ -199,14 +215,26 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
         if custom_price not in (None, "") or (discount_type or DiscountType.NONE) != DiscountType.NONE:
             raise BillingError("Для программы скидка задаётся итоговой стоимостью курса.", code="invalid_discount")
         quote = course_quote(plan, start_date)
+        standard_price = quote.standard_course_price
+        if month_prices:
+            # Индивидуальные цены месяцев договора: стандартная = их сумма.
+            from .month_plan import MODES
+
+            if month_plan_mode not in MODES:
+                raise BillingError("Выберите правило распределения скидки по месяцам.", code="invalid")
+            if month_plan_mode == "MANUAL" and not _can_manual_plan(actor):
+                raise BillingError("Суммы месяцев вручную задаёт бухгалтер.", code="forbidden")
+            if len(month_prices) != quote.duration_months:
+                raise BillingError(f"Укажите цену каждого из {quote.duration_months} месяцев.", code="invalid")
+            standard_price = sum((Decimal(str(v)) for v in month_prices), Decimal("0"))
         # Проверка до создания: ошибка ввода не оставляет полузаписанный договор.
-        course_terms(standard_price=quote.standard_course_price, discount_enabled=discount_enabled,
+        course_terms(standard_price=standard_price, discount_enabled=discount_enabled,
                      final_price=final_course_price, reason=discount_reason)
         course = {
             "payment_mode": payment_mode, "reservation_allocation": reservation_allocation,
             "duration_months": quote.duration_months, "lessons_per_month": quote.lessons_per_month,
             "deadline_lessons": quote.deadline_lessons, "month_price": quote.month_price,
-            "standard_course_price": quote.standard_course_price, "final_course_price": quote.standard_course_price,
+            "standard_course_price": standard_price, "final_course_price": standard_price,
         }
     with transaction.atomic():
         Student.objects.select_for_update().get(pk=student.pk)
@@ -232,6 +260,16 @@ def create_student_billing_profile(*, student: Student, plan: BillingPlan, actor
         elif custom_price not in (None, "") or (discount_type or DiscountType.NONE) != DiscountType.NONE:
             _submit_terms(profile, actor=actor, custom_price=custom_price, discount_type=discount_type,
                           discount_value=discount_value, reason=discount_reason)
+        if profile.is_course and month_prices:
+            # План месяцев — до первого начисления: месяц №1 сразу по плану.
+            # При скидке на согласовании план считается от стандартной цены и
+            # пересчитывается при решении (правило PROPORTIONAL).
+            from .month_plan import set_month_plan
+
+            set_month_plan(profile, actor=actor, standard_prices=month_prices,
+                           final_course_price=profile.final_course_price, mode=month_plan_mode,
+                           manual_amounts=month_amounts, reason=discount_reason, initial=True)
+            profile = lock_profile(profile)
         # Дата выставления — сегодня (срок оплаты первого пакета — от даты
         # начала, если она впереди); период начисления — начало договора, а не
         # день оформления: договор с 1 сентября, внесённый в октябре, — сентябрь.

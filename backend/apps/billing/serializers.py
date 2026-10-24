@@ -169,6 +169,13 @@ class ProfileCreateSerializer(TermsInputMixin):
     payment_method = serializers.ChoiceField(choices=StudentPayment.Method.choices, required=False,
                                              default=StudentPayment.Method.CASH)
     payer_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    # Индивидуальные цены учебных месяцев договора (по одной на месяц) и
+    # правило распределения скидки: PROPORTIONAL или MANUAL (`month_amounts`).
+    month_prices = serializers.ListField(child=serializers.DecimalField(**MONEY, min_value=Decimal("0.01")),
+                                         required=False, allow_empty=False)
+    month_plan_mode = serializers.ChoiceField(choices=("PROPORTIONAL", "MANUAL"), required=False, default="")
+    month_amounts = serializers.ListField(child=serializers.DecimalField(**MONEY, min_value=Decimal("0")),
+                                          required=False, allow_empty=False)
     # Когда деньги при зачислении фактически получены (по умолчанию — сегодня;
     # договор, оформляемый задним числом, — прошлая дата).
     payment_received_date = serializers.DateField(required=False, allow_null=True)
@@ -197,6 +204,20 @@ class ProfileUpdateSerializer(serializers.Serializer):
     responsible_accountant = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.filter(role=User.Role.ACCOUNTANT, is_active=True), required=False, allow_null=True,
     )
+
+
+class MonthPlanSerializer(serializers.Serializer):
+    """План стоимости месяцев договора. `dry_run` — только предпросмотр."""
+
+    standard_prices = serializers.ListField(child=serializers.DecimalField(**MONEY, min_value=Decimal("0.01")),
+                                            allow_empty=False)
+    final_course_price = serializers.DecimalField(**MONEY, min_value=Decimal("0"))
+    mode = serializers.ChoiceField(choices=("PROPORTIONAL", "MANUAL"))
+    manual_amounts = serializers.ListField(child=serializers.DecimalField(**MONEY, allow_null=True),
+                                           required=False, allow_empty=False)
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+    reissue_unstarted = serializers.BooleanField(required=False, default=False)
+    dry_run = serializers.BooleanField(required=False, default=False)
 
 
 class StartDateSerializer(serializers.Serializer):
@@ -285,7 +306,14 @@ class ProfileSerializer(serializers.ModelSerializer):
                   "discount_type",
                   "discount_value", "discount_reason", "discount_assigned_by_name", "discount_approved_by_name",
                   "special_terms", "responsible_accountant", "responsible_accountant_name", "stopped_on",
-                  "stop_reason", "payment_status", "current_package", "pending_terms", "created_at")
+                  "stop_reason", "payment_status", "current_package", "pending_terms", "month_plan_mode",
+                  "month_prices", "created_at")
+
+    month_prices = serializers.SerializerMethodField()
+
+    def get_month_prices(self, obj) -> list[dict]:
+        return [{"month_number": r.month_number, "standard_price": str(r.standard_price), "amount": str(r.amount)}
+                for r in obj.month_prices.all()] if obj.month_plan_mode else []
 
     def get_responsible_accountant_name(self, obj) -> str | None:
         return _name(obj.responsible_accountant)

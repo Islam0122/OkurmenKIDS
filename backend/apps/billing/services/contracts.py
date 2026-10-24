@@ -9,7 +9,9 @@
 Скидка — не процент: академия задаёт итоговую стоимость курса,
 скидка = стандартная − итоговая (не отрицательна, итоговая ≥ 0).
 
-Начисление за учебный месяц k (из N):
+Начисление за учебный месяц k (из N) — если у договора есть план месяцев
+(`ContractMonthPrice`, `services.month_plan`), сумма месяца берётся из плана;
+иначе — прежнее правило:
 
     осталось начислить = итоговая стоимость − Σ действующих начислений договора
     помесячно:  осталось начислить / (N − k + 1), округление вниз до тыйына,
@@ -174,6 +176,12 @@ def month_charge(profile: StudentBillingProfile, month_number: int, *,
                     ZERO)
     if profile.payment_mode == PaymentMode.FULL_PREPAY:
         return remaining, (Invoice.Kind.COURSE if month_number == 1 else Invoice.Kind.MONTH)
+    if profile.month_plan_mode:
+        # План договора (`ContractMonthPrice`): сумма месяца задана планом;
+        # больше остатка итоговой стоимости не начисляется никогда.
+        row = profile.month_prices.filter(month_number=month_number).first()
+        if row is not None:
+            return min(money(row.amount), remaining), Invoice.Kind.MONTH
     months_left = duration - month_number + 1
     if months_left <= 1:
         return remaining, Invoice.Kind.MONTH
@@ -368,6 +376,7 @@ def payment_schedule(profile: StudentBillingProfile) -> dict | None:
     covered_months = {p.month_number for p in live_packages(profile) if p.month_number}
     remaining = max(final - invoiced, ZERO)
     projected_total = ZERO
+    plan = {r.month_number: r for r in profile.month_prices.all()} if profile.month_plan_mode else {}
     for month in range(1, duration + 1):
         invoices = by_month.get(month, [])
         if invoices:
@@ -376,12 +385,18 @@ def payment_schedule(profile: StudentBillingProfile) -> dict | None:
                     "month_number": month, "state": "invoiced", "invoice": inv.pk, "number": inv.number,
                     "kind": inv.kind, "amount": inv.amount, "paid": inv.amount_paid + inv.amount_adjusted,
                     "balance": inv.balance if inv.status in Invoice.UNPAID_STATUSES else ZERO, "status": inv.status,
+                    "status_display": inv.get_status_display(), "due_lesson": inv.due_lesson,
+                    "due_date": None if inv.due_lesson else inv.due_date.isoformat(),
+                    "lessons_used": inv.package.lessons_used,
                     "covered_by_credit": ZERO, "to_pay": ZERO,
                 })
             continue
         if profile.payment_mode == PaymentMode.FULL_PREPAY or month in covered_months:
             # Предоплата: месяц оплачен начислением «Весь курс» (своего начисления нет).
             amount = ZERO
+        elif month in plan:
+            amount = min(money(plan[month].amount), remaining)
+            remaining -= amount
         else:
             months_left = sum(1 for m in range(month, duration + 1) if m not in by_month)
             amount = remaining if months_left <= 1 else (remaining / months_left).quantize(CENT, rounding=ROUND_DOWN)
@@ -404,7 +419,14 @@ def payment_schedule(profile: StudentBillingProfile) -> dict | None:
         issues.append(f"Начислено {money(invoiced)} — больше итоговой стоимости {final}: нужна корректировка начислений.")
     elif total != final:
         issues.append(f"Начислено и запланировано {money(total)}, а итоговая стоимость {final}.")
+    for row in rows:
+        price = plan.get(row["month_number"])
+        row["standard_price"] = money(price.standard_price) if price else None
+        row["plan_amount"] = money(price.amount) if price else None
     return {
+        "month_plan_mode": profile.month_plan_mode,
+        "standard_course_price": money(profile.standard_course_price) if profile.standard_course_price else None,
+        "discount_amount": money(profile.discount_amount),
         "final_course_price": final, "invoiced": money(invoiced), "projected": money(projected_total),
         "total": money(total), "consistent": not issues, "issues": issues, "price_changes": changes,
         "months": [{k: (money(v) if isinstance(v, Decimal) else v) for k, v in r.items()} for r in rows],
