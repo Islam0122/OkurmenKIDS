@@ -22,12 +22,33 @@
 начисления остаются как есть (снимок).
 
 Сводка денег договора считается из записей (начисления, распределения,
-корректировки, журнал аванса), а не хранится отдельно:
+корректировки, журнал аванса), а не хранится отдельно. Каждое понятие — своё
+поле, одна сумма не попадает в два места:
 
-    оплачено по договору = Σ действующих распределений + свободный аванс
-    остаток по договору  = итоговая − оплачено − корректировки (не < 0)
-    к оплате сейчас      = Σ остатков выставленных неоплаченных начислений
-    будущие периоды      = итоговая − Σ действующих начислений
+    получено (received)            = Σ подтверждённых платежей (по дате денег)
+    возвращено (refunded)          = Σ подтверждённых возвратов
+    распределено (allocated)       = Σ действующих распределений на начисления
+                                     = «оплачено по начислениям»
+    свободный аванс (credit)       = Σ журнала аванса
+                                     = получено − возвраты − распределено − удержания брони
+    деньги по договору (paid_total)= распределено + свободный аванс
+    начислено (invoiced)           = Σ действующих начислений
+    остаток начислений (invoices_balance)
+                                   = Σ (сумма − оплачено − корректировки) неоплаченных
+    применимый аванс (credit_applicable)
+                                   = аванс, который правила договора разрешают
+                                     направить на эти начисления (бронь «в общую
+                                     стоимость» — только на «Весь курс» / последний месяц)
+    к оплате сейчас (due_now)      = max(остаток начислений − применимый аванс, 0)
+    просрочено (overdue)           = max(остаток просроченных − применимый аванс, 0)
+    остаток по договору (outstanding)
+                                   = max(итоговая − распределено − аванс − корректировки, 0)
+    будущие периоды (future)       = max(итоговая − начислено, 0) — ещё не выставлено,
+                                     не долг и не просрочка
+
+Свободный аванс рядом с неоплаченным начислением — несогласованное состояние
+(`credit_unapplied` > 0): платёж записан без распределения. Сервис платежей
+больше так не делает; старые записи исправляет `billing_money_audit --apply`.
 """
 from __future__ import annotations
 
@@ -201,6 +222,23 @@ def payment_stage(invoice: Invoice, lessons_used: int | None = None) -> str:
 # Сводка денег договора
 # ---------------------------------------------------------------------------
 
+def applicable_credit(profile: StudentBillingProfile, unpaid: list[Invoice], credit: Decimal) -> Decimal:
+    """Сколько свободного аванса можно направить на `unpaid` по правилам
+    договора (как `may_fund`): бронь в режиме «в общую стоимость курса» —
+    только на «Весь курс» или последний месяц."""
+    if credit <= 0:
+        return ZERO
+    if not (profile.is_course and profile.reservation_allocation == ReservationAllocation.COURSE_TOTAL):
+        return credit
+    held = max(CreditLedgerEntry.objects.filter(
+        profile=profile, payment__purpose=StudentPayment.Purpose.RESERVATION,
+    ).aggregate(s=Sum("amount"))["s"] or ZERO, ZERO)
+    held = min(held, credit)
+    eligible = sum((i.balance for i in unpaid
+                    if i.kind == Invoice.Kind.COURSE or is_final_month(profile, i.package)), ZERO)
+    return credit - held + min(held, eligible)
+
+
 def money_summary(profile: StudentBillingProfile) -> dict:
     """Деньги договора из записей (см. модуль). Суммы — Decimal."""
     allocated = PaymentAllocation.objects.filter(
@@ -221,14 +259,19 @@ def money_summary(profile: StudentBillingProfile) -> dict:
     reservation_free = CreditLedgerEntry.objects.filter(
         profile=profile, payment__purpose=StudentPayment.Purpose.RESERVATION,
     ).aggregate(s=Sum("amount"))["s"] or ZERO
-    unpaid = Invoice.objects.filter(profile=profile, status__in=Invoice.UNPAID_STATUSES)
-    due_now = sum((i.balance for i in unpaid), ZERO)
-    overdue = sum((i.balance for i in unpaid if i.status == Invoice.Status.OVERDUE), ZERO)
+    unpaid = list(Invoice.objects.filter(profile=profile, status__in=Invoice.UNPAID_STATUSES).select_related("package"))
+    balance = sum((i.balance for i in unpaid), ZERO)
+    overdue_balance = sum((i.balance for i in unpaid if i.status == Invoice.Status.OVERDUE), ZERO)
+    usable = applicable_credit(profile, unpaid, credit)
+    unapplied = min(usable, balance)
+    due_now = max(balance - usable, ZERO)
     result = {
         "received": money(received), "refunded": money(refunded), "net_received": money(received - refunded),
         "reservation_received": money(reservation_received), "reservation_unused": money(max(reservation_free, ZERO)),
         "allocated": money(allocated), "adjusted": money(adjusted), "credit": money(credit),
-        "due_now": money(due_now), "overdue": money(overdue),
+        "invoiced": money(invoiced_total(profile)), "invoices_balance": money(balance),
+        "credit_applicable": money(usable), "credit_unapplied": money(unapplied),
+        "due_now": money(due_now), "overdue": money(max(overdue_balance - usable, ZERO)),
         "paid_total": money(allocated + credit),
     }
     if profile.final_course_price is not None and profile.status == StudentBillingProfile.Status.INACTIVE:

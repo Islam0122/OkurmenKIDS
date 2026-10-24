@@ -258,6 +258,15 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         причиной для каждого незасчитанного урока (только чтение)."""
         return Response(lessons.lesson_breakdown(self.get_object()))
 
+    @extend_schema(request=s.StartDateSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"], url_path="start-date", permission_classes=[MoneyAccess])
+    def start_date(self, request, pk=None):
+        """Исправить ошибочную дату начала договора (основание, аудит) и
+        засчитать уроки приоритетного предмета с новой даты."""
+        data = _valid(s.StartDateSerializer, request)
+        result = _call(profiles.change_start_date, self.get_object(), actor=request.user, **data)
+        return Response({**result, "lessons": lessons.lesson_breakdown(StudentBillingProfile.objects.get(pk=pk))})
+
     @extend_schema(request=s.CourseTermsSerializer, responses=s.TermsChangeSerializer)
     @action(detail=True, methods=["post"], url_path="course-terms")
     def course_terms(self, request, pk=None):
@@ -574,7 +583,8 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         items = [(row["invoice"], row["amount"]) for row in data.pop("allocations", None) or []]
         mode, invoice = data.pop("mode"), data.pop("invoice", None)
         if mode == "advance":
-            data["auto_allocate"] = False
+            # Предоплата: сначала закрывает уже выставленные начисления
+            # (например, «Весь курс»), остаток — аванс на будущие месяцы.
             data.setdefault("purpose", StudentPayment.Purpose.PREPAYMENT)
         elif mode == "invoice":
             if invoice is None:

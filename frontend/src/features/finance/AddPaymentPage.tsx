@@ -190,8 +190,8 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
                 <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Назначение платежа">
                   {([
                     ['auto', 'Текущий долг', 'Начисления по порядку, остаток — аванс'],
-                    ['invoice', 'Конкретное начисление', 'Остаток — аванс'],
-                    ['advance', 'Предоплата / аванс', 'Закроет будущие месяцы'],
+                    ['invoice', 'Конкретное начисление', 'Сначала это начисление, остаток — на другие, затем аванс'],
+                    ['advance', 'Предоплата / аванс', 'Сначала выставленные начисления (например, «Весь курс»), остаток — аванс на будущие месяцы'],
                   ] as const).map(([value, label, hint]) => (
                     <label key={value} className={cn('flex cursor-pointer gap-2 rounded-lg border p-3 text-sm',
                       mode === value ? 'border-brand-500 bg-brand-50' : 'border-border')}>

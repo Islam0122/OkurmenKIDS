@@ -255,7 +255,14 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
             if allocations:
                 for invoice, part in allocations:
                     _allocate_locked(payment, invoice, _amount(part), actor=actor, source=PaymentAllocation.Source.PAYMENT)
-            elif auto_allocate:
+            if auto_allocate:
+                # Деньги не лежат «свободным авансом» рядом с выставленным
+                # неоплаченным начислением того же договора: сначала выбранное
+                # начисление (если указано), остаток — на остальные по порядку,
+                # затем аванс. Иначе карточка показывает одну сумму и долгом
+                # («к оплате»), и авансом (бронь «в общую стоимость» держит
+                # `contracts.may_fund`). `auto_allocate=False` — явное решение
+                # оставить деньги авансом до платёжного события.
                 _distribute_locked(profile, [payment], actor=actor, source=PaymentAllocation.Source.PAYMENT)
             from .receipts import issue_receipt
 
@@ -269,14 +276,15 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
     return payment, True
 
 
-def reverse_payment(payment: StudentPayment, *, actor, reason: str) -> StudentPayment:
+def reverse_payment(payment: StudentPayment, *, actor, reason: str, system: bool = False) -> StudentPayment:
     """Сторно ошибочно внесённого платежа: все его распределения
     сторнируются (начисления снова ждут оплаты), платёж отменяется (VOID) с
     причиной; записи не удаляются. Если по платежу был возврат — сначала
     отмените возврат."""
     from ..permissions import authorize
 
-    authorize(actor, "reverse_payment")
+    if not system:  # system — сторно по итогам аудита из консоли (`billing_money_audit`)
+        authorize(actor, "reverse_payment")
     reason = (reason or "").strip()
     if not reason:
         raise BillingError("Укажите причину отмены.", code="reason_required")
@@ -399,8 +407,10 @@ def preview_payment(profile: StudentBillingProfile, *, amount, invoice: Invoice 
                     mode: str = "auto") -> dict:
     """Что произойдёт при сохранении платежа — ничего не записывая.
 
-    `mode`: auto — на начисления по порядку; invoice — на выбранное
-    начисление (остаток — аванс); advance — весь платёж в аванс."""
+    `mode`: auto и advance (предоплата) — на выставленные неоплаченные
+    начисления по порядку, остаток — аванс на будущие месяцы; invoice —
+    сначала на выбранное начисление, остаток — на остальные по порядку, затем
+    аванс (так же, как `record_payment`)."""
     from .contracts import money_summary
 
     amount = _amount(amount)
@@ -412,9 +422,8 @@ def preview_payment(profile: StudentBillingProfile, *, amount, invoice: Invoice 
     if mode == "invoice":
         if invoice is None or invoice.profile_id != profile.pk:
             raise BillingError("Выберите начисление этого студента.", code="wrong_profile")
-        targets = [invoice] if invoice.status in Invoice.UNPAID_STATUSES else []
-    elif mode == "advance":
-        targets = []
+        first = [invoice] if invoice.status in Invoice.UNPAID_STATUSES else []
+        targets = first + [inv for inv in unpaid if inv.pk != invoice.pk]
     else:
         targets = unpaid
     left, rows = amount, []

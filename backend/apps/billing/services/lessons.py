@@ -391,13 +391,19 @@ def lesson_breakdown(profile: StudentBillingProfile, *, until: dt.date | None = 
     groups = _student_group_ids(profile.student_id)
     lessons = (Lesson.objects.filter(Q(pk__in=list(attendance)) | Q(pk__in=list(consumed)))
                .select_related("group", "subject").order_by("date", "start_time", "pk"))
+    marks = dict(Attendance.Status.choices)
     rows, totals = [], defaultdict(int)
+    priority_before = []  # уроки приоритетного предмета до начала договора — подсказка к дате начала
     for lesson in lessons:
         package = consumed.get(lesson.pk)
         if package is not None:
             reason = "counted"
+        elif profile.subject_id and lesson.subject_id is None:
+            reason = "no_subject"
         elif profile.subject_id and lesson.subject_id != profile.subject_id:
             reason = "other_subject"
+        elif lesson.status == Lesson.Status.CANCELLED:
+            reason = "cancelled"
         elif lesson.status != Lesson.Status.COMPLETED:
             reason = "not_completed"
         elif lesson.date < profile.start_date:
@@ -414,24 +420,39 @@ def lesson_breakdown(profile: StudentBillingProfile, *, until: dt.date | None = 
             reason = "course_completed"
         else:
             reason = "not_in_group_or_absence_rule"
+        if reason == "before_contract" and lesson.status == Lesson.Status.COMPLETED:
+            priority_before.append(lesson.date)
         totals[reason] += 1
+        mark = attendance.get(lesson.pk)
         rows.append({
             "lesson": lesson.pk, "date": lesson.date.isoformat(), "group": lesson.group.name,
             "subject": lesson.subject.name if lesson.subject_id else None, "lesson_status": lesson.status,
-            "attendance": attendance.get(lesson.pk), "reason": reason, "reason_display": REASONS[reason],
+            "lesson_status_display": lesson.get_status_display(),
+            "attendance": mark, "attendance_display": marks.get(mark, "Нет отметки") if mark else "Нет отметки",
+            "contract_start": profile.start_date.isoformat(),
+            "reason": reason, "reason_display": REASONS[reason],
             "month_number": (package.month_number or package.number) if package else None,
         })
     return {
         "attended": sum(1 for v in attendance.values() if v in ATTENDED),
-        "marked": len(attendance), "counted": totals["counted"], "totals": dict(totals), "lessons": rows,
+        "marked": len(attendance), "counted": totals.get("counted", 0), "totals": dict(totals), "lessons": rows,
         "priority_subject": profile.subject.name if profile.subject_id else None,
+        "contract_start": profile.start_date.isoformat(),
+        # Проведённые уроки приоритетного предмета до даты начала договора: если
+        # дата начала указана ошибочно, её исправляет `profiles.change_start_date`.
+        "priority_before_contract": {
+            "count": len(priority_before),
+            "first_date": priority_before[0].isoformat() if priority_before else None,
+        },
     }
 
 
 REASONS = {
     "counted": "Засчитан в учебный месяц",
-    "other_subject": "Другой предмет — учебный месяц считается по приоритетному предмету",
-    "not_completed": "Урок не отмечен как «Проведён»",
+    "other_subject": "Другой предмет",
+    "no_subject": "У урока не указан предмет",
+    "cancelled": "Урок отменён",
+    "not_completed": "Урок не подтверждён (не отмечен как «Проведён»)",
     "before_contract": "До даты начала договора",
     "after_stop": "После остановки начислений",
     "other_group": "Урок другой группы / в будущем",

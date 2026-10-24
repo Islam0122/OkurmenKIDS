@@ -23,7 +23,7 @@ from django.utils import timezone
 from apps.accounting.services.money import money
 
 from ..models import BillingContactLog, BillingSettings, CreditLedgerEntry, Invoice, LessonPackage, StudentBillingProfile
-from .contracts import next_month_cost, payment_stage
+from .contracts import applicable_credit, next_month_cost, payment_stage
 
 ZERO = Decimal("0.00")
 QUEUES = ("to_pay", "soon", "overdue", "all")
@@ -113,6 +113,8 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
         "draft" if any(i.status == Invoice.Status.DRAFT for i in invoices) else "paid")
     overdue_lessons = max((i.package.lessons_used - i.due_lesson for i in overdue if i.due_lesson), default=0)
     overdue_days = max(((today - (i.overdue_since or i.due_date)).days for i in overdue), default=0)
+    credit = profile.credit_sum if getattr(profile, "credit_sum", None) else ZERO
+    usable = applicable_credit(profile, unpaid, credit)
     student = profile.student
     row = {
         "profile": profile.pk, "student": student.pk, "student_name": str(student),
@@ -139,8 +141,10 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
             "due_date": None if focus.due_lesson else focus.due_date.isoformat(),
             "status": focus.status, "status_display": focus.get_status_display(),
         },
-        "due_now": _s(sum((i.balance for i in unpaid), ZERO)),
-        "overdue_amount": _s(sum((i.balance for i in overdue), ZERO)),
+        # Как в карточке (`contracts.money_summary`): за вычетом аванса,
+        # который правила договора разрешают направить на эти начисления.
+        "due_now": _s(max(sum((i.balance for i in unpaid), ZERO) - usable, ZERO)),
+        "overdue_amount": _s(max(sum((i.balance for i in overdue), ZERO) - usable, ZERO)),
         "overdue_lessons": overdue_lessons, "overdue_days": overdue_days,
         "credit": _s(profile.credit_sum if hasattr(profile, "credit_sum") and profile.credit_sum else ZERO),
         "last_contact_at": last_contact.contacted_at.isoformat() if last_contact else None,

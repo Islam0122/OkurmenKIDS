@@ -198,6 +198,11 @@ class ProfileUpdateSerializer(serializers.Serializer):
     )
 
 
+class StartDateSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+    reason = serializers.CharField()
+
+
 class BillingReasonSerializer(serializers.Serializer):
     reason = serializers.CharField()
 

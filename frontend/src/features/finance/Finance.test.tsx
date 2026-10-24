@@ -19,6 +19,7 @@ vi.mock('@/api/finance', () => ({
     me: vi.fn(), options: vi.fn(), counts: vi.fn(), queue: vi.fn(), card: vi.fn(), previewPayment: vi.fn(),
     recordPayment: vi.fn(), receipt: vi.fn(), receiptPrinted: vi.fn(), downloadReceiptPdf: vi.fn(), plans: vi.fn(),
     lmsStudents: vi.fn(), createContract: vi.fn(), periods: vi.fn(), payments: vi.fn(), periodReport: vi.fn(),
+    lessonBreakdown: vi.fn(), applyCredit: vi.fn(), changeStartDate: vi.fn(),
   },
 }))
 
@@ -27,6 +28,7 @@ import { AddPaymentPage } from '@/features/finance/AddPaymentPage'
 import { FinanceLayout } from '@/features/finance/FinanceLayout'
 import { NewContractPage } from '@/features/finance/NewContractPage'
 import { PaymentsPage } from '@/features/finance/PaymentsPage'
+import { StudentCardPage } from '@/features/finance/StudentCardPage'
 import { currentMonth, setFinancePeriod } from '@/features/finance/period'
 import { ToPayPage } from '@/features/finance/QueuePage'
 import { ReceiptSheet } from '@/features/finance/ReceiptPage'
@@ -259,5 +261,46 @@ describe('ReceiptSheet', () => {
     expect(screen.getByText('10 000,00 сом')).toBeInTheDocument()
     expect(screen.getByText('35 000,00 сом')).toBeInTheDocument()
     expect(screen.getByText(/Не является фискальным чеком/)).toBeInTheDocument()
+  })
+})
+
+describe('StudentCardPage', () => {
+  it('shows unapplied credit separately and explains every attendance', async () => {
+    vi.mocked(financeApi.card).mockResolvedValue({
+      ...CARD,
+      contract: { ...CARD.contract, status: 'ACTIVE', status_display: 'Обучается', is_course: true, start_date: '2026-10-24' },
+      summary: { received: '53000.00', refunded: '0.00', net_received: '53000.00', reservation_received: '0.00',
+        reservation_unused: '0.00', allocated: '0.00', adjusted: '0.00', credit: '53000.00', invoiced: '53000.00',
+        invoices_balance: '53000.00', credit_applicable: '53000.00', credit_unapplied: '53000.00', due_now: '0.00',
+        overdue: '0.00', paid_total: '53000.00', standard_course_price: '60000.00', final_course_price: '53000.00',
+        discount_amount: '7000.00', outstanding: '0.00', future: '0.00' },
+      months: [], invoices: [], reservations: [], payments: [], contacts: [],
+    } as unknown as ContractCard)
+    vi.mocked(financeApi.lessonBreakdown).mockResolvedValue({
+      attended: 2, marked: 2, counted: 0, priority_subject: 'IT', contract_start: '2026-10-24',
+      totals: { other_subject: 1, before_contract: 1 }, priority_before_contract: { count: 1, first_date: '2026-09-08' },
+      lessons: [
+        { lesson: 1, date: '2026-09-08', group: 'KC-1', subject: 'IT', lesson_status: 'completed', lesson_status_display: 'Проведён',
+          attendance: 'present', attendance_display: 'Присутствовал', contract_start: '2026-10-24', reason: 'before_contract',
+          reason_display: 'До даты начала договора', month_number: null },
+        { lesson: 2, date: '2026-09-09', group: 'KC-1', subject: 'English', lesson_status: 'completed', lesson_status_display: 'Проведён',
+          attendance: 'present', attendance_display: 'Присутствовал', contract_start: '2026-10-24', reason: 'other_subject',
+          reason_display: 'Другой предмет', month_number: null },
+      ],
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<Routes><Route path="/finance/students/:profileId" element={<StudentCardPage />} /></Routes>,
+      { route: '/finance/students/7' })
+    expect(await screen.findByText(/Свободный аванс 53 000 сом не распределён/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Распределить аванс' })).toBeInTheDocument()
+    expect(screen.getByText('Получено по договору')).toBeInTheDocument()
+    expect(await screen.findByText(/1 проведённых уроков IT до даты начала договора/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Разбор посещений' }))
+    const table = screen.getByRole('table')
+    expect(table).toHaveTextContent('Причина учёта или исключения')
+    expect(table).toHaveTextContent('Другой предмет')
+    expect(table).toHaveTextContent('До даты начала договора')
+    await user.click(screen.getByRole('button', { name: 'Распределить аванс' }))
+    expect(financeApi.applyCredit).toHaveBeenCalledWith(7)
   })
 })

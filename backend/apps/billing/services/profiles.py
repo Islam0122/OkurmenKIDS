@@ -36,6 +36,7 @@ from ..models import (
     BillingTermsChange,
     DiscountType,
     Invoice,
+    LessonConsumption,
     LessonPackage,
     PaymentMode,
     ReservationAllocation,
@@ -430,6 +431,57 @@ def update_profile(profile: StudentBillingProfile, *, actor, **fields) -> Studen
             k: getattr(profile, k + "_id" if k == "responsible_accountant" else k) for k in fields
         })
     return profile
+
+
+def change_start_date(profile: StudentBillingProfile, *, actor, start_date: dt.date, reason: str) -> dict:
+    """Контролируемое исправление даты начала договора (например, договор
+    оформлен 24.10 с датой «сегодня», а студент учится с сентября и уже
+    оплатил курс). Только администратор оплаты, с основанием и аудитом.
+
+    * раньше — уроки приоритетного предмета с новой даты засчитываются в
+      учебные месяцы по обычным правилам (`sync_profile_history`): другие
+      предметы, отменённые уроки и дни вне группы по-прежнему не идут;
+    * позже — только если до новой даты ничего не засчитано (засчитанные
+      уроки исправляются сторно отдельно, а не сменой даты);
+    * период первого начисления, если он был равен старой дате начала,
+      переносится на новую (`correct_invoice_period`, тоже в аудите).
+    Посещаемость, платежи и суммы начислений не меняются."""
+    from ..permissions import authorize
+    from .invoices import correct_invoice_period
+    from .lessons import sync_profile_history
+
+    authorize(actor, "adjust_invoice")
+    reason = (reason or "").strip()
+    if not reason:
+        raise BillingError("Укажите основание исправления даты начала.", code="reason_required")
+    if start_date > timezone.localdate():
+        raise BillingError("Дата начала не может быть в будущем при исправлении.", code="bad_date")
+    with transaction.atomic():
+        profile = lock_profile(profile)
+        if profile.status in StudentBillingProfile.CLOSED_STATUSES:
+            raise BillingError("Договор закрыт — дата начала не меняется.", code="profile_inactive")
+        old = profile.start_date
+        if start_date == old:
+            return {"profile": profile.pk, "start_date": old.isoformat(), "consumed": 0, "changed": False}
+        if start_date > old and LessonConsumption.objects.filter(
+            profile=profile, kind=LessonConsumption.Kind.CONSUME, status=LessonConsumption.Status.ACTIVE,
+            lesson_date__lt=start_date,
+        ).exists():
+            raise BillingError("До новой даты уже засчитаны уроки — сначала сторнируйте их.", code="has_consumptions")
+        if profile.stopped_on and start_date >= profile.stopped_on:
+            raise BillingError("Дата начала позже даты остановки начислений.", code="bad_date")
+        profile.start_date = start_date
+        profile.save(update_fields=["start_date", "updated_at"])
+        audit.log(actor, profile, "billing_profile_start_date", old={"start_date": old},
+                  new={"start_date": start_date}, reason=reason)
+        first = (profile.invoices.exclude(status=Invoice.Status.VOID).select_related("package")
+                 .order_by("package__number", "pk").first())
+        if first is not None and first.period_date == old:
+            correct_invoice_period(first, actor=actor, period_date=start_date, system=True,
+                                   reason=f"Исправлена дата начала договора: {reason}")
+    result = sync_profile_history(StudentBillingProfile.objects.get(pk=profile.pk))
+    return {"profile": profile.pk, "start_date": start_date.isoformat(), "consumed": result["consumed"],
+            "changed": True}
 
 
 # ---------------------------------------------------------------------------
