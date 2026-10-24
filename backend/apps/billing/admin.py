@@ -104,3 +104,57 @@ class ReceiptAdmin(ReadOnlyAdmin):
 
         return format_html('<a href="{}">№{}</a>', reverse("admin:billing_payment_manage", args=[obj.payment_id]),
                            obj.payment_id)
+
+
+@admin.register(models.FinancialCorrection)
+class FinancialCorrectionAdmin(admin.ModelAdmin):
+    """«Неправильные данные»: пункт меню раздела оплаты обучения. Виден и
+    открывается только с разрешением `billing.correct_financial_records`
+    (проверка — и здесь, и в каждом представлении `admin_corrections`)."""
+
+    def _allowed(self, request):
+        from .admin_corrections import allowed
+
+        return allowed(request.user)
+
+    def has_module_permission(self, request):
+        return self._allowed(request)
+
+    def has_view_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_model_perms(self, request):
+        return {"view": self._allowed(request)}
+
+    def changelist_view(self, request, extra_context=None):
+        from .admin_corrections import index_view
+
+        return index_view(request, self.admin_site)
+
+    def get_urls(self):
+        from django.urls import path
+
+        from . import admin_corrections as views
+
+        wrap = self.admin_site.admin_view
+        return [
+            path("", wrap(lambda request: views.index_view(request, self.admin_site)),
+                 name="billing_financialcorrection_changelist"),
+            path("journal/", wrap(lambda request: views.journal_view(request, self.admin_site)),
+                 name="billing_correction_journal"),
+            path("<str:kind>/<int:pk>/", wrap(lambda request, kind, pk: views.correct_view(request, kind, pk,
+                                                                                            self.admin_site)),
+                 name="billing_correction_edit"),
+            path("<str:kind>/<int:pk>/void/", wrap(lambda request, kind, pk: views.void_view(request, kind, pk,
+                                                                                              self.admin_site)),
+                 name="billing_correction_void"),
+        ]

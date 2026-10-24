@@ -1174,3 +1174,17 @@ class BillingSettings(models.Model):
                 ),
             })
         return obj
+
+
+class FinancialCorrection(Invoice):
+    """Пункт Django Admin «Неправильные данные» — страница поиска и
+    исправления ошибочных финансовых записей (`admin_corrections`). Прокси без
+    таблицы; несёт разрешение `billing.correct_financial_records`: без него
+    страница, формы и прямые POST-запросы недоступны."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Неправильные данные"
+        verbose_name_plural = "Неправильные данные"
+        default_permissions = ()
+        permissions = [("correct_financial_records", "Исправление неправильных финансовых данных")]
