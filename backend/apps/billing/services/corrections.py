@@ -207,11 +207,18 @@ def correct_payment(payment: StudentPayment, *, actor, reason: str, received_dat
         if comment is not None and comment != payment.comment:
             payment.comment = comment
             changed.append("comment")
+        reclassified = None
         if purpose and purpose != payment.purpose:
-            if StudentPayment.Purpose.RESERVATION in (purpose, payment.purpose):
-                raise BillingError("Оплата брони меняется через бронь (отмена / возврат).", code="invalid")
+            if purpose == StudentPayment.Purpose.RESERVATION:
+                raise BillingError("Платёж не становится бронью задним числом — оформите бронь.", code="invalid")
             if purpose not in StudentPayment.Purpose.values:
                 raise BillingError("Неизвестное назначение платежа.", code="invalid")
+            if payment.purpose == StudentPayment.Purpose.RESERVATION:
+                # Деньги, принятые как «оплата брони», на самом деле — оплата
+                # обучения / предоплата (например, весь курс внесён через бронь):
+                # бронь закрывается без возврата и удержания, деньги и их
+                # распределения остаются, ограничения брони больше не действуют.
+                reclassified = getattr(payment, "reservation", None)
             payment.purpose = purpose
             changed.append("purpose")
 
@@ -250,6 +257,18 @@ def correct_payment(payment: StudentPayment, *, actor, reason: str, received_dat
         if not changed and allocations is None:
             return {"payment": payment, "changed": [], "warnings": [], "audit": None}
         payment.save()
+        if reclassified is not None and reclassified.status != reclassified.Status.CANCELLED:
+            from ..models import Reservation
+
+            reservation = Reservation.objects.select_for_update().get(pk=reclassified.pk)
+            old_status = reservation.status
+            reservation.status, reservation.cancelled_at = Reservation.Status.CANCELLED, timezone.now()
+            reservation.cancel_reason = f"Платёж переквалифицирован в «{payment.get_purpose_display()}»: {reason}"
+            reservation.cancelled_by = actor if getattr(actor, "is_authenticated", False) else None
+            reservation.save()
+            audit.log(actor, reservation, "billing_reservation_reclassify", old={"status": old_status},
+                      new={"status": reservation.status, "payment": payment.pk, "purpose": payment.purpose},
+                      reason=reason)
 
         created_ids: list[int] = []
         if allocations is not None:

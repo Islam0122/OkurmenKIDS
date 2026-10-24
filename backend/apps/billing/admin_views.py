@@ -21,9 +21,9 @@ from django.urls import reverse
 
 from apps.accounting.models import StudentPayment
 
-from .models import Invoice, PaymentAllocation, Receipt, StudentBillingProfile
+from .models import Invoice, PaymentAllocation, Receipt, Reservation, StudentBillingProfile
 from .permissions import can_view_money, is_billing_accountant
-from .services import BillingError, corrections, payments, receipts
+from .services import BillingError, corrections, payments, receipts, reservations
 from .services.receipt_pdf import receipt_rows, render_receipt_pdf
 
 PURPOSES = [("", "— не менять —"), (StudentPayment.Purpose.TUITION, "Оплата обучения"),
@@ -103,6 +103,18 @@ class CreatedAtForm(forms.Form):
     reason = forms.CharField(label="Причина", widget=forms.Textarea(attrs={"rows": 2}))
 
 
+class ReservationEditForm(forms.Form):
+    expected_amount = forms.DecimalField(label="Сумма брони, сом", max_digits=14, decimal_places=2,
+                                         min_value=Decimal("0.01"), required=False)
+    reserved_until = forms.DateField(label="Бронь до", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    reason = forms.CharField(label="Причина", widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class ReservationCancelForm(forms.Form):
+    confirm = forms.BooleanField(label="Подтверждаю отмену брони")
+    reason = forms.CharField(label="Причина отмены", widget=forms.Textarea(attrs={"rows": 2}))
+
+
 class VoidForm(forms.Form):
     confirm = forms.BooleanField(label="Подтверждаю аннулирование этого платежа")
     reason = forms.CharField(label="Причина аннулирования", widget=forms.Textarea(attrs={"rows": 2}))
@@ -154,6 +166,22 @@ def manage_payment_view(request, pk, admin_site):
                         payments.reverse_payment(payment, actor=request.user, reason=form.cleaned_data["reason"])
                     messages.success(request, f"Платёж №{payment.pk} аннулирован, чек аннулирован.")
                     return redirect(request.path)
+            elif action in ("reservation_edit", "reservation_cancel"):
+                reservation = get_object_or_404(Reservation, pk=request.POST.get("reservation"),
+                                                profile_id=payment.billing_profile_id)
+                form_class = ReservationEditForm if action == "reservation_edit" else ReservationCancelForm
+                form = form_class(request.POST)
+                if form.is_valid():
+                    if action == "reservation_edit":
+                        reservations.update_reservation(reservation, actor=request.user, **form.cleaned_data)
+                        messages.success(request, "Бронь исправлена.")
+                    else:
+                        reservations.cancel_reservation(reservation, actor=request.user,
+                                                        reason=form.cleaned_data["reason"])
+                        messages.success(request, "Бронь отменена (деньги, если были, остались авансом).")
+                else:
+                    messages.error(request, "Проверьте форму брони: причина обязательна.")
+                return redirect(request.path)
             elif action == "reprint":
                 receipt = get_object_or_404(Receipt, payment=payment)
                 receipts.mark_printed(receipt, actor=request.user)
@@ -169,6 +197,11 @@ def manage_payment_view(request, pk, admin_site):
         "receipt": receipt, "receipt_rows": receipt_rows(receipt) if receipt else [],
         "allocations": PaymentAllocation.objects.filter(payment=payment).select_related("invoice").order_by("pk"),
         "history": corrections.payment_history(payment), "forms": forms_, "can_edit": can_edit,
+        # Бронь договора: оплаченная ссылается на этот же платёж (не отдельные деньги).
+        "reservations": [{"obj": r, "edit": ReservationEditForm(initial={"expected_amount": r.expected_amount,
+                                                                          "reserved_until": r.reserved_until}),
+                          "cancel": ReservationCancelForm(), "same_payment": r.payment_id == payment.pk}
+                         for r in Reservation.objects.filter(profile_id=payment.billing_profile_id).order_by("-pk")],
         "is_void": payment.status == StudentPayment.Status.VOID,
         "list_url": reverse("admin:accounting_studentpayment_changelist"),
     }

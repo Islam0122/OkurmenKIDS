@@ -40,6 +40,29 @@
     </div>
   </div>
 
+  {% for r in reservations %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Бронь #{{ r.obj.pk }} · {{ r.obj.get_status_display }}</span></div>
+    <div class="ok-card-body">
+      <p>Сумма брони: {{ r.obj.expected_amount }} сом{% if r.obj.reserved_until %} · до {{ r.obj.reserved_until|date:"d.m.Y" }}{% endif %}.
+        {% if r.same_payment %}<strong>Оплачена этим платежом</strong> — это не отдельные деньги: в «получено» учитывается только платёж;
+        оплату брони исправляйте формой платежа выше (дата, сумма, назначение «Оплата обучения», если это не бронь).
+        {% elif r.obj.payment_id %}Оплачена платежом №{{ r.obj.payment_id }}.{% endif %}
+        {% if r.obj.cancel_reason %}<br>Отменена: {{ r.obj.cancel_reason }}{% endif %}</p>
+      {% if can_edit and r.obj.status == "PENDING" %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="reservation_edit">
+        <input type="hidden" name="reservation" value="{{ r.obj.pk }}">{{ r.edit.as_p }}
+        <button type="submit" class="button">Исправить бронь</button></form>
+      {% endif %}
+      {% if can_edit and r.obj.status != "CANCELLED" %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="reservation_cancel">
+        <input type="hidden" name="reservation" value="{{ r.obj.pk }}">{{ r.cancel.as_p }}
+        <button type="submit" class="button">Отменить бронь</button></form>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
   {% if can_edit and not is_void %}
   <div class="ok-card">
     <div class="ok-card-header"><span>Исправить платёж</span></div>

@@ -132,3 +132,36 @@ def cancel_reservation(reservation: Reservation, *, actor, reason: str, refund_a
             "refunded": refund_amount, "retained": retain_amount,
         }, reason=reason)
     return reservation
+
+
+def update_reservation(reservation: Reservation, *, actor, reason: str, expected_amount=None,
+                       reserved_until=None, clear_reserved_until: bool = False) -> Reservation:
+    """Исправить неоплаченную бронь: ожидаемую сумму и срок. У оплаченной
+    брони сумма и дата — это платёж: исправляются через
+    `corrections.correct_payment` (дата поступления, сумма, назначение)."""
+    from ..permissions import authorize
+
+    authorize(actor, "cancel_reservation")
+    reason = (reason or "").strip()
+    if not reason:
+        raise BillingError("Укажите причину.", code="reason_required")
+    with transaction.atomic():
+        lock_profile(reservation.profile_id)
+        reservation = Reservation.objects.select_for_update().get(pk=reservation.pk)
+        if reservation.status != Reservation.Status.PENDING:
+            raise BillingError("Оплаченная бронь исправляется через её платёж; отменённая — не меняется.",
+                               code="bad_status")
+        old = {"expected_amount": reservation.expected_amount, "reserved_until": reservation.reserved_until}
+        if expected_amount not in (None, ""):
+            amount = Decimal(str(expected_amount))
+            if amount <= 0:
+                raise BillingError("Сумма брони должна быть больше нуля.", code="invalid_amount")
+            reservation.expected_amount = amount
+        if reserved_until is not None or clear_reserved_until:
+            reservation.reserved_until = reserved_until
+        new = {"expected_amount": reservation.expected_amount, "reserved_until": reservation.reserved_until}
+        if new == old:
+            return reservation
+        reservation.save()
+        audit.log(actor, reservation, "billing_reservation_update", old=old, new=new, reason=reason)
+    return reservation

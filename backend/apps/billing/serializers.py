@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.db import models
 from rest_framework import serializers
 
 from apps.academy.models import Course, Student
@@ -516,14 +517,51 @@ class CreditEntrySerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class ReservationSerializer(serializers.ModelSerializer):
+    """Бронь — не отдельные деньги: оплаченная бронь ссылается на платёж
+    (`payment`), и в «получено» считается только он. `paid_used` — сколько
+    из этого платежа уже распределено на начисления, `paid_unused` — сколько
+    осталось авансом."""
+
     student_name = serializers.CharField(source="profile.student.__str__", read_only=True)
     paid_amount = serializers.DecimalField(source="payment.amount", **MONEY, read_only=True, default=None)
+    paid_date = serializers.DateField(source="payment.received_date", read_only=True, default=None)
+    payment_status = serializers.CharField(source="payment.status", read_only=True, default=None)
+    receipt_number = serializers.SerializerMethodField()
+    paid_used = serializers.SerializerMethodField()
+    paid_unused = serializers.SerializerMethodField()
 
     class Meta:
         model = Reservation
         fields = ("id", "profile", "student_name", "group", "expected_amount", "reserved_until", "status", "payment",
-                  "paid_amount", "comment", "refunded_amount", "retained_amount", "cancel_reason", "cancelled_at",
-                  "created_at")
+                  "paid_amount", "paid_date", "payment_status", "receipt_number", "paid_used", "paid_unused",
+                  "comment", "refunded_amount", "retained_amount", "cancel_reason", "cancelled_at", "created_at")
+
+    def get_receipt_number(self, obj) -> str | None:
+        receipt = getattr(obj.payment, "receipt", None) if obj.payment_id else None
+        return receipt.number if receipt else None
+
+    def get_paid_used(self, obj) -> str | None:
+        if not obj.payment_id:
+            return None
+        used = obj.payment.billing_allocations.filter(status="ACTIVE").aggregate(s=models.Sum("amount"))["s"]
+        from apps.accounting.services.money import money
+
+        return str(money(used or Decimal("0.00")))
+
+    def get_paid_unused(self, obj) -> str | None:
+        if not obj.payment_id or obj.payment.status != StudentPayment.Status.CONFIRMED:
+            return None
+        from .services.ledger import payment_unallocated
+
+        from apps.accounting.services.money import money
+
+        return str(money(payment_unallocated(obj.payment_id)))
+
+
+class ReservationEditSerializer(serializers.Serializer):
+    expected_amount = serializers.DecimalField(**MONEY, min_value=Decimal("0.01"), required=False)
+    reserved_until = serializers.DateField(required=False, allow_null=True)
+    reason = serializers.CharField()
 
 
 class ReservationCreateSerializer(serializers.Serializer):
