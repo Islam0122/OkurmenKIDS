@@ -239,6 +239,9 @@ export interface Contract {
   is_course: boolean
   pending_terms: { id: number; final_course_price: string | null; discount_amount: string; reason: string } | null
   special_terms: string
+  /** План стоимости месяцев: '' — итоговая поровну на оставшиеся месяцы. */
+  month_plan_mode?: '' | 'PROPORTIONAL' | 'MANUAL'
+  month_prices?: { month_number: number; standard_price: string; amount: string }[]
 }
 
 export interface MoneySummary {
@@ -291,6 +294,9 @@ export interface Reservation {
 
 /** График оплаты договора: выставленные месяцы + прогноз оставшихся. */
 export interface PaymentSchedule {
+  month_plan_mode: '' | 'PROPORTIONAL' | 'MANUAL'
+  standard_course_price: string | null
+  discount_amount: string
   final_course_price: string
   invoiced: string
   projected: string
@@ -299,7 +305,32 @@ export interface PaymentSchedule {
   issues: string[]
   price_changes: { date: string; from: string | null; to: string; reason: string }[]
   months: { month_number: number; state: 'invoiced' | 'planned' | 'future'; invoice?: number; number?: string
-    amount: string; paid: string; balance: string; covered_by_credit: string; to_pay: string }[]
+    amount: string; paid: string; balance: string; covered_by_credit: string; to_pay: string
+    /** Цена месяца по плану договора (стандартная и после скидки); null — договор без плана. */
+    standard_price: string | null; plan_amount: string | null
+    status?: InvoiceStatus; status_display?: string; due_lesson?: number | null; due_date?: string | null
+    lessons_used?: number }[]
+}
+
+export interface MonthPlanBody {
+  standard_prices: string[]
+  final_course_price: string
+  mode: 'PROPORTIONAL' | 'MANUAL'
+  manual_amounts?: (string | null)[]
+  reason?: string
+  reissue_unstarted?: boolean
+  dry_run?: boolean
+}
+
+export interface MonthPlanResult {
+  mode: string
+  standard_total: string
+  final_course_price: string
+  discount: string
+  total: string
+  changed: boolean
+  reissued?: string[]
+  rows: { month_number: number; standard_price: string; amount: string; issued: boolean }[]
 }
 
 export interface Contact {
@@ -393,6 +424,10 @@ export interface ContractBody {
   payment_method?: string
   payer_name?: string
   special_terms?: string
+  /** Индивидуальные цены месяцев договора и правило распределения скидки. */
+  month_prices?: string[]
+  month_plan_mode?: 'PROPORTIONAL' | 'MANUAL'
+  month_amounts?: string[]
 }
 
 export interface LmsStudent {

@@ -1,0 +1,51 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div class="ok-form-container" style="max-width: 1000px; display:grid; gap:1.25rem;">
+  <div class="ok-card">
+    <div class="ok-card-header"><span>{{ profile.student }} · {{ profile.plan }} · {{ profile.get_payment_mode_display }}</span></div>
+    <div class="ok-card-body">
+      <table class="table table-sm">
+        <tr><th>Стандартная стоимость</th><td>{{ profile.standard_course_price }} сом</td></tr>
+        <tr><th>Итоговая стоимость договора</th><td>{{ profile.final_course_price }} сом</td></tr>
+        <tr><th>Скидка</th><td>{{ profile.discount_amount }} сом</td></tr>
+        <tr><th>Правило</th><td>{{ profile.get_month_plan_mode_display|default:"прежнее: итоговая поровну на оставшиеся месяцы" }}</td></tr>
+      </table>
+      {% if schedule %}
+      <p class="ok-section-subtitle">План начислений</p>
+      <table class="table table-sm">
+        <thead><tr><th>Месяц</th><th>Стандарт</th><th>По плану</th><th>Состояние</th><th>Начисление</th><th>Оплачено</th><th>Остаток</th></tr></thead>
+        {% for m in schedule.months %}
+        <tr><td>№{{ m.month_number }}</td><td>{{ m.standard_price|default:"—" }}</td><td>{{ m.plan_amount|default:"—" }}</td>
+          <td>{{ m.state }}{% if m.number %} · {{ m.number }}{% endif %}</td><td>{{ m.amount }}</td><td>{{ m.paid }}</td><td>{{ m.balance }}</td></tr>
+        {% endfor %}
+      </table>
+      <p>Начислено {{ schedule.invoiced }} + запланировано {{ schedule.projected }} = {{ schedule.total }}
+        {% if schedule.consistent %}(совпадает с итоговой){% else %}<strong style="color:#ba2121;">— несоответствие: {{ schedule.issues|join:" " }}</strong>{% endif %}</p>
+      {% endif %}
+    </div>
+  </div>
+  {% if preview %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Предпросмотр (не сохранён)</span></div>
+    <div class="ok-card-body">
+      <p>Стандартная {{ preview.standard_total }} · итоговая {{ preview.final_course_price }} · скидка {{ preview.discount }} · сумма плана {{ preview.total }}</p>
+      <table class="table table-sm"><thead><tr><th>Месяц</th><th>Стандарт</th><th>Итог</th><th></th></tr></thead>
+        {% for r in preview.rows %}<tr><td>№{{ r.month_number }}</td><td>{{ r.standard_price }}</td><td>{{ r.amount }}</td><td>{% if r.issued %}выставлен — не меняется{% endif %}</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  {% if can_edit %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Изменить план</span></div>
+    <div class="ok-card-body">
+      <p class="ok-help-text">Уже выставленные месяцы не меняются: план распределяет остаток итоговой стоимости по не выставленным месяцам.
+        Исправить выставленные — отметкой «перевыставить не начатые» (без уроков и корректировок) или корректировкой начисления.</p>
+      <form method="post">{% csrf_token %}{{ form.as_p }}
+        <button type="submit" name="action" value="preview" class="button">Предпросмотр</button>
+        <button type="submit" name="action" value="save" class="button default">Сохранить план</button></form>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

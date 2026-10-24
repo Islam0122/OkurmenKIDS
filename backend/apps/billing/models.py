@@ -311,6 +311,15 @@ class StudentBillingProfile(models.Model):
     final_course_price = models.DecimalField(**MONEY, null=True, blank=True, verbose_name="Итоговая стоимость курса")
     discount_enabled = models.BooleanField(default=False, verbose_name="Скидка предоставлена")
     discount_amount = models.DecimalField(**MONEY, default=ZERO, verbose_name="Размер скидки, сом")
+    # План стоимости учебных месяцев (`ContractMonthPrice`): пусто — прежнее
+    # правило (итоговая делится поровну на оставшиеся месяцы); PROPORTIONAL —
+    # скидка распределена пропорционально стандартным ценам месяцев; MANUAL —
+    # итоговая сумма каждого месяца задана бухгалтером.
+    month_plan_mode = models.CharField(
+        max_length=12, blank=True, default="", choices=[("PROPORTIONAL", "Скидка пропорционально цене месяцев"),
+                                                       ("MANUAL", "Суммы месяцев заданы вручную")],
+        verbose_name="План стоимости месяцев",
+    )
     responsible_accountant = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="billing_profiles",
         verbose_name="Ответственный бухгалтер",
@@ -353,6 +362,43 @@ class StudentBillingProfile(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Платёжный профиль нельзя удалить — остановите начисления.")
+
+
+class ContractMonthPrice(models.Model):
+    """Стоимость учебного месяца договора по программе: стандартная цена месяца
+    (например, №1 — 13 000, №2–4 — 15 000) и итоговая сумма к начислению после
+    распределения скидки. Σ итоговых сумм = итоговая стоимость договора.
+
+    Начисление месяца берёт сумму отсюда в момент выставления (снимок в
+    `Invoice`); изменение плана уже выставленные начисления не меняет — для них
+    итоговая сумма плана равна сумме начисления. Меняется только сервисом
+    `services.month_plan` (блокировка договора, причина, аудит)."""
+
+    profile = models.ForeignKey(StudentBillingProfile, on_delete=models.PROTECT, related_name="month_prices",
+                                verbose_name="Договор")
+    month_number = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)], verbose_name="Учебный месяц №")
+    standard_price = models.DecimalField(**MONEY, verbose_name="Стандартная цена месяца, сом")
+    amount = models.DecimalField(**MONEY, verbose_name="Итоговая сумма месяца, сом")
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Стоимость учебного месяца"
+        verbose_name_plural = "План стоимости учебных месяцев"
+        ordering = ["profile", "month_number"]
+        constraints = [
+            models.UniqueConstraint(fields=["profile", "month_number"], name="unique_contract_month_price"),
+            models.CheckConstraint(condition=Q(standard_price__gt=0), name="contract_month_standard_positive"),
+            models.CheckConstraint(condition=Q(amount__gte=0), name="contract_month_amount_non_negative"),
+        ]
+
+    def __str__(self):
+        return f"{self.profile} · месяц №{self.month_number}: {self.amount} сом"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Строку плана нельзя удалить — измените план договора.")
 
 
 class BillingTermsChange(_NoDelete, models.Model):

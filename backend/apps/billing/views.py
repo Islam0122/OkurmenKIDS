@@ -56,6 +56,7 @@ from .services import (
     corrections,
     invoices,
     lessons,
+    month_plan,
     payments,
     periods,
     pricing,
@@ -188,7 +189,7 @@ class PlanViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
 def _profile_qs():
     return StudentBillingProfile.objects.select_related(
         "student__group", "subject", "plan", "responsible_accountant", "discount_assigned_by", "discount_approved_by",
-    ).prefetch_related("invoices", "packages", "terms_changes")
+    ).prefetch_related("invoices", "packages", "terms_changes", "month_prices")
 
 
 @extend_schema(tags=TAG, parameters=[
@@ -258,6 +259,30 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         """Посещения студента и какие из них засчитаны в учебные месяцы — с
         причиной для каждого незасчитанного урока (только чтение)."""
         return Response(lessons.lesson_breakdown(self.get_object()))
+
+    @extend_schema(request=s.MonthPlanSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["get", "post"], url_path="month-plan")
+    def month_plan(self, request, pk=None):
+        """План стоимости учебных месяцев: GET — текущий план и график; POST —
+        предпросмотр (`dry_run`) или сохранение (администратор оплаты, причина,
+        аудит; выставленные начисления не меняются, кроме `reissue_unstarted`)."""
+        profile = self.get_object()
+        if request.method == "GET":
+            return Response({"mode": profile.month_plan_mode, "rows": [
+                {"month_number": r.month_number, "standard_price": str(r.standard_price), "amount": str(r.amount)}
+                for r in profile.month_prices.all()], "schedule": _schedule_json(contracts.payment_schedule(profile))})
+        data = dict(_valid(s.MonthPlanSerializer, request))
+        dry_run = data.pop("dry_run")
+        if dry_run:
+            from .permissions import authorize
+
+            _call(authorize, request.user, "approve_terms")
+            plan = _call(month_plan.compute_plan, profile, standard_prices=data["standard_prices"],
+                         final_course_price=data["final_course_price"], mode=data["mode"],
+                         manual_amounts=data.get("manual_amounts"))
+            return Response(_plan_json({**plan, "changed": False, "dry_run": True}))
+        plan = _call(month_plan.set_month_plan, profile, actor=request.user, **data)
+        return Response(_plan_json(plan))
 
     @extend_schema(request=s.StartDateSerializer, responses=OpenApiTypes.OBJECT)
     @action(detail=True, methods=["post"], url_path="start-date", permission_classes=[MoneyAccess])
@@ -1036,6 +1061,12 @@ def queue_filters(request) -> dict:
         "accountant": _int(q.get("accountant"), "accountant"), "ordering": q.get("ordering") or None,
         "contract_status": q.get("contract_status") or None,
     }
+
+
+def _plan_json(plan: dict) -> dict:
+    out = {k: (str(v) if isinstance(v, Decimal) else v) for k, v in plan.items() if k != "rows"}
+    out["rows"] = [{k: (str(v) if isinstance(v, Decimal) else v) for k, v in r.items()} for r in plan["rows"]]
+    return out
 
 
 def _schedule_json(schedule: dict | None) -> dict | None:

@@ -77,20 +77,32 @@ export function NewContractPage() {
   const [method, setMethod] = useState('cash')
   const [payer, setPayer] = useState('')
   const [specialTerms, setSpecialTerms] = useState('')
+  // Индивидуальные цены учебных месяцев договора (например, №1 — 13 000, №2–4 — 15 000).
+  const [customMonths, setCustomMonths] = useState(false)
+  const [monthPrices, setMonthPrices] = useState<string[]>([])
+  const [planMode, setPlanMode] = useState<'PROPORTIONAL' | 'MANUAL'>('PROPORTIONAL')
+  const [monthAmounts, setMonthAmounts] = useState<string[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const activePlans = (plans.data?.results ?? []).filter((p) => p.is_active)
   const plan = activePlans.find((p) => p.id === planId) ?? null
   const student = students.data?.results.find((s) => s.id === studentId)
   const isAccountant = me.data?.can_record_payments ?? false
-  const standard = plan?.current?.standard_course_price ?? plan?.current?.package_price ?? null
   const months = plan?.duration_months ?? 1
+  const usePlan = customMonths && !!plan?.duration_months
+  const priceList = usePlan ? Array.from({ length: months }, (_, i) => monthPrices[i] ?? plan?.current?.package_price ?? '') : []
+  const standard = usePlan
+    ? (priceList.reduce((sum, p) => sum + cents(p), 0) / 100).toFixed(2)
+    : plan?.current?.standard_course_price ?? plan?.current?.package_price ?? null
 
   const preview = useMemo(() => {
     const std = cents(standard)
     const fin = discount ? cents(finalPrice) : std
     const res = cents(reservation)
-    const firstMonth = mode === 'FULL_PREPAY' ? fin : Math.floor(fin / months)
+    // Месяц №1 по плану: пропорционально его стандартной цене или вручную (точную сумму считает backend).
+    const firstMonth = mode === 'FULL_PREPAY' ? fin
+      : usePlan ? (planMode === 'MANUAL' ? cents(monthAmounts[0]) : Math.floor(std ? fin * cents(priceList[0]) / std : 0))
+        : Math.floor(fin / months)
     const received = (reservationReceived ? res : 0) + cents(firstPayment)
     const resToFirst = reservationReceived && reservationMode === 'FIRST_MONTH' ? res : 0
     return {
@@ -98,7 +110,8 @@ export function NewContractPage() {
       firstMonthDue: Math.max(firstMonth - resToFirst - cents(firstPayment), 0),
       received, outstanding: Math.max(fin - received, 0),
     }
-  }, [standard, discount, finalPrice, reservation, mode, months, reservationReceived, reservationMode, firstPayment])
+  }, [standard, discount, finalPrice, reservation, mode, months, reservationReceived, reservationMode, firstPayment, usePlan,
+    planMode, monthAmounts, priceList])
 
   const limit = Number(me.data?.max_manager_discount_percent ?? 0)
   const overLimit = discount && !isAccountant && preview.std > 0 && preview.discount * 100 > preview.std * limit
@@ -119,6 +132,8 @@ export function NewContractPage() {
           reservation_amount: reservation || null, reservation_received: isAccountant && reservationReceived,
           initial_payment: isAccountant && firstPayment ? firstPayment : null, payment_method: method, payer_name: payer,
           special_terms: specialTerms,
+          ...(usePlan ? { month_prices: priceList, month_plan_mode: planMode,
+            month_amounts: planMode === 'MANUAL' ? Array.from({ length: months }, (_, i) => monthAmounts[i] ?? '') : undefined } : {}),
         }, key.current)
         createdId = contract.id
       } catch (error) {
@@ -209,6 +224,41 @@ export function NewContractPage() {
               <input type="checkbox" checked={discount} onChange={(e) => setDiscount(e.target.checked)} />
               Скидка предоставлена
             </label>
+            {plan?.duration_months ? (
+              <label className="mt-2 flex items-center gap-2 text-sm font-medium text-ink">
+                <input type="checkbox" checked={customMonths} onChange={(e) => setCustomMonths(e.target.checked)} />
+                Индивидуальная стоимость учебных месяцев
+              </label>
+            ) : null}
+            {usePlan ? (
+              <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
+                <div className="grid gap-2 sm:grid-cols-4">
+                  {priceList.map((p, i) => (
+                    <Field key={i} label={`Месяц №${i + 1}`} htmlFor={`nc-m${i}`} error={errors[`month_prices.${i}`]}>
+                      <Input id={`nc-m${i}`} inputMode="decimal" value={p}
+                        onChange={(e) => setMonthPrices(priceList.map((x, j) => j === i ? e.target.value : x))} />
+                    </Field>
+                  ))}
+                </div>
+                <div role="radiogroup" aria-label="Распределение скидки по месяцам" className="space-y-1 text-sm">
+                  <label className="flex items-center gap-2"><input type="radio" checked={planMode === 'PROPORTIONAL'} onChange={() => setPlanMode('PROPORTIONAL')} />
+                    Скидка пропорционально стоимости месяцев</label>
+                  <label className="flex items-center gap-2"><input type="radio" checked={planMode === 'MANUAL'} disabled={!isAccountant}
+                    onChange={() => setPlanMode('MANUAL')} /> Вручную задать итоговую сумму каждого месяца{isAccountant ? '' : ' (бухгалтер)'}</label>
+                </div>
+                {planMode === 'MANUAL' ? (
+                  <div className="grid gap-2 sm:grid-cols-4">
+                    {priceList.map((_, i) => (
+                      <Field key={i} label={`Итог месяца №${i + 1}`} htmlFor={`nc-a${i}`}>
+                        <Input id={`nc-a${i}`} inputMode="decimal" value={monthAmounts[i] ?? ''}
+                          onChange={(e) => setMonthAmounts(priceList.map((_x, j) => j === i ? e.target.value : (monthAmounts[j] ?? '')))} />
+                      </Field>
+                    ))}
+                  </div>
+                ) : null}
+                <p className="text-xs text-ink-secondary">Сумма месяцев после скидки всегда равна итоговой стоимости договора (точно до тыйына).</p>
+              </div>
+            ) : null}
             {discount ? (
               <Field label="Причина скидки" htmlFor="nc-reason" required className="mt-3" error={errors.discount_reason}>
                 <Textarea id="nc-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)}

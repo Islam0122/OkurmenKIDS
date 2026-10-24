@@ -20,6 +20,8 @@ import type {
   PaymentCorrectionResult,
   PaymentPreview,
   PaymentTarget,
+  MonthPlanBody,
+  MonthPlanResult,
   PeriodReport,
   PeriodsResponse,
   Plan,
@@ -98,6 +100,8 @@ export const financeApi = {
     post<Payment>(`/payments/${id}/refund/`, { amount, reason }, { 'Idempotency-Key': idempotencyKey }),
   payReservation: (id: number, body: { amount: string; received_date: string; method: string; payer_name?: string },
     idempotencyKey: string) => post(`/reservations/${id}/pay/`, body, { 'Idempotency-Key': idempotencyKey }),
+  /** План стоимости учебных месяцев договора (`dry_run` — предпросмотр). */
+  saveMonthPlan: (profile: number, body: MonthPlanBody) => post<MonthPlanResult>(`/profiles/${profile}/month-plan/`, body),
   editReservation: (id: number, body: { expected_amount?: string; reserved_until?: string | null; reason: string }) =>
     post(`/reservations/${id}/edit/`, body),
   cancelReservation: (id: number, reason: string) => post(`/reservations/${id}/cancel/`, { reason }),

@@ -206,3 +206,67 @@ def manage_payment_view(request, pk, admin_site):
         "list_url": reverse("admin:accounting_studentpayment_changelist"),
     }
     return render(request, "admin/billing/manage_payment.html", context)
+
+
+class MonthPlanForm(forms.Form):
+    standard_prices = forms.CharField(
+        label="Стандартные цены месяцев", help_text="Через запятую, по одной на месяц: 13000, 15000, 15000, 15000")
+    final_course_price = forms.DecimalField(label="Итоговая стоимость договора, сом", max_digits=14, decimal_places=2,
+                                            min_value=Decimal("0"))
+    mode = forms.ChoiceField(label="Правило распределения скидки", choices=[
+        ("PROPORTIONAL", "Пропорционально стоимости месяцев"), ("MANUAL", "Вручную задать сумму каждого месяца")])
+    manual_amounts = forms.CharField(label="Итоговые суммы месяцев (для «вручную»)", required=False,
+                                     help_text="Через запятую; для уже выставленных месяцев — их сумма или пусто.")
+    reissue_unstarted = forms.BooleanField(
+        label="Перевыставить не начатые месяцы по новому плану (корректировка с аудитом)", required=False)
+    reason = forms.CharField(label="Причина", required=False, widget=forms.Textarea(attrs={"rows": 2}))
+
+    @staticmethod
+    def _list(text, *, blanks=False):
+        items = [x.strip().replace(" ", "") for x in (text or "").split(",")]
+        if blanks:
+            return [x or None for x in items]
+        return [x for x in items if x]
+
+    def service_kwargs(self) -> dict:
+        data = self.cleaned_data
+        kwargs = {"standard_prices": self._list(data["standard_prices"]), "final_course_price": data["final_course_price"],
+                  "mode": data["mode"]}
+        if data["mode"] == "MANUAL":
+            kwargs["manual_amounts"] = self._list(data["manual_amounts"], blanks=True)
+        return kwargs
+
+
+def month_plan_view(request, pk, admin_site):
+    """План стоимости месяцев договора: предпросмотр и сохранение через
+    `services.month_plan` (права, блокировка, аудит)."""
+    from .services import month_plan
+    from .services.contracts import payment_schedule
+
+    profile = get_object_or_404(StudentBillingProfile.objects.select_related("student", "plan"), pk=pk)
+    rows = list(profile.month_prices.all())
+    initial = {"final_course_price": profile.final_course_price, "mode": profile.month_plan_mode or "PROPORTIONAL",
+               "standard_prices": ", ".join(str(r.standard_price) for r in rows) if rows else
+               ", ".join([str(profile.month_price or "")] * (profile.duration_months or 0)),
+               "manual_amounts": ", ".join(str(r.amount) for r in rows)}
+    form, preview = MonthPlanForm(initial=initial), None
+    if request.method == "POST":
+        form = MonthPlanForm(request.POST)
+        if form.is_valid():
+            try:
+                if request.POST.get("action") == "preview":
+                    if not is_billing_accountant(request.user):
+                        raise BillingError("Недостаточно прав.", code="forbidden")
+                    preview = month_plan.compute_plan(profile, **form.service_kwargs())
+                else:
+                    result = month_plan.set_month_plan(profile, actor=request.user, reason=form.cleaned_data["reason"],
+                                                       reissue_unstarted=form.cleaned_data["reissue_unstarted"],
+                                                       **form.service_kwargs())
+                    messages.success(request, "План сохранён." if result["changed"] else "Изменений нет.")
+                    return redirect(request.path)
+            except BillingError as exc:
+                messages.error(request, exc.message)
+    context = {**admin_site.each_context(request), "title": f"План месяцев — {profile.student}", "profile": profile,
+               "form": form, "preview": preview, "schedule": payment_schedule(profile),
+               "can_edit": is_billing_accountant(request.user)}
+    return render(request, "admin/billing/month_plan.html", context)

@@ -20,7 +20,7 @@ vi.mock('@/api/finance', () => ({
     recordPayment: vi.fn(), receipt: vi.fn(), receiptPrinted: vi.fn(), downloadReceiptPdf: vi.fn(), plans: vi.fn(),
     lmsStudents: vi.fn(), createContract: vi.fn(), periods: vi.fn(), payments: vi.fn(), periodReport: vi.fn(),
     lessonBreakdown: vi.fn(), applyCredit: vi.fn(), changeStartDate: vi.fn(),
-    payment: vi.fn(), paymentHistory: vi.fn(), correctPayment: vi.fn(), reversePayment: vi.fn(),
+    payment: vi.fn(), paymentHistory: vi.fn(), correctPayment: vi.fn(), reversePayment: vi.fn(), saveMonthPlan: vi.fn(),
   },
 }))
 
@@ -32,6 +32,7 @@ import { PaymentDetailPage } from '@/features/finance/PaymentDetailPage'
 import { PaymentsPage } from '@/features/finance/PaymentsPage'
 import { StudentCardPage } from '@/features/finance/StudentCardPage'
 import { currentMonth, setFinancePeriod } from '@/features/finance/period'
+import { ScheduleBlock } from '@/features/finance/CardSections'
 import { ToPayPage } from '@/features/finance/QueuePage'
 import { ReceiptSheet } from '@/features/finance/ReceiptPage'
 
@@ -419,5 +420,64 @@ describe('StudentCardPage — бронь и платежи', () => {
     const schedule = screen.getByRole('table', { name: 'График оплаты' })
     expect(within(schedule).getAllByRole('row')).toHaveLength(5)
     expect(schedule).toHaveTextContent('будет выставлен')
+  })
+})
+
+describe('План стоимости месяцев', () => {
+  it('new contract sends individual month prices; standard is their sum', async () => {
+    vi.mocked(financeApi.plans).mockResolvedValue({ count: 1, next: null, previous: null, results: [{
+      id: 1, name: "Kid's Club Standard", subject: 1, subject_name: 'IT', course: 1, course_name: "Kid's Club",
+      duration_months: 4, payment_deadline_lessons: 3, allow_monthly: true, allow_full_prepay: true, absence_policy: 'ALL_HELD',
+      is_active: true, current: { lessons_per_package: 12, package_price: '15000.00', effective_from: '2026-01-01', standard_course_price: '60000.00' },
+    }] })
+    vi.mocked(financeApi.lmsStudents).mockResolvedValue({ count: 1, next: null, previous: null, results: [
+      { id: 3, name: 'Асанов Айбек', group: 1, group_name: 'KC-1', status: 'active', status_display: 'Активен', parent_phone: '', profiles: [] },
+    ] })
+    vi.mocked(financeApi.createContract).mockResolvedValue({ id: 9 } as never)
+    const user = userEvent.setup()
+    renderWithProviders(<NewContractPage />, { route: '/finance/contracts/new?student=3' })
+    await screen.findByRole('option', { name: "Kid's Club Standard" })
+    await user.selectOptions(screen.getByLabelText(/Программа/), '1')
+    await user.click(screen.getByLabelText('Индивидуальная стоимость учебных месяцев'))
+    const first = screen.getByLabelText('Месяц №1')
+    await user.clear(first)
+    await user.type(first, '13000')
+    expect(screen.getByLabelText('Стандартная стоимость курса')).toHaveValue('58\u00a0000\u00a0сом')
+    await user.click(screen.getByLabelText('Скидка предоставлена'))
+    await user.type(screen.getByLabelText('Итоговая стоимость курса'), '50000')
+    await user.type(screen.getByLabelText(/Причина скидки/), 'Семья')
+    await user.click(screen.getByRole('button', { name: /Оформить договор/ }))
+    await waitFor(() => expect(financeApi.createContract).toHaveBeenCalled())
+    expect(vi.mocked(financeApi.createContract).mock.calls[0][0]).toMatchObject({
+      month_prices: ['13000', '15000.00', '15000.00', '15000.00'], month_plan_mode: 'PROPORTIONAL', final_course_price: '50000',
+    })
+  })
+
+  it('previews and saves the month plan with the chosen distribution rule', async () => {
+    vi.mocked(financeApi.saveMonthPlan).mockResolvedValue({ mode: 'PROPORTIONAL', standard_total: '58000.00',
+      final_course_price: '50000.00', discount: '8000.00', total: '50000.00', changed: false,
+      rows: [{ month_number: 1, standard_price: '13000.00', amount: '11206.90', issued: true },
+        { month_number: 2, standard_price: '15000.00', amount: '12931.04', issued: false },
+        { month_number: 3, standard_price: '15000.00', amount: '12931.03', issued: false },
+        { month_number: 4, standard_price: '15000.00', amount: '12931.03', issued: false }] })
+    const month = (n: number, state: 'invoiced' | 'future', amount: string) => ({ month_number: n, state, amount, paid: '0.00',
+      balance: state === 'invoiced' ? amount : '0.00', covered_by_credit: '0.00', to_pay: amount, standard_price: n === 1 ? '13000.00' : '15000.00',
+      plan_amount: amount, status: state === 'invoiced' ? 'OPEN' as const : undefined, status_display: 'Ожидает оплаты', due_lesson: 3, lessons_used: 1,
+      number: state === 'invoiced' ? 'INV-1' : undefined, invoice: state === 'invoiced' ? 1 : undefined })
+    const schedule = { month_plan_mode: 'PROPORTIONAL' as const, standard_course_price: '58000.00', discount_amount: '8000.00',
+      final_course_price: '50000.00', invoiced: '11206.90', projected: '38793.10', total: '50000.00', consistent: true, issues: [],
+      price_changes: [], months: [month(1, 'invoiced', '11206.90'), month(2, 'future', '12931.04'), month(3, 'future', '12931.03'), month(4, 'future', '12931.03')] }
+    const user = userEvent.setup()
+    renderWithProviders(<ScheduleBlock schedule={schedule} profile={7} canEdit />)
+    const table = screen.getByRole('table', { name: 'График оплаты' })
+    expect(table).toHaveTextContent('Стандарт')
+    expect(table).toHaveTextContent('3-й урок (сейчас 1)')
+    expect(screen.getByText(/Стандартная 58\s000/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'План стоимости месяцев' }))
+    await user.click(screen.getByRole('button', { name: 'Предпросмотр' }))
+    expect(financeApi.saveMonthPlan).toHaveBeenCalledWith(7, expect.objectContaining({ dry_run: true, mode: 'PROPORTIONAL',
+      standard_prices: ['13000.00', '15000.00', '15000.00', '15000.00'], final_course_price: '50000.00' }))
+    expect(await screen.findByText(/Сумма плана 50\s000/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()  // без причины
   })
 })

@@ -9,10 +9,10 @@ import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { Textarea } from '@/components/ui/Textarea'
 import { Field } from '@/features/worklog/formUi'
-import type { Payment, PaymentSchedule, Reservation } from '@/types/finance'
+import type { MonthPlanBody, MonthPlanResult, Payment, PaymentSchedule, Reservation } from '@/types/finance'
 import { cn } from '@/utils/cn'
 
-import { Amount, formatDate, som, useInvalidateFinance, useRunner } from './ui'
+import { Amount, InvoiceStatusBadge, formatDate, som, useInvalidateFinance, useRunner } from './ui'
 
 /** Тип операции для таблицы: бронь, предоплата, платёж, возврат. */
 export function operationType(p: Payment): string {
@@ -201,10 +201,29 @@ function ReservationCancelModal({ reservation, onClose }: { reservation: Reserva
 
 const STATE: Record<string, string> = { invoiced: 'выставлен', planned: 'оплачен по договору', future: 'будет выставлен' }
 
-/** График оплаты: выставленные месяцы и прогноз оставшихся (как их выставит backend), покрытие авансом и проверка суммы. */
-export function ScheduleBlock({ schedule }: { schedule: PaymentSchedule }) {
+function due(m: PaymentSchedule['months'][number]): string {
+  if (m.state !== 'invoiced') return '—'
+  if (m.due_lesson) return `${m.due_lesson}-й урок (сейчас ${m.lessons_used ?? 0})`
+  return formatDate(m.due_date ?? null)
+}
+
+/** График оплаты: цена месяца по плану договора, начисление, оплачено, остаток,
+ * срок и статус; прогноз оставшихся месяцев (как их выставит backend) и проверка суммы. */
+export function ScheduleBlock({ schedule, profile, canEdit }: { schedule: PaymentSchedule; profile?: number; canEdit?: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const hasPlan = schedule.months.some((m) => m.standard_price !== null)
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm">
+          {schedule.standard_course_price ? <>Стандартная {som(schedule.standard_course_price)} · </> : null}
+          итоговая <b>{som(schedule.final_course_price)}</b>
+          {schedule.discount_amount !== '0.00' ? <> · скидка {som(schedule.discount_amount)}</> : null}
+          <span className="text-ink-secondary"> · {schedule.month_plan_mode === 'MANUAL' ? 'суммы месяцев заданы вручную'
+            : schedule.month_plan_mode === 'PROPORTIONAL' ? 'скидка пропорционально цене месяцев' : 'итоговая поровну на оставшиеся месяцы'}</span>
+        </p>
+        {canEdit && profile ? <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>План стоимости месяцев</Button> : null}
+      </div>
       {schedule.consistent ? (
         <p className="text-sm text-ink-secondary">
           Начислено {som(schedule.invoiced)} + запланировано {som(schedule.projected)} = итоговая стоимость {som(schedule.final_course_price)}.
@@ -219,22 +238,96 @@ export function ScheduleBlock({ schedule }: { schedule: PaymentSchedule }) {
         </p>
       ) : null}
       <div className="card overflow-x-auto">
-        <table className="data-table min-w-[560px]" aria-label="График оплаты">
-          <thead><tr><th>Месяц</th><th>Состояние</th><th>Сумма</th><th>Оплачено</th><th>Закроет аванс</th><th>Осталось оплатить</th></tr></thead>
+        <table className="data-table min-w-[820px]" aria-label="График оплаты">
+          <thead><tr>
+            <th>Месяц</th>{hasPlan ? <><th>Стандарт</th><th>По плану</th></> : null}<th>Начисление</th><th>Оплачено</th>
+            <th>Закроет аванс</th><th>Остаток</th><th>Срок</th><th>Статус</th>
+          </tr></thead>
           <tbody>
             {schedule.months.map((m) => (
               <tr key={`${m.month_number}-${m.invoice ?? 'p'}`}>
                 <td className="whitespace-nowrap">№{m.month_number}{m.number ? <span className="block text-xs text-ink-secondary">{m.number}</span> : null}</td>
-                <td>{STATE[m.state]}</td>
+                {hasPlan ? <><td><Amount value={m.standard_price} tone="muted" /></td><td><Amount value={m.plan_amount} /></td></> : null}
                 <td><Amount value={m.amount} /></td>
                 <td><Amount value={m.paid} tone="muted" /></td>
                 <td><Amount value={m.covered_by_credit} tone="muted" /></td>
                 <td><Amount value={m.state === 'invoiced' ? m.balance : m.to_pay} /></td>
+                <td className="whitespace-nowrap">{due(m)}</td>
+                <td>{m.state === 'invoiced' && m.status ? <InvoiceStatusBadge status={m.status} label={m.status_display ?? ''} /> : STATE[m.state]}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {editing && profile ? <MonthPlanModal profile={profile} schedule={schedule} onClose={() => setEditing(false)} /> : null}
     </div>
+  )
+}
+
+/** Цены месяцев договора и правило скидки: предпросмотр на сервере (dry_run), сохранение с причиной. */
+function MonthPlanModal({ profile, schedule, onClose }: { profile: number; schedule: PaymentSchedule; onClose: () => void }) {
+  const invalidate = useInvalidateFinance()
+  const { run, busy } = useRunner()
+  const n = schedule.months.length
+  const [prices, setPrices] = useState(schedule.months.map((m) => m.standard_price ?? ''))
+  const [final, setFinal] = useState(schedule.final_course_price)
+  const [mode, setMode] = useState<'PROPORTIONAL' | 'MANUAL'>(schedule.month_plan_mode === 'MANUAL' ? 'MANUAL' : 'PROPORTIONAL')
+  const [manual, setManual] = useState(schedule.months.map((m) => m.state === 'invoiced' ? m.amount : (m.plan_amount ?? '')))
+  const [reissue, setReissue] = useState(false)
+  const [reason, setReason] = useState('')
+  const [preview, setPreview] = useState<MonthPlanResult | null>(null)
+  const standardTotal = prices.reduce((sum, p) => sum + (Number(p.replace(',', '.')) || 0), 0)
+  const body = (dry: boolean): MonthPlanBody => ({
+    standard_prices: prices.map((p) => p.replace(',', '.')), final_course_price: final.replace(',', '.'), mode,
+    manual_amounts: mode === 'MANUAL' ? manual.map((a) => a ? a.replace(',', '.') : null) : undefined,
+    reason: reason.trim(), reissue_unstarted: reissue, dry_run: dry,
+  })
+  return (
+    <Modal isOpen onClose={onClose} title="План стоимости учебных месяцев">
+      <div className="space-y-3 text-sm">
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(n, 4)}, minmax(0, 1fr))` }}>
+          {prices.map((p, i) => (
+            <Field key={i} label={`Месяц №${i + 1}, стандарт`} htmlFor={`mp-${i}`}>
+              <Input id={`mp-${i}`} inputMode="decimal" value={p} onChange={(e) => setPrices(prices.map((x, j) => j === i ? e.target.value : x))} />
+            </Field>
+          ))}
+        </div>
+        <p className="text-ink-secondary">Стандартная стоимость: <b>{som(standardTotal.toFixed(2))}</b></p>
+        <Field label="Итоговая стоимость договора" htmlFor="mp-final"><Input id="mp-final" inputMode="decimal" value={final} onChange={(e) => setFinal(e.target.value)} /></Field>
+        <div role="radiogroup" aria-label="Правило распределения скидки" className="space-y-1">
+          <label className="flex items-center gap-2"><input type="radio" checked={mode === 'PROPORTIONAL'} onChange={() => setMode('PROPORTIONAL')} /> Скидка пропорционально стоимости месяцев</label>
+          <label className="flex items-center gap-2"><input type="radio" checked={mode === 'MANUAL'} onChange={() => setMode('MANUAL')} /> Вручную задать итоговую сумму каждого месяца</label>
+        </div>
+        {mode === 'MANUAL' ? (
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(n, 4)}, minmax(0, 1fr))` }}>
+            {manual.map((a, i) => (
+              <Field key={i} label={`Месяц №${i + 1}, итог`} htmlFor={`mm-${i}`}>
+                <Input id={`mm-${i}`} inputMode="decimal" value={a} disabled={schedule.months[i]?.state === 'invoiced'}
+                  onChange={(e) => setManual(manual.map((x, j) => j === i ? e.target.value : x))} />
+              </Field>
+            ))}
+          </div>
+        ) : null}
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={reissue} onChange={(e) => setReissue(e.target.checked)} />
+          Перевыставить выставленные, но не начатые месяцы (без уроков и корректировок) по новому плану
+        </label>
+        <p className="text-xs text-ink-secondary">Начатые месяцы не меняются: их суммы исправляются корректировкой начисления.</p>
+        <Field label="Причина" htmlFor="mp-reason" required><Textarea id="mp-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        {preview ? (
+          <div className="rounded-lg bg-surface-muted p-2">
+            <p>План: {preview.rows.map((r) => `№${r.month_number} — ${som(r.amount)}${r.issued ? ' (выставлен)' : ''}`).join(' · ')}</p>
+            <p className="font-medium">Сумма плана {som(preview.total)} = итоговая {som(preview.final_course_price)} · скидка {som(preview.discount)}</p>
+          </div>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>Отмена</Button>
+          <Button variant="secondary" isLoading={busy} onClick={() => run(async () => setPreview(await financeApi.saveMonthPlan(profile, body(true))))}>Предпросмотр</Button>
+          <Button isLoading={busy} disabled={!reason.trim()} onClick={async () => {
+            if (await run(() => financeApi.saveMonthPlan(profile, body(false)), 'План месяцев сохранён')) { invalidate(); onClose() }
+          }}>Сохранить</Button>
+        </div>
+      </div>
+    </Modal>
   )
 }

@@ -157,7 +157,7 @@ function Card360({ card }: { card: ContractCard }) {
 
       {card.schedule ? (
         <Section title="График оплаты по договору">
-          <ScheduleBlock schedule={card.schedule} />
+          <ScheduleBlock schedule={card.schedule} profile={c.id} canEdit={me.data?.can_manage_settings ?? false} />
         </Section>
       ) : null}
 
