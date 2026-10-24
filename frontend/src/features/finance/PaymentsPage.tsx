@@ -23,7 +23,7 @@ export function PaymentsPage() {
   const options = useFinanceOptions()
   // Платежи периода — по дате ФАКТИЧЕСКОГО поступления денег (не по дате записи).
   const period = useFinancePeriod()
-  const [f, setF] = useState({ search: '', method: '', kind: '', status: '', program: '', group: '', page: 1 })
+  const [f, setF] = useState({ search: '', number: '', method: '', kind: '', status: '', program: '', group: '', page: 1 })
   const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch, page: patch.page ?? 1 })
   const params = { ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '')),
     date_from: period.date_from, date_to: period.date_to }
@@ -44,6 +44,7 @@ export function PaymentsPage() {
         ) : undefined} />
       <FilterBar>
         <FilterField size="lg"><SearchInput value={f.search} onChange={(search) => set({ search })} placeholder="Студент или номер документа" /></FilterField>
+        <FilterField><SearchInput value={f.number} onChange={(number) => set({ number })} placeholder="№ платежа или чека" /></FilterField>
         <FilterField>
           <Select aria-label="Программа" value={f.program} placeholder="Все программы" onChange={(e) => set({ program: e.target.value })}
             options={(options.data?.programs ?? []).map((p) => ({ value: String(p.id), label: p.name }))} />
@@ -71,7 +72,8 @@ export function PaymentsPage() {
         <Loadable query={query} empty={(d) => d.count === 0} emptyTitle="Платежей не найдено">
           {(data) => (
             <>
-              <DataTable rows={data.results} getRowKey={(p) => p.id} onRowClick={(p) => navigate(`/finance/students/${p.billing_profile}#payments`)} columns={[
+              <DataTable rows={data.results} getRowKey={(p) => p.id} onRowClick={(p) => navigate(`/finance/payments/${p.id}`)} columns={[
+                { key: 'id', header: '№', render: (p) => <span className="tabular-nums text-ink-secondary">{p.id}</span> },
                 { key: 'd', header: 'Получено', render: (p) => formatDate(p.received_date) },
                 { key: 's', header: 'Студент', render: (p) => (
                   <div><p className="font-medium">{p.student_name}</p><p className="text-xs text-ink-secondary">{p.group_name} · {p.program_name}</p></div>

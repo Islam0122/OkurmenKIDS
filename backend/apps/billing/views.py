@@ -53,6 +53,7 @@ from .services import (
     analytics,
     contacts,
     contracts,
+    corrections,
     invoices,
     lessons,
     payments,
@@ -555,8 +556,8 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     permission_classes = [MoneyAccess]
     serializer_class = s.BillingPaymentSerializer
     pagination_class = BillingPagination
-    filterset_fields = ("billing_profile", "kind", "status", "purpose", "method")
-    search_fields = ("student__first_name", "student__last_name", "reference")
+    filterset_fields = ("billing_profile", "student", "kind", "status", "purpose", "method")
+    search_fields = ("student__first_name", "student__last_name", "reference", "receipt__number")
 
     def get_queryset(self):
         f = filters_from(self.request, invoice_status=False)
@@ -570,8 +571,16 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             qs = qs.filter(received_date__gte=f["date_from"])
         if f["date_to"]:
             qs = qs.filter(received_date__lte=f["date_to"])
-        if self.request.query_params.get("program"):
-            qs = qs.filter(billing_profile__plan__course_id=_int(self.request.query_params["program"], "program"))
+        q = self.request.query_params
+        if q.get("program"):
+            qs = qs.filter(billing_profile__plan__course_id=_int(q["program"], "program"))
+        if q.get("month"):  # месяц поступления денег: ГГГГ-ММ
+            first, last = _call(periods.month_bounds, q["month"])
+            qs = qs.filter(received_date__gte=first, received_date__lte=last)
+        if q.get("number"):  # номер платежа (id) или чека
+            number = q["number"].strip()
+            qs = qs.filter(Q(pk=int(number)) | Q(receipt__number__icontains=number) if number.isdigit()
+                           else Q(receipt__number__icontains=number))
         return qs.order_by("-received_date", "-id")
 
     @extend_schema(request=s.PaymentCreateSerializer, responses=s.BillingPaymentSerializer,
@@ -634,6 +643,33 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         else:
             _call(payments.reverse_payment, payment, actor=request.user, reason=data["reason"])
         return Response(s.BillingPaymentSerializer(self.get_queryset().get(pk=pk)).data)
+
+    @extend_schema(request=s.CorrectPaymentSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"])
+    def correct(self, request, pk=None):
+        """Исправить проведённый платёж (дата, сумма, способ, договор,
+        назначение, распределение) — с причиной и аудитом. Повтор той же
+        формы ничего не меняет."""
+        data = dict(_valid(s.CorrectPaymentSerializer, request))
+        if "allocations" in data:
+            data["allocations"] = [(row["invoice"], row["amount"]) for row in data["allocations"]]
+        result = _call(corrections.correct_payment, self.get_object(), actor=request.user, **data)
+        return Response({"payment": s.BillingPaymentSerializer(self.get_queryset().get(pk=pk)).data,
+                         "changed": result["changed"], "warnings": result["warnings"], "audit": result["audit"]})
+
+    @extend_schema(request=s.CreatedAtSerializer, responses=s.BillingPaymentSerializer)
+    @action(detail=True, methods=["post"], url_path="created-at")
+    def created_at(self, request, pk=None):
+        """Административная корректировка даты создания записи (аудит)."""
+        data = _valid(s.CreatedAtSerializer, request)
+        _call(corrections.correct_created_at, self.get_object(), actor=request.user, **data)
+        return Response(s.BillingPaymentSerializer(self.get_queryset().get(pk=pk)).data)
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        """История изменений платежа, его чека и распределений (только чтение)."""
+        return Response(corrections.payment_history(self.get_object()))
 
     @extend_schema(request=s.RefundSerializer, responses=s.BillingPaymentSerializer)
     @action(detail=True, methods=["post"])

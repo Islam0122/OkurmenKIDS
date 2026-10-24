@@ -38,11 +38,67 @@ class ReadOnlyAdmin(admin.ModelAdmin):
         return False
 
 
+class ReceivedMonthFilter(admin.SimpleListFilter):
+    """Месяц ФАКТИЧЕСКОГО поступления денег (не дата записи)."""
+
+    title = "месяц поступления"
+    parameter_name = "received_month"
+
+    def lookups(self, request, model_admin):
+        months = StudentPayment.objects.dates("received_date", "month", order="DESC")
+        return [(f"{m:%Y-%m}", f"{m:%m.%Y}") for m in months[:36]]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            year, month = self.value().split("-")
+            return queryset.filter(received_date__year=int(year), received_date__month=int(month))
+        return queryset
+
+
 @admin.register(StudentPayment)
 class StudentPaymentAdmin(ReadOnlyAdmin):
-    list_display = ("student", "group", "kind", "amount", "received_date", "status")
-    list_filter = ("kind", "status", "method")
-    search_fields = ("student__first_name", "student__last_name", "reference")
+    """Платежи: просмотр, фильтры и поиск; изменения — на странице
+    «Управление платежом» (оплата обучения), которая вызывает сервисы с
+    проверкой прав, блокировками и аудитом. Обычная форма — только чтение."""
+
+    list_display = ("id", "receipt_number", "student", "kind", "amount", "received_date", "method", "status",
+                    "created_at", "manage_link")
+    list_filter = ("status", "kind", "method", "purpose", ReceivedMonthFilter)
+    date_hierarchy = "received_date"
+    search_fields = ("student__first_name", "student__last_name", "reference", "receipt__number")
+    list_select_related = ("student", "receipt")
+
+    def get_search_results(self, request, queryset, search_term):
+        qs, distinct = super().get_search_results(request, queryset, search_term)
+        term = search_term.strip().lstrip("№#")
+        if term.isdigit():  # номер платежа
+            qs |= queryset.filter(pk=int(term))
+        return qs, distinct
+
+    @admin.display(description="Чек")
+    def receipt_number(self, obj):
+        receipt = getattr(obj, "receipt", None)
+        return receipt.number if receipt else "—"
+
+    @admin.display(description="Действия")
+    def manage_link(self, obj):
+        from django.urls import reverse
+        from django.utils.html import format_html
+
+        if not obj.billing_profile_id:
+            return "—"
+        return format_html('<a href="{}">Открыть / исправить / аннулировать</a>',
+                           reverse("admin:billing_payment_manage", args=[obj.pk]))
+
+    def get_urls(self):
+        from apps.billing.admin_views import manage_payment_view
+
+        return [
+            path("<int:pk>/manage/",
+                 self.admin_site.admin_view(lambda request, pk: manage_payment_view(request, pk, self.admin_site)),
+                 name="billing_payment_manage"),
+            *super().get_urls(),
+        ]
 
 
 @admin.register(EmployeeSalaryProfile)

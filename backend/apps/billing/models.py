@@ -731,6 +731,10 @@ class CreditLedgerEntry(_NoDelete, models.Model):
         RETENTION = "RETENTION", "Удержание брони"
         PAYMENT_VOID = "PAYMENT_VOID", "Отмена платежа"
         REFUND_REVERSAL = "REFUND_REVERSAL", "Отмена возврата"
+        # Исправление проведённого платежа бухгалтером (`services.corrections`):
+        # изменение суммы (±разница) или перенос на другой договор (− у старого,
+        # + у нового). Исходная запись PAYMENT_IN не меняется.
+        PAYMENT_ADJUST = "PAYMENT_ADJUST", "Исправление платежа"
 
     SIGN = {
         Kind.PAYMENT_IN: 1, Kind.ALLOCATION: -1, Kind.ALLOCATION_REVERSAL: 1, Kind.REFUND: -1,
@@ -769,7 +773,8 @@ class CreditLedgerEntry(_NoDelete, models.Model):
             models.CheckConstraint(condition=~Q(amount=0), name="billing_credit_non_zero"),
             models.CheckConstraint(
                 condition=(Q(kind__in=("PAYMENT_IN", "ALLOCATION_REVERSAL", "REFUND_REVERSAL"), amount__gt=0)
-                           | Q(kind__in=("ALLOCATION", "REFUND", "RETENTION", "PAYMENT_VOID"), amount__lt=0)),
+                           | Q(kind__in=("ALLOCATION", "REFUND", "RETENTION", "PAYMENT_VOID"), amount__lt=0)
+                           | Q(kind="PAYMENT_ADJUST")),
                 name="billing_credit_sign",
             ),
             models.UniqueConstraint(

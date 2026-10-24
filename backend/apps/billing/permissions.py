@@ -91,6 +91,7 @@ ACTIONS = {
     "record_payment": is_billing_accountant,
     "allocate": is_billing_accountant,
     "reverse_payment": is_billing_accountant,
+    "correct_payment": is_billing_accountant,
     "refund": is_billing_accountant,
     "cancel_reservation": is_billing_accountant,
     "reverse_consumption": is_billing_accountant,
