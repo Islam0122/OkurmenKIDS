@@ -21,7 +21,7 @@ from apps.accounting.models import StudentPayment
 from apps.accounting.services.money import money
 
 from ..models import CreditLedgerEntry, Invoice, PaymentAllocation, PaymentMode, Receipt, StudentBillingProfile
-from .contracts import invoiced_total, money_summary
+from .contracts import invoiced_total, money_summary, payment_schedule
 from .invoices import calculate_invoice_balance
 
 ZERO = Decimal("0.00")
@@ -197,6 +197,19 @@ def profile_money_audit(profile: StudentBillingProfile) -> dict:
         problems.append({"type": "credit_unapplied", "amount": _s(summary["credit_unapplied"]),
                          "detail": "Свободный аванс и неоплаченное начисление одного договора — платёж не распределён.",
                          "fix": "apply_credit"})
+    for reservation in profile.reservations.filter(payment__isnull=False).select_related("payment"):
+        paid = reservation.payment
+        if paid.status == StudentPayment.Status.CONFIRMED and paid.amount > reservation.expected_amount:
+            problems.append({
+                "type": "reservation_paid_over_expected", "reservation": reservation.pk, "payment": paid.pk,
+                "expected": _s(reservation.expected_amount), "paid": _s(paid.amount), "fix": "confirm",
+                "detail": "Через «Оплату брони» принято больше суммы брони — возможно, это оплата обучения. "
+                          "Бронь — тот же платёж, деньги не считаются дважды. Если это оплата обучения, "
+                          "измените назначение платежа (payments/{id}/correct/ purpose=tuition|prepayment).",
+            })
+    schedule = payment_schedule(profile)
+    if schedule is not None and not schedule["consistent"]:
+        problems.append({"type": "schedule_mismatch", "issues": schedule["issues"], "fix": "manual"})
     if summary["credit"] < 0:
         problems.append({"type": "negative_credit", "fix": "manual"})
 

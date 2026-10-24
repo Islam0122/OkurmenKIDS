@@ -339,3 +339,73 @@ def next_month_cost(profile) -> dict | None:
 
 def contract_q_active() -> Q:
     return Q(status__in=(StudentBillingProfile.Status.ACTIVE, StudentBillingProfile.Status.PAUSED))
+
+
+def payment_schedule(profile: StudentBillingProfile) -> dict | None:
+    """График оплаты договора по программе: выставленные учебные месяцы
+    (сумма, оплачено, остаток) и прогноз оставшихся по той же формуле, что
+    выставит `month_charge`, — с учётом свободного аванса, который их закроет.
+
+    Проверка согласованности: Σ начислений + Σ прогноза = итоговая стоимость.
+    Если месяцы выставлены по прежней итоговой стоимости (изменена после
+    выставления), это видно из `price_changes` — суммы выставленных начислений
+    не пересчитываются (снимок), разница уходит в оставшиеся месяцы."""
+    if not profile.is_course or profile.final_course_price is None:
+        return None
+    from ..models import BillingTermsChange
+
+    final = money(profile.final_course_price)
+    duration = profile.duration_months
+    live = list(Invoice.objects.filter(profile=profile).exclude(status=Invoice.Status.VOID)
+                .select_related("package").order_by("package__number", "pk"))
+    rows, by_month = [], {}
+    for inv in live:
+        by_month.setdefault(inv.package.month_number or 0, []).append(inv)
+    invoiced = sum((i.amount for i in live), ZERO)
+    unpaid = [i for i in live if i.status in Invoice.UNPAID_STATUSES]
+    credit = CreditLedgerEntry.objects.filter(profile=profile).aggregate(s=Sum("amount"))["s"] or ZERO
+    spare = max(applicable_credit(profile, unpaid, credit) - sum((i.balance for i in unpaid), ZERO), ZERO)
+    covered_months = {p.month_number for p in live_packages(profile) if p.month_number}
+    remaining = max(final - invoiced, ZERO)
+    projected_total = ZERO
+    for month in range(1, duration + 1):
+        invoices = by_month.get(month, [])
+        if invoices:
+            for inv in invoices:
+                rows.append({
+                    "month_number": month, "state": "invoiced", "invoice": inv.pk, "number": inv.number,
+                    "kind": inv.kind, "amount": inv.amount, "paid": inv.amount_paid + inv.amount_adjusted,
+                    "balance": inv.balance if inv.status in Invoice.UNPAID_STATUSES else ZERO, "status": inv.status,
+                    "covered_by_credit": ZERO, "to_pay": ZERO,
+                })
+            continue
+        if profile.payment_mode == PaymentMode.FULL_PREPAY or month in covered_months:
+            # Предоплата: месяц оплачен начислением «Весь курс» (своего начисления нет).
+            amount = ZERO
+        else:
+            months_left = sum(1 for m in range(month, duration + 1) if m not in by_month)
+            amount = remaining if months_left <= 1 else (remaining / months_left).quantize(CENT, rounding=ROUND_DOWN)
+            remaining -= amount
+        covered = min(spare, amount)
+        spare -= covered
+        projected_total += amount
+        rows.append({"month_number": month, "state": "planned" if month in covered_months else "future",
+                     "amount": amount, "paid": ZERO, "balance": ZERO, "covered_by_credit": covered,
+                     "to_pay": amount - covered})
+    changes = [{
+        "date": c.decided_at.date().isoformat() if c.decided_at else c.requested_at.date().isoformat(),
+        "from": str(money(c.previous_terms.get("final_course_price") or 0)) if c.previous_terms.get("final_course_price") else None,
+        "to": str(money(c.final_course_price)), "reason": c.reason,
+    } for c in BillingTermsChange.objects.filter(profile=profile, status=BillingTermsChange.Status.APPROVED,
+                                                 final_course_price__isnull=False).order_by("requested_at", "pk")]
+    total = invoiced + projected_total
+    issues = []
+    if invoiced > final:
+        issues.append(f"Начислено {money(invoiced)} — больше итоговой стоимости {final}: нужна корректировка начислений.")
+    elif total != final:
+        issues.append(f"Начислено и запланировано {money(total)}, а итоговая стоимость {final}.")
+    return {
+        "final_course_price": final, "invoiced": money(invoiced), "projected": money(projected_total),
+        "total": money(total), "consistent": not issues, "issues": issues, "price_changes": changes,
+        "months": [{k: (money(v) if isinstance(v, Decimal) else v) for k, v in r.items()} for r in rows],
+    }

@@ -370,3 +370,54 @@ describe('PaymentDetailPage', () => {
     }
   })
 })
+
+describe('StudentCardPage — бронь и платежи', () => {
+  it('shows one row per operation, the reservation as the same payment and a consistent schedule', async () => {
+    const payment = { ...PAYMENT, id: 28, purpose: 'reservation', purpose_display: 'Бронь', method: 'bank',
+      method_display: 'Банковский перевод', received_date: '2026-08-25', amount: '38000.00', unallocated: '18000.00',
+      receipt: { id: 3, number: 'OK-2026-000028', status: 'ISSUED' },
+      allocations: [
+        { id: 1, invoice: 100, invoice_number: 'INV-2026-000100', invoice_period_date: '2026-09-09', amount: '10000.00', status: 'ACTIVE' },
+        { id: 2, invoice: 101, invoice_number: 'INV-2026-000101', invoice_period_date: '2026-10-01', amount: '10000.00', status: 'ACTIVE' },
+      ] } as unknown as Payment
+    vi.mocked(financeApi.lessonBreakdown).mockResolvedValue({ attended: 0, marked: 0, counted: 0, priority_subject: 'IT',
+      contract_start: '2026-09-09', totals: {}, priority_before_contract: { count: 0, first_date: null }, lessons: [] })
+    vi.mocked(financeApi.card).mockResolvedValue({
+      ...CARD,
+      contract: { ...CARD.contract, status: 'ACTIVE', status_display: 'Обучается', is_course: true, start_date: '2026-09-09' },
+      summary: { received: '38000.00', refunded: '0.00', net_received: '38000.00', reservation_received: '38000.00',
+        reservation_unused: '18000.00', allocated: '20000.00', adjusted: '0.00', credit: '18000.00', invoiced: '20000.00',
+        invoices_balance: '0.00', credit_applicable: '18000.00', credit_unapplied: '0.00', due_now: '0.00', overdue: '0.00',
+        paid_total: '38000.00', standard_course_price: '60000.00', final_course_price: '38000.00', discount_amount: '22000.00',
+        outstanding: '0.00', future: '18000.00' },
+      reservations: [{ id: 4, expected_amount: '38000.00', status: 'PAID', payment: 28, paid_amount: '38000.00',
+        paid_date: '2026-08-25', receipt_number: 'OK-2026-000028', paid_used: '20000.00', paid_unused: '18000.00', reserved_until: null }],
+      schedule: { final_course_price: '38000.00', invoiced: '20000.00', projected: '18000.00', total: '38000.00', consistent: true,
+        issues: [], price_changes: [{ date: '2026-10-24', from: '40000.00', to: '38000.00', reason: 'Доп. скидка' }],
+        months: [
+          { month_number: 1, state: 'invoiced', invoice: 100, number: 'INV-2026-000100', amount: '10000.00', paid: '10000.00', balance: '0.00', covered_by_credit: '0.00', to_pay: '0.00' },
+          { month_number: 2, state: 'invoiced', invoice: 101, number: 'INV-2026-000101', amount: '10000.00', paid: '10000.00', balance: '0.00', covered_by_credit: '0.00', to_pay: '0.00' },
+          { month_number: 3, state: 'future', amount: '9000.00', paid: '0.00', balance: '0.00', covered_by_credit: '9000.00', to_pay: '0.00' },
+          { month_number: 4, state: 'future', amount: '9000.00', paid: '0.00', balance: '0.00', covered_by_credit: '9000.00', to_pay: '0.00' },
+        ] },
+      months: [], invoices: [], payments: [payment], contacts: [],
+    } as unknown as ContractCard)
+    renderWithProviders(<Routes><Route path="/finance/students/:profileId" element={<StudentCardPage />} /></Routes>,
+      { route: '/finance/students/7' })
+    const table = await screen.findByRole('table', { name: 'Платежи и чеки' })
+    const rows = within(table).getAllByRole('row')
+    expect(rows).toHaveLength(2)  // заголовок + одна операция
+    expect(rows[0]).toHaveTextContent('ДатаТип операцииСуммаСпособ оплатыСтатусКто принялНомер чекаДействия')
+    expect(rows[1]).toHaveTextContent('25.08.2026')
+    expect(rows[1]).toHaveTextContent('Бронь')
+    expect(rows[1]).toHaveTextContent('Банковский перевод')
+    expect(rows[1]).toHaveTextContent('OK-2026-000028')
+    const reservation = screen.getByText(/Это тот же платёж/)
+    expect(reservation).toHaveTextContent('Оплачена платежом №28 от 25.08.2026 (чек OK-2026-000028)')
+    expect(reservation).toHaveTextContent(/засчитано в начисления 20\s000 сом, осталось авансом 18\s000 сом/)
+    expect(screen.getByText(/= итоговая стоимость 38\s000/)).toBeInTheDocument()
+    const schedule = screen.getByRole('table', { name: 'График оплаты' })
+    expect(within(schedule).getAllByRole('row')).toHaveLength(5)
+    expect(schedule).toHaveTextContent('будет выставлен')
+  })
+})

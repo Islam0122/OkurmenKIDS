@@ -98,6 +98,9 @@ export const financeApi = {
     post<Payment>(`/payments/${id}/refund/`, { amount, reason }, { 'Idempotency-Key': idempotencyKey }),
   payReservation: (id: number, body: { amount: string; received_date: string; method: string; payer_name?: string },
     idempotencyKey: string) => post(`/reservations/${id}/pay/`, body, { 'Idempotency-Key': idempotencyKey }),
+  editReservation: (id: number, body: { expected_amount?: string; reserved_until?: string | null; reason: string }) =>
+    post(`/reservations/${id}/edit/`, body),
+  cancelReservation: (id: number, reason: string) => post(`/reservations/${id}/cancel/`, { reason }),
   receipts: (params: Params) => get<Paginated<Receipt>>('/receipts/', params),
   receipt: (id: number) => get<Receipt>(`/receipts/${id}/`),
   receiptPrinted: (id: number) => post<Receipt>(`/receipts/${id}/printed/`),

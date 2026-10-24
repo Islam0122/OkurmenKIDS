@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Pencil, Phone, Plus, Printer } from 'lucide-react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Pencil, Phone, Plus } from 'lucide-react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { financeApi } from '@/api/finance'
 import { newIdempotencyKey } from '@/api/accounting'
@@ -19,6 +19,8 @@ import { Textarea } from '@/components/ui/Textarea'
 import { ReasonModal, Section } from '@/features/accounting/shared'
 import { Field } from '@/features/worklog/formUi'
 import type { ContractCard, Payment, Reservation } from '@/types/finance'
+
+import { OperationsTable, ReservationBlock, ScheduleBlock } from './CardSections'
 
 import {
   Amount,
@@ -134,16 +136,7 @@ function Card360({ card }: { card: ContractCard }) {
           {c.special_terms ? <p className="mt-3 text-sm text-ink-secondary">Особые условия: {c.special_terms}</p> : null}
         </Card>
         <Card title="Бронь">
-          {card.reservations.length === 0 ? <p className="text-sm text-ink-secondary">Брони нет.</p> : (
-            <ul className="space-y-2 text-sm">
-              {card.reservations.map((r) => (
-                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
-                  <span>{som(r.expected_amount)} · {r.status === 'PAID' ? `оплачена (${som(r.paid_amount)})` : r.status === 'PENDING' ? 'ожидает оплаты' : 'отменена'}</span>
-                  {r.status === 'PENDING' && canPay ? <Button size="sm" variant="secondary" onClick={() => setReservationPay(r)}>Принять оплату брони</Button> : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <ReservationBlock reservations={card.reservations} canPay={canPay} onPay={setReservationPay} />
         </Card>
       </div>
 
@@ -161,6 +154,12 @@ function Card360({ card }: { card: ContractCard }) {
           ]} />
         )}
       </Section>
+
+      {card.schedule ? (
+        <Section title="График оплаты по договору">
+          <ScheduleBlock schedule={card.schedule} />
+        </Section>
+      ) : null}
 
       <Section title="Начисления">
         {card.invoices.length === 0 ? <EmptyState title="Начислений нет" /> : (
@@ -181,24 +180,7 @@ function Card360({ card }: { card: ContractCard }) {
         <Section title="Платежи и чеки">
           <div id="payments" />
           {card.payments.length === 0 ? <EmptyState title="Платежей пока нет" /> : (
-            <DataTable rows={card.payments} getRowKey={(p) => p.id} columns={[
-              { key: 'date', header: 'Дата', render: (p) => formatDate(p.received_date) },
-              { key: 'kind', header: 'Операция', render: (p) => (
-                <div className="text-sm"><p>{p.kind === 'refund' ? 'Возврат' : p.purpose_display || 'Оплата'}</p>
-                  <p className="text-xs text-ink-secondary">{p.allocations.filter((a) => a.status === 'ACTIVE').map((a) => a.invoice_number).join(', ') || (p.kind === 'payment' ? 'аванс' : '')}</p></div>
-              ) },
-              { key: 'amount', header: 'Сумма', render: (p) => <Amount value={p.kind === 'refund' ? `-${p.amount}` : p.amount} /> },
-              { key: 'method', header: 'Способ', render: (p) => p.method_display },
-              { key: 'st', header: 'Статус', render: (p) => p.status === 'void' ? <Badge tone="muted">Отменён</Badge> : <Badge tone="success">Проведён</Badge> },
-              { key: 'who', header: 'Принял', render: (p) => p.created_by_name ?? '—' },
-              { key: 'act', header: '', className: 'text-right', render: (p) => (
-                <div className="flex justify-end gap-1">
-                  {p.receipt ? <Link to={`/finance/receipts/${p.receipt.id}`} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-sm text-brand-700 hover:bg-brand-50">
-                    <Printer className="size-4" />{p.receipt.number}</Link> : null}
-                  {canPay && p.status === 'confirmed' ? <Button size="sm" variant="ghost" onClick={() => setReversing(p)}>Сторно</Button> : null}
-                </div>
-              ) },
-            ]} />
+            <OperationsTable payments={card.payments} canPay={canPay} onReverse={setReversing} />
           )}
         </Section>
       ) : null}

@@ -733,6 +733,16 @@ class ReservationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         return Response(s.ReservationSerializer(reservation).data,
                         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
+    @extend_schema(request=s.ReservationEditSerializer, responses=s.ReservationSerializer)
+    @action(detail=True, methods=["post"], permission_classes=[MoneyAccess])
+    def edit(self, request, pk=None):
+        """Исправить неоплаченную бронь (сумма, срок) — с причиной и аудитом."""
+        data = dict(_valid(s.ReservationEditSerializer, request))
+        clear = "reserved_until" in data and data["reserved_until"] is None
+        reservation = _call(reservations.update_reservation, self.get_object(), actor=request.user,
+                            clear_reserved_until=clear, **data)
+        return Response(s.ReservationSerializer(reservation).data)
+
     @extend_schema(request=s.ReservationCancelSerializer, responses=s.ReservationSerializer)
     @action(detail=True, methods=["post"], permission_classes=[MoneyAccess])
     def cancel(self, request, pk=None):
@@ -1028,6 +1038,15 @@ def queue_filters(request) -> dict:
     }
 
 
+def _schedule_json(schedule: dict | None) -> dict | None:
+    if schedule is None:
+        return None
+    plain = {k: (str(v) if isinstance(v, Decimal) else v) for k, v in schedule.items() if k != "months"}
+    plain["months"] = [{k: (str(v) if isinstance(v, Decimal) else v) for k, v in row.items()}
+                       for row in schedule["months"]]
+    return plain
+
+
 def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
     from .services.ledger import credit_balance
 
@@ -1042,8 +1061,10 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
         "invoices": s.InvoiceSerializer(profile.invoices.exclude(status=Invoice.Status.VOID)
                                         .select_related("package", "profile__student__group", "profile__subject"),
                                         many=True).data,
-        "reservations": s.ReservationSerializer(profile.reservations.select_related("payment", "profile__student"),
+        "reservations": s.ReservationSerializer(profile.reservations.select_related("payment__receipt",
+                                                                                    "profile__student"),
                                                 many=True).data,
+        "schedule": _schedule_json(contracts.payment_schedule(profile)),
     }
     if with_money:
         payments_qs = StudentPayment.objects.filter(billing_profile=profile).select_related(

@@ -272,12 +272,34 @@ export interface MoneySummary {
   future: string | null
 }
 
+/** Бронь. Оплаченная ссылается на платёж (`payment`) — это не отдельные деньги. */
 export interface Reservation {
   id: number
   expected_amount: string
   status: 'PENDING' | 'PAID' | 'CANCELLED'
+  payment: number | null
   paid_amount: string | null
+  paid_date: string | null
+  receipt_number: string | null
+  /** Сколько из платежа брони распределено на начисления. */
+  paid_used: string | null
+  /** Сколько из платежа брони осталось авансом. */
+  paid_unused: string | null
   reserved_until: string | null
+  cancel_reason?: string
+}
+
+/** График оплаты договора: выставленные месяцы + прогноз оставшихся. */
+export interface PaymentSchedule {
+  final_course_price: string
+  invoiced: string
+  projected: string
+  total: string
+  consistent: boolean
+  issues: string[]
+  price_changes: { date: string; from: string | null; to: string; reason: string }[]
+  months: { month_number: number; state: 'invoiced' | 'planned' | 'future'; invoice?: number; number?: string
+    amount: string; paid: string; balance: string; covered_by_credit: string; to_pay: string }[]
 }
 
 export interface Contact {
@@ -295,6 +317,7 @@ export interface ContractCard {
   contract: Contract
   row: QueueRow
   summary: MoneySummary
+  schedule: PaymentSchedule | null
   months: StudyMonth[]
   invoices: Invoice[]
   reservations: Reservation[]

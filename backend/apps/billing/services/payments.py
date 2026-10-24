@@ -313,6 +313,17 @@ def reverse_payment(payment: StudentPayment, *, actor, reason: str, system: bool
         payment.status = StudentPayment.Status.VOID
         payment.void_reason, payment.voided_by, payment.voided_at = reason, actor, timezone.now()
         payment.save()
+        from ..models import Reservation
+
+        reservation = Reservation.objects.select_for_update().filter(payment=payment).first()
+        if reservation is not None and reservation.status == Reservation.Status.PAID:
+            # Ошибочная оплата брони аннулирована — бронь снова ждёт оплаты
+            # (её можно отменить отдельно); связь с платежом — в журнале.
+            reservation.status, reservation.payment = Reservation.Status.PENDING, None
+            reservation.save(update_fields=["status", "payment", "updated_at"])
+            audit.log(actor, reservation, "billing_reservation_payment_void",
+                      old={"status": Reservation.Status.PAID, "payment": payment.pk},
+                      new={"status": reservation.status}, reason=reason)
         audit.log(actor, payment, "billing_payment_reverse", old=old, new={"status": payment.status}, reason=reason)
         if credit_balance(profile.pk) < 0:
             raise BillingError("Отмена увела аванс в минус — проверьте журнал.", code="negative_credit")
