@@ -65,9 +65,13 @@ class StudentsListTests(StudentsListFixture):
                 "due_today_amount", "not_due_amount", "credit", "stage")
         rows = {name: {k: self.row(p)[k] for k in keys} for name, p in
                 (("umar", umar), ("bayel", bayel), ("zeynep", zeynep), ("edgar", edgar))}
-        self.assertEqual(rows["umar"], {"month_number": 1, "lessons_used": 2, "course_lessons_counted": 2,
+        # Учебный месяц — месяц группы (13 занятий → месяц 2, 1/12) у всех; у Umar свой пакет №1: 2/12.
+        self.assertEqual(rows["umar"], {"month_number": 2, "lessons_used": 1, "course_lessons_counted": 2,
                                         "due_now": "0.00", "overdue_amount": "0.00", "due_today_amount": "0.00",
                                         "not_due_amount": "0.00", "credit": "0.00", "stage": "paid"})
+        u = self.row(umar)
+        self.assertEqual((u["package_number"], u["package_lessons_used"], u["package_lessons_total"]), (1, 2, 12))
+        self.assertEqual((self.row(bayel)["package_number"], self.row(bayel)["package_lessons_used"]), (2, 1))
         self.assertEqual(rows["bayel"], {"month_number": 2, "lessons_used": 1, "course_lessons_counted": 13,
                                          "due_now": "15000.00", "overdue_amount": "0.00", "due_today_amount": "0.00",
                                          "not_due_amount": "15000.00", "credit": "0.00", "stage": "awaiting"})

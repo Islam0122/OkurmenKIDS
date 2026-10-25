@@ -24,7 +24,7 @@ from apps.accounting.services.money import money
 
 from ..models import BillingContactLog, BillingSettings, CreditLedgerEntry, Invoice, LessonPackage, StudentBillingProfile
 from .contracts import applicable_credit, next_month_cost, payment_stage
-from .progress import profile_progress
+from .progress import financial_package, group_progress
 
 ZERO = Decimal("0.00")
 QUEUES = ("to_pay", "soon", "overdue", "all")
@@ -99,7 +99,8 @@ def _last_contacts(profile_ids) -> dict:
     return result
 
 
-def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next: bool = False) -> dict:
+def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next: bool = False,
+                 group_cache: dict | None = None) -> dict:
     today = timezone.localdate()
     invoices = list(profile.invoices.all())
     packages = [p for p in profile.packages.all() if p.status != LessonPackage.Status.CANCELLED]
@@ -127,11 +128,14 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
         split[key] = max(balance - left, ZERO)
         left = max(left - balance, ZERO)
     student = profile.student
-    # Учебный месяц и уроки — единый расчёт по засчитанным урокам (`progress`):
-    # 12/12 остаётся в завершённом месяце. Тариф без учебных месяцев — пакет.
-    progress = profile_progress(profile, packages)
-    if progress is not None:
-        month_number, lessons_used, lessons_total = progress["month"], progress["in_month"], progress["per_month"]
+    # Учебный месяц — месяц ГРУППЫ (`progress.group_progress`: проведённые
+    # IT-занятия текущей группы, одинаково у всех учеников). Финансовый пакет
+    # договора — отдельные поля `package_*`. Тариф без учебных месяцев — пакет.
+    package = financial_package(profile, packages)
+    group = group_progress(student.group if student.group_id else None, profile.subject_id,
+                           cache=group_cache) if profile.is_course else None
+    if group is not None:
+        month_number, lessons_used, lessons_total = group["month"], group["in_month"], group["per_month"]
     else:
         month_number = (current.month_number or current.number) if current else None
         lessons_used = current.lessons_used if current else 0
@@ -147,14 +151,17 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
         "is_course": profile.is_course, "payment_mode": profile.payment_mode,
         "payment_mode_display": profile.get_payment_mode_display(),
         "duration_months": profile.duration_months,
+        # Учебный месяц группы: месяц, занятие группы в месяце, уроков в месяце.
         "month_number": month_number, "lessons_used": lessons_used, "lessons_total": lessons_total,
-        # Засчитано ученику за курс (не проведённые занятия группы) и план курса.
-        "course_lessons_counted": progress["counted"] if progress else None,
-        "course_lessons_total": progress["total"] if progress else None,
-        # Платёжный цикл: на границе 12/12 уже открыт следующий месяц (начисление
-        # выставлено по правилу проекта) — показывается подсказкой.
-        "billing_month_number": progress["billing_month"] if progress else month_number,
-        "next_month_open": progress["next_month_open"] if progress else False,
+        "group_progress": group,  # held / total / warning («Нужна настройка…» — цифр нет)
+        # Финансовый пакет договора ученика — по нему начисления и сроки.
+        "package_number": package["number"] if package else None,
+        "package_lessons_used": package["lessons_used"] if package else None,
+        "package_lessons_total": package["lessons_total"] if package else None,
+        # Засчитано ученику по договору за курс (не занятия группы) и объём договора.
+        "course_lessons_counted": package["counted"] if package else 0,
+        "course_lessons_total": (profile.duration_months * profile.lessons_per_month
+                                 if profile.duration_months and profile.lessons_per_month else None),
         "final_course_price": _s(profile.final_course_price),
         "discount_amount": _s(profile.discount_amount),
         "stage": stage,
@@ -189,7 +196,8 @@ SORTS = {
     "name": lambda r: (r["student_name"],),
     "debt": lambda r: (-Decimal(r["due_now"]), r["student_name"]),
     "overdue": lambda r: (-r["overdue_lessons"], -r["overdue_days"], -Decimal(r["overdue_amount"]), r["student_name"]),
-    "lessons": lambda r: (-(r["lessons_used"] / (r["lessons_total"] or 1)), r["student_name"]),
+    # «Скоро оплата» — по финансовому пакету (сколько уроков пакета пройдено).
+    "lessons": lambda r: (-((r["package_lessons_used"] or 0) / (r["package_lessons_total"] or 1)), r["student_name"]),
     "group": lambda r: (r["group_name"] or "", r["student_name"]),
 }
 
@@ -198,9 +206,9 @@ def queue_rows(queue: str, f: dict) -> list[dict]:
     """Строки очереди (все, до пагинации — сортировка по вычисляемым полям)."""
     profiles = list(queue_queryset(queue, f))
     contacts = _last_contacts([p.pk for p in profiles])
-    rows = []
+    rows, groups = [], {}  # месяц группы считается один раз на группу
     for profile in profiles:
-        row = contract_row(profile, last_contact=contacts.get(profile.pk), with_next=queue == "soon")
+        row = contract_row(profile, last_contact=contacts.get(profile.pk), with_next=queue == "soon", group_cache=groups)
         if queue == "to_pay" and row["stage"] not in ("awaiting", "deadline"):
             # Есть просрочка — студент в «Просроченных», здесь только этап «к оплате».
             if not any(i.status in (Invoice.Status.OPEN, Invoice.Status.PARTIALLY_PAID) for i in profile.invoices.all()):

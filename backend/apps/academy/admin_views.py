@@ -885,8 +885,14 @@ def _teaching_program_cards(group: Group) -> list[dict]:
         )
     }
 
+    from apps.billing.models import BillingPlan
+    from apps.billing.services.progress import group_progress as group_month
+
+    month_cache: dict = {}
+    billed_subjects = set(BillingPlan.objects.filter(course_id=group.course_id, duration_months__isnull=False)
+                          .values_list("subject_id", flat=True))
     planned = planned_lessons_by_program(group)
-    course_plan_url = f"{reverse('admin:academy_courselessonplan_changelist')}?course__id__exact={group.course_id}"
+    course_plan_url =f"{reverse('admin:academy_courselessonplan_changelist')}?course__id__exact={group.course_id}"
     cards = []
     for gt in programs:
         active_slots = sorted(
@@ -937,6 +943,13 @@ def _teaching_program_cards(group: Group) -> list[dict]:
             "remove_url": reverse("admin:academy_group_workspace_teachers_remove", args=[group.pk, gt.pk]),
         }
         card["status_class"], card["status_label"] = _program_status(card)
+        # Учебный месяц группы по предмету программы — тот же расчёт, что в
+        # бухгалтерии (`billing.services.progress.group_progress`): все
+        # проведённые занятия предмета в группе, тариф программы курса.
+        # Только для предметов, по которым у курса есть тариф с учебными месяцами (IT);
+        # English / Soft Skills учебных месяцев не имеют.
+        card["group_month"] = (group_month(group, gt.subject_id, cache=month_cache)
+                               if gt.subject_id in billed_subjects else None)
         cards.append(card)
     return cards
 

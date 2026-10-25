@@ -1114,13 +1114,12 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
     profile = queues.base_queryset().get(pk=profile.pk)
     summary = contracts.money_summary(profile)
     months = [s.PackageSerializer(p).data for p in profile.packages.all().prefetch_related("invoices")]
-    progress = study.profile_progress(profile)
-    if progress is not None:
-        # Учебный месяц по засчитанным урокам ученика (как в «Все студенты»);
-        # отдельно — проведённые занятия группы (показатель академии).
-        progress = {**progress, "group_held": study.group_held_lessons(profile)}
-        for m in months:
-            m["is_current"] = m["month_number"] == progress["month"] and m["status"] != LessonPackage.Status.CANCELLED
+    progress = None
+    if profile.is_course:
+        # Три отдельных показателя: учебный месяц группы, посещаемость ученика,
+        # финансовый пакет договора (`months` — пакеты; по ним начисления).
+        group = profile.student.group if profile.student.group_id else None
+        progress = {**study.profile_progress(profile), "attendance": study.attendance(profile, group)}
     coverage = contracts.course_coverage(profile)
     if coverage is not None:
         # Предоплата за весь курс: «Весь курс» — начисление договора, не месяца
