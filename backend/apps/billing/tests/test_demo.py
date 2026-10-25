@@ -140,8 +140,17 @@ class DemoSeedTests(TestCase):
         self.assertEqual(contracts.money_summary(profile("M"))["overdue"], D("10000"))
         to_pay = {r["profile"] for r in queues.queue_rows("to_pay", {})}
         self.assertTrue({profile(k).pk for k in ("B", "F", "I", "L")} <= to_pay)
+        # «Скоро оплата» — по дате урока-срока в расписании (демо: урок IT каждый день с завтра).
+        # H и J (9 из 12): месяц 2 ещё не выставлен, срок — 3-й урок месяца 2 через 6 дней;
+        # C и E (5 из 12) — через 10 дней (C: месяц 11 250 − аванс 3 750; у E ещё просрочка месяца 1
+        # — отдельное обязательство).
+        page = queues.soon_page({"section": "days_6_10"})
+        forecast = {r["profile"]: [(o["days"], o["to_pay"]) for o in r["upcoming"] if o["source"] == "forecast"]
+                    for r in page["rows"]}
+        self.assertEqual(forecast, {profile("H").pk: [(6, "15000.00")], profile("J").pk: [(6, "15000.00")],
+                                    profile("C").pk: [(10, "7500.00")], profile("E").pk: [(10, "15000.00")]})
         soon = {r["profile"] for r in queues.queue_rows("soon", {})}
-        self.assertEqual(soon, {profile(k).pk for k in ("H", "J")})
+        self.assertTrue(soon.isdisjoint({profile(k).pk for k in ("A", "K")}))  # курс / месяцы оплачены вперёд
         # Будущие месяцы — не просрочка: у B месяц 2 ещё в сроке.
         self.assertEqual(contracts.money_summary(profile("B"))["overdue"], D("0"))
 

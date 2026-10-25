@@ -65,6 +65,7 @@ from .services import (
     receipts,
     reports,
     reservations,
+    soon,
 )
 from .services import prepayments as prepayments_service
 from .services import progress as study
@@ -1091,7 +1092,17 @@ def queue_filters(request) -> dict:
         "plan": _int(q.get("plan"), "plan"), "program": _int(q.get("program"), "program"),
         "accountant": _int(q.get("accountant"), "accountant"), "ordering": q.get("ordering") or None,
         "contract_status": q.get("contract_status") or None,
+        "section": _section(q.get("section")),
     }
+
+
+def _section(value: str | None) -> str | None:
+    """Подраздел «Скоро оплата» (`services.soon.SECTIONS`)."""
+    if not value:
+        return None
+    if value not in soon.SECTIONS:
+        raise ValidationError({"section": "Неизвестный подраздел «Скоро оплата»."})
+    return value
 
 
 def _plan_json(plan: dict) -> dict:
@@ -1165,11 +1176,16 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
 @extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT, parameters=[
     OpenApiParameter("search", str), OpenApiParameter("group", int), OpenApiParameter("program", int),
     OpenApiParameter("plan", int), OpenApiParameter("ordering", str), OpenApiParameter("page", int),
+    OpenApiParameter("section", str, enum=list(soon.SECTIONS)),
 ])
 class QueueView(APIView):
     """Рабочие списки: to_pay («К оплате»), soon («Скоро оплата»), overdue
     («Просроченные»), all (все договоры). Денежные — бухгалтер и директор;
-    «all» — также менеджеру (статусы без денежных операций)."""
+    «all» — также менеджеру (статусы без денежных операций).
+
+    «Скоро оплата» — подраздел `section` (days_1_3, days_4_5, days_6_10,
+    next_month, paid_course; без него — все временные) и сводка `sections`
+    ({count, amount} каждого подраздела по тем же строкам)."""
 
     permission_classes = [BillingAccess]
 
@@ -1178,7 +1194,12 @@ class QueueView(APIView):
             raise ValidationError({"queue": "Неизвестный список."})
         if queue != "all" and not can_view_money(request.user):
             raise PermissionDenied({"detail": "Финансовые списки доступны только бухгалтерии.", "code": "forbidden"})
-        return Response(_paginate(request, queues.queue_rows(queue, queue_filters(request))))
+        f = queue_filters(request)
+        if queue == "soon":
+            page = queues.soon_page(f)
+            return Response({**_paginate(request, page["rows"]), "section": f["section"],
+                             "sections": page["sections"], "undated": page["undated"]})
+        return Response(_paginate(request, queues.queue_rows(queue, f)))
 
 
 @extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)

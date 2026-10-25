@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildUser } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/testUtils'
 import type { UserRole } from '@/types/auth'
-import type { ContractCard, FinanceMe, FinanceOptions, Payment, QueueRow, Receipt } from '@/types/finance'
+import type { ContractCard, FinanceMe, FinanceOptions, Payment, QueueRow, Receipt, SoonQueuePage } from '@/types/finance'
 
 const mockRole = vi.hoisted(() => ({ role: 'accountant' as UserRole }))
 
@@ -16,7 +16,7 @@ vi.mock('@/hooks/useAuth', () => ({
 vi.mock('@/api/accounting', () => ({ newIdempotencyKey: () => 'form-key' }))
 vi.mock('@/api/finance', () => ({
   financeApi: {
-    me: vi.fn(), options: vi.fn(), counts: vi.fn(), queue: vi.fn(), card: vi.fn(), previewPayment: vi.fn(),
+    me: vi.fn(), options: vi.fn(), counts: vi.fn(), queue: vi.fn(), soon: vi.fn(), card: vi.fn(), previewPayment: vi.fn(),
     recordPayment: vi.fn(), receipt: vi.fn(), receiptPrinted: vi.fn(), downloadReceiptPdf: vi.fn(), plans: vi.fn(),
     lmsStudents: vi.fn(), createContract: vi.fn(), periods: vi.fn(), payments: vi.fn(), periodReport: vi.fn(),
     lessonBreakdown: vi.fn(), applyCredit: vi.fn(), changeStartDate: vi.fn(),
@@ -36,6 +36,7 @@ import { StudentsPage } from '@/features/finance/StudentsPage'
 import { currentMonth, setFinancePeriod } from '@/features/finance/period'
 import { OperationsTable, ScheduleBlock } from '@/features/finance/CardSections'
 import { ToPayPage } from '@/features/finance/QueuePage'
+import { SoonPage } from '@/features/finance/SoonPage'
 import { ReceiptSheet } from '@/features/finance/ReceiptPage'
 import { MonthProgress, rowProgress } from '@/features/finance/ui'
 
@@ -168,6 +169,74 @@ describe('«К оплате»', () => {
     const row = (await screen.findByText('Асанов Айбек')).closest('tr')!
     await waitFor(() => expect(financeApi.me).toHaveBeenCalled())
     expect(row).not.toHaveTextContent('Платёж')
+  })
+})
+
+const SECTIONS: SoonQueuePage['sections'] = {
+  days_1_3: { count: 1, amount: '15000.00' }, days_4_5: { count: 0, amount: '0.00' },
+  days_6_10: { count: 0, amount: '0.00' }, next_month: { count: 1, amount: '10000.00' },
+  paid_course: { count: 1, amount: '0.00' },
+}
+const SOON_ROW: QueueRow = {
+  ...ROW, due_now: '15000.00', overdue_amount: '15000.00', credit: '5000.00',
+  course_payment: { final_course_price: '60000.00', allocated: '0.00', credit: '5000.00', adjusted: '0.00',
+    unpaid: '55000.00', due_now: '15000.00', paid_in_full: false },
+  upcoming: [
+    { key: 'invoice:32', source: 'invoice', invoice: 32, number: 'INV-2026-000032', kind: 'MONTH', month_number: 2,
+      due_date: '2026-10-26', days: 2, date_basis: 'schedule', due_lesson: 3, amount: '15000.00', paid: '0.00',
+      balance: '15000.00', credit_applied: '0.00', to_pay: '15000.00', section: 'days_1_3' },
+    { key: 'next:3', source: 'forecast', invoice: null, number: null, kind: 'MONTH', month_number: 3,
+      due_date: '2026-11-07', days: 14, date_basis: 'schedule', due_lesson: 3, amount: '15000.00', paid: '0.00',
+      balance: '15000.00', credit_applied: '5000.00', to_pay: '10000.00', section: 'next_month' },
+  ],
+  upcoming_undated: false, section: 'days_1_3', section_days: 2, section_due_date: '2026-10-26', section_to_pay: '15000.00',
+}
+
+describe('«Скоро оплата» — подразделы по дате срока', () => {
+  it('shows five sections with counters and sums, each obligation separately', async () => {
+    vi.mocked(financeApi.soon).mockResolvedValue({ count: 1, page: 1, page_size: 25, results: [SOON_ROW],
+      section: 'days_1_3', sections: SECTIONS, undated: 2 })
+    renderWithProviders(<SoonPage />)
+    const row = (await screen.findByText('Асанов Айбек')).closest('tr')!
+    const tabs = screen.getAllByRole('tab')
+    const labels = ['Через 1–3 дня', 'Через 4–5 дней', 'Через 6–10 дней', 'Следующий месяц', 'Полностью оплатили курс']
+    labels.forEach((label, i) => expect(tabs[i]).toHaveTextContent(label))
+    expect(tabs).toHaveLength(5)
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    expect(tabs[0]).toHaveTextContent('к оплате 15 000 сом')
+    expect(tabs[3]).toHaveTextContent('к оплате 10 000 сом')
+    expect(tabs[4]).toHaveTextContent('к оплате 0 сом')
+    expect(vi.mocked(financeApi.soon).mock.calls[0][0]).toMatchObject({ section: 'days_1_3', page_size: 25 })
+    expect(row).toHaveTextContent('26.10.2026')
+    expect(row).toHaveTextContent('через 2 дня')
+    expect(row).toHaveTextContent('Месяц 2 · INV-2026-000032')
+    expect(row).toHaveTextContent('Выставлено')
+    // Обязательство другого подраздела — отдельно, со своей суммой и авансом.
+    expect(row).toHaveTextContent('Ещё не выставлено')
+    expect(row).toHaveTextContent('аванс закрывает 5 000 сом из 15 000 сом')
+    expect(row).toHaveTextContent('в т.ч. просрочено 15 000 сом')
+    expect(row).toHaveTextContent('Осталось по курсу 55 000 сом')
+    expect(row).not.toHaveTextContent('Курс оплачен')
+    expect(screen.getByText(/У 2 студ\. дата срока не подтверждена/)).toBeInTheDocument()
+  })
+
+  it('switches to «Полностью оплатили курс» with the paid status and no amount due', async () => {
+    const paid: QueueRow = { ...SOON_ROW, upcoming: [], due_now: '0.00', overdue_amount: '0.00', credit: '45000.00',
+      section: 'paid_course', section_days: null, section_due_date: null, section_to_pay: '0.00',
+      course_payment: { final_course_price: '60000.00', allocated: '15000.00', credit: '45000.00', adjusted: '0.00',
+        unpaid: '0.00', due_now: '0.00', paid_in_full: true } }
+    vi.mocked(financeApi.soon).mockResolvedValue({ count: 1, page: 1, page_size: 25, results: [SOON_ROW],
+      section: 'days_1_3', sections: SECTIONS, undated: 0 })
+    renderWithProviders(<SoonPage />)
+    await screen.findByText('Асанов Айбек')
+    vi.mocked(financeApi.soon).mockResolvedValue({ count: 1, page: 1, page_size: 25, results: [paid],
+      section: 'paid_course', sections: SECTIONS, undated: 0 })
+    await userEvent.click(screen.getByRole('tab', { name: /Полностью оплатили курс/ }))
+    await waitFor(() => expect(vi.mocked(financeApi.soon).mock.calls.at(-1)?.[0]).toMatchObject({ section: 'paid_course' }))
+    const row = (await screen.findByText('Курс оплачен')).closest('tr')!
+    expect(row).toHaveTextContent('60 000 сом')
+    expect(row).toHaveTextContent('+ аванс 45 000 сом')
+    expect(row).not.toHaveTextContent('Осталось по курсу')
   })
 })
 

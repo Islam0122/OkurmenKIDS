@@ -492,15 +492,16 @@ class QueueTests(ContractFixture):
     def test_soon_queue(self):
         profile = self.contract()
         self.pay(profile, "15000")
-        self.it_lessons(8)
-        self.assertEqual(queues.queue_rows("soon", {}), [])
-        self.it_lessons(1)
+        self.it_lessons(9)
+        self.assertEqual(queues.queue_rows("soon", {}), [])  # нет расписания вперёд — дата срока не известна
+        self.plan_lessons(12, start_day=self.today + dt.timedelta(days=1))
         (row,) = queues.queue_rows("soon", {})
-        self.assertEqual((row["profile"], row["lessons_used"], row["next_month"]["cost"], row["next_month"]["to_pay"]),
-                         (profile.pk, 9, "15000.00", "15000.00"))
+        (o,) = row["upcoming"]  # месяц 2: 3 урока до конца месяца 1 + 3-й урок месяца 2 = через 6 дней
+        self.assertEqual((row["profile"], o["source"], o["month_number"], o["days"], o["section"], o["amount"],
+                          o["to_pay"]), (profile.pk, "forecast", 2, 6, "days_6_10", "15000.00", "15000.00"))
         self.pay(profile, "6000")
         (row,) = queues.queue_rows("soon", {})
-        self.assertEqual((row["next_month"]["covered"], row["next_month"]["to_pay"]), ("6000.00", "9000.00"))
+        self.assertEqual((row["upcoming"][0]["credit_applied"], row["upcoming"][0]["to_pay"]), ("6000.00", "9000.00"))
         self.pay(profile, "9000")
         self.assertEqual(queues.queue_rows("soon", {}), [])  # следующий месяц уже оплачен авансом
         self.assertEqual(queues.counts()["soon"], 0)

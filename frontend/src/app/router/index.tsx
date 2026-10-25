@@ -350,7 +350,7 @@ export const router = createBrowserRouter([
             children: [
               { index: true, lazy: async () => ({ Component: (await import('@/features/finance/DashboardPage')).FinanceDashboardPage }) },
               { path: 'to-pay', lazy: async () => ({ Component: (await import('@/features/finance/QueuePage')).ToPayPage }) },
-              { path: 'soon', lazy: async () => ({ Component: (await import('@/features/finance/QueuePage')).SoonPage }) },
+              { path: 'soon', lazy: async () => ({ Component: (await import('@/features/finance/SoonPage')).SoonPage }) },
               { path: 'overdue', lazy: async () => ({ Component: (await import('@/features/finance/QueuePage')).OverduePage }) },
               { path: 'students', lazy: async () => ({ Component: (await import('@/features/finance/StudentsPage')).StudentsPage }) },
               { path: 'students/:profileId', lazy: async () => ({ Component: (await import('@/features/finance/StudentCardPage')).StudentCardPage }) },
