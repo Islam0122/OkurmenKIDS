@@ -18,6 +18,7 @@ import {
   ListFilters,
   Loadable,
   MonthProgress,
+  rowProgress,
   StageBadge,
   formatDateTime,
   useFinanceMe,
@@ -115,7 +116,7 @@ export function QueuePage({ queue }: { queue: Exclude<QueueKind, 'all'> }) {
   const columns: Record<typeof queue, DataTableColumn<QueueRow>[]> = {
     to_pay: [
       { key: 'student', header: 'Студент', render: (r) => <StudentCell row={r} /> },
-      { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress month={r.month_number} months={r.duration_months} used={r.lessons_used} total={r.lessons_total} /> },
+      { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress {...rowProgress(r)} /> },
       { key: 'cost', header: 'Начислено', render: (r) => <Amount value={r.focus_invoice?.amount} /> },
       { key: 'paid', header: 'Получено', render: (r) => <Amount value={r.focus_invoice?.paid} tone="muted" /> },
       { key: 'balance', header: 'Остаток', render: (r) => <Amount value={r.focus_invoice?.balance} tone="brand" /> },
@@ -126,7 +127,7 @@ export function QueuePage({ queue }: { queue: Exclude<QueueKind, 'all'> }) {
     ],
     soon: [
       { key: 'student', header: 'Студент', render: (r) => <StudentCell row={r} /> },
-      { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress month={r.month_number} months={r.duration_months} used={r.lessons_used} total={r.lessons_total} /> },
+      { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress {...rowProgress(r)} /> },
       { key: 'left', header: 'Осталось уроков', render: (r) => <span className="font-semibold">{r.lessons_total - r.lessons_used}</span> },
       { key: 'next', header: 'Следующий месяц', render: (r) => <Amount value={r.next_month?.cost} /> },
       { key: 'covered', header: 'Внесено авансом', render: (r) => <Amount value={r.next_month?.covered} tone="muted" /> },
@@ -142,7 +143,7 @@ export function QueuePage({ queue }: { queue: Exclude<QueueKind, 'all'> }) {
           <p className="text-ink-secondary">{r.overdue_days} дн.</p>
         </div>
       ) },
-      { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress month={r.month_number} months={r.duration_months} used={r.lessons_used} total={r.lessons_total} /> },
+      { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress {...rowProgress(r)} /> },
       { key: 'parent', header: 'Родитель', render: (r) => (
         <div className="text-sm"><p>{r.parent_name || '—'}</p>
           {r.parent_phone ? <a className="whitespace-nowrap text-brand-700 hover:underline" href={`tel:${r.parent_phone}`} onClick={(e) => e.stopPropagation()}>{r.parent_phone}</a> : null}

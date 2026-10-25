@@ -24,6 +24,7 @@ from apps.accounting.services.money import money
 
 from ..models import BillingContactLog, BillingSettings, CreditLedgerEntry, Invoice, LessonPackage, StudentBillingProfile
 from .contracts import applicable_credit, next_month_cost, payment_stage
+from .progress import profile_progress
 
 ZERO = Decimal("0.00")
 QUEUES = ("to_pay", "soon", "overdue", "all")
@@ -116,6 +117,15 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
     credit = profile.credit_sum if getattr(profile, "credit_sum", None) else ZERO
     usable = applicable_credit(profile, unpaid, credit)
     student = profile.student
+    # Учебный месяц и уроки — единый расчёт по засчитанным урокам (`progress`):
+    # 12/12 остаётся в завершённом месяце. Тариф без учебных месяцев — пакет.
+    progress = profile_progress(profile, packages)
+    if progress is not None:
+        month_number, lessons_used, lessons_total = progress["month"], progress["in_month"], progress["per_month"]
+    else:
+        month_number = (current.month_number or current.number) if current else None
+        lessons_used = current.lessons_used if current else 0
+        lessons_total = current.lessons_total if current else (profile.lessons_per_month or 0)
     row = {
         "profile": profile.pk, "student": student.pk, "student_name": str(student),
         "group": student.group_id, "group_name": student.group.name if student.group_id else None,
@@ -127,9 +137,14 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
         "is_course": profile.is_course, "payment_mode": profile.payment_mode,
         "payment_mode_display": profile.get_payment_mode_display(),
         "duration_months": profile.duration_months,
-        "month_number": (current.month_number or current.number) if current else None,
-        "lessons_used": current.lessons_used if current else 0,
-        "lessons_total": current.lessons_total if current else (profile.lessons_per_month or 0),
+        "month_number": month_number, "lessons_used": lessons_used, "lessons_total": lessons_total,
+        # Засчитано ученику за курс (не проведённые занятия группы) и план курса.
+        "course_lessons_counted": progress["counted"] if progress else None,
+        "course_lessons_total": progress["total"] if progress else None,
+        # Платёжный цикл: на границе 12/12 уже открыт следующий месяц (начисление
+        # выставлено по правилу проекта) — показывается подсказкой.
+        "billing_month_number": progress["billing_month"] if progress else month_number,
+        "next_month_open": progress["next_month_open"] if progress else False,
         "final_course_price": _s(profile.final_course_price),
         "discount_amount": _s(profile.discount_amount),
         "stage": stage,

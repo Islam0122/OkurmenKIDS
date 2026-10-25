@@ -176,6 +176,7 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
                     <p className="mt-1 text-sm text-ink-secondary">
                       Курс {som(data.contract.final_course_price)}{data.contract.discount_enabled ? ` (скидка ${som(data.contract.discount_amount)})` : ''}
                       {row.month_number ? ` · месяц ${row.month_number}${row.duration_months ? ` из ${row.duration_months}` : ''}, IT ${row.lessons_used} из ${row.lessons_total}` : ''}
+                      {row.course_lessons_total ? `, курс ${row.course_lessons_counted ?? 0} из ${row.course_lessons_total}` : ''}
                     </p>
                   </div>
                   <StageBadge stage={row.stage} />

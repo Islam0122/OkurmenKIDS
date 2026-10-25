@@ -18,7 +18,7 @@ import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { Field } from '@/features/worklog/formUi'
 import { som, useRunner } from '@/features/accounting/shared'
-import type { ContractStatus, FinanceOptions, InvoiceStatus, PaymentStage, QueueFilters } from '@/types/finance'
+import type { ContractStatus, FinanceOptions, InvoiceStatus, PaymentStage, QueueFilters, QueueRow } from '@/types/finance'
 import { cn } from '@/utils/cn'
 
 export { formatDate, formatDateTime, som, today, useRunner } from '@/features/accounting/shared'
@@ -68,12 +68,17 @@ export function ContractStatusBadge({ status, label }: { status: ContractStatus;
   return <Badge tone={CONTRACT_TONE[status]}>{label}</Badge>
 }
 
-/** «Месяц 2 из 4 · IT 1 из 12» с полоской прогресса. */
-export function MonthProgress({ month, months, used, total }: {
+/** «Месяц 2 из 6 · IT 2 из 12 · курс 14 из 72» с полоской прогресса. Все числа —
+ * из backend (`progress.study_progress`): засчитанные ученику уроки, не занятия группы. */
+export function MonthProgress({ month, months, used, total, courseCounted, courseTotal, billingMonth }: {
   month: number | null
   months: number | null
   used: number
   total: number
+  courseCounted?: number | null
+  courseTotal?: number | null
+  /** Платёжный цикл уже следующего месяца (граница 12/12) — подсказка про начисление. */
+  billingMonth?: number | null
 }) {
   const percent = total ? Math.min(100, Math.round((used / total) * 100)) : 0
   return (
@@ -87,8 +92,18 @@ export function MonthProgress({ month, months, used, total }: {
         </div>
         <span className="whitespace-nowrap text-xs text-ink-secondary">IT {used} из {total}</span>
       </div>
+      {courseTotal ? <p className="whitespace-nowrap text-xs text-ink-secondary">курс {courseCounted ?? 0} из {courseTotal}</p> : null}
+      {billingMonth && month && billingMonth > month ? (
+        <p className="whitespace-nowrap text-xs text-ink-secondary">выставлен месяц {billingMonth}</p>
+      ) : null}
     </div>
   )
+}
+
+/** Пропсы `MonthProgress` из строки списка — одинаково во всех таблицах. */
+export function rowProgress(r: QueueRow) {
+  return { month: r.month_number, months: r.duration_months, used: r.lessons_used, total: r.lessons_total,
+    courseCounted: r.course_lessons_counted, courseTotal: r.course_lessons_total, billingMonth: r.billing_month_number }
 }
 
 export function Loadable<T>({ query, empty, emptyTitle = 'Нет данных', emptyDescription, children }: {

@@ -89,9 +89,17 @@ export interface QueueRow {
   payment_mode: PaymentMode
   payment_mode_display: string
   duration_months: number | null
+  /** Учебный месяц ученика по засчитанным урокам (1–12 → 1, 13–24 → 2…; 12/12 — ещё месяц 1). */
   month_number: number | null
+  /** Засчитано в этом месяце / уроков в месяце. */
   lessons_used: number
   lessons_total: number
+  /** Засчитано ученику за курс и план курса (не проведённые занятия группы). */
+  course_lessons_counted?: number | null
+  course_lessons_total?: number | null
+  /** Месяц текущего платёжного цикла: на границе 12/12 уже следующий (начисление выставлено). */
+  billing_month_number?: number | null
+  next_month_open?: boolean
   final_course_price: string | null
   discount_amount: string | null
   stage: PaymentStage
@@ -172,6 +180,23 @@ export interface StudyMonth {
   invoice: { id: number; number: string; status: InvoiceStatus; balance: string; amount: string; kind: InvoiceKind } | null
   /** Предоплата за весь курс: доля «Весь курс» на этот месяц и сколько её оплачено (не отдельное начисление). */
   course_share?: { invoice: number; number: string; amount: string; paid: string; paid_in_full: boolean } | null
+  /** Текущий учебный месяц ученика по засчитанным урокам (на границе 12/12 — завершённый). */
+  is_current?: boolean
+}
+
+/** Учебный прогресс ученика по договору (backend `progress.profile_progress`). */
+export interface StudyProgress {
+  month: number | null
+  months: number | null
+  in_month: number
+  per_month: number | null
+  /** Засчитано ученику за курс. */
+  counted: number
+  total: number | null
+  billing_month: number | null
+  next_month_open: boolean
+  /** Показатель академии: проведённые занятия предмета в группах ученика. */
+  group_held: { all_time: number; since_contract: number }
 }
 
 export interface Allocation {
@@ -373,6 +398,7 @@ export interface ContractCard {
   row: QueueRow
   summary: MoneySummary
   schedule: PaymentSchedule | null
+  progress?: StudyProgress | null
   months: StudyMonth[]
   invoices: Invoice[]
   reservations: Reservation[]

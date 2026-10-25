@@ -16,7 +16,8 @@ from django.test import SimpleTestCase
 from apps.academy.models import Lesson
 from apps.billing.models import Invoice, LessonConsumption
 from apps.billing.services import lessons, payments, pricing, profiles
-from apps.billing.services.progress_audit import _rule, profile_progress
+from apps.billing.services.progress import study_progress
+from apps.billing.services.progress_audit import profile_progress
 from apps.billing.tests.base import D
 from apps.billing.tests.test_periods import PeriodFixture
 
@@ -28,7 +29,7 @@ class RuleTests(SimpleTestCase):
         cases = {0: (1, 0), 1: (1, 1), 11: (1, 11), 12: (1, 12), 13: (2, 1), 14: (2, 2), 24: (2, 12), 25: (3, 1),
                  72: (6, 12)}
         for counted, expected in cases.items():
-            rule = _rule(counted, 12, 6)
+            rule = study_progress(counted, 12, 6)
             self.assertEqual((rule["month"], rule["in_month"]), expected, counted)
 
 
@@ -64,8 +65,10 @@ class AuditTests(AuditFixture):
         profile = self.contract()
         self.held(12)
         r = profile_progress(profile)
-        self.assertEqual(r["billing"]["shown"], "месяц 2 из 6, IT 0/12")  # как сейчас в «Все студенты»
+        # «Все студенты» — по правилу: 12/12 в завершённом месяце; платёжный цикл месяца 2 открыт (справочно).
+        self.assertEqual(r["billing"]["shown"], "месяц 1 из 6, IT 12/12")
         self.assertEqual(r["rule"]["shown"], "месяц 1 из 6, 12 из 12")
+        self.assertEqual((r["billing"]["billing_month"], r["billing"]["counted_in_packages"]), (2, 12))
         self.assertEqual([f["code"] for f in r["findings"]], ["boundary_month"])
         self.assertEqual([(i["month"], i["status"]) for i in r["money"]["invoices"]],
                          [(1, Invoice.Status.PAID), (2, Invoice.Status.OPEN)])  # начисление месяца 2 — по правилу проекта
@@ -107,6 +110,7 @@ class AuditTests(AuditFixture):
         call_command("billing_progress_audit", plan="Next 3", stdout=out)
         self.assertIn("boundary_month", out.getvalue())
         self.assertIn("месяц 1 из 6, 12 из 12", out.getvalue())
+        self.assertIn("показано «месяц 1 из 6, IT 12/12»", out.getvalue())
         self.assertEqual((LessonConsumption.objects.count(), Invoice.objects.count(),
                           list(Invoice.objects.values_list("status", "amount_paid"))), before)
         self.assertEqual(profile.invoices.count(), 2)
