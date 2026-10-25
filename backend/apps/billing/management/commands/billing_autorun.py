@@ -2,15 +2,18 @@
 
     python manage.py billing_autorun [--date 2026-10-21] [--no-report]
 
-Тот же набор, что `billing.run_daily` в Celery Beat. Повторный запуск
-ничего не дублирует.
+Только задачи оплаты обучения (`billing.run_daily`) — через ту же аренду, что
+`run_scheduled_tasks`: два запуска одновременно не выполнят проверки дважды.
+Для Railway Cron используйте `run_scheduled_tasks` (ещё и посещаемость
+сотрудников). Сбой хотя бы одной проверки — код выхода 1.
 """
 import datetime as dt
 import json
+import sys
 
 from django.core.management.base import BaseCommand
 
-from apps.billing.tasks import run_daily
+from apps.billing.services.scheduler import run_all
 
 
 class Command(BaseCommand):
@@ -21,5 +24,8 @@ class Command(BaseCommand):
         parser.add_argument("--no-report", action="store_true")
 
     def handle(self, *args, **options):
-        result = run_daily(on=options["date"], report=not options["no_report"])
-        self.stdout.write(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        summary = run_all(on=options["date"], report=not options["no_report"], staff_attendance=False)
+        self.stdout.write(json.dumps({"status": summary["status"], **summary["tasks"]}, ensure_ascii=False,
+                                     indent=2, default=str))
+        if summary["failed"]:
+            sys.exit(1)
