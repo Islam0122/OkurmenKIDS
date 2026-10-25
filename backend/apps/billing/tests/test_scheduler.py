@@ -101,6 +101,33 @@ class SchedulerTests(BillingFixture):
         daily.assert_not_called()
         self.assertEqual(scheduler.pending_migrations(), [])  # в тестовой базе всё применено
 
+    def test_empty_database_is_an_error_not_a_silent_skip(self):
+        # Не задан DJANGO_ENV=production → подключилась пустая SQLite: не молчать с кодом 0.
+        with mock.patch.object(scheduler, "schema_missing", return_value=True), \
+                mock.patch("apps.billing.tasks.run_daily_tasks") as daily:
+            summary, code = run_command()
+        self.assertEqual((summary["status"], summary["failed"], code), ("no_schema", True, 1))
+        daily.assert_not_called()
+        self.assertFalse(scheduler.schema_missing())
+
+    def test_lease_is_renewed_before_each_task(self):
+        started = timezone.now() - dt.timedelta(minutes=20)
+        renewed = []
+
+        def task(**_kwargs):
+            renewed.append(BillingEvent.objects.get(key=scheduler.LOCK_KEY).updated_at)
+            return {}
+
+        with mock.patch("apps.billing.services.scheduler.timezone.now", return_value=started):
+            self.assertTrue(scheduler.acquire(uuid.uuid4()))
+        run_id = BillingEvent.objects.get(key=scheduler.LOCK_KEY).run_id
+        from apps.billing import tasks
+        with mock.patch.object(tasks, "DAILY", (mock.Mock(side_effect=task, __name__="t1"),)):
+            tasks.run_daily_tasks(before_each=lambda: scheduler.renew(run_id))
+        self.assertGreater(renewed[0], started + dt.timedelta(minutes=19))  # продлена перед задачей
+        scheduler.renew(uuid.uuid4())  # чужой run_id не продлевает
+        self.assertFalse(scheduler.acquire(uuid.uuid4()))  # аренда жива
+
     def test_billing_autorun_still_works_without_staff_attendance(self):
         out = StringIO()
         call_command("billing_autorun", "--no-report", stdout=out)

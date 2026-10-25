@@ -19,7 +19,12 @@
   аренда, не снятая из-за падения процесса, истекает через `LEASE`;
 * **повтор в тот же день безопасен** — у каждой задачи свои блокировки и
   уникальные ключи (пакет, начисление, уведомление, задача), см. `tasks.py`;
-* **миграции не применены** (деплой ещё идёт) — запуск пропускается.
+* **миграции не применены** (деплой ещё идёт) — запуск пропускается;
+  в базе нет ни одной миграции (не та база: например, не задан
+  `DJANGO_ENV=production` и подключилась пустая SQLite) — ошибка, код 1;
+* **аренда продлевается** перед каждой задачей, поэтому долгий запуск не
+  теряет её, а аренда упавшего процесса истекает через `LEASE` после
+  последнего продления.
 """
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ import uuid
 
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations.recorder import MigrationRecorder
 from django.utils import timezone
 
 from ..models import BillingEvent
@@ -46,6 +52,11 @@ def pending_migrations() -> list[str]:
     return [f"{migration.app_label}.{migration.name}" for migration, _backwards in plan]
 
 
+def schema_missing() -> bool:
+    """В базе нет таблицы миграций — значит, это не рабочая база проекта."""
+    return not MigrationRecorder(connections[DEFAULT_DB_ALIAS]).has_table()
+
+
 def acquire(run_id: uuid.UUID, *, now: dt.datetime | None = None) -> bool:
     """Захватить аренду: свободна, снята или истекла — атомарный UPDATE."""
     now = now or timezone.now()
@@ -54,6 +65,11 @@ def acquire(run_id: uuid.UUID, *, now: dt.datetime | None = None) -> bool:
              .exclude(status=BillingEvent.Status.PROCESSING, updated_at__gt=now - LEASE)
              .update(status=BillingEvent.Status.PROCESSING, run_id=run_id, updated_at=now, error=""))
     return taken == 1
+
+
+def renew(run_id: uuid.UUID) -> None:
+    BillingEvent.objects.filter(key=LOCK_KEY, run_id=run_id, status=BillingEvent.Status.PROCESSING).update(
+        updated_at=timezone.now())
 
 
 def release(run_id: uuid.UUID, *, result: dict, failed: bool) -> None:
@@ -71,10 +87,13 @@ def _report_done_today(on: dt.date) -> bool:
 
 def run_all(*, on: dt.date | None = None, report: bool = True, staff_attendance: bool = True) -> dict:
     """Один запуск всех периодических задач (см. модуль). Возвращает
-    {"status": done | skipped_locked | skipped_migrations, "tasks": {...},
-    "failed": bool}."""
+    {"status": done | skipped_locked | skipped_migrations | no_schema,
+    "tasks": {...}, "failed": bool}."""
     from .. import tasks
 
+    if schema_missing():
+        logger.error("scheduler: database has no migrations table — wrong database or DJANGO_ENV")
+        return {"status": "no_schema", "tasks": {}, "failed": True}
     pending = pending_migrations()
     if pending:
         logger.warning("scheduler: migrations pending, skip: %s", pending)
@@ -86,11 +105,13 @@ def run_all(*, on: dt.date | None = None, report: bool = True, staff_attendance:
     on = on or timezone.localdate()
     results: dict = {}
     try:
-        results.update(tasks.run_daily_tasks(on=on))
+        results.update(tasks.run_daily_tasks(on=on, before_each=lambda: renew(run_id)))
+        renew(run_id)
         if report and not _report_done_today(on):
             results["build_financial_report"] = _safe(
                 lambda: {"problems": len(tasks.build_financial_report(on=on)["reconcile_problems"])}, "report")
         if staff_attendance:
+            renew(run_id)
             from apps.staff_attendance.services.marking import close_stale_sessions
 
             results["staff_attendance_close_stale"] = _safe(lambda: {"closed": close_stale_sessions()}, "staff")
@@ -109,4 +130,4 @@ def _safe(func, name: str) -> dict:
         return {"error": str(exc)}
 
 
-__all__ = ["LEASE", "LOCK_KEY", "acquire", "pending_migrations", "release", "run_all"]
+__all__ = ["LEASE", "LOCK_KEY", "acquire", "pending_migrations", "release", "renew", "run_all", "schema_missing"]

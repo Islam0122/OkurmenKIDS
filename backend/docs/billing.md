@@ -685,8 +685,10 @@ python manage.py run_scheduled_tasks        # [--date ГГГГ-ММ-ДД] [--no-
 Защита (`services/scheduler.py`): **один запуск за раз** — аренда в базе
 (`BillingEvent` `scheduler:lock`, атомарный UPDATE; занята — выход 0,
 `skipped_locked`; не снятая после падения истекает через 25 минут);
-**миграции не применены** (деплой идёт) — выход 0, `skipped_migrations`;
-повтор в тот же день не дублирует записи (блокировки и уникальные ключи
+аренда продлевается перед каждой задачей; **миграции не применены** (деплой
+идёт) — выход 0, `skipped_migrations`; **в базе нет таблицы миграций** (не та
+база — например, не задан `DJANGO_ENV=production` и подключилась пустая
+SQLite) — выход 1, `no_schema`; повтор в тот же день не дублирует записи (блокировки и уникальные ключи
 задач). Сбой хотя бы одной задачи — **код выхода 1**, остальные выполняются.
 Итог — одна строка JSON в логе; каждая задача — запись в «Журнале обработки
 событий» (`task:<задача>:<дата>`, DONE / FAILED, попытки, ошибка).
@@ -698,7 +700,14 @@ python manage.py run_scheduled_tasks        # [--date ГГГГ-ММ-ДД] [--no-
 переменные — те же, что у web (`DJANGO_ENV=production`, `SECRET_KEY`,
 `ALLOWED_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `PGHOST`, `PGPORT`,
 `PGUSER`, `PGPASSWORD`, `PGDATABASE` — ссылками на существующую базу),
-`CELERY_BROKER_URL` не задавать. Config-as-code: `deployment/railway-cron.json`.
+`CELERY_BROKER_URL` не задавать; `FRONTEND_BASE_URL` / `SITE_URL` — как у web,
+если заданы там. Миграции и создание администратора cron не выполняет — это
+делает только `server-entrypoint.sh` web-сервиса.
+
+Настраивать в интерфейсе сервиса (Settings): Railway объявил Config as Code
+(`railway.json`) устаревшим — новые сервисы его подключить не могут, старые
+работают до 2026-12-01. `deployment/railway-cron.json` — только справка по
+значениям полей, не подключать как Config File.
 Celery Worker / Beat и Redis не нужны; запускать Beat вместе с cron нельзя
 (расписание должно быть одно; `billing.run_daily` всё равно идёт через ту же
 аренду и одновременно с cron не выполнится).
