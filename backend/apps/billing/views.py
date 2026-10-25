@@ -381,7 +381,7 @@ def _profile_summary(profile) -> dict:
     invoices_all = list(profile.invoices.all())
     unpaid = [i for i in invoices_all if i.status in Invoice.UNPAID_STATUSES]
     debt = sum((i.balance for i in unpaid), Decimal("0"))
-    if any(i.status == Invoice.Status.OVERDUE for i in unpaid):
+    if any(contracts.payment_stage(i) == "overdue" for i in unpaid):  # по актуальным данным
         state = "overdue"
     elif unpaid:
         state = "awaiting"
@@ -433,7 +433,8 @@ class StudentsView(APIView):
         if q.get("state") == "debt":
             qs = qs.filter(billing_profiles__invoices__status__in=Invoice.UNPAID_STATUSES).distinct()
         elif q.get("state") == "overdue":
-            qs = qs.filter(billing_profiles__invoices__status=Invoice.Status.OVERDUE).distinct()
+            overdue = Invoice.objects.filter(status__in=Invoice.UNPAID_STATUSES).filter(invoices.overdue_q())
+            qs = qs.filter(billing_profiles__invoices__in=overdue).distinct()  # срок прошёл — по актуальным данным
         profiles = (
             StudentBillingProfile.objects.exclude(status__in=StudentBillingProfile.CLOSED_STATUSES)
             .select_related("plan", "subject")

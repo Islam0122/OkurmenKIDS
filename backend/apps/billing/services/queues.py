@@ -70,11 +70,13 @@ def apply_filters(qs, f: dict):
 
 
 def queue_queryset(queue: str, f: dict):
+    """Кандидаты очереди. «К оплате» / «Просроченные» — договоры с
+    непогашенным остатком начислений; в какую очередь попадает договор,
+    решает `contract_row` по актуальной стадии (`contracts.payment_stage`:
+    сегодняшняя дата, срок, остаток), а не сохранённый статус начисления."""
     qs = apply_filters(base_queryset(), f)
-    if queue == "to_pay":
-        return qs.filter(invoices__status__in=(Invoice.Status.OPEN, Invoice.Status.PARTIALLY_PAID)).distinct()
-    if queue == "overdue":
-        return qs.filter(invoices__status=Invoice.Status.OVERDUE).distinct()
+    if queue in ("to_pay", "overdue"):
+        return qs.filter(invoices__status__in=Invoice.UNPAID_STATUSES).distinct()
     if queue == "soon":
         return _soon_candidates(qs)
     return qs
@@ -107,11 +109,15 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
     current = next((p for p in packages if p.status == LessonPackage.Status.ACTIVE), None)
     if current is None and packages:
         current = packages[-1]
-    unpaid = [i for i in invoices if i.status in Invoice.UNPAID_STATUSES]
-    overdue = [i for i in unpaid if i.status == Invoice.Status.OVERDUE]
+    # Стадии — по актуальным данным (`payment_stage`: дата по часовому поясу
+    # проекта, урок-срок, остаток), а не по сохранённому статусу начисления.
+    stages = {i.pk: payment_stage(i, on=today) for i in invoices}
+    unpaid = [i for i in invoices if stages[i.pk] in ("awaiting", "deadline", "overdue")]
+    overdue = [i for i in unpaid if stages[i.pk] == "overdue"]
+    due = [i for i in unpaid if stages[i.pk] == "deadline"] + [i for i in unpaid if stages[i.pk] == "awaiting"]
     # Этап оплаты: самое срочное неоплаченное начисление.
-    focus = overdue[0] if overdue else (unpaid[0] if unpaid else None)
-    stage = payment_stage(focus) if focus else (
+    focus = overdue[0] if overdue else (due[0] if due else None)
+    stage = stages[focus.pk] if focus else (
         "draft" if any(i.status == Invoice.Status.DRAFT for i in invoices) else "paid")
     overdue_lessons = max((i.package.lessons_used - i.due_lesson for i in overdue if i.due_lesson), default=0)
     overdue_days = max(((today - (i.overdue_since or i.due_date)).days for i in overdue), default=0)
@@ -122,8 +128,8 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
     # сегодня, затем те, срок которых ещё не наступил.
     left = usable
     split = {}
-    for key, part in (("overdue", overdue), ("deadline", [i for i in unpaid if payment_stage(i) == "deadline"]),
-                      ("not_due", [i for i in unpaid if payment_stage(i) == "awaiting"])):
+    for key, part in (("overdue", overdue), ("deadline", [i for i in unpaid if stages[i.pk] == "deadline"]),
+                      ("not_due", [i for i in unpaid if stages[i.pk] == "awaiting"])):
         balance = sum((i.balance for i in part), ZERO)
         split[key] = max(balance - left, ZERO)
         left = max(left - balance, ZERO)
@@ -180,6 +186,11 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
         # Из «К оплате сейчас»: последний срок сегодня / срок ещё не наступил
         # (просрочено + сегодня + не наступил = к оплате сейчас).
         "due_today_amount": _s(split["deadline"]), "not_due_amount": _s(split["not_due"]),
+        # Категории очередей — единое правило (списки и счётчики): «Просроченные» —
+        # срок прошёл и после применимого аванса остаётся долг; «К оплате» —
+        # выставленное начисление, срок не прошёл, к оплате > 0. Полностью
+        # оплаченное (остаток 0) — ни там, ни там.
+        "in_overdue": split["overdue"] > 0, "in_to_pay": split["deadline"] + split["not_due"] > 0,
         "overdue_lessons": overdue_lessons, "overdue_days": overdue_days,
         "credit": _s(profile.credit_sum if hasattr(profile, "credit_sum") and profile.credit_sum else ZERO),
         "last_contact_at": last_contact.contacted_at.isoformat() if last_contact else None,
@@ -202,6 +213,22 @@ SORTS = {
 }
 
 
+def in_queue(queue: str, row: dict) -> bool:
+    """Попадает ли строка в очередь — одно правило для списка и счётчика.
+
+    «Скоро оплата» — следующий месяц приближается, его начисление ещё НЕ
+    выставлено и аванс его не покрывает; как только начисление выставлено
+    (срок оплаты наступил) — студент в «К оплате», а не здесь."""
+    if queue == "to_pay":
+        return row["in_to_pay"]
+    if queue == "overdue":
+        return row["in_overdue"]
+    if queue == "soon":
+        nxt = row.get("next_month")
+        return nxt is not None and not nxt.get("issued") and Decimal(nxt["to_pay"]) > 0
+    return True
+
+
 def queue_rows(queue: str, f: dict) -> list[dict]:
     """Строки очереди (все, до пагинации — сортировка по вычисляемым полям)."""
     profiles = list(queue_queryset(queue, f))
@@ -209,11 +236,7 @@ def queue_rows(queue: str, f: dict) -> list[dict]:
     rows, groups = [], {}  # месяц группы считается один раз на группу
     for profile in profiles:
         row = contract_row(profile, last_contact=contacts.get(profile.pk), with_next=queue == "soon", group_cache=groups)
-        if queue == "to_pay" and row["stage"] not in ("awaiting", "deadline"):
-            # Есть просрочка — студент в «Просроченных», здесь только этап «к оплате».
-            if not any(i.status in (Invoice.Status.OPEN, Invoice.Status.PARTIALLY_PAID) for i in profile.invoices.all()):
-                continue
-        if queue == "soon" and (row.get("next_month") is None or Decimal(row["next_month"]["to_pay"]) <= 0):
+        if not in_queue(queue, row):
             continue
         rows.append(row)
     default = {"overdue": "overdue", "to_pay": "debt", "soon": "lessons"}.get(queue, "name")
@@ -223,8 +246,5 @@ def queue_rows(queue: str, f: dict) -> list[dict]:
 
 def counts(f: dict | None = None) -> dict:
     f = f or {}
-    return {
-        "to_pay": queue_queryset("to_pay", f).count(),
-        "soon": len(queue_rows("soon", f)),
-        "overdue": queue_queryset("overdue", f).count(),
-    }
+    # Те же строки, что в списках (`in_queue`), — счётчики не расходятся со списками.
+    return {queue: len(queue_rows(queue, f)) for queue in ("to_pay", "soon", "overdue")}

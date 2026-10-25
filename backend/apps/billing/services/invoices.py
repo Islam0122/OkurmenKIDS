@@ -371,15 +371,24 @@ def ensure_future_packages(profile: StudentBillingProfile, count: int, *, actor,
 # Просрочки, корректировки, аннулирование
 # ---------------------------------------------------------------------------
 
+def overdue_q(on: dt.date | None = None) -> Q:
+    """Срок оплаты прошёл (для неоплаченных начислений) — то же правило, что
+    `contracts.payment_stage` == overdue, в виде условия запроса: срок в
+    уроках — проведено больше урока-срока; срок датой — дата раньше `on`."""
+    on = on or today()
+    return (Q(due_lesson__isnull=True, due_date__lt=on)
+            | Q(due_lesson__isnull=False, package__lessons_used__gt=F("due_lesson")))
+
+
 def mark_overdue_invoices(on: dt.date | None = None) -> list[int]:
     """OPEN / PARTIALLY_PAID со сроком раньше `on` и остатком — OVERDUE.
     Повторный запуск в тот же день ничего не меняет и не дублирует
-    уведомления (ключ — начисление)."""
+    уведомления (ключ — начисление). Обновляет сохранённый статус и
+    уведомления; очереди и счётчики от этой задачи не зависят — они
+    считают стадию по актуальным данным (`contracts.payment_stage`)."""
     on = on or today()
     ids = list(
-        Invoice.objects.filter(status__in=(Status.OPEN, Status.PARTIALLY_PAID))
-        .filter(Q(due_lesson__isnull=True, due_date__lt=on)
-                | Q(due_lesson__isnull=False, package__lessons_used__gt=F("due_lesson")))
+        Invoice.objects.filter(status__in=(Status.OPEN, Status.PARTIALLY_PAID)).filter(overdue_q(on))
         .values_list("pk", "profile_id")
     )
     marked = []

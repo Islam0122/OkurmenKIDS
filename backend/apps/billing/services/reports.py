@@ -34,6 +34,8 @@ from ..models import (
     LessonPackage,
     StudentBillingProfile,
 )
+from .contracts import payment_stage
+from .invoices import overdue_q
 from .ledger import credit_balance
 
 ZERO = Decimal("0.00")
@@ -95,12 +97,12 @@ def dashboard(filters: dict, *, on: dt.date | None = None) -> dict:
     totals = unpaid.aggregate(
         invoices=Count("pk"), students=Count("profile__student", distinct=True), debt=Sum(balance),
     )
-    overdue = unpaid.filter(status=Invoice.Status.OVERDUE)
+    # Просрочка — по актуальным данным (срок прошёл), как очереди, а не по сохранённому статусу.
+    overdue = unpaid.filter(overdue_q(on))
     overdue_totals = overdue.aggregate(
         invoices=Count("pk"), students=Count("profile__student", distinct=True), amount=Sum(balance),
     )
-    due_soon = unpaid.filter(
-        status__in=(Invoice.Status.OPEN, Invoice.Status.PARTIALLY_PAID),
+    due_soon = unpaid.exclude(overdue_q(on)).filter(
         due_date__gte=on, due_date__lte=on + dt.timedelta(days=soon_days),
     ).select_related(*rel).order_by("due_date")
     partial = unpaid.filter(amount_paid__gt=0).select_related(*rel).order_by("due_date")
@@ -176,7 +178,8 @@ def debtors(filters: dict, *, on: dt.date | None = None) -> list[dict]:
     unpaid = invoices_qs({**filters, "status": None}).filter(status__in=UNPAID)
     if filters.get("status"):
         unpaid = unpaid.filter(status=filters["status"])
-    unpaid = unpaid.select_related("profile__student__group", "profile__subject", "profile__responsible_accountant")
+    unpaid = unpaid.select_related("profile__student__group", "profile__subject", "profile__responsible_accountant",
+                                   "package")
     rows: dict[int, dict] = {}
     for inv in unpaid.order_by("due_date"):
         profile = inv.profile
@@ -192,7 +195,7 @@ def debtors(filters: dict, *, on: dt.date | None = None) -> list[dict]:
         })
         row["invoices"] += 1
         row["debt"] += inv.balance
-        if inv.status == Invoice.Status.OVERDUE:
+        if payment_stage(inv, on=on) == "overdue":
             row["overdue_amount"] += inv.balance
             row["max_days_overdue"] = max(row["max_days_overdue"], (on - inv.due_date).days)
         row["has_partial"] = row["has_partial"] or inv.amount_paid > 0
