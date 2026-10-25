@@ -762,6 +762,35 @@ class PaymentAllocation(_NoDelete, models.Model):
         indexes = [models.Index(fields=["payment", "status"], name="ix_balloc_payment_status")]
 
 
+class PaymentReplacement(_NoDelete, models.Model):
+    """Связь «сторнированный платёж → заменяющие платежи»: ошибочно внесённый
+    платёж аннулирован, те же деньги внесены заново (например, 38 000 одной
+    записью → 19 000 + 19 000). Деньги не дублируются: исходный платёж VOID
+    в «получено» не входит; связь только делает цепочку исправления
+    прослеживаемой (карточка, чеки, аудит). Только добавление."""
+
+    original = models.ForeignKey("accounting.StudentPayment", on_delete=models.PROTECT, related_name="replaced_by_links",
+                                 verbose_name="Сторнированный платёж")
+    replacement = models.ForeignKey("accounting.StudentPayment", on_delete=models.PROTECT, related_name="replaces_links",
+                                    verbose_name="Заменяющий платёж")
+    reason = models.TextField(verbose_name="Основание")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Замена сторнированного платежа"
+        verbose_name_plural = "Замены сторнированных платежей"
+        ordering = ["original", "replacement"]
+        constraints = [
+            models.UniqueConstraint(fields=["original", "replacement"], name="unique_payment_replacement"),
+            models.UniqueConstraint(fields=["replacement"], name="unique_payment_replaced_once"),
+            models.CheckConstraint(condition=~Q(original=F("replacement")), name="payment_replacement_not_self"),
+        ]
+
+
 class CreditLedgerEntry(_NoDelete, models.Model):
     """Журнал аванса профиля (только добавление). Доступный аванс = сумма
     записей. Платёж приходит целиком (+), распределение на начисление

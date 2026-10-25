@@ -91,12 +91,20 @@ function Card360({ card }: { card: ContractCard }) {
         <Stat label="К оплате сейчас" value={som(summary.due_now)} tone={summary.overdue !== '0.00' ? 'danger' : undefined}
           hint={summary.overdue !== '0.00' ? `из них просрочено ${som(summary.overdue)}` : 'наступившие начисления'} />
         <Stat label="Получено по договору" value={som(summary.net_received)}
-          hint={`оплачено по начислениям ${som(summary.allocated)}${summary.refunded !== '0.00' ? `, возвраты ${som(summary.refunded)}` : ''}`} />
+          hint={`оплачено по начислениям ${som(summary.allocated)}${summary.refunded !== '0.00' ? `, возвраты ${som(summary.refunded)}` : ''}${summary.voided_count ? `; сторно ${som(summary.voided)} не учитывается` : ''}`} />
         <Stat label="Свободный аванс" value={som(summary.credit)}
-          hint={summary.reservation_unused !== '0.00' ? `в т.ч. бронь ${som(summary.reservation_unused)}` : 'получено, но не распределено'} />
-        <Stat label="Остаток по договору" value={som(summary.outstanding)} tone="brand"
-          hint={summary.future ? `будущие периоды ${som(summary.future)}` : undefined} />
+          hint={summary.credit_reserved_future !== '0.00'
+            ? `из них на будущие начисления (прогноз) ${som(summary.credit_reserved_future)}`
+            : summary.reservation_unused !== '0.00' ? `в т.ч. бронь ${som(summary.reservation_unused)}` : 'получено, но не распределено'} />
+        <Stat label="Осталось оплатить" value={som(summary.net_to_pay)} tone="brand"
+          hint={summary.future ? `будущие начисления ${som(summary.future)}` : undefined} />
       </div>
+      <p className="mt-2 text-xs text-ink-secondary" data-testid="money-breakdown">
+        Получено {som(summary.net_received)} = оплачено по начислениям {som(summary.allocated)} + свободный аванс {som(summary.credit)}
+        {summary.credit !== '0.00' ? ` (на текущий долг ${som(summary.credit_unapplied)}, на будущие начисления — прогноз ${som(summary.credit_reserved_future)}, сверх договора ${som(summary.credit_unreserved)})` : ''}.
+        {' '}Текущий долг {som(summary.due_now)} · будущие начисления {som(summary.future ?? '0')} · осталось оплатить {som(summary.net_to_pay)}.
+        {summary.voided_count ? ` Сторнировано ${summary.voided_count} платеж(а) на ${som(summary.voided)} — это отмена записи, не возврат денег.` : ''}
+      </p>
 
       {summary.credit_unapplied !== '0.00' ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/20 bg-warning-soft p-3 text-sm text-warning">

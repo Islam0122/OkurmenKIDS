@@ -445,7 +445,17 @@ class BillingPaymentSerializer(serializers.ModelSerializer):
         fields = ("id", "billing_profile", "student", "student_name", "group_name", "program_name", "kind",
                   "purpose", "purpose_display", "amount", "currency", "received_date", "method", "method_display",
                   "reference", "comment", "status", "void_reason", "refund_of", "unallocated", "allocations",
-                  "receipt", "created_by_name", "created_at")
+                  "receipt", "created_by_name", "created_at", "replaces", "replaced_by", "voided_at")
+
+    replaces = serializers.SerializerMethodField()
+    replaced_by = serializers.SerializerMethodField()
+
+    def get_replaces(self, obj) -> list[int]:
+        """Сторнированные платежи, взамен которых внесён этот (цепочка исправления)."""
+        return [link.original_id for link in obj.replaces_links.all()]
+
+    def get_replaced_by(self, obj) -> list[int]:
+        return [link.replacement_id for link in obj.replaced_by_links.all()]
 
     def get_receipt(self, obj) -> dict | None:
         receipt = getattr(obj, "receipt", None)
@@ -490,6 +500,9 @@ class PaymentCreateSerializer(serializers.Serializer):
     mode = serializers.ChoiceField(choices=("auto", "invoice", "advance"), required=False, default="auto")
     invoice = serializers.PrimaryKeyRelatedField(queryset=Invoice.objects.all(), required=False, allow_null=True)
     payer_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    # Платёж вносится взамен сторнированного (связь в цепочке исправления).
+    replaces = serializers.PrimaryKeyRelatedField(queryset=StudentPayment.objects.filter(status="void"),
+                                                  required=False, allow_null=True)
 
 
 class PaymentPreviewSerializer(serializers.Serializer):

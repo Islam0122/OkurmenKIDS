@@ -104,6 +104,9 @@ def _submit_terms(profile, *, actor, custom_price, discount_type, discount_value
     )
     if not _is_standard(custom, discount_type) and not (reason or "").strip():
         raise BillingError("Укажите основание скидки или индивидуальной цены.", code="reason_required")
+    if (custom == profile.custom_price and discount_type == profile.discount_type
+            and value == profile.discount_value):
+        return None  # условия те же — запись истории не создаётся
     if BillingTermsChange.objects.filter(profile=profile, status=BillingTermsChange.Status.PENDING).exists():
         raise BillingError("Предыдущее изменение условий ещё ждёт согласования.", code="pending_terms")
     within = check_manager_discount(actor, base_price=base, custom_price=custom, discount_type=discount_type,
@@ -142,6 +145,10 @@ def _submit_course_terms(profile, *, actor, discount_enabled: bool, final_course
     final, discount = course_terms(standard_price=profile.standard_course_price, discount_enabled=discount_enabled,
                                    final_price=final_course_price, reason=reason)
     if initial and not discount_enabled:
+        return None
+    if (not initial and final == profile.final_course_price and bool(discount_enabled) == profile.discount_enabled):
+        # Стоимость та же (повторное сохранение формы) — новая запись истории
+        # не создаётся: в истории остаются только настоящие изменения.
         return None
     if profile.month_plan_mode == "MANUAL" and not initial:
         raise BillingError("Суммы месяцев заданы вручную — измените итоговую стоимость в плане месяцев.",

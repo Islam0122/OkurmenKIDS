@@ -204,6 +204,10 @@ export interface Payment {
   unallocated: string | null
   allocations: Allocation[]
   receipt: { id: number; number: string; status: 'ISSUED' | 'CANCELLED' } | null
+  /** Цепочка исправления: сторнированные платежи, взамен которых внесён этот, и наоборот. */
+  replaces?: number[]
+  replaced_by?: number[]
+  voided_at?: string | null
   created_by_name: string | null
   created_at: string
 }
@@ -268,6 +272,15 @@ export interface MoneySummary {
   overdue: string
   /** Деньги по договору: распределено + свободный аванс. */
   paid_total: string
+  /** Сторнированные платежи — справочно, в «получено» не входят (сторно ≠ возврат). */
+  voided: string
+  voided_count: number
+  /** Часть свободного аванса, которая по прогнозу закроет будущие начисления (не распределена). */
+  credit_reserved_future: string
+  /** Свободный аванс сверх текущего долга и будущих начислений. */
+  credit_unreserved: string
+  /** Осталось оплатить по договору с учётом всего аванса. */
+  net_to_pay: string
   standard_course_price: string | null
   final_course_price: string | null
   discount_amount: string
@@ -379,6 +392,8 @@ export interface PaymentBody {
   received_date: string
   method: string
   purpose?: 'tuition' | 'prepayment'
+  /** id сторнированного платежа, взамен которого вносятся деньги. */
+  replaces?: number | null
   mode: PaymentTarget
   invoice?: number | null
   reference?: string
