@@ -101,6 +101,8 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
   const period = useFinancePeriod()
   const [date, setDate] = useState(today())
   const [reference, setReference] = useState('')
+  // Деньги вносятся взамен сторнированного платежа (цепочка исправления, не новое поступление сверх него).
+  const [replaces, setReplaces] = useState('')
   const [payer, setPayer] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -142,7 +144,7 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
       try {
         result = await financeApi.recordPayment({
           profile, amount: amount.replace(',', '.'), received_date: date, method, mode,
-          purpose: mode === 'advance' ? 'prepayment' : 'tuition',
+          purpose: mode === 'advance' ? 'prepayment' : 'tuition', replaces: replaces ? Number(replaces) : null,
           invoice: mode === 'invoice' && invoice ? Number(invoice) : null, reference, payer_name: payer,
         }, key.current)
       } catch (error) {
@@ -231,6 +233,13 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
                   <Field label="Плательщик (ФИО)" htmlFor="ap-payer">
                     <Input id="ap-payer" value={payer} onChange={(e) => setPayer(e.target.value)} />
                   </Field>
+                  {(data.payments ?? []).some((x) => x.status === 'void' && x.kind === 'payment') ? (
+                    <Field label="Взамен сторнированного платежа" htmlFor="ap-replaces" error={errors.replaces} className="sm:col-span-2">
+                      <Select id="ap-replaces" value={replaces} placeholder="— нет, это новое поступление —" onChange={(e) => setReplaces(e.target.value)}
+                        options={(data.payments ?? []).filter((x) => x.status === 'void' && x.kind === 'payment').map((x) => ({
+                          value: String(x.id), label: `№${x.id} от ${x.received_date} · ${som(x.amount)}${x.receipt ? ` · чек ${x.receipt.number}` : ''}` }))} />
+                    </Field>
+                  ) : null}
                   <Field label="Номер документа / транзакции" htmlFor="ap-ref" error={errors.reference} className="sm:col-span-2">
                     <Input id="ap-ref" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="для перевода или карты" />
                   </Field>

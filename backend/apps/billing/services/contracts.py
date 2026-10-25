@@ -47,6 +47,16 @@
                                    = max(итоговая − распределено − аванс − корректировки, 0)
     будущие периоды (future)       = max(итоговая − начислено, 0) — ещё не выставлено,
                                      не долг и не просрочка
+    аванс на будущие начисления (credit_reserved_future)
+                                   = min(аванс, оставшийся после текущих начислений, будущие)
+                                     — ПРОГНОЗ: деньги остаются свободным авансом и
+                                     распределяются, когда месяц будет выставлен
+    свободный аванс сверх будущих (credit_unreserved) = аванс − текущий долг, покрытый
+                                     авансом, − аванс на будущие (переплата сверх договора)
+    осталось оплатить (net_to_pay) = остаток по договору (= текущий долг + будущие −
+                                     весь аванс; ноль, если аванс всё покрывает)
+    сторнировано (voided)          = Σ сторнированных платежей — справочно, в «получено»
+                                     не входит (сторно ≠ возврат денег)
 
 Свободный аванс рядом с неоплаченным начислением — несогласованное состояние
 (`credit_unapplied` > 0): платёж записан без распределения. Сервис платежей
@@ -58,7 +68,7 @@ import datetime as dt
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 
 from apps.accounting.models import StudentPayment
 from apps.accounting.services.money import money
@@ -273,7 +283,16 @@ def money_summary(profile: StudentBillingProfile) -> dict:
     usable = applicable_credit(profile, unpaid, credit)
     unapplied = min(usable, balance)
     due_now = max(balance - usable, ZERO)
+    voided = StudentPayment.objects.filter(billing_profile=profile, status=StudentPayment.Status.VOID,
+                                           kind=StudentPayment.Kind.PAYMENT).aggregate(s=Sum("amount"), n=Count("pk"))
+    future_amount = (max(money(profile.final_course_price) - invoiced_total(profile), ZERO)
+                     if profile.final_course_price is not None
+                     and profile.status != StudentBillingProfile.Status.INACTIVE else ZERO)
+    reserved = min(max(usable - balance, ZERO), future_amount)
     result = {
+        "voided": money(voided["s"] or ZERO), "voided_count": voided["n"],
+        "credit_reserved_future": money(reserved),
+        "credit_unreserved": money(max(credit - unapplied - reserved, ZERO)),
         "received": money(received), "refunded": money(refunded), "net_received": money(received - refunded),
         "reservation_received": money(reservation_received), "reservation_unused": money(max(reservation_free, ZERO)),
         "allocated": money(allocated), "adjusted": money(adjusted), "credit": money(credit),
@@ -301,6 +320,7 @@ def money_summary(profile: StudentBillingProfile) -> dict:
     else:
         result.update({"standard_course_price": None, "final_course_price": None, "discount_amount": ZERO,
                        "outstanding": money(due_now), "future": None})
+    result["net_to_pay"] = result["outstanding"]
     return result
 
 
@@ -413,6 +433,9 @@ def payment_schedule(profile: StudentBillingProfile) -> dict | None:
         "to": str(money(c.final_course_price)), "reason": c.reason,
     } for c in BillingTermsChange.objects.filter(profile=profile, status=BillingTermsChange.Status.APPROVED,
                                                  final_course_price__isnull=False).order_by("requested_at", "pk")]
+    # Записи «38 000 → 38 000» (повторные сохранения до исправления) не
+    # удаляются из истории условий, но в истории стоимости не показываются.
+    changes = [c for c in changes if c["from"] != c["to"]]
     total = invoiced + projected_total
     issues = []
     if invoiced > final:

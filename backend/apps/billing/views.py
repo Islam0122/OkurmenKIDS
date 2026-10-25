@@ -298,6 +298,8 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     def course_terms(self, request, pk=None):
         data = _valid(s.CourseTermsSerializer, request)
         change = _call(profiles.request_course_terms_change, self.get_object(), actor=request.user, **data)
+        if change is None:  # стоимость та же — новая запись истории не создаётся
+            return Response({"detail": "Стоимость не изменилась — изменений нет.", "changed": False})
         return Response(s.TermsChangeSerializer(change).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(request=s.PaymentModeSerializer, responses=s.ProfileSerializer)
@@ -337,6 +339,8 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     def terms(self, request, pk=None):
         data = _valid(s.TermsChangeInputSerializer, request)
         change = _call(profiles.request_terms_change, self.get_object(), actor=request.user, **data)
+        if change is None:
+            return Response({"detail": "Условия не изменились — изменений нет.", "changed": False})
         return Response(s.TermsChangeSerializer(change).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(request=s.StopSerializer, responses=s.ProfileSerializer)
@@ -591,6 +595,7 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         )
         qs = reports.filter_profiles(qs, f, "billing_profile__").prefetch_related(
             Prefetch("billing_allocations", queryset=PaymentAllocation.objects.select_related("invoice")),
+            "replaces_links", "replaced_by_links",
         )
         if f["date_from"]:
             qs = qs.filter(received_date__gte=f["date_from"])
@@ -1100,7 +1105,8 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
     if with_money:
         payments_qs = StudentPayment.objects.filter(billing_profile=profile).select_related(
             "student", "created_by", "group", "course", "receipt").prefetch_related(
-            Prefetch("billing_allocations", queryset=PaymentAllocation.objects.select_related("invoice")))
+            Prefetch("billing_allocations", queryset=PaymentAllocation.objects.select_related("invoice")),
+            "replaces_links", "replaced_by_links")
         data.update({
             "payments": s.BillingPaymentSerializer(payments_qs.order_by("-received_date", "-id"), many=True).data,
             "contacts": s.ContactSerializer(BillingContactLog.objects.filter(profile=profile)

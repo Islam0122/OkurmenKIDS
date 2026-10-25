@@ -23,6 +23,7 @@ from apps.accounting.services.money import money
 from ..models import CreditLedgerEntry, Invoice, PaymentAllocation, PaymentMode, Receipt, StudentBillingProfile
 from .contracts import invoiced_total, money_summary, payment_schedule
 from .invoices import calculate_invoice_balance
+from .payment_chain import chain, unlinked_replacements
 
 ZERO = Decimal("0.00")
 D = Decimal
@@ -131,6 +132,8 @@ def profile_money_audit(profile: StudentBillingProfile) -> dict:
             "before_contract_start": p.received_date < profile.start_date,
             "method": p.method, "reference": p.reference, "created_by": str(p.created_by),
             "has_idempotency_key": bool(p.idempotency_key), "void_reason": p.void_reason,
+            "voided_at": p.voided_at.isoformat() if p.voided_at else None,
+            "voided_by": str(p.voided_by) if p.voided_by_id else None, **chain(p),
             "allocated": _s(allocated[p.pk]) if p.kind == StudentPayment.Kind.PAYMENT else None,
             "unallocated": _s(p.amount - allocated[p.pk]) if p.kind == StudentPayment.Kind.PAYMENT
             and p.status == StudentPayment.Status.CONFIRMED else None,
@@ -207,6 +210,13 @@ def profile_money_audit(profile: StudentBillingProfile) -> dict:
                           "Бронь — тот же платёж, деньги не считаются дважды. Если это оплата обучения, "
                           "измените назначение платежа (payments/{id}/correct/ purpose=tuition|prepayment).",
             })
+    for row in unlinked_replacements(profile):
+        problems.append({
+            "type": "unlinked_replacement", **row, "fix": "confirm",
+            "detail": "Сторнированный платёж и внесённые после него платежи на ту же сумму без связи: проверьте, "
+                      "что это те же деньги, и свяжите (billing_money_audit --link ИСХОДНЫЙ --replacements A,B "
+                      "--reason … --confirm). Суммы уже не дублируются — исходный в «получено» не входит.",
+        })
     schedule = payment_schedule(profile)
     if schedule is not None and not schedule["consistent"]:
         problems.append({"type": "schedule_mismatch", "issues": schedule["issues"], "fix": "manual"})

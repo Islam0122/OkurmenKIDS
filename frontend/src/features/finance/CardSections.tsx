@@ -27,9 +27,14 @@ function StatusBadge({ p }: { p: Payment }) {
 }
 
 function paidFor(p: Payment): string {
+  const chain = [
+    p.replaced_by?.length ? `заменён платежами ${p.replaced_by.map((id) => `№${id}`).join(', ')}` : '',
+    p.replaces?.length ? `взамен сторнированного ${p.replaces.map((id) => `№${id}`).join(', ')}` : '',
+  ].filter(Boolean).join('; ')
+  if (p.status === 'void') return chain || 'не учитывается в поступлениях'
   const active = p.allocations.filter((a) => a.status === 'ACTIVE')
-  if (active.length) return `на ${active.map((a) => a.invoice_number).join(', ')}`
-  return p.kind === 'payment' && p.status === 'confirmed' ? 'аванс' : ''
+  const where = active.length ? `на ${active.map((a) => a.invoice_number).join(', ')}` : p.kind === 'payment' ? 'аванс' : ''
+  return [where, chain].filter(Boolean).join(' · ')
 }
 
 /** «Платежи и чеки»: одна операция — одна строка (на телефоне — карточка).
@@ -69,9 +74,12 @@ export function OperationsTable({ payments, canPay, onReverse }: {
                 <td className="whitespace-nowrap">{formatDate(p.received_date)}</td>
                 <td>
                   <span className="whitespace-nowrap font-medium">{operationType(p)}</span>
-                  <span className="block max-w-40 truncate text-xs text-ink-secondary" title={paidFor(p)}>{paidFor(p)}</span>
+                  <span className="block max-w-48 truncate text-xs text-ink-secondary" title={paidFor(p)}>{paidFor(p)}</span>
                 </td>
-                <td className="whitespace-nowrap"><Amount value={p.kind === 'refund' ? `-${p.amount}` : p.amount} /></td>
+                <td className={cn('whitespace-nowrap', p.status === 'void' && 'text-ink-muted line-through')}
+                  title={p.status === 'void' ? 'Сторнировано — не учитывается в поступлениях' : undefined}>
+                  <Amount value={p.kind === 'refund' ? `-${p.amount}` : p.amount} tone={p.status === 'void' ? 'muted' : undefined} />
+                </td>
                 <td>{p.method_display}</td>
                 <td><StatusBadge p={p} /></td>
                 <td>{p.created_by_name ?? '—'}</td>
@@ -241,12 +249,12 @@ export function ScheduleBlock({ schedule, profile, canEdit }: { schedule: Paymen
         <table className="data-table min-w-[820px]" aria-label="График оплаты">
           <thead><tr>
             <th>Месяц</th>{hasPlan ? <><th>Стандарт</th><th>По плану</th></> : null}<th>Начисление</th><th>Оплачено</th>
-            <th>Закроет аванс</th><th>Остаток</th><th>Срок</th><th>Статус</th>
+            <th title="Прогноз: свободный аванс закроет месяц, когда он будет выставлен">Закроет аванс (прогноз)</th><th>Остаток</th><th>Срок</th><th>Статус</th>
           </tr></thead>
           <tbody>
             {schedule.months.map((m) => (
               <tr key={`${m.month_number}-${m.invoice ?? 'p'}`}>
-                <td className="whitespace-nowrap">№{m.month_number}{m.number ? <span className="block text-xs text-ink-secondary">{m.number}</span> : null}</td>
+                <td className="whitespace-nowrap">№{m.month_number}{m.number ? <span className="text-ink-secondary"> · {m.number}</span> : null}</td>
                 {hasPlan ? <><td><Amount value={m.standard_price} tone="muted" /></td><td><Amount value={m.plan_amount} /></td></> : null}
                 <td><Amount value={m.amount} /></td>
                 <td><Amount value={m.paid} tone="muted" /></td>

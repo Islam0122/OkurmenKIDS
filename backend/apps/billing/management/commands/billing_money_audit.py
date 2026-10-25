@@ -43,13 +43,17 @@ class Command(BaseCommand):
         parser.add_argument("--invoice", action="append", help="Номер начисления (можно несколько).")
         parser.add_argument("--apply", action="store_true", help="Распределить свободный аванс (credit_unapplied).")
         parser.add_argument("--reverse-payment", type=int, help="id платежа, зарегистрированного повторно.")
-        parser.add_argument("--reason", default="", help="Основание сторно.")
+        parser.add_argument("--reason", default="", help="Основание сторно / связи.")
+        parser.add_argument("--link", type=int, help="id сторнированного платежа для связи с заменяющими.")
+        parser.add_argument("--replacements", default="", help="id заменяющих платежей через запятую.")
         parser.add_argument("--confirm", action="store_true", help="Записать изменения (без флага — dry-run).")
 
     def handle(self, *args, **o):
         output = {"dry_run": not o["confirm"]}
         if o["reverse_payment"]:
             output["reverse_payment"] = self._reverse(o)
+        if o["link"]:
+            output["link"] = self._link(o)
         targeted = bool(o["profile"] or o["student"] or o["receipt"] or o["invoice"])
         if o["receipt"] or o["invoice"]:
             output["lookup"] = lookup_numbers(receipts=o["receipt"], invoices=o["invoice"])
@@ -69,6 +73,27 @@ class Command(BaseCommand):
             results.append(report)
         output.update({"profiles": len(results), "results": results})
         self.stdout.write(json.dumps(output, ensure_ascii=False, indent=2, default=str))
+
+    def _link(self, o) -> dict:
+        """Связать сторнированный платёж с заменяющими (dry-run без --confirm)."""
+        from apps.billing.services.payment_chain import link_replacement
+
+        original = StudentPayment.objects.filter(pk=o["link"], billing_profile__isnull=False).first()
+        ids = [int(x) for x in o["replacements"].split(",") if x.strip()]
+        replacements = list(StudentPayment.objects.filter(pk__in=ids))
+        if original is None or len(replacements) != len(ids) or not ids:
+            raise CommandError("Укажите существующие платежи: --link ID --replacements A,B.")
+        if not o["reason"].strip():
+            raise CommandError("Укажите --reason.")
+        plan = {"original": original.pk, "original_amount": str(original.amount), "original_status": original.status,
+                "replacements": [{"id": p.pk, "amount": str(p.amount), "status": p.status} for p in replacements]}
+        if not o["confirm"]:
+            return {**plan, "would_link": True}
+        try:
+            links = link_replacement(original, replacements, actor=None, reason=o["reason"].strip(), system=True)
+        except BillingError as exc:
+            raise CommandError(exc.message)
+        return {**plan, "linked": [link.replacement_id for link in links]}
 
     def _reverse(self, o) -> dict:
         from apps.billing.services.payments import reverse_payment

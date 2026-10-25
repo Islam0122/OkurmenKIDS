@@ -207,7 +207,7 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
                    idempotency_key: str | None = None, purpose: str = StudentPayment.Purpose.TUITION,
                    auto_allocate: bool = True, prepay_packages: int = 0,
                    allocations: list[tuple[Invoice, Decimal]] | None = None, reservation=None,
-                   payer_name: str = ""):
+                   payer_name: str = "", replaces: StudentPayment | None = None):
     """Зарегистрировать фактически полученные деньги. Возвращает (платёж,
     создан). Сумма зачисляется в аванс и (по умолчанию) сразу распределяется
     по неоплаченным начислениям; остаток — аванс."""
@@ -267,6 +267,12 @@ def record_payment(*, profile: StudentBillingProfile, amount, received_date: dt.
             from .receipts import issue_receipt
 
             issue_receipt(payment, actor=actor, payer_name=payer_name)
+            if replaces is not None:
+                # Деньги вносятся взамен сторнированного платежа — связь в цепочке исправления.
+                from .payment_chain import link_replacement
+
+                link_replacement(replaces, [payment], actor=actor, system=True,
+                                 reason=f"Внесён взамен сторнированного платежа №{replaces.pk}")
     except IntegrityError:
         if key:
             existing = StudentPayment.objects.filter(idempotency_key=key).first()

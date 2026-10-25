@@ -32,7 +32,7 @@ import { PaymentDetailPage } from '@/features/finance/PaymentDetailPage'
 import { PaymentsPage } from '@/features/finance/PaymentsPage'
 import { StudentCardPage } from '@/features/finance/StudentCardPage'
 import { currentMonth, setFinancePeriod } from '@/features/finance/period'
-import { ScheduleBlock } from '@/features/finance/CardSections'
+import { OperationsTable, ScheduleBlock } from '@/features/finance/CardSections'
 import { ToPayPage } from '@/features/finance/QueuePage'
 import { ReceiptSheet } from '@/features/finance/ReceiptPage'
 
@@ -479,5 +479,25 @@ describe('План стоимости месяцев', () => {
       standard_prices: ['13000.00', '15000.00', '15000.00', '15000.00'], final_course_price: '50000.00' }))
     expect(await screen.findByText(/Сумма плана 50\s000/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()  // без причины
+  })
+})
+
+describe('Цепочка исправления платежа', () => {
+  it('shows the reversed payment as not counted and links replacements both ways', () => {
+    const base = { ...PAYMENT, method_display: 'Наличные', receipt: null, allocations: [] }
+    const rows = [
+      { ...base, id: 42, amount: '19000.00', replaces: [39], replaced_by: [] },
+      { ...base, id: 41, amount: '19000.00', replaces: [39], replaced_by: [],
+        allocations: [{ id: 1, invoice: 112, invoice_number: 'INV-2026-000112', invoice_period_date: '2026-09-01', amount: '9500.00', status: 'ACTIVE' }] },
+      { ...base, id: 39, amount: '38000.00', status: 'void', replaces: [], replaced_by: [41, 42] },
+    ] as unknown as Payment[]
+    renderWithProviders(<OperationsTable payments={rows} canPay onReverse={() => undefined} />)
+    const table = screen.getByRole('table', { name: 'Платежи и чеки' })
+    const [, r42, r41, r39] = within(table).getAllByRole('row')
+    expect(r39).toHaveTextContent('заменён платежами №41, №42')
+    expect(r39).toHaveTextContent('Сторно')
+    expect(within(r39).queryByRole('button', { name: 'Сторно' })).not.toBeInTheDocument()  // повторно нельзя
+    expect(r41).toHaveTextContent('на INV-2026-000112 · взамен сторнированного №39')
+    expect(r42).toHaveTextContent('аванс · взамен сторнированного №39')
   })
 })
