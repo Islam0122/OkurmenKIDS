@@ -42,7 +42,11 @@ export function FinanceDashboardPage() {
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <Stat label={`Ожидалось: ${period.label}`} value={som(analytics.data?.expected.amount)} hint={analytics.data ? `срок оплаты в периоде; не оплачено ${som(analytics.data.expected.unpaid)}` : undefined} />
         <Stat label="Долг сейчас" value={som(dashboard.data?.total_debt)} hint={dashboard.data ? `просрочено ${som(dashboard.data.overdue_amount)}` : undefined} tone="danger" />
-        <Stat label="Свободные авансы" value={som(dashboard.data?.credit_total)} hint="деньги, ещё не распределённые" />
+        <Link to="/finance/prepayments" className="block rounded-xl transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand-500"
+          aria-label="Остаток предоплаты за обучение — открыть детализацию по ученикам">
+          <Stat label="Остаток предоплаты за обучение" value={som(dashboard.data?.prepayment_total)}
+            hint="Деньги, полученные от родителей за обучение заранее и ещё не зачтённые в оплату учебных месяцев" />
+        </Link>
       </div>
       {money ? <div className="mt-4"><PeriodReportCard compact /></div> : null}
       <Card className="mt-4" title="Дольше всех просрочено" actions={<Link to="/finance/overdue" className="text-sm text-brand-700 hover:underline">Все просроченные</Link>}>

@@ -66,6 +66,7 @@ from .services import (
     reports,
     reservations,
 )
+from .services import prepayments as prepayments_service
 from .services import settings as billing_settings
 
 from apps.accounting.services.money import money
@@ -909,6 +910,29 @@ def _period_from(request) -> tuple[dt.date, dt.date]:
     if date_from > date_to:
         raise ValidationError({"date_from": "Начало периода позже конца."})
     return date_from, date_to
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT, parameters=[
+    OpenApiParameter("search", str), OpenApiParameter("program", int), OpenApiParameter("group", int),
+    OpenApiParameter("status", str),
+])
+class PrepaymentsView(APIView):
+    """Остаток предоплаты за обучение по ученикам (детализация карточки
+    дашборда): итоги, статусы «полная / частичная / остаток аванса / требует
+    проверки», поиск и фильтры."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        q = request.query_params
+        if q.get("status") and q["status"] not in ("full", "partial", "advance", "review"):
+            raise ValidationError({"status": "Неизвестный статус."})
+        f = filters_from(request, invoice_status=False)
+        f.update({"program": _int(q.get("program"), "program"), "status": q.get("status") or None,
+                  "search": q.get("search") or ""})
+        data = prepayments_service.prepayments(f)
+        data["summary"] = {k: (str(v) if isinstance(v, Decimal) else v) for k, v in data["summary"].items()}
+        return Response(data)
 
 
 @extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)

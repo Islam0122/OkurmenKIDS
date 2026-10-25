@@ -550,6 +550,9 @@ export interface FinanceDashboard {
   students_awaiting: number
   active_students: number
   credit_total: string
+  /** Остаток предоплаты за обучение (= Σ детализации `prepayments/`). */
+  prepayment_total: string
+  prepayment_students: number
   received: { amount: string; count: number; refunds: string; net: string }
 }
 
@@ -642,4 +645,47 @@ export interface AuditEntry {
   old_values: Record<string, unknown>
   new_values: Record<string, unknown>
   reason: string
+}
+
+export type PrepaymentStatus = 'full' | 'partial' | 'advance' | 'review'
+
+export interface PrepaymentRow {
+  profile: number
+  student: number
+  student_name: string
+  program: string
+  program_id: number | null
+  group: string | null
+  group_id: number | null
+  contract_total: string | null
+  received: string
+  applied_to_studied: string
+  allocated_future: string
+  allocated_future_exact: boolean
+  unallocated: string
+  reservation_held: string
+  prepayment: string
+  remaining_obligations: string | null
+  paid_months: number
+  duration_months: number | null
+  next_covered_month: number | null
+  status: PrepaymentStatus
+  status_display: string
+  review_reasons: string[]
+}
+
+export interface PrepaymentsResponse {
+  summary: {
+    prepayment: string
+    students: number
+    full: number
+    partial: number
+    advance: number
+    review: number
+    allocated_future: string
+    unallocated: string
+    reservation_held: string
+    definitions: Record<string, string>
+  }
+  results: PrepaymentRow[]
 }
