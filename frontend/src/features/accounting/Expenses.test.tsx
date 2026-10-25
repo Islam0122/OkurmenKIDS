@@ -120,16 +120,25 @@ describe('Навигация бухгалтерии', () => {
 })
 
 describe('AccountingHomePage', () => {
-  it('shows every section with its sub-sections and queue counters', async () => {
+  it('shows the logo, title and exactly four section cards leading to existing sections', () => {
     renderWithProviders(<AccountingHomePage />, { route: '/accounting' })
-    for (const title of ['1. Оплата студентов', '2. Зарплата сотрудников', '3. Расходы компании', '4. Аналитика и отчёты', 'Касса и движение денег', 'Финансовые настройки']) {
-      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Okurmen Kids' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Бухгалтерия' })).toBeInTheDocument()
+    expect(screen.getByText('Финансовое управление Okurmen Kids')).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Разделы бухгалтерии' })
+    expect(within(nav).getAllByRole('link')).toHaveLength(4)
+    for (const [name, href] of [
+      ['Оплата студентов', '/finance'],
+      ['Зарплата сотрудников', '/accounting/payroll'],
+      ['Расходы компании', '/accounting/expenses'],
+      ['Аналитика и отчёты', '/accounting/finance'],
+    ]) {
+      expect(within(nav).getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href)
     }
-    expect(screen.getByRole('link', { name: /Полностью оплаченные курсы/ })).toHaveAttribute('href', '/finance/soon?section=paid_course')
-    expect(screen.getByRole('link', { name: /^Возвраты/ })).toHaveAttribute('href', '/finance/payments?kind=refund')
-    const overdue = await screen.findByRole('link', { name: /Просроченные платежи/ })
-    await waitFor(() => expect(within(overdue).getByText('2')).toBeInTheDocument())
-    expect(await screen.findAllByText(/17\s000\sсом/)).not.toHaveLength(0)
+    // Без sidebar, таблиц и показателей.
+    expect(screen.queryByRole('navigation', { name: 'Навигация бухгалтерии' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(accountingApi.financeOverview).not.toHaveBeenCalled()
   })
 })
 

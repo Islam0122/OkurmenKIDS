@@ -311,11 +311,11 @@ export const router = createBrowserRouter([
       {
         element: <RequireRoles roles={['accountant', 'director', 'admin']} />,
         children: [
+          // Главная бухгалтерии — четыре карточки разделов, без sidebar (вне AccountingLayout).
+          { index: true, lazy: async () => ({ Component: (await import('@/features/accounting/HomePage')).AccountingHomePage }) },
           {
             lazy: async () => ({ Component: (await import('@/features/accounting/AccountingLayout')).AccountingLayout }),
             children: [
-              // Обзор: четыре раздела бухгалтерии, касса и настройки — куда перейти для задачи.
-              { index: true, lazy: async () => ({ Component: (await import('@/features/accounting/HomePage')).AccountingHomePage }) },
               { path: 'payroll', lazy: async () => ({ Component: (await import('@/features/accounting/DashboardPage')).AccountingDashboardPage }) },
               { path: 'expenses', lazy: async () => ({ Component: (await import('@/features/accounting/ExpensesPage')).ExpensesPage }) },
               { path: 'finance', lazy: async () => ({ Component: (await import('@/features/accounting/FinancePanelPage')).FinancePanelPage }) },
