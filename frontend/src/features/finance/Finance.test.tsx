@@ -36,6 +36,7 @@ import { currentMonth, setFinancePeriod } from '@/features/finance/period'
 import { OperationsTable, ScheduleBlock } from '@/features/finance/CardSections'
 import { ToPayPage } from '@/features/finance/QueuePage'
 import { ReceiptSheet } from '@/features/finance/ReceiptPage'
+import { MonthProgress, rowProgress } from '@/features/finance/ui'
 
 const ACCOUNTANT: FinanceMe = {
   role: 'accountant', read_only: false, can_view: true, can_view_money: true, is_manager: false, is_accountant: true,
@@ -421,6 +422,54 @@ describe('StudentCardPage — бронь и платежи', () => {
     const schedule = screen.getByRole('table', { name: 'График оплаты' })
     expect(within(schedule).getAllByRole('row')).toHaveLength(5)
     expect(schedule).toHaveTextContent('будет выставлен')
+  })
+})
+
+describe('Учебный месяц — из backend, 12/12 в завершённом месяце', () => {
+  const base = { month_number: 1, duration_months: 6, lessons_used: 12, lessons_total: 12, course_lessons_counted: 12,
+    course_lessons_total: 72, billing_month_number: 2, next_month_open: true } as QueueRow
+
+  it('boundary: «Месяц 1 из 6 · IT 12 из 12 · курс 12 из 72» and the issued next month as a hint', () => {
+    renderWithProviders(<MonthProgress {...rowProgress(base)} />)
+    expect(screen.getByText('Месяц 1 из 6')).toBeInTheDocument()
+    expect(screen.getByText('IT 12 из 12')).toBeInTheDocument()
+    expect(screen.getByText('курс 12 из 72')).toBeInTheDocument()
+    expect(screen.getByText('выставлен месяц 2')).toBeInTheDocument()
+  })
+
+  it('14 lessons: «Месяц 2 из 6 · IT 2 из 12 · курс 14 из 72», no hint', () => {
+    renderWithProviders(<MonthProgress {...rowProgress({ ...base, month_number: 2, lessons_used: 2,
+      course_lessons_counted: 14, next_month_open: false })} />)
+    expect(screen.getByText('Месяц 2 из 6')).toBeInTheDocument()
+    expect(screen.getByText('IT 2 из 12')).toBeInTheDocument()
+    expect(screen.getByText('курс 14 из 72')).toBeInTheDocument()
+    expect(screen.queryByText(/выставлен месяц/)).not.toBeInTheDocument()
+  })
+
+  it('card separates the student’s counted lessons from the group’s held lessons', async () => {
+    vi.mocked(financeApi.lessonBreakdown).mockResolvedValue({ attended: 0, marked: 0, counted: 0, priority_subject: 'IT',
+      contract_start: '2026-09-04', totals: {}, priority_before_contract: { count: 0, first_date: null }, lessons: [] })
+    vi.mocked(financeApi.card).mockResolvedValue({
+      ...CARD, schedule: null, invoices: [], payments: [], contacts: [], reservations: [],
+      contract: { ...CARD.contract, status: 'ACTIVE', status_display: 'Обучается', is_course: true, subject_name: 'IT' },
+      progress: { month: 1, months: 6, in_month: 12, per_month: 12, counted: 12, total: 72, billing_month: 2,
+        next_month_open: true, group_held: { all_time: 14, since_contract: 12 } },
+      months: [
+        { id: 1, number: 1, month_number: 1, status: 'COMPLETED', lessons_total: 12, lessons_used: 12, lessons_remaining: 0,
+          final_price: '12000.00', started_on: '2026-09-04', completed_on: '2026-10-20', invoice: null, is_current: true },
+        { id: 2, number: 2, month_number: 2, status: 'ACTIVE', lessons_total: 12, lessons_used: 0, lessons_remaining: 12,
+          final_price: '12000.00', started_on: null, completed_on: null, invoice: null, is_current: false },
+      ],
+    } as unknown as ContractCard)
+    renderWithProviders(<Routes><Route path="/finance/students/:profileId" element={<StudentCardPage />} /></Routes>,
+      { route: '/finance/students/7' })
+    const line = await screen.findByTestId('study-progress')
+    expect(line).toHaveTextContent('Учебный месяц 1 из 6 · IT 12 из 12')
+    expect(line).toHaveTextContent('засчитано ученику за курс 12 из 72')
+    expect(line).toHaveTextContent('проведено занятий IT в группе с начала договора: 12 (всего 14)')
+    expect(line).toHaveTextContent('начисление за месяц 2 уже выставлено')
+    expect(screen.getByText('Текущий (пройден)')).toBeInTheDocument()
+    expect(screen.getByText('Выставлен, уроков ещё нет')).toBeInTheDocument()
   })
 })
 

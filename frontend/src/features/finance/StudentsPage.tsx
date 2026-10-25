@@ -21,6 +21,7 @@ import {
   ListFilters,
   Loadable,
   MonthProgress,
+  rowProgress,
   StageBadge,
   useFinanceMe,
   useFinanceOptions,
@@ -81,7 +82,7 @@ function Contracts({ money }: { money: boolean }) {
                   { key: 'program', header: 'Программа', render: (r) => (
                     <div className="text-sm"><p>{r.program ?? r.plan_name}</p><p className="text-xs text-ink-secondary">{r.payment_mode_display}</p></div>
                   ) },
-                  { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress month={r.month_number} months={r.duration_months} used={r.lessons_used} total={r.lessons_total} /> },
+                  { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress {...rowProgress(r)} /> },
                   { key: 'price', header: 'Стоимость курса', render: (r) => (
                     <div><Amount value={r.final_course_price} />
                       {r.discount_amount && r.discount_amount !== '0.00' ? <p className="text-xs text-ink-secondary">скидка <Amount value={r.discount_amount} tone="muted" /></p> : null}</div>

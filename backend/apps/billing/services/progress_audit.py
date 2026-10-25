@@ -25,19 +25,21 @@ from django.db.models import Q
 from apps.academy.models import Lesson
 
 from ..models import Invoice, LessonConsumption, StudentBillingProfile
+from . import progress as study
 from .contracts import money_summary
-from .lessons import _student_group_ids, lesson_breakdown
+from .lessons import lesson_breakdown
+from .progress import group_held_lessons
 
 FINDINGS = {
-    "boundary_month": "Месяц завершён ровно на границе (12, 24, … уроков): бухгалтерия уже показывает следующий "
-                      "месяц с 0 уроков, по правилу «1–12 → месяц 1» это ещё последний урок прошлого месяца.",
+    "boundary_month": "Граница месяца (12, 24, … уроков): показан завершённый месяц 12/12, а платёжный цикл "
+                      "следующего месяца уже открыт — его начисление выставлено по правилу проекта (справочно).",
     "count_mismatch": "Проведённых уроков предмета в группе с начала договора больше / меньше, чем засчитано "
                       "в бухгалтерии — причины по урокам в `excluded`.",
     "not_processed": "Урок подлежит списанию, но не засчитан (сигнал / фоновая задача не обработали) — "
                      "исправляет billing_resync_lessons / sync_profile_history.",
     "before_contract": "Проведённые уроки до даты начала договора не засчитываются — проверьте дату начала.",
-    "package_mismatch": "Номер пакета или уроки в нём не совпадают с правилом по числу засчитанных уроков "
-                        "(не на границе) — нужна ручная проверка пакетов.",
+    "package_mismatch": "Уроки в пакетах (lessons_used) не совпадают с действующими списаниями — счётчики "
+                        "пакетов расходятся с журналом списаний, нужна ручная проверка.",
     "credit_unapplied": "Аванс лежит рядом с неоплаченным начислением: «К оплате сейчас» его учитывает, "
                         "но начисление не оплачено (статус не «Оплачено»).",
     "overdue_before_deadline": "Начисление «Просрочено», хотя в его месяце засчитано не больше уроков, чем "
@@ -45,31 +47,14 @@ FINDINGS = {
 }
 
 
-def _rule(counted: int, per_month: int, duration: int | None) -> dict:
-    """Месяц по правилу: уроки 1..per_month → 1, следующие per_month → 2…"""
-    if not per_month:
-        return {"month": None, "in_month": None}
-    if counted <= 0:
-        return {"month": 1, "in_month": 0}
-    month = (counted - 1) // per_month + 1
-    if duration:
-        month = min(month, duration)
-    return {"month": month, "in_month": counted - (month - 1) * per_month}
-
-
 def profile_progress(profile: StudentBillingProfile) -> dict:
     from .queues import base_queryset, contract_row
 
     profile = base_queryset().get(pk=profile.pk)
-    groups = _student_group_ids(profile.student_id)
-    held = Lesson.objects.filter(group_id__in=groups, status=Lesson.Status.COMPLETED)
-    if profile.subject_id:
-        held = held.filter(subject_id=profile.subject_id)
-    held_since = held.filter(date__gte=profile.start_date)
-    if profile.stopped_on:
-        held_since = held_since.filter(date__lt=profile.stopped_on)
+    group = group_held_lessons(profile)
     counted = LessonConsumption.objects.filter(profile=profile, kind=LessonConsumption.Kind.CONSUME,
                                                status=LessonConsumption.Status.ACTIVE).count()
+    progress = study.profile_progress(profile)
     duplicates = (LessonConsumption.objects.filter(profile=profile, kind=LessonConsumption.Kind.CONSUME,
                                                    status=LessonConsumption.Status.ACTIVE)
                   .values("lesson_ref").order_by().distinct().count())
@@ -79,7 +64,7 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
                        and (not profile.subject_id or r["subject"] == profile.subject.name))
     row = contract_row(profile)
     per_month = profile.lessons_per_month or (row["lessons_total"] or 0)
-    rule = _rule(counted, per_month, profile.duration_months)
+    rule = study.study_progress(counted, per_month, profile.duration_months)
     s = money_summary(profile)
     invoices = []
     for inv in (Invoice.objects.filter(profile=profile).exclude(status=Invoice.Status.VOID)
@@ -92,11 +77,11 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
         })
     findings = []
     shown_month, shown_used = row["month_number"], row["lessons_used"]
-    if counted and per_month and counted % per_month == 0 and shown_used == 0 and shown_month == rule["month"] + 1:
+    if progress and progress["next_month_open"]:
         findings.append("boundary_month")
-    elif rule["month"] and (shown_month, shown_used) != (rule["month"], rule["in_month"]):
+    if progress and progress["counted"] != counted:
         findings.append("package_mismatch")
-    if held_since.count() != counted:
+    if group["since_contract"] != counted:
         findings.append("count_mismatch")
     if excluded.get("not_processed"):
         findings.append("not_processed")
@@ -112,9 +97,11 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
         "group": profile.student.group.name if profile.student.group_id else None,
         "subject": profile.subject.name if profile.subject_id else None,
         "contract_start": profile.start_date.isoformat(), "absence_policy": profile.plan.absence_policy,
-        "academy": {"held_all_time": held.count(), "held_since_contract": held_since.count(),
+        "academy": {"held_all_time": group["all_time"], "held_since_contract": group["since_contract"],
                     "course_plan": (profile.duration_months or 0) * per_month or None},
         "billing": {"counted": counted, "counted_distinct_lessons": duplicates,
+                    "counted_in_packages": progress["counted"] if progress else None,
+                    "billing_month": progress["billing_month"] if progress else None,
                     "shown": f"месяц {shown_month} из {row['duration_months']}, IT {shown_used}/{row['lessons_total']}",
                     "excluded": dict(excluded)},
         "rule": {"month": rule["month"], "month_progress": rule["in_month"], "per_month": per_month,

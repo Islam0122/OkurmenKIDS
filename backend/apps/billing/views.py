@@ -67,6 +67,7 @@ from .services import (
     reservations,
 )
 from .services import prepayments as prepayments_service
+from .services import progress as study
 from .services import settings as billing_settings
 
 from apps.accounting.services.money import money
@@ -1113,6 +1114,13 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
     profile = queues.base_queryset().get(pk=profile.pk)
     summary = contracts.money_summary(profile)
     months = [s.PackageSerializer(p).data for p in profile.packages.all().prefetch_related("invoices")]
+    progress = study.profile_progress(profile)
+    if progress is not None:
+        # Учебный месяц по засчитанным урокам ученика (как в «Все студенты»);
+        # отдельно — проведённые занятия группы (показатель академии).
+        progress = {**progress, "group_held": study.group_held_lessons(profile)}
+        for m in months:
+            m["is_current"] = m["month_number"] == progress["month"] and m["status"] != LessonPackage.Status.CANCELLED
     coverage = contracts.course_coverage(profile)
     if coverage is not None:
         # Предоплата за весь курс: «Весь курс» — начисление договора, не месяца
@@ -1138,6 +1146,7 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
                                                                                     "profile__student"),
                                                 many=True).data,
         "schedule": _schedule_json(contracts.payment_schedule(profile)),
+        "progress": progress,
     }
     if with_money:
         payments_qs = StudentPayment.objects.filter(billing_profile=profile).select_related(
