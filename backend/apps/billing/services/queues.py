@@ -116,6 +116,16 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
     overdue_days = max(((today - (i.overdue_since or i.due_date)).days for i in overdue), default=0)
     credit = profile.credit_sum if getattr(profile, "credit_sum", None) else ZERO
     usable = applicable_credit(profile, unpaid, credit)
+    # «К оплате сейчас» по срокам (только отображение, суммы те же): аванс
+    # закрывает сначала просроченное, затем начисления с последним сроком
+    # сегодня, затем те, срок которых ещё не наступил.
+    left = usable
+    split = {}
+    for key, part in (("overdue", overdue), ("deadline", [i for i in unpaid if payment_stage(i) == "deadline"]),
+                      ("not_due", [i for i in unpaid if payment_stage(i) == "awaiting"])):
+        balance = sum((i.balance for i in part), ZERO)
+        split[key] = max(balance - left, ZERO)
+        left = max(left - balance, ZERO)
     student = profile.student
     # Учебный месяц и уроки — единый расчёт по засчитанным урокам (`progress`):
     # 12/12 остаётся в завершённом месяце. Тариф без учебных месяцев — пакет.
@@ -160,6 +170,9 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
         # который правила договора разрешают направить на эти начисления.
         "due_now": _s(max(sum((i.balance for i in unpaid), ZERO) - usable, ZERO)),
         "overdue_amount": _s(max(sum((i.balance for i in overdue), ZERO) - usable, ZERO)),
+        # Из «К оплате сейчас»: последний срок сегодня / срок ещё не наступил
+        # (просрочено + сегодня + не наступил = к оплате сейчас).
+        "due_today_amount": _s(split["deadline"]), "not_due_amount": _s(split["not_due"]),
         "overdue_lessons": overdue_lessons, "overdue_days": overdue_days,
         "credit": _s(profile.credit_sum if hasattr(profile, "credit_sum") and profile.credit_sum else ZERO),
         "last_contact_at": last_contact.contacted_at.isoformat() if last_contact else None,

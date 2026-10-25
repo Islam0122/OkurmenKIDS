@@ -39,11 +39,23 @@ class Command(BaseCommand):
               f" из плана {a['course_plan']}")
             w(f"  бухгалтерия: засчитано {b['counted']} · показано «{b['shown']}» · не засчитаны: {b['excluded'] or '—'}")
             w(f"  по правилу: {rule['shown']} · курс {rule['course_progress']}")
-            w(f"  деньги: {m['stage']} · к оплате {m['due_now']} · просрочка {m['overdue']} · аванс {m['credit']}"
-              f" (не распределён {m['credit_unapplied']})")
+            w(f"  деньги: {m['stage']} · к оплате {m['due_now']} (просрочено {m['overdue']}, срок сегодня "
+              f"{m['due_today']}, срок не наступил {m['not_due']}) · аванс {m['credit']}"
+              f" (не распределён {m['credit_unapplied']}) · получено {m['received']}, распределено {m['allocated']}")
+            w("  начисления:")
             for i in m["invoices"]:
+                due = f"{i['due_lesson']}-й урок (в месяце {i['month_lessons_used']})" if i["due_lesson"] else i["due_date"]
                 w(f"    {i['number']} {'весь курс' if i['kind'] == 'COURSE' else 'месяц ' + str(i['month'])}: "
-                  f"{i['amount']}, оплачено {i['paid']}, остаток {i['balance']}, {i['status']}, "
-                  f"срок {i['due_lesson']}-й урок (в месяце {i['month_lessons_used']})")
+                  f"период {i['period_date']}, создано {i['created_at'][:10]}, {i['amount']}, оплачено {i['paid']}, "
+                  f"остаток {i['balance']}, {i['status']}, срок {due}")
+            w("  платежи:")
+            for p in m["payments"] or [{"id": None}]:
+                if p["id"] is None:
+                    w("    —")
+                    continue
+                parts = "; ".join(f"{a['invoice']} {a['amount']} ({a['status']})" for a in p["allocations"]) or "—"
+                w(f"    №{p['id']} {p['kind']} {p['status']} {p['amount']} от {p['received_date']} (внесён "
+                  f"{p['created_at'][:10]}), чек {p['receipt'] or '—'}, назначение {p['purpose'] or '—'} · "
+                  f"распределения: {parts} · не распределено {p['unallocated'] or '—'}")
             for f in r["findings"]:
                 w(f"  ! {f['code']}: {f['detail']}")

@@ -106,6 +106,9 @@ export interface QueueRow {
   focus_invoice: FocusInvoice | null
   due_now: string
   overdue_amount: string
+  /** Из «К оплате сейчас»: последний срок сегодня / срок ещё не наступил (просрочено + сегодня + не наступил = due_now). */
+  due_today_amount?: string
+  not_due_amount?: string
   overdue_lessons: number
   overdue_days: number
   credit: string

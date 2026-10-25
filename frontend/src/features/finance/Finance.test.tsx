@@ -32,6 +32,7 @@ import { PaymentDetailPage } from '@/features/finance/PaymentDetailPage'
 import { PaymentsPage } from '@/features/finance/PaymentsPage'
 import { PrepaymentsPage } from '@/features/finance/PrepaymentsPage'
 import { StudentCardPage } from '@/features/finance/StudentCardPage'
+import { StudentsPage } from '@/features/finance/StudentsPage'
 import { currentMonth, setFinancePeriod } from '@/features/finance/period'
 import { OperationsTable, ScheduleBlock } from '@/features/finance/CardSections'
 import { ToPayPage } from '@/features/finance/QueuePage'
@@ -422,6 +423,26 @@ describe('StudentCardPage — бронь и платежи', () => {
     const schedule = screen.getByRole('table', { name: 'График оплаты' })
     expect(within(schedule).getAllByRole('row')).toHaveLength(5)
     expect(schedule).toHaveTextContent('будет выставлен')
+  })
+})
+
+describe('«Все студенты» — «К оплате сейчас» по срокам', () => {
+  it('shows overdue part in red and the not-yet-due part separately (ЭДГАР: 21 500 = 7 000 + 14 500)', async () => {
+    vi.mocked(financeApi.queue).mockResolvedValue({ count: 2, page: 1, page_size: 25, results: [
+      { ...ROW, profile: 8, student_name: 'Токтобеков ЭДГАР', final_course_price: '58000.00', discount_amount: '2000.00',
+        stage: 'overdue', due_now: '21500.00', overdue_amount: '7000.00', due_today_amount: '0.00', not_due_amount: '14500.00' },
+      { ...ROW, profile: 9, student_name: 'Калбеков Байэл', due_now: '15000.00', overdue_amount: '0.00',
+        due_today_amount: '0.00', not_due_amount: '15000.00' },
+    ] })
+    renderWithProviders(<StudentsPage />, { route: '/finance/students' })
+    const edgar = (await screen.findByText('Токтобеков ЭДГАР')).closest('tr')!
+    expect(edgar).toHaveTextContent(/21\s500/)
+    expect(within(edgar).getByText(/просрочено/)).toHaveTextContent(/просрочено 7\s000/)
+    expect(within(edgar).getByText(/просрочено/)).toHaveClass('text-danger')
+    expect(edgar).toHaveTextContent(/срок не наступил 14\s500/)
+    const bayel = screen.getByText('Калбеков Байэл').closest('tr')!
+    expect(bayel).toHaveTextContent(/срок не наступил 15\s000/)
+    expect(within(bayel).queryByText(/просрочено/)).not.toBeInTheDocument()
   })
 })
 
