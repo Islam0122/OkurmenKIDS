@@ -70,7 +70,7 @@ export function PayrollDetailPage() {
 
   return (
     <div>
-      <BackLink to="/accounting">К начислениям</BackLink>
+      <BackLink to="/accounting/payroll">К начислениям</BackLink>
       <PageHeader
         title={p.employee_name}
         description={`${p.position || '—'} · ${p.salary_type_display || '—'} · период ${p.period_label}`}

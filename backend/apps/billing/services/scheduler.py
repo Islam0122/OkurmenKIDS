@@ -115,6 +115,13 @@ def run_all(*, on: dt.date | None = None, report: bool = True, staff_attendance:
             from apps.staff_attendance.services.marking import close_stale_sessions
 
             results["staff_attendance_close_stale"] = _safe(lambda: {"closed": close_stale_sessions()}, "staff")
+        renew(run_id)
+        # Регулярные расходы компании: один неоплаченный расход на шаблон и
+        # месяц (уникальный индекс) — повтор в тот же день ничего не создаёт.
+        from apps.accounting.services.expenses import generate_recurring
+
+        results["recurring_expenses"] = _safe(
+            lambda: {"created": len(generate_recurring(on.year, on.month)["created"])}, "recurring_expenses")
     finally:
         failed = any(isinstance(v, dict) and "error" in v for v in results.values())
         summary = {"status": "done", "on": on.isoformat(), "run_id": str(run_id), "tasks": results, "failed": failed}

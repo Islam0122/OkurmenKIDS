@@ -16,6 +16,9 @@ from .models import (
     DeductionRule,
     Department,
     EmployeeSalaryProfile,
+    Expense,
+    ExpenseCategory,
+    PaymentMethod,
     PayoutPlan,
     Payroll,
     PayrollAdjustment,
@@ -23,6 +26,7 @@ from .models import (
     PayrollLine,
     PayrollPayment,
     PayrollPeriod,
+    RecurringExpense,
     SalaryRule,
     StudentPayment,
 )
@@ -825,3 +829,122 @@ class DeductionRuleChangeSerializer(serializers.Serializer):
     effective_to = serializers.DateField(required=False, allow_null=True)
     is_active = serializers.BooleanField(required=False)
     description = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+
+# ---------------------------------------------------------------------------
+# Расходы компании
+# ---------------------------------------------------------------------------
+
+class ExpenseCategorySerializer(serializers.ModelSerializer):
+    expenses_count = serializers.IntegerField(read_only=True, default=None)
+
+    class Meta:
+        model = ExpenseCategory
+        fields = ("id", "code", "name", "description", "sort_order", "is_active", "expenses_count")
+        read_only_fields = ("id",)
+        extra_kwargs = {"code": {"required": False}, "name": {"validators": []}}
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    payment_method_display = serializers.CharField(source="get_payment_method_display", read_only=True)
+    responsible_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    voided_by_name = serializers.SerializerMethodField()
+    has_document = serializers.SerializerMethodField()
+    is_overdue = serializers.SerializerMethodField()
+    recurring_description = serializers.CharField(source="recurring.description", read_only=True, default=None)
+
+    class Meta:
+        model = Expense
+        fields = (
+            "id", "category", "category_name", "description", "amount", "currency", "expense_date", "due_date",
+            "vendor", "payment_method", "payment_method_display", "responsible", "responsible_name", "reference",
+            "comment", "status", "status_display", "paid_date", "is_overdue", "has_document", "document_name",
+            "recurring", "recurring_description", "recurrence_month", "void_reason", "version",
+            "created_by", "created_by_name", "created_at", "updated_at", "voided_by", "voided_by_name", "voided_at",
+        )
+
+    def get_responsible_name(self, obj) -> str:
+        return _name(obj.responsible)
+
+    def get_created_by_name(self, obj) -> str:
+        return _name(obj.created_by) or "система"
+
+    def get_voided_by_name(self, obj) -> str:
+        return _name(obj.voided_by)
+
+    def get_has_document(self, obj) -> bool:
+        return bool(obj.document)
+
+    def get_is_overdue(self, obj) -> bool:
+        from django.utils import timezone
+
+        return bool(obj.status == Expense.Status.UNPAID and obj.due_date and obj.due_date < timezone.localdate())
+
+
+class _ExpenseFieldsSerializer(serializers.Serializer):
+    category = serializers.PrimaryKeyRelatedField(queryset=ExpenseCategory.objects.all())
+    description = serializers.CharField(max_length=255)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    expense_date = serializers.DateField()
+    due_date = serializers.DateField(required=False, allow_null=True)
+    vendor = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    payment_method = serializers.ChoiceField(choices=PaymentMethod.choices, default=PaymentMethod.CASH)
+    responsible = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True), required=False,
+                                                     allow_null=True)
+    reference = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class ExpenseCreateSerializer(_ExpenseFieldsSerializer):
+    paid = serializers.BooleanField(default=False, help_text="Сразу отметить оплату.")
+    paid_date = serializers.DateField(required=False, allow_null=True)
+    document = serializers.FileField(required=False, allow_null=True)
+    idempotency_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
+
+
+class ExpenseUpdateSerializer(_ExpenseFieldsSerializer):
+    version = serializers.IntegerField(required=False)
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if name not in ("version", "reason"):
+                field.required = False
+                if getattr(field, "default", None) is not serializers.empty:
+                    field.default = serializers.empty
+
+
+class ExpensePaySerializer(serializers.Serializer):
+    paid_date = serializers.DateField(required=False, allow_null=True)
+    payment_method = serializers.ChoiceField(choices=PaymentMethod.choices, required=False)
+    reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    version = serializers.IntegerField(required=False)
+
+
+class ExpenseReasonSerializer(serializers.Serializer):
+    reason = serializers.CharField()
+    version = serializers.IntegerField(required=False)
+
+
+class RecurringExpenseSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    payment_method_display = serializers.CharField(source="get_payment_method_display", read_only=True)
+    responsible_name = serializers.SerializerMethodField()
+    expenses_count = serializers.IntegerField(read_only=True, default=None)
+    last_month = serializers.DateField(read_only=True, default=None)
+
+    class Meta:
+        model = RecurringExpense
+        fields = (
+            "id", "category", "category_name", "description", "amount", "vendor", "payment_method",
+            "payment_method_display", "responsible", "responsible_name", "day_of_month", "start_month", "end_month",
+            "is_active", "comment", "expenses_count", "last_month", "created_at",
+        )
+        read_only_fields = ("id", "created_at")
+
+    def get_responsible_name(self, obj) -> str:
+        return _name(obj.responsible)

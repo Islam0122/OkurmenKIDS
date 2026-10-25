@@ -33,6 +33,9 @@ from .models import (
     DeductionRule,
     Department,
     EmployeeSalaryProfile,
+    Expense,
+    ExpenseCategory,
+    PaymentMethod,
     PayoutPlan,
     PayoutPlanLine,
     Payroll,
@@ -40,6 +43,7 @@ from .models import (
     PayrollAuditLog,
     PayrollPayment,
     PayrollPeriod,
+    RecurringExpense,
     SalaryRule,
     StudentPayment,
 )
@@ -49,6 +53,9 @@ from .services import approval_service, cycles, payment_service, payroll_calcula
 from .services import student_payments as student_payment_service
 from .services.periods import close_period, get_or_create_period
 from .services import analytics, deductions, earnings, estimates, my_salary, payout_plans, pricing
+from .services import expenses as expense_service
+from .services.money import money
+from .services import finance_overview
 from .services.report_pdf import (
     render_individual_pdf,
     render_my_salary_pdf,
@@ -1484,3 +1491,384 @@ class MyPayoutPlanView(APIView):
     @extend_schema(responses=OpenApiTypes.OBJECT)
     def get(self, request):
         return Response({"results": _jsonable(payout_plans.my_planned(request.user))})
+
+
+# ---------------------------------------------------------------------------
+# Расходы компании
+# ---------------------------------------------------------------------------
+
+def _date_param(request, name):
+    value = request.query_params.get(name)
+    if not value:
+        return None
+    try:
+        return timezone.datetime.fromisoformat(value).date()
+    except ValueError:
+        raise ValidationError({name: "Ожидается дата ГГГГ-ММ-ДД."})
+
+
+def _range_from_query(request):
+    """Период отчёта: `month=ГГГГ-ММ`, или `date_from` + `date_to`; по
+    умолчанию — текущий месяц."""
+    from .services.finance_overview import month_range
+
+    month = request.query_params.get("month")
+    if month:
+        try:
+            year, mm = (int(x) for x in month.split("-"))
+            return month_range(year, mm)
+        except (TypeError, ValueError):
+            raise ValidationError({"month": "Ожидается ГГГГ-ММ."})
+    date_from, date_to = _date_param(request, "date_from"), _date_param(request, "date_to")
+    if date_from and date_to:
+        if date_to < date_from:
+            raise ValidationError({"date_to": "Конец периода раньше начала."})
+        if (date_to - date_from).days > 3 * 366:
+            raise ValidationError({"date_to": "Период не длиннее трёх лет."})
+        return date_from, date_to
+    today = timezone.localdate()
+    return month_range(today.year, today.month)
+
+
+def _expense_filters(request) -> dict:
+    q = request.query_params
+    f = {k: q.get(k) for k in ("search", "status", "payment_method", "vendor", "recurring", "overdue", "include_void")
+         if q.get(k)}
+    for name in ("category", "responsible"):
+        if q.get(name):
+            f[name] = _int(q[name], name)
+    for name in ("date_from", "date_to", "paid_from", "paid_to"):
+        value = _date_param(request, name)
+        if value:
+            f[name] = value
+    if f.get("status") and f["status"] not in Expense.Status.values:
+        raise ValidationError({"status": "Неизвестный статус."})
+    return f
+
+
+def _expense_fail(exc: AccountingError):
+    if exc.code == "conflict":
+        raise Conflict({"detail": exc.message, "code": exc.code})
+    _fail(exc)
+
+
+EXPENSE_FILTERS = [
+    OpenApiParameter("search", str), OpenApiParameter("category", int), OpenApiParameter("status", str),
+    OpenApiParameter("payment_method", str), OpenApiParameter("responsible", int), OpenApiParameter("vendor", str),
+    OpenApiParameter("date_from", OpenApiTypes.DATE), OpenApiParameter("date_to", OpenApiTypes.DATE),
+    OpenApiParameter("paid_from", OpenApiTypes.DATE), OpenApiParameter("paid_to", OpenApiTypes.DATE),
+    OpenApiParameter("recurring", bool), OpenApiParameter("overdue", bool), OpenApiParameter("include_void", bool),
+]
+
+
+@extend_schema(tags=TAG)
+class ExpenseCategoryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Справочник категорий расходов: чтение — бухгалтер, директор,
+    администратор; создание и изменение — бухгалтер. Не удаляется — отключается."""
+
+    permission_classes = [AccountingAccess]
+    serializer_class = s.ExpenseCategorySerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+    pagination_class = None
+
+    def get_queryset(self):
+        from django.db.models import Count
+
+        qs = ExpenseCategory.objects.annotate(expenses_count=Count("expenses", filter=~Q(expenses__status="VOID")))
+        if self.request.query_params.get("active") in ("1", "true"):
+            qs = qs.filter(is_active=True)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        data = _valid(s.ExpenseCategorySerializer, request)
+        try:
+            category = expense_service.save_category(actor=request.user, **data)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response(s.ExpenseCategorySerializer(category).data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        serializer = s.ExpenseCategorySerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = {k: v for k, v in serializer.validated_data.items() if k != "code"}
+        try:
+            category = expense_service.save_category(actor=request.user, category=self.get_object(), **data)
+        except AccountingError as exc:
+            _fail(exc)
+        return Response(s.ExpenseCategorySerializer(category).data)
+
+
+@extend_schema(tags=TAG, parameters=EXPENSE_FILTERS)
+class ExpenseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Расходы компании. Чтение — бухгалтер, директор, администратор; запись —
+    бухгалтер. Неоплаченный расход — обязательство (в движение денег не
+    входит); оплата — `pay/`, отмена — `void/` с причиной; удаления нет."""
+
+    pagination_class = AccountingPagination
+    permission_classes = [AccountingAccess]
+    serializer_class = s.ExpenseSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_parsers(self):
+        from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+
+        return [JSONParser(), MultiPartParser(), FormParser()]
+
+    def get_queryset(self):
+        qs = Expense.objects.select_related("category", "responsible", "created_by", "voided_by", "recurring")
+        if self.action == "list":
+            qs = expense_service.filter_expenses(qs, _expense_filters(self.request))
+            ordering = self.request.query_params.get("ordering")
+            if ordering in ("expense_date", "-expense_date", "amount", "-amount", "due_date", "-due_date",
+                            "paid_date", "-paid_date"):
+                qs = qs.order_by(ordering, "-id")
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        from django.db.models import Sum
+
+        qs = self.filter_queryset(self.get_queryset())
+        totals = qs.aggregate(total=Sum("amount"), paid=Sum("amount", filter=Q(status=Expense.Status.PAID)),
+                              unpaid=Sum("amount", filter=Q(status=Expense.Status.UNPAID)))
+        response.data["totals"] = {k: str(money(v or 0)) for k, v in totals.items()}
+        return response
+
+    def _out(self, expense, *, code=status.HTTP_200_OK):
+        return Response(s.ExpenseSerializer(self.get_queryset().get(pk=expense.pk)).data, status=code)
+
+    @extend_schema(request=s.ExpenseCreateSerializer, responses=s.ExpenseSerializer)
+    def create(self, request, *args, **kwargs):
+        data = dict(_valid(s.ExpenseCreateSerializer, request))
+        data["idempotency_key"] = _idempotency_key(request, data) or None
+        try:
+            expense, created = expense_service.create_expense(actor=request.user, **data)
+        except AccountingError as exc:
+            _fail(exc)
+        return self._out(expense, code=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    @extend_schema(request=s.ExpenseUpdateSerializer, responses=s.ExpenseSerializer)
+    def partial_update(self, request, *args, **kwargs):
+        data = dict(_valid(s.ExpenseUpdateSerializer, request))
+        version, reason = data.pop("version", None), data.pop("reason", "")
+        try:
+            expense = expense_service.update_expense(self.get_object(), actor=request.user, changes=data,
+                                                     reason=reason, version=version)
+        except AccountingError as exc:
+            _expense_fail(exc)
+        return self._out(expense)
+
+    @extend_schema(request=s.ExpensePaySerializer, responses=s.ExpenseSerializer)
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        data = _valid(s.ExpensePaySerializer, request)
+        try:
+            expense = expense_service.mark_paid(self.get_object(), actor=request.user, **data)
+        except AccountingError as exc:
+            _expense_fail(exc)
+        return self._out(expense)
+
+    @extend_schema(request=s.ExpenseReasonSerializer, responses=s.ExpenseSerializer)
+    @action(detail=True, methods=["post"])
+    def unpay(self, request, pk=None):
+        data = _valid(s.ExpenseReasonSerializer, request)
+        try:
+            expense = expense_service.unmark_paid(self.get_object(), actor=request.user, **data)
+        except AccountingError as exc:
+            _expense_fail(exc)
+        return self._out(expense)
+
+    @extend_schema(request=s.ExpenseReasonSerializer, responses=s.ExpenseSerializer)
+    @action(detail=True, methods=["post"])
+    def void(self, request, pk=None):
+        data = _valid(s.ExpenseReasonSerializer, request)
+        try:
+            expense = expense_service.void_expense(self.get_object(), actor=request.user, **data)
+        except AccountingError as exc:
+            _expense_fail(exc)
+        return self._out(expense)
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        expense = self.get_object()
+        log = PayrollAuditLog.objects.filter(entity_type="expense", entity_id=expense.pk).select_related("actor") \
+            .order_by("-created_at", "-id")
+        return Response({"results": s.PayrollAuditLogSerializer(log, many=True).data})
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    @action(detail=True, methods=["get", "post"])
+    def document(self, request, pk=None):
+        """GET — скачать подтверждающий документ (только через API: файл не
+        отдаётся публичной ссылкой); POST (multipart `document`) — прикрепить
+        или заменить."""
+        expense = self.get_object()
+        if request.method == "POST":
+            try:
+                expense = expense_service.attach_document(
+                    expense, actor=request.user, document=request.FILES.get("document"),
+                    version=_int(request.data.get("version"), "version"),
+                )
+            except AccountingError as exc:
+                _expense_fail(exc)
+            return self._out(expense)
+        if not expense.document:
+            raise ValidationError({"detail": "К расходу не прикреплён документ.", "code": "no_document"})
+        from django.http import FileResponse
+
+        try:
+            handle = expense.document.open("rb")
+        except FileNotFoundError:
+            raise ValidationError({"detail": "Файл документа не найден в хранилище.", "code": "missing_file"})
+        response = FileResponse(handle, as_attachment=True, filename=expense.document_name or expense.document.name)
+        response["Cache-Control"] = "no-store"
+        return response
+
+    @extend_schema(responses=OpenApiTypes.OBJECT, parameters=[OpenApiParameter("month", str)])
+    @action(detail=False, methods=["get"])
+    def report(self, request):
+        date_from, date_to = _range_from_query(request)
+        return Response(_jsonable(expense_service.report(date_from, date_to, _expense_filters(request))))
+
+    @extend_schema(responses=OpenApiTypes.BINARY, parameters=[OpenApiParameter("month", str)])
+    @action(detail=False, methods=["get"], url_path="export.xlsx")
+    def export_xlsx(self, request):
+        from .services.report_xlsx import render_expenses_xlsx
+
+        date_from, date_to = _range_from_query(request)
+        f = _expense_filters(request)
+        rows = list(expense_service.filter_expenses(
+            Expense.objects.select_related("category", "responsible"),
+            {**f, "date_from": date_from, "date_to": date_to},
+        ).order_by("expense_date", "id"))
+        content = render_expenses_xlsx(rows, expense_service.report(date_from, date_to, f))
+        return _file(content, f"expenses-{date_from:%Y-%m-%d}-{date_to:%Y-%m-%d}.xlsx", XLSX)
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["get"])
+    def options(self, request):
+        """Справочники формы расхода: категории, способы, статусы и сотрудники
+        (только id и ФИО — для поля «Ответственный»)."""
+        staff = User.objects.filter(is_active=True).order_by("last_name", "first_name") \
+            .values("id", "first_name", "last_name", "username")
+        return Response({
+            "categories": s.ExpenseCategorySerializer(ExpenseCategory.objects.all(), many=True).data,
+            "payment_methods": [{"value": v, "label": label} for v, label in PaymentMethod.choices],
+            "statuses": [{"value": v, "label": label} for v, label in Expense.Status.choices],
+            "staff": [{"id": u["id"], "name": f"{u['last_name']} {u['first_name']}".strip() or u["username"]}
+                      for u in staff],
+            "unpaid": _jsonable(expense_service.unpaid_summary()),
+        })
+
+
+@extend_schema(tags=TAG)
+class RecurringExpenseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Регулярные (ежемесячные) расходы. Шаблон не является деньгами: по нему
+    раз в месяц создаётся один неоплаченный расход (`generate/`, ежедневный
+    `run_scheduled_tasks`); повторный запуск ничего не дублирует."""
+
+    permission_classes = [AccountingAccess]
+    serializer_class = s.RecurringExpenseSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+    pagination_class = None
+
+    def get_queryset(self):
+        from django.db.models import Count, Max
+
+        return RecurringExpense.objects.select_related("category", "responsible").annotate(
+            expenses_count=Count("expenses", filter=~Q(expenses__status="VOID")),
+            last_month=Max("expenses__recurrence_month"),
+        )
+
+    def _out(self, recurring, *, code=status.HTTP_200_OK):
+        return Response(s.RecurringExpenseSerializer(self.get_queryset().get(pk=recurring.pk)).data, status=code)
+
+    def create(self, request, *args, **kwargs):
+        data = _valid(s.RecurringExpenseSerializer, request)
+        try:
+            recurring = expense_service.save_recurring(actor=request.user, **data)
+        except AccountingError as exc:
+            _fail(exc)
+        return self._out(recurring, code=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        serializer = s.RecurringExpenseSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        try:
+            recurring = expense_service.save_recurring(actor=request.user, recurring=self.get_object(),
+                                                       **serializer.validated_data)
+        except AccountingError as exc:
+            _fail(exc)
+        return self._out(recurring)
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["post"])
+    def generate(self, request):
+        today = timezone.localdate()
+        year = _int(request.data.get("year"), "year") or today.year
+        month = _int(request.data.get("month"), "month") or today.month
+        if not 1 <= month <= 12:
+            raise ValidationError({"month": "Месяц 1–12."})
+        return Response(expense_service.generate_recurring(year, month, actor=request.user))
+
+
+# ---------------------------------------------------------------------------
+# Финансовая панель и касса
+# ---------------------------------------------------------------------------
+
+RANGE_PARAMS = [OpenApiParameter("month", str), OpenApiParameter("date_from", OpenApiTypes.DATE),
+                OpenApiParameter("date_to", OpenApiTypes.DATE)]
+
+
+@extend_schema(tags=TAG, parameters=RANGE_PARAMS)
+class FinanceOverviewView(APIView):
+    """Единая финансовая панель за период: оплата студентов, зарплата,
+    расходы, денежный поток, сравнение с предыдущим периодом (только чтение)."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        date_from, date_to = _range_from_query(request)
+        return Response(_jsonable(finance_overview.overview(date_from, date_to)))
+
+
+@extend_schema(tags=TAG, parameters=RANGE_PARAMS + [
+    OpenApiParameter("kind", str), OpenApiParameter("method", str), OpenApiParameter("direction", str),
+    OpenApiParameter("search", str),
+])
+class CashFlowView(APIView):
+    """Касса: все фактические движения денег за период одной лентой."""
+
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        date_from, date_to = _range_from_query(request)
+        q = request.query_params
+        if q.get("kind") and q["kind"] not in finance_overview.KINDS:
+            raise ValidationError({"kind": "Неизвестный тип операции."})
+        data = finance_overview.cash_movements(date_from, date_to, kind=q.get("kind"), method=q.get("method"),
+                                               direction=q.get("direction"), search=q.get("search"))
+        paginator = AccountingPagination()
+        page = paginator.paginate_queryset(data["results"], request, view=self)
+        response = paginator.get_paginated_response(_jsonable(page))
+        response.data.update(_jsonable({k: v for k, v in data.items() if k != "results"}))
+        return response
+
+
+@extend_schema(tags=TAG, parameters=RANGE_PARAMS)
+class FinanceReportXlsxView(APIView):
+    permission_classes = [CanViewAccounting]
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    def get(self, request):
+        from .services.report_xlsx import render_finance_xlsx
+
+        date_from, date_to = _range_from_query(request)
+        content = render_finance_xlsx(
+            finance_overview.overview(date_from, date_to),
+            finance_overview.cash_movements(date_from, date_to),
+            expense_service.report(date_from, date_to),
+        )
+        return _file(content, f"finance-{date_from:%Y-%m-%d}-{date_to:%Y-%m-%d}.xlsx", XLSX)

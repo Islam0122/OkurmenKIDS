@@ -314,7 +314,12 @@ export const router = createBrowserRouter([
           {
             lazy: async () => ({ Component: (await import('@/features/accounting/AccountingLayout')).AccountingLayout }),
             children: [
-              { index: true, lazy: async () => ({ Component: (await import('@/features/accounting/DashboardPage')).AccountingDashboardPage }) },
+              // Обзор: четыре раздела бухгалтерии, касса и настройки — куда перейти для задачи.
+              { index: true, lazy: async () => ({ Component: (await import('@/features/accounting/HomePage')).AccountingHomePage }) },
+              { path: 'payroll', lazy: async () => ({ Component: (await import('@/features/accounting/DashboardPage')).AccountingDashboardPage }) },
+              { path: 'expenses', lazy: async () => ({ Component: (await import('@/features/accounting/ExpensesPage')).ExpensesPage }) },
+              { path: 'finance', lazy: async () => ({ Component: (await import('@/features/accounting/FinancePanelPage')).FinancePanelPage }) },
+              { path: 'cash', lazy: async () => ({ Component: (await import('@/features/accounting/CashFlowPage')).CashFlowPage }) },
               { path: 'payrolls/:id', lazy: async () => ({ Component: (await import('@/features/accounting/PayrollDetailPage')).PayrollDetailPage }) },
               { path: 'earnings', lazy: async () => ({ Component: (await import('@/features/accounting/EarningsPage')).EarningsPage }) },
               { path: 'payout-plan', lazy: async () => ({ Component: (await import('@/features/accounting/PayoutPlanPage')).PayoutPlanPage }) },

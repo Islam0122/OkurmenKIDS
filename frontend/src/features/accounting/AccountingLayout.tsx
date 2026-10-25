@@ -1,5 +1,8 @@
 import { Suspense, useState } from 'react'
-import { ArrowLeft, Banknote, ReceiptText, BarChart3, BookOpenCheck, CalendarClock, Calculator, Coins, FileText, History, LayoutDashboard, LogOut, Menu, ScanLine, Settings2, Tags } from 'lucide-react'
+import {
+  ArrowLeft, ArrowLeftRight, Banknote, BarChart3, BookOpenCheck, CalendarClock, Calculator, Coins, FileText, History,
+  LayoutDashboard, LineChart, LogOut, Menu, ReceiptText, ScanLine, Settings2, Tags, Wallet,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -17,22 +20,62 @@ interface NavItem {
   end?: boolean
 }
 
-/** Бухгалтерия: сводка и начисления, зарплатные правила, платежи студентов, журнал. */
-export const ACCOUNTING_NAV: NavItem[] = [
-  { to: '/accounting', label: 'Начисления', icon: LayoutDashboard, end: true },
-  { to: '/accounting/earnings', label: 'Заработок сотрудников', icon: Coins },
-  { to: '/accounting/payout-plan', label: 'План выплат', icon: CalendarClock },
-  { to: '/accounting/settings', label: 'Зарплатные правила', icon: Settings2 },
-  { to: '/accounting/courses', label: 'Курсы и блоки', icon: BookOpenCheck },
-  { to: '/accounting/pricing', label: 'Стоимость курсов', icon: Tags },
-  { to: '/accounting/analytics', label: 'Аналитика', icon: BarChart3 },
-  { to: '/accounting/reports', label: 'Отчёт по сотрудникам', icon: FileText },
-  { to: '/finance', label: 'Финансы студентов', icon: ReceiptText },
-  { to: '/accounting/student-payments', label: 'Платежи студентов', icon: Banknote },
-  { to: '/accounting/audit', label: 'Журнал изменений', icon: History },
+export interface NavSection {
+  title?: string
+  items: NavItem[]
+}
+
+/**
+ * Бухгалтерия: четыре основных раздела (оплата студентов, зарплата, расходы,
+ * аналитика) плюс касса и финансовые настройки. Подразделы каждого раздела —
+ * на странице «Обзор» (`/accounting`). Оплата студентов живёт в своём модуле
+ * `/finance` со своим меню — здесь на него ведут ссылки.
+ */
+export const ACCOUNTING_SECTIONS: NavSection[] = [
+  { items: [{ to: '/accounting', label: 'Обзор бухгалтерии', icon: LayoutDashboard, end: true }] },
+  {
+    title: 'Оплата студентов',
+    items: [
+      { to: '/finance', label: 'Финансы студентов', icon: ReceiptText },
+      { to: '/accounting/student-payments', label: 'Платежи вне договоров', icon: Banknote },
+    ],
+  },
+  {
+    title: 'Зарплата сотрудников',
+    items: [
+      { to: '/accounting/payroll', label: 'Начисления и выплаты', icon: Calculator },
+      { to: '/accounting/earnings', label: 'Заработок сотрудников', icon: Coins },
+      { to: '/accounting/payout-plan', label: 'План выплат', icon: CalendarClock },
+      { to: '/accounting/courses', label: 'Курсы и блоки', icon: BookOpenCheck },
+      { to: '/accounting/reports', label: 'Отчёт по сотрудникам', icon: FileText },
+      { to: '/accounting/analytics', label: 'Аналитика зарплат', icon: BarChart3 },
+    ],
+  },
+  {
+    title: 'Расходы компании',
+    items: [{ to: '/accounting/expenses', label: 'Расходы', icon: Wallet }],
+  },
+  {
+    title: 'Аналитика и касса',
+    items: [
+      { to: '/accounting/finance', label: 'Финансовая панель', icon: LineChart },
+      { to: '/accounting/cash', label: 'Касса и движение денег', icon: ArrowLeftRight },
+    ],
+  },
+  {
+    title: 'Финансовые настройки',
+    items: [
+      { to: '/accounting/settings', label: 'Зарплатные правила', icon: Settings2 },
+      { to: '/accounting/pricing', label: 'Стоимость курсов', icon: Tags },
+      { to: '/accounting/audit', label: 'Журнал изменений', icon: History },
+    ],
+  },
   // Свой приход и уход по QR-коду офиса (/attendance ведёт на страницу своей роли).
-  { to: '/attendance', label: 'Приход и уход', icon: ScanLine },
+  { items: [{ to: '/attendance', label: 'Приход и уход', icon: ScanLine }] },
 ]
+
+/** Плоский список пунктов меню (порядок — как в разделах). */
+export const ACCOUNTING_NAV: NavItem[] = ACCOUNTING_SECTIONS.flatMap((section) => section.items)
 
 const ROW = 'flex h-9 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'
 
@@ -54,8 +97,15 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const { user, logout } = useAuth()
   return (
     <div className="flex h-full flex-col">
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3" aria-label="Навигация бухгалтерии">
-        {ACCOUNTING_NAV.map((item) => <NavRow key={item.to} item={item} onNavigate={onNavigate} />)}
+      <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3" aria-label="Навигация бухгалтерии">
+        {ACCOUNTING_SECTIONS.map((section, index) => (
+          <div key={section.title ?? index} className="space-y-0.5">
+            {section.title ? (
+              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">{section.title}</p>
+            ) : null}
+            {section.items.map((item) => <NavRow key={item.to} item={item} onNavigate={onNavigate} />)}
+          </div>
+        ))}
       </nav>
       <div className="space-y-0.5 border-t border-border px-3 py-3">
         {user?.role === 'admin' ? (

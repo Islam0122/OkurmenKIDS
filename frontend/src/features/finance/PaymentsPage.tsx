@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Plus, Printer } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { financeApi } from '@/api/finance'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -23,7 +23,10 @@ export function PaymentsPage() {
   const options = useFinanceOptions()
   // Платежи периода — по дате ФАКТИЧЕСКОГО поступления денег (не по дате записи).
   const period = useFinancePeriod()
-  const [f, setF] = useState({ search: '', number: '', method: '', kind: '', status: '', program: '', group: '', page: 1 })
+  // Тип и статус можно задать ссылкой (Бухгалтерия → «Возвраты и сторнирования»).
+  const [searchParams] = useSearchParams()
+  const [f, setF] = useState({ search: '', number: '', method: '', kind: searchParams.get('kind') ?? '',
+    status: searchParams.get('status') ?? '', program: '', group: '', page: 1 })
   const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch, page: patch.page ?? 1 })
   const params = { ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '')),
     date_from: period.date_from, date_to: period.date_to }

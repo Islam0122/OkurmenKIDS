@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { accountingApi } from '@/api/accounting'
 import type { PayrollFilters } from '@/api/accounting'
-import type { AnalyticsFilters, MySalaryFilters, PayoutPlanFilters, PeriodSelection } from '@/types/accounting'
+import type { AnalyticsFilters, ExpenseFilters, FinanceRange, MySalaryFilters, PayoutPlanFilters, PeriodSelection } from '@/types/accounting'
 
 export function useAccountingOptions() {
   return useQuery({ queryKey: ['accounting', 'options'], queryFn: accountingApi.options, staleTime: 5 * 60 * 1000 })
@@ -175,4 +175,48 @@ export function useDeductionRules(params: Record<string, string | number | boole
     queryFn: () => accountingApi.deductionRules(params),
     placeholderData: keepPreviousData,
   })
+}
+
+export function useFinanceOverview(range: FinanceRange) {
+  return useQuery({
+    queryKey: ['accounting', 'finance-overview', range],
+    queryFn: () => accountingApi.financeOverview(range),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useCashFlow(range: FinanceRange, params: Record<string, string | number | undefined>) {
+  return useQuery({
+    queryKey: ['accounting', 'cash-flow', range, params],
+    queryFn: () => accountingApi.cashFlow(range, params),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useExpenseOptions() {
+  return useQuery({ queryKey: ['accounting', 'expense-options'], queryFn: accountingApi.expenseOptions })
+}
+
+export function useExpenses(filters: ExpenseFilters) {
+  return useQuery({
+    queryKey: ['accounting', 'expenses', filters],
+    queryFn: () => accountingApi.expenses(filters),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useExpenseReport(range: FinanceRange) {
+  return useQuery({
+    queryKey: ['accounting', 'expense-report', range],
+    queryFn: () => accountingApi.expenseReport(range),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useExpenseCategories() {
+  return useQuery({ queryKey: ['accounting', 'expense-categories'], queryFn: accountingApi.expenseCategories })
+}
+
+export function useRecurringExpenses() {
+  return useQuery({ queryKey: ['accounting', 'recurring-expenses'], queryFn: accountingApi.recurringExpenses })
 }

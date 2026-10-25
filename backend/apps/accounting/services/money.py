@@ -19,6 +19,19 @@ def money(value) -> Decimal:
     return Decimal(value).quantize(quantum(), rounding=ROUND_HALF_UP)
 
 
+def money_all(value):
+    """Округлить все Decimal во вложенной структуре отчёта (агрегаты SQLite
+    возвращают суммы без масштаба: 50000 вместо 50000.00). Проценты
+    (`percent`, `share_percent`) не трогаются."""
+    if isinstance(value, Decimal):
+        return money(value)
+    if isinstance(value, dict):
+        return {k: v if k in ("percent", "share_percent") else money_all(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [money_all(v) for v in value]
+    return value
+
+
 def allocate_by_days(amount: Decimal, start: dt.date, end: dt.date, part_start: dt.date, part_end: dt.date) -> Decimal:
     """Доля суммы `amount`, распределённой поровну по дням [start, end],
     приходящаяся на дни [part_start, part_end].
