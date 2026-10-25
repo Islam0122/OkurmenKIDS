@@ -97,8 +97,15 @@ function Card360({ card }: { card: ContractCard }) {
             ? `из них на будущие начисления (прогноз) ${som(summary.credit_reserved_future)}`
             : summary.reservation_unused !== '0.00' ? `в т.ч. бронь ${som(summary.reservation_unused)}` : 'получено, но не распределено'} />
         <Stat label="Осталось оплатить" value={som(summary.net_to_pay)} tone="brand"
-          hint={summary.future ? `будущие начисления ${som(summary.future)}` : undefined} />
+          hint={summary.course_paid_in_full ? 'курс полностью оплачен'
+            : summary.future && summary.future !== '0.00' ? `будущие начисления ${som(summary.future)}` : undefined} />
       </div>
+      {summary.course_paid_in_full ? (
+        <p className="mt-3 rounded-xl border border-border bg-brand-50 p-3 text-sm text-brand-700" data-testid="course-paid">
+          <b>Курс полностью оплачен</b>{c.final_course_price ? ` — ${som(c.final_course_price)}` : ''}. Текущий долг 0 сом, просрочки нет,
+          дополнительные платежи не требуются. Добровольно внесённая сумма будет учтена как аванс.
+        </p>
+      ) : null}
       <p className="mt-2 text-xs text-ink-secondary" data-testid="money-breakdown">
         Получено {som(summary.net_received)} = оплачено по начислениям {som(summary.allocated)} + свободный аванс {som(summary.credit)}
         {summary.credit !== '0.00' ? ` (на текущий долг ${som(summary.credit_unapplied)}, на будущие начисления — прогноз ${som(summary.credit_reserved_future)}, сверх договора ${som(summary.credit_unreserved)})` : ''}.
@@ -156,7 +163,15 @@ function Card360({ card }: { card: ContractCard }) {
             { key: 'n', header: 'Месяц', render: (m) => <span className="font-medium">№{m.month_number ?? m.number}</span> },
             { key: 'st', header: 'Статус', render: (m) => <Badge tone={m.status === 'ACTIVE' ? 'info' : m.status === 'COMPLETED' ? 'success' : 'muted'}>{MONTH_STATUS[m.status]}</Badge> },
             { key: 'l', header: 'Уроки IT', render: (m) => `${m.lessons_used} из ${m.lessons_total}` },
-            { key: 'inv', header: 'Начисление', render: (m) => m.invoice ? <Amount value={m.invoice.amount} /> : <span className="text-sm text-ink-secondary">оплачен по договору</span> },
+            { key: 'inv', header: 'Начисление', render: (m) => m.invoice ? <Amount value={m.invoice.amount} />
+              : m.course_share ? (
+                <span className="text-sm" title={`Доля начисления «Весь курс» ${m.course_share.number}, не отдельное начисление`}>
+                  <Amount value={m.course_share.amount} />
+                  <span className="block text-xs text-ink-secondary">
+                    {m.course_share.paid_in_full ? 'оплачен предоплатой курса' : `доля курса, оплачено ${som(m.course_share.paid)}`}
+                  </span>
+                </span>
+              ) : <span className="text-sm text-ink-secondary">оплачен по договору</span> },
             { key: 'bal', header: 'Остаток', render: (m) => m.invoice ? <Amount value={m.invoice.balance} /> : '—' },
             { key: 'dates', header: 'Начат / завершён', render: (m) => `${formatDate(m.started_on)} — ${formatDate(m.completed_on)}` },
           ]} />

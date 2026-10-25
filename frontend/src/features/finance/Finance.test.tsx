@@ -424,6 +424,88 @@ describe('StudentCardPage — бронь и платежи', () => {
   })
 })
 
+describe('StudentCardPage — предоплата за весь курс и кнопка «Добавить платёж»', () => {
+  const SUMMARY = { received: '53000.00', refunded: '0.00', net_received: '53000.00', reservation_received: '0.00',
+    reservation_unused: '0.00', allocated: '53000.00', adjusted: '0.00', credit: '0.00', invoiced: '53000.00',
+    invoices_balance: '0.00', credit_applicable: '0.00', credit_unapplied: '0.00', due_now: '0.00', overdue: '0.00',
+    paid_total: '53000.00', standard_course_price: '60000.00', final_course_price: '53000.00', discount_amount: '7000.00',
+    outstanding: '0.00', future: '0.00', net_to_pay: '0.00', voided: '0.00', voided_count: 0, credit_reserved_future: '0.00',
+    credit_unreserved: '0.00', course_paid_in_full: true }
+  const share = (n: number, paid: string, state: 'prepaid' | 'course_due') => ({ month_number: n, state, kind: 'COURSE',
+    invoice: 50, number: 'INV-2026-000050', amount: '13250.00', paid, balance: '0.00', covered_by_credit: '0.00',
+    to_pay: '0.00', standard_price: null, plan_amount: null, status: 'PAID', status_display: 'Оплачено' })
+  const prepaidCard = (paidInFull = true) => ({
+    ...CARD,
+    contract: { ...CARD.contract, status: 'ACTIVE', status_display: 'Обучается', is_course: true, payment_mode: 'FULL_PREPAY',
+      payment_mode_display: 'Предоплата за весь курс', final_course_price: '53000.00' },
+    summary: paidInFull ? SUMMARY : { ...SUMMARY, due_now: '33000.00', outstanding: '33000.00', net_to_pay: '33000.00',
+      allocated: '20000.00', course_paid_in_full: false },
+    schedule: { final_course_price: '53000.00', standard_course_price: '60000.00', discount_amount: '7000.00',
+      month_plan_mode: '', invoiced: '53000.00', projected: '0.00', total: '53000.00', consistent: true, issues: [],
+      price_changes: [],
+      course: { invoice: 50, number: 'INV-2026-000050', amount: '53000.00', paid: paidInFull ? '53000.00' : '20000.00',
+        balance: paidInFull ? '0.00' : '33000.00', status: paidInFull ? 'PAID' : 'PARTIALLY_PAID',
+        status_display: paidInFull ? 'Оплачено' : 'Частично оплачено', due_date: '2026-09-01', paid_in_full: paidInFull },
+      months: paidInFull ? [1, 2, 3, 4].map((n) => share(n, '13250.00', 'prepaid'))
+        : [share(1, '13250.00', 'prepaid'), share(2, '6750.00', 'course_due'), share(3, '0.00', 'course_due'), share(4, '0.00', 'course_due')] },
+    months: [{ id: 1, number: 1, month_number: 1, status: 'COMPLETED', lessons_total: 12, lessons_used: 12, lessons_remaining: 0,
+      final_price: '53000.00', started_on: '2026-09-02', completed_on: '2026-09-13', invoice: null,
+      course_share: { invoice: 50, number: 'INV-2026-000050', amount: '13250.00', paid: '13250.00', paid_in_full: true } }],
+    invoices: [], payments: [], contacts: [], reservations: [],
+  }) as unknown as ContractCard
+
+  const openCard = () => renderWithProviders(
+    <Routes>
+      <Route path="/finance/students/:profileId" element={<StudentCardPage />} />
+      <Route path="/finance/payments/new" element={<p>Форма платежа</p>} />
+    </Routes>, { route: '/finance/students/7' })
+
+  beforeEach(() => {
+    vi.mocked(financeApi.lessonBreakdown).mockResolvedValue({ attended: 0, marked: 0, counted: 0, priority_subject: 'IT',
+      contract_start: '2026-09-01', totals: {}, priority_before_contract: { count: 0, first_date: null }, lessons: [] })
+  })
+
+  it('paid course: debt 0, «Курс полностью оплачен», months are course shares, button stays and opens the form', async () => {
+    vi.mocked(financeApi.card).mockResolvedValue(prepaidCard())
+    const user = userEvent.setup()
+    openCard()
+    expect(await screen.findByTestId('course-paid')).toHaveTextContent('Курс полностью оплачен')
+    expect(screen.getByTestId('course-paid')).toHaveTextContent(/53\s000/)
+    expect(screen.getByTestId('course-prepayment')).toHaveTextContent('курс полностью оплачен')
+    const schedule = screen.getByRole('table', { name: 'График оплаты' })
+    expect(within(schedule).getAllByRole('row')).toHaveLength(5)
+    expect(within(schedule).getAllByText('оплачен предоплатой курса')).toHaveLength(4)
+    expect(schedule).not.toHaveTextContent(/53\s000/)  // «Весь курс» — не стоимость месяца №1
+    expect(screen.getByText('оплачен предоплатой курса', { selector: 'span.block' })).toBeInTheDocument()
+    const add = await screen.findByRole('button', { name: 'Добавить платёж' })  // после загрузки прав
+    await user.click(add)
+    expect(await screen.findByText('Форма платежа')).toBeInTheDocument()
+  })
+
+  it('button is shown for partial prepayment and monthly contracts too', async () => {
+    vi.mocked(financeApi.card).mockResolvedValue(prepaidCard(false))
+    const { unmount } = openCard()
+    expect(await screen.findByRole('button', { name: 'Добавить платёж' })).toBeInTheDocument()
+    expect(screen.queryByTestId('course-paid')).not.toBeInTheDocument()
+    expect(screen.getAllByText('ждёт оплаты «Весь курс»')).toHaveLength(3)
+    unmount()
+    vi.mocked(financeApi.card).mockResolvedValue({ ...prepaidCard(), schedule: null, months: [],
+      contract: { ...prepaidCard().contract, payment_mode: 'MONTHLY', payment_mode_display: 'Помесячно' },
+      summary: { ...SUMMARY, course_paid_in_full: false, due_now: '15000.00' } } as unknown as ContractCard)
+    openCard()
+    expect(await screen.findByRole('button', { name: 'Добавить платёж' })).toBeInTheDocument()
+  })
+
+  it('users who cannot take payments do not see the button', async () => {
+    vi.mocked(financeApi.me).mockResolvedValue(DIRECTOR)
+    vi.mocked(financeApi.card).mockResolvedValue(prepaidCard())
+    openCard()
+    expect(await screen.findByTestId('course-paid')).toBeInTheDocument()
+    await waitFor(() => expect(financeApi.me).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Добавить платёж' })).not.toBeInTheDocument()
+  })
+})
+
 describe('План стоимости месяцев', () => {
   it('new contract sends individual month prices; standard is their sum', async () => {
     vi.mocked(financeApi.plans).mockResolvedValue({ count: 1, next: null, previous: null, results: [{

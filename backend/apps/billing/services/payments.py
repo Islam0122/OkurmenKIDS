@@ -466,4 +466,7 @@ def preview_payment(profile: StudentBillingProfile, *, amount, invoice: Invoice 
         "due_now_before": str(summary["due_now"]), "due_now_after": str(max(due_after, ZERO)),
         "credit_before": str(summary["credit"]), "credit_after": str(summary["credit"] + left),
         "outstanding_before": str(summary["outstanding"]), "outstanding_after": str(max(outstanding_after, ZERO)),
+        # Долга нет (курс оплачен): платёж не создаёт начисление и не меняет
+        # статусы — вся сумма станет авансом / переплатой договора.
+        "course_paid_in_full": summary["course_paid_in_full"],
     }

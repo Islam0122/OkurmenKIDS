@@ -257,6 +257,12 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
               <Card title="До сохранения">
                 {!validAmount ? <p className="text-sm text-ink-secondary">Введите сумму, чтобы увидеть результат.</p> : p ? (
                   <dl className="space-y-2 text-sm">
+                    {p.course_paid_in_full ? (
+                      <p className="rounded-lg bg-brand-50 p-2 text-brand-700" data-testid="paid-in-full-note">
+                        Курс полностью оплачен, долга нет. Платёж не создаёт начисление и не меняет статус курса —
+                        вся сумма будет учтена как аванс (переплата).
+                      </p>
+                    ) : null}
                     <Line label="Сумма обязательства" value={som(p.obligation)} />
                     <Line label="Уже оплачено" value={som(p.paid_before)} />
                     <Line label="Новый платёж" value={som(p.amount)} strong />
@@ -268,7 +274,7 @@ function PaymentForm({ profile, initialInvoice, onChange, onSaved }: {
                         <p className="mb-1">Поступление: {periodMonth(date)}. Гасит начисления:</p>
                         {p.allocations.map((a) => {
                           const inv = unpaid.find((i) => i.id === a.invoice)
-                          return <p key={a.invoice}>{a.month_number ? `Месяц №${a.month_number}` : a.number}
+                          return <p key={a.invoice}>{a.kind === 'COURSE' ? `Весь курс (${a.number})` : a.month_number ? `Месяц №${a.month_number}` : a.number}
                             {inv ? ` (за ${periodMonth(inv.period_date)})` : ''}: {som(a.payment)}</p>
                         })}
                         {p.to_credit !== '0.00' ? <p>В аванс: {som(p.to_credit)}</p> : null}
