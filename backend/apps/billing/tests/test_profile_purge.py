@@ -140,8 +140,13 @@ class SafetyTests(PurgeFixture):
         self.assertEqual([p["id"] for p in report["real_money"]], [self.payment.pk])
         self.assertEqual(report["real_money"][0]["receipt"], self.payment.receipt.number)
         page = self.client_as(self.admin).get(self.url())
-        self.assertContains(page, "Удаление остановлено: проведённые платежи")
-        self.assertNotContains(page, 'name="last_name"')
+        self.assertContains(page, "Обычное удаление остановлено: проведённые платежи")
+        self.assertFalse(page.context["report"]["can_delete"])  # обычная форма не показывается
+        self.assertNotContains(page, "Подтверждение</span>")
+        # Обычная форма удаления, отправленная напрямую, проведённый платёж не удаляет.
+        body = {"fingerprint": page.context["report"]["fingerprint"], "reason": "x", "last_name": "Karimberdieva"}
+        self.client_as(self.admin).post(self.url(), body)
+        self.assertTrue(StudentPayment.objects.filter(pk=self.payment.pk, status="confirmed").exists())
         with self.assertRaises(BillingError) as ctx:
             profile_purge.purge(self.profile, actor=self.admin, reason="x")
         self.assertEqual(ctx.exception.code, "real_money")

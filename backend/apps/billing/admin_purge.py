@@ -1,6 +1,10 @@
 """Django Admin → «Платёжные профили студентов» → «Удалить профиль из
 бухгалтерии»: предварительный отчёт и подтверждение (`services.profile_purge`).
 
+Два режима: обычное удаление (профиль без проведённых платежей) и «Полный
+сброс» (удаляются и проведённые платежи с чеками — отдельное подтверждение
+фразой, списком показанных платежей и отметкой о закрытых периодах).
+
 Доступ — ТОЛЬКО суперпользователь Django (`is_superuser`). Проверяется в
 трёх местах независимо: действие списка не показывается и при вызове
 отказывает, страница отчёта / подтверждения отвечает 403 на GET и POST,
@@ -43,17 +47,51 @@ class PurgeForm(forms.Form):
         return value
 
 
+class FullResetForm(PurgeForm):
+    payment_ids = forms.CharField(widget=forms.HiddenInput)
+    phrase = forms.CharField(label=f"Введите «{profile_purge.FULL_PHRASE}»", strip=True,
+                             widget=forms.TextInput(attrs={"autocomplete": "off"}))
+    money_acknowledged = forms.BooleanField(
+        label="Понимаю: проведённые платежи и чеки будут удалены из учёта и отчётов о поступлениях; "
+              "реальные деньги внесу заново в новый профиль", required=True)
+    confirm_closed_period = forms.BooleanField(
+        label="Подтверждаю удаление платежей из утверждённого / закрытого расчётного периода", required=False)
+
+    def clean_phrase(self):
+        value = self.cleaned_data["phrase"]
+        if value != profile_purge.FULL_PHRASE:
+            raise forms.ValidationError(f"Нужно ввести ровно «{profile_purge.FULL_PHRASE}».")
+        return value
+
+    def payment_list(self) -> list[int]:
+        return [int(pk) for pk in self.cleaned_data["payment_ids"].split(",") if pk.strip().isdigit()]
+
+
+def _initial(report) -> dict:
+    return {"fingerprint": report["fingerprint"],
+            "payment_ids": ",".join(str(p["id"]) for p in report["real_money"])}
+
+
 def purge_view(request, pk: int, admin_site):
     guard(request)
     profile = get_object_or_404(StudentBillingProfile.objects.select_related("student", "plan"), pk=pk)
     report = profile_purge.preview(profile, actor=request.user)
-    form = PurgeForm(initial={"fingerprint": report["fingerprint"]}, student=profile.student)
+    form = PurgeForm(initial=_initial(report), student=profile.student)
+    full_form = FullResetForm(initial=_initial(report), student=profile.student)
     if request.method == "POST":
-        form = PurgeForm(request.POST, student=profile.student)
-        if form.is_valid() and report["can_delete"]:
+        full = request.POST.get("mode") == "full"
+        bound = (FullResetForm if full else PurgeForm)(request.POST, student=profile.student)
+        if full:
+            full_form = bound
+        else:
+            form = bound
+        allowed = report["full_reset_available"] if full else report["can_delete"]
+        if bound.is_valid() and allowed:
+            options = {"full_reset": True, "confirmed_payment_ids": bound.payment_list(),
+                       "confirm_closed_period": bound.cleaned_data["confirm_closed_period"]} if full else {}
             try:
-                deleted = profile_purge.purge(profile, actor=request.user, reason=form.cleaned_data["reason"],
-                                              fingerprint=form.cleaned_data["fingerprint"])
+                deleted = profile_purge.purge(profile, actor=request.user, reason=bound.cleaned_data["reason"],
+                                              fingerprint=bound.cleaned_data["fingerprint"], **options)
             except BillingError as exc:
                 messages.error(request, f"Удаление не выполнено, изменения отменены. {exc.message}")
                 report = profile_purge.preview(profile, actor=request.user)
@@ -64,7 +102,7 @@ def purge_view(request, pk: int, admin_site):
                 return redirect(reverse("admin:billing_studentbillingprofile_changelist"))
     return render(request, "admin/billing/profile_purge.html", {
         **admin_site.each_context(request), "title": "Удалить профиль из бухгалтерии", "report": report,
-        "form": form, "opts": StudentBillingProfile._meta,
+        "form": form, "full_form": full_form, "opts": StudentBillingProfile._meta,
     })
 
 
