@@ -1113,10 +1113,23 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
     profile = queues.base_queryset().get(pk=profile.pk)
     summary = contracts.money_summary(profile)
     months = [s.PackageSerializer(p).data for p in profile.packages.all().prefetch_related("invoices")]
+    coverage = contracts.course_coverage(profile)
+    if coverage is not None:
+        # Предоплата за весь курс: «Весь курс» — начисление договора, не месяца
+        # №1; месяц показывает свою долю курса и сколько её закрыто оплатой.
+        course = coverage["invoice"]
+        for m in months:
+            if m["invoice"] and m["invoice"]["id"] == course.pk:
+                m["invoice"] = None
+            share = coverage["months"].get(m["month_number"])
+            m["course_share"] = None if share is None else {
+                "invoice": course.pk, "number": course.number, "amount": str(share["share"]),
+                "paid": str(share["paid"]), "paid_in_full": share["paid"] == share["share"],
+            }
     data = {
         "contract": s.ProfileSerializer(_profile_qs().get(pk=profile.pk)).data,
         "row": queues.contract_row(profile, with_next=True),
-        "summary": {k: (None if v is None else str(v)) for k, v in summary.items()},
+        "summary": {k: (None if v is None else v if isinstance(v, bool) else str(v)) for k, v in summary.items()},
         "months": months,
         "invoices": s.InvoiceSerializer(profile.invoices.exclude(status=Invoice.Status.VOID)
                                         .select_related("package", "profile__student__group", "profile__subject"),

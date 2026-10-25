@@ -66,6 +66,8 @@ export interface NextMonth {
   month_number: number
   cost: string
   covered: string
+  /** Предоплата за весь курс: часть стоимости месяца, уже оплаченная начислением «Весь курс». */
+  prepaid?: string
   to_pay: string
 }
 
@@ -168,6 +170,8 @@ export interface StudyMonth {
   started_on: string | null
   completed_on: string | null
   invoice: { id: number; number: string; status: InvoiceStatus; balance: string; amount: string; kind: InvoiceKind } | null
+  /** Предоплата за весь курс: доля «Весь курс» на этот месяц и сколько её оплачено (не отдельное начисление). */
+  course_share?: { invoice: number; number: string; amount: string; paid: string; paid_in_full: boolean } | null
 }
 
 export interface Allocation {
@@ -286,6 +290,8 @@ export interface MoneySummary {
   discount_amount: string
   outstanding: string
   future: string | null
+  /** Итоговая стоимость покрыта, долга нет — дополнительные платежи не требуются. */
+  course_paid_in_full: boolean
 }
 
 /** Бронь. Оплаченная ссылается на платёж (`payment`) — это не отдельные деньги. */
@@ -317,7 +323,12 @@ export interface PaymentSchedule {
   consistent: boolean
   issues: string[]
   price_changes: { date: string; from: string | null; to: string; reason: string }[]
-  months: { month_number: number; state: 'invoiced' | 'planned' | 'future'; invoice?: number; number?: string
+  /** Предоплата за весь курс: одно начисление договора «Весь курс» (не месяц №1). */
+  course?: { invoice: number; number: string; amount: string; paid: string; balance: string; status: InvoiceStatus
+    status_display: string; due_date: string | null; paid_in_full: boolean } | null
+  /** prepaid / course_due — доля «Весь курс» на месяц: оплачена / ждёт оплаты начисления курса. */
+  months: { month_number: number; state: 'invoiced' | 'planned' | 'future' | 'prepaid' | 'course_due'; invoice?: number
+    number?: string; kind?: InvoiceKind
     amount: string; paid: string; balance: string; covered_by_credit: string; to_pay: string
     /** Цена месяца по плану договора (стандартная и после скидки); null — договор без плана. */
     standard_price: string | null; plan_amount: string | null
@@ -382,7 +393,10 @@ export interface PaymentPreview {
   credit_after: string
   outstanding_before: string
   outstanding_after: string
-  allocations: { invoice: number; number: string; month_number: number | null; payment: string; balance_after: string }[]
+  allocations: { invoice: number; number: string; kind?: InvoiceKind; month_number: number | null; payment: string
+    balance_after: string }[]
+  /** Долга нет: вся сумма станет авансом / переплатой, начисление не создаётся. */
+  course_paid_in_full?: boolean
 }
 
 export interface PaymentBody {

@@ -199,6 +199,44 @@ def month_charge(profile: StudentBillingProfile, month_number: int, *,
     return share, Invoice.Kind.MONTH
 
 
+def course_invoice(profile) -> Invoice | None:
+    """Действующее начисление «Весь курс» (предоплата за весь курс)."""
+    if not profile.is_course:
+        return None
+    return (Invoice.objects.filter(profile=profile, kind=Invoice.Kind.COURSE).exclude(status=Invoice.Status.VOID)
+            .select_related("package").order_by("pk").first())
+
+
+def course_month_shares(profile, total: Decimal) -> dict[int, Decimal]:
+    """Доля суммы «Весь курс» на каждый учебный месяц: по плану стоимости
+    месяцев договора (если он сходится с суммой), иначе поровну (остаток
+    тыйынов — по методу наибольших остатков). Это разбивка одного уже
+    выставленного начисления — для графика и карточки, не новое начисление."""
+    from .month_plan import distribute
+
+    n = profile.duration_months
+    plan = {r.month_number: money(r.amount) for r in profile.month_prices.all()} if profile.month_plan_mode else {}
+    if set(plan) == set(range(1, n + 1)) and sum(plan.values(), ZERO) == money(total):
+        return dict(sorted(plan.items()))
+    return dict(zip(range(1, n + 1), distribute([Decimal(1)] * n, money(total))))
+
+
+def course_coverage(profile) -> dict | None:
+    """Предоплата за весь курс: начисление «Весь курс» и какие учебные месяцы
+    закрыты его оплатой (деньги начисления идут на месяцы по порядку).
+    None — у договора нет начисления «Весь курс»."""
+    invoice = course_invoice(profile)
+    if invoice is None:
+        return None
+    left = invoice.amount_paid + invoice.amount_adjusted if invoice.status != Invoice.Status.DRAFT else ZERO
+    months = {}
+    for month, share in course_month_shares(profile, invoice.amount).items():
+        paid = min(share, max(left, ZERO))
+        left -= paid
+        months[month] = {"share": share, "paid": money(paid)}
+    return {"invoice": invoice, "months": months, "paid_in_full": invoice.status == Invoice.Status.PAID}
+
+
 def is_final_month(profile, package: LessonPackage) -> bool:
     return bool(profile.duration_months and package.month_number and package.month_number >= profile.duration_months)
 
@@ -321,6 +359,11 @@ def money_summary(profile: StudentBillingProfile) -> dict:
         result.update({"standard_course_price": None, "final_course_price": None, "discount_amount": ZERO,
                        "outstanding": money(due_now), "future": None})
     result["net_to_pay"] = result["outstanding"]
+    # «Курс полностью оплачен»: итоговая стоимость покрыта, наступившего и
+    # будущего долга нет — дополнительные платежи не требуются.
+    result["course_paid_in_full"] = bool(
+        profile.final_course_price is not None and profile.final_course_price > 0
+        and result["outstanding"] == 0 and result["due_now"] == 0)
     return result
 
 
@@ -345,12 +388,14 @@ def next_month_cost(profile) -> dict | None:
         cost = invoice.amount if invoice else ZERO
         return {"month_number": planned.month_number or planned.number, "cost": money(cost),
                 "covered": money(cost - balance), "to_pay": money(balance)}
+    coverage = None
     if profile.is_course:
         number = (current.month_number or 0) + 1
         if number > profile.duration_months:
             return None
         cost, _kind = month_charge(profile, number)
         final_next = number >= profile.duration_months
+        coverage = course_coverage(profile)
     else:
         from .pricing import quote_for_profile
         cost, number, final_next = quote_for_profile(profile, dt.date.today()).final_price, current.number + 1, True
@@ -361,6 +406,16 @@ def next_month_cost(profile) -> dict | None:
         ).aggregate(s=Sum("amount"))["s"] or ZERO
     # Долг по текущим начислениям аванс закроет раньше следующего месяца.
     credit -= sum((i.balance for i in profile.invoices.filter(status__in=Invoice.UNPAID_STATUSES)), ZERO)
+    if coverage is not None:
+        # Предоплата за весь курс: месяц стоит свою долю «Весь курс». Оплаченная
+        # часть доли уже закрыта этим начислением, неоплаченная — долг по нему
+        # (он уже в «К оплате», второй раз не считается). К оплате за месяц —
+        # только доплата сверх «Весь курс» (`cost`, после повышения цены).
+        month = coverage["months"].get(number, {"share": ZERO, "paid": ZERO})
+        extra_covered = min(max(credit, ZERO), cost)
+        return {"month_number": number, "cost": money(month["share"] + cost),
+                "covered": money(month["paid"] + extra_covered), "prepaid": month["paid"],
+                "to_pay": money(cost - extra_covered)}
     covered = min(max(credit, ZERO), cost)
     return {"month_number": number, "cost": money(cost), "covered": money(covered), "to_pay": money(cost - covered)}
 
@@ -386,8 +441,16 @@ def payment_schedule(profile: StudentBillingProfile) -> dict | None:
     duration = profile.duration_months
     live = list(Invoice.objects.filter(profile=profile).exclude(status=Invoice.Status.VOID)
                 .select_related("package").order_by("package__number", "pk"))
+    # Предоплата за весь курс: «Весь курс» — начисление договора, а не месяца
+    # №1 (к пакету №1 оно привязано технически). Каждый месяц показывает свою
+    # долю курса и сколько из неё закрыто оплатой «Весь курс».
+    coverage = course_coverage(profile)
+    course = coverage["invoice"] if coverage else None
+    lessons_by_month = {p.month_number: p.lessons_used for p in live_packages(profile) if p.month_number}
     rows, by_month = [], {}
     for inv in live:
+        if course is not None and inv.pk == course.pk:
+            continue
         by_month.setdefault(inv.package.month_number or 0, []).append(inv)
     invoiced = sum((i.amount for i in live), ZERO)
     unpaid = [i for i in live if i.status in Invoice.UNPAID_STATUSES]
@@ -397,8 +460,31 @@ def payment_schedule(profile: StudentBillingProfile) -> dict | None:
     remaining = max(final - invoiced, ZERO)
     projected_total = ZERO
     plan = {r.month_number: r for r in profile.month_prices.all()} if profile.month_plan_mode else {}
+    surcharge_month = next((m for m in range(1, duration + 1) if m not in covered_months), None)
     for month in range(1, duration + 1):
         invoices = by_month.get(month, [])
+        if course is not None:
+            share = coverage["months"][month]
+            rows.append({
+                "month_number": month, "state": "prepaid" if share["paid"] == share["share"] else "course_due",
+                "invoice": course.pk, "number": course.number, "kind": Invoice.Kind.COURSE,
+                "amount": share["share"], "paid": share["paid"], "balance": ZERO,
+                "status": course.status, "status_display": course.get_status_display(),
+                "due_lesson": None, "due_date": None, "lessons_used": lessons_by_month.get(month),
+                "covered_by_credit": ZERO, "to_pay": ZERO,
+            })
+            if not invoices and month == surcharge_month and remaining > 0:
+                # Доплата сверх «Весь курс» (цена курса повышена): её выставит
+                # следующий учебный месяц (`month_charge`).
+                covered = min(spare, remaining)
+                spare -= covered
+                projected_total += remaining
+                rows.append({"month_number": month, "state": "future", "kind": Invoice.Kind.MONTH,
+                             "amount": remaining, "paid": ZERO, "balance": ZERO, "covered_by_credit": covered,
+                             "to_pay": remaining - covered})
+                remaining = ZERO
+            if not invoices:
+                continue
         if invoices:
             for inv in invoices:
                 rows.append({
@@ -452,5 +538,13 @@ def payment_schedule(profile: StudentBillingProfile) -> dict | None:
         "discount_amount": money(profile.discount_amount),
         "final_course_price": final, "invoiced": money(invoiced), "projected": money(projected_total),
         "total": money(total), "consistent": not issues, "issues": issues, "price_changes": changes,
+        "course": None if course is None else {
+            "invoice": course.pk, "number": course.number, "amount": money(course.amount),
+            "paid": money(course.amount_paid + course.amount_adjusted),
+            "balance": money(course.balance) if course.status in Invoice.UNPAID_STATUSES else ZERO,
+            "status": course.status, "status_display": course.get_status_display(),
+            "due_date": course.due_date.isoformat() if course.due_date else None,
+            "paid_in_full": coverage["paid_in_full"],
+        },
         "months": [{k: (money(v) if isinstance(v, Decimal) else v) for k, v in r.items()} for r in rows],
     }

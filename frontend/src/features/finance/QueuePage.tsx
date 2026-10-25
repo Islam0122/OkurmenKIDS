@@ -64,7 +64,9 @@ function StudentCell({ row }: { row: QueueRow }) {
 function deadlineText(row: QueueRow): string {
   const inv = row.focus_invoice
   if (!inv) return '—'
-  if (inv.due_lesson) return `${inv.due_lesson}-й урок IT ${inv.kind === 'COURSE' ? 'месяца 1' : `месяца ${inv.month_number}`}`
+  if (inv.due_lesson) return inv.kind === 'COURSE'
+    ? `Весь курс: до ${inv.due_lesson}-го урока IT первого месяца`
+    : `${inv.due_lesson}-й урок IT месяца ${inv.month_number}`
   return inv.due_date ?? '—'
 }
 

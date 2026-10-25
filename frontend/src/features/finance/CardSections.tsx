@@ -207,7 +207,10 @@ function ReservationCancelModal({ reservation, onClose }: { reservation: Reserva
   )
 }
 
-const STATE: Record<string, string> = { invoiced: 'выставлен', planned: 'оплачен по договору', future: 'будет выставлен' }
+const STATE: Record<string, string> = {
+  invoiced: 'выставлен', planned: 'оплачен по договору', future: 'будет выставлен',
+  prepaid: 'оплачен предоплатой курса', course_due: 'ждёт оплаты «Весь курс»',
+}
 
 function due(m: PaymentSchedule['months'][number]): string {
   if (m.state !== 'invoiced') return '—'
@@ -232,6 +235,15 @@ export function ScheduleBlock({ schedule, profile, canEdit }: { schedule: Paymen
         </p>
         {canEdit && profile ? <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>План стоимости месяцев</Button> : null}
       </div>
+      {schedule.course ? (
+        <p className="rounded-lg border border-border bg-surface p-2 text-sm" data-testid="course-prepayment">
+          Предоплата за весь курс: начисление «Весь курс» {schedule.course.number} на <b>{som(schedule.course.amount)}</b>,
+          оплачено {som(schedule.course.paid)}
+          {schedule.course.paid_in_full
+            ? <> — <b className="text-brand-700">курс полностью оплачен</b>. Учебные месяцы закрыты этой оплатой, отдельных начислений по ним нет.</>
+            : <>, остаток {som(schedule.course.balance)}. Месяцы закрываются по мере оплаты курса.</>}
+        </p>
+      ) : null}
       {schedule.consistent ? (
         <p className="text-sm text-ink-secondary">
           Начислено {som(schedule.invoiced)} + запланировано {som(schedule.projected)} = итоговая стоимость {som(schedule.final_course_price)}.
@@ -253,15 +265,18 @@ export function ScheduleBlock({ schedule, profile, canEdit }: { schedule: Paymen
           </tr></thead>
           <tbody>
             {schedule.months.map((m) => (
-              <tr key={`${m.month_number}-${m.invoice ?? 'p'}`}>
+              <tr key={`${m.month_number}-${m.invoice ?? 'p'}-${m.state}`}>
                 <td className="whitespace-nowrap">№{m.month_number}{m.number ? <span className="text-ink-secondary"> · {m.number}</span> : null}</td>
                 {hasPlan ? <><td><Amount value={m.standard_price} tone="muted" /></td><td><Amount value={m.plan_amount} /></td></> : null}
-                <td><Amount value={m.amount} /></td>
+                <td title={m.kind === 'COURSE' ? 'Доля стоимости курса — часть начисления «Весь курс», не отдельное начисление' : undefined}>
+                  <Amount value={m.amount} />{m.kind === 'COURSE' ? <span className="block text-xs text-ink-secondary">доля курса</span> : null}
+                </td>
                 <td><Amount value={m.paid} tone="muted" /></td>
                 <td><Amount value={m.covered_by_credit} tone="muted" /></td>
                 <td><Amount value={m.state === 'invoiced' ? m.balance : m.to_pay} /></td>
                 <td className="whitespace-nowrap">{due(m)}</td>
-                <td>{m.state === 'invoiced' && m.status ? <InvoiceStatusBadge status={m.status} label={m.status_display ?? ''} /> : STATE[m.state]}</td>
+                <td>{m.state === 'invoiced' && m.status ? <InvoiceStatusBadge status={m.status} label={m.status_display ?? ''} />
+                  : m.state === 'prepaid' ? <Badge tone="success">{STATE.prepaid}</Badge> : STATE[m.state]}</td>
               </tr>
             ))}
           </tbody>
