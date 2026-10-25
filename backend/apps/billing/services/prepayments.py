@@ -205,4 +205,4 @@ def _json(row: dict) -> dict:
     return {k: (str(v) if isinstance(v, Decimal) else v) for k, v in row.items()}
 
 
-__all__ = ["FULL", "PARTIAL", "ADVANCE", "REVIEW", "prepayment_row", "prepayments"]
+__all__ = ["ADVANCE", "FULL", "PARTIAL", "REVIEW", "prepayment_row", "prepayments"]
