@@ -251,7 +251,8 @@ SCENARIOS: tuple[Scenario, ...] = (
              "Месяц 1 пройден; месяц 2: 3-й урок — последний срок, проведено 4 — просрочка 15 000.",
              {}, (("pay", "15000"), ("it", 16), ("call", "PROMISED"))),
     Scenario("H", "Хасан", "Скоров", "next", "Скоро оплата",
-             "Программа Next (6 месяцев): 9 из 12 уроков IT месяца 1 — в «Скоро оплата» (месяц 2 — 15 000).",
+             "Программа Next (6 месяцев): 9 из 12 уроков IT месяца 1; срок месяца 2 — 3-й урок месяца 2, "
+             "по расписанию через 6 дней — «Скоро оплата → через 6–10 дней» (15 000).",
              {}, (("pay", "15000"), ("it", 9))),
     Scenario("I", "Ислам", "Айтишников", "standard", "English отстаёт от IT",
              "IT 12, English 10 — месяц 1 завершён по IT, месяц 2 к оплате.",
@@ -377,7 +378,24 @@ def _run(ctx: Ctx, sc: Scenario) -> StudentBillingProfile:
                 promised_payment_date=promised,
                 next_contact_date=promised + dt.timedelta(days=1) if promised else ctx.today + dt.timedelta(days=1),
             )
+    _plan_upcoming(ctx, group, ctx.subjects["IT"], last=clock.number)
     return profile
+
+
+UPCOMING_LESSONS = 30
+
+
+def _plan_upcoming(ctx: Ctx, group: Group, subject: Subject, *, last: int) -> None:
+    """Расписание вперёд: запланированные уроки IT каждый день с завтрашнего —
+    по ним «Скоро оплата» определяет дату урока-срока. Не проводятся и не
+    списываются (статус «Запланирован»)."""
+    gt = GroupTeacher.objects.get(group=group, subject=subject)
+    for i in range(UPCOMING_LESSONS):
+        ensure(f"upcoming:{group.pk}:{i}", lambda i=i: Lesson.objects.create(
+            group=group, group_teacher=gt, teacher=ctx.teacher, subject=subject, lesson_number=last + i + 1,
+            date=ctx.today + dt.timedelta(days=i + 1), start_time=dt.time(15), end_time=dt.time(16, 30),
+            status=Lesson.Status.SCHEDULED,
+        ))
 
 
 # ---------------------------------------------------------------------------

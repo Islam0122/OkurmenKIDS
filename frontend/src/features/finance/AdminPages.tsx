@@ -216,9 +216,6 @@ export function SettingsPage() {
                 <Field label="Скидка менеджера без согласования, %" htmlFor="st-disc" help="Больше — на согласование бухгалтеру">
                   <Input id="st-disc" disabled={readOnly} value={form.manager_max_discount_percent} onChange={(e) => set({ manager_max_discount_percent: e.target.value })} />
                 </Field>
-                <Field label="«Скоро оплата» — за N уроков до конца месяца" htmlFor="st-soon">
-                  <Input id="st-soon" disabled={readOnly} inputMode="numeric" value={String(form.due_soon_lessons)} onChange={(e) => set({ due_soon_lessons: Number(e.target.value) })} />
-                </Field>
                 <Field label="Срок оплаты для новых программ — урок №" htmlFor="st-dl">
                   <Input id="st-dl" disabled={readOnly} inputMode="numeric" value={String(form.default_deadline_lessons)} onChange={(e) => set({ default_deadline_lessons: Number(e.target.value) })} />
                 </Field>

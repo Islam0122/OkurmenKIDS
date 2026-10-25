@@ -1,4 +1,4 @@
-"""Очереди «Скоро оплата» → «К оплате» → «Просроченные» — по актуальным
+"""Очереди «Скоро оплата» / «К оплате» → «Просроченные» — по актуальным
 данным (`contracts.payment_stage`: сегодняшняя дата по часовому поясу
 проекта, урок-срок, остаток), а не по сохранённому статусу начисления:
 переход происходит при следующем запросе, без фоновой задачи и действий
@@ -55,7 +55,9 @@ class DateDeadlineTests(QueueHelpers, BillingFixture):
 
     def test_not_due_today_due_and_passed_without_background_job(self):
         with self.on(self.due - dt.timedelta(days=1)):
-            self.assertEqual((payment_stage(self.invoice), self.queues_of(self.profile_)), ("awaiting", {"to_pay"}))
+            # Срок завтра: выставлено — «К оплате»; предстоящий платёж — «Скоро оплата → 1–3 дня».
+            self.assertEqual((payment_stage(self.invoice), self.queues_of(self.profile_)),
+                             ("awaiting", {"to_pay", "soon"}))
             self.assert_counts_match_lists()
         with self.on(self.due):  # срок наступил сегодня
             self.assertEqual((payment_stage(self.invoice), self.queues_of(self.profile_)), ("deadline", {"to_pay"}))
@@ -117,25 +119,33 @@ class DateDeadlineTests(QueueHelpers, BillingFixture):
 
 
 class LessonDeadlineTests(QueueHelpers, PeriodFixture):
-    """Договор по программе: срок — 3-й урок месяца; «Скоро оплата» — за 3 урока до конца месяца."""
+    """Договор по программе: срок — 3-й урок месяца; «Скоро оплата» — дата урока-срока по расписанию группы."""
 
     def setUp(self):
         super().setUp()
         self.at(OCT24)
         self.day = dt.date(2026, 9, 2)
 
+    def upcoming(self, profile):
+        rows = [r for r in queues.queue_rows("soon", {}) if r["profile"] == profile.pk]
+        return [(o["source"], o["due_date"], o["section"], o["to_pay"]) for r in rows for o in r["upcoming"]]
+
     def test_soon_then_to_pay_then_overdue_by_lessons(self):
         profile = self.contract(start_date=dt.date(2026, 9, 1))
         self.pay(profile, "15000", on=OCT24)  # месяц 1 оплачен
-        self.it_lessons(8)
-        self.assertEqual(self.queues_of(profile), set())
-        self.it_lessons(1)  # 9/12 — осталось 3: следующий месяц приближается, не покрыт
+        self.it_lessons(9)  # 9/12
+        self.assertEqual(self.queues_of(profile), set())  # расписания вперёд нет — дата срока не подтверждена
+        self.plan_lessons(10, start_day=OCT24 + dt.timedelta(days=1))  # уроки IT каждый день с 25.10
+        # Срок месяца 2 — его 3-й урок = 6-й запланированный (3 до конца месяца 1 + 3) = 30.10, через 6 дней.
         self.assertEqual(self.queues_of(profile), {"soon"})
+        self.assertEqual(self.upcoming(profile), [("forecast", "2026-10-30", "days_6_10", "15000.00")])
         self.assert_counts_match_lists()
-        self.it_lessons(3)  # 12-й урок: начисление месяца 2 выставлено — срок оплаты наступил
-        self.assertEqual(self.queues_of(profile), {"to_pay"})
-        self.it_lessons(2)  # уроки 1–2 месяца 2
-        self.assertEqual(self.queues_of(profile), {"to_pay"})
+        self.it_lessons(3)  # 12-й урок: начисление месяца 2 выставлено — «К оплате», срок 3-й урок = 27.10
+        self.assertEqual(self.queues_of(profile), {"to_pay", "soon"})
+        self.assertEqual(self.upcoming(profile), [("invoice", "2026-10-27", "days_1_3", "15000.00")])
+        self.it_lessons(2)  # уроки 1–2 месяца 2: срок — следующий урок, завтра
+        self.assertEqual(self.queues_of(profile), {"to_pay", "soon"})
+        self.assertEqual(self.upcoming(profile), [("invoice", "2026-10-25", "days_1_3", "15000.00")])
         self.it_lessons(1)  # 3-й урок — последний срок
         self.assertEqual((self.queues_of(profile), self.row(profile)["stage"]), ({"to_pay"}, "deadline"))
         self.it_lessons(1)  # 4-й урок — просрочка
@@ -172,8 +182,17 @@ class LessonDeadlineTests(QueueHelpers, PeriodFixture):
             responsible_accountant=self.accountant)
         self.pay(profile, "4000", on=OCT24)
         self.hold(9, start_day=start)
+        self.plan_lessons(5, start_day=OCT24 + dt.timedelta(days=1))
+        # Прогноз: ранний счёт на 10-м уроке (25.10) + 5 дней = 30.10 — «через 6–10 дней».
         self.assertEqual(self.queues_of(profile), {"soon"})
+        (row,) = [r for r in queues.queue_rows("soon", {}) if r["profile"] == profile.pk]
+        self.assertEqual([(o["source"], o["due_date"], o["to_pay"]) for o in row["upcoming"]],
+                         [("forecast", "2026-10-30", "4000.00")])
         lessons.sync_lesson(self.lesson(day=start + dt.timedelta(days=9)).pk)  # 10-й урок: счёт следующего пакета
         self.assertEqual(Invoice.objects.filter(profile=profile).count(), 2)
-        self.assertEqual(self.queues_of(profile), {"to_pay"})  # начисление выставлено — не «Скоро»
+        # Начисление выставлено (23.10 + 5 = 28.10): «К оплате» и в «Скоро» — уже само начисление, не прогноз.
+        self.assertEqual(self.queues_of(profile), {"to_pay", "soon"})
+        (row,) = [r for r in queues.queue_rows("soon", {}) if r["profile"] == profile.pk]
+        self.assertEqual([(o["source"], o["due_date"], o["section"]) for o in row["upcoming"]],
+                         [("invoice", "2026-10-28", "days_4_5")])
         self.assertEqual(Decimal(self.row(profile)["due_now"]), D("4000"))

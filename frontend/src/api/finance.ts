@@ -31,6 +31,7 @@ import type {
   QueueFilters,
   QueueKind,
   QueuePage,
+  SoonQueuePage,
   Receipt,
 } from '@/types/finance'
 
@@ -72,6 +73,8 @@ export const financeApi = {
   periodReport: (params: Params) => get<PeriodReport>('/reports/period/', params),
   counts: () => get<QueueCounts>('/queues/counts/'),
   queue: (queue: QueueKind, filters: QueueFilters) => get<QueuePage>(`/queues/${queue}/`, { ...filters }),
+  /** «Скоро оплата»: подраздел `section` и сводка всех подразделов. */
+  soon: (filters: QueueFilters) => get<SoonQueuePage>('/queues/soon/', { ...filters }),
   lmsStudents: (params: { search?: string; group?: number; registered?: string; page?: number }) =>
     get<Paginated<LmsStudent>>('/students/', params),
   card: (profile: number) => get<ContractCard>(`/profiles/${profile}/card/`),

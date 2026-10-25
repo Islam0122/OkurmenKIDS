@@ -133,6 +133,57 @@ export interface QueueRow {
   last_contact_at: string | null
   last_contact_result: string | null
   next_month?: NextMonth | null
+  /** «Скоро оплата»: предстоящие обязательства (каждое — в одном подразделе). */
+  upcoming?: UpcomingObligation[]
+  /** Есть обязательство без подтверждённой даты срока (нет расписания) — в подразделы не попало. */
+  upcoming_undated?: boolean
+  course_payment?: CoursePayment | null
+  /** Выбранный подраздел: ближайший срок, дней до него и к оплате по его обязательствам. */
+  section?: SoonSection | null
+  section_days?: number | null
+  section_due_date?: string | null
+  section_to_pay?: string
+}
+
+export type SoonSection = 'days_1_3' | 'days_4_5' | 'days_6_10' | 'next_month' | 'paid_course'
+
+export interface UpcomingObligation {
+  key: string
+  /** invoice — выставленное начисление; forecast — следующий месяц, ещё не выставлен. */
+  source: 'invoice' | 'forecast'
+  invoice: number | null
+  number: string | null
+  kind: 'MONTH' | 'COURSE' | 'PACKAGE'
+  month_number: number
+  due_date: string
+  days: number
+  /** invoice_date — срок датой начисления; schedule — дата урока-срока по расписанию группы. */
+  date_basis: 'invoice_date' | 'schedule'
+  due_lesson: number | null
+  amount: string
+  paid: string
+  balance: string
+  credit_applied: string
+  to_pay: string
+  section: Exclude<SoonSection, 'paid_course'>
+}
+
+/** Оплата всего курса — то же правило, что «Курс полностью оплачен» в карточке. */
+export interface CoursePayment {
+  final_course_price: string
+  allocated: string
+  credit: string
+  adjusted: string
+  unpaid: string
+  due_now: string
+  paid_in_full: boolean
+}
+
+export interface SoonQueuePage extends QueuePage {
+  section: SoonSection | null
+  sections: Record<SoonSection, { count: number; amount: string }>
+  /** Студентов, у которых есть обязательство без подтверждённой даты срока. */
+  undated: number
 }
 
 export interface QueuePage {
@@ -149,6 +200,8 @@ export interface QueueFilters {
   plan?: number
   ordering?: string
   contract_status?: ContractStatus
+  /** Подраздел «Скоро оплата». */
+  section?: SoonSection
   page?: number
   page_size?: number
 }

@@ -93,6 +93,11 @@ class BillingMixin:
             held.append(lesson)
         return held
 
+    def plan_lessons(self, count, *, start_day, group=None, subject=None, every: int = 1) -> list[Lesson]:
+        """Расписание вперёд: `count` запланированных (не проведённых) уроков с `start_day`."""
+        return [self.lesson(group=group, subject=subject, day=start_day + dt.timedelta(days=i * every),
+                            status=Lesson.Status.SCHEDULED) for i in range(count)]
+
     def mark(self, lesson, student, status):
         Attendance.objects.update_or_create(lesson=lesson, student=student, defaults={"status": status})
 

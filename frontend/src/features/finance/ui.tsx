@@ -18,7 +18,9 @@ import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { Field } from '@/features/worklog/formUi'
 import { som, useRunner } from '@/features/accounting/shared'
-import type { ContractStatus, FinanceOptions, InvoiceStatus, PaymentStage, QueueFilters, QueueRow } from '@/types/finance'
+import type {
+  ContractStatus, FinanceOptions, InvoiceStatus, PaymentStage, QueueFilters, QueueRow, SoonSection,
+} from '@/types/finance'
 import { cn } from '@/utils/cn'
 
 export { formatDate, formatDateTime, som, today, useRunner } from '@/features/accounting/shared'
@@ -141,6 +143,7 @@ export function useUrlFilters(): [QueueFilters, (next: QueueFilters) => void] {
     plan: num('plan'),
     ordering: params.get('ordering') ?? undefined,
     contract_status: (params.get('contract_status') as ContractStatus | null) ?? undefined,
+    section: (params.get('section') as SoonSection | null) ?? undefined,
     page: num('page') ?? 1,
   }
   const set = (next: QueueFilters) => {

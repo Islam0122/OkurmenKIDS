@@ -372,12 +372,29 @@ def money_summary(profile: StudentBillingProfile) -> dict:
         result.update({"standard_course_price": None, "final_course_price": None, "discount_amount": ZERO,
                        "outstanding": money(due_now), "future": None})
     result["net_to_pay"] = result["outstanding"]
-    # «Курс полностью оплачен»: итоговая стоимость покрыта, наступившего и
-    # будущего долга нет — дополнительные платежи не требуются.
-    result["course_paid_in_full"] = bool(
-        profile.final_course_price is not None and profile.final_course_price > 0
-        and result["outstanding"] == 0 and result["due_now"] == 0)
+    result["course_paid_in_full"] = course_paid_in_full(
+        profile.final_course_price, allocated=allocated, credit=credit, adjusted=adjusted, due_now=due_now)
     return result
+
+
+def course_unpaid(final_price, *, allocated, credit, adjusted) -> Decimal | None:
+    """Не покрыто из итоговой стоимости курса: итоговая − распределено −
+    свободный аванс − корректировки (≥ 0). None — у договора нет итоговой
+    стоимости курса (тариф пакетов). Не зависит от статуса договора."""
+    if final_price is None:
+        return None
+    return money(max(money(final_price) - (allocated or ZERO) - (credit or ZERO) - (adjusted or ZERO), ZERO))
+
+
+def course_paid_in_full(final_price, *, allocated, credit, adjusted, due_now) -> bool:
+    """«Курс полностью оплачен» — единое правило (карточка, платёж, «Скоро
+    оплата»): итоговая стоимость (> 0, со скидкой) покрыта действующими
+    распределениями, свободным авансом и корректировками, и к оплате сейчас
+    ничего нет. Сторно и возвраты уже учтены в распределениях / журнале аванса.
+    Оплаченный месяц или нулевой остаток одного начисления — не «курс оплачен».
+    Ушедший студент (начисления остановлены) — тоже только при полном покрытии."""
+    unpaid = course_unpaid(final_price, allocated=allocated, credit=credit, adjusted=adjusted)
+    return bool(final_price is not None and final_price > 0 and unpaid == 0 and due_now <= 0)
 
 
 def current_month(profile) -> LessonPackage | None:

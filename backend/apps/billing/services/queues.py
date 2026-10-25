@@ -3,9 +3,9 @@
 * «К оплате» — наступил платёжный этап: есть выставленное неоплаченное
   начисление, срок которого ещё не прошёл (ожидается оплата или сегодня
   последний срок);
-* «Скоро оплата» — в текущем учебном месяце осталось ≤ N уроков
-  приоритетного предмета (`BillingSettings.due_soon_lessons`), следующий
-  месяц есть в договоре и ещё не покрыт (предоплата / аванс → не попадает);
+* «Скоро оплата» — предстоящие обязательства по дате срока, подразделы
+  «через 1–3 / 4–5 / 6–10 дней», «следующий месяц» и «полностью оплатили
+  курс» (`services.soon`); срок сегодня и прошедший — не здесь;
 * «Просроченные» — есть начисление после срока с непогашенным остатком
   (бронь сама по себе долгом не является: долг — только наступившие
   начисления).
@@ -22,8 +22,24 @@ from django.utils import timezone
 
 from apps.accounting.services.money import money
 
-from ..models import BillingContactLog, BillingSettings, CreditLedgerEntry, Invoice, LessonPackage, StudentBillingProfile
-from .contracts import applicable_credit, next_month_cost, payment_stage
+from ..models import (
+    BillingContactLog,
+    CreditLedgerEntry,
+    Invoice,
+    InvoiceAdjustment,
+    LessonPackage,
+    PaymentAllocation,
+    StudentBillingProfile,
+)
+from . import soon
+from .contracts import (
+    applicable_credit,
+    contract_q_active,
+    course_paid_in_full,
+    course_unpaid,
+    next_month_cost,
+    payment_stage,
+)
 from .progress import financial_package, group_progress
 
 ZERO = Decimal("0.00")
@@ -34,14 +50,23 @@ def _s(value) -> str | None:
     return None if value is None else str(money(value))
 
 
+def _sum_subquery(qs, field: str = "profile"):
+    # Подзапрос: join-фильтры очередей не умножают сумму.
+    return Subquery(qs.order_by().values(field).annotate(s=Sum("amount")).values("s")[:1])
+
+
 def base_queryset():
     return (
         StudentBillingProfile.objects.select_related("student__group", "plan__course", "subject",
                                                      "responsible_accountant")
-        .annotate(credit_sum=Subquery(  # подзапрос: join-фильтры очередей не умножают сумму
-            CreditLedgerEntry.objects.filter(profile=OuterRef("pk")).order_by().values("profile")
-            .annotate(s=Sum("amount")).values("s")[:1],
-        ))
+        .annotate(
+            credit_sum=_sum_subquery(CreditLedgerEntry.objects.filter(profile=OuterRef("pk"))),
+            # Для «Курс оплачен» (`contracts.course_paid_in_full`) — те же суммы, что `money_summary`.
+            allocated_sum=_sum_subquery(PaymentAllocation.objects.filter(
+                profile=OuterRef("pk"), status=PaymentAllocation.Status.ACTIVE)),
+            adjusted_sum=_sum_subquery(InvoiceAdjustment.objects.filter(
+                invoice__profile=OuterRef("pk"), status=InvoiceAdjustment.Status.APPLIED), "invoice__profile"),
+        )
         .prefetch_related(
             Prefetch("invoices", queryset=Invoice.objects.select_related("package").order_by("package__number", "pk")),
             Prefetch("packages", queryset=LessonPackage.objects.order_by("number")),
@@ -78,20 +103,9 @@ def queue_queryset(queue: str, f: dict):
     if queue in ("to_pay", "overdue"):
         return qs.filter(invoices__status__in=Invoice.UNPAID_STATUSES).distinct()
     if queue == "soon":
-        return _soon_candidates(qs)
+        # Действующие договоры (обучается / пауза); фильтр статуса договора — как задан.
+        return qs if f.get("contract_status") else qs.filter(contract_q_active())
     return qs
-
-
-def _soon_candidates(qs):
-    from django.db.models import F
-
-    n = BillingSettings.load().due_soon_lessons
-    return qs.filter(
-        status=StudentBillingProfile.Status.ACTIVE,
-        packages__status=LessonPackage.Status.ACTIVE,
-        packages__lessons_used__gte=F("packages__lessons_total") - n,
-        packages__lessons_used__lt=F("packages__lessons_total"),
-    ).distinct()
 
 
 def _last_contacts(profile_ids) -> dict:
@@ -102,7 +116,9 @@ def _last_contacts(profile_ids) -> dict:
 
 
 def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next: bool = False,
-                 group_cache: dict | None = None) -> dict:
+                 group_cache: dict | None = None, calendar: soon.LessonCalendar | None = None) -> dict:
+    """Строка договора для очередей. `calendar` — добавить предстоящие
+    обязательства «Скоро оплата» (`services.soon`) и состояние оплаты курса."""
     today = timezone.localdate()
     invoices = list(profile.invoices.all())
     packages = [p for p in profile.packages.all() if p.status != LessonPackage.Status.CANCELLED]
@@ -196,6 +212,13 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
         "last_contact_at": last_contact.contacted_at.isoformat() if last_contact else None,
         "last_contact_result": last_contact.get_result_display() if last_contact else None,
     }
+    if calendar is not None:
+        upcoming = soon.upcoming_obligations(profile, invoices=invoices, stages=stages, packages=packages,
+                                             usable=usable, today=today, calendar=calendar)
+        row["upcoming"] = upcoming["items"]
+        row["upcoming_undated"] = upcoming["undated"]
+        row["course_payment"] = course_payment(profile, due_now=max(sum((i.balance for i in unpaid), ZERO) - usable,
+                                                                     ZERO))
     if with_next:
         nxt = next_month_cost(profile)
         row["next_month"] = None if nxt is None else {k: (str(v) if isinstance(v, Decimal) else v)
@@ -203,45 +226,107 @@ def contract_row(profile: StudentBillingProfile, *, last_contact=None, with_next
     return row
 
 
+def course_payment(profile, *, due_now: Decimal) -> dict | None:
+    """Оплата всего курса — суммы как в `contracts.money_summary` (из
+    аннотаций `base_queryset`). None — у договора нет итоговой стоимости."""
+    if profile.final_course_price is None:
+        return None
+    allocated = profile.allocated_sum or ZERO
+    credit = profile.credit_sum or ZERO
+    adjusted = profile.adjusted_sum or ZERO
+    unpaid = course_unpaid(profile.final_course_price, allocated=allocated, credit=credit, adjusted=adjusted)
+    return {
+        "final_course_price": _s(profile.final_course_price), "allocated": _s(allocated), "credit": _s(credit),
+        "adjusted": _s(adjusted), "unpaid": _s(unpaid), "due_now": _s(due_now),
+        "paid_in_full": course_paid_in_full(profile.final_course_price, allocated=allocated, credit=credit,
+                                            adjusted=adjusted, due_now=due_now),
+    }
+
+
 SORTS = {
     "name": lambda r: (r["student_name"],),
     "debt": lambda r: (-Decimal(r["due_now"]), r["student_name"]),
     "overdue": lambda r: (-r["overdue_lessons"], -r["overdue_days"], -Decimal(r["overdue_amount"]), r["student_name"]),
-    # «Скоро оплата» — по финансовому пакету (сколько уроков пакета пройдено).
+    # По финансовому пакету (сколько уроков пакета пройдено) — прежняя сортировка «Скоро оплата».
     "lessons": lambda r: (-((r["package_lessons_used"] or 0) / (r["package_lessons_total"] or 1)), r["student_name"]),
     "group": lambda r: (r["group_name"] or "", r["student_name"]),
+    # «Скоро оплата» — ближайший срок в подразделе.
+    "date": lambda r: (r.get("section_days") if r.get("section_days") is not None else 10 ** 6, r["student_name"]),
 }
 
 
 def in_queue(queue: str, row: dict) -> bool:
     """Попадает ли строка в очередь — одно правило для списка и счётчика.
 
-    «Скоро оплата» — следующий месяц приближается, его начисление ещё НЕ
-    выставлено и аванс его не покрывает; как только начисление выставлено
-    (срок оплаты наступил) — студент в «К оплате», а не здесь."""
+    «Скоро оплата» (без подраздела) — есть предстоящее обязательство в одном
+    из временных подразделов (1–3 / 4–5 / 6–10 дней, следующий месяц)."""
     if queue == "to_pay":
         return row["in_to_pay"]
     if queue == "overdue":
         return row["in_overdue"]
     if queue == "soon":
-        nxt = row.get("next_month")
-        return nxt is not None and not nxt.get("issued") and Decimal(nxt["to_pay"]) > 0
+        return in_section(None, row)
     return True
 
 
-def queue_rows(queue: str, f: dict) -> list[dict]:
-    """Строки очереди (все, до пагинации — сортировка по вычисляемым полям)."""
+def in_section(section: str | None, row: dict) -> bool:
+    """Подраздел «Скоро оплата»: временной — есть обязательство с этим сроком;
+    «Полностью оплатили курс» — `course_payment.paid_in_full`; None — любой временной."""
+    if section == soon.PAID_COURSE:
+        return bool(row.get("course_payment") and row["course_payment"]["paid_in_full"])
+    return any(o["section"] == section or (section is None and o["section"] in soon.TIME_SECTIONS)
+               for o in row.get("upcoming", ()))
+
+
+def _rows(queue: str, f: dict) -> list[dict]:
     profiles = list(queue_queryset(queue, f))
     contacts = _last_contacts([p.pk for p in profiles])
-    rows, groups = [], {}  # месяц группы считается один раз на группу
-    for profile in profiles:
-        row = contract_row(profile, last_contact=contacts.get(profile.pk), with_next=queue == "soon", group_cache=groups)
-        if not in_queue(queue, row):
-            continue
-        rows.append(row)
-    default = {"overdue": "overdue", "to_pay": "debt", "soon": "lessons"}.get(queue, "name")
+    groups = {}  # месяц группы считается один раз на группу
+    calendar = soon.LessonCalendar(timezone.localdate()) if queue == "soon" else None
+    return [contract_row(p, last_contact=contacts.get(p.pk), group_cache=groups, calendar=calendar) for p in profiles]
+
+
+def queue_rows(queue: str, f: dict) -> list[dict]:
+    """Строки очереди (все, до пагинации — сортировка по вычисляемым полям).
+    «Скоро оплата» — подраздел `f["section"]` (без него — все временные)."""
+    if queue == "soon":
+        return soon_page(f)["rows"]
+    rows = [row for row in _rows(queue, f) if in_queue(queue, row)]
+    default = {"overdue": "overdue", "to_pay": "debt"}.get(queue, "name")
     rows.sort(key=SORTS.get(f.get("ordering") or default, SORTS["name"]))
     return rows
+
+
+def soon_page(f: dict) -> dict:
+    """«Скоро оплата»: строки подраздела `f["section"]` и сводка всех
+    подразделов по тем же строкам — {"rows", "sections", "undated"}.
+
+    Сводка подраздела: студентов (строк списка) и сумма к оплате его
+    обязательств (у «Полностью оплатили курс» — 0, к оплате нет). Студент с
+    обязательствами в разных подразделах учитывается в каждом из них — своим
+    обязательством; одно обязательство — ровно в одном подразделе."""
+    section = f.get("section") or None
+    all_rows = _rows("soon", f)
+    sections = {}
+    for key in soon.SECTIONS:
+        members = [r for r in all_rows if in_section(key, r)]
+        amount = sum((Decimal(o["to_pay"]) for r in members for o in r["upcoming"] if o["section"] == key), ZERO)
+        sections[key] = {"count": len(members), "amount": _s(amount)}
+    rows = []
+    for row in all_rows:
+        if not in_section(section, row):
+            continue
+        mine = [o for o in row["upcoming"] if o["section"] == section or (section is None
+                                                                          and o["section"] in soon.TIME_SECTIONS)]
+        row["section"] = section
+        row["section_days"] = min((o["days"] for o in mine), default=None)
+        row["section_due_date"] = min((o["due_date"] for o in mine), default=None)
+        row["section_to_pay"] = _s(sum((Decimal(o["to_pay"]) for o in mine), ZERO))
+        rows.append(row)
+    default = "name" if section == soon.PAID_COURSE else "date"
+    rows.sort(key=SORTS.get(f.get("ordering") or default, SORTS["name"]))
+    return {"rows": rows, "sections": sections,
+            "undated": sum(1 for r in all_rows if r["upcoming_undated"])}
 
 
 def counts(f: dict | None = None) -> dict:

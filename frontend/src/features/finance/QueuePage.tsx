@@ -28,16 +28,13 @@ import {
 
 const PAGE_SIZE = 25
 
-const META: Record<Exclude<QueueKind, 'all'>, { title: string; description: string; empty: string }> = {
+type ListQueue = Exclude<QueueKind, 'all' | 'soon'>
+
+const META: Record<ListQueue, { title: string; description: string; empty: string }> = {
   to_pay: {
     title: 'К оплате',
     description: 'Наступил платёжный этап: учебный месяц начался, начисление выставлено. Срок — не позднее указанного урока IT месяца.',
     empty: 'Сейчас никто не ждёт оплаты',
-  },
-  soon: {
-    title: 'Скоро оплата',
-    description: 'До конца учебного месяца осталось 3 урока IT или меньше, а следующий месяц ещё не оплачен.',
-    empty: 'В ближайшие уроки никому не предстоит оплата',
   },
   overdue: {
     title: 'Просроченные',
@@ -48,12 +45,11 @@ const META: Record<Exclude<QueueKind, 'all'>, { title: string; description: stri
 
 const ORDERINGS = {
   to_pay: [{ value: 'debt', label: 'По сумме долга' }, { value: 'name', label: 'По имени' }, { value: 'group', label: 'По группе' }],
-  soon: [{ value: 'lessons', label: 'Ближе к концу месяца' }, { value: 'name', label: 'По имени' }, { value: 'group', label: 'По группе' }],
   overdue: [{ value: 'overdue', label: 'Дольше всех просрочено' }, { value: 'debt', label: 'По сумме долга' },
     { value: 'name', label: 'По имени' }],
 }
 
-function StudentCell({ row }: { row: QueueRow }) {
+export function StudentCell({ row }: { row: QueueRow }) {
   return (
     <div className="min-w-40">
       <p className="font-medium text-ink">{row.student_name}</p>
@@ -71,7 +67,42 @@ function deadlineText(row: QueueRow): string {
   return inv.due_date ?? '—'
 }
 
-export function QueuePage({ queue }: { queue: Exclude<QueueKind, 'all'> }) {
+/** Платёж, контакт с родителем, история, карточка — одинаково во всех рабочих списках. */
+export function QueueRowActions({ row, canPay, invoice, onContact, onOpen }: {
+  row: QueueRow
+  canPay: boolean
+  /** Начисление для формы платежа (по умолчанию — самое срочное). */
+  invoice?: number | null
+  onContact: (row: QueueRow) => void
+  onOpen: (row: QueueRow) => void
+}) {
+  const navigate = useNavigate()
+  const target = invoice === undefined ? row.focus_invoice?.id : invoice
+  return (
+    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} role="presentation">
+      {canPay ? (
+        <Button size="sm" leftIcon={<Plus className="size-4" />}
+          onClick={() => navigate(`/finance/payments/new?profile=${row.profile}${target ? `&invoice=${target}` : ''}`)}>
+          Платёж
+        </Button>
+      ) : null}
+      {canPay ? (
+        <Button size="sm" variant="ghost" aria-label="Контакт с родителем" title="Зафиксировать контакт" onClick={() => onContact(row)}>
+          <Phone className="size-4" />
+        </Button>
+      ) : null}
+      <Button size="sm" variant="ghost" aria-label="История платежей" title="История платежей"
+        onClick={() => navigate(`/finance/students/${row.profile}#payments`)}>
+        <History className="size-4" />
+      </Button>
+      <Button size="sm" variant="ghost" aria-label="Карточка студента" title="Карточка студента" onClick={() => onOpen(row)}>
+        <UserRound className="size-4" />
+      </Button>
+    </div>
+  )
+}
+
+export function QueuePage({ queue }: { queue: ListQueue }) {
   const meta = META[queue]
   const navigate = useNavigate()
   const location = useLocation()
@@ -89,28 +120,7 @@ export function QueuePage({ queue }: { queue: Exclude<QueueKind, 'all'> }) {
 
   const actions: DataTableColumn<QueueRow> = {
     key: 'actions', header: '', className: 'text-right',
-    render: (row) => (
-      <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} role="presentation">
-        {canPay ? (
-          <Button size="sm" leftIcon={<Plus className="size-4" />}
-            onClick={() => navigate(`/finance/payments/new?profile=${row.profile}${row.focus_invoice ? `&invoice=${row.focus_invoice.id}` : ''}`)}>
-            Платёж
-          </Button>
-        ) : null}
-        {canPay ? (
-          <Button size="sm" variant="ghost" aria-label="Контакт с родителем" title="Зафиксировать контакт" onClick={() => setContact(row)}>
-            <Phone className="size-4" />
-          </Button>
-        ) : null}
-        <Button size="sm" variant="ghost" aria-label="История платежей" title="История платежей"
-          onClick={() => navigate(`/finance/students/${row.profile}#payments`)}>
-          <History className="size-4" />
-        </Button>
-        <Button size="sm" variant="ghost" aria-label="Карточка студента" title="Карточка студента" onClick={() => open(row)}>
-          <UserRound className="size-4" />
-        </Button>
-      </div>
-    ),
+    render: (row) => <QueueRowActions row={row} canPay={canPay} onContact={setContact} onOpen={open} />,
   }
 
   const columns: Record<typeof queue, DataTableColumn<QueueRow>[]> = {
@@ -123,15 +133,6 @@ export function QueuePage({ queue }: { queue: Exclude<QueueKind, 'all'> }) {
       { key: 'due', header: 'Срок оплаты', render: (r) => (
         <div className="space-y-1"><p className="text-sm">{deadlineText(r)}</p><StageBadge stage={r.stage} /></div>
       ) },
-      actions,
-    ],
-    soon: [
-      { key: 'student', header: 'Студент', render: (r) => <StudentCell row={r} /> },
-      { key: 'month', header: 'Учебный месяц', render: (r) => <MonthProgress {...rowProgress(r)} /> },
-      { key: 'left', header: 'Осталось уроков', render: (r) => <span className="font-semibold">{r.lessons_total - r.lessons_used}</span> },
-      { key: 'next', header: 'Следующий месяц', render: (r) => <Amount value={r.next_month?.cost} /> },
-      { key: 'covered', header: 'Внесено авансом', render: (r) => <Amount value={r.next_month?.covered} tone="muted" /> },
-      { key: 'to_pay', header: 'К оплате', render: (r) => <Amount value={r.next_month?.to_pay} tone="brand" /> },
       actions,
     ],
     overdue: [
@@ -183,10 +184,6 @@ export function QueuePage({ queue }: { queue: Exclude<QueueKind, 'all'> }) {
 
 export function ToPayPage() {
   return <QueuePage queue="to_pay" />
-}
-
-export function SoonPage() {
-  return <QueuePage queue="soon" />
 }
 
 export function OverduePage() {
