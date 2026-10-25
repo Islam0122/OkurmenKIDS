@@ -46,6 +46,30 @@ class StudentBillingProfileAdmin(ReadOnlyAdmin):
     list_filter = ("status", "plan", "payment_mode", "month_plan_mode")
     search_fields = ("student__first_name", "student__last_name")
     inlines = [ContractMonthPriceInline]
+    actions = ["delete_from_billing"]
+
+    def get_actions(self, request):
+        """«Удалить профиль из бухгалтерии» — только суперпользователю."""
+        from .services.profile_purge import is_allowed
+
+        actions = super().get_actions(request)
+        if not is_allowed(request.user):
+            actions.pop("delete_from_billing", None)
+        return actions
+
+    @admin.action(description="Удалить профиль из бухгалтерии")
+    def delete_from_billing(self, request, queryset):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from django.urls import reverse
+
+        from .admin_purge import guard
+
+        guard(request)  # не только скрытие: прямой POST действия тоже проверяется
+        if queryset.count() != 1:
+            self.message_user(request, "Выберите один профиль: удаление выполняется по одному.", messages.WARNING)
+            return None
+        return redirect(reverse("admin:billing_profile_purge", args=[queryset.get().pk]))
 
     @admin.display(description="План месяцев")
     def month_plan_link(self, obj):
@@ -59,12 +83,16 @@ class StudentBillingProfileAdmin(ReadOnlyAdmin):
     def get_urls(self):
         from django.urls import path
 
+        from .admin_purge import purge_view
         from .admin_views import month_plan_view
 
         return [
             path("<int:pk>/month-plan/",
                  self.admin_site.admin_view(lambda request, pk: month_plan_view(request, pk, self.admin_site)),
                  name="billing_month_plan"),
+            path("<int:pk>/purge/",
+                 self.admin_site.admin_view(lambda request, pk: purge_view(request, pk, self.admin_site)),
+                 name="billing_profile_purge"),
             *super().get_urls(),
         ]
 
