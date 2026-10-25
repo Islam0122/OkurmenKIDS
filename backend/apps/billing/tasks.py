@@ -247,11 +247,14 @@ DAILY = (
 )
 
 
-def run_daily_tasks(on=None) -> dict:
-    """Проверки `DAILY` по порядку; сбой одной не останавливает остальные."""
+def run_daily_tasks(on=None, before_each=None) -> dict:
+    """Проверки `DAILY` по порядку; сбой одной не останавливает остальные.
+    `before_each` — вызывается перед каждой (продление аренды планировщика)."""
     on = _date(on)
     results = {}
     for task in DAILY:
+        if before_each is not None:
+            before_each()
         try:
             results[task.__name__] = task(on=on)
         except Exception as exc:  # noqa: BLE001 — сбой одной проверки не останавливает остальные
