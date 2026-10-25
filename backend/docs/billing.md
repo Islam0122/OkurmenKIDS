@@ -668,14 +668,53 @@ Beat (`CELERY_BEAT_SCHEDULE`) только запускает проверки; 
 дня, попытки, результат / ошибка). Уведомления — transactional outbox:
 создаются в транзакции события, доставляются `on_commit` и задачей.
 
-Без брокера (`CELERY_BROKER_URL` пуст) задачи выполняются синхронно; для
-хостинга без Redis — `python manage.py billing_autorun` (cron, раз в день или
-чаще). Для Redis нужен пакет `redis` и `CELERY_BROKER_URL=redis://…`:
+### Запуск по расписанию — Railway Cron (рекомендуется)
+
+Брокер не нужен: без `CELERY_BROKER_URL` задачи выполняются синхронно. Все
+периодические задачи запускает одна команда:
+
+```
+python manage.py run_scheduled_tasks        # [--date ГГГГ-ММ-ДД] [--no-report] [--no-staff-attendance]
+```
+
+* оплата обучения — весь `DAILY` (уроки, следующие месяцы, ранние начисления,
+  конец пакета, аванс на наступившие начисления, просрочки, повторные
+  контакты, доставка уведомлений); снимок отчёта и сверка — раз в сутки;
+* посещаемость сотрудников — закрыть открытые сессии прошлых дней.
+
+Защита (`services/scheduler.py`): **один запуск за раз** — аренда в базе
+(`BillingEvent` `scheduler:lock`, атомарный UPDATE; занята — выход 0,
+`skipped_locked`; не снятая после падения истекает через 25 минут);
+**миграции не применены** (деплой идёт) — выход 0, `skipped_migrations`;
+повтор в тот же день не дублирует записи (блокировки и уникальные ключи
+задач). Сбой хотя бы одной задачи — **код выхода 1**, остальные выполняются.
+Итог — одна строка JSON в логе; каждая задача — запись в «Журнале обработки
+событий» (`task:<задача>:<дата>`, DONE / FAILED, попытки, ошибка).
+
+**Railway:** отдельный сервис из того же репозитория (Root Directory
+`backend`, Dockerfile), Custom Start Command
+`python manage.py run_scheduled_tasks`, Cron Schedule `*/30 * * * *` (UTC;
+каждые 30 минут — как прежний `billing-lessons`), Restart Policy «Never»;
+переменные — те же, что у web (`DJANGO_ENV=production`, `SECRET_KEY`,
+`ALLOWED_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `PGHOST`, `PGPORT`,
+`PGUSER`, `PGPASSWORD`, `PGDATABASE` — ссылками на существующую базу),
+`CELERY_BROKER_URL` не задавать. Config-as-code: `deployment/railway-cron.json`.
+Celery Worker / Beat и Redis не нужны; запускать Beat вместе с cron нельзя
+(расписание должно быть одно; `billing.run_daily` всё равно идёт через ту же
+аренду и одновременно с cron не выполнится).
+
+`billing_autorun` — только оплата обучения, через ту же аренду (совместимость).
+
+### Вариант с Celery (если появится Redis)
+
+Нужны пакет `redis` и `CELERY_BROKER_URL=redis://…`, сервисы:
 
 ```
 celery -A config worker -l info
 celery -A config beat -l info
 ```
+
+Тогда cron-сервис `run_scheduled_tasks` отключить.
 
 ## Настройки
 
@@ -691,7 +730,7 @@ BILLING_DUE_SOON_DAYS=3
 BILLING_MAX_PREPAID_PACKAGES=12
 BILLING_SYNC_LOOKBACK_DAYS=14
 BILLING_NOTIFICATION_BACKEND=             # путь к функции доставки; пусто — лог
-CELERY_BROKER_URL=
+CELERY_BROKER_URL=                        # пусто — Railway Cron, без Celery
 ```
 `BILLING_ADMIN_ROLES` больше не используется: права — в `billing/permissions.py`.
 

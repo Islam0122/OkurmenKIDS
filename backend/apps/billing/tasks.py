@@ -12,7 +12,9 @@
 
 Celery в проекте необязателен: без брокера (`CELERY_BROKER_URL` пуст)
 задачи выполняются синхронно (`CELERY_TASK_ALWAYS_EAGER`), а для cron
-хостинга есть `python manage.py billing_autorun` — тот же набор задач.
+хостинга (Railway Cron) есть `python manage.py run_scheduled_tasks` — все
+периодические задачи одним запуском, с арендой против параллельных запусков
+(`services/scheduler.py`).
 """
 from __future__ import annotations
 
@@ -245,9 +247,8 @@ DAILY = (
 )
 
 
-@shared_task(name="billing.run_daily")
-def run_daily(on=None, report: bool = True) -> dict:
-    """Все проверки дня по порядку (Celery Beat или `billing_autorun`)."""
+def run_daily_tasks(on=None) -> dict:
+    """Проверки `DAILY` по порядку; сбой одной не останавливает остальные."""
     on = _date(on)
     results = {}
     for task in DAILY:
@@ -256,6 +257,16 @@ def run_daily(on=None, report: bool = True) -> dict:
         except Exception as exc:  # noqa: BLE001 — сбой одной проверки не останавливает остальные
             logger.exception("billing task %s failed", task.__name__)
             results[task.__name__] = {"error": str(exc)}
-    if report:
-        results["build_financial_report"] = {"problems": len(build_financial_report(on=on)["reconcile_problems"])}
     return results
+
+
+@shared_task(name="billing.run_daily")
+def run_daily(on=None, report: bool = True) -> dict:
+    """Все проверки дня (Celery Beat, `billing_autorun`, Railway Cron —
+    `run_scheduled_tasks`). Через ту же аренду, что и cron
+    (`services.scheduler`): Beat и Cron одновременно не выполнят проверки;
+    отчёт — раз в сутки. Посещаемость сотрудников у Beat — отдельная задача."""
+    from .services.scheduler import run_all
+
+    summary = run_all(on=_date(on), report=report, staff_attendance=False)
+    return {"status": summary["status"], **summary["tasks"]}
