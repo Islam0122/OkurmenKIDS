@@ -23,6 +23,7 @@ import type {
   MonthPlanBody,
   MonthPlanResult,
   PeriodReport,
+  PrepaymentsResponse,
   PeriodsResponse,
   Plan,
   PlanBody,
@@ -65,6 +66,8 @@ export const financeApi = {
   options: () => get<FinanceOptions>('/options/'),
   dashboard: () => get<FinanceDashboard>('/dashboard/'),
   periods: () => get<PeriodsResponse>('/periods/'),
+  /** Остаток предоплаты по ученикам: итоги, статусы, поиск и фильтры. */
+  prepayments: (params: Params) => get<PrepaymentsResponse>('/prepayments/', params),
   /** `month=ГГГГ-ММ` или `date_from` + `date_to`. */
   periodReport: (params: Params) => get<PeriodReport>('/reports/period/', params),
   counts: () => get<QueueCounts>('/queues/counts/'),

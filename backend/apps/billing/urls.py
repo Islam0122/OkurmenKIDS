@@ -32,6 +32,7 @@ urlpatterns = [
     path("reports/summary/", views.FinancialReportView.as_view(), name="report-summary"),
     path("reports/period/", views.PeriodReportView.as_view(), name="report-period"),
     path("periods/", views.PeriodsView.as_view(), name="periods"),
+    path("prepayments/", views.PrepaymentsView.as_view(), name="prepayments"),
     path("periods/review/", views.PeriodReviewView.as_view(), name="period-review"),
     path("audit-log/", views.AuditView.as_view(), name="audit-log"),
     path("queues/counts/", views.QueueCountsView.as_view(), name="queue-counts"),

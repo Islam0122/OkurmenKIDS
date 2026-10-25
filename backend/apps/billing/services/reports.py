@@ -125,6 +125,9 @@ def dashboard(filters: dict, *, on: dt.date | None = None) -> dict:
         contacts = contacts.filter(contacted_at__date__gte=date_from, contacted_at__date__lte=date_to)
     tasks = filter_profiles(BillingTask.objects.filter(status__in=BillingTask.LIVE_STATUSES), filters, "profile__")
     received_sum, refunds_sum = received["s"] or ZERO, refunds["s"] or ZERO
+    from .prepayments import prepayments
+
+    prepayment = prepayments({k: filters.get(k) for k in ("group", "subject", "student", "accountant", "plan")})["summary"]
 
     return {
         "date": on.isoformat(), "date_from": date_from.isoformat(), "date_to": date_to.isoformat(),
@@ -140,7 +143,10 @@ def dashboard(filters: dict, *, on: dt.date | None = None) -> dict:
         "due_soon": [_invoice_row(inv) for inv in due_soon[:100]],
         "received": {"amount": _s(received_sum), "count": received["n"], "refunds": _s(refunds_sum),
                      "refunds_count": refunds["n"], "net": _s(received_sum - refunds_sum)},
+        # Сумма журнала аванса по всем договорам (техническая, для сверки) —
+        # карточка дашборда показывает `prepayment_total` (services.prepayments).
         "credit_total": _s(credit), "credit_profiles": credit_profiles,
+        "prepayment_total": _s(prepayment["prepayment"]), "prepayment_students": prepayment["students"],
         "partial": [_invoice_row(inv) for inv in partial[:100]],
         "packages_ending": filter_profiles(
             LessonPackage.objects.filter(status=LessonPackage.Status.ACTIVE, ending_notified_at__isnull=False),

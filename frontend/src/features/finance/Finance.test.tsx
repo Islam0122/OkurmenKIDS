@@ -20,7 +20,7 @@ vi.mock('@/api/finance', () => ({
     recordPayment: vi.fn(), receipt: vi.fn(), receiptPrinted: vi.fn(), downloadReceiptPdf: vi.fn(), plans: vi.fn(),
     lmsStudents: vi.fn(), createContract: vi.fn(), periods: vi.fn(), payments: vi.fn(), periodReport: vi.fn(),
     lessonBreakdown: vi.fn(), applyCredit: vi.fn(), changeStartDate: vi.fn(),
-    payment: vi.fn(), paymentHistory: vi.fn(), correctPayment: vi.fn(), reversePayment: vi.fn(), saveMonthPlan: vi.fn(),
+    payment: vi.fn(), paymentHistory: vi.fn(), correctPayment: vi.fn(), reversePayment: vi.fn(), saveMonthPlan: vi.fn(), prepayments: vi.fn(),
   },
 }))
 
@@ -30,6 +30,7 @@ import { FinanceLayout } from '@/features/finance/FinanceLayout'
 import { NewContractPage } from '@/features/finance/NewContractPage'
 import { PaymentDetailPage } from '@/features/finance/PaymentDetailPage'
 import { PaymentsPage } from '@/features/finance/PaymentsPage'
+import { PrepaymentsPage } from '@/features/finance/PrepaymentsPage'
 import { StudentCardPage } from '@/features/finance/StudentCardPage'
 import { currentMonth, setFinancePeriod } from '@/features/finance/period'
 import { OperationsTable, ScheduleBlock } from '@/features/finance/CardSections'
@@ -499,5 +500,34 @@ describe('Цепочка исправления платежа', () => {
     expect(within(r39).queryByRole('button', { name: 'Сторно' })).not.toBeInTheDocument()  // повторно нельзя
     expect(r41).toHaveTextContent('на INV-2026-000112 · взамен сторнированного №39')
     expect(r42).toHaveTextContent('аванс · взамен сторнированного №39')
+  })
+})
+
+describe('PrepaymentsPage', () => {
+  it('shows totals, statuses and filters by status', async () => {
+    const row = { profile: 7, student: 3, student_name: 'Асанов Айбек', program: "Kid's Club", program_id: 1, group: 'KC-1', group_id: 1,
+      contract_total: '60000.00', received: '60000.00', applied_to_studied: '30000.00', allocated_future: '30000.00',
+      allocated_future_exact: false, unallocated: '0.00', reservation_held: '0.00', prepayment: '30000.00',
+      remaining_obligations: '30000.00', paid_months: 4, duration_months: 4, next_covered_month: null, status: 'full' as const,
+      status_display: 'Полная предоплата', review_reasons: [] }
+    vi.mocked(financeApi.prepayments).mockResolvedValue({
+      summary: { prepayment: '55000.00', students: 2, full: 1, partial: 1, advance: 0, review: 0, allocated_future: '30000.00',
+        unallocated: '25000.00', reservation_held: '0.00', definitions: { prepayment: 'Деньги заранее', full: 'хватает', partial: 'не хватает',
+          allocated_future: 'на будущие', unallocated: 'свободный аванс' } },
+      results: [row, { ...row, profile: 8, student_name: 'Бекова Айжан', status: 'partial', status_display: 'Частичная предоплата',
+        prepayment: '25000.00', allocated_future: '0.00', unallocated: '25000.00', paid_months: 1, next_covered_month: 2 }],
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<PrepaymentsPage />)
+    expect(await screen.findByText('Общий остаток предоплаты')).toBeInTheDocument()
+    expect(screen.getAllByText(/55\s000/).length).toBeGreaterThan(0)
+    const table = screen.getAllByRole('table')[0]
+    expect(table).toHaveTextContent('Остаток предоплаты')
+    expect(table).toHaveTextContent('Полная предоплата')
+    expect(table).toHaveTextContent('Частичная предоплата')
+    expect(table).toHaveTextContent('4 из 4')
+    expect(table).toHaveTextContent('№2')
+    await user.selectOptions(screen.getByLabelText('Статус'), 'partial')
+    await waitFor(() => expect(financeApi.prepayments).toHaveBeenLastCalledWith({ status: 'partial' }))
   })
 })
