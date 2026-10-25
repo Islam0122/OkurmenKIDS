@@ -327,7 +327,9 @@ class ProfileSerializer(serializers.ModelSerializer):
     def get_payment_status(self, obj) -> dict:
         unpaid = [i for i in obj.invoices.all() if i.status in Invoice.UNPAID_STATUSES]
         debt = sum((i.balance for i in unpaid), Decimal("0"))
-        overdue = any(i.status == Invoice.Status.OVERDUE for i in unpaid)
+        from .services.contracts import payment_stage
+
+        overdue = any(payment_stage(i) == "overdue" for i in unpaid)  # по актуальным данным
         state = "overdue" if overdue else ("awaiting" if unpaid else "paid")
         if any(i.status == Invoice.Status.DRAFT for i in obj.invoices.all()):
             state = "draft" if not unpaid else state

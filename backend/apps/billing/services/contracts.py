@@ -69,6 +69,7 @@ from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
 
 from django.db.models import Count, Q, Sum
+from django.utils import timezone
 
 from apps.accounting.models import StudentPayment
 from apps.accounting.services.money import money
@@ -256,22 +257,34 @@ def may_fund(profile, payment: StudentPayment, invoice: Invoice) -> bool:
 # Стадия оплаты начисления
 # ---------------------------------------------------------------------------
 
-def payment_stage(invoice: Invoice, lessons_used: int | None = None) -> str:
-    """awaiting — ожидается оплата; deadline — сегодняшний урок последний
-    срок; overdue — просрочка; paid; draft; void."""
+def payment_stage(invoice: Invoice, lessons_used: int | None = None, on: dt.date | None = None) -> str:
+    """Стадия оплаты начисления — по актуальным данным, а не по сохранённому
+    статусу (его обновляют уроки и фоновая задача, он может отставать):
+
+    * paid — остаток 0 (оплачено распределениями / корректировками);
+    * срок в уроках (`due_lesson`): до него — awaiting, на уроке-сроке —
+      deadline, после — overdue;
+    * срок датой (`due_date`): раньше даты — awaiting, в день срока —
+      deadline, после — overdue. «Сегодня» — по часовому поясу проекта
+      (`timezone.localdate`, Asia/Bishkek).
+
+    Единый источник для очередей «Скоро оплата» / «К оплате» / «Просроченные»,
+    их счётчиков, строки студента и карточки."""
     if invoice.status == Invoice.Status.VOID:
         return "void"
     if invoice.status == Invoice.Status.DRAFT:
         return "draft"
-    if invoice.status == Invoice.Status.PAID:
+    if invoice.status == Invoice.Status.PAID or invoice.balance <= 0:
         return "paid"
-    if invoice.status == Invoice.Status.OVERDUE:
-        return "overdue"
     if invoice.due_lesson:
         used = invoice.package.lessons_used if lessons_used is None else lessons_used
-        if used == invoice.due_lesson:
-            return "deadline"
-    return "awaiting"
+        if used > invoice.due_lesson:
+            return "overdue"
+        return "deadline" if used == invoice.due_lesson else "awaiting"
+    on = on or timezone.localdate()
+    if invoice.due_date < on:
+        return "overdue"
+    return "deadline" if invoice.due_date == on else "awaiting"
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +330,7 @@ def money_summary(profile: StudentBillingProfile) -> dict:
     ).aggregate(s=Sum("amount"))["s"] or ZERO
     unpaid = list(Invoice.objects.filter(profile=profile, status__in=Invoice.UNPAID_STATUSES).select_related("package"))
     balance = sum((i.balance for i in unpaid), ZERO)
-    overdue_balance = sum((i.balance for i in unpaid if i.status == Invoice.Status.OVERDUE), ZERO)
+    overdue_balance = sum((i.balance for i in unpaid if payment_stage(i) == "overdue"), ZERO)
     usable = applicable_credit(profile, unpaid, credit)
     unapplied = min(usable, balance)
     due_now = max(balance - usable, ZERO)
@@ -386,8 +399,10 @@ def next_month_cost(profile) -> dict | None:
         invoice = planned.invoices.exclude(status=Invoice.Status.VOID).first()
         balance = invoice.balance if invoice and invoice.status in Invoice.UNPAID_STATUSES else ZERO
         cost = invoice.amount if invoice else ZERO
+        # issued — начисление следующего месяца уже выставлено (срок оплаты наступил):
+        # студент в «К оплате», не в «Скоро оплата».
         return {"month_number": planned.month_number or planned.number, "cost": money(cost),
-                "covered": money(cost - balance), "to_pay": money(balance)}
+                "covered": money(cost - balance), "to_pay": money(balance), "issued": invoice is not None}
     coverage = None
     if profile.is_course:
         number = (current.month_number or 0) + 1

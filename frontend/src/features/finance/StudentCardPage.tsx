@@ -224,7 +224,7 @@ function Card360({ card }: { card: ContractCard }) {
             { key: 'bal', header: 'Остаток', render: (i) => <Amount value={i.balance} tone={i.status === 'OVERDUE' ? 'danger' : undefined} /> },
             { key: 'due', header: 'Срок', render: (i) => i.due_lesson ? `${i.due_lesson}-й урок (сейчас ${i.lessons_used})` : formatDate(i.due_date) },
             { key: 'st', header: 'Статус', render: (i) => <div className="flex flex-wrap gap-1"><InvoiceStatusBadge status={i.status} label={i.status_display} />
-              {i.stage === 'deadline' ? <StageBadge stage="deadline" /> : null}</div> },
+              {i.stage === 'deadline' || (i.stage === 'overdue' && i.status !== 'OVERDUE') ? <StageBadge stage={i.stage} /> : null}</div> },
           ]} />
         )}
       </Section>
