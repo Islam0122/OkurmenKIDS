@@ -1,0 +1,53 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div class="ok-form-container" style="max-width: 1000px; display:grid; gap:1.25rem;">
+  <div class="ok-card">
+    <div class="ok-card-header"><span>{{ report.student }} · {{ report.profile.plan }} · {{ report.profile.get_status_display }}</span></div>
+    <div class="ok-card-body">
+      <p><strong style="color:#ba2121;">{{ report.warning }}.</strong></p>
+      <p class="ok-section-subtitle">Будут удалены записи бухгалтерии ({{ report.total }})</p>
+      <table class="table table-sm">
+        <thead><tr><th>Тип записи</th><th>Модель</th><th>Количество</th></tr></thead>
+        {% for r in report.rows %}<tr><td>{{ r.model }}</td><td><code>{{ r.label }}</code></td><td>{{ r.count }}</td></tr>{% endfor %}
+      </table>
+      {% if report.payments %}
+      <p class="ok-section-subtitle">Платежи профиля</p>
+      <table class="table table-sm">
+        <thead><tr><th>№</th><th>Операция</th><th>Статус</th><th>Сумма</th><th>Дата денег</th><th>Чек</th></tr></thead>
+        {% for p in report.payments %}<tr><td>{{ p.id }}</td><td>{{ p.kind }}</td><td>{{ p.status }}</td><td>{{ p.amount }}</td><td>{{ p.received_date }}</td><td>{{ p.receipt|default:"—" }}</td></tr>{% endfor %}
+      </table>
+      {% endif %}
+      <p class="ok-help-text">Не удаляются: ученик, учебный профиль, зачисление, группа, расписание, уроки, посещаемость,
+        результаты тестов и экзаменов, тренеры, тариф. Полная копия удаляемых записей сохраняется в журнале аудита.</p>
+    </div>
+  </div>
+  {% if report.real_money %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Удаление остановлено: проведённые платежи (реальные деньги)</span></div>
+    <div class="ok-card-body">
+      <table class="table table-sm">
+        <thead><tr><th>№</th><th>Операция</th><th>Сумма</th><th>Дата</th><th>Чек</th><th>Что сделать</th></tr></thead>
+        {% for p in report.real_money %}<tr><td>{{ p.id }}</td><td>{{ p.kind }}</td><td>{{ p.amount }}</td><td>{{ p.received_date }}</td><td>{{ p.receipt|default:"—" }}</td><td>{{ p.advice }}</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  {% if report.foreign or report.external_references %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Удаление остановлено: связи с другими записями</span></div>
+    <div class="ok-card-body"><ul>{% for f in report.foreign %}<li>{{ f }}</li>{% endfor %}{% for f in report.external_references %}<li>{{ f }}</li>{% endfor %}</ul>
+      <p class="ok-help-text">Исправьте связи в «Неправильные данные» (перенос начисления или брони, отмена распределения) и откройте отчёт снова.</p></div>
+  </div>
+  {% endif %}
+  {% if report.can_delete %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span>Подтверждение</span></div>
+    <div class="ok-card-body">
+      <form method="post">{% csrf_token %}{{ form.as_p }}
+        <button type="submit" class="button" style="background:#ba2121;color:#fff;">Удалить профиль из бухгалтерии</button>
+        <a href="{% url 'admin:billing_studentbillingprofile_changelist' %}" class="button">Отмена</a></form>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
