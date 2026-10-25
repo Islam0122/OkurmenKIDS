@@ -1376,3 +1376,177 @@ class DeductionAllocation(models.Model):
 
     def __str__(self):
         return f"{self.applied.name}: {self.amount}"
+
+
+# ---------------------------------------------------------------------------
+# Расходы компании
+# ---------------------------------------------------------------------------
+
+class PaymentMethod(models.TextChoices):
+    """Способ оплаты расхода — те же значения, что у платежей студентов, чтобы
+    касса сводила приход и расход по одному набору способов."""
+
+    CASH = "cash", "Наличные"
+    BANK = "bank", "Банковский перевод"
+    CARD = "card", "Карта / QR"
+    OTHER = "other", "Другое"
+
+
+class ExpenseCategory(models.Model):
+    """Категория расходов (аренда, коммунальные услуги, реклама…). Справочник
+    ведёт бухгалтер; категория не удаляется, а отключается — у старых расходов
+    она остаётся."""
+
+    code = models.SlugField(max_length=40, unique=True, verbose_name="Код")
+    name = models.CharField(max_length=100, unique=True, verbose_name="Название")
+    description = models.CharField(max_length=255, blank=True, verbose_name="Описание")
+    sort_order = models.PositiveSmallIntegerField(default=100, verbose_name="Порядок")
+    is_active = models.BooleanField(default=True, verbose_name="Используется")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Категория расходов"
+        verbose_name_plural = "Категории расходов"
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Категорию нельзя удалить — отключите её.")
+
+
+class RecurringExpense(models.Model):
+    """Шаблон регулярного (ежемесячного) расхода: аренда, интернет, связь.
+
+    Сам по себе деньгами не является: раз в месяц по нему создаётся один
+    неоплаченный `Expense` (уникальность по шаблону и месяцу — повторный
+    запуск не дублирует), а оплата отмечается у созданного расхода."""
+
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.PROTECT, related_name="recurring",
+                                 verbose_name="Категория")
+    description = models.CharField(max_length=255, verbose_name="Описание")
+    amount = models.DecimalField(**MONEY, validators=[MinValueValidator(Decimal("0.01"))], verbose_name="Сумма, сом")
+    vendor = models.CharField(max_length=200, blank=True, verbose_name="Получатель / поставщик")
+    payment_method = models.CharField(max_length=10, choices=PaymentMethod.choices, default=PaymentMethod.BANK,
+                                      verbose_name="Способ оплаты")
+    responsible = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="+", verbose_name="Ответственный")
+    day_of_month = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(28)], verbose_name="Число месяца",
+        help_text="Дата расхода и срок оплаты в каждом месяце (1–28, чтобы число было в любом месяце).",
+    )
+    start_month = models.DateField(verbose_name="С месяца", help_text="Первое число первого месяца.")
+    end_month = models.DateField(null=True, blank=True, verbose_name="По месяц (включительно)")
+    is_active = models.BooleanField(default=True, verbose_name="Действует")
+    comment = models.TextField(blank=True, verbose_name="Комментарий")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Регулярный расход"
+        verbose_name_plural = "Регулярные расходы"
+        ordering = ["category__sort_order", "description", "id"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="recurring_expense_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(end_month__isnull=True) | models.Q(end_month__gte=models.F("start_month")),
+                name="recurring_expense_range",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.description} · {self.amount} сом / мес"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Регулярный расход нельзя удалить — остановите его.")
+
+
+def expense_document_path(instance, filename: str) -> str:
+    """Случайное имя файла: документ не угадать по `/media/`, а скачивается он
+    только через API бухгалтерии (`expenses/{id}/document/`)."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    return f"accounting/expenses/{uuid.uuid4().hex}.{ext}"
+
+
+class Expense(models.Model):
+    """Расход компании. Статус оплаты хранится явно: неоплаченный расход —
+    обязательство, а не потраченные деньги; в движение денежных средств он
+    попадает только с датой оплаты (`paid_date`). Не удаляется — отменяется
+    (VOID) с причиной; каждое изменение — в журнале аудита."""
+
+    class Status(models.TextChoices):
+        UNPAID = "UNPAID", "Не оплачен"
+        PAID = "PAID", "Оплачен"
+        VOID = "VOID", "Отменён"
+
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.PROTECT, related_name="expenses",
+                                 verbose_name="Категория")
+    description = models.CharField(max_length=255, verbose_name="Описание")
+    amount = models.DecimalField(**MONEY, validators=[MinValueValidator(Decimal("0.01"))], verbose_name="Сумма, сом")
+    currency = models.CharField(max_length=3, default=CURRENCY, editable=False)
+    expense_date = models.DateField(db_index=True, verbose_name="Дата расхода",
+                                    help_text="Дата документа / обязательства (к какому периоду относится).")
+    due_date = models.DateField(null=True, blank=True, verbose_name="Оплатить до")
+    vendor = models.CharField(max_length=200, blank=True, verbose_name="Получатель / поставщик")
+    payment_method = models.CharField(max_length=10, choices=PaymentMethod.choices, default=PaymentMethod.CASH,
+                                      verbose_name="Способ оплаты")
+    responsible = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="+", verbose_name="Ответственный")
+    reference = models.CharField(max_length=100, blank=True, verbose_name="Номер документа")
+    comment = models.TextField(blank=True, verbose_name="Комментарий")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.UNPAID, db_index=True)
+    paid_date = models.DateField(null=True, blank=True, db_index=True, verbose_name="Дата оплаты")
+    document = models.FileField(upload_to=expense_document_path, blank=True, verbose_name="Подтверждающий документ")
+    document_name = models.CharField(max_length=255, blank=True, help_text="Исходное имя загруженного файла.")
+    recurring = models.ForeignKey(RecurringExpense, on_delete=models.PROTECT, null=True, blank=True,
+                                  related_name="expenses", verbose_name="Регулярный расход")
+    recurrence_month = models.DateField(null=True, blank=True,
+                                        help_text="Месяц регулярного расхода (1-е число) — не больше одного на шаблон.")
+    void_reason = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=64, null=True, blank=True, unique=True, editable=False)
+    version = models.PositiveIntegerField(default=1, help_text="Защита от одновременного изменения.")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                  related_name="+")
+    voided_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Расход компании"
+        verbose_name_plural = "Расходы компании"
+        ordering = ["-expense_date", "-id"]
+        indexes = [models.Index(fields=["category", "expense_date"], name="ix_expense_category_date")]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="expense_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(status="PAID", paid_date__isnull=False) | ~models.Q(status="PAID"),
+                name="expense_paid_has_date",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(recurring__isnull=True, recurrence_month__isnull=True)
+                | models.Q(recurring__isnull=False, recurrence_month__isnull=False),
+                name="expense_recurrence_both_or_none",
+            ),
+            # Один расход на шаблон и месяц: повторная генерация не дублирует.
+            models.UniqueConstraint(fields=["recurring", "recurrence_month"], condition=models.Q(recurring__isnull=False),
+                                    name="unique_recurring_expense_month"),
+            # Один и тот же документ поставщика не проводится дважды.
+            models.UniqueConstraint(fields=["vendor", "reference"],
+                                    condition=~models.Q(reference="") & ~models.Q(status="VOID"),
+                                    name="unique_live_expense_document"),
+        ]
+
+    def __str__(self):
+        return f"{self.description} · {self.amount} сом · {self.expense_date:%d.%m.%Y}"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Расход нельзя удалить — отмените его с указанием причины.")

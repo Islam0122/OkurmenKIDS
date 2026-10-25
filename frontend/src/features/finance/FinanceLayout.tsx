@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PiggyBank,
   ReceiptText,
   Settings2,
   Tags,
@@ -54,6 +55,7 @@ export const FINANCE_NAV: FinanceNavItem[] = [
   { to: '/finance/overdue', label: 'Просроченные', icon: TriangleAlert, badge: 'overdue', tone: 'danger', access: 'money' },
   { to: '/finance/students', label: 'Все студенты', icon: Users, access: 'all' },
   { to: '/finance/payments', label: 'Платежи', icon: Banknote, access: 'money' },
+  { to: '/finance/prepayments', label: 'Авансы', icon: PiggyBank, access: 'money' },
   { to: '/finance/receipts', label: 'Чеки', icon: ReceiptText, access: 'money' },
   { to: '/finance/analytics', label: 'Аналитика', icon: BarChart3, access: 'money' },
   { to: '/finance/plans', label: 'Тарифы и программы', icon: Tags, access: 'settings' },
@@ -110,7 +112,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   })
   const items = navFor(me.data)
   const back = user?.role === 'assistant' ? '/assistant' : user?.role === 'admin' ? '/app/dashboard' : '/accounting'
-  const backLabel = user?.role === 'assistant' ? 'В рабочее место' : user?.role === 'admin' ? 'Вернуться в LMS' : 'Бухгалтерия (зарплаты)'
+  const backLabel = user?.role === 'assistant' ? 'В рабочее место' : user?.role === 'admin' ? 'Вернуться в LMS' : 'Бухгалтерия'
   return (
     <div className="flex h-full flex-col">
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3" aria-label="Финансы студентов">

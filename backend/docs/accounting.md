@@ -3,6 +3,9 @@
 API: `/api/v1/accounting/` · интерфейс: `/accounting` (React) · валюта: KGS ·
 периоды: 1–15 и 16–последний день месяца.
 
+Структура всей бухгалтерии (оплата студентов, зарплата, расходы компании,
+финансовая панель, касса, настройки) — [finance.md](finance.md).
+
 ## Роли
 
 | Роль | Что может |
@@ -413,6 +416,8 @@ QuerySet) — только отмена (`VOID`) с причиной.
 | GET | `analytics/summary/`, `analytics/by-department/` |
 | GET | `reports/teachers/`, `reports/teachers.xlsx`, `reports/teachers.pdf` |
 | GET | `earnings/schedule/` — график выплат по датам по всем сотрудникам (`date_from`, `date_to`, `department`, `search`) |
+| GET/POST/PATCH | `expenses/`, `expense-categories/`, `recurring-expenses/` — расходы компании (см. [finance.md](finance.md)) |
+| GET | `finance/overview/`, `finance/cash-flow/`, `finance/report.xlsx` — финансовая панель и касса |
 | GET | `earnings/` — заработок сотрудников на сегодня (`department`, `search`); `earnings/{employee_id}/` — детали |
 | GET/POST | `deduction-rules/` — налоги и удержания (`?current=1` — последние версии, `employee`, `kind`); POST — создать |
 | POST | `deduction-rules/{id}/change/` — изменить с причиной (на месте или новой версией с 1-го числа); GET `{id}/history/` |

@@ -33,6 +33,17 @@ import type {
   PayoutPlanSummary,
   Dashboard,
   EmployeeRow,
+  CashFlowResponse,
+  Expense,
+  ExpenseBody,
+  ExpenseCategory,
+  ExpenseFilters,
+  ExpenseList,
+  ExpenseOptions,
+  ExpenseReport,
+  FinanceOverview,
+  FinanceRange,
+  RecurringExpense,
   PayrollAdjustment,
   PayrollDetail,
   PayrollListItem,
@@ -222,6 +233,56 @@ export const accountingApi = {
   downloadPayoutPlan: (id: number, format: 'pdf' | 'xlsx') =>
     download(`/payout-plans/${id}/report.${format}/`, undefined, `payout-plan-${id}.${format}`),
   myPayoutPlan: () => get<{ results: MyPlannedPayout[] }>('/my/payout-plan/'),
+
+  /** Расходы компании. Неоплаченный расход — обязательство, не потраченные
+   * деньги; оплата — `payExpense`; удаления нет — только отмена с причиной. */
+  expenseOptions: () => get<ExpenseOptions>('/expenses/options/'),
+  expenses: (filters: ExpenseFilters) => get<ExpenseList>('/expenses/', { ...filters }),
+  expense: (id: number) => get<Expense>(`/expenses/${id}/`),
+  /** Документ в той же форме (multipart), если он выбран. */
+  createExpense: (body: ExpenseBody & { paid?: boolean; paid_date?: string | null; document?: File | null }, idempotencyKey: string) => {
+    const { document, ...rest } = body
+    if (!document) return post<Expense>('/expenses/', rest, { 'Idempotency-Key': idempotencyKey })
+    const form = new FormData()
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined && value !== null) form.append(key, String(value))
+    }
+    form.append('document', document)
+    return post<Expense>('/expenses/', form, { 'Idempotency-Key': idempotencyKey })
+  },
+  updateExpense: (id: number, body: Partial<ExpenseBody> & { version: number; reason?: string }) =>
+    patch<Expense>(`/expenses/${id}/`, body),
+  payExpense: (id: number, body: { paid_date: string; payment_method?: string; reference?: string; version: number }) =>
+    post<Expense>(`/expenses/${id}/pay/`, body),
+  unpayExpense: (id: number, reason: string, version: number) => post<Expense>(`/expenses/${id}/unpay/`, { reason, version }),
+  voidExpense: (id: number, reason: string, version: number) => post<Expense>(`/expenses/${id}/void/`, { reason, version }),
+  expenseHistory: (id: number) => get<{ results: AuditEntry[] }>(`/expenses/${id}/history/`),
+  uploadExpenseDocument: (id: number, file: File, version: number) => {
+    const form = new FormData()
+    form.append('document', file)
+    form.append('version', String(version))
+    return post<Expense>(`/expenses/${id}/document/`, form)
+  },
+  downloadExpenseDocument: (id: number, name: string) => download(`/expenses/${id}/document/`, undefined, name || `expense-${id}`),
+  expenseReport: (range: FinanceRange, filters: ExpenseFilters = {}) =>
+    get<ExpenseReport>('/expenses/report/', { ...filters, ...range, page: undefined }),
+  downloadExpenses: (range: FinanceRange, filters: ExpenseFilters = {}) =>
+    download('/expenses/export.xlsx/', { ...filters, ...range, page: undefined }, 'expenses.xlsx'),
+  expenseCategories: () => get<ExpenseCategory[]>('/expense-categories/'),
+  createExpenseCategory: (body: { name: string; description?: string; sort_order?: number }) =>
+    post<ExpenseCategory>('/expense-categories/', body),
+  updateExpenseCategory: (id: number, body: Partial<Pick<ExpenseCategory, 'name' | 'description' | 'sort_order' | 'is_active'>>) =>
+    patch<ExpenseCategory>(`/expense-categories/${id}/`, body),
+  recurringExpenses: () => get<RecurringExpense[]>('/recurring-expenses/'),
+  createRecurringExpense: (body: Record<string, unknown>) => post<RecurringExpense>('/recurring-expenses/', body),
+  updateRecurringExpense: (id: number, body: Record<string, unknown>) => patch<RecurringExpense>(`/recurring-expenses/${id}/`, body),
+  generateRecurringExpenses: (year: number, month: number) =>
+    post<{ year: number; month: number; created: number[]; skipped: number[] }>('/recurring-expenses/generate/', { year, month }),
+
+  /** Единая финансовая панель, касса (движение денег) и общий отчёт Excel. */
+  financeOverview: (range: FinanceRange) => get<FinanceOverview>('/finance/overview/', { ...range }),
+  cashFlow: (range: FinanceRange, params: Params = {}) => get<CashFlowResponse>('/finance/cash-flow/', { ...range, ...params }),
+  downloadFinanceReport: (range: FinanceRange) => download('/finance/report.xlsx', { ...range }, 'finance.xlsx'),
 
   /** Сотрудник — всегда текущий пользователь на сервере; id в запросе нет. */
   mySalary: (filters: MySalaryFilters = {}) => get<MySalary>('/my/salary/', { ...filters }),

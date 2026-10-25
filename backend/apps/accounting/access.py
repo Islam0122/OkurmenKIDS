@@ -27,10 +27,10 @@ ACCOUNTANT_GROUP = "Accountant"
 _VIEW = ("studentpayment", "employeesalaryprofile", "salaryrule", "payrollperiod", "payroll", "payrollline",
          "payrolladjustment", "payrollpayment", "payrollauditlog", "coursepayrollsettings", "coursecycle",
          "cycleaccrual", "coursepriceversion", "cyclelesson", "payoutplan", "payoutplanline", "deductionrule",
-         "applieddeduction", "deductionallocation")
+         "applieddeduction", "deductionallocation", "expensecategory", "expense", "recurringexpense")
 _WRITE = ("studentpayment", "employeesalaryprofile", "salaryrule", "payrollperiod", "payroll", "payrollline",
           "payrolladjustment", "payrollpayment", "coursepayrollsettings", "coursepriceversion", "cycleaccrual",
-          "payoutplan", "payoutplanline", "deductionrule")
+          "payoutplan", "payoutplanline", "deductionrule", "expensecategory", "expense", "recurringexpense")
 ACCOUNTANT_PERMISSIONS = tuple(
     [f"view_{m}" for m in _VIEW] + [f"add_{m}" for m in _WRITE] + [f"change_{m}" for m in _WRITE]
 )

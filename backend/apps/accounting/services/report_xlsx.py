@@ -186,3 +186,91 @@ def render_payout_plan_xlsx(report: dict) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+_MONTHS = ("Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь",
+           "Ноябрь", "Декабрь")
+
+
+def render_finance_xlsx(overview: dict, movements: dict, expense_report: dict) -> bytes:
+    """Финансовый отчёт за период: сводка, движение денег, расходы по
+    категориям, денежный поток по месяцам."""
+    period = f"{_d(overview['date_from'])}–{_d(overview['date_to'])} · KGS"
+    s, pr, ex, cf = overview["students"], overview["payroll"], overview["expenses"], overview["cash_flow"]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Сводка"
+    summary = [
+        ["Оплата студентов", "Поступило (валовые)", s["gross"]],
+        ["Оплата студентов", "Возвраты", s["refunds"]],
+        ["Оплата студентов", "Поступило (чистые)", s["net"]],
+        ["Оплата студентов", "Выставлено начислений за период (не доход)", s["invoiced"]],
+        ["Оплата студентов", "Задолженность на конец периода", s["debt_end"]],
+        ["Оплата студентов", "Задолженность сейчас", s["debt_now"]],
+        ["Оплата студентов", "Просрочено сейчас", s["overdue_now"]],
+        ["Оплата студентов", "Остаток предоплаты (обязательство)", s["prepayment"]],
+        ["Зарплата", "Начислено (утверждено)", pr["accrued"]],
+        ["Зарплата", "Удержано", pr["deductions"]],
+        ["Зарплата", "Выплачено в периоде", pr["paid_cash"]],
+        ["Зарплата", "Ожидает утверждения", pr["awaiting_approval"]],
+        ["Зарплата", "Долг перед сотрудниками сейчас", pr["outstanding_now"]],
+        ["Расходы", "Оплачено в периоде", ex["paid"]],
+        ["Расходы", "Начислено по дате расхода", ex["incurred"]],
+        ["Расходы", "Не оплачено сейчас", ex["unpaid_now_amount"]],
+        ["Денежный поток", "Приход", cf["inflow"]],
+        ["Денежный поток", "Расход", cf["outflow"]],
+        ["Денежный поток", "Чистый поток (денежный результат)", cf["net"]],
+    ]
+    _sheet(ws, "Финансовая сводка", period + " · " + overview["result"]["accrual_note"],
+           [("Раздел", 22), ("Показатель", 48), ("Сумма", 18)], summary, {3}, None)
+
+    ws = wb.create_sheet("Движение денег")
+    rows = [[_d(r["date"]), r["kind_display"], "Приход" if r["direction"] == "in" else "Расход",
+             r["amount"] if r["direction"] == "in" else -r["amount"], r["method_display"], r["counterparty"],
+             r["description"], r["reference"]] for r in movements["results"]]
+    m = movements["summary"]
+    _sheet(ws, "Движение денежных средств", period + " · " + movements["note"],
+           [("Дата", 12), ("Операция", 20), ("Направление", 12), ("Сумма", 16), ("Способ", 20),
+            ("Контрагент", 30), ("Описание", 40), ("Документ", 16)],
+           rows, {4}, ["Итого", "", "", m["net"], "", "", f"приход {m['inflow']} · расход {m['outflow']}", ""])
+
+    ws = wb.create_sheet("Расходы по категориям")
+    rows = [[r["category_name"], r["paid"], r["paid_count"], r["incurred"], r["unpaid"]]
+            for r in expense_report["by_category"]]
+    _sheet(ws, "Расходы по категориям", period + " · оплачено — по дате оплаты, начислено — по дате расхода",
+           [("Категория", 36), ("Оплачено", 16), ("Операций", 10), ("Начислено", 16), ("Не оплачено", 16)],
+           rows, {2, 4, 5}, ["Итого", expense_report["paid"], expense_report["paid_count"], expense_report["incurred"],
+                             expense_report["unpaid"]])
+
+    ws = wb.create_sheet("По месяцам")
+    rows = [[f"{_MONTHS[h['month'] - 1]} {h['year']}", h["inflow"], h["refunds"], h["payroll"], h["expenses"],
+             h["net"]] for h in overview["history"]]
+    _sheet(ws, "Денежный поток по месяцам", "Последние 12 месяцев · KGS",
+           [("Месяц", 18), ("Поступило", 16), ("Возвраты", 16), ("Зарплата", 16), ("Расходы", 16), ("Чистый поток", 16)],
+           rows, {2, 3, 4, 5, 6}, None)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def render_expenses_xlsx(expenses, report: dict) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Расходы"
+    rows = [[_d(e.expense_date), e.category.name, e.description, e.vendor, e.amount, e.get_status_display(),
+             _d(e.paid_date) if e.paid_date else "", e.get_payment_method_display(),
+             (e.responsible.get_full_name() or e.responsible.username) if e.responsible_id else "", e.reference]
+            for e in expenses]
+    total = sum((e.amount for e in expenses), 0)
+    _sheet(ws, "Расходы компании", f"{_d(report['date_from'])}–{_d(report['date_to'])} · KGS",
+           [("Дата", 12), ("Категория", 30), ("Описание", 40), ("Получатель", 26), ("Сумма", 14), ("Статус", 14),
+            ("Оплачено", 12), ("Способ", 18), ("Ответственный", 24), ("Документ", 16)],
+           rows, {5}, ["Итого", "", "", "", total, "", "", "", "", ""])
+    ws = wb.create_sheet("По категориям")
+    rows = [[r["category_name"], r["paid"], r["paid_count"], r["incurred"], r["unpaid"]] for r in report["by_category"]]
+    _sheet(ws, "Расходы по категориям", "оплачено — по дате оплаты, начислено — по дате расхода",
+           [("Категория", 36), ("Оплачено", 16), ("Операций", 10), ("Начислено", 16), ("Не оплачено", 16)],
+           rows, {2, 4, 5}, ["Итого", report["paid"], report["paid_count"], report["incurred"], report["unpaid"]])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

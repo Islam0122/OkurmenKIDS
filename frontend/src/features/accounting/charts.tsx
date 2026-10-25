@@ -23,8 +23,14 @@ const PAD_BOTTOM = 20
  * Подсказка при наведении/фокусе; легенда всегда видна; значения дублируются
  * таблицей под графиком, поэтому цвет — не единственный носитель смысла.
  */
-export function MonthlyBarsChart({ title, points }: { title: string; points: MonthBar[] }) {
+export function MonthlyBarsChart({ title, points, labels }: {
+  title: string
+  points: MonthBar[]
+  /** Подписи двух серий, если это не «Начислено / Выплачено» (например, приход и расход). */
+  labels?: readonly [string, string]
+}) {
   const [active, setActive] = useState<number | null>(null)
+  const series = SERIES.map((s, i) => ({ ...s, label: labels?.[i] ?? s.label }))
   const max = Math.max(1, ...points.flatMap((p) => [p.accrued, p.paid]))
   const slot = 36
   const width = Math.max(points.length * slot, 200)
@@ -38,7 +44,7 @@ export function MonthlyBarsChart({ title, points }: { title: string; points: Mon
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="section-title">{title}</h2>
         <ul className="flex gap-3 text-xs text-ink-secondary" aria-label="Легенда">
-          {SERIES.map((s) => (
+          {series.map((s) => (
             <li key={s.key} className="flex items-center gap-1.5">
               <span className="inline-block size-2.5 rounded-sm" style={{ background: s.color }} aria-hidden />{s.label}
             </li>
@@ -47,7 +53,7 @@ export function MonthlyBarsChart({ title, points }: { title: string; points: Mon
       </div>
       <div className="relative">
         <svg viewBox={`0 0 ${width} ${H}`} className="w-full" role="img"
-          aria-label={`${title}: ${points.map((p) => `${p.label} — начислено ${p.accrued}, выплачено ${p.paid}`).join('; ')}`}>
+          aria-label={`${title}: ${points.map((p) => `${p.label} — ${series[0].label.toLowerCase()} ${p.accrued}, ${series[1].label.toLowerCase()} ${p.paid}`).join('; ')}`}>
           <line x1={0} x2={width} y1={PAD_TOP + inner} y2={PAD_TOP + inner} stroke="var(--color-border)" />
           {points.map((p, i) => {
             const x0 = i * slot + (slot - bar * 2 - 2) / 2
@@ -55,7 +61,7 @@ export function MonthlyBarsChart({ title, points }: { title: string; points: Mon
               <g key={p.label} onMouseEnter={() => setActive(i)} onMouseLeave={() => setActive(null)}
                 onFocus={() => setActive(i)} onBlur={() => setActive(null)} tabIndex={0}>
                 <rect x={i * slot} y={0} width={slot} height={H} fill={active === i ? 'var(--color-surface-hover)' : 'transparent'} />
-                {SERIES.map((s, k) => {
+                {series.map((s, k) => {
                   const value = p[s.key]
                   const top = y(value)
                   return (
@@ -71,8 +77,8 @@ export function MonthlyBarsChart({ title, points }: { title: string; points: Mon
         {hovered ? (
           <div className="pointer-events-none absolute right-0 top-0 rounded-lg border border-border bg-surface px-3 py-2 text-xs shadow-sm" role="status">
             <p className="font-medium text-ink">{hovered.label}</p>
-            <p className="text-ink-secondary">Начислено: {som(hovered.accrued)}</p>
-            <p className="text-ink-secondary">Выплачено: {som(hovered.paid)}</p>
+            <p className="text-ink-secondary">{series[0].label}: {som(hovered.accrued)}</p>
+            <p className="text-ink-secondary">{series[1].label}: {som(hovered.paid)}</p>
           </div>
         ) : null}
       </div>

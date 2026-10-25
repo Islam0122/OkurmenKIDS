@@ -1080,3 +1080,254 @@ export interface EarningsRow {
   difference: string
   difference_reasons: { source: EarningsSource; label: string; amount: string }[]
 }
+
+// ---------------------------------------------------------------------------
+// Расходы компании, финансовая панель, касса
+// ---------------------------------------------------------------------------
+
+export type ExpenseStatus = 'UNPAID' | 'PAID' | 'VOID'
+export type MoneyMethod = 'cash' | 'bank' | 'card' | 'other'
+
+export interface ExpenseCategory {
+  id: number
+  code: string
+  name: string
+  description: string
+  sort_order: number
+  is_active: boolean
+  expenses_count: number | null
+}
+
+export interface Expense {
+  id: number
+  category: number
+  category_name: string
+  description: string
+  amount: string
+  currency: string
+  expense_date: string
+  due_date: string | null
+  vendor: string
+  payment_method: MoneyMethod
+  payment_method_display: string
+  responsible: number | null
+  responsible_name: string
+  reference: string
+  comment: string
+  status: ExpenseStatus
+  status_display: string
+  paid_date: string | null
+  is_overdue: boolean
+  has_document: boolean
+  document_name: string
+  recurring: number | null
+  recurring_description: string | null
+  recurrence_month: string | null
+  void_reason: string
+  version: number
+  created_by: number | null
+  created_by_name: string
+  created_at: string
+  updated_at: string
+  voided_by: number | null
+  voided_by_name: string
+  voided_at: string | null
+}
+
+export interface ExpenseFilters {
+  search?: string
+  category?: number
+  status?: ExpenseStatus
+  payment_method?: MoneyMethod
+  responsible?: number
+  date_from?: string
+  date_to?: string
+  overdue?: boolean
+  recurring?: boolean
+  include_void?: boolean
+  page?: number
+  page_size?: number
+}
+
+export interface ExpenseBody {
+  category: number
+  description: string
+  amount: string
+  expense_date: string
+  due_date?: string | null
+  vendor?: string
+  payment_method?: MoneyMethod
+  responsible?: number | null
+  reference?: string
+  comment?: string
+}
+
+export interface ExpenseOptions {
+  categories: ExpenseCategory[]
+  payment_methods: { value: MoneyMethod; label: string }[]
+  statuses: { value: ExpenseStatus; label: string }[]
+  staff: { id: number; name: string }[]
+  unpaid: { amount: string; count: number; overdue_amount: string; overdue_count: number }
+}
+
+export interface ExpenseList {
+  count: number
+  next: string | null
+  previous: string | null
+  results: Expense[]
+  totals: { total: string; paid: string; unpaid: string }
+}
+
+export interface ExpenseReportRow {
+  category: number
+  category_name: string
+  paid: string
+  paid_count: number
+  incurred: string
+  unpaid: string
+  share_percent: string | null
+}
+
+export interface ExpenseReport {
+  date_from: string
+  date_to: string
+  paid: string
+  paid_count: number
+  incurred: string
+  unpaid: string
+  by_category: ExpenseReportRow[]
+  by_month: { year: number; month: number; paid: string; incurred: string }[]
+  unpaid_now: ExpenseOptions['unpaid']
+  definitions: Record<string, string>
+}
+
+export interface RecurringExpense {
+  id: number
+  category: number
+  category_name: string
+  description: string
+  amount: string
+  vendor: string
+  payment_method: MoneyMethod
+  payment_method_display: string
+  responsible: number | null
+  responsible_name: string
+  day_of_month: number
+  start_month: string
+  end_month: string | null
+  is_active: boolean
+  comment: string
+  expenses_count: number | null
+  last_month: string | null
+  created_at: string
+}
+
+/** Период финансовых отчётов: месяц (ГГГГ-ММ) или произвольный диапазон. */
+export interface FinanceRange {
+  month?: string
+  date_from?: string
+  date_to?: string
+}
+
+export interface MetricChange {
+  current: string
+  previous: string
+  delta: string
+  percent: string | null
+}
+
+export interface MethodFlow {
+  method: MoneyMethod
+  method_display: string
+  inflow: string
+  outflow: string
+  net: string
+}
+
+export interface FinanceOverview {
+  date_from: string
+  date_to: string
+  previous_period: { date_from: string; date_to: string }
+  branches_supported: boolean
+  students: {
+    gross: string
+    count: number
+    refunds: string
+    refunds_count: number
+    net: string
+    invoiced: string
+    invoiced_count: number
+    expected: string
+    expected_paid: string
+    debt_end: string
+    debt_now: string
+    overdue_now: string
+    overdue_students: number
+    students_awaiting: number
+    prepayment: string
+    prepayment_students: number
+    unallocated_credit: string
+    prepayment_review: number
+  }
+  payroll: {
+    accrued: string
+    deductions: string
+    paid_on_accrued: string
+    outstanding_on_accrued: string
+    awaiting_approval: string
+    employees: number
+    paid_cash: string
+    paid_cash_count: number
+    outstanding_now: string
+  }
+  expenses: {
+    paid: string
+    incurred: string
+    unpaid_now_amount: string
+    unpaid_now_count: number
+    unpaid_now_overdue_amount: string
+    unpaid_now_overdue_count: number
+  }
+  cash_flow: {
+    inflow: string
+    outflow: string
+    net: string
+    outflow_refunds: string
+    outflow_payroll: string
+    outflow_expenses: string
+    by_method: MethodFlow[]
+  }
+  result: { cash: string; cash_basis: string; accrual: string | null; accrual_note: string }
+  comparison: Record<'student_receipts' | 'payroll_accrued' | 'payroll_paid' | 'expenses_paid' | 'cash_flow_net', MetricChange>
+  history: { year: number; month: number; inflow: string; refunds: string; payroll: string; expenses: string; outflow: string; net: string }[]
+  definitions: Record<string, string>
+}
+
+export type CashMovementKind = 'student_payment' | 'student_refund' | 'payroll_payment' | 'expense'
+
+export interface CashMovement {
+  key: string
+  date: string
+  kind: CashMovementKind
+  kind_display: string
+  direction: 'in' | 'out'
+  amount: string
+  method: MoneyMethod
+  method_display: string
+  counterparty: string
+  description: string
+  reference: string
+  source_id: number
+  link: string
+}
+
+export interface CashFlowResponse {
+  count: number
+  next: string | null
+  previous: string | null
+  results: CashMovement[]
+  date_from: string
+  date_to: string
+  summary: { inflow: string; outflow: string; net: string; count: number; by_method: MethodFlow[] }
+  note: string
+}
