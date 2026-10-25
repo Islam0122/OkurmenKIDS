@@ -23,12 +23,29 @@
   </div>
   {% if report.real_money %}
   <div class="ok-card">
-    <div class="ok-card-header"><span>Удаление остановлено: проведённые платежи (реальные деньги)</span></div>
+    <div class="ok-card-header"><span>Обычное удаление остановлено: проведённые платежи (реальные деньги) — итого {{ report.money_total }} сом</span></div>
     <div class="ok-card-body">
       <table class="table table-sm">
-        <thead><tr><th>№</th><th>Операция</th><th>Сумма</th><th>Дата</th><th>Чек</th><th>Что сделать</th></tr></thead>
-        {% for p in report.real_money %}<tr><td>{{ p.id }}</td><td>{{ p.kind }}</td><td>{{ p.amount }}</td><td>{{ p.received_date }}</td><td>{{ p.receipt|default:"—" }}</td><td>{{ p.advice }}</td></tr>{% endfor %}
+        <thead><tr><th>№</th><th>Операция</th><th>Сумма</th><th>Дата денег</th><th>Чек</th><th>Внёс</th><th>Проверка</th><th>Что будет / что сделать</th></tr></thead>
+        {% for p in report.real_money %}<tr><td>{{ p.id }}</td><td>{{ p.kind }}</td><td>{{ p.amount }}</td><td>{{ p.received_date }}</td><td>{{ p.receipt|default:"—" }}</td>
+          <td>{{ p.created_by|default:"—" }}<br><small>{{ p.created_at|date:"d.m.Y H:i" }}</small></td>
+          <td>{% if p.possible_duplicate %}<strong style="color:#ba2121;">возможен повторный ввод — сверьте с кассой</strong>{% endif %}
+            {% for w in p.closed_periods %}<br>период {{ w.period }} — {{ w.status }}{% endfor %}</td>
+          <td>{{ p.advice }}</td></tr>{% endfor %}
       </table>
+    </div>
+  </div>
+  {% endif %}
+  {% if report.full_reset_available %}
+  <div class="ok-card">
+    <div class="ok-card-header"><span style="color:#ba2121;">Полный сброс бухгалтерии ученика (включая проведённые платежи)</span></div>
+    <div class="ok-card-body">
+      <p>Будут удалены все записи из таблицы выше, в том числе проведённые платежи и чеки на {{ report.money_total }} сом:
+        они исчезнут из отчётов о поступлениях за даты получения денег. Сторно, возвраты и платежи «взамен» не создаются.
+        Если деньги действительно получены — после создания нового профиля внесите их обычной оплатой с настоящей датой.</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="mode" value="full">{{ full_form.as_p }}
+        <button type="submit" class="button" style="background:#ba2121;color:#fff;">Полностью сбросить бухгалтерию</button>
+        <a href="{% url 'admin:billing_studentbillingprofile_changelist' %}" class="button">Отмена</a></form>
     </div>
   </div>
   {% endif %}
