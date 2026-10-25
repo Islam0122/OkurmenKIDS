@@ -30,6 +30,21 @@ import {
 
 const PAGE_SIZE = 25
 
+const nonZero = (v?: string | null) => !!v && v !== '0.00'
+
+/** «К оплате сейчас» с разбивкой по срокам (суммы — backend `contract_row`): красным — только
+ * просроченная часть; начисления с ненаступившим сроком — отдельной строкой. */
+function DueBreakdown({ row }: { row: QueueRow }) {
+  return (
+    <div className="text-sm">
+      <Amount value={row.due_now} />
+      {nonZero(row.overdue_amount) ? <p className="text-xs font-medium text-danger">просрочено <Amount value={row.overdue_amount} /></p> : null}
+      {nonZero(row.due_today_amount) ? <p className="text-xs text-warning">срок сегодня <Amount value={row.due_today_amount} /></p> : null}
+      {nonZero(row.not_due_amount) ? <p className="text-xs text-ink-secondary">срок не наступил <Amount value={row.not_due_amount} tone="muted" /></p> : null}
+    </div>
+  )
+}
+
 export function StudentsPage() {
   const [view, setView] = useState<'contracts' | 'unregistered'>('contracts')
   const me = useFinanceMe()
@@ -88,7 +103,7 @@ function Contracts({ money }: { money: boolean }) {
                       {r.discount_amount && r.discount_amount !== '0.00' ? <p className="text-xs text-ink-secondary">скидка <Amount value={r.discount_amount} tone="muted" /></p> : null}</div>
                   ) },
                   ...(money ? [
-                    { key: 'due', header: 'К оплате сейчас', render: (r: QueueRow) => <Amount value={r.due_now} tone={r.overdue_amount !== '0.00' ? 'danger' : undefined} /> },
+                    { key: 'due', header: 'К оплате сейчас', render: (r: QueueRow) => <DueBreakdown row={r} /> },
                     { key: 'credit', header: 'Аванс', render: (r: QueueRow) => <Amount value={r.credit} tone="muted" /> },
                   ] : []),
                   { key: 'stage', header: 'Статус', render: (r) => (

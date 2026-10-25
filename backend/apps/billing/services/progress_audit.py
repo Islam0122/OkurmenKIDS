@@ -19,10 +19,12 @@
 from __future__ import annotations
 
 from collections import Counter
+from decimal import Decimal
 
 from django.db.models import Q
 
 from apps.academy.models import Lesson
+from apps.accounting.models import StudentPayment
 
 from ..models import Invoice, LessonConsumption, StudentBillingProfile
 from . import progress as study
@@ -44,6 +46,8 @@ FINDINGS = {
                         "но начисление не оплачено (статус не «Оплачено»).",
     "overdue_before_deadline": "Начисление «Просрочено», хотя в его месяце засчитано не больше уроков, чем "
                                "срок оплаты, — проверьте начисление.",
+    "possible_duplicate_payment": "Два проведённых платежа на одну сумму с одной датой — сверьте с кассой, не "
+                                  "внесены ли одни деньги дважды (автоматически не исправляется).",
 }
 
 
@@ -73,8 +77,26 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
             "number": inv.number, "kind": inv.kind, "month": inv.package.month_number, "amount": str(inv.amount),
             "paid": str(inv.amount_paid + inv.amount_adjusted), "balance": str(inv.balance), "status": inv.status,
             "due_lesson": inv.due_lesson, "month_lessons_used": inv.package.lessons_used,
-            "issue_date": inv.issue_date.isoformat(),
+            "due_date": None if inv.due_lesson else inv.due_date.isoformat(),
+            "period_date": inv.period_date.isoformat(), "issue_date": inv.issue_date.isoformat(),
+            "created_at": inv.created_at.isoformat(),
         })
+    payments = []
+    for p in (StudentPayment.objects.filter(billing_profile=profile).select_related("receipt")
+              .prefetch_related("billing_allocations__invoice").order_by("received_date", "pk")):
+        receipt = getattr(p, "receipt", None)
+        allocations = [{"invoice": a.invoice.number, "amount": str(a.amount), "status": a.status}
+                       for a in p.billing_allocations.all()]
+        active = sum((a.amount for a in p.billing_allocations.all() if a.status == "ACTIVE"), Decimal(0))
+        payments.append({
+            "id": p.pk, "kind": p.kind, "status": p.status, "purpose": p.purpose, "amount": str(p.amount),
+            "received_date": p.received_date.isoformat(), "created_at": p.created_at.isoformat(),
+            "receipt": receipt.number if receipt else None, "allocations": allocations,
+            "unallocated": str(p.amount - active) if p.kind == StudentPayment.Kind.PAYMENT
+            and p.status == StudentPayment.Status.CONFIRMED else None,
+        })
+    same_day = Counter((p["amount"], p["received_date"]) for p in payments
+                       if p["status"] == StudentPayment.Status.CONFIRMED and p["kind"] == StudentPayment.Kind.PAYMENT)
     findings = []
     shown_month, shown_used = row["month_number"], row["lessons_used"]
     if progress and progress["next_month_open"]:
@@ -92,6 +114,8 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
     if any(i["status"] == Invoice.Status.OVERDUE and i["due_lesson"] and i["month_lessons_used"] <= i["due_lesson"]
            for i in invoices):
         findings.append("overdue_before_deadline")
+    if any(n > 1 for n in same_day.values()):
+        findings.append("possible_duplicate_payment")
     return {
         "profile": profile.pk, "student": str(profile.student), "plan": profile.plan.name,
         "group": profile.student.group.name if profile.student.group_id else None,
@@ -110,7 +134,9 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
                  "course_progress": f"{counted} из {(profile.duration_months or 0) * per_month}"},
         "money": {"stage": row["stage"], "due_now": str(s["due_now"]), "overdue": str(s["overdue"]),
                   "credit": str(s["credit"]), "credit_unapplied": str(s["credit_unapplied"]),
-                  "outstanding": str(s["outstanding"]), "invoices": invoices},
+                  "outstanding": str(s["outstanding"]), "received": str(s["net_received"]),
+                  "allocated": str(s["allocated"]), "due_today": row["due_today_amount"],
+                  "not_due": row["not_due_amount"], "invoices": invoices, "payments": payments},
         "findings": [{"code": c, "detail": FINDINGS[c]} for c in findings],
     }
 
