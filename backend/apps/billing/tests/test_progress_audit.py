@@ -37,14 +37,15 @@ class AuditFixture(PeriodFixture):
     def setUp(self):
         super().setUp()
         self.at(SEP1)
-        self.next3 = pricing.create_plan(
-            actor=self.accountant, name="Next 3", subject=self.it, course=self.course, lessons_per_package=12,
-            package_price=D("12000"), effective_from=self.start, duration_months=6, payment_deadline_lessons=3)
+        # Тот же размер месяца, что у тарифа курса из фикстуры (4 × 12) — тарифы согласованы.
+        self.soft2 = pricing.create_plan(
+            actor=self.accountant, name="Prog SOFT 2", subject=self.it, course=self.course, lessons_per_package=12,
+            package_price=D("15000"), effective_from=self.start, duration_months=4, payment_deadline_lessons=3)
         self.day = dt.date(2026, 9, 2)
 
-    def contract(self, *, start=SEP1, paid="12000", **kw):
+    def contract(self, *, start=SEP1, paid="15000", **kw):
         profile = profiles.create_student_billing_profile(
-            student=self.student(self.group_b), plan=self.next3, actor=self.accountant, start_date=start,
+            student=self.student(self.group_b), plan=self.soft2, actor=self.accountant, start_date=start,
             responsible_accountant=self.accountant, **kw)
         if paid:
             self.pay(profile, paid, on=SEP1)
@@ -61,25 +62,24 @@ class AuditFixture(PeriodFixture):
 
 
 class AuditTests(AuditFixture):
-    def test_boundary_and_fourteenth_lesson(self):
+    def test_group_month_package_and_fourteenth_lesson(self):
         profile = self.contract()
         self.held(12)
         r = profile_progress(profile)
-        # «Все студенты» — по правилу: 12/12 в завершённом месяце; платёжный цикл месяца 2 открыт (справочно).
-        self.assertEqual(r["billing"]["shown"], "месяц 1 из 6, IT 12/12")
-        self.assertEqual(r["rule"]["shown"], "месяц 1 из 6, 12 из 12")
-        self.assertEqual((r["billing"]["billing_month"], r["billing"]["counted_in_packages"]), (2, 12))
-        self.assertEqual([f["code"] for f in r["findings"]], ["boundary_month"])
+        self.assertEqual(r["shown"], "Месяц группы 1 из 4 · IT 12/12")
+        # Финансовый пакет договора уже №2 (начисление месяца 2 — по правилу проекта): справочно.
+        self.assertEqual(r["package"]["shown"], "финансовый пакет №2: 0/12")
+        self.assertEqual([f["code"] for f in r["findings"]], ["package_differs_from_group"])
         self.assertEqual([(i["month"], i["status"]) for i in r["money"]["invoices"]],
-                         [(1, Invoice.Status.PAID), (2, Invoice.Status.OPEN)])  # начисление месяца 2 — по правилу проекта
+                         [(1, Invoice.Status.PAID), (2, Invoice.Status.OPEN)])
         self.held(2)
         r = profile_progress(profile)
-        self.assertEqual((r["billing"]["shown"], r["rule"]["shown"], r["rule"]["course_progress"]),
-                         ("месяц 2 из 6, IT 2/12", "месяц 2 из 6, 2 из 12", "14 из 72"))
-        self.assertEqual(r["academy"]["held_since_contract"], 14)
+        self.assertEqual((r["shown"], r["package"]["shown"], r["group_month"]["held"]),
+                         ("Месяц группы 2 из 4 · IT 2/12", "финансовый пакет №2: 2/12", 14))
+        self.assertEqual(r["billing"]["held_since_contract"], 14)
         self.assertEqual(r["findings"], [])
 
-    def test_other_subjects_cancelled_and_before_contract_are_not_counted(self):
+    def test_late_contract_other_subjects_and_cancelled(self):
         self.day = dt.date(2026, 9, 2)
         self.held(2)  # до начала договора
         profile = self.contract(start=dt.date(2026, 9, 4))
@@ -87,10 +87,12 @@ class AuditTests(AuditFixture):
         self.held(2, subject=self.english)
         self.held(1, status=Lesson.Status.CANCELLED)
         r = profile_progress(profile)
-        self.assertEqual((r["academy"]["held_all_time"], r["academy"]["held_since_contract"], r["billing"]["counted"]),
+        self.assertEqual((r["group_month"]["held"], r["billing"]["held_since_contract"], r["billing"]["counted"]),
                          (5, 3, 3))
         self.assertEqual(r["billing"]["counted_distinct_lessons"], 3)  # урок не засчитан дважды
-        self.assertEqual(r["rule"]["shown"], "месяц 1 из 6, 3 из 12")
+        self.assertEqual((r["shown"], r["package"]["shown"]), ("Месяц группы 1 из 4 · IT 5/12",
+                                                               "финансовый пакет №1: 3/12"))
+        self.assertIn("package_differs_from_group", {f["code"] for f in r["findings"]})
 
     def test_unprocessed_lesson_and_unapplied_credit_are_flagged(self):
         profile = self.contract(paid=None)
@@ -107,10 +109,10 @@ class AuditTests(AuditFixture):
         before = (LessonConsumption.objects.count(), Invoice.objects.count(),
                   list(Invoice.objects.values_list("status", "amount_paid")))
         out = StringIO()
-        call_command("billing_progress_audit", plan="Next 3", stdout=out)
-        self.assertIn("boundary_month", out.getvalue())
-        self.assertIn("месяц 1 из 6, 12 из 12", out.getvalue())
-        self.assertIn("показано «месяц 1 из 6, IT 12/12»", out.getvalue())
+        call_command("billing_progress_audit", plan="Prog SOFT 2", stdout=out)
+        self.assertIn("учебный месяц группы: Месяц группы 1 из 4 · IT 12/12", out.getvalue())
+        self.assertIn("финансовый пакет: финансовый пакет №2: 0/12", out.getvalue())
+        self.assertIn("посещаемость: посетил", out.getvalue())
         self.assertEqual((LessonConsumption.objects.count(), Invoice.objects.count(),
                           list(Invoice.objects.values_list("status", "amount_paid"))), before)
         self.assertEqual(profile.invoices.count(), 2)
@@ -118,4 +120,4 @@ class AuditTests(AuditFixture):
             path = Path(folder) / "report.json"
             call_command("billing_progress_audit", profile=profile.pk, json=str(path), stdout=StringIO())
             report = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual((report["total"], report["by_finding"]), (1, {"boundary_month": 1}))
+        self.assertEqual((report["total"], report["by_finding"]), (1, {"package_differs_from_group": 1}))

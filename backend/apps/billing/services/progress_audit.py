@@ -1,19 +1,20 @@
 """Сверка учебного прогресса академии и бухгалтерии (только чтение).
 
-Для каждого договора по программе сравниваются:
+Для каждого договора по программе — три независимых показателя
+(`services.progress`) и деньги:
 
-* **академия** — проведённые (`completed`) уроки приоритетного предмета
-  договора в группах ученика (текущая и из истории переводов), как их
-  считает вкладка «Программы» группы: всего и с даты начала договора;
-* **бухгалтерия** — засчитанные уроки (действующие списания `LessonConsumption`)
-  и то, что показывает строка «Все студенты» (`queues.contract_row`): номер
-  текущего пакета и уроки в нём;
-* **правило** «12 засчитанных уроков на месяц»: уроки 1–12 → месяц 1,
-  13–24 → месяц 2… — месяц и прогресс месяца по числу засчитанных уроков;
-* **деньги** — стадия, «К оплате сейчас», просрочка, аванс, начисления по
-  месяцам (сумма, статус, остаток, срок) — чтобы аванс не принимался за
-  оплату конкретного начисления.
+* **учебный месяц группы** — проведённые IT-занятия текущей группы, месяц
+  по тарифу программы курса (одинаков у всех учеников группы); если
+  программа или тариф неоднозначны — предупреждение;
+* **посещаемость ученика** — посещённые им проведённые занятия группы;
+* **финансовый пакет** — пакет договора и засчитанные ученику уроки
+  (действующие списания `LessonConsumption`), с причинами незасчитанных;
+* **деньги** — стадия, «К оплате сейчас» по срокам, аванс, начисления
+  (период, дата создания, срок, оплачено, остаток), платежи с
+  распределениями — чтобы аванс не принимался за оплату начисления.
 
+Расхождение месяца группы и финансового пакета — справочно (ученик пришёл
+позже, пропуски по правилу тарифа): начисления идут по договору.
 Каждое расхождение получает код и объяснение (`FINDINGS`). Ничего не
 меняет: ни уроки, ни посещаемость, ни начисления, ни платежи."""
 from __future__ import annotations
@@ -29,14 +30,14 @@ from apps.accounting.models import StudentPayment
 from ..models import Invoice, LessonConsumption, StudentBillingProfile
 from . import progress as study
 from .contracts import money_summary
-from .lessons import lesson_breakdown
-from .progress import group_held_lessons
+from .lessons import _student_group_ids, lesson_breakdown
 
 FINDINGS = {
-    "boundary_month": "Граница месяца (12, 24, … уроков): показан завершённый месяц 12/12, а платёжный цикл "
-                      "следующего месяца уже открыт — его начисление выставлено по правилу проекта (справочно).",
-    "count_mismatch": "Проведённых уроков предмета в группе с начала договора больше / меньше, чем засчитано "
-                      "в бухгалтерии — причины по урокам в `excluded`.",
+    "group_month_unavailable": "Учебный месяц группы не определён — см. предупреждение (программа / тариф / группа).",
+    "package_differs_from_group": "Финансовый пакет договора не совпадает с учебным месяцем группы (ученик пришёл "
+                                  "позже, пропуски по правилу тарифа и т. п.) — справочно: начисления идут по договору.",
+    "count_mismatch": "Проведённых уроков предмета в группах ученика с начала договора больше / меньше, чем засчитано "
+                      "по договору — причины по урокам в `excluded`.",
     "not_processed": "Урок подлежит списанию, но не засчитан (сигнал / фоновая задача не обработали) — "
                      "исправляет billing_resync_lessons / sync_profile_history.",
     "before_contract": "Проведённые уроки до даты начала договора не засчитываются — проверьте дату начала.",
@@ -51,24 +52,37 @@ FINDINGS = {
 }
 
 
+def _held_since_contract(profile) -> int:
+    """Проведённые уроки предмета договора в группах ученика (текущая и из
+    истории) с даты начала договора — для сверки с засчитанными."""
+    held = Lesson.objects.filter(group_id__in=_student_group_ids(profile.student_id), status=Lesson.Status.COMPLETED,
+                                 date__gte=profile.start_date)
+    if profile.subject_id:
+        held = held.filter(subject_id=profile.subject_id)
+    if profile.stopped_on:
+        held = held.filter(date__lt=profile.stopped_on)
+    return held.count()
+
+
 def profile_progress(profile: StudentBillingProfile) -> dict:
     from .queues import base_queryset, contract_row
 
     profile = base_queryset().get(pk=profile.pk)
-    group = group_held_lessons(profile)
+    current_group = profile.student.group if profile.student.group_id else None
     counted = LessonConsumption.objects.filter(profile=profile, kind=LessonConsumption.Kind.CONSUME,
                                                status=LessonConsumption.Status.ACTIVE).count()
-    progress = study.profile_progress(profile)
-    duplicates = (LessonConsumption.objects.filter(profile=profile, kind=LessonConsumption.Kind.CONSUME,
-                                                   status=LessonConsumption.Status.ACTIVE)
-                  .values("lesson_ref").order_by().distinct().count())
+    distinct = (LessonConsumption.objects.filter(profile=profile, kind=LessonConsumption.Kind.CONSUME,
+                                                 status=LessonConsumption.Status.ACTIVE)
+                .values("lesson_ref").order_by().distinct().count())
     breakdown = lesson_breakdown(profile)
     excluded = Counter(r["reason"] for r in breakdown["lessons"]
                        if r["reason"] != "counted" and r["lesson_status"] == Lesson.Status.COMPLETED
                        and (not profile.subject_id or r["subject"] == profile.subject.name))
     row = contract_row(profile)
-    per_month = profile.lessons_per_month or (row["lessons_total"] or 0)
-    rule = study.study_progress(counted, per_month, profile.duration_months)
+    group = row["group_progress"] or {}
+    package = study.financial_package(profile)
+    visits = study.attendance(profile, current_group)
+    held_since = _held_since_contract(profile)
     s = money_summary(profile)
     invoices = []
     for inv in (Invoice.objects.filter(profile=profile).exclude(status=Invoice.Status.VOID)
@@ -98,12 +112,13 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
     same_day = Counter((p["amount"], p["received_date"]) for p in payments
                        if p["status"] == StudentPayment.Status.CONFIRMED and p["kind"] == StudentPayment.Kind.PAYMENT)
     findings = []
-    shown_month, shown_used = row["month_number"], row["lessons_used"]
-    if progress and progress["next_month_open"]:
-        findings.append("boundary_month")
-    if progress and progress["counted"] != counted:
+    if group.get("status") != "ok":
+        findings.append("group_month_unavailable")
+    elif package and (package["number"], package["lessons_used"]) != (group["month"], group["in_month"]):
+        findings.append("package_differs_from_group")
+    if package and package["counted"] != counted:
         findings.append("package_mismatch")
-    if group["since_contract"] != counted:
+    if held_since != counted:
         findings.append("count_mismatch")
     if excluded.get("not_processed"):
         findings.append("not_processed")
@@ -121,17 +136,15 @@ def profile_progress(profile: StudentBillingProfile) -> dict:
         "group": profile.student.group.name if profile.student.group_id else None,
         "subject": profile.subject.name if profile.subject_id else None,
         "contract_start": profile.start_date.isoformat(), "absence_policy": profile.plan.absence_policy,
-        "academy": {"held_all_time": group["all_time"], "held_since_contract": group["since_contract"],
-                    "course_plan": (profile.duration_months or 0) * per_month or None},
-        "billing": {"counted": counted, "counted_distinct_lessons": duplicates,
-                    "counted_in_packages": progress["counted"] if progress else None,
-                    "billing_month": progress["billing_month"] if progress else None,
-                    "shown": f"месяц {shown_month} из {row['duration_months']}, IT {shown_used}/{row['lessons_total']}",
+        "group_month": {k: group.get(k) for k in ("status", "warning", "group_name", "held", "month", "months",
+                                                  "in_month", "per_month", "total")},
+        "shown": (f"Месяц группы {group['month']} из {group['months']} · IT {group['in_month']}/{group['per_month']}"
+                  if group.get("status") == "ok" else group.get("warning")),
+        "attendance": visits,
+        "package": {**(package or {}), "shown": (f"финансовый пакет №{package['number']}: "
+                                                   f"{package['lessons_used']}/{package['lessons_total']}" if package else None)},
+        "billing": {"counted": counted, "counted_distinct_lessons": distinct, "held_since_contract": held_since,
                     "excluded": dict(excluded)},
-        "rule": {"month": rule["month"], "month_progress": rule["in_month"], "per_month": per_month,
-                 "shown": (f"месяц {rule['month']} из {profile.duration_months}, {rule['in_month']} из {per_month}"
-                           if rule["month"] else None),
-                 "course_progress": f"{counted} из {(profile.duration_months or 0) * per_month}"},
         "money": {"stage": row["stage"], "due_now": str(s["due_now"]), "overdue": str(s["overdue"]),
                   "credit": str(s["credit"]), "credit_unapplied": str(s["credit_unapplied"]),
                   "outstanding": str(s["outstanding"]), "received": str(s["net_received"]),

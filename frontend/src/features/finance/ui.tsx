@@ -68,33 +68,41 @@ export function ContractStatusBadge({ status, label }: { status: ContractStatus;
   return <Badge tone={CONTRACT_TONE[status]}>{label}</Badge>
 }
 
-/** «Месяц 2 из 6 · IT 2 из 12 · курс 14 из 72» с полоской прогресса. Все числа —
- * из backend (`progress.study_progress`): засчитанные ученику уроки, не занятия группы. */
-export function MonthProgress({ month, months, used, total, courseCounted, courseTotal, billingMonth }: {
+/** «Месяц группы 2 из 4 · IT 2/12 · финансовый пакет №1: 3/12». Два разных показателя из backend
+ * (`progress`): месяц группы — проведённые IT-занятия текущей группы (одинаков у всех её учеников);
+ * финансовый пакет — пакет договора ученика (по нему начисления). Месяц не определён — предупреждение. */
+export function MonthProgress({ month, months, used, total, warning, groupMonth = true, packageNumber, packageUsed,
+  packageTotal }: {
   month: number | null
   months: number | null
-  used: number
-  total: number
-  courseCounted?: number | null
-  courseTotal?: number | null
-  /** Платёжный цикл уже следующего месяца (граница 12/12) — подсказка про начисление. */
-  billingMonth?: number | null
+  used: number | null
+  total: number | null
+  /** «Нужна настройка: …» — вместо цифр. */
+  warning?: string | null
+  /** false — тариф без учебных месяцев: показывается пакет уроков. */
+  groupMonth?: boolean
+  packageNumber?: number | null
+  packageUsed?: number | null
+  packageTotal?: number | null
 }) {
-  const percent = total ? Math.min(100, Math.round((used / total) * 100)) : 0
+  const percent = total && used !== null ? Math.min(100, Math.round((used / total) * 100)) : 0
   return (
     <div className="min-w-32">
-      <p className="whitespace-nowrap text-sm text-ink">
-        {month ? `Месяц ${month}${months ? ` из ${months}` : ''}` : '—'}
-      </p>
-      <div className="mt-1 flex items-center gap-2">
-        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-hover" aria-hidden>
-          <div className="h-full rounded-full bg-brand-500" style={{ width: `${percent}%` }} />
-        </div>
-        <span className="whitespace-nowrap text-xs text-ink-secondary">IT {used} из {total}</span>
-      </div>
-      {courseTotal ? <p className="whitespace-nowrap text-xs text-ink-secondary">курс {courseCounted ?? 0} из {courseTotal}</p> : null}
-      {billingMonth && month && billingMonth > month ? (
-        <p className="whitespace-nowrap text-xs text-ink-secondary">выставлен месяц {billingMonth}</p>
+      {month ? (
+        <>
+          <p className="whitespace-nowrap text-sm text-ink">
+            {groupMonth ? 'Месяц группы' : 'Месяц'} {month}{months ? ` из ${months}` : ''}
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-hover" aria-hidden>
+              <div className="h-full rounded-full bg-brand-500" style={{ width: `${percent}%` }} />
+            </div>
+            <span className="whitespace-nowrap text-xs text-ink-secondary">IT {used}/{total}</span>
+          </div>
+        </>
+      ) : <p className="max-w-48 text-xs text-warning">{warning ?? '—'}</p>}
+      {groupMonth && packageNumber ? (
+        <p className="whitespace-nowrap text-xs text-ink-secondary">финансовый пакет №{packageNumber}: {packageUsed}/{packageTotal}</p>
       ) : null}
     </div>
   )
@@ -102,8 +110,10 @@ export function MonthProgress({ month, months, used, total, courseCounted, cours
 
 /** Пропсы `MonthProgress` из строки списка — одинаково во всех таблицах. */
 export function rowProgress(r: QueueRow) {
-  return { month: r.month_number, months: r.duration_months, used: r.lessons_used, total: r.lessons_total,
-    courseCounted: r.course_lessons_counted, courseTotal: r.course_lessons_total, billingMonth: r.billing_month_number }
+  const groupMonth = r.group_progress !== null && r.group_progress !== undefined
+  return { month: r.month_number, months: groupMonth ? r.group_progress?.months ?? null : r.duration_months,
+    used: r.lessons_used, total: r.lessons_total, warning: r.group_progress?.warning, groupMonth,
+    packageNumber: r.package_number, packageUsed: r.package_lessons_used, packageTotal: r.package_lessons_total }
 }
 
 export function Loadable<T>({ query, empty, emptyTitle = 'Нет данных', emptyDescription, children }: {

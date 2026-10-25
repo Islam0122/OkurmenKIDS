@@ -1,161 +1,221 @@
-"""Учебный месяц и прогресс ученика — единый расчёт (`services.progress`):
-1–12 засчитанных уроков → месяц 1, 13–24 → месяц 2…; 12/12 остаётся в
-завершённом месяце. English и Soft Skills не влияют; проведённые занятия
-группы и засчитанные ученику показываются отдельно; правило начислений и
-финансовые записи не меняются."""
+"""Три независимых показателя (`services.progress`):
+
+* учебный месяц ГРУППЫ — проведённые IT-занятия текущей группы, тариф
+  программы курса: 1–12 → месяц 1, 13–24 → месяц 2…; одинаков у всех
+  учеников группы, не зависит от даты прихода и посещаемости;
+* посещаемость ученика;
+* финансовый пакет договора (начисления и сроки — по нему).
+
+Смена преподавателя не сбрасывает прогресс; параллельные IT-программы и
+неоднозначный тариф — предупреждение без цифр; после перевода — прогресс
+новой группы; отображение не меняет финансовые записи."""
 from __future__ import annotations
 
 import datetime as dt
 
 from django.test import SimpleTestCase
 
-from apps.academy.models import Attendance
+from apps.academy.models import Attendance, GroupTeacher, Lesson
+from apps.academy.services.trainer_assignment import assign_trainer
 from apps.accounting.models import StudentPayment
 from apps.billing.models import (
-    AbsencePolicy,
     CreditLedgerEntry,
     Invoice,
+    LessonPackage,
     PaymentAllocation,
 )
 from apps.billing.services import lessons, pricing, profiles, queues
-from apps.billing.services.progress import study_progress
-from apps.billing.tests.base import D
+from apps.billing.services.progress import WARNINGS, group_progress, study_progress
+from apps.billing.tests.base import D, make_user
 from apps.billing.tests.test_contracts import BASE
 from apps.billing.tests.test_periods import PeriodFixture
+from apps.users.models import Teacher
 
 SEP1 = dt.date(2026, 9, 1)
-EXPECTED = {0: (1, 0), 1: (1, 1), 11: (1, 11), 12: (1, 12), 13: (2, 1), 14: (2, 2), 23: (2, 11), 24: (2, 12),
-            25: (3, 1), 35: (3, 11), 36: (3, 12), 48: (4, 12), 60: (5, 12), 72: (6, 12)}
 
 
 class RuleTests(SimpleTestCase):
     def test_boundaries(self):
-        for counted, (month, in_month) in EXPECTED.items():
-            p = study_progress(counted, 12, 6)
-            self.assertEqual((p["month"], p["in_month"], p["counted"], p["total"]), (month, in_month, counted, 72),
-                             counted)
-
-    def test_no_month_plan_and_overflow(self):
-        self.assertEqual(study_progress(5, None, None)["month"], None)
-        self.assertEqual((study_progress(80, 12, 6)["month"], study_progress(80, 12, 6)["in_month"]), (6, 20))
+        cases = {0: (1, 0), 1: (1, 1), 11: (1, 11), 12: (1, 12), 13: (2, 1), 14: (2, 2), 24: (2, 12), 25: (3, 1),
+                 36: (3, 12), 48: (4, 12)}
+        for held, expected in cases.items():
+            p = study_progress(held, 12, 4)
+            self.assertEqual((p["month"], p["in_month"]), expected, held)
+        self.assertEqual(study_progress(5, None, None)["month"], None)  # тариф не подтверждён — месяца нет
 
 
-class ProgressFixture(PeriodFixture):
+class GroupFixture(PeriodFixture):
     def setUp(self):
         super().setUp()
         self.at(SEP1)
-        self.next3 = pricing.create_plan(
-            actor=self.accountant, name="Next 3", subject=self.it, course=self.course, lessons_per_package=12,
-            package_price=D("12000"), effective_from=self.start, duration_months=6, payment_deadline_lessons=3)
         self.day = dt.date(2026, 9, 2)
 
-    def contract(self, plan=None, start=SEP1, student=None):
+    def contract(self, student=None, start=SEP1):
         return profiles.create_student_billing_profile(
-            student=student or self.student(self.group_b), plan=plan or self.next3, actor=self.accountant,
-            start_date=start, responsible_accountant=self.accountant)
+            student=student or self.student(self.group_b), plan=self.kc, actor=self.accountant, start_date=start,
+            responsible_accountant=self.accountant)
 
-    def held(self, n, subject=None, mark=None, student=None):
+    def held(self, n, *, subject=None, group=None, status=Lesson.Status.COMPLETED, marks=None):
+        out = []
         for _ in range(n):
-            lesson = self.lesson(group=self.group_b, day=self.day, subject=subject)
-            if mark is not None:
+            lesson = self.lesson(group=group or self.group_b, day=self.day, subject=subject, status=status)
+            for student, mark in (marks or {}).items():
                 Attendance.objects.update_or_create(lesson=lesson, student=student, defaults={"status": mark})
             lessons.sync_lesson(lesson.pk)
             self.day += dt.timedelta(days=1)
+            out.append(lesson)
+        return out
 
     def row(self, profile):
         return queues.contract_row(queues.base_queryset().get(pk=profile.pk))
 
-    def finance(self, profile):
-        return (list(Invoice.objects.filter(profile=profile).order_by("pk").values_list("amount", "status", "amount_paid")),
+    def shown(self, profile):
+        r = self.row(profile)
+        return (r["month_number"], r["lessons_used"], r["lessons_total"], r["package_number"], r["package_lessons_used"])
+
+    def finance(self):
+        return (list(Invoice.objects.order_by("pk").values_list("amount", "status", "amount_paid")),
+                list(LessonPackage.objects.order_by("pk").values_list("lessons_used", "status")),
                 StudentPayment.objects.count(), PaymentAllocation.objects.count(),
                 list(CreditLedgerEntry.objects.order_by("pk").values_list("amount", flat=True)))
 
 
-class ListProgressTests(ProgressFixture):
-    def test_every_boundary_from_0_to_72_and_billing_cycle_unchanged(self):
-        profile = self.contract()
-        done = 0
-        for counted, (month, in_month) in EXPECTED.items():
-            self.held(counted - done)
-            self.held(1, subject=self.english)  # English между уроками IT — не влияет
-            done = counted
-            r = self.row(profile)
-            self.assertEqual((r["month_number"], r["lessons_used"], r["lessons_total"]), (month, in_month, 12), counted)
-            self.assertEqual((r["course_lessons_counted"], r["course_lessons_total"], r["duration_months"]),
-                             (counted, 72, 6), counted)
-            invoices = Invoice.objects.filter(profile=profile).exclude(status="VOID").count()
-            # Правило начислений прежнее: после 12-го, 24-го… урока выставлен следующий месяц.
-            self.assertEqual(invoices, min(counted // 12 + 1, 6), counted)
-            boundary = counted in (12, 24, 36, 48, 60)
-            self.assertEqual((r["next_month_open"], r["billing_month_number"]),
-                             (boundary, month + 1 if boundary else month), counted)
+class GroupMonthTests(GroupFixture):
+    def test_two_students_joined_at_different_times_see_the_same_group_month(self):
+        early = self.contract()
+        late_student = self.student(self.group_b)
+        checkpoints = {11: (1, 11), 12: (1, 12), 13: (2, 1), 14: (2, 2), 24: (2, 12), 25: (3, 1)}
+        done, late = 0, None
+        for held, (month, in_month) in checkpoints.items():
+            self.held(held - done)
+            self.held(1, subject=self.english)  # English / Soft Skills не влияют
+            self.held(1, subject=self.soft)
+            done = held
+            if late is None:  # второй ученик пришёл после 11 занятий группы
+                late = self.contract(student=late_student, start=self.day)
+            for profile in (early, late):
+                r = self.row(profile)
+                self.assertEqual((r["month_number"], r["lessons_used"], r["lessons_total"], r["group_progress"]["held"]),
+                                 (month, in_month, 12, held), (held, profile.pk))
+        # Финансовые пакеты — у каждого свои (по его договору).
+        self.assertEqual(self.shown(early), (3, 1, 12, 3, 1))
+        self.assertEqual(self.shown(late), (3, 1, 12, 2, 2))  # засчитано 14 → пакет №2, 2/12
+        self.assertEqual((self.row(early)["course_lessons_counted"], self.row(late)["course_lessons_counted"]), (25, 14))
 
-    def test_fourteen_lessons_example_and_card(self):
-        profile = self.contract()
-        self.held(14)
-        r = self.row(profile)
-        self.assertEqual(f"месяц {r['month_number']} из {r['duration_months']}, IT {r['lessons_used']}/{r['lessons_total']}, "
-                         f"курс {r['course_lessons_counted']}/{r['course_lessons_total']}",
-                         "месяц 2 из 6, IT 2/12, курс 14/72")
-        card = self.client_for(self.accountant).get(BASE + f"profiles/{profile.pk}/card/").data
-        self.assertEqual({k: card["progress"][k] for k in ("month", "in_month", "counted", "total")},
-                         {"month": 2, "in_month": 2, "counted": 14, "total": 72})
-        self.assertEqual(card["progress"]["group_held"], {"all_time": 14, "since_contract": 14})
-        self.assertEqual([(m["month_number"], m["is_current"]) for m in card["months"]], [(1, False), (2, True)])
+    def test_attendance_and_absence_do_not_change_group_month(self):
+        a, b = self.student(self.group_b), self.student(self.group_b)
+        pa, pb = self.contract(student=a), self.contract(student=b)
+        self.held(13, marks={a: Attendance.Status.PRESENT, b: Attendance.Status.ABSENT})
+        self.assertEqual(self.row(pa)["month_number"], self.row(pb)["month_number"])
+        card_a = self.client_for(self.accountant).get(BASE + f"profiles/{pa.pk}/card/").data["progress"]
+        card_b = self.client_for(self.accountant).get(BASE + f"profiles/{pb.pk}/card/").data["progress"]
+        self.assertEqual((card_a["group"]["month"], card_b["group"]["month"]), (2, 2))
+        self.assertEqual((card_a["attendance"], card_b["attendance"]), ({"attended": 13, "held": 13},
+                                                                         {"attended": 0, "held": 13}))
 
-    def test_boundary_card_keeps_completed_month_current(self):
-        profile = self.contract()
-        self.held(12)
-        card = self.client_for(self.accountant).get(BASE + f"profiles/{profile.pk}/card/").data
-        self.assertEqual((card["row"]["month_number"], card["row"]["lessons_used"]), (1, 12))
-        self.assertEqual([(m["month_number"], m["status"], m["is_current"]) for m in card["months"]],
-                         [(1, "COMPLETED", True), (2, "ACTIVE", False)])
-        self.assertTrue(card["progress"]["next_month_open"])
-        self.assertEqual(card["progress"]["billing_month"], 2)
-
-    def test_other_subjects_do_not_change_progress(self):
+    def test_cancelled_and_scheduled_lessons_are_not_counted(self):
         profile = self.contract()
         self.held(5)
-        before = self.row(profile)
-        self.held(7, subject=self.english)
-        self.held(7, subject=self.soft)  # Soft Skills — программа группы есть (фикстура)
-        after = self.row(profile)
-        keys = ("month_number", "lessons_used", "course_lessons_counted")
-        self.assertEqual({k: after[k] for k in keys}, {k: before[k] for k in keys})
-        self.assertEqual(after["course_lessons_counted"], 5)
+        self.held(2, status=Lesson.Status.CANCELLED)
+        self.held(3, status=Lesson.Status.SCHEDULED)
+        self.assertEqual(self.row(profile)["group_progress"]["held"], 5)
+        self.assertEqual(self.shown(profile)[:2], (1, 5))
 
 
-class GroupVersusStudentTests(ProgressFixture):
-    def test_late_contract_and_absence_rule_differ_from_group_count(self):
-        self.held(3)  # группа уже провела 3 урока IT до договора
-        profile = self.contract(start=self.day)
+class ProgramHistoryTests(GroupFixture):
+    def test_teacher_change_keeps_progress_and_counts_each_lesson_once(self):
+        profile = self.contract()
+        self.held(10)
+        new = Teacher.objects.create(user=make_user("trainer2"))
+        program = GroupTeacher.objects.get(group=self.group_b, subject=self.it)
+        assign_trainer(self.group_b, teacher=new, user=self.admin, program=program)  # та же строка программы
         self.held(4)
-        card = self.client_for(self.accountant).get(BASE + f"profiles/{profile.pk}/card/").data
-        self.assertEqual(card["progress"]["group_held"], {"all_time": 7, "since_contract": 4})
-        self.assertEqual((card["progress"]["counted"], card["row"]["month_number"], card["row"]["lessons_used"]),
-                         (4, 1, 3 + 1))
-        # Тариф «только посещённые»: пропуск не засчитан ученику, хотя занятие группы проведено.
-        strict = pricing.create_plan(
-            actor=self.accountant, name="Next 3 strict", subject=self.it, course=self.course, lessons_per_package=12,
-            package_price=D("12000"), effective_from=self.start, duration_months=6, absence_policy=AbsencePolicy.ATTENDED_ONLY)
+        r = self.row(profile)
+        self.assertEqual((r["group_progress"]["status"], r["group_progress"]["held"], r["month_number"],
+                          r["lessons_used"]), ("ok", 14, 2, 2))
+
+    def test_sequential_program_rows_are_one_history(self):
+        profile = self.contract()
+        self.held(6)
+        old = GroupTeacher.objects.get(group=self.group_b, subject=self.it)
+        old.is_active = False
+        old.save(update_fields=["is_active"])
+        new = GroupTeacher.objects.create(group=self.group_b, teacher=Teacher.objects.create(user=make_user("t3")),
+                                          subject=self.it)
+        for _ in range(7):
+            lesson = Lesson.objects.create(group=self.group_b, group_teacher=new, teacher=new.teacher, subject=self.it,
+                                           lesson_number=900 + _, date=self.day, start_time=dt.time(10),
+                                           end_time=dt.time(11), status=Lesson.Status.COMPLETED)
+            lessons.sync_lesson(lesson.pk)
+            self.day += dt.timedelta(days=1)
+        r = self.row(profile)
+        self.assertEqual((r["group_progress"]["status"], r["group_progress"]["held"], r["month_number"],
+                          r["lessons_used"]), ("ok", 13, 2, 1))
+
+    def test_parallel_it_programs_need_configuration(self):
+        profile = self.contract()
+        self.held(13)
+        GroupTeacher.objects.create(group=self.group_b, teacher=Teacher.objects.create(user=make_user("t4")),
+                                    subject=self.it)  # вторая активная IT-программа
+        r = self.row(profile)
+        self.assertEqual((r["group_progress"]["status"], r["month_number"], r["lessons_used"]),
+                         ("multiple_programs", None, None))
+        self.assertEqual(r["group_progress"]["warning"], WARNINGS["multiple_programs"])
+        self.assertEqual((r["package_number"], r["package_lessons_used"]), (2, 1))  # финансы — как были
+
+    def test_overlapping_lessons_of_two_rows_need_configuration(self):
+        self.held(4)
+        second = GroupTeacher.objects.create(group=self.group_b, teacher=Teacher.objects.create(user=make_user("t5")),
+                                             subject=self.it, is_active=False)
+        Lesson.objects.create(group=self.group_b, group_teacher=second, teacher=second.teacher, subject=self.it,
+                              lesson_number=950, date=dt.date(2026, 9, 3), start_time=dt.time(15),
+                              end_time=dt.time(16), status=Lesson.Status.COMPLETED)
+        self.assertEqual(group_progress(self.group_b, self.it.pk)["status"], "multiple_programs")
+
+
+class TransferAndTariffTests(GroupFixture):
+    def test_transfer_takes_new_group_progress_and_keeps_packages(self):
         student = self.student(self.group_b)
-        other = self.contract(plan=strict, start=self.day, student=student)
-        self.held(1, mark=Attendance.Status.PRESENT, student=student)
-        self.held(1, mark=Attendance.Status.ABSENT, student=student)
-        card = self.client_for(self.accountant).get(BASE + f"profiles/{other.pk}/card/").data
-        self.assertEqual((card["progress"]["group_held"]["since_contract"], card["progress"]["counted"]), (2, 1))
-        self.assertEqual(self.row(other)["course_lessons_counted"], 1)
+        profile = self.contract(student=student)
+        self.held(13)
+        self.held(3, group=self.group)  # другая группа того же курса провела 3 занятия IT
+        before = self.finance()
+        self.transfer(student, self.group, self.day)
+        r = self.row(profile)
+        self.assertEqual((r["month_number"], r["lessons_used"], r["group_progress"]["group_name"]), (1, 3, "Group A"))
+        self.assertEqual((r["package_number"], r["package_lessons_used"]), (2, 1))
+        self.assertEqual(self.finance(), before)  # перевод и отображение финансы не меняют
+
+    def test_conflicting_or_missing_tariff_shows_warning_not_12(self):
+        profile = self.contract()
+        self.held(13)
+        pricing.create_plan(actor=self.accountant, name="Next 6", subject=self.it, course=self.course,
+                            lessons_per_package=12, package_price=D("12000"), effective_from=self.start,
+                            duration_months=6)
+        r = self.row(profile)
+        self.assertEqual((r["group_progress"]["status"], r["month_number"], r["lessons_total"]),
+                         ("tariff_conflict", None, None))
+        self.assertEqual(group_progress(None, self.it.pk)["status"], "no_group")
+
+    def test_academy_programs_tab_uses_the_same_group_month(self):
+        from apps.academy.admin_views import _teaching_program_cards
+
+        profile = self.contract()
+        self.held(14)
+        cards = {c["obj"].subject_id: c for c in _teaching_program_cards(self.group_b)}
+        it = cards[self.it.pk]["group_month"]
+        self.assertEqual((it["month"], it["months"], it["in_month"], it["per_month"]), (2, 4, 2, 12))
+        r = self.row(profile)
+        self.assertEqual((r["month_number"], r["lessons_used"]), (it["month"], it["in_month"]))  # бухгалтерия = академия
+        self.assertIsNone(cards[self.english.pk]["group_month"])  # у English учебных месяцев нет
 
     def test_display_is_read_only(self):
         profile = self.contract()
-        self.held(12)
-        before = self.finance(profile)
+        self.held(13)
+        before = self.finance()
         api = self.client_for(self.accountant)
         for _ in range(2):
             self.row(profile)
             self.assertEqual(api.get(BASE + f"profiles/{profile.pk}/card/").status_code, 200)
-            listing = api.get(BASE + "queues/all/")
-            self.assertEqual(listing.status_code, 200)
-        row = next(r for r in listing.data["results"] if r["profile"] == profile.pk)
-        self.assertEqual((row["month_number"], row["lessons_used"], row["next_month_open"]), (1, 12, True))
-        self.assertEqual(self.finance(profile), before)
+            self.assertEqual(api.get(BASE + "queues/all/").status_code, 200)
+        self.assertEqual(self.finance(), before)

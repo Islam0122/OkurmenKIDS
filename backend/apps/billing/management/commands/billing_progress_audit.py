@@ -33,12 +33,13 @@ class Command(BaseCommand):
         w = self.stdout.write
         w(f"Договоров: {report['total']}, с расхождениями: {report['with_findings']} {report['by_finding']}")
         for r in report["rows"]:
-            a, b, rule, m = r["academy"], r["billing"], r["rule"], r["money"]
+            g, v, pk, b, m = r["group_month"], r["attendance"], r["package"], r["billing"], r["money"]
             w(f"\n{r['student']} · {r['group']} · {r['plan']} · договор с {r['contract_start']} · {r['absence_policy']}")
-            w(f"  академия: проведено {r['subject']} {a['held_all_time']} (с начала договора {a['held_since_contract']})"
-              f" из плана {a['course_plan']}")
-            w(f"  бухгалтерия: засчитано {b['counted']} · показано «{b['shown']}» · не засчитаны: {b['excluded'] or '—'}")
-            w(f"  по правилу: {rule['shown']} · курс {rule['course_progress']}")
+            w(f"  учебный месяц группы: {r['shown']} (проведено {r['subject']} в группе: {g['held']}"
+              f"{'' if g['total'] is None else ' из ' + str(g['total'])})")
+            w(f"  посещаемость: посетил {v['attended']} из {v['held']}")
+            w(f"  финансовый пакет: {pk['shown'] or '—'} · засчитано по договору {b['counted']} "
+              f"(проведено с начала договора {b['held_since_contract']}) · не засчитаны: {b['excluded'] or '—'}")
             w(f"  деньги: {m['stage']} · к оплате {m['due_now']} (просрочено {m['overdue']}, срок сегодня "
               f"{m['due_today']}, срок не наступил {m['not_due']}) · аванс {m['credit']}"
               f" (не распределён {m['credit_unapplied']}) · получено {m['received']}, распределено {m['allocated']}")

@@ -70,6 +70,13 @@
                   {% else %}
                     <span class="ok-prog-meta">нет плана</span>
                   {% endif %}
+                  {% if card.group_month %}
+                    {% if card.group_month.month %}
+                      <div class="ok-prog-meta" data-testid="group-month">Учебный месяц группы {{ card.group_month.month }} из {{ card.group_month.months }} · занятие {{ card.group_month.in_month }} из {{ card.group_month.per_month }}</div>
+                    {% elif card.group_month.warning %}
+                      <div class="ok-prog-meta" style="color:#b45309;" data-testid="group-month">{{ card.group_month.warning }}</div>
+                    {% endif %}
+                  {% endif %}
                 </td>
                 <td data-label="Следующее занятие">
                   {% if card.next_lesson_date %}{{ card.next_lesson_date|date:"d.m.Y" }}{% else %}<span class="ok-prog-meta">—</span>{% endif %}

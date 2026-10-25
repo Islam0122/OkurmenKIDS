@@ -18,7 +18,7 @@ import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { ReasonModal, Section } from '@/features/accounting/shared'
 import { Field } from '@/features/worklog/formUi'
-import type { ContractCard, Payment, Reservation, StudyMonth } from '@/types/finance'
+import type { ContractCard, Payment, Reservation, StudyProgress } from '@/types/finance'
 
 import { OperationsTable, ReservationBlock, ScheduleBlock } from './CardSections'
 
@@ -45,18 +45,32 @@ const MONTH_STATUS: Record<string, string> = {
   PLANNED: 'Следующий', ACTIVE: 'Текущий', COMPLETED: 'Пройден', CANCELLED: 'Отменён',
 }
 
-/** Статус месяца: «Текущий» — по засчитанным урокам ученика (`is_current` от backend);
- * открытый платёжный цикл без уроков на границе 12/12 — «Выставлен, уроков ещё нет». */
-function monthStatus(m: StudyMonth): string {
-  if (m.is_current === undefined) return MONTH_STATUS[m.status]
-  if (m.status === 'ACTIVE' && !m.is_current) return 'Выставлен, уроков ещё нет'
-  if (m.status === 'COMPLETED' && m.is_current) return 'Текущий (пройден)'
-  return MONTH_STATUS[m.status]
-}
-
-function monthTone(m: StudyMonth): 'info' | 'success' | 'muted' {
-  if (m.is_current ?? m.status === 'ACTIVE') return 'info'
-  return m.status === 'COMPLETED' ? 'success' : 'muted'
+/** Три независимых показателя (backend `progress`): учебный месяц группы, посещаемость ученика,
+ * финансовый пакет договора. Месяц группы не подтверждает посещение и не меняет начисления. */
+function ProgressBlock({ progress, subject }: { progress: StudyProgress; subject: string }) {
+  const g = progress.group
+  const pkg = progress.package
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-3" data-testid="study-progress">
+      <div className="rounded-xl border border-border bg-surface p-3 text-sm">
+        <p className="text-xs text-ink-secondary">Учебный месяц группы{g.group_name ? ` · ${g.group_name}` : ''}</p>
+        {g.month ? (
+          <p><b>Месяц группы {g.month} из {g.months}</b> · {subject} {g.in_month}/{g.per_month}
+            <span className="block text-xs text-ink-secondary">проведено занятий группы: {g.held} из {g.total}</span></p>
+        ) : <p className="text-warning">{g.warning}</p>}
+      </div>
+      <div className="rounded-xl border border-border bg-surface p-3 text-sm">
+        <p className="text-xs text-ink-secondary">Посещаемость ученика</p>
+        <p>{progress.attendance.attended === null ? '—' : <>посетил <b>{progress.attendance.attended}</b> из {progress.attendance.held} занятий {subject} группы</>}</p>
+      </div>
+      <div className="rounded-xl border border-border bg-surface p-3 text-sm">
+        <p className="text-xs text-ink-secondary">Финансовый пакет договора</p>
+        <p>{pkg ? <><b>№{pkg.number}: {pkg.lessons_used}/{pkg.lessons_total}</b>
+          <span className="block text-xs text-ink-secondary">засчитано по договору: {pkg.counted}
+            {pkg.contract_months && pkg.contract_per_month ? ` из ${pkg.contract_months * pkg.contract_per_month}` : ''} · начисления и сроки — по пакету</span></> : '—'}</p>
+      </div>
+    </div>
+  )
 }
 
 export function StudentCardPage() {
@@ -171,22 +185,13 @@ function Card360({ card }: { card: ContractCard }) {
 
       <LessonCount profile={c.id} canFix={me.data?.can_manage_settings ?? false} />
 
-      <Section title="Учебные месяцы">
-        {card.progress ? (
-          <p className="mb-2 text-sm" data-testid="study-progress">
-            Учебный месяц <b>{card.progress.month} из {card.progress.months}</b> · IT {card.progress.in_month} из {card.progress.per_month}
-            {' '}· засчитано ученику за курс <b>{card.progress.counted} из {card.progress.total}</b>
-            <span className="text-ink-secondary">
-              {' '}· проведено занятий {c.subject_name ?? 'IT'} в группе с начала договора: {card.progress.group_held.since_contract}
-              {card.progress.group_held.all_time !== card.progress.group_held.since_contract ? ` (всего ${card.progress.group_held.all_time})` : ''}
-              {card.progress.next_month_open ? ` · начисление за месяц ${card.progress.billing_month} уже выставлено` : ''}
-            </span>
-          </p>
-        ) : null}
+      {card.progress ? <ProgressBlock progress={card.progress} subject={c.subject_name ?? 'IT'} /> : null}
+
+      <Section title={c.is_course ? 'Финансовые пакеты договора (по ним начисления)' : 'Учебные месяцы'}>
         {card.months.length === 0 ? <EmptyState title="Месяцев пока нет" /> : (
           <DataTable rows={card.months} getRowKey={(m) => m.id} columns={[
-            { key: 'n', header: 'Месяц', render: (m) => <span className="font-medium">№{m.month_number ?? m.number}</span> },
-            { key: 'st', header: 'Статус', render: (m) => <Badge tone={monthTone(m)}>{monthStatus(m)}</Badge> },
+            { key: 'n', header: c.is_course ? 'Пакет' : 'Месяц', render: (m) => <span className="font-medium">№{m.month_number ?? m.number}</span> },
+            { key: 'st', header: 'Статус', render: (m) => <Badge tone={m.status === 'ACTIVE' ? 'info' : m.status === 'COMPLETED' ? 'success' : 'muted'}>{MONTH_STATUS[m.status]}</Badge> },
             { key: 'l', header: 'Уроки IT', render: (m) => `${m.lessons_used} из ${m.lessons_total}` },
             { key: 'inv', header: 'Начисление', render: (m) => m.invoice ? <Amount value={m.invoice.amount} />
               : m.course_share ? (

@@ -64,6 +64,9 @@ const ROW: QueueRow = {
   plan_name: "Kid's Club Standard", subject_name: 'IT', parent_name: 'Асанова А.', parent_phone: '+996555000111',
   contract_status: 'ACTIVE', contract_status_display: 'Обучается', is_course: true, payment_mode: 'MONTHLY',
   payment_mode_display: 'Помесячная оплата', duration_months: 4, month_number: 2, lessons_used: 1, lessons_total: 12,
+  group_progress: { status: 'ok', warning: null, group: 1, group_name: 'KC-1', held: 13, month: 2, months: 4, in_month: 1,
+    per_month: 12, total: 48 },
+  package_number: 2, package_lessons_used: 1, package_lessons_total: 12,
   final_course_price: '60000.00', discount_amount: '0.00', stage: 'awaiting',
   focus_invoice: { id: 31, number: 'INV-2026-000031', kind: 'MONTH', month_number: 2, amount: '15000.00', paid: '5000.00',
     balance: '10000.00', due_lesson: 3, due_date: null, status: 'PARTIALLY_PAID', status_display: 'Частично оплачено' },
@@ -148,8 +151,9 @@ describe('«К оплате»', () => {
   it('shows month progress, charge, received, balance and the lesson deadline', async () => {
     renderWithProviders(<ToPayPage />)
     const row = (await screen.findByText('Асанов Айбек')).closest('tr')!
-    expect(row).toHaveTextContent('Месяц 2 из 4')
-    expect(row).toHaveTextContent('IT 1 из 12')
+    expect(row).toHaveTextContent('Месяц группы 2 из 4')
+    expect(row).toHaveTextContent('IT 1/12')
+    expect(row).toHaveTextContent('финансовый пакет №2: 1/12')
     expect(row).toHaveTextContent('15 000 сом')
     expect(row).toHaveTextContent('5 000 сом')
     expect(row).toHaveTextContent('10 000 сом')
@@ -446,51 +450,49 @@ describe('«Все студенты» — «К оплате сейчас» по 
   })
 })
 
-describe('Учебный месяц — из backend, 12/12 в завершённом месяце', () => {
-  const base = { month_number: 1, duration_months: 6, lessons_used: 12, lessons_total: 12, course_lessons_counted: 12,
-    course_lessons_total: 72, billing_month_number: 2, next_month_open: true } as QueueRow
+describe('Учебный месяц группы и финансовый пакет — разные показатели', () => {
+  const group = { status: 'ok' as const, warning: null, group: 1, group_name: 'KC-1', held: 14, month: 2, months: 4,
+    in_month: 2, per_month: 12, total: 48 }
 
-  it('boundary: «Месяц 1 из 6 · IT 12 из 12 · курс 12 из 72» and the issued next month as a hint', () => {
-    renderWithProviders(<MonthProgress {...rowProgress(base)} />)
-    expect(screen.getByText('Месяц 1 из 6')).toBeInTheDocument()
-    expect(screen.getByText('IT 12 из 12')).toBeInTheDocument()
-    expect(screen.getByText('курс 12 из 72')).toBeInTheDocument()
-    expect(screen.getByText('выставлен месяц 2')).toBeInTheDocument()
+  it('list: «Месяц группы 2 из 4 · IT 2/12 · финансовый пакет №1: 3/12»', () => {
+    renderWithProviders(<MonthProgress {...rowProgress({ ...ROW, month_number: 2, lessons_used: 2, lessons_total: 12,
+      group_progress: group, package_number: 1, package_lessons_used: 3, package_lessons_total: 12 })} />)
+    expect(screen.getByText('Месяц группы 2 из 4')).toBeInTheDocument()
+    expect(screen.getByText('IT 2/12')).toBeInTheDocument()
+    expect(screen.getByText('финансовый пакет №1: 3/12')).toBeInTheDocument()
   })
 
-  it('14 lessons: «Месяц 2 из 6 · IT 2 из 12 · курс 14 из 72», no hint', () => {
-    renderWithProviders(<MonthProgress {...rowProgress({ ...base, month_number: 2, lessons_used: 2,
-      course_lessons_counted: 14, next_month_open: false })} />)
-    expect(screen.getByText('Месяц 2 из 6')).toBeInTheDocument()
-    expect(screen.getByText('IT 2 из 12')).toBeInTheDocument()
-    expect(screen.getByText('курс 14 из 72')).toBeInTheDocument()
-    expect(screen.queryByText(/выставлен месяц/)).not.toBeInTheDocument()
+  it('list: ambiguous IT programs show the warning instead of numbers', () => {
+    renderWithProviders(<MonthProgress {...rowProgress({ ...ROW, month_number: null, lessons_used: null, lessons_total: null,
+      group_progress: { ...group, status: 'multiple_programs', month: null, in_month: null, per_month: null,
+        warning: 'Нужна настройка: несколько IT-программ в группе — общий прогресс не определён.' },
+      package_number: 2, package_lessons_used: 1, package_lessons_total: 12 })} />)
+    expect(screen.getByText(/Нужна настройка: несколько IT-программ/)).toBeInTheDocument()
+    expect(screen.queryByText(/Месяц группы/)).not.toBeInTheDocument()
+    expect(screen.getByText('финансовый пакет №2: 1/12')).toBeInTheDocument()
   })
 
-  it('card separates the student’s counted lessons from the group’s held lessons', async () => {
+  it('card shows group month, attendance and the financial package separately', async () => {
     vi.mocked(financeApi.lessonBreakdown).mockResolvedValue({ attended: 0, marked: 0, counted: 0, priority_subject: 'IT',
-      contract_start: '2026-09-04', totals: {}, priority_before_contract: { count: 0, first_date: null }, lessons: [] })
+      contract_start: '2026-09-14', totals: {}, priority_before_contract: { count: 0, first_date: null }, lessons: [] })
     vi.mocked(financeApi.card).mockResolvedValue({
       ...CARD, schedule: null, invoices: [], payments: [], contacts: [], reservations: [],
       contract: { ...CARD.contract, status: 'ACTIVE', status_display: 'Обучается', is_course: true, subject_name: 'IT' },
-      progress: { month: 1, months: 6, in_month: 12, per_month: 12, counted: 12, total: 72, billing_month: 2,
-        next_month_open: true, group_held: { all_time: 14, since_contract: 12 } },
-      months: [
-        { id: 1, number: 1, month_number: 1, status: 'COMPLETED', lessons_total: 12, lessons_used: 12, lessons_remaining: 0,
-          final_price: '12000.00', started_on: '2026-09-04', completed_on: '2026-10-20', invoice: null, is_current: true },
-        { id: 2, number: 2, month_number: 2, status: 'ACTIVE', lessons_total: 12, lessons_used: 0, lessons_remaining: 12,
-          final_price: '12000.00', started_on: null, completed_on: null, invoice: null, is_current: false },
-      ],
+      progress: { group, attendance: { attended: 3, held: 14 },
+        package: { number: 1, lessons_used: 3, lessons_total: 12, status: 'ACTIVE', counted: 3, contract_months: 4,
+          contract_per_month: 12 } },
+      months: [{ id: 1, number: 1, month_number: 1, status: 'ACTIVE', lessons_total: 12, lessons_used: 3, lessons_remaining: 9,
+        final_price: '15000.00', started_on: '2026-09-14', completed_on: null, invoice: null }],
     } as unknown as ContractCard)
     renderWithProviders(<Routes><Route path="/finance/students/:profileId" element={<StudentCardPage />} /></Routes>,
       { route: '/finance/students/7' })
-    const line = await screen.findByTestId('study-progress')
-    expect(line).toHaveTextContent('Учебный месяц 1 из 6 · IT 12 из 12')
-    expect(line).toHaveTextContent('засчитано ученику за курс 12 из 72')
-    expect(line).toHaveTextContent('проведено занятий IT в группе с начала договора: 12 (всего 14)')
-    expect(line).toHaveTextContent('начисление за месяц 2 уже выставлено')
-    expect(screen.getByText('Текущий (пройден)')).toBeInTheDocument()
-    expect(screen.getByText('Выставлен, уроков ещё нет')).toBeInTheDocument()
+    const block = await screen.findByTestId('study-progress')
+    expect(block).toHaveTextContent('Месяц группы 2 из 4 · IT 2/12')
+    expect(block).toHaveTextContent('проведено занятий группы: 14 из 48')
+    expect(block).toHaveTextContent('посетил 3 из 14 занятий IT группы')
+    expect(block).toHaveTextContent('№1: 3/12')
+    expect(block).toHaveTextContent('засчитано по договору: 3 из 48')
+    expect(screen.getByText('Финансовые пакеты договора (по ним начисления)')).toBeInTheDocument()
   })
 })
 
