@@ -420,6 +420,27 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    // Раздел «Сотрудники» HR-менеджера — в той же оболочке, что и его учёт
+    // посещаемости. Кого HR может менять, решает backend (apps.users.hr).
+    path: '/hr',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['hr_manager']} redirectTo="/attendance" />,
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/staffAttendance/AttendanceLayout')).AttendanceLayout }),
+            children: [
+              { path: 'employees', lazy: async () => ({ Component: (await import('@/features/hr/EmployeesPage')).HrEmployeesPage }) },
+              { path: '*', element: <Navigate to="/hr/employees" replace /> },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
     // Центральная панель учёта посещаемости, офисы с QR-кодами и настройки.
     // Права (отчёты / исправления / управление) — с backend, см. admin/meta.
     path: '/admin/attendance',

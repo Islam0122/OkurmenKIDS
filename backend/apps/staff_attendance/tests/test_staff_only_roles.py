@@ -69,14 +69,14 @@ class StaffOnlyRolesTests(AttendanceFixture):
             self.assertEqual(AttendanceEvent.objects.filter(user=user).count(), 2)
 
     def test_history_shows_only_own_data(self):
-        hr, sales = self.staff[User.Role.HR_MANAGER], self.staff[User.Role.SALES_MANAGER]
+        rop, sales = self.staff[User.Role.ROP], self.staff[User.Role.SALES_MANAGER]
         with frozen(local(*WED, 9, 0)):
-            self.mark(hr)
+            self.mark(rop)
             self.mark(sales)
-        client = jwt_client(hr.username)
+        client = jwt_client(rop.username)
         history = client.get(f"{API}/me/history/", {"user": sales.pk}).data
         self.assertEqual([row["id"] for row in history["results"]],
-                         [AttendanceSession.objects.get(user=hr).pk])
+                         [AttendanceSession.objects.get(user=rop).pk])
         self.assertEqual(client.get(f"{API}/admin/employees/{sales.pk}/").status_code, 403)
 
     def test_rest_of_system_is_closed(self):
