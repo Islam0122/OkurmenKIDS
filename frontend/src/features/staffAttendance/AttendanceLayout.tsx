@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { ArrowLeft, ClipboardList, LogOut, MapPinned, Settings2, UserRound } from 'lucide-react'
+import { ArrowLeft, ClipboardList, LogOut, MapPinned, Settings2, UserRound, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 
@@ -29,6 +29,8 @@ export function AttendanceLayout() {
   const workspace = workspaceFor(user?.role)
 
   const tabs: Tab[] = [{ to: personalPathFor(user?.role), label: 'Мой кабинет', icon: UserRound }]
+  // Раздел «Сотрудники» HR-менеджера (права проверяет backend: apps.users.hr).
+  if (user?.role === 'hr_manager') tabs.push({ to: '/hr/employees', label: 'Сотрудники', icon: Users })
   if (access?.can_view_reports) tabs.push({ to: '/admin/attendance', label: 'Учёт сотрудников', icon: ClipboardList, end: true })
   if (access?.can_manage) {
     tabs.push({ to: '/admin/attendance/locations', label: 'Офисы и QR', icon: MapPinned })

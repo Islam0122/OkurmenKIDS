@@ -76,6 +76,8 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/auth/refresh/",
     "/api/v1/auth/me/",
     "/api/v1/staff-attendance/",
+    # Раздел «Сотрудники» HR-менеджера; права проверяет apps.users.hr.
+    "/api/v1/hr/",
 )
 
 

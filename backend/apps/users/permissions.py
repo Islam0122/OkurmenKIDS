@@ -46,6 +46,25 @@ def is_assistant(user) -> bool:
     return bool(user.is_active and getattr(user, "role", None) == User.Role.ASSISTANT)
 
 
+def is_hr_manager(user) -> bool:
+    """An active HR manager account. Safe for AnonymousUser."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(user.is_active and getattr(user, "role", None) == User.Role.HR_MANAGER)
+
+
+def hr_can_manage(actor, target) -> bool:
+    """May HR `actor` change `target`'s account? Only another person whose
+    role is in User.HR_MANAGEABLE_ROLES and who is not a privileged account."""
+    return bool(
+        is_hr_manager(actor)
+        and target.pk != actor.pk
+        and target.role in User.HR_MANAGEABLE_ROLES
+        and not target.is_superuser
+        and not target.is_staff
+    )
+
+
 def can_run_operations(user) -> bool:
     """May use the Assistant Workspace (academy operations): Admin or Assistant."""
     return is_admin_user(user) or is_assistant(user)
@@ -112,6 +131,15 @@ class IsTeamLead(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         return is_team_lead(request.user)
+
+
+class IsHRManager(BasePermission):
+    """The HR «Сотрудники» API: an active HR manager only."""
+
+    message = "Доступ разрешён только HR-менеджеру."
+
+    def has_permission(self, request, view) -> bool:
+        return is_hr_manager(request.user)
 
 
 class IsAdminOrAssistant(BasePermission):

@@ -7,7 +7,8 @@ permissions модели AttendanceSession позволяют дополните
 * отметка прихода/ухода и своя история — любой активный сотрудник, чья роль
   отмечена в настройках (по умолчанию — все роли LMS). Только свои данные.
 * отчёты — Администратор и Директор (все сотрудники), Team Lead (только
-  тренеры — он руководит тренерами), либо право `view_attendance_reports`.
+  тренеры — он руководит тренерами), HR-менеджер (только сотрудники в его
+  ведении — User.HR_MANAGEABLE_ROLES), либо право `view_attendance_reports`.
 * исправления записей — Администратор или право `adjust_attendance`.
 * офисы, QR-коды, настройки, личные расписания — Администратор или право
   `manage_attendance`.
@@ -46,7 +47,28 @@ def report_scope(user) -> Q | None:
         return Q()
     if user.role == User.Role.TEAM_LEAD:
         return Q(role=User.Role.TEACHER)
+    if user.role == User.Role.HR_MANAGER:
+        return Q(role__in=User.HR_MANAGEABLE_ROLES, is_superuser=False, is_staff=False)
     return None
+
+
+def report_roles(user) -> set[str] | None:
+    """Роли, отчёты по которым видит `user`; None — все."""
+    if not _active(user) or is_admin_user(user) or user.role == User.Role.DIRECTOR or user.has_perm(PERM_REPORTS):
+        return None
+    if user.role == User.Role.TEAM_LEAD:
+        return {User.Role.TEACHER}
+    if user.role == User.Role.HR_MANAGER:
+        return set(User.HR_MANAGEABLE_ROLES)
+    return None
+
+
+def report_scope_name(user) -> str:
+    """Для интерфейса: all / teachers (Team Lead) / hr (HR-менеджер)."""
+    roles = report_roles(user)
+    if roles is None:
+        return "all"
+    return "teachers" if roles == {User.Role.TEACHER} else "hr"
 
 
 def can_view_reports(user) -> bool:

@@ -136,7 +136,7 @@ export interface AdminMeta {
   roles: { value: UserRole; label: string }[]
   statuses: { value: StatusFilter; label: string }[]
   locations: { id: number; name: string; is_active: boolean }[]
-  access: AttendanceAccess & { scope: 'all' | 'teachers' }
+  access: AttendanceAccess & { scope: 'all' | 'teachers' | 'hr' }
 }
 
 export interface Overview {

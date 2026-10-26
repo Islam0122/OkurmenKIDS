@@ -53,6 +53,7 @@ export function isAccountingRole(role: UserRole | undefined): boolean {
  * (backend: apps.accounting.access — every LMS URL answers it 403). */
 export function homeFor(role: UserRole | undefined, target: string): string {
   if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance')) return '/accounting'
+  if (role === 'hr_manager' && target.startsWith('/hr')) return target
   if (isStaffOnlyRole(role) && !target.startsWith('/attendance')) return '/attendance/staff'
   return target
 }
