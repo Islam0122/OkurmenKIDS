@@ -4,6 +4,7 @@ import { AppLayout } from '@/app/layouts/AppLayout'
 import { AccessDeniedPage } from '@/features/auth/AccessDeniedPage'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { HOME_PATH } from '@/lib/appMode'
+import { STAFF_ONLY_ROLES } from '@/lib/roles'
 
 import { NotFoundPage } from './NotFoundPage'
 import { ProtectedRoute } from './ProtectedRoute'
@@ -405,6 +406,11 @@ export const router = createBrowserRouter([
           {
             element: <RequireRoles roles={['admin', 'director', 'team_lead']} redirectTo="/attendance" />,
             children: [{ path: 'office', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).OfficeAttendancePage }) }],
+          },
+          {
+            // ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг.
+            element: <RequireRoles roles={STAFF_ONLY_ROLES} redirectTo="/attendance" />,
+            children: [{ path: 'staff', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).StaffAttendancePage }) }],
           },
           // Отчёты руководства/HR: доступ решает backend (admin/meta → 403 → назад в кабинет).
           { path: 'management', lazy: async () => ({ Component: (await import('@/features/staffAttendance/AdminAttendancePage')).ManagementAttendancePage }) },

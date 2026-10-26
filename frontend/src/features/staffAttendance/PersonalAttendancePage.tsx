@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CalendarClock, ChevronLeft, ChevronRight, Clock3, LogIn, LogOut, ScanLine, Timer, TrendingDown } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Construction, ChevronLeft, ChevronRight, Clock3, LogIn, LogOut, ScanLine, Timer, TrendingDown } from 'lucide-react'
 
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -97,6 +97,14 @@ export function PersonalAttendancePage({ variant, presetCode, onFlowDone }: { va
 
   return (
     <div className="space-y-5">
+      {variant === 'staff' ? (
+        <Card>
+          <div role="status" className="flex items-center gap-3">
+            <Construction className="size-5 shrink-0 text-brand-600" aria-hidden />
+            <p className="text-sm font-medium text-ink">Ваш личный кабинет находится в разработке</p>
+          </div>
+        </Card>
+      ) : null}
       <TodayCard
         status={data}
         variant={variant}

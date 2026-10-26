@@ -2,6 +2,8 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useAuth } from '@/hooks/useAuth'
+import { isStaffOnlyRole } from '@/lib/roles'
+import type { UserRole } from '@/types/auth'
 
 import { PersonalAttendancePage } from './PersonalAttendancePage'
 import { personalPathFor, type PersonalVariant } from './roles'
@@ -29,10 +31,15 @@ export function OfficeAttendancePage() {
   return <PersonalAttendancePage variant="office" />
 }
 
-function variantFor(role: string | undefined): PersonalVariant {
+export function StaffAttendancePage() {
+  return <PersonalAttendancePage variant="staff" />
+}
+
+function variantFor(role: UserRole | undefined): PersonalVariant {
   if (role === 'teacher') return 'teacher'
   if (role === 'accountant') return 'accounting'
   if (role === 'assistant') return 'assistant'
+  if (isStaffOnlyRole(role)) return 'staff'
   return 'office'
 }
 

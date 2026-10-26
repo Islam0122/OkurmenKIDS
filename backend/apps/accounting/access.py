@@ -66,6 +66,26 @@ ALLOWED_PREFIXES = (
 )
 
 
+# Сотрудники с базовым доступом (User.STAFF_ONLY_ROLES: ДОП, РОП, РОМ,
+# операционный директор, HR, продажи, маркетинг) изолированы тем же
+# middleware: личного кабинета у них пока нет — только вход и учёт прихода и
+# ухода. Отчёты посещаемости (admin/…) сами проверяют права
+# (apps.staff_attendance.access): без явно выданного права — 403.
+STAFF_ONLY_ALLOWED_PREFIXES = (
+    "/api/v1/auth/login/",
+    "/api/v1/auth/refresh/",
+    "/api/v1/auth/me/",
+    "/api/v1/staff-attendance/",
+)
+
+
+def is_staff_only(user) -> bool:
+    from apps.users.models import User
+
+    return bool(user is not None and getattr(user, "is_authenticated", False)
+                and getattr(user, "role", None) in User.STAFF_ONLY_ROLES)
+
+
 def isolated_roles() -> tuple[str, ...]:
     return tuple(getattr(settings, "ACCOUNTING_ISOLATED_ROLES", ("accountant",)))
 
@@ -145,11 +165,20 @@ class AccountingIsolationMiddleware:
     def __call__(self, request):
         path = request.path
         static = "/" + settings.STATIC_URL.lstrip("/")
-        if not path.startswith(ALLOWED_PREFIXES) and not path.startswith(static):
+        if path.startswith(static):
+            return self.get_response(request)
+        accounting_allowed = path.startswith(ALLOWED_PREFIXES)
+        staff_allowed = path.startswith(STAFF_ONLY_ALLOWED_PREFIXES)
+        if not (accounting_allowed and staff_allowed):
             user = _request_user(request)
-            if is_isolated(user):
+            if not accounting_allowed and is_isolated(user):
                 message = "Раздел недоступен: бухгалтерия работает только в /accounting/."
                 if path.startswith("/api/"):
                     return JsonResponse({"detail": message, "code": "accounting_only"}, status=403)
+                return HttpResponseForbidden(message)
+            if not staff_allowed and is_staff_only(user):
+                message = "Раздел недоступен: ваш личный кабинет находится в разработке."
+                if path.startswith("/api/"):
+                    return JsonResponse({"detail": message, "code": "staff_only"}, status=403)
                 return HttpResponseForbidden(message)
         return self.get_response(request)

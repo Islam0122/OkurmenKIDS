@@ -48,13 +48,15 @@ export function AttendanceLayout() {
               <p className="max-w-48 truncate text-sm font-medium text-ink">{user?.first_name} {user?.last_name}</p>
               <p className="text-xs text-ink-secondary">{user ? ROLE_LABEL[user.role] : ''}</p>
             </div>
-            <Link
-              to={workspace.to}
-              className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-hover"
-            >
-              <ArrowLeft className="size-4" aria-hidden />
-              <span className="hidden sm:inline">{workspace.label}</span>
-            </Link>
+            {workspace ? (
+              <Link
+                to={workspace.to}
+                className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-hover"
+              >
+                <ArrowLeft className="size-4" aria-hidden />
+                <span className="hidden sm:inline">{workspace.label}</span>
+              </Link>
+            ) : null}
             <button
               type="button"
               onClick={logout}

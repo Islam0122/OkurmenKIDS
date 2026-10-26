@@ -56,7 +56,7 @@ class AttendanceWorkScheduleAdmin(admin.ModelAdmin):
 @admin.register(AttendanceSession)
 class AttendanceSessionAdmin(ReadOnlyAdmin):
     list_display = ("user", "work_date", "checked_in_at", "checked_out_at", "status", "late_minutes", "is_adjusted")
-    list_filter = ("status", "is_adjusted", "source", "work_date")
+    list_filter = ("status", "user__role", "is_adjusted", "source", "work_date")
     search_fields = ("user__username", "user__first_name", "user__last_name")
     date_hierarchy = "work_date"
 
@@ -64,7 +64,7 @@ class AttendanceSessionAdmin(ReadOnlyAdmin):
 @admin.register(AttendanceEvent)
 class AttendanceEventAdmin(ReadOnlyAdmin):
     list_display = ("user", "kind", "occurred_at", "location", "distance_m", "accuracy_m")
-    list_filter = ("kind",)
+    list_filter = ("kind", "user__role")
     search_fields = ("user__username", "user__first_name", "user__last_name")
 
 

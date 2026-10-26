@@ -6,7 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { MobileNavigation } from '@/components/layout/MobileNavigation'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useAuth } from '@/hooks/useAuth'
-import { isAccountingRole, isAssistant } from '@/lib/roles'
+import { isAccountingRole, isAssistant, isStaffOnlyRole } from '@/lib/roles'
 
 /**
  * The one page shell every /app route renders in:
@@ -25,6 +25,8 @@ export function AppLayout() {
   if (isAssistant(user?.role)) return <Navigate to="/assistant" replace />
   // Бухгалтер и Директор — только в разделе бухгалтерии.
   if (isAccountingRole(user?.role)) return <Navigate to="/accounting" replace />
+  // Новые роли пока только отмечают приход и уход.
+  if (isStaffOnlyRole(user?.role)) return <Navigate to="/attendance" replace />
 
   return (
     <div className="flex min-h-dvh bg-surface-muted">

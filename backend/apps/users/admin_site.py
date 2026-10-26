@@ -44,7 +44,7 @@ class LmsAwareAdminAuthenticationForm(AdminAuthenticationForm):
 
     def confirm_login_allowed(self, user):
         role = getattr(user, "role", None)
-        lms_only = role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT) or (
+        lms_only = role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT, *User.STAFF_ONLY_ROLES) or (
             role == User.Role.TEACHER and not user.is_staff
         )
         if user.is_active and lms_only and not user.is_superuser:
@@ -73,7 +73,8 @@ class OkurmenKidsAdminSite(AdminSite):
         Assistant's (who works through the Assistant Workspace), even if the
         account was given is_staff by mistake."""
         user = request.user
-        if getattr(user, "role", None) in (User.Role.TEAM_LEAD, User.Role.ASSISTANT) and not user.is_superuser:
+        if getattr(user, "role", None) in (User.Role.TEAM_LEAD, User.Role.ASSISTANT, *User.STAFF_ONLY_ROLES) \
+                and not user.is_superuser:
             return False
         return super().has_permission(request)
 
