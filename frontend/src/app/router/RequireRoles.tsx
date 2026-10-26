@@ -1,6 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom'
 
 import { useAuth } from '@/hooks/useAuth'
+import { isStaffOnlyRole } from '@/lib/roles'
 import type { UserRole } from '@/types/auth'
 
 /** Hides a section from roles that have no access to it. UI only — the
@@ -8,7 +9,8 @@ import type { UserRole } from '@/types/auth'
 export function RequireRoles({ roles, redirectTo }: { roles: UserRole[]; redirectTo?: string }) {
   const { user } = useAuth()
   if (!user || !roles.includes(user.role)) {
-    return <Navigate to={redirectTo ?? (user?.role === 'accountant' ? '/accounting' : '/app/dashboard')} replace />
+    const fallback = user?.role === 'accountant' ? '/accounting' : isStaffOnlyRole(user?.role) ? '/attendance' : '/app/dashboard'
+    return <Navigate to={redirectTo ?? fallback} replace />
   }
   return <Outlet />
 }

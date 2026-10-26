@@ -1,4 +1,4 @@
-import type { UserRole } from '@/types/auth'
+import type { StaffOnlyRole, UserRole } from '@/types/auth'
 
 /** UI-only role helpers. Every permission is enforced by the backend
  * (apps.users.permissions) — these only decide what the UI offers. */
@@ -10,6 +10,23 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   assistant: 'Ассистент',
   accountant: 'Бухгалтер',
   director: 'Директор',
+  dop: 'ДОП',
+  rop: 'РОП',
+  rom: 'РОМ',
+  operations_director: 'Операционный директор',
+  hr_manager: 'HR-менеджер',
+  sales_manager: 'Менеджер по продажам',
+  marketing: 'Маркетинг',
+}
+
+/** Mirrors `User.STAFF_ONLY_ROLES`: these roles only sign in and mark
+ * arrival/departure (backend: apps.accounting.access isolates the rest). */
+export const STAFF_ONLY_ROLES: StaffOnlyRole[] = [
+  'dop', 'rop', 'rom', 'operations_director', 'hr_manager', 'sales_manager', 'marketing',
+]
+
+export function isStaffOnlyRole(role: UserRole | undefined): role is StaffOnlyRole {
+  return (STAFF_ONLY_ROLES as (UserRole | undefined)[]).includes(role)
 }
 
 /** The Assistant works only in the Assistant Workspace (/assistant), never in /app. */
@@ -36,5 +53,6 @@ export function isAccountingRole(role: UserRole | undefined): boolean {
  * (backend: apps.accounting.access — every LMS URL answers it 403). */
 export function homeFor(role: UserRole | undefined, target: string): string {
   if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance')) return '/accounting'
+  if (isStaffOnlyRole(role) && !target.startsWith('/attendance')) return '/attendance/staff'
   return target
 }

@@ -40,6 +40,17 @@ class User(AbstractUser):
         # Директор: сводная финансовая панель, утверждение/возврат начислений,
         # отчёты и журнал изменений бухгалтерии.
         DIRECTOR = "director", "Директор"
+        # Сотрудники с базовым доступом: пока только вход и отметка прихода
+        # и ухода (apps.staff_attendance, /attendance/staff во фронтенде).
+        # Личные кабинеты в разработке; всё остальное закрыто изоляцией —
+        # см. apps.accounting.access (STAFF_ONLY_ALLOWED_PREFIXES).
+        DOP = "dop", "ДОП"
+        ROP = "rop", "РОП"
+        ROM = "rom", "РОМ"
+        OPERATIONS_DIRECTOR = "operations_director", "Операционный директор"
+        HR_MANAGER = "hr_manager", "HR-менеджер"
+        SALES_MANAGER = "sales_manager", "Менеджер по продажам"
+        MARKETING = "marketing", "Маркетинг"
 
     username = models.CharField(
         max_length=150,
@@ -96,8 +107,13 @@ class User(AbstractUser):
 
     objects = CustomUserManager()
 
+    # Roles that (for now) only sign in and mark arrival/departure.
+    STAFF_ONLY_ROLES = (
+        Role.DOP, Role.ROP, Role.ROM, Role.OPERATIONS_DIRECTOR,
+        Role.HR_MANAGER, Role.SALES_MANAGER, Role.MARKETING,
+    )
     # Roles that work only through the LMS, never through Django admin.
-    LMS_ONLY_ROLES = (Role.TEAM_LEAD, Role.ASSISTANT, Role.ACCOUNTANT, Role.DIRECTOR)
+    LMS_ONLY_ROLES = (Role.TEAM_LEAD, Role.ASSISTANT, Role.ACCOUNTANT, Role.DIRECTOR, *STAFF_ONLY_ROLES)
 
     class Meta:
         verbose_name = "Пользователь"
@@ -145,6 +161,10 @@ class User(AbstractUser):
     @property
     def is_director(self):
         return self.role == self.Role.DIRECTOR
+
+    @property
+    def is_staff_only(self):
+        return self.role in self.STAFF_ONLY_ROLES
 
 
 class Subject(models.Model):

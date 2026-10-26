@@ -42,6 +42,13 @@ ROLE_ADMIN_LABELS = {
     User.Role.ACCOUNTANT: "💰 Бухгалтер — зарплаты и выплаты",
     User.Role.DIRECTOR: "🏛 Директор — утверждение начислений",
     User.Role.TEACHER: "👨‍💻 Тренер",
+    User.Role.DOP: "🕘 ДОП — только учёт прихода и ухода",
+    User.Role.ROP: "🕘 РОП — только учёт прихода и ухода",
+    User.Role.ROM: "🕘 РОМ — только учёт прихода и ухода",
+    User.Role.OPERATIONS_DIRECTOR: "🕘 Операционный директор — только учёт прихода и ухода",
+    User.Role.HR_MANAGER: "🕘 HR-менеджер — только учёт прихода и ухода",
+    User.Role.SALES_MANAGER: "🕘 Менеджер по продажам — только учёт прихода и ухода",
+    User.Role.MARKETING: "🕘 Маркетинг — только учёт прихода и ухода",
 }
 
 ROLE_HELP_TEXT = (
@@ -51,6 +58,8 @@ ROLE_HELP_TEXT = (
     "Ассистент ведёт группы, студентов, расписание, посещаемость, стипендии и опросы "
     "в Assistant Workspace LMS (/assistant/) — тоже не в этой админ-панели. "
     "Бухгалтер и Директор работают в разделе бухгалтерии LMS (/accounting/). "
+    "ДОП, РОП, РОМ, Операционный директор, HR-менеджер, Менеджер по продажам и "
+    "Маркетинг пока только входят в LMS и отмечают приход и уход (/attendance/). "
     "Тренера с профилем удобнее создавать в разделе «Тренеры»."
 )
 
@@ -176,7 +185,7 @@ class UserAdmin(DjangoUserAdmin):
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
-        if obj.role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT):
+        if obj.role in (User.Role.TEAM_LEAD, User.Role.ASSISTANT, *User.STAFF_ONLY_ROLES):
             from .admin_site import lms_login_url
 
             messages.info(

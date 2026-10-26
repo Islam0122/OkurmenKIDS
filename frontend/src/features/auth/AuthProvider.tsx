@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/api/auth'
 import { registerSessionExpiredHandler } from '@/api/client'
 import { isNetworkOrServerError } from '@/lib/apiError'
+import { STAFF_ONLY_ROLES } from '@/lib/roles'
 import { tokenStorage } from '@/lib/tokenStorage'
 import type { User } from '@/types/auth'
 
@@ -18,7 +19,7 @@ import { AuthContext, type AuthStatus } from './AuthContext'
 function isEligibleUser(user: User): boolean {
   if (!user.is_active) return false
   if (user.role === 'teacher') return user.is_verified
-  return ['admin', 'team_lead', 'assistant', 'accountant', 'director'].includes(user.role)
+  return ['admin', 'team_lead', 'assistant', 'accountant', 'director', ...STAFF_ONLY_ROLES].includes(user.role)
 }
 
 function describeIneligibility(user: User): string {
