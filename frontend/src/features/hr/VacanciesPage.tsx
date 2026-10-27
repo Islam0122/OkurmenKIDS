@@ -1,50 +1,96 @@
-import { useState, type FormEvent } from 'react'
-import { Briefcase, PencilLine, Plus } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Archive, Briefcase, ExternalLink, Lock, Pause, PencilLine, Play, Plus, Send } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { Input } from '@/components/ui/Input'
 import { LoadingState } from '@/components/ui/LoadingState'
-import { Modal } from '@/components/ui/Modal'
+import { Menu, type MenuItem } from '@/components/ui/Menu'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
-import { Textarea } from '@/components/ui/Textarea'
 import { useToast } from '@/components/ui/Toast'
-import { useRecruitmentMeta, useSaveVacancy, useVacancies } from '@/hooks/useHr'
+import { useRecruitmentMeta, useVacancies, useVacancyStatus } from '@/hooks/useHr'
 import { extractErrorMessage } from '@/lib/apiError'
-import type { HRPerson, Vacancy, VacancyStatus } from '@/types/hr'
+import type { Vacancy, VacancyStatus } from '@/types/hr'
 import { formatDateShort } from '@/utils/format'
 
-import { Field, FormActions, FormError, officeDate, TABLE_HEAD, Th, VACANCY_TONE } from './shared'
+import { SortableTh, TABLE_HEAD, Th, VACANCY_TONE, officeDate } from './shared'
 
 const PAGE_SIZE = 20
 
-/** /hr/vacancies — справочник вакансий: название, отдел, статус, ответственный. */
+/** Действия со статусом вакансии и их подтверждения. */
+export const STATUS_ACTIONS: Record<VacancyStatus, { label: string; icon: typeof Play; confirm: string }> = {
+  published: { label: 'Опубликовать', icon: Send, confirm: 'Вакансия появится на карьерном сайте и начнёт принимать отклики.' },
+  paused: { label: 'Приостановить', icon: Pause, confirm: 'Вакансия исчезнет с сайта; отклики и история сохранятся. Возобновить можно в любой момент.' },
+  closed: { label: 'Закрыть', icon: Lock, confirm: 'Приём откликов прекратится, по старой ссылке будет «вакансия закрыта». Все отклики и история сохранятся.' },
+  archived: { label: 'В архив', icon: Archive, confirm: 'Закрытая вакансия уйдёт в архив. Отклики и история сохранятся.' },
+  draft: { label: 'В черновик', icon: PencilLine, confirm: '' },
+}
+
+export function useVacancyStatusAction() {
+  const change = useVacancyStatus()
+  const { showToast } = useToast()
+  const [pending, setPending] = useState<{ vacancy: Vacancy; status: VacancyStatus } | null>(null)
+  const run = async () => {
+    if (!pending) return
+    try {
+      await change.mutateAsync({ id: pending.vacancy.id, status: pending.status })
+      showToast(`Вакансия: ${pending.vacancy.allowed_statuses.find((s) => s.value === pending.status)?.label.toLowerCase() ?? 'статус изменён'}`, 'success')
+    } catch (err) {
+      showToast(extractErrorMessage(err), 'error')
+    } finally {
+      setPending(null)
+    }
+  }
+  const label = (vacancy: Vacancy, status: VacancyStatus) =>
+    status === 'published' && vacancy.status === 'paused' ? 'Возобновить' : status === 'published' && vacancy.status === 'closed' ? 'Открыть снова'
+      : status === 'closed' && vacancy.status === 'archived' ? 'Вернуть из архива' : STATUS_ACTIONS[status].label
+  const dialog = (
+    <ConfirmDialog
+      isOpen={pending !== null}
+      title={pending ? `${label(pending.vacancy, pending.status)}: «${pending.vacancy.title}»?` : ''}
+      message={pending ? STATUS_ACTIONS[pending.status].confirm : ''}
+      confirmLabel={pending ? label(pending.vacancy, pending.status) : ''}
+      tone={pending?.status === 'closed' ? 'danger' : 'primary'}
+      isLoading={change.isPending}
+      onConfirm={() => void run()}
+      onCancel={() => setPending(null)}
+    />
+  )
+  return { ask: (vacancy: Vacancy, status: VacancyStatus) => setPending({ vacancy, status }), label, dialog }
+}
+
+/** /hr/vacancies — вакансии: черновики, опубликованные, на паузе, закрытые и архив. */
 export function HrVacanciesPage() {
   const meta = useRecruitmentMeta()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
+  const [responsible, setResponsible] = useState('')
+  const [ordering, setOrdering] = useState('-created_at')
   const [page, setPage] = useState(1)
-  const list = useVacancies({ search: search.trim() || undefined, status: status || undefined, page })
-  const [editing, setEditing] = useState<Vacancy | 'new' | null>(null)
+  const list = useVacancies({ search: search.trim() || undefined, status: status || undefined, responsible: responsible || undefined, ordering, page })
+  const action = useVacancyStatusAction()
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Вакансии"
-        description="Открытые позиции, на которые подбираются кандидаты"
-        actions={<Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => setEditing('new')}>Новая вакансия</Button>}
+        description="Карьерный сайт показывает только опубликованные вакансии"
+        actions={<Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => navigate('/hr/vacancies/new')}>Новая вакансия</Button>}
       />
       <Card>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Название или отдел" aria-label="Поиск вакансии" />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Название, направление, город" aria-label="Поиск вакансии" />
           <Select aria-label="Статус вакансии" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} placeholder="Все статусы" options={meta.data?.vacancy_statuses ?? []} />
+          <Select aria-label="Ответственный" value={responsible} onChange={(e) => { setResponsible(e.target.value); setPage(1) }} placeholder="Все ответственные"
+            options={(meta.data?.people ?? []).map((p) => ({ value: String(p.id), label: p.full_name }))} />
         </div>
       </Card>
       {list.isPending ? (
@@ -52,102 +98,69 @@ export function HrVacanciesPage() {
       ) : list.isError ? (
         <ErrorState message={extractErrorMessage(list.error)} onRetry={() => void list.refetch()} />
       ) : list.data.results.length === 0 ? (
-        <EmptyState icon={Briefcase} title="Вакансий нет" description="Создайте вакансию, чтобы привязывать к ней кандидатов." />
+        <EmptyState icon={Briefcase} title="Вакансий нет" description="Создайте вакансию: она сохранится черновиком, пока вы её не опубликуете." />
       ) : (
         <Card padding="none" className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
-                <Th>Вакансия</Th>
+                <SortableTh label="Вакансия" field="title" ordering={ordering} onChange={setOrdering} />
                 <Th>Статус</Th>
+                <SortableTh label="Опубликована" field="published_at" ordering={ordering} onChange={setOrdering} />
+                <SortableTh label="Отклики" field="applications_count" ordering={ordering} onChange={setOrdering} />
                 <Th>Ответственный</Th>
-                <Th>Кандидатов</Th>
-                <Th>Создана</Th>
+                <SortableTh label="Создана" field="created_at" ordering={ordering} onChange={setOrdering} />
                 <Th className="px-4 py-3 text-right">Действия</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {list.data.results.map((vacancy) => (
-                <tr key={vacancy.id}>
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-ink">{vacancy.title}</p>
-                    {vacancy.department ? <p className="text-xs text-ink-secondary">{vacancy.department}</p> : null}
-                  </td>
-                  <td className="px-4 py-3"><Badge tone={VACANCY_TONE[vacancy.status]}>{vacancy.status_label}</Badge></td>
-                  <td className="px-4 py-3">{vacancy.responsible_info?.full_name ?? '—'}</td>
-                  <td className="px-4 py-3 tabular-nums">
-                    {vacancy.candidates_count ? (
-                      <Link className="text-brand-700 hover:underline" to={`/hr/candidates?vacancy=${vacancy.id}`}>{vacancy.candidates_count}</Link>
-                    ) : 0}
-                  </td>
-                  <td className="px-4 py-3 tabular-nums">{formatDateShort(officeDate(vacancy.created_at))}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Button size="sm" variant="ghost" aria-label={`Изменить ${vacancy.title}`} leftIcon={<PencilLine className="size-4" aria-hidden />} onClick={() => setEditing(vacancy)}>Изменить</Button>
-                  </td>
-                </tr>
-              ))}
+              {list.data.results.map((vacancy) => {
+                const items: MenuItem[] = vacancy.allowed_statuses.map((s) => {
+                  const Icon = STATUS_ACTIONS[s.value].icon
+                  return { key: s.value, label: action.label(vacancy, s.value), icon: <Icon className="size-4" aria-hidden />,
+                    tone: s.value === 'closed' ? 'danger' : 'default', onClick: () => action.ask(vacancy, s.value) }
+                })
+                return (
+                  <tr key={vacancy.id}>
+                    <td className="px-4 py-3">
+                      <Link to={`/hr/vacancies/${vacancy.id}`} className="font-medium text-ink hover:text-brand-700">{vacancy.title}</Link>
+                      <p className="text-xs text-ink-secondary">{[vacancy.department, vacancy.location, vacancy.work_format_label].filter(Boolean).join(' · ')}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={VACANCY_TONE[vacancy.status]}>{vacancy.status_label}</Badge>
+                      {vacancy.status === 'published' && !vacancy.is_accepting ? <p className="mt-1 text-xs text-warning">Срок приёма истёк</p> : null}
+                      {vacancy.closes_on ? <p className="mt-1 text-xs text-ink-muted">до {formatDateShort(vacancy.closes_on)}</p> : null}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">{vacancy.published_at ? formatDateShort(officeDate(vacancy.published_at)) : '—'}</td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {vacancy.applications_count ? (
+                        <Link className="text-brand-700 hover:underline" to={`/hr/candidates?vacancy=${vacancy.id}`}>{vacancy.applications_count}</Link>
+                      ) : 0}
+                      {vacancy.new_count ? <Badge tone="info" className="ml-2">новых {vacancy.new_count}</Badge> : null}
+                    </td>
+                    <td className="px-4 py-3">{vacancy.responsible_info?.full_name ?? '—'}</td>
+                    <td className="px-4 py-3 tabular-nums">{formatDateShort(officeDate(vacancy.created_at))}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {vacancy.status === 'published' ? (
+                          <a href={`/careers/vacancies/${vacancy.slug}`} target="_blank" rel="noreferrer" aria-label={`Открыть «${vacancy.title}» на сайте`}
+                            className="flex size-8 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-hover hover:text-brand-700">
+                            <ExternalLink className="size-4" aria-hidden />
+                          </a>
+                        ) : null}
+                        <Button size="sm" variant="ghost" aria-label={`Изменить ${vacancy.title}`} leftIcon={<PencilLine className="size-4" aria-hidden />} onClick={() => navigate(`/hr/vacancies/${vacancy.id}`)}>Изменить</Button>
+                        {items.length ? <Menu items={items} label={`Статус «${vacancy.title}»`} /> : null}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </Card>
       )}
       {list.data ? <Pagination page={page} pageSize={PAGE_SIZE} totalCount={list.data.count} onPageChange={setPage} /> : null}
-      <Modal isOpen={editing !== null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Новая вакансия' : 'Изменить вакансию'}>
-        {editing !== null ? (
-          <VacancyForm vacancy={editing === 'new' ? null : editing} statuses={meta.data?.vacancy_statuses ?? []} people={meta.data?.people ?? []} onClose={() => setEditing(null)} />
-        ) : null}
-      </Modal>
+      {action.dialog}
     </div>
-  )
-}
-
-function VacancyForm({ vacancy, statuses, people, onClose }: { vacancy: Vacancy | null; statuses: { value: VacancyStatus; label: string }[]; people: HRPerson[]; onClose: () => void }) {
-  const { showToast } = useToast()
-  const save = useSaveVacancy()
-  const [form, setForm] = useState({
-    title: vacancy?.title ?? '',
-    department: vacancy?.department ?? '',
-    description: vacancy?.description ?? '',
-    status: vacancy?.status ?? ('open' as VacancyStatus),
-    responsible: vacancy?.responsible ? String(vacancy.responsible) : '',
-  })
-  const [error, setError] = useState<string | null>(null)
-  const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }))
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    setError(null)
-    if (!form.title.trim()) {
-      setError('Укажите название вакансии.')
-      return
-    }
-    try {
-      await save.mutateAsync({
-        id: vacancy?.id,
-        payload: {
-          title: form.title.trim(), department: form.department.trim(), description: form.description.trim(),
-          status: form.status, responsible: form.responsible ? Number(form.responsible) : null,
-        },
-      })
-      showToast(vacancy ? 'Вакансия сохранена' : 'Вакансия создана', 'success')
-      onClose()
-    } catch (err) {
-      setError(extractErrorMessage(err))
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-3" noValidate>
-      <Field id="vac-title" label="Название" required><Input id="vac-title" value={form.title} onChange={set('title')} maxLength={200} /></Field>
-      <Field id="vac-dep" label="Отдел или должность"><Input id="vac-dep" value={form.department} onChange={set('department')} maxLength={150} /></Field>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field id="vac-status" label="Статус" required><Select id="vac-status" value={form.status} onChange={set('status')} options={statuses} /></Field>
-        <Field id="vac-resp" label="Ответственный">
-          <Select id="vac-resp" value={form.responsible} onChange={set('responsible')} placeholder="Не назначен" options={people.map((p) => ({ value: String(p.id), label: `${p.full_name} · ${p.role_label}` }))} />
-        </Field>
-      </div>
-      <Field id="vac-desc" label="Описание"><Textarea id="vac-desc" rows={4} value={form.description} onChange={set('description')} /></Field>
-      <FormError message={error} />
-      <FormActions onCancel={onClose} isLoading={save.isPending} />
-    </form>
   )
 }

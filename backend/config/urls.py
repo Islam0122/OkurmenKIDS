@@ -1,8 +1,9 @@
+import posixpath
 import re
 
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
+from django.http import Http404
 from django.urls import include, path, re_path
 from django.views.static import serve as serve_media
 
@@ -40,6 +41,8 @@ urlpatterns = [
     # HR-кабинет: вакансии, кандидаты, собеседования, отчёты (см. apps.recruitment).
     # Сотрудники HR — /api/v1/hr/employees/ (apps.users.hr).
     path("api/v1/hr/", include("apps.recruitment.urls")),
+    # Публичный карьерный сайт: опубликованные вакансии и отклики (без входа).
+    path("api/v1/public/careers/", include("apps.recruitment.public_urls")),
 
     # Public feedback survey links (no login) — /feedback/s/<token>/
     path("feedback/", include("apps.feedback.public_urls")),
@@ -63,20 +66,28 @@ urlpatterns = [
 ]
 
 
-if settings.DEBUG:
-    urlpatterns += static(
-        settings.MEDIA_URL,
-        document_root=settings.MEDIA_ROOT,
-    )
-elif settings.SERVE_MEDIA:
-    # static() is a no-op once DEBUG is off, so production (Railway, no
-    # separate web server) routes uploads through the same serve() view
-    # directly. serve() resolves paths inside document_root only — "..",
-    # absolute paths and directory listings are rejected.
+def serve_public_media(request, path, document_root=None):
+    """Загрузки из MEDIA_ROOT — кроме закрытого каталога (резюме кандидатов
+    и другие персональные файлы отдаются только через API с проверкой прав).
+    Путь нормализуется так же, как в serve(), поэтому «a/../private/…» тоже
+    не проходит."""
+    from apps.recruitment.storage import PRIVATE_MEDIA_DIR
+
+    normalized = posixpath.normpath(path).lstrip("/")
+    if normalized == PRIVATE_MEDIA_DIR or normalized.startswith(PRIVATE_MEDIA_DIR + "/"):
+        raise Http404
+    return serve_media(request, path, document_root=document_root)
+
+
+if settings.DEBUG or settings.SERVE_MEDIA:
+    # In development (DEBUG) and on Railway (no separate web server, see
+    # docs/media.md) Django serves MEDIA_URL itself. serve() resolves paths
+    # inside document_root only — "..", absolute paths and directory
+    # listings are rejected.
     urlpatterns += [
         re_path(
             r"^%s(?P<path>.*)$" % re.escape(settings.MEDIA_URL.lstrip("/")),
-            serve_media,
+            serve_public_media,
             {"document_root": settings.MEDIA_ROOT},
         ),
     ]

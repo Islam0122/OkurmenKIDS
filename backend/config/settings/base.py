@@ -226,6 +226,9 @@ REST_FRAMEWORK = {
         "public_leaderboard": env("PUBLIC_LEADERBOARD_RATE", default="1200/hour"),
         # Отметка прихода/ухода сотрудника (apps.staff_attendance, на пользователя).
         "staff_attendance_mark": env("STAFF_ATTENDANCE_MARK_RATE", default="30/hour"),
+        # Публичный карьерный сайт (apps.recruitment.public, по IP, без входа).
+        "careers_read": env("CAREERS_READ_RATE", default="1200/hour"),
+        "careers_apply": env("CAREERS_APPLY_RATE", default="10/hour"),
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -293,6 +296,17 @@ BILLING_MAX_PREPAID_PACKAGES = env.int("BILLING_MAX_PREPAID_PACKAGES", default=1
 BILLING_SYNC_LOOKBACK_DAYS = env.int("BILLING_SYNC_LOOKBACK_DAYS", default=14)
 # Канал доставки уведомлений (путь к функции); пусто — только лог и раздел оплаты.
 BILLING_NOTIFICATION_BACKEND = env("BILLING_NOTIFICATION_BACKEND", default="")
+
+# Подбор персонала (apps.recruitment, карьерный сайт и HR-кабинет).
+# Резюме хранятся вне публичных /media/ — по умолчанию в MEDIA_ROOT/private
+# (тот же постоянный том; config/urls.py этот каталог не отдаёт).
+RECRUITMENT_PRIVATE_ROOT = env("RECRUITMENT_PRIVATE_ROOT", default="")
+RECRUITMENT_RESUME_MAX_MB = env.int("RECRUITMENT_RESUME_MAX_MB", default=5)
+# Версия текста согласия на обработку персональных данных (фиксируется в отклике).
+RECRUITMENT_CONSENT_VERSION = env("RECRUITMENT_CONSENT_VERSION", default="2026-10")
+# Срок хранения данных кандидатов без найма (дней после последнего события);
+# `manage.py purge_candidate_data` удаляет персональные данные по этому сроку.
+RECRUITMENT_RETENTION_DAYS = env.int("RECRUITMENT_RETENTION_DAYS", default=365)
 
 # Celery (config/celery.py). Без брокера задачи выполняются синхронно.
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="")

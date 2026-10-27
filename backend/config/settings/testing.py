@@ -29,3 +29,5 @@ PASSWORD_HASHERS = [
 ]
 
 MEDIA_ROOT = tempfile.mkdtemp()
+# Резюме кандидатов (apps.recruitment.storage) — тоже во временный каталог.
+RECRUITMENT_PRIVATE_ROOT = tempfile.mkdtemp()

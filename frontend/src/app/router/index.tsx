@@ -439,6 +439,8 @@ export const router = createBrowserRouter([
               { path: 'candidates/:id', lazy: async () => ({ Component: (await import('@/features/hr/CandidateCardPage')).HrCandidateCardPage }) },
               { path: 'interviews', lazy: async () => ({ Component: (await import('@/features/hr/InterviewsPage')).HrInterviewsPage }) },
               { path: 'vacancies', lazy: async () => ({ Component: (await import('@/features/hr/VacanciesPage')).HrVacanciesPage }) },
+              { path: 'vacancies/new', lazy: async () => ({ Component: (await import('@/features/hr/VacancyEditPage')).HrVacancyEditPage }) },
+              { path: 'vacancies/:id', lazy: async () => ({ Component: (await import('@/features/hr/VacancyEditPage')).HrVacancyEditPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/hr/ReportsPage')).HrReportsPage }) },
               { path: '*', element: <Navigate to="/hr" replace /> },
             ],
@@ -491,6 +493,20 @@ export const router = createBrowserRouter([
       { index: true, lazy: async () => ({ Component: (await import('@/features/leaderboardSite/LeaderboardPages')).StudentsLeaderboardPage }) },
       { path: 'groups', lazy: async () => ({ Component: (await import('@/features/leaderboardSite/LeaderboardPages')).GroupsLeaderboardPage }) },
       { path: '*', element: <Navigate to="/leaderboard" replace /> },
+    ],
+  },
+  {
+    // Карьерный сайт — ПУБЛИЧНЫЙ: без входа, свой layout, только публичный API
+    // вакансий (/api/v1/public/careers/ — белый список полей, без внутренних
+    // данных). Отклик — без регистрации. Никогда не за ProtectedRoute.
+    path: '/careers',
+    errorElement: <RouteErrorPage />,
+    lazy: async () => ({ Component: (await import('@/features/careers/SiteLayout')).CareersLayout }),
+    children: [
+      { index: true, lazy: async () => ({ Component: (await import('@/features/careers/CareersHomePage')).CareersHomePage }) },
+      { path: 'vacancies/:slug', lazy: async () => ({ Component: (await import('@/features/careers/VacancyPage')).VacancyPage }) },
+      { path: 'privacy', lazy: async () => ({ Component: (await import('@/features/careers/PrivacyPage')).CareersPrivacyPage }) },
+      { path: '*', element: <Navigate to="/careers" replace /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },

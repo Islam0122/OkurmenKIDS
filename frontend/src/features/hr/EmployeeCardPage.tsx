@@ -66,7 +66,7 @@ export function HrEmployeeCardPage() {
             <div>
               <dt className="text-xs uppercase tracking-wide text-ink-muted">Принят из кандидатов</dt>
               <dd className="text-sm">
-                <Link className="text-brand-700 hover:underline" to={`/hr/candidates/${e.hired_from.id}`}>{e.hired_from.full_name}</Link>
+                <Link className="text-brand-700 hover:underline" to={`/hr/candidates/${e.hired_from.id}?application=${e.hired_from.application}`}>{e.hired_from.full_name}</Link>
                 {e.hired_from.position ? <span className="text-ink-secondary"> · {e.hired_from.position}</span> : null}
               </dd>
             </div>

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import type { CandidateStatus, HRActivity, InterviewStatus, VacancyStatus } from '@/types/hr'
+import type { ApplicationStatus, HRActivity, InterviewStatus, VacancyStatus } from '@/types/hr'
 import { formatDateShort } from '@/utils/format'
 
 /** Время из HR API приходит во времени офиса с поясом
@@ -32,12 +32,14 @@ export function minutesOfDay(iso: string): number {
   return Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16))
 }
 
-export const CANDIDATE_TONE: Record<CandidateStatus, BadgeTone> = {
+export const APPLICATION_TONE: Record<ApplicationStatus, BadgeTone> = {
   new: 'info',
-  contacted: 'info',
+  screening: 'info',
+  shortlisted: 'info',
   interview_scheduled: 'brand',
   interview_done: 'brand',
   awaiting_decision: 'warning',
+  next_stage: 'brand',
   offer: 'warning',
   hired: 'success',
   rejected: 'danger',
@@ -47,17 +49,33 @@ export const CANDIDATE_TONE: Record<CandidateStatus, BadgeTone> = {
 export const INTERVIEW_TONE: Record<InterviewStatus, BadgeTone> = {
   scheduled: 'success',
   completed: 'info',
+  rescheduled: 'muted',
   cancelled: 'muted',
+  no_show: 'danger',
 }
 
 export const VACANCY_TONE: Record<VacancyStatus, BadgeTone> = {
-  open: 'success',
+  draft: 'muted',
+  published: 'success',
   paused: 'warning',
-  closed: 'muted',
+  closed: 'danger',
+  archived: 'muted',
 }
 
-export function CandidateStatusBadge({ status, label }: { status: CandidateStatus; label: string }) {
-  return <Badge tone={CANDIDATE_TONE[status]}>{label}</Badge>
+export function ApplicationStatusBadge({ status, label }: { status: ApplicationStatus; label: string }) {
+  return <Badge tone={APPLICATION_TONE[status]}>{label}</Badge>
+}
+
+/** Размер файла по-человечески: 1,2 МБ, 340 КБ. */
+export function fileSize(bytes: number | null): string {
+  if (!bytes) return ''
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} МБ`
+  return `${Math.max(1, Math.round(bytes / 1024))} КБ`
+}
+
+/** Ссылка на карточку кандидата с выбранным откликом. */
+export function candidatePath(candidate: number, application?: number | null): string {
+  return application ? `/hr/candidates/${candidate}?application=${application}` : `/hr/candidates/${candidate}`
 }
 
 export function Field({ id, label, required, hint, children }: { id: string; label: string; required?: boolean; hint?: string; children: ReactNode }) {
@@ -121,7 +139,7 @@ export function ActivityList({ items, showSubject = true, empty = 'Событи�
             {officeDateTime(item.created_at)}
             {item.actor ? ` · ${item.actor}` : ''}
             {showSubject && item.candidate ? (
-              <> · <Link className="text-brand-700 hover:underline" to={`/hr/candidates/${item.candidate.id}`}>{item.candidate.full_name}</Link></>
+              <> · <Link className="text-brand-700 hover:underline" to={candidatePath(item.candidate.id, item.application)}>{item.candidate.full_name}</Link></>
             ) : null}
             {showSubject && !item.candidate && item.employee ? (
               <> · <Link className="text-brand-700 hover:underline" to={`/hr/employees/${item.employee.id}`}>{item.employee.full_name}</Link></>

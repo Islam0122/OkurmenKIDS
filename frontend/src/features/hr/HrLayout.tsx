@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react'
-import { BarChart3, Briefcase, CalendarDays, LayoutDashboard, LogOut, Menu, ScanLine, UserSearch, Users } from 'lucide-react'
+import { BarChart3, Briefcase, CalendarDays, ExternalLink, LayoutDashboard, LogOut, Menu, ScanLine, UserSearch, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -9,6 +9,8 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { useAuth } from '@/hooks/useAuth'
 import { ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/utils/cn'
+
+import { RemindersBell } from './Reminders'
 
 interface NavItem {
   to: string
@@ -52,6 +54,10 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
         {HR_NAV.map((item) => <NavRow key={item.to} item={item} onNavigate={onNavigate} />)}
       </nav>
       <div className="space-y-0.5 border-t border-border px-3 py-3">
+        <a href="/careers" target="_blank" rel="noreferrer" className={cn(ROW, 'text-ink-secondary hover:bg-surface-hover hover:text-ink')}>
+          <ExternalLink className="size-[18px] shrink-0" aria-hidden />
+          Карьерный сайт
+        </a>
         <NavRow item={{ to: '/attendance', label: 'Моя отметка прихода', icon: ScanLine }} onNavigate={onNavigate} />
         <button type="button" onClick={logout} className={cn(ROW, 'w-full text-ink-secondary hover:bg-surface-hover hover:text-danger')}>
           <LogOut className="size-[18px] shrink-0" aria-hidden />
@@ -87,6 +93,7 @@ export function HrLayout() {
             <span className="truncate font-semibold text-ink lg:hidden">HR-кабинет</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <RemindersBell />
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
