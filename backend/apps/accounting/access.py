@@ -85,6 +85,12 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
 )
 
 
+# HR-менеджеру дополнительно открыта «Моя зарплата»: /accounting/my/ — только
+# собственные начисления и выплаты, только чтение (сотрудник — request.user).
+# Остальная бухгалтерия для HR закрыта правами представлений (403).
+HR_ALLOWED_PREFIXES = ("/api/v1/accounting/my/",)
+
+
 def is_staff_only(user) -> bool:
     from apps.users.models import User
 
@@ -182,7 +188,8 @@ class AccountingIsolationMiddleware:
                 if path.startswith("/api/"):
                     return JsonResponse({"detail": message, "code": "accounting_only"}, status=403)
                 return HttpResponseForbidden(message)
-            if not staff_allowed and is_staff_only(user):
+            if not staff_allowed and is_staff_only(user) and not (
+                    path.startswith(HR_ALLOWED_PREFIXES) and user.role == user.Role.HR_MANAGER):
                 message = "Раздел недоступен: ваш личный кабинет находится в разработке."
                 if path.startswith("/api/"):
                     return JsonResponse({"detail": message, "code": "staff_only"}, status=403)

@@ -2,6 +2,8 @@
 (EmployeeSalaryProfile → Payroll → PayrollPayment), только свои данные."""
 from __future__ import annotations
 
+from rest_framework.test import APIClient
+
 from apps.accounting.models import Payroll, SalaryRule, SalaryType
 from apps.accounting.services.approval_service import approve_payroll
 from apps.accounting.services.payment_service import register_payment
@@ -102,3 +104,44 @@ class HRMySalaryTests(AccountingFixture):
             ("post", f"/api/v1/accounting/payrolls/{payroll.pk}/adjustments/", {"kind": "BONUS", "amount": "1", "reason": "x"}),
         ):
             self.assertIn(getattr(client, method)(url, body, format="json").status_code, (403, 405), url)
+
+
+def jwt_client(user) -> APIClient:
+    """Вход по паролю и JWT, как в браузере: так запрос проходит через
+    AccountingIsolationMiddleware (force_authenticate её обходит)."""
+    client = APIClient()
+    response = client.post("/api/v1/auth/login/", {"username": user.username, "password": "Str0ngPassw0rd!"},
+                           format="json")
+    assert response.status_code == 200, response.content
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+    return client
+
+
+class HRMySalaryIsolationTests(AccountingFixture):
+    """Реальный запрос с токеном: middleware изоляции пускает HR в свою
+    зарплату, но не в остальную бухгалтерию и не в LMS."""
+
+    def setUp(self):
+        super().setUp()
+        self.hr = make_user("hr", User.Role.HR_MANAGER)
+        self.rule(self.profile(self.hr, SalaryType.FIXED), R.FIXED, amount=D("40000"))
+
+    def test_hr_opens_own_salary_with_token(self):
+        approve_payroll(self.calc(MONTH, self.hr), self.director)
+        client = jwt_client(self.hr)
+        for url in (URL, "/api/v1/accounting/my/salary/report.pdf", "/api/v1/accounting/my/payrolls/",
+                    "/api/v1/accounting/my/payments/", "/api/v1/accounting/my/payout-plan/",
+                    "/api/v1/accounting/my/estimates/"):
+            self.assertEqual(client.get(url).status_code, 200, url)
+        self.assertEqual(client.get(URL).json()["totals"]["accrued"], "40000.00")
+
+    def test_rest_of_accounting_and_lms_stay_closed_for_hr(self):
+        client = jwt_client(self.hr)
+        for url in ("/api/v1/accounting/payrolls/", "/api/v1/accounting/employees/",
+                    "/api/v1/accounting/salary-profiles/", "/api/v1/accounting/payments/", "/api/v1/trainers/"):
+            self.assertEqual(client.get(url).status_code, 403, url)
+
+    def test_other_staff_only_roles_are_still_isolated(self):
+        rop = make_user("rop", User.Role.ROP)
+        response = jwt_client(rop).get(URL)
+        self.assertEqual((response.status_code, response.json()["code"]), (403, "staff_only"))
