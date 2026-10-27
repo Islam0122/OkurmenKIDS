@@ -224,7 +224,6 @@ def update_interview(interview: Interview, actor, *, confirm: bool = False, **da
         setattr(interview, key, value)
     if moved:
         interview.reschedule_count += 1
-    interview.full_clean(exclude=["candidate", "interviewer", "vacancy", "created_by"])
     interview.save()
     if moved:
         fmt = "%d.%m.%Y %H:%M"

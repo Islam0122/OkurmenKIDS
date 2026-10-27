@@ -1,6 +1,6 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent } from 'react'
 import { KeyRound, PencilLine, Plus, Power, ShieldAlert, Users } from 'lucide-react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
@@ -27,6 +27,8 @@ import {
 import { extractErrorMessage } from '@/lib/apiError'
 import type { HREmployee, HRRoleOption } from '@/types/hr'
 
+import { Field, FormError, SortableTh, TABLE_HEAD, Th } from './shared'
+
 const PAGE_SIZE = 20
 
 /** /hr/employees — раздел «Сотрудники» HR-менеджера. Кого HR может менять,
@@ -38,7 +40,7 @@ export function HrEmployeesPage() {
   return <Employees />
 }
 
-function formatDate(value: string | null): string {
+export function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleDateString('ru-RU') : '—'
 }
 
@@ -47,8 +49,9 @@ function Employees() {
   const [search, setSearch] = useState('')
   const [role, setRole] = useState('')
   const [active, setActive] = useState<'' | 'true' | 'false'>('')
+  const [ordering, setOrdering] = useState('-created_at')
   const [page, setPage] = useState(1)
-  const list = useHrEmployees({ search: search.trim() || undefined, role: role || undefined, is_active: active || undefined, page })
+  const list = useHrEmployees({ search: search.trim() || undefined, role: role || undefined, is_active: active || undefined, ordering, page })
   const [editing, setEditing] = useState<HREmployee | 'new' | null>(null)
   const [passwordFor, setPasswordFor] = useState<HREmployee | null>(null)
   const [toggling, setToggling] = useState<HREmployee | null>(null)
@@ -105,22 +108,22 @@ function Employees() {
       ) : list.data.results.length === 0 ? (
         <EmptyState icon={Users} title="Сотрудников не найдено" description="Измените фильтры или добавьте сотрудника." />
       ) : (
-        <Card className="overflow-x-auto p-0">
+        <Card padding="none" className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
-            <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-ink-muted">
+            <thead className={TABLE_HEAD}>
               <tr>
-                <th scope="col" className="px-4 py-3">Сотрудник</th>
-                <th scope="col" className="px-4 py-3">Должность</th>
-                <th scope="col" className="px-4 py-3">Статус</th>
-                <th scope="col" className="px-4 py-3">Создан</th>
-                <th scope="col" className="px-4 py-3 text-right">Действия</th>
+                <SortableTh label="Сотрудник" field="last_name" ordering={ordering} onChange={resetPage(setOrdering)} />
+                <SortableTh label="Должность" field="role" ordering={ordering} onChange={resetPage(setOrdering)} />
+                <SortableTh label="Статус" field="is_active" ordering={ordering} onChange={resetPage(setOrdering)} />
+                <SortableTh label="Создан" field="created_at" ordering={ordering} onChange={resetPage(setOrdering)} />
+                <Th className="px-4 py-3 text-right">Действия</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {list.data.results.map((employee) => (
                 <tr key={employee.id}>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-ink">{employee.full_name}</p>
+                    <Link to={`/hr/employees/${employee.id}`} className="font-medium text-ink hover:text-brand-700">{employee.full_name}</Link>
                     <p className="text-xs text-ink-secondary">{employee.username} · {employee.email}</p>
                   </td>
                   <td className="px-4 py-3">{employee.role_label}</td>
@@ -160,20 +163,7 @@ function Employees() {
   )
 }
 
-function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
-  return (
-    <div>
-      <label htmlFor={id} className="mb-1.5 block field-label">{label}</label>
-      {children}
-    </div>
-  )
-}
-
-function FormError({ message }: { message: string | null }) {
-  return message ? <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">{message}</p> : null
-}
-
-function EmployeeForm({ employee, roles, onClose }: { employee: HREmployee | null; roles: HRRoleOption[]; onClose: () => void }) {
+export function EmployeeForm({ employee, roles, onClose }: { employee: HREmployee | null; roles: HRRoleOption[]; onClose: () => void }) {
   const { showToast } = useToast()
   const save = useSaveHrEmployee()
   const [form, setForm] = useState({
@@ -241,7 +231,7 @@ function EmployeeForm({ employee, roles, onClose }: { employee: HREmployee | nul
   )
 }
 
-function PasswordForm({ employee, onClose }: { employee: HREmployee; onClose: () => void }) {
+export function PasswordForm({ employee, onClose }: { employee: HREmployee; onClose: () => void }) {
   const { showToast } = useToast()
   const setPassword = useSetHrEmployeePassword()
   const [password, setPasswordValue] = useState('')
@@ -280,7 +270,7 @@ function PasswordForm({ employee, onClose }: { employee: HREmployee; onClose: ()
   )
 }
 
-function ToggleActiveDialog({ employee, onClose }: { employee: HREmployee | null; onClose: () => void }) {
+export function ToggleActiveDialog({ employee, onClose }: { employee: HREmployee | null; onClose: () => void }) {
   const { showToast } = useToast()
   const setActive = useSetHrEmployeeActive()
   const deactivating = employee?.is_active ?? false

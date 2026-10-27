@@ -25,7 +25,8 @@ export function AppLayout() {
   if (isAssistant(user?.role)) return <Navigate to="/assistant" replace />
   // Бухгалтер и Директор — только в разделе бухгалтерии.
   if (isAccountingRole(user?.role)) return <Navigate to="/accounting" replace />
-  // Новые роли пока только отмечают приход и уход.
+  // HR работает в HR-кабинете; остальные новые роли пока только отмечают приход и уход.
+  if (user?.role === 'hr_manager') return <Navigate to="/hr" replace />
   if (isStaffOnlyRole(user?.role)) return <Navigate to="/attendance" replace />
 
   return (

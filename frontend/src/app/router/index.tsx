@@ -420,8 +420,8 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    // Раздел «Сотрудники» HR-менеджера — в той же оболочке, что и его учёт
-    // посещаемости. Кого HR может менять, решает backend (apps.users.hr).
+    // HR-кабинет: главная, сотрудники, кандидаты, собеседования, вакансии,
+    // отчёты (backend: apps.users.hr, apps.recruitment — только HR-менеджер).
     path: '/hr',
     element: <ProtectedRoute />,
     errorElement: <RouteErrorPage />,
@@ -430,10 +430,17 @@ export const router = createBrowserRouter([
         element: <RequireRoles roles={['hr_manager']} redirectTo="/attendance" />,
         children: [
           {
-            lazy: async () => ({ Component: (await import('@/features/staffAttendance/AttendanceLayout')).AttendanceLayout }),
+            lazy: async () => ({ Component: (await import('@/features/hr/HrLayout')).HrLayout }),
             children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/hr/DashboardPage')).HrDashboardPage }) },
               { path: 'employees', lazy: async () => ({ Component: (await import('@/features/hr/EmployeesPage')).HrEmployeesPage }) },
-              { path: '*', element: <Navigate to="/hr/employees" replace /> },
+              { path: 'employees/:id', lazy: async () => ({ Component: (await import('@/features/hr/EmployeeCardPage')).HrEmployeeCardPage }) },
+              { path: 'candidates', lazy: async () => ({ Component: (await import('@/features/hr/CandidatesPage')).HrCandidatesPage }) },
+              { path: 'candidates/:id', lazy: async () => ({ Component: (await import('@/features/hr/CandidateCardPage')).HrCandidateCardPage }) },
+              { path: 'interviews', lazy: async () => ({ Component: (await import('@/features/hr/InterviewsPage')).HrInterviewsPage }) },
+              { path: 'vacancies', lazy: async () => ({ Component: (await import('@/features/hr/VacanciesPage')).HrVacanciesPage }) },
+              { path: 'reports', lazy: async () => ({ Component: (await import('@/features/hr/ReportsPage')).HrReportsPage }) },
+              { path: '*', element: <Navigate to="/hr" replace /> },
             ],
           },
         ],

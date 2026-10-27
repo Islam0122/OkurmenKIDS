@@ -53,7 +53,7 @@ describe('раздел «Сотрудники» HR', () => {
     await user.type(screen.getByLabelText('Поиск сотрудника'), 'Аз')
     await user.selectOptions(screen.getByLabelText('Должность'), 'rop')
     await user.selectOptions(screen.getByLabelText('Статус'), 'false')
-    await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ search: 'Аз', role: 'rop', is_active: 'false', page: 1 }))
+    await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ search: 'Аз', role: 'rop', is_active: 'false', ordering: '-created_at', page: 1 }))
   })
 
   it('создаёт сотрудника только с разрешённой ролью из списка сервера', async () => {

@@ -119,6 +119,12 @@ def activity_brief(entry: HRActivity) -> dict:
     }
 
 
+def visible_activity(qs: QuerySet) -> QuerySet:
+    """Лента без служебной записи «вход в этап «Новый»» — её дублирует
+    «Добавлен кандидат»; в журнале она остаётся для расчёта времени этапов."""
+    return qs.exclude(kind=K.CANDIDATE_STATUS, from_status="")
+
+
 def _status_counts(qs: QuerySet) -> dict[str, int]:
     counts = dict(qs.order_by().values("status").annotate(n=Count("id")).values_list("status", "n"))
     return {value: counts.get(value, 0) for value, _ in S.choices}
@@ -139,7 +145,7 @@ def dashboard(date_from: date, date_to: date) -> dict:
     upcoming = (Interview.objects.select_related("candidate", "interviewer", "vacancy")
                 .filter(status=Interview.Status.SCHEDULED, scheduled_at__gte=now - timedelta(hours=1))
                 .order_by("scheduled_at")[:8])
-    recent = HRActivity.objects.select_related("actor", "candidate", "employee")[:12]
+    recent = visible_activity(HRActivity.objects.select_related("actor", "candidate", "employee"))[:12]
     return {
         "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
         "employees_active": staff.filter(is_active=True).count(),

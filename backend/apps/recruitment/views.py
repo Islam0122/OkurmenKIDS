@@ -196,7 +196,7 @@ class CandidateViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.
     @action(detail=True, methods=["get"])
     def history(self, request, pk=None):
         candidate = self.get_object()
-        entries = candidate.activities.select_related("actor", "candidate", "employee")
+        entries = reports.visible_activity(candidate.activities.select_related("actor", "candidate", "employee"))
         return Response(ActivitySerializer(entries, many=True).data)
 
     @extend_schema(tags=TAGS, responses=CandidateSerializer)

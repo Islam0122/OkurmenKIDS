@@ -29,6 +29,12 @@ export function isStaffOnlyRole(role: UserRole | undefined): role is StaffOnlyRo
   return (STAFF_ONLY_ROLES as (UserRole | undefined)[]).includes(role)
 }
 
+/** Роли без своего кабинета: после входа — только отметка прихода и ухода.
+ * У HR-менеджера есть HR-кабинет (/hr). */
+export function hasCabinetInDevelopment(role: UserRole | undefined): boolean {
+  return isStaffOnlyRole(role) && role !== 'hr_manager'
+}
+
 /** The Assistant works only in the Assistant Workspace (/assistant), never in /app. */
 export function isAssistant(role: UserRole | undefined): boolean {
   return role === 'assistant'
@@ -53,7 +59,7 @@ export function isAccountingRole(role: UserRole | undefined): boolean {
  * (backend: apps.accounting.access — every LMS URL answers it 403). */
 export function homeFor(role: UserRole | undefined, target: string): string {
   if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance')) return '/accounting'
-  if (role === 'hr_manager' && target.startsWith('/hr')) return target
+  if (role === 'hr_manager') return target.startsWith('/hr') || target.startsWith('/attendance') ? target : '/hr'
   if (isStaffOnlyRole(role) && !target.startsWith('/attendance')) return '/attendance/staff'
   return target
 }

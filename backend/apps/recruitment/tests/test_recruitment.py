@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.recruitment.models import Candidate, HRActivity, Interview, Vacancy
+from apps.recruitment.models import Candidate, HRActivity, Interview
 from apps.users.models import User
 
 TZ = ZoneInfo("Asia/Bishkek")
@@ -142,7 +142,10 @@ class CandidateTests(RecruitmentFixture):
         self.assertEqual(candidate["position_label"], "Менеджер по продажам")
         self.assertEqual([s["value"] for s in candidate["allowed_statuses"]], ["contacted", "rejected", "withdrawn"])
         history = self.get(f"candidates/{candidate['id']}/history/").data
-        self.assertEqual({h["kind"] for h in history}, {"candidate_created", "candidate_status"})
+        self.assertEqual([h["kind"] for h in history], ["candidate_created"])
+        # Служебный вход в этап «Новый» есть в журнале (для времени этапов), но не в ленте.
+        self.assertTrue(HRActivity.objects.filter(candidate_id=candidate["id"], kind="candidate_status",
+                                                  from_status="", to_status="new").exists())
 
     def test_validation(self):
         with frozen(at(20)):
