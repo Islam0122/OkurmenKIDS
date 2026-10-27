@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react'
-import { ArrowLeft, Briefcase, CalendarDays, Check, Clock, Link2, MapPin, Share2, Wallet } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { ArrowLeft, ArrowRight, Briefcase, CalendarDays, Clock, Link2, MapPin, Share2, Wallet } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { Link, useLocation, useParams } from 'react-router-dom'
 
-import { Button } from '@/components/ui/Button'
-import { ErrorState } from '@/components/ui/ErrorState'
-import { LoadingState } from '@/components/ui/LoadingState'
 import { useCareersVacancy } from '@/hooks/useCareers'
 import { extractErrorMessage } from '@/lib/apiError'
 import type { PublicVacancy } from '@/types/careers'
 
 import { ApplyForm } from './ApplyForm'
+import { Eyebrow } from './Eyebrow'
+import { GlassesMark } from './Photo'
+import { scrollToSection } from './scroll'
 import { COMPANY } from './content'
 import { formatPublished, formatSalary } from './format'
 import { absoluteUrl, useDocumentMeta } from './useDocumentMeta'
@@ -46,12 +46,12 @@ function jobPosting(v: PublicVacancy, url: string): Record<string, unknown> {
 function Section({ title, items }: { title: string; items: string[] }) {
   if (!items.length) return null
   return (
-    <section className="mt-8">
-      <h2 className="text-lg font-semibold text-ink">{title}</h2>
-      <ul className="mt-3 space-y-2">
+    <section className="border-t border-ok-line py-8">
+      <h2 className="text-xl font-extrabold text-ok-indigo">{title}</h2>
+      <ul className="mt-4 space-y-3">
         {items.map((item) => (
-          <li key={item} className="flex gap-2.5 text-ink-secondary">
-            <Check className="mt-1 size-4 shrink-0 text-brand-600" aria-hidden />
+          <li key={item} className="grid grid-cols-[auto_1fr] gap-3 text-[17px] leading-relaxed text-ok-ink/85">
+            <span className="mt-[0.7em] size-2 rounded-full bg-ok-amber" aria-hidden />
             <span>{item}</span>
           </li>
         ))}
@@ -79,26 +79,34 @@ function ShareButton({ title, url }: { title: string; url: string }) {
       window.prompt('Скопируйте ссылку на вакансию', url)
     }
   }
+  const Icon = copied ? Link2 : Share2
   return (
-    <Button type="button" variant="secondary" className="w-full" leftIcon={copied ? <Link2 className="size-4" aria-hidden /> : <Share2 className="size-4" aria-hidden />} onClick={() => void share()}>
+    <button type="button" onClick={() => void share()}
+      className="flex h-12 w-full items-center justify-center gap-2 rounded-full border-2 border-ok-indigo/15 text-[15px] font-bold text-ok-indigo transition-colors hover:border-ok-indigo/40 hover:bg-ok-paper">
+      <Icon className="size-4" aria-hidden />
       {copied ? 'Ссылка скопирована' : 'Поделиться'}
-    </Button>
+    </button>
   )
+}
+
+function Shell({ children }: { children: ReactNode }) {
+  return <div className="mx-auto max-w-3xl px-5 py-20 text-center sm:px-8">{children}</div>
 }
 
 function Unavailable({ title, closed }: { title?: string; closed: boolean }) {
   useDocumentMeta({ title: `${closed ? 'Вакансия закрыта' : 'Вакансия не найдена'} — ${COMPANY.siteName}`, noindex: true })
   return (
-    <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6">
-      <h1 className="text-2xl font-semibold text-ink">{closed ? `«${title}» — приём откликов закрыт` : 'Вакансия не найдена'}</h1>
-      <p className="mt-3 text-ink-secondary">
+    <Shell>
+      <div className="mx-auto w-40 opacity-30" aria-hidden><GlassesMark stroke="var(--color-ok-indigo)" /></div>
+      <h1 className="mt-6 text-3xl font-extrabold text-ok-indigo">{closed ? `«${title}» — приём откликов закрыт` : 'Вакансия не найдена'}</h1>
+      <p className="mx-auto mt-4 max-w-xl text-lg text-ok-muted">
         {closed ? 'Эта вакансия больше не принимает отклики. Посмотрите другие открытые вакансии — возможно, вам подойдёт одна из них.'
           : 'Возможно, ссылка устарела или вакансия ещё не опубликована.'}
       </p>
-      <Link to="/careers" className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600">
-        Все вакансии
+      <Link to="/careers#vacancies" className="mt-8 inline-flex h-12 items-center gap-2 rounded-full bg-ok-indigo px-6 font-bold text-white hover:bg-ok-indigo-soft">
+        Все вакансии<ArrowRight className="size-4" aria-hidden />
       </Link>
-    </div>
+    </Shell>
   )
 }
 
@@ -109,10 +117,19 @@ export function VacancyPage() {
   const { hash } = useLocation()
 
   useEffect(() => {
-    if (hash === '#apply' && vacancy.data) document.getElementById('apply')?.scrollIntoView?.({ behavior: 'smooth' })
+    if (hash === '#apply' && vacancy.data) scrollToSection('apply')
   }, [hash, vacancy.data])
 
-  if (vacancy.isPending) return <LoadingState label="Загружаем вакансию…" />
+  if (vacancy.isPending) {
+    return (
+      <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8" aria-busy="true" aria-label="Загружаем вакансию…">
+        <div className="h-4 w-32 rounded bg-ok-indigo-100 motion-safe:animate-pulse" />
+        <div className="mt-5 h-12 w-2/3 rounded bg-ok-indigo-100 motion-safe:animate-pulse" />
+        <div className="mt-4 h-5 w-1/2 rounded bg-ok-indigo-50 motion-safe:animate-pulse" />
+        <div className="mt-12 h-64 rounded-[28px] bg-white motion-safe:animate-pulse" />
+      </div>
+    )
+  }
   if (vacancy.isError) {
     const error = vacancy.error
     if (error instanceof AxiosError && (error.response?.status === 404 || error.response?.status === 410)) {
@@ -120,9 +137,11 @@ export function VacancyPage() {
       return <Unavailable closed={error.response.status === 410} title={data?.title} />
     }
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-        <ErrorState message={extractErrorMessage(error)} onRetry={() => void vacancy.refetch()} />
-      </div>
+      <Shell>
+        <h1 className="text-3xl font-extrabold text-ok-indigo">Не удалось загрузить вакансию</h1>
+        <p className="mt-4 text-lg text-ok-muted">{extractErrorMessage(error, 'Проверьте соединение и попробуйте ещё раз.')}</p>
+        <button type="button" onClick={() => void vacancy.refetch()} className="mt-8 h-12 rounded-full bg-ok-indigo px-6 font-bold text-white hover:bg-ok-indigo-soft">Повторить</button>
+      </Shell>
     )
   }
   return <VacancyContent vacancy={vacancy.data} />
@@ -139,63 +158,75 @@ function VacancyContent({ vacancy: v }: { vacancy: PublicVacancy }) {
   })
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <Link to="/careers" className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-secondary hover:text-brand-700">
-        <ArrowLeft className="size-4" aria-hidden />
-        Все вакансии
-      </Link>
-      <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_20rem]">
-        <article className="card card-body min-w-0 sm:p-8">
-          {v.department ? <p className="text-sm font-medium uppercase tracking-wide text-brand-700">{v.department}</p> : null}
-          <h1 className="mt-1 text-2xl font-bold text-ink sm:text-3xl">{v.title}</h1>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+    <>
+      <header className="relative overflow-hidden border-b border-ok-line">
+        <div className="absolute -right-20 -top-10 hidden w-[520px] opacity-[0.06] lg:block" aria-hidden><GlassesMark stroke="var(--color-ok-indigo)" /></div>
+        <div className="relative mx-auto max-w-7xl px-5 pb-12 pt-8 sm:px-8 lg:pb-16 lg:pt-12">
+          <Link to="/careers#vacancies" className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-ok-muted hover:text-ok-indigo">
+            <ArrowLeft className="size-4" aria-hidden />
+            Все вакансии
+          </Link>
+          <div className="mt-8">{v.department ? <Eyebrow>{v.department}</Eyebrow> : null}</div>
+          <h1 className="mt-4 max-w-4xl text-4xl font-extrabold leading-[1.06] tracking-[-0.03em] text-ok-indigo sm:text-5xl lg:text-6xl">{v.title}</h1>
+          <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2">
             {v.location ? <Fact icon={MapPin}>{v.location}</Fact> : null}
             <Fact icon={Briefcase}>{v.work_format_label}</Fact>
             <Fact icon={Clock}>{v.employment_type_label}</Fact>
             {salary ? <Fact icon={Wallet}>{salary}</Fact> : null}
           </div>
-          {v.summary ? <p className="mt-5 text-lg text-ink">{v.summary}</p> : null}
-          {v.description ? <p className="mt-4 whitespace-pre-line leading-relaxed text-ink-secondary">{v.description}</p> : null}
-          <Section title="Обязанности" items={v.responsibilities} />
-          <Section title="Требования" items={v.requirements} />
-          <Section title="Будет плюсом" items={v.nice_to_have} />
-          <Section title="Условия работы" items={v.conditions} />
-          {v.selection_stages.length ? (
-            <section className="mt-8">
-              <h2 className="text-lg font-semibold text-ink">Этапы отбора</h2>
-              <ol className="mt-3 space-y-2">
-                {v.selection_stages.map((stage, index) => (
-                  <li key={stage} className="flex items-center gap-3 text-ink-secondary">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-sm font-semibold text-brand-700">{index + 1}</span>
-                    {stage}
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ) : null}
-          <section id="apply" className="mt-10 scroll-mt-24 border-t border-border pt-8">
-            <h2 className="text-xl font-semibold text-ink">Откликнуться на вакансию</h2>
-            <p className="mb-5 mt-1 text-sm text-ink-secondary">Заполните короткую анкету — обязательны только ФИО, телефон и email.</p>
+        </div>
+      </header>
+      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 sm:px-8 lg:grid-cols-[1fr_22rem] lg:gap-16 lg:py-16">
+        <article className="min-w-0">
+          {v.summary ? <p className="text-2xl font-semibold leading-snug text-ok-ink">{v.summary}</p> : null}
+          {v.description ? <p className="mt-5 whitespace-pre-line text-[17px] leading-relaxed text-ok-ink/80">{v.description}</p> : null}
+          <div className="mt-8">
+            <Section title="Обязанности" items={v.responsibilities} />
+            <Section title="Требования" items={v.requirements} />
+            <Section title="Будет плюсом" items={v.nice_to_have} />
+            <Section title="Условия работы" items={v.conditions} />
+            {v.selection_stages.length ? (
+              <section className="border-t border-ok-line py-8">
+                <h2 className="text-xl font-extrabold text-ok-indigo">Этапы отбора</h2>
+                <ol className="mt-5 space-y-4">
+                  {v.selection_stages.map((stage, index) => (
+                    <li key={stage} className="flex items-center gap-4 text-[17px] text-ok-ink/85">
+                      <span className={index === 0 ? 'flex size-10 shrink-0 items-center justify-center rounded-full bg-ok-amber font-extrabold text-ok-indigo-deep'
+                        : 'flex size-10 shrink-0 items-center justify-center rounded-full border-2 border-ok-indigo font-extrabold text-ok-indigo'}>{index + 1}</span>
+                      {stage}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+          </div>
+          <section id="apply" aria-labelledby="apply-title" className="mt-6 scroll-mt-24 rounded-[28px] bg-white p-6 shadow-[0_24px_60px_-40px_rgba(23,14,69,0.35)] ring-1 ring-ok-line sm:p-10">
+            <Eyebrow>Отклик</Eyebrow>
+            <h2 id="apply-title" className="mt-4 text-3xl font-extrabold tracking-[-0.02em] text-ok-indigo">Откликнуться на вакансию</h2>
+            <p className="mb-8 mt-2 text-[17px] text-ok-muted">Заполните короткую анкету — обязательны только ФИО, телефон и email. Регистрация не нужна.</p>
             <ApplyForm slug={v.slug} vacancyTitle={v.title} />
           </section>
         </article>
-        <aside className="lg:sticky lg:top-24 lg:self-start">
-          <div className="card card-body space-y-4">
-            <dl className="space-y-3 text-sm">
-              {salary ? <div><dt className="text-ink-muted">Зарплата</dt><dd className="font-semibold text-ink">{salary}</dd></div> : null}
-              <div><dt className="text-ink-muted">Формат работы</dt><dd className="text-ink">{v.work_format_label}</dd></div>
-              <div><dt className="text-ink-muted">Тип занятости</dt><dd className="text-ink">{v.employment_type_label}</dd></div>
-              {v.location ? <div><dt className="text-ink-muted">Место работы</dt><dd className="text-ink">{v.location}</dd></div> : null}
-              <div className="flex items-center gap-1.5 text-ink-secondary"><CalendarDays className="size-4" aria-hidden />Опубликовано {formatPublished(v.published_at)}</div>
-              {v.closes_on ? <div className="text-ink-secondary">Приём откликов до {formatPublished(v.closes_on)}</div> : null}
+        <aside className="lg:sticky lg:top-28 lg:self-start">
+          <div className="rounded-[28px] bg-ok-indigo p-7 text-white">
+            <dl className="space-y-4 text-[15px]">
+              {salary ? <div><dt className="text-white/60">Зарплата</dt><dd className="mt-0.5 text-xl font-extrabold">{salary}</dd></div> : null}
+              <div><dt className="text-white/60">Формат работы</dt><dd className="mt-0.5 font-bold">{v.work_format_label}</dd></div>
+              <div><dt className="text-white/60">Тип занятости</dt><dd className="mt-0.5 font-bold">{v.employment_type_label}</dd></div>
+              {v.location ? <div><dt className="text-white/60">Место работы</dt><dd className="mt-0.5 font-bold">{v.location}</dd></div> : null}
             </dl>
-            <a href="#apply" className="flex h-11 w-full items-center justify-center rounded-lg bg-brand-500 text-sm font-semibold text-white hover:bg-brand-600">
+            <p className="mt-6 flex items-center gap-2 border-t border-white/15 pt-5 text-sm text-white/70">
+              <CalendarDays className="size-4" aria-hidden />Опубликовано {formatPublished(v.published_at)}
+            </p>
+            {v.closes_on ? <p className="mt-1 text-sm text-white/70">Приём откликов до {formatPublished(v.closes_on)}</p> : null}
+            <a href="#apply" onClick={(e) => { e.preventDefault(); scrollToSection('apply') }}
+              className="mt-6 flex h-12 w-full items-center justify-center rounded-full bg-ok-amber text-[15px] font-extrabold text-ok-indigo-deep transition-colors hover:bg-ok-amber/90">
               Откликнуться
             </a>
-            <ShareButton title={v.title} url={url} />
           </div>
+          <div className="mt-3"><ShareButton title={v.title} url={url} /></div>
         </aside>
       </div>
-    </div>
+    </>
   )
 }

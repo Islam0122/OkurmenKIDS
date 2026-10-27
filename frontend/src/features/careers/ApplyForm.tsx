@@ -1,9 +1,8 @@
 import { useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { CheckCircle2, FileText, Paperclip, X } from 'lucide-react'
+import { CheckCircle2, FileText, Loader2, Paperclip, X } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { Link } from 'react-router-dom'
 
-import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
@@ -71,7 +70,7 @@ function Row({ id, label, required, hint, error, children }: { id: string; label
       <label htmlFor={id} className="mb-1.5 block field-label">{label}{required ? <span className="text-danger"> *</span> : null}</label>
       {children}
       {error ? <p id={`${id}-error`} className="mt-1 text-xs text-danger" role="alert">{error}</p>
-        : hint ? <p className="mt-1 text-xs text-ink-muted">{hint}</p> : null}
+        : hint ? <p className="mt-1 text-[13px] text-ok-muted">{hint}</p> : null}
     </div>
   )
 }
@@ -123,14 +122,14 @@ export function ApplyForm({ slug, vacancyTitle }: { slug: string; vacancyTitle: 
 
   if (done) {
     return (
-      <div className="rounded-2xl border border-brand-200 bg-brand-50 p-6 text-center" role="status">
-        <CheckCircle2 className="mx-auto size-10 text-brand-600" aria-hidden />
-        <h3 className="mt-3 text-lg font-semibold text-ink">Заявка отправлена</h3>
-        <p className="mt-1 text-sm text-ink-secondary">{done.message}</p>
-        <p className="mt-4 text-sm text-ink-secondary">Номер заявки</p>
-        <p className="font-mono text-2xl font-semibold tracking-wider text-brand-700">{done.number}</p>
-        <p className="mt-4 text-xs text-ink-muted">Сохраните номер — назовите его HR, если будете уточнять статус отклика на «{vacancyTitle}».</p>
-        <Link to="/careers" className="mt-5 inline-flex h-10 items-center rounded-lg border border-brand-200 bg-surface px-4 text-sm font-medium text-brand-700 hover:bg-brand-50">
+      <div className="rounded-[24px] bg-ok-indigo px-6 py-10 text-center text-white sm:px-10" role="status">
+        <CheckCircle2 className="mx-auto size-12 text-ok-amber" aria-hidden />
+        <h3 className="mt-4 text-2xl font-extrabold">Заявка отправлена</h3>
+        <p className="mx-auto mt-2 max-w-md text-white/80">{done.message}</p>
+        <p className="mt-6 text-sm text-white/60">Номер заявки</p>
+        <p className="mt-1 font-mono text-3xl font-bold tracking-[0.12em] text-ok-amber">{done.number}</p>
+        <p className="mx-auto mt-5 max-w-md text-sm text-white/60">Сохраните номер — назовите его HR, если будете уточнять статус отклика на «{vacancyTitle}».</p>
+        <Link to="/careers#vacancies" className="mt-7 inline-flex h-12 items-center rounded-full bg-white px-6 font-bold text-ok-indigo hover:bg-ok-paper">
           Другие вакансии
         </Link>
       </div>
@@ -184,16 +183,18 @@ export function ApplyForm({ slug, vacancyTitle }: { slug: string; vacancyTitle: 
             aria-describedby={describedBy('resume')} />
           {resume ? (
             <div className="flex h-10 items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 text-sm">
-              <span className="flex min-w-0 items-center gap-2"><FileText className="size-4 shrink-0 text-brand-600" aria-hidden /><span className="truncate">{resume.name}</span></span>
-              <button type="button" aria-label="Убрать файл" className="text-ink-muted hover:text-danger"
+              <span className="flex min-w-0 items-center gap-2"><FileText className="size-4 shrink-0 text-ok-indigo" aria-hidden /><span className="truncate">{resume.name}</span></span>
+              <button type="button" aria-label="Убрать файл" className="text-ok-muted hover:text-danger"
                 onClick={() => { setResume(null); if (fileInput.current) fileInput.current.value = '' }}>
                 <X className="size-4" aria-hidden />
               </button>
             </div>
           ) : (
-            <Button type="button" variant="secondary" className="w-full" leftIcon={<Paperclip className="size-4" aria-hidden />} onClick={() => fileInput.current?.click()}>
+            <button type="button" onClick={() => fileInput.current?.click()}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-[0.875rem] border-2 border-dashed border-ok-indigo/25 text-[15px] font-bold text-ok-indigo transition-colors hover:border-ok-indigo/50 hover:bg-ok-indigo-50">
+              <Paperclip className="size-4" aria-hidden />
               Прикрепить файл
-            </Button>
+            </button>
           )}
         </Row>
         <Row id="apply-source" label="Откуда вы узнали о вакансии" error={errors.source}>
@@ -206,23 +207,25 @@ export function ApplyForm({ slug, vacancyTitle }: { slug: string; vacancyTitle: 
         <input id="apply-website" tabIndex={-1} autoComplete="off" value={form.website} onChange={set('website')} />
       </div>
       <div>
-        <label className="flex items-start gap-2.5 text-sm text-ink">
-          <input id="apply-consent" type="checkbox" className="mt-0.5 size-4 shrink-0 accent-brand-600" checked={form.consent}
+        <label className="flex items-start gap-3 text-[15px] leading-relaxed text-ok-ink">
+          <input id="apply-consent" type="checkbox" className="mt-1 size-[18px] shrink-0 accent-[#27186d]" checked={form.consent}
             onChange={(e) => { setForm((f) => ({ ...f, consent: e.target.checked })); setErrors((p) => ({ ...p, consent: undefined })) }}
             aria-invalid={Boolean(errors.consent)} aria-describedby={describedBy('consent')} />
           <span>
             Я согласен(на) на обработку персональных данных для рассмотрения моей кандидатуры —{' '}
-            <Link to="/careers/privacy" target="_blank" className="text-brand-700 underline">условия обработки</Link>
+            <Link to="/careers/privacy" target="_blank" className="font-semibold text-ok-indigo underline underline-offset-2">условия обработки</Link>
             <span className="text-danger"> *</span>
           </span>
         </label>
         {errors.consent ? <p id="apply-consent-error" className="mt-1 text-xs text-danger" role="alert">{errors.consent}</p> : null}
       </div>
       {message ? <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">{message}</p> : null}
-      <Button type="submit" size="lg" className="w-full sm:w-auto" isLoading={apply.isPending} disabled={apply.isPending}>
+      <button type="submit" disabled={apply.isPending} aria-busy={apply.isPending}
+        className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-full bg-ok-indigo px-10 text-base font-bold text-white transition-colors hover:bg-ok-indigo-soft disabled:cursor-wait disabled:opacity-70 sm:w-auto">
+        {apply.isPending ? <Loader2 className="size-5 motion-safe:animate-spin" aria-hidden /> : null}
         Отправить заявку
-      </Button>
-      <p className="text-xs text-ink-muted">Регистрация не нужна. Учётная запись не создаётся — HR свяжется с вами по указанным контактам.</p>
+      </button>
+      <p className="text-[13px] text-ok-muted">Регистрация не нужна. Учётная запись не создаётся — HR свяжется с вами по указанным контактам.</p>
     </form>
   )
 }

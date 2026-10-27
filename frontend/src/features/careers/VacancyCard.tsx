@@ -1,4 +1,4 @@
-import { ArrowRight, Briefcase, Clock, MapPin, Wallet } from 'lucide-react'
+import { ArrowUpRight, Briefcase, Clock, MapPin } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import type { PublicVacancyCard } from '@/types/careers'
@@ -11,49 +11,61 @@ export function vacancyPath(slug: string): string {
 
 export function Fact({ icon: Icon, children }: { icon: typeof MapPin; children: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-sm text-ink-secondary">
-      <Icon className="size-4 shrink-0 text-ink-muted" aria-hidden />
+    <span className="inline-flex items-center gap-1.5 text-[15px] text-ok-muted">
+      <Icon className="size-4 shrink-0 text-ok-indigo/50" aria-hidden />
       {children}
     </span>
   )
 }
 
-/** Карточка вакансии в каталоге: всё главное и две кнопки — подробнее и откликнуться. */
+/** Строка каталога вакансий: всё главное и два действия — подробнее и откликнуться. */
 export function VacancyCard({ vacancy: v }: { vacancy: PublicVacancyCard }) {
   const salary = formatSalary(v.salary)
+  const path = vacancyPath(v.slug)
   return (
-    <article className="card card-body flex flex-col gap-3 transition-shadow hover:shadow-md" aria-labelledby={`vac-${v.slug}`}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          {v.department ? <p className="text-xs font-medium uppercase tracking-wide text-brand-700">{v.department}</p> : null}
-          <h3 id={`vac-${v.slug}`} className="mt-0.5 text-lg font-semibold text-ink">
-            <Link to={vacancyPath(v.slug)} className="hover:text-brand-700">{v.title}</Link>
-          </h3>
+    <article aria-labelledby={`vac-${v.slug}`}
+      className="group relative grid gap-5 border-t border-ok-line py-7 transition-colors first:border-t-0 md:grid-cols-[1fr_auto] md:gap-10 md:px-6 md:hover:bg-ok-paper lg:py-8">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-bold uppercase tracking-[0.14em]">
+          {v.department ? <span className="text-ok-indigo">{v.department}</span> : null}
+          <span className="font-semibold normal-case tracking-normal text-ok-muted">Опубликовано {formatPublished(v.published_at)}</span>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700">
-          <span className="size-1.5 rounded-full bg-current" aria-hidden />
-          Приём откликов открыт
-        </span>
+        <h3 id={`vac-${v.slug}`} className="mt-2 text-2xl font-extrabold tracking-[-0.01em] text-ok-ink">
+          <Link to={path} className="transition-colors hover:text-ok-indigo-soft">{v.title}</Link>
+        </h3>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+          {v.location ? <Fact icon={MapPin}>{v.location}</Fact> : null}
+          <Fact icon={Briefcase}>{v.work_format_label}</Fact>
+          <Fact icon={Clock}>{v.employment_type_label}</Fact>
+        </div>
+        {v.summary ? <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ok-muted">{v.summary}</p> : null}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-        {v.location ? <Fact icon={MapPin}>{v.location}</Fact> : null}
-        <Fact icon={Briefcase}>{v.work_format_label}</Fact>
-        <Fact icon={Clock}>{v.employment_type_label}</Fact>
-        {salary ? <Fact icon={Wallet}>{salary}</Fact> : null}
-      </div>
-      {v.summary ? <p className="text-sm text-ink-secondary">{v.summary}</p> : null}
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-1">
-        <p className="text-xs text-ink-muted">Опубликовано {formatPublished(v.published_at)}</p>
+      <div className="flex flex-col gap-4 md:items-end md:justify-between">
+        {salary ? <p className="text-lg font-extrabold text-ok-indigo">{salary}</p> : <span className="hidden md:block" />}
         <div className="flex gap-2">
-          <Link to={vacancyPath(v.slug)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 px-3 text-sm font-medium text-brand-700 hover:bg-brand-50">
+          <Link to={path} className="inline-flex h-11 items-center rounded-full border-2 border-ok-indigo/15 px-5 text-[15px] font-bold text-ok-indigo transition-colors hover:border-ok-indigo/40 hover:bg-white">
             Подробнее
           </Link>
-          <Link to={`${vacancyPath(v.slug)}#apply`} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-sm font-medium text-white hover:bg-brand-600">
+          <Link to={`${path}#apply`} aria-label={`Откликнуться на вакансию «${v.title}»`}
+            className="inline-flex h-11 items-center gap-1.5 rounded-full bg-ok-indigo px-5 text-[15px] font-bold text-white transition-colors hover:bg-ok-indigo-soft">
             Откликнуться
-            <ArrowRight className="size-4" aria-hidden />
+            <ArrowUpRight className="size-4 transition-transform motion-safe:group-hover:-translate-y-0.5 motion-safe:group-hover:translate-x-0.5" aria-hidden />
           </Link>
         </div>
       </div>
     </article>
+  )
+}
+
+export function VacancySkeleton() {
+  return (
+    <div className="grid gap-4 border-t border-ok-line py-8 first:border-t-0 md:grid-cols-[1fr_auto] md:px-6" aria-hidden>
+      <div className="space-y-3">
+        <div className="h-3 w-28 rounded bg-ok-indigo-100 motion-safe:animate-pulse" />
+        <div className="h-6 w-2/3 rounded bg-ok-indigo-100 motion-safe:animate-pulse" />
+        <div className="h-4 w-1/2 rounded bg-ok-indigo-50 motion-safe:animate-pulse" />
+      </div>
+      <div className="h-11 w-56 rounded-full bg-ok-indigo-50 motion-safe:animate-pulse" />
+    </div>
   )
 }

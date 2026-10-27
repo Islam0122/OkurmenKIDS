@@ -47,33 +47,68 @@ beforeEach(() => {
 })
 
 describe('главная карьерного сайта', () => {
-  it('показывает вакансии с фактами, ссылками и реальным числом вакансий', async () => {
+  it('первый экран, разделы и вакансии из API с реальным числом вакансий', async () => {
     renderWithProviders(<CareersHomePage />, { route: '/careers' })
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Создавайте будущее вместе с OKURMEN KIDS')
     expect(await screen.findByRole('heading', { name: 'Менеджер по продажам' })).toBeInTheDocument()
     expect(screen.getByText('40 000 – 60 000 сом')).toBeInTheDocument()
-    expect(screen.getByText('Сейчас 1 открытая вакансия')).toBeInTheDocument()
+    expect(screen.getByText('1 вакансия')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Подробнее' })).toHaveAttribute('href', '/careers/vacancies/menedzher-po-prodazham')
-    expect(screen.getByRole('link', { name: /Откликнуться/ })).toHaveAttribute('href', '/careers/vacancies/menedzher-po-prodazham#apply')
-    expect(screen.getByRole('heading', { name: 'О компании' })).toBeInTheDocument()
-    expect(document.title).toContain('Карьера в OkurmenKIDS')
+    expect(screen.getByRole('link', { name: 'Откликнуться на вакансию «Менеджер по продажам»' }))
+      .toHaveAttribute('href', '/careers/vacancies/menedzher-po-prodazham#apply')
+    for (const name of ['Мы учим детей и подростков технологиям, языку и умению работать вместе — так, чтобы знания оставались с ними надолго.',
+      'Почему стоит присоединиться к команде', 'Одна команда — много профессий', 'Открытые вакансии', 'От отклика до первого рабочего дня',
+      'Давайте создавать будущее вместе']) {
+      expect(screen.getByRole('heading', { name })).toBeInTheDocument()
+    }
+    expect(document.title).toContain('Карьера в OKURMEN KIDS')
+  })
+
+  it('без фотографий показывает фирменные панели, а не битые изображения', () => {
+    renderWithProviders(<CareersHomePage />, { route: '/careers' })
+    expect(document.querySelectorAll('main img, section img')).toHaveLength(0)
+    expect(screen.getByText('Учим технологиям, языку и умению работать вместе')).toBeInTheDocument()
+  })
+
+  it('кнопки первого экрана ведут к вакансиям и к команде', async () => {
+    const user = userEvent.setup()
+    const scrolled: string[] = []
+    Element.prototype.scrollIntoView = vi.fn(function (this: Element) { scrolled.push(this.id) })
+    renderWithProviders(<CareersHomePage />, { route: '/careers' })
+    await user.click(screen.getByRole('link', { name: /Смотреть вакансии/ }))
+    await user.click(screen.getByRole('link', { name: 'Познакомиться с командой' }))
+    await user.click(screen.getByRole('link', { name: /Выбрать вакансию/ }))
+    expect(scrolled).toEqual(['vacancies', 'team', 'vacancies'])
   })
 
   it('поиск, фильтры и сортировка уходят на сервер', async () => {
     const user = userEvent.setup()
+    api.filters.mockResolvedValue({ ...filters, total: 5 })
     renderWithProviders(<CareersHomePage />, { route: '/careers' })
     await screen.findByRole('heading', { name: 'Менеджер по продажам' })
-    await user.type(screen.getByLabelText('Поиск вакансий'), 'продаж')
-    await user.click(screen.getByRole('button', { name: 'Найти вакансии' }))
+    await user.type(await screen.findByLabelText('Поиск вакансий'), 'продаж')
+    await user.click(screen.getByRole('button', { name: 'Найти' }))
     await waitFor(() => expect(api.vacancies).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'продаж', page: 1 })))
     await user.selectOptions(screen.getByLabelText('Формат работы'), 'office')
     await user.selectOptions(screen.getByLabelText('Сортировка'), 'salary_desc')
     await waitFor(() => expect(api.vacancies).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'продаж', work_format: 'office', ordering: 'salary_desc' })))
   })
 
-  it('пустой список и ошибка', async () => {
-    api.vacancies.mockResolvedValueOnce({ count: 0, page: 1, page_size: 12, results: [] })
+  it('при паре вакансий фильтры не нужны', async () => {
     renderWithProviders(<CareersHomePage />, { route: '/careers' })
+    await screen.findByRole('heading', { name: 'Менеджер по продажам' })
+    expect(screen.queryByLabelText('Поиск вакансий')).not.toBeInTheDocument()
+  })
+
+  it('пустой список и ошибка', async () => {
+    api.vacancies.mockResolvedValueOnce({ count: 0, page: 1, page_size: 10, results: [] })
+    const { unmount } = renderWithProviders(<CareersHomePage />, { route: '/careers' })
     expect(await screen.findByText('Открытых вакансий пока нет')).toBeInTheDocument()
+    unmount()
+    api.vacancies.mockRejectedValueOnce(axiosError(500, { detail: 'Сервер недоступен' }))
+    renderWithProviders(<CareersHomePage />, { route: '/careers' })
+    expect(await screen.findByText('Не удалось загрузить вакансии')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument()
   })
 })
 
@@ -87,7 +122,7 @@ describe('страница вакансии', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Менеджер по продажам' })).toBeInTheDocument()
     expect(screen.getByText('Опыт продаж')).toBeInTheDocument()
     expect(screen.getByText('Встреча с РОП')).toBeInTheDocument()
-    expect(document.title).toBe('Менеджер по продажам — вакансия OkurmenKIDS')
+    expect(document.title).toBe('Менеджер по продажам — вакансия OKURMEN KIDS')
     expect(document.head.querySelector('meta[name="description"]')?.getAttribute('content')).toBe('Продажи курсов для детей')
     const ld = JSON.parse(document.head.querySelector('script[type="application/ld+json"]')?.textContent ?? '{}')
     expect(ld).toMatchObject({ '@type': 'JobPosting', title: 'Менеджер по продажам', employmentType: 'FULL_TIME', datePosted: '2026-10-01' })
