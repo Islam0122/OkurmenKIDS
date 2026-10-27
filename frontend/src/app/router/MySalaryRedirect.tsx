@@ -7,6 +7,7 @@ export function MySalaryRedirect() {
   const { user } = useAuth()
   const target = {
     assistant: '/assistant/my-salary',
+    hr_manager: '/hr/my-salary',
     team_lead: '/app/my-salary',
     teacher: '/app/my-salary',
   }[user?.role ?? ''] ?? '/app/dashboard'

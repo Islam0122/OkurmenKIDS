@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react'
-import { BarChart3, Briefcase, CalendarDays, ExternalLink, LayoutDashboard, LogOut, Menu, ScanLine, UserSearch, Users } from 'lucide-react'
+import { BarChart3, Briefcase, CalendarDays, ExternalLink, LayoutDashboard, LogOut, Menu, ScanLine, UserSearch, Users, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -20,7 +20,8 @@ interface NavItem {
 }
 
 /** Разделы HR-кабинета. Учёт прихода и ухода сотрудников в обязанности HR не
- * входит — внизу только своя отметка, как у бухгалтерии. */
+ * входит — внизу только своя отметка, как у бухгалтерии. «Моя зарплата» —
+ * только собственные начисления и выплаты HR. */
 export const HR_NAV: NavItem[] = [
   { to: '/hr', label: 'Главная', icon: LayoutDashboard, end: true },
   { to: '/hr/employees', label: 'Сотрудники', icon: Users },
@@ -28,6 +29,7 @@ export const HR_NAV: NavItem[] = [
   { to: '/hr/interviews', label: 'Собеседования', icon: CalendarDays },
   { to: '/hr/vacancies', label: 'Вакансии', icon: Briefcase },
   { to: '/hr/reports', label: 'Отчёты', icon: BarChart3 },
+  { to: '/hr/my-salary', label: 'Моя зарплата', icon: Wallet },
 ]
 
 const ROW = 'flex h-9 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'

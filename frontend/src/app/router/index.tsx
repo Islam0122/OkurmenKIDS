@@ -421,7 +421,7 @@ export const router = createBrowserRouter([
   },
   {
     // HR-кабинет: главная, сотрудники, кандидаты, собеседования, вакансии,
-    // отчёты (backend: apps.users.hr, apps.recruitment — только HR-менеджер).
+    // отчёты, своя зарплата (backend: apps.users.hr, apps.recruitment — только HR-менеджер).
     path: '/hr',
     element: <ProtectedRoute />,
     errorElement: <RouteErrorPage />,
@@ -442,6 +442,8 @@ export const router = createBrowserRouter([
               { path: 'vacancies/new', lazy: async () => ({ Component: (await import('@/features/hr/VacancyEditPage')).HrVacancyEditPage }) },
               { path: 'vacancies/:id', lazy: async () => ({ Component: (await import('@/features/hr/VacancyEditPage')).HrVacancyEditPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/hr/ReportsPage')).HrReportsPage }) },
+              // Своя зарплата HR — та же страница и тот же API, что у тренеров (/accounting/my/salary/).
+              { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: '*', element: <Navigate to="/hr" replace /> },
             ],
           },
