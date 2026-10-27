@@ -8,7 +8,9 @@ import { pluralize } from '@/utils/format'
 
 import { Eyebrow } from './Eyebrow'
 import { ABOUT, COMPANY, HIRING_STEPS, REASONS, TEAMS } from './content'
+import { Faq, HeroShowcase, MobileCta, PerksStrip, QuickVacancyLinks } from './Marketing'
 import { GlassesMark, Photo } from './Photo'
+import { photo } from './photos'
 import { scrollToSection } from './scroll'
 import { absoluteUrl, useDocumentMeta } from './useDocumentMeta'
 import { VacanciesSection } from './VacanciesSection'
@@ -46,12 +48,15 @@ export function CareersHomePage() {
   return (
     <>
       <Hero />
+      <PerksStrip />
       <About />
       <Culture />
       <People />
       <VacanciesSection />
       <Hiring />
+      <Faq />
       <FinalCta />
+      <MobileCta />
     </>
   )
 }
@@ -62,7 +67,7 @@ function Hero() {
   return (
     <section aria-labelledby="hero-title" className="relative overflow-hidden">
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 pb-16 pt-8 sm:px-8 lg:grid-cols-12 lg:gap-8 lg:pb-24 lg:pt-14">
-        <div className="lg:col-span-6">
+        <div className="min-w-0 lg:col-span-6">
           <Eyebrow>{COMPANY.heroEyebrow}</Eyebrow>
           <h1 id="hero-title" className="mt-6 text-[2.6rem] font-extrabold leading-[1.04] tracking-[-0.03em] text-ok-indigo sm:text-6xl lg:text-[4.25rem]">
             {COMPANY.heroTitleStart}{' '}
@@ -98,7 +103,18 @@ function Hero() {
           </dl>
         </div>
 
-        <div className="relative lg:col-span-6">
+        <div className="relative min-w-0 lg:col-span-6">
+          {photo('hero').src ? <HeroPhotos /> : <HeroShowcase />}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Первый экран с фотографиями (когда в src/assets/careers есть hero.*). */
+function HeroPhotos() {
+  return (
+    <>
           <div className="relative ml-auto w-full sm:w-[86%] lg:w-[82%]">
             <div className="absolute -bottom-6 -left-6 hidden size-40 rounded-[28px] bg-ok-amber sm:block" aria-hidden />
             <Photo slot="hero" priority sizes="(min-width: 1024px) 45vw, 90vw" tone="indigo" textAt="top"
@@ -118,9 +134,7 @@ function Hero() {
                 <p className="mt-2 text-lg font-extrabold leading-snug">Тренеры, ассистенты и специалисты</p>
               </div>
             )} />
-        </div>
-      </div>
-    </section>
+    </>
   )
 }
 
@@ -278,6 +292,7 @@ function FinalCta() {
             </Link>
           </div>
         </div>
+        <div className="relative"><QuickVacancyLinks /></div>
       </div>
     </section>
   )

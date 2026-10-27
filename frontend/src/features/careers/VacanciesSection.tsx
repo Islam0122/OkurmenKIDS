@@ -9,6 +9,7 @@ import { cn } from '@/utils/cn'
 import { pluralize } from '@/utils/format'
 
 import { Eyebrow } from './Eyebrow'
+import { useShowcase } from './Marketing'
 import { GlassesMark } from './Photo'
 import { scrollToSection } from './scroll'
 import { VacancyCard, VacancySkeleton } from './VacancyCard'
@@ -63,6 +64,11 @@ export function VacanciesSection() {
     ordering: (query.ordering || 'newest') as CareersOrdering, page, page_size: PAGE_SIZE,
   })
   const total = filters.data?.total ?? 0
+  const showcase = useShowcase()
+  const departments = Object.entries((showcase.data?.results ?? []).reduce<Record<string, number>>((acc, v) => {
+    if (v.department) acc[v.department] = (acc[v.department] ?? 0) + 1
+    return acc
+  }, {})).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'))
   const hasFilters = FILTER_KEYS.some((key) => key !== 'ordering' && query[key])
   const activeFilters = (['department', 'work_format', 'employment_type', 'location'] as const).filter((key) => query[key]).length
 
@@ -103,6 +109,28 @@ export function VacanciesSection() {
             {filters.data ? (total ? `${total} ${pluralize(total, 'вакансия', 'вакансии', 'вакансий')} с открытым приёмом откликов` : 'Сейчас приём откликов закрыт') : ' '}
           </p>
         </div>
+
+        {departments.length > 1 ? (
+          <ul className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Направления с открытыми вакансиями">
+            {departments.map(([name, count]) => {
+              const active = query.department === name
+              return (
+                <li key={name}>
+                  <button type="button" aria-pressed={active} onClick={() => update({ department: active ? '' : name })}
+                    className={cn('group flex w-full items-center justify-between gap-3 rounded-2xl border p-5 text-left transition-colors',
+                      active ? 'border-ok-indigo bg-ok-indigo text-white' : 'border-ok-line bg-ok-paper hover:border-ok-indigo/40 hover:bg-white')}>
+                    <span>
+                      <span className={cn('block text-lg font-extrabold', active ? 'text-white' : 'text-ok-indigo')}>{name}</span>
+                      <span className={cn('block text-sm', active ? 'text-white/75' : 'text-ok-muted')}>{count} {pluralize(count, 'вакансия', 'вакансии', 'вакансий')}</span>
+                    </span>
+                    <span className={cn('flex size-10 items-center justify-center rounded-full text-sm font-extrabold tabular-nums',
+                      active ? 'bg-ok-amber text-ok-indigo-deep' : 'bg-white text-ok-indigo group-hover:bg-ok-amber-soft')}>{count}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        ) : null}
 
         {showFilters ? (
           <div className="mt-10 space-y-3">
