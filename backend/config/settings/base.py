@@ -59,6 +59,8 @@ LOCAL_APPS = [
     "apps.billing.apps.BillingConfig",
     "apps.leaderboard.apps.LeaderboardConfig",
     "apps.staff_attendance.apps.StaffAttendanceConfig",
+    # HR-кабинет: вакансии, кандидаты, собеседования, кадровые отчёты.
+    "apps.recruitment.apps.RecruitmentConfig",
 ]
 
 INSTALLED_APPS = (

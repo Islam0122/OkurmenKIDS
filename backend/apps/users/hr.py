@@ -22,9 +22,14 @@ from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+
+from apps.recruitment.models import HRActivity
+from apps.recruitment.services import activity
+from apps.recruitment.services.reports import activity_brief
 
 from .models import User
 from .permissions import IsHRManager, hr_can_manage
@@ -47,6 +52,34 @@ class HREmployeeSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj: User) -> str:
         return obj.get_full_name() or obj.username
+
+
+class HREmployeeCardSerializer(HREmployeeSerializer):
+    """Карточка: только данные, которые реально есть в системе, плюс история
+    кадровых действий и кандидат, из которого сотрудник был принят."""
+
+    hired_from = serializers.SerializerMethodField()
+    history = serializers.SerializerMethodField()
+
+    class Meta(HREmployeeSerializer.Meta):
+        fields = [*HREmployeeSerializer.Meta.fields, "hired_from", "history"]
+        read_only_fields = fields
+
+    def get_hired_from(self, obj: User):
+        candidate = getattr(obj, "hired_from_candidate", None)
+        if candidate is None:
+            return None
+        return {"id": candidate.pk, "full_name": candidate.full_name, "position": candidate.position_label}
+
+    def get_history(self, obj: User):
+        entries = obj.hr_activities.select_related("actor", "candidate", "employee")[:50]
+        return [activity_brief(entry) for entry in entries]
+
+
+class HRPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
 
 class _PasswordMixin(serializers.Serializer):
@@ -118,6 +151,7 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
     DELETE нет — только деактивация."""
 
     permission_classes = [IsAuthenticated, IsHRManager]
+    pagination_class = HRPagination
     http_method_names = ["get", "post", "patch", "put"]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["role", "is_active"]
@@ -146,17 +180,20 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
             return HREmployeeCreateSerializer
         if self.action in ("update", "partial_update"):
             return HREmployeeWriteSerializer
+        if self.action == "retrieve":
+            return HREmployeeCardSerializer
         return HREmployeeSerializer
 
-    def _log(self, action_name: str, target: User) -> None:
-        logger.info("hr action=%s target=%s role=%s by=%s", action_name, target.pk, target.role, self.request.user.pk)
+    def _log(self, kind: str, target: User, message: str = "") -> None:
+        # Журнал кадровых действий (apps.recruitment.HRActivity); пароль туда не пишется.
+        activity.log(kind, self.request.user, employee=target, message=message)
 
     @extend_schema(tags=TAGS, responses=HREmployeeSerializer)
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        self._log("create", user)
+        self._log(HRActivity.Kind.EMPLOYEE_CREATED, user, f"Учётная запись «{user.username}» ({user.get_role_display()})")
         return Response(HREmployeeSerializer(user).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(tags=TAGS, responses=HREmployeeSerializer)
@@ -164,8 +201,17 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         target = self.get_object()
         serializer = self.get_serializer(target, data=request.data, partial=kwargs.get("partial", False))
         serializer.is_valid(raise_exception=True)
+        changes = []
+        for field, value in serializer.validated_data.items():
+            old = getattr(target, field)
+            if old != value:
+                if field == "role":
+                    changes.append(f"должность: {User.Role(old).label} → {User.Role(value).label}")
+                else:
+                    changes.append(str(User._meta.get_field(field).verbose_name).lower())
         user = serializer.save()
-        self._log("update", user)
+        if changes:
+            self._log(HRActivity.Kind.EMPLOYEE_UPDATED, user, "Изменено: " + ", ".join(changes))
         return Response(HREmployeeSerializer(user).data)
 
     @extend_schema(tags=TAGS, request=HRPasswordSerializer, responses=HREmployeeSerializer)
@@ -176,7 +222,7 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         serializer.is_valid(raise_exception=True)
         target.set_password(serializer.validated_data["password"])
         target.save(update_fields=["password", "updated_at"])
-        self._log("set_password", target)
+        self._log(HRActivity.Kind.EMPLOYEE_PASSWORD, target, "Пароль изменён")
         return Response(HREmployeeSerializer(target).data)
 
     @extend_schema(tags=TAGS, request=None, responses=HREmployeeSerializer)
@@ -194,7 +240,7 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         if target.is_active != value:
             target.is_active = value
             target.save(update_fields=["is_active", "updated_at"])
-            self._log("activate" if value else "deactivate", target)
+            self._log(HRActivity.Kind.EMPLOYEE_ACTIVATED if value else HRActivity.Kind.EMPLOYEE_DEACTIVATED, target)
         return Response(HREmployeeSerializer(target).data)
 
     @extend_schema(tags=TAGS)
