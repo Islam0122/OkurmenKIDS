@@ -2,7 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string
-  /** «schedule» — this build is the standalone «OkurmenKIDS Schedule» site: «/» opens /schedule. */
+  /** «schedule» / «leaderboard» / «careers» — this build is that standalone public site: «/» opens it. */
   readonly VITE_APP_MODE?: string
 }
 

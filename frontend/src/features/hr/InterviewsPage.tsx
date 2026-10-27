@@ -19,7 +19,7 @@ import { cn } from '@/utils/cn'
 
 import { DAY_MINUTES, DAY_START, assignLanes, fromMinutes, hourMarks, place } from '../scheduleBoard/timeGrid'
 import { InterviewForm, InterviewModal } from './InterviewDialogs'
-import { minutesOfDay, officeDate, officeTime } from './shared'
+import { candidatePath, minutesOfDay, officeDate, officeTime } from './shared'
 
 type View = 'day' | 'week' | 'month'
 
@@ -27,11 +27,14 @@ const HOUR_PX = 48
 const PX_PER_MIN = HOUR_PX / 60
 const ISO = 'yyyy-MM-dd'
 
-// Только токены темы (index.css): назначено — фирменный цвет, проведено — нейтрально-синий, отменено — серое зачёркнутое.
+// Только токены темы (index.css): назначено — фирменный цвет, проведено — нейтрально-синий,
+// перенесено и отменено — серое зачёркнутое, неявка — красное.
 const EVENT_STYLE: Record<InterviewStatus, string> = {
   scheduled: 'border-brand-200 bg-brand-50 text-brand-700',
   completed: 'border-info/30 bg-info-soft text-info',
+  rescheduled: 'border-border bg-surface-muted text-ink-muted line-through',
   cancelled: 'border-border bg-surface-muted text-ink-muted line-through',
+  no_show: 'border-danger/30 bg-danger-soft text-danger',
 }
 
 function rangeOf(view: View, anchor: Date): { from: Date; to: Date; days: Date[] } {
@@ -229,7 +232,7 @@ function AgendaList({ items, onOpen }: { items: Interview[]; onOpen: (interview:
             </button>
             <div className="flex items-center gap-2">
               <span className={cn('rounded-full border px-2 py-0.5 text-xs', EVENT_STYLE[item.status])}>{item.status_label}</span>
-              <Link to={`/hr/candidates/${item.candidate}`} className="text-xs text-brand-700 hover:underline">Кандидат</Link>
+              <Link to={candidatePath(item.candidate, item.application)} className="text-xs text-brand-700 hover:underline">Кандидат</Link>
             </div>
           </li>
         ))}

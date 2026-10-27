@@ -63,6 +63,8 @@ ALLOWED_PREFIXES = (
     # Личная отметка прихода/ухода бухгалтера (только свои данные; отчёты
     # посещаемости — admin/… — остаются закрыты).
     "/api/v1/staff-attendance/me/",
+    # Публичный карьерный сайт — открыт всем, в том числе вошедшим сотрудникам.
+    "/api/v1/public/careers/",
 )
 
 
@@ -76,8 +78,10 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/auth/refresh/",
     "/api/v1/auth/me/",
     "/api/v1/staff-attendance/",
-    # Раздел «Сотрудники» HR-менеджера; права проверяет apps.users.hr.
+    # HR-кабинет: права проверяют apps.users.hr и apps.recruitment (IsHRManager).
     "/api/v1/hr/",
+    # Публичный карьерный сайт — открыт всем, в том числе вошедшим сотрудникам.
+    "/api/v1/public/careers/",
 )
 
 

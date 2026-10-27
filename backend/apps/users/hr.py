@@ -66,10 +66,11 @@ class HREmployeeCardSerializer(HREmployeeSerializer):
         read_only_fields = fields
 
     def get_hired_from(self, obj: User):
-        candidate = getattr(obj, "hired_from_candidate", None)
-        if candidate is None:
+        application = getattr(obj, "hired_from_application", None)
+        if application is None:
             return None
-        return {"id": candidate.pk, "full_name": candidate.full_name, "position": candidate.position_label}
+        return {"id": application.candidate_id, "application": application.pk, "number": application.number,
+                "full_name": application.candidate.full_name, "position": application.position_label}
 
     def get_history(self, obj: User):
         entries = obj.hr_activities.select_related("actor", "candidate", "employee")[:50]

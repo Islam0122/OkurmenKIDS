@@ -1,8 +1,11 @@
-"""Кадровые показатели: главная HR, ежедневный и ежемесячный отчёты.
+"""Кадровые показатели: главная HR, ежедневный и периодический (месячный) отчёты.
 
-Всё считается по записям в базе: кандидаты (дата добавления, текущий этап),
-собеседования (время, статус) и журнал HRActivity (переходы этапов, переносы,
-отмены). Показатель, который нельзя достоверно посчитать, не выводится.
+Всё считается по записям в базе — откликам (дата создания, текущий этап),
+собеседованиям (время, статус), вакансиям (даты публикации и закрытия) и
+журналу HRActivity (переходы этапов, назначения, переносы, отмены, неявки).
+Что именно считается событием периода, перечислено в `DEFINITIONS` и
+возвращается вместе с отчётом. Показатель, который нельзя достоверно
+посчитать, не выводится (None или пустой список).
 """
 from __future__ import annotations
 
@@ -17,22 +20,53 @@ from django.utils import timezone
 from apps.staff_attendance.services.export import safe_cell
 from apps.users.models import User
 
-from ..models import Candidate, HRActivity, Interview, Vacancy
+from ..models import AccountRequest, Application, HRActivity, Interview, Vacancy
 
-S = Candidate.Status
+S = Application.Status
 K = HRActivity.Kind
+I = Interview.Status  # noqa: E741
 
 # Воронка: «дошёл до этапа» — достиг его или любого следующего.
-FUNNEL = [S.NEW, S.CONTACTED, S.INTERVIEW_SCHEDULED, S.INTERVIEW_DONE, S.OFFER, S.HIRED]
-RANK = {S.NEW: 0, S.CONTACTED: 1, S.INTERVIEW_SCHEDULED: 2, S.INTERVIEW_DONE: 3, S.AWAITING_DECISION: 3,
-        S.OFFER: 4, S.HIRED: 5}
-WAITING = (S.INTERVIEW_DONE, S.AWAITING_DECISION)
+FUNNEL = [S.NEW, S.SCREENING, S.SHORTLISTED, S.INTERVIEW_SCHEDULED, S.INTERVIEW_DONE, S.OFFER, S.HIRED]
+RANK = {S.NEW: 0, S.SCREENING: 1, S.SHORTLISTED: 2, S.INTERVIEW_SCHEDULED: 3, S.INTERVIEW_DONE: 4,
+        S.AWAITING_DECISION: 4, S.NEXT_STAGE: 4, S.OFFER: 5, S.HIRED: 6}
+WAITING = (S.INTERVIEW_DONE, S.AWAITING_DECISION, S.NEXT_STAGE)
 DECISIONS = (S.OFFER, S.HIRED, S.REJECTED, S.WITHDRAWN)
+EARLY = (S.NEW, S.SCREENING)
+TERMINAL = (S.HIRED, S.REJECTED, S.WITHDRAWN)
+# Эффективность источника показывается, когда из него пришло хотя бы столько откликов.
+MIN_SOURCE_SAMPLE = 10
+MAX_PERIOD_DAYS = 366
+
+DEFINITIONS = {
+    "new_applications": "Новые отклики — по дате создания отклика (с сайта или добавленные HR).",
+    "passed_screening": "Прошли первичный отбор — переход из «Нового отклика» или «Первичного просмотра» "
+                        "на любой следующий этап (кроме отказа) в этот период.",
+    "interviews_scheduled": "Назначено собеседований — по дате, когда встречу назначили.",
+    "interviews_conducted": "Проведено собеседований — встречи с зафиксированным результатом, по дате и "
+                            "времени самой встречи.",
+    "interviews_rescheduled": "Перенесено, отменено, неявка — по дате, когда это зафиксировали.",
+    "decisions": "Решения — переходы в «Предложение о работе», «Принят», «Отказ компании» или «Кандидат "
+                 "отказался» по дате перехода.",
+    "offers": "Предложения о работе — переходы в этап «Предложение о работе» по дате перехода.",
+    "hired": "Приняты — переходы в «Принят на работу» (учётная запись создана) по дате перехода.",
+    "funnel": "Воронка — отклики, созданные в периоде: сколько из них дошли до этапа или дальше; "
+              "конверсия — доля от предыдущего этапа.",
+    "average_days_to_hire": "Среднее время до найма — от даты отклика до перехода в «Принят» для принятых в периоде.",
+    "vacancy_days_to_close": "Среднее время закрытия вакансии — от публикации до закрытия для вакансий, "
+                             "закрытых в периоде (только с обеими датами).",
+    "source_efficiency": f"Эффективность источника — доля откликов периода, дошедших до собеседования и до найма; "
+                         f"показывается при {MIN_SOURCE_SAMPLE} и более откликах из источника.",
+}
 
 
 def day_bounds(day: date) -> tuple[datetime, datetime]:
     start = timezone.make_aware(datetime.combine(day, time.min))
     return start, start + timedelta(days=1)
+
+
+def period_bounds(first: date, last: date) -> tuple[datetime, datetime]:
+    return day_bounds(first)[0], day_bounds(last)[1]
 
 
 def month_bounds(year: int, month: int) -> tuple[date, date]:
@@ -42,10 +76,10 @@ def month_bounds(year: int, month: int) -> tuple[date, date]:
 
 
 # ---------------------------------------------------------------------------
-# Фильтры (должность, вакансия, источник, ответственный)
+# Фильтры (должность, вакансия, источник, ответственный HR)
 # ---------------------------------------------------------------------------
 
-def candidate_filter(filters: dict, prefix: str = "") -> Q:
+def application_filter(filters: dict, prefix: str = "") -> Q:
     q = Q()
     if filters.get("vacancy"):
         q &= Q(**{f"{prefix}vacancy_id": filters["vacancy"]})
@@ -60,17 +94,17 @@ def candidate_filter(filters: dict, prefix: str = "") -> Q:
     return q
 
 
-def _candidates(filters: dict) -> QuerySet:
-    return Candidate.objects.filter(candidate_filter(filters))
+def _applications(filters: dict) -> QuerySet:
+    return Application.objects.filter(application_filter(filters))
 
 
 def _interviews(filters: dict) -> QuerySet:
-    return Interview.objects.select_related("candidate", "interviewer", "vacancy").filter(
-        candidate_filter(filters, "candidate__"))
+    return Interview.objects.select_related("application__candidate", "interviewer", "vacancy").filter(
+        application_filter(filters, "application__"))
 
 
 def _events(filters: dict) -> QuerySet:
-    return HRActivity.objects.filter(candidate__isnull=False).filter(candidate_filter(filters, "candidate__"))
+    return HRActivity.objects.filter(application__isnull=False).filter(application_filter(filters, "application__"))
 
 
 def _local(value: datetime) -> str:
@@ -78,6 +112,7 @@ def _local(value: datetime) -> str:
 
 
 def interview_brief(interview: Interview) -> dict:
+    app = interview.application
     return {
         "id": interview.pk,
         "scheduled_at": _local(interview.scheduled_at),
@@ -85,21 +120,26 @@ def interview_brief(interview: Interview) -> dict:
         "status": interview.status,
         "status_label": interview.get_status_display(),
         "format_label": interview.get_format_display(),
-        "candidate": {"id": interview.candidate_id, "full_name": interview.candidate.full_name},
+        "candidate": {"id": app.candidate_id, "full_name": app.candidate.full_name},
+        "application": app.pk,
         "interviewer": interview.interviewer.get_full_name() or interview.interviewer.username,
-        "position": interview.vacancy.title if interview.vacancy_id else interview.candidate.position,
+        "position": interview.vacancy.title if interview.vacancy_id else app.position,
     }
 
 
-def candidate_brief(candidate: Candidate) -> dict:
+def application_brief(application: Application) -> dict:
     return {
-        "id": candidate.pk,
-        "full_name": candidate.full_name,
-        "status": candidate.status,
-        "status_label": candidate.get_status_display(),
-        "position": candidate.position_label,
-        "source_label": candidate.get_source_display(),
-        "added_on": candidate.added_on.isoformat(),
+        "id": application.pk,
+        "number": application.number,
+        "candidate": {"id": application.candidate_id, "full_name": application.candidate.full_name},
+        "status": application.status,
+        "status_label": application.get_status_display(),
+        "position": application.position_label,
+        "source_label": application.get_source_display(),
+        "channel": application.channel,
+        "applied_on": application.applied_on.isoformat(),
+        "created_at": _local(application.created_at),
+        "needs_duplicate_review": application.needs_duplicate_review,
     }
 
 
@@ -112,6 +152,7 @@ def activity_brief(entry: HRActivity) -> dict:
         "created_at": _local(entry.created_at),
         "actor": (entry.actor.get_full_name() or entry.actor.username) if entry.actor_id else None,
         "candidate": {"id": entry.candidate_id, "full_name": entry.candidate.full_name} if entry.candidate_id else None,
+        "application": entry.application_id,
         "employee": ({"id": entry.employee_id, "full_name": entry.employee.get_full_name() or entry.employee.username}
                      if entry.employee_id else None),
         "from_status": entry.from_status,
@@ -120,8 +161,8 @@ def activity_brief(entry: HRActivity) -> dict:
 
 
 def visible_activity(qs: QuerySet) -> QuerySet:
-    """Лента без служебной записи «вход в этап «Новый»» — её дублирует
-    «Добавлен кандидат»; в журнале она остаётся для расчёта времени этапов."""
+    """Лента без служебной записи «вход в первый этап» — её дублирует «Получен
+    отклик» / «Добавлен кандидат»; в журнале она остаётся для времени этапов."""
     return qs.exclude(kind=K.CANDIDATE_STATUS, from_status="")
 
 
@@ -137,32 +178,43 @@ def _status_counts(qs: QuerySet) -> dict[str, int]:
 def dashboard(date_from: date, date_to: date) -> dict:
     now = timezone.now()
     today_start, today_end = day_bounds(timezone.localdate())
+    period_start, period_end = period_bounds(date_from, date_to)
     staff = User.objects.filter(role__in=User.HR_MANAGEABLE_ROLES, is_superuser=False, is_staff=False)
-    period_start, _ = day_bounds(date_from)
-    _, period_end = day_bounds(date_to)
-    statuses = _status_counts(Candidate.objects.all())
-    scheduled = Interview.objects.filter(status=Interview.Status.SCHEDULED)
-    upcoming = (Interview.objects.select_related("candidate", "interviewer", "vacancy")
-                .filter(status=Interview.Status.SCHEDULED, scheduled_at__gte=now - timedelta(hours=1))
+    statuses = _status_counts(Application.objects.all())
+    vacancies = dict(Vacancy.objects.order_by().values("status").annotate(n=Count("id")).values_list("status", "n"))
+    upcoming = (Interview.objects.select_related("application__candidate", "interviewer", "vacancy")
+                .filter(status=I.SCHEDULED, scheduled_at__gte=now - timedelta(hours=1))
                 .order_by("scheduled_at")[:8])
+    recent_apps = Application.objects.select_related("candidate", "vacancy").order_by("-created_at", "-id")[:8]
     recent = visible_activity(HRActivity.objects.select_related("actor", "candidate", "employee"))[:12]
+    hired_events = HRActivity.objects.filter(kind=K.CANDIDATE_STATUS, to_status=S.HIRED)
     return {
         "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
         "employees_active": staff.filter(is_active=True).count(),
         "employees_new": staff.filter(created_at__gte=period_start, created_at__lt=period_end).count(),
-        "candidates_total": sum(statuses.values()),
-        "candidates_in_progress": sum(n for s, n in statuses.items() if s not in (S.HIRED, S.REJECTED, S.WITHDRAWN)),
-        "candidates_by_status": statuses,
-        "interviews_scheduled": scheduled.filter(scheduled_at__gte=now).count(),
-        "interviews_today": Interview.objects.exclude(status=Interview.Status.CANCELLED).filter(
-            scheduled_at__gte=today_start, scheduled_at__lt=today_end).count(),
-        "awaiting_decision": statuses[S.INTERVIEW_DONE] + statuses[S.AWAITING_DECISION],
-        "interview_passed": statuses[S.INTERVIEW_DONE],
+        "vacancies_open": vacancies.get(Vacancy.Status.PUBLISHED, 0),
+        "vacancies_paused": vacancies.get(Vacancy.Status.PAUSED, 0),
+        "vacancies_draft": vacancies.get(Vacancy.Status.DRAFT, 0),
+        "vacancies_closed": vacancies.get(Vacancy.Status.CLOSED, 0),
+        "applications_total": sum(statuses.values()),
+        "applications_in_progress": sum(n for s, n in statuses.items() if s not in TERMINAL),
+        "applications_today": Application.objects.filter(created_at__gte=today_start, created_at__lt=today_end).count(),
+        "applications_new": statuses[S.NEW],
+        "screening": statuses[S.SCREENING],
+        "shortlisted": statuses[S.SHORTLISTED],
+        "applications_by_status": statuses,
+        "interviews_today": Interview.objects.filter(status__in=(I.SCHEDULED, I.COMPLETED, I.NO_SHOW),
+                                                     scheduled_at__gte=today_start, scheduled_at__lt=today_end).count(),
+        "interviews_upcoming": Interview.objects.filter(status=I.SCHEDULED, scheduled_at__gte=now).count(),
+        "awaiting_decision": sum(statuses[s] for s in WAITING),
         "offers": statuses[S.OFFER],
         "hired": statuses[S.HIRED],
+        "hired_in_period": hired_events.filter(created_at__gte=period_start, created_at__lt=period_end).count(),
         "rejected": statuses[S.REJECTED],
         "withdrawn": statuses[S.WITHDRAWN],
-        "vacancies_open": Vacancy.objects.filter(status=Vacancy.Status.OPEN).count(),
+        "duplicates_to_review": Application.objects.filter(needs_duplicate_review=True).count(),
+        "account_requests_pending": AccountRequest.objects.filter(status=AccountRequest.Status.PENDING).count(),
+        "recent_applications": [application_brief(a) for a in recent_apps],
         "upcoming_interviews": [interview_brief(i) for i in upcoming],
         "recent_activity": [activity_brief(a) for a in recent],
     }
@@ -172,46 +224,62 @@ def dashboard(date_from: date, date_to: date) -> dict:
 # Ежедневный отчёт
 # ---------------------------------------------------------------------------
 
+def _passed_screening(events: QuerySet) -> int:
+    return (events.filter(kind=K.CANDIDATE_STATUS, from_status__in=EARLY)
+            .exclude(to_status__in=(*EARLY, S.REJECTED, S.WITHDRAWN))
+            .values("application").distinct().count())
+
+
+def _distinct(events: QuerySet, kind: str) -> int:
+    return events.filter(kind=kind).values("interview").distinct().count()
+
+
 def daily(day: date, filters: dict) -> dict:
     start, end = day_bounds(day)
-    new = _candidates(filters).select_related("vacancy").filter(added_on=day).order_by("last_name", "first_name")
-    planned = _interviews(filters).filter(scheduled_at__gte=start, scheduled_at__lt=end).exclude(
-        status=Interview.Status.CANCELLED).order_by("scheduled_at")
+    new = list(_applications(filters).select_related("candidate", "vacancy")
+               .filter(created_at__gte=start, created_at__lt=end).order_by("created_at", "id"))
+    planned = list(_interviews(filters).filter(scheduled_at__gte=start, scheduled_at__lt=end)
+                   .exclude(status__in=(I.CANCELLED, I.RESCHEDULED)).order_by("scheduled_at"))
     events = _events(filters).filter(created_at__gte=start, created_at__lt=end)
     transitions = Counter(events.filter(kind=K.CANDIDATE_STATUS, to_status__in=DECISIONS)
                           .values_list("to_status", flat=True))
-    waiting = _candidates(filters).filter(status__in=WAITING)
+    by_vacancy = Counter(a.position_label or "Без вакансии" for a in new)
     return {
         "date": day.isoformat(),
-        "new_candidates": len(new),
-        "new_candidates_list": [candidate_brief(c) for c in new],
+        "new_applications": len(new),
+        "new_by_vacancy": [{"label": label, "count": n} for label, n in by_vacancy.most_common()],
+        "new_applications_list": [application_brief(a) for a in new],
+        "passed_screening": _passed_screening(events),
+        "interviews_scheduled": _distinct(events, K.INTERVIEW_SCHEDULED),
         "interviews_planned": len(planned),
         "interviews_list": [interview_brief(i) for i in planned],
-        "interviews_conducted": sum(1 for i in planned if i.status == Interview.Status.COMPLETED),
-        "interviews_rescheduled": events.filter(kind=K.INTERVIEW_RESCHEDULED).values("interview").distinct().count(),
-        "interviews_cancelled": events.filter(kind=K.INTERVIEW_CANCELLED).values("interview").distinct().count(),
-        "awaiting_decision_now": waiting.count(),
+        "interviews_conducted": sum(1 for i in planned if i.status == I.COMPLETED),
+        "interviews_rescheduled": _distinct(events, K.INTERVIEW_RESCHEDULED),
+        "interviews_cancelled": _distinct(events, K.INTERVIEW_CANCELLED),
+        "interviews_no_show": _distinct(events, K.INTERVIEW_NO_SHOW),
+        "awaiting_decision_now": _applications(filters).filter(status__in=WAITING).count(),
         "decisions": sum(transitions.values()),
         "offers": transitions[S.OFFER],
         "hired": transitions[S.HIRED],
         "rejected": transitions[S.REJECTED],
         "withdrawn": transitions[S.WITHDRAWN],
+        "definitions": DEFINITIONS,
     }
 
 
 # ---------------------------------------------------------------------------
-# Ежемесячный отчёт
+# Отчёт за период (по умолчанию — месяц)
 # ---------------------------------------------------------------------------
 
-def _reached(cohort_ids: list[int]) -> dict[int, int]:
-    """Наибольший ранг воронки, которого достиг каждый кандидат (по журналу)."""
-    best = {cid: 0 for cid in cohort_ids}
-    rows = HRActivity.objects.filter(candidate_id__in=cohort_ids, kind=K.CANDIDATE_STATUS).values_list(
-        "candidate_id", "to_status")
-    for cid, status in rows:
+def _reached(ids: list[int]) -> dict[int, int]:
+    """Наибольший ранг воронки, которого достиг каждый отклик (по журналу)."""
+    best = {pk: 0 for pk in ids}
+    rows = HRActivity.objects.filter(application_id__in=ids, kind=K.CANDIDATE_STATUS).values_list(
+        "application_id", "to_status")
+    for pk, status in rows:
         rank = RANK.get(status)
-        if rank is not None and rank > best[cid]:
-            best[cid] = rank
+        if rank is not None and rank > best[pk]:
+            best[pk] = rank
     return best
 
 
@@ -219,37 +287,47 @@ def _stage_durations(filters: dict, start: datetime, end: datetime) -> list[dict
     """Среднее время на этапе по переходам, завершившимся в периоде. Учитываются
     только этапы, время входа в которые есть в журнале."""
     leaving = list(_events(filters).filter(kind=K.CANDIDATE_STATUS, created_at__gte=start, created_at__lt=end)
-                   .exclude(from_status="").values_list("candidate_id", "from_status", "created_at"))
+                   .exclude(from_status="").values_list("application_id", "from_status", "created_at"))
     if not leaving:
         return []
-    candidates = {c for c, _, _ in leaving}
     history = defaultdict(list)
-    for cid, to_status, at in (HRActivity.objects.filter(candidate_id__in=candidates, kind=K.CANDIDATE_STATUS)
-                               .order_by("created_at", "id").values_list("candidate_id", "to_status", "created_at")):
-        history[cid].append((to_status, at))
+    for pk, to_status, at in (HRActivity.objects.filter(application_id__in={a for a, _, _ in leaving},
+                                                        kind=K.CANDIDATE_STATUS)
+                              .order_by("created_at", "id").values_list("application_id", "to_status", "created_at")):
+        history[pk].append((to_status, at))
     totals: dict[str, list[float]] = defaultdict(list)
-    for cid, stage, left_at in leaving:
-        entered = [at for status, at in history[cid] if status == stage and at <= left_at]
+    for pk, stage, left_at in leaving:
+        entered = [at for status, at in history[pk] if status == stage and at <= left_at]
         if entered:
             totals[stage].append((left_at - entered[-1]).total_seconds() / 3600)
     labels = dict(S.choices)
     return [
-        {"status": stage, "status_label": labels[stage], "transitions": len(hours),
+        {"status": stage, "status_label": labels.get(stage, stage), "transitions": len(hours),
          "average_hours": round(sum(hours) / len(hours), 1)}
         for stage, hours in sorted(totals.items(), key=lambda item: RANK.get(item[0], 9))
     ]
 
 
-def monthly(year: int, month: int, filters: dict) -> dict:
-    first, last = month_bounds(year, month)
-    start, _ = day_bounds(first)
-    _, end = day_bounds(last)
-    cohort = _candidates(filters).select_related("vacancy").filter(added_on__range=(first, last))
-    cohort_list = list(cohort)
+def _vacancy_close_times(filters: dict, start: datetime, end: datetime) -> dict:
+    qs = Vacancy.objects.filter(closed_at__gte=start, closed_at__lt=end, published_at__isnull=False)
+    if filters.get("vacancy"):
+        qs = qs.filter(pk=filters["vacancy"])
+    if filters.get("responsible"):
+        qs = qs.filter(responsible_id=filters["responsible"])
+    if filters.get("position"):
+        qs = qs.filter(Q(title__icontains=filters["position"]) | Q(department__icontains=filters["position"]))
+    days = [(v.closed_at - v.published_at).total_seconds() / 86400 for v in qs if v.closed_at >= v.published_at]
+    return {"count": len(days), "average_days": round(sum(days) / len(days), 1) if days else None}
+
+
+def period_report(first: date, last: date, filters: dict, label: str) -> dict:
+    start, end = period_bounds(first, last)
+    cohort = list(_applications(filters).select_related("vacancy").filter(created_at__gte=start, created_at__lt=end))
     events = _events(filters).filter(created_at__gte=start, created_at__lt=end)
     transitions = Counter(events.filter(kind=K.CANDIDATE_STATUS).values_list("to_status", flat=True))
+    conducted = _interviews(filters).filter(status=I.COMPLETED, scheduled_at__gte=start, scheduled_at__lt=end)
 
-    reached = _reached([c.pk for c in cohort_list])
+    reached = _reached([a.pk for a in cohort])
     funnel = []
     for index, stage in enumerate(FUNNEL):
         count = sum(1 for rank in reached.values() if rank >= index)
@@ -259,33 +337,76 @@ def monthly(year: int, month: int, filters: dict) -> dict:
             "conversion_percent": round(count * 100 / previous, 1) if previous else None,
         })
 
-    hire_days = []
-    hired_events = events.filter(kind=K.CANDIDATE_STATUS, to_status=S.HIRED).select_related("candidate")
-    for entry in hired_events:
-        hire_days.append((timezone.localtime(entry.created_at).date() - entry.candidate.added_on).days)
+    hire_days = [(timezone.localtime(entry.created_at).date() - entry.application.applied_on).days
+                 for entry in events.filter(kind=K.CANDIDATE_STATUS, to_status=S.HIRED).select_related("application")]
 
-    by_vacancy = Counter(c.vacancy.title if c.vacancy_id else (c.position or "Без вакансии") for c in cohort_list)
-    by_source = Counter(c.get_source_display() for c in cohort_list)
-    by_stage = Counter(c.status for c in cohort_list)
+    # По вакансиям: отклики периода, проведённые встречи, предложения, найм и отказы периода.
+    vacancy_rows: dict[str, Counter] = defaultdict(Counter)
+    for a in cohort:
+        vacancy_rows[a.position_label or "Без вакансии"]["applications"] += 1
+    for i in conducted:
+        vacancy_rows[i.vacancy.title if i.vacancy_id else (i.application.position or "Без вакансии")]["interviews"] += 1
+    for entry in events.filter(kind=K.CANDIDATE_STATUS, to_status__in=(S.OFFER, S.HIRED, S.REJECTED)) \
+            .select_related("application__vacancy"):
+        vacancy_rows[entry.application.position_label or "Без вакансии"][entry.to_status] += 1
+    by_vacancy = sorted(
+        ({"label": label, "applications": c["applications"], "interviews": c["interviews"], "offers": c[S.OFFER],
+          "hired": c[S.HIRED], "rejected": c[S.REJECTED]} for label, c in vacancy_rows.items()),
+        key=lambda row: (-row["applications"], row["label"]),
+    )
+
+    sources: dict[str, Counter] = defaultdict(Counter)
+    labels = dict(Application.Source.choices)
+    for a in cohort:
+        row = sources[a.source]
+        row["applications"] += 1
+        if reached.get(a.pk, 0) >= RANK[S.INTERVIEW_SCHEDULED]:
+            row["interview"] += 1
+        if a.status == S.HIRED:
+            row["hired"] += 1
+    by_source = []
+    for source, c in sorted(sources.items(), key=lambda item: -item[1]["applications"]):
+        enough = c["applications"] >= MIN_SOURCE_SAMPLE
+        by_source.append({
+            "source": source, "label": labels.get(source, source), "count": c["applications"],
+            "enough_data": enough,
+            "interview_percent": round(c["interview"] * 100 / c["applications"], 1) if enough else None,
+            "hired_percent": round(c["hired"] * 100 / c["applications"], 1) if enough else None,
+        })
+
+    by_stage = Counter(a.status for a in cohort)
+    close_times = _vacancy_close_times(filters, start, end)
     return {
-        "month": f"{year:04d}-{month:02d}",
-        "new_candidates": len(cohort_list),
-        "interviews_conducted": _interviews(filters).filter(
-            status=Interview.Status.COMPLETED, scheduled_at__gte=start, scheduled_at__lt=end).count(),
-        "interviews_cancelled": events.filter(kind=K.INTERVIEW_CANCELLED).values("interview").distinct().count(),
-        "interviews_rescheduled": events.filter(kind=K.INTERVIEW_RESCHEDULED).count(),
+        "month": label,
+        "date_from": first.isoformat(),
+        "date_to": last.isoformat(),
+        "new_applications": len(cohort),
+        "interviews_conducted": conducted.count(),
+        "interviews_scheduled": _distinct(events, K.INTERVIEW_SCHEDULED),
+        "interviews_cancelled": _distinct(events, K.INTERVIEW_CANCELLED),
+        "interviews_rescheduled": _distinct(events, K.INTERVIEW_RESCHEDULED),
+        "interviews_no_show": _distinct(events, K.INTERVIEW_NO_SHOW),
+        "passed_screening": _passed_screening(events),
         "hired": transitions[S.HIRED],
         "rejected": transitions[S.REJECTED],
         "withdrawn": transitions[S.WITHDRAWN],
         "offers": transitions[S.OFFER],
-        "by_stage": [{"status": value, "status_label": label, "count": by_stage.get(value, 0)}
-                     for value, label in S.choices],
+        "by_stage": [{"status": value, "status_label": text, "count": by_stage.get(value, 0)}
+                     for value, text in S.choices],
         "funnel": funnel,
-        "by_vacancy": [{"label": label, "count": n} for label, n in by_vacancy.most_common()],
-        "by_source": [{"label": label, "count": n} for label, n in by_source.most_common()],
+        "by_vacancy": by_vacancy,
+        "by_source": by_source,
         "stage_durations": _stage_durations(filters, start, end),
         "average_days_to_hire": round(sum(hire_days) / len(hire_days), 1) if hire_days else None,
+        "vacancies_closed": close_times["count"],
+        "vacancy_days_to_close": close_times["average_days"],
+        "definitions": DEFINITIONS,
     }
+
+
+def monthly(year: int, month: int, filters: dict) -> dict:
+    first, last = month_bounds(year, month)
+    return period_report(first, last, filters, f"{year:04d}-{month:02d}")
 
 
 # ---------------------------------------------------------------------------
@@ -301,45 +422,58 @@ def _csv(rows: list[list]) -> str:
     return buffer.getvalue()
 
 
+def _definitions(report: dict) -> list[list]:
+    return [[], ["Как считаются показатели"], *[[text] for text in report["definitions"].values()]]
+
+
 def daily_csv(report: dict) -> str:
     rows = [["Ежедневный HR-отчёт", report["date"]], [], ["Показатель", "Значение"]]
     for key, label in (
-        ("new_candidates", "Новые кандидаты"), ("interviews_planned", "Запланированные собеседования"),
-        ("interviews_conducted", "Проведённые собеседования"), ("interviews_rescheduled", "Перенесённые встречи"),
-        ("interviews_cancelled", "Отменённые встречи"), ("awaiting_decision_now", "Ожидают решения (сейчас)"),
+        ("new_applications", "Новые отклики"), ("passed_screening", "Прошли первичный отбор"),
+        ("interviews_scheduled", "Назначено собеседований"), ("interviews_conducted", "Проведено собеседований"),
+        ("interviews_rescheduled", "Перенесено встреч"), ("interviews_cancelled", "Отменено встреч"),
+        ("interviews_no_show", "Кандидат не пришёл"), ("awaiting_decision_now", "Ожидают решения (сейчас)"),
         ("decisions", "Принятые решения"), ("offers", "Предложения о работе"), ("hired", "Приняты на работу"),
-        ("rejected", "Отказы"), ("withdrawn", "Кандидат отказался"),
+        ("rejected", "Отказ компании"), ("withdrawn", "Кандидат отказался"),
     ):
         rows.append([label, report[key]])
-    rows += [[], ["Собеседования"], ["Время", "Кандидат", "Должность", "Интервьюер", "Статус"]]
+    rows += [[], ["Отклики по вакансиям"], ["Вакансия", "Откликов"]]
+    rows += [[item["label"], item["count"]] for item in report["new_by_vacancy"]]
+    rows += [[], ["Собеседования дня"], ["Время", "Кандидат", "Должность", "Интервьюер", "Статус"]]
     for item in report["interviews_list"]:
         rows.append([item["scheduled_at"][11:16], item["candidate"]["full_name"], item["position"],
                      item["interviewer"], item["status_label"]])
-    rows += [[], ["Новые кандидаты"], ["Кандидат", "Должность", "Источник", "Этап"]]
-    for item in report["new_candidates_list"]:
-        rows.append([item["full_name"], item["position"], item["source_label"], item["status_label"]])
-    return _csv(rows)
+    rows += [[], ["Новые отклики"], ["Номер", "Кандидат", "Вакансия", "Источник", "Этап"]]
+    for item in report["new_applications_list"]:
+        rows.append([item["number"], item["candidate"]["full_name"], item["position"], item["source_label"],
+                     item["status_label"]])
+    return _csv(rows + _definitions(report))
 
 
 def monthly_csv(report: dict) -> str:
-    rows = [["Ежемесячный HR-отчёт", report["month"]], [], ["Показатель", "Значение"]]
+    rows = [["HR-отчёт за период", report["date_from"], report["date_to"]], [], ["Показатель", "Значение"]]
     for key, label in (
-        ("new_candidates", "Новые кандидаты"), ("interviews_conducted", "Проведённые собеседования"),
-        ("interviews_cancelled", "Отменённые встречи"), ("interviews_rescheduled", "Переносы встреч"),
-        ("offers", "Предложения о работе"), ("hired", "Приняты на работу"), ("rejected", "Отказы"),
-        ("withdrawn", "Кандидат отказался"), ("average_days_to_hire", "Среднее время до найма, дней"),
+        ("new_applications", "Новые отклики"), ("passed_screening", "Прошли первичный отбор"),
+        ("interviews_scheduled", "Назначено собеседований"), ("interviews_conducted", "Проведено собеседований"),
+        ("interviews_cancelled", "Отменено встреч"), ("interviews_rescheduled", "Переносы встреч"),
+        ("interviews_no_show", "Кандидат не пришёл"), ("offers", "Предложения о работе"),
+        ("hired", "Приняты на работу"), ("rejected", "Отказ компании"), ("withdrawn", "Кандидат отказался"),
+        ("average_days_to_hire", "Среднее время до найма, дней"), ("vacancies_closed", "Закрыто вакансий"),
+        ("vacancy_days_to_close", "Среднее время закрытия вакансии, дней"),
     ):
         rows.append([label, "" if report[key] is None else report[key]])
-    rows += [[], ["Кандидаты месяца по этапам"], ["Этап", "Кандидатов"]]
+    rows += [[], ["Отклики периода по этапам"], ["Этап", "Откликов"]]
     rows += [[item["status_label"], item["count"]] for item in report["by_stage"]]
     rows += [[], ["Воронка"], ["Этап", "Дошли", "Конверсия от предыдущего, %"]]
     rows += [[item["status_label"], item["count"], "" if item["conversion_percent"] is None
               else item["conversion_percent"]] for item in report["funnel"]]
-    rows += [[], ["По вакансиям"], ["Вакансия", "Кандидатов"]]
-    rows += [[item["label"], item["count"]] for item in report["by_vacancy"]]
-    rows += [[], ["По источникам"], ["Источник", "Кандидатов"]]
-    rows += [[item["label"], item["count"]] for item in report["by_source"]]
+    rows += [[], ["По вакансиям"], ["Вакансия", "Откликов", "Собеседований", "Предложений", "Принято", "Отказов"]]
+    rows += [[r["label"], r["applications"], r["interviews"], r["offers"], r["hired"], r["rejected"]]
+             for r in report["by_vacancy"]]
+    rows += [[], ["По источникам"], ["Источник", "Откликов", "Дошли до собеседования, %", "Приняты, %"]]
+    rows += [[r["label"], r["count"], "" if r["interview_percent"] is None else r["interview_percent"],
+              "" if r["hired_percent"] is None else r["hired_percent"]] for r in report["by_source"]]
     if report["stage_durations"]:
         rows += [[], ["Среднее время на этапе"], ["Этап", "Переходов", "Среднее, ч"]]
         rows += [[item["status_label"], item["transitions"], item["average_hours"]] for item in report["stage_durations"]]
-    return _csv(rows)
+    return _csv(rows + _definitions(report))
