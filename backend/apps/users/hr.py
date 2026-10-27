@@ -1,10 +1,17 @@
 """Раздел «Сотрудники» HR-менеджера (/api/v1/hr/employees/).
 
 Сотрудник — существующий `users.User`; отдельной таблицы нет. HR управляет
-только ролями из `User.HR_MANAGEABLE_ROLES` (белый список). Защищённые
-категории (ДОП, РОМ, бухгалтерия, операционный директор), администраторы,
-директор, другие HR и собственная учётная запись — вне полномочий: список их
-не показывает, а любое действие с ними сервер отклоняет (403).
+только ролями из `User.HR_MANAGEABLE_ROLES` (белый список, единый источник и
+для API, и для формы — `GET meta/`). Защищённые должности
+(`User.HR_PROTECTED_ROLES`: директор, бухгалтер, ДОП — директор отдела продаж,
+операционный директор), администраторы, суперпользователи, служебные (staff)
+учётные записи и собственная учётная запись — вне полномочий: список их не
+показывает, назначить такую роль нельзя (400), а любое действие с такой
+учётной записью сервер отклоняет (403).
+
+Тренер создаётся штатным механизмом LMS (`services.create_teacher`) — вместе с
+профилем тренера. Поэтому роль «Тренер» при редактировании не меняется ни на
+другую, ни с другой: без профиля тренера кабинет тренера не работает.
 
 Пароль задаёт HR при создании или сбросе; хранится только хеш
 (`set_password`), в ответах пароль не возвращается. Удаления нет: сотрудник
@@ -32,26 +39,48 @@ from apps.recruitment.services import activity
 from apps.recruitment.services.reports import activity_brief
 
 from .models import User
-from .permissions import IsHRManager, hr_can_manage
+from .permissions import IsHRManager, hr_can_manage, hr_can_view
+from .services import create_teacher
 
 logger = logging.getLogger("apps.users.hr")
 
 TAGS = ["HR employees"]
-ROLE_CHOICES = [(value, label) for value, label in User.Role.choices if value in User.HR_MANAGEABLE_ROLES]
+# Понятные названия должностей для HR (в модели — короткие подписи-аббревиатуры).
+ROLE_TITLES = {
+    User.Role.DOP: "ДОП — директор отдела продаж",
+    User.Role.ROP: "РОП — руководитель отдела продаж",
+    User.Role.ROM: "РОМ — руководитель отдела маркетинга",
+    User.Role.TEAM_LEAD: "Руководитель тренеров (Team Lead)",
+}
+
+
+def role_title(role: str) -> str:
+    return ROLE_TITLES.get(role) or dict(User.Role.choices).get(role, role)
+
+
+ROLE_CHOICES = [(role.value, role_title(role)) for role in User.HR_MANAGEABLE_ROLES]
 
 
 class HREmployeeSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
-    role_label = serializers.CharField(source="get_role_display", read_only=True)
+    role_label = serializers.SerializerMethodField()
+    can_manage = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "first_name", "last_name", "full_name", "role", "role_label",
-                  "is_active", "created_at", "last_login"]
+                  "is_active", "can_manage", "created_at", "last_login"]
         read_only_fields = fields
+
+    def get_can_manage(self, obj: User) -> bool:
+        request = self.context.get("request")
+        return bool(request and hr_can_manage(request.user, obj))
 
     def get_full_name(self, obj: User) -> str:
         return obj.get_full_name() or obj.username
+
+    def get_role_label(self, obj: User) -> str:
+        return role_title(obj.role)
 
 
 class HREmployeeCardSerializer(HREmployeeSerializer):
@@ -120,6 +149,17 @@ class HREmployeeWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Пользователь с таким email уже существует.")
         return value
 
+    def validate_role(self, value):
+        # ChoiceField уже отклоняет роли вне белого списка; здесь — правило
+        # для тренера: его учётная запись существует вместе с профилем тренера.
+        current = getattr(self.instance, "role", None)
+        if current is not None and value != current and User.Role.TEACHER in (current, value):
+            raise serializers.ValidationError(
+                "Роль «Тренер» не меняется на другую и не назначается существующему сотруднику: "
+                "тренер создаётся вместе с профилем тренера. Создайте новую учётную запись."
+            )
+        return value
+
 
 class HREmployeeCreateSerializer(_PasswordMixin, HREmployeeWriteSerializer):
     class Meta(HREmployeeWriteSerializer.Meta):
@@ -135,8 +175,13 @@ class HREmployeeCreateSerializer(_PasswordMixin, HREmployeeWriteSerializer):
     def create(self, validated_data):
         validated_data.pop("password_confirm")
         password = validated_data.pop("password")
-        # Обычный пользователь без прав администратора; is_staff/is_superuser
-        # для этих ролей в любом случае сбрасывает User.save().
+        if validated_data.get("role") == User.Role.TEACHER:
+            # Штатное создание тренера — вместе с профилем; письмо с паролем
+            # не отправляется: пароль задаёт и передаёт HR, как и остальным.
+            fields = {k: v for k, v in validated_data.items() if k != "role"}
+            return create_teacher(password=password, send_email=False, **fields).teacher.user
+        # Обычный пользователь без прав администратора (is_staff и
+        # is_superuser не выставляются; для ролей LMS их сбрасывает User.save()).
         return User.objects.create_user(password=password, is_verified=True, **validated_data)
 
 
@@ -170,7 +215,10 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         # Ищем среди всех пользователей, чтобы на защищённого сотрудника
         # ответить явным отказом (403), а не «не найден».
         target = get_object_or_404(User, pk=self.kwargs["pk"])
-        if not hr_can_manage(self.request.user, target):
+        # Карточку можно открыть у всех, кого HR видит; менять — только тех,
+        # кем HR управляет (коллеги-HR — только просмотр).
+        allowed = hr_can_view if self.action == "retrieve" else hr_can_manage
+        if not allowed(self.request.user, target):
             logger.warning("hr denied action=%s target=%s role=%s by=%s",
                            self.action, target.pk, target.role, self.request.user.pk)
             raise PermissionDenied("Этот сотрудник вне полномочий HR: управлять его учётной записью нельзя.")
@@ -195,7 +243,8 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         self._log(HRActivity.Kind.EMPLOYEE_CREATED, user, f"Учётная запись «{user.username}» ({user.get_role_display()})")
-        return Response(HREmployeeSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(HREmployeeSerializer(user, context=self.get_serializer_context()).data,
+                        status=status.HTTP_201_CREATED)
 
     @extend_schema(tags=TAGS, responses=HREmployeeSerializer)
     def update(self, request, *args, **kwargs):
@@ -213,7 +262,7 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         user = serializer.save()
         if changes:
             self._log(HRActivity.Kind.EMPLOYEE_UPDATED, user, "Изменено: " + ", ".join(changes))
-        return Response(HREmployeeSerializer(user).data)
+        return Response(HREmployeeSerializer(user, context=self.get_serializer_context()).data)
 
     @extend_schema(tags=TAGS, request=HRPasswordSerializer, responses=HREmployeeSerializer)
     @action(detail=True, methods=["post"], url_path="set-password")
@@ -224,7 +273,7 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         target.set_password(serializer.validated_data["password"])
         target.save(update_fields=["password", "updated_at"])
         self._log(HRActivity.Kind.EMPLOYEE_PASSWORD, target, "Пароль изменён")
-        return Response(HREmployeeSerializer(target).data)
+        return Response(HREmployeeSerializer(target, context=self.get_serializer_context()).data)
 
     @extend_schema(tags=TAGS, request=None, responses=HREmployeeSerializer)
     @action(detail=True, methods=["post"])
@@ -242,7 +291,7 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
             target.is_active = value
             target.save(update_fields=["is_active", "updated_at"])
             self._log(HRActivity.Kind.EMPLOYEE_ACTIVATED if value else HRActivity.Kind.EMPLOYEE_DEACTIVATED, target)
-        return Response(HREmployeeSerializer(target).data)
+        return Response(HREmployeeSerializer(target, context=self.get_serializer_context()).data)
 
     @extend_schema(tags=TAGS)
     @action(detail=False, methods=["get"])
@@ -250,5 +299,5 @@ class HREmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         """Роли, которые HR может назначать, и защищённые категории (для подсказки)."""
         return Response({
             "roles": [{"value": value, "label": label} for value, label in ROLE_CHOICES],
-            "protected_roles": [{"value": role.value, "label": role.label} for role in User.HR_PROTECTED_ROLES],
+            "protected_roles": [{"value": role.value, "label": role_title(role)} for role in User.HR_PROTECTED_ROLES],
         })

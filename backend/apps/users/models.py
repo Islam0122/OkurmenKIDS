@@ -112,12 +112,17 @@ class User(AbstractUser):
         Role.DOP, Role.ROP, Role.ROM, Role.OPERATIONS_DIRECTOR,
         Role.HR_MANAGER, Role.SALES_MANAGER, Role.MARKETING,
     )
-    # HR-менеджер управляет учётными записями только этих ролей (раздел
-    # «Сотрудники», apps.users.hr). Это белый список: всё, чего в нём нет, —
-    # в том числе защищённые ДОП, РОМ, бухгалтерия и операционный директор,
-    # администраторы, директор и сами HR — для HR закрыто.
-    HR_MANAGEABLE_ROLES = (Role.ROP, Role.SALES_MANAGER, Role.MARKETING)
-    HR_PROTECTED_ROLES = (Role.DOP, Role.ROM, Role.ACCOUNTANT, Role.OPERATIONS_DIRECTOR)
+    # Раздел «Сотрудники» HR-менеджера (apps.users.hr) — единый источник
+    # ролей для API и интерфейса. Защищённые должности HR не назначает и не
+    # меняет: директор, бухгалтер, ДОП (директор отдела продаж) и
+    # операционный директор. Администратор — привилегированная учётная
+    # запись и тоже вне полномочий HR. Всё остальное HR создаёт сам.
+    HR_PROTECTED_ROLES = (Role.DIRECTOR, Role.ACCOUNTANT, Role.DOP, Role.OPERATIONS_DIRECTOR)
+    HR_PRIVILEGED_ROLES = (Role.ADMIN,)
+    HR_MANAGEABLE_ROLES = (
+        Role.TEACHER, Role.TEAM_LEAD, Role.ASSISTANT, Role.ROP, Role.ROM, Role.HR_MANAGER,
+        Role.SALES_MANAGER, Role.MARKETING,
+    )
     # Roles that work only through the LMS, never through Django admin.
     LMS_ONLY_ROLES = (Role.TEAM_LEAD, Role.ASSISTANT, Role.ACCOUNTANT, Role.DIRECTOR, *STAFF_ONLY_ROLES)
 

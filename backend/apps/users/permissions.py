@@ -53,9 +53,9 @@ def is_hr_manager(user) -> bool:
     return bool(user.is_active and getattr(user, "role", None) == User.Role.HR_MANAGER)
 
 
-def hr_can_manage(actor, target) -> bool:
-    """May HR `actor` change `target`'s account? Only another person whose
-    role is in User.HR_MANAGEABLE_ROLES and who is not a privileged account."""
+def hr_can_view(actor, target) -> bool:
+    """May HR `actor` see `target` in «Сотрудники»? Another person whose role
+    is in User.HR_MANAGEABLE_ROLES and who is not a privileged account."""
     return bool(
         is_hr_manager(actor)
         and target.pk != actor.pk
@@ -63,6 +63,13 @@ def hr_can_manage(actor, target) -> bool:
         and not target.is_superuser
         and not target.is_staff
     )
+
+
+def hr_can_manage(actor, target) -> bool:
+    """May HR `actor` change `target`'s account (data, role, password,
+    activation)? Everyone HR can see — except other HR managers: a colleague's
+    account is read-only, so one HR cannot take over another's login."""
+    return hr_can_view(actor, target) and target.role != User.Role.HR_MANAGER
 
 
 def can_run_operations(user) -> bool:

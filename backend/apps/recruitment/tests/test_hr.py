@@ -402,7 +402,7 @@ class HireTests(RecruitmentFixture):
         self.assertIn("username", response.data)
         response = self.post(f"applications/{self.app['id']}/hire/", self.hire_body(email="taken@okurmen.kg"))
         self.assertIn("email", response.data)
-        for role in ("admin", "director", "hr_manager", "accountant", "dop", "teacher"):
+        for role in ("admin", "director", "accountant", "dop", "operations_director"):
             with self.subTest(role=role):
                 response = self.post(f"applications/{self.app['id']}/hire/", self.hire_body(role=role))
                 self.assertEqual((response.status_code, response.data["code"]), (403, "role_requires_approval"))
@@ -438,7 +438,8 @@ class HireTests(RecruitmentFixture):
 
     def test_admin_action_in_django_admin(self):
         self.post(f"applications/{self.app['id']}/account-request/",
-                  {"role": "teacher", "username": "trainer", "email": "trainer@mail.kg", "first_name": "Бакыт"})
+                  {"role": "operations_director", "username": "trainer", "email": "trainer@mail.kg",
+                   "first_name": "Бакыт"})
         request = AccountRequest.objects.get()
         admin = make("boss", User.Role.ADMIN, is_staff=True, is_superuser=True)
         self.client.force_login(admin)
@@ -446,10 +447,20 @@ class HireTests(RecruitmentFixture):
         self.assertEqual(self.client.get(changelist).status_code, 200)
         response = self.client.post(changelist, {"action": "approve", "_selected_action": [request.pk]})
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(User.objects.get(username="trainer").role, "teacher")
+        self.assertEqual(User.objects.get(username="trainer").role, "operations_director")
         hr_web = APIClient()
         hr_web.force_login(self.hr)
         self.assertNotEqual(hr_web.get(changelist).status_code, 200)
+
+    def test_hire_as_teacher_creates_trainer_profile(self):
+        from apps.users.models import Teacher
+
+        response = self.post(f"applications/{self.app['id']}/hire/", self.hire_body(role="teacher"))
+        self.assertEqual(response.status_code, 200, response.data)
+        user = User.objects.get(username="bakyt")
+        self.assertEqual(user.role, "teacher")
+        self.assertTrue(Teacher.objects.filter(user=user).exists())
+        self.assertFalse(user.is_staff or user.is_superuser)
 
     def test_rejected_request(self):
         self.post(f"applications/{self.app['id']}/account-request/",
