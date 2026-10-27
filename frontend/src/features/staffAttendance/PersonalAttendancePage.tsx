@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CalendarClock, Construction, ChevronLeft, ChevronRight, Clock3, LogIn, LogOut, ScanLine, Timer, TrendingDown } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Construction, ChevronLeft, ChevronRight, Clock3, LogIn, LogOut, ScanLine, ScanQrCode, Timer, TrendingDown } from 'lucide-react'
 
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -183,8 +183,8 @@ function TodayCard({ status, variant, onScan }: { status: MyStatus; variant: Per
             <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{formatDuration(today.duration_seconds)}</dd>
           </div>
         </dl>
-        <Button size="lg" className="h-16 w-full px-8 text-lg lg:w-auto" onClick={onScan}>
-          <span aria-hidden>📷</span> Сканировать QR
+        <Button size="lg" className="h-16 w-full px-8 text-lg lg:w-auto" leftIcon={<ScanQrCode className="size-6 shrink-0" aria-hidden />} onClick={onScan}>
+          Сканировать QR
         </Button>
       </div>
       <p className="mt-3 text-sm text-ink-secondary">
