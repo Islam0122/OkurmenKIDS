@@ -77,8 +77,8 @@ function Employees() {
         <p className="flex items-start gap-2 rounded-xl bg-info-soft px-4 py-3 text-sm text-info">
           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>
-            Учётными записями категорий {meta.data.protected_roles.map((r) => r.label).join(', ')}, руководства и
-            администраторов управляет только администратор.
+            Роли {meta.data.protected_roles.map((r) => r.label).join(', ')} и учётные записи администраторов
+            назначает только администратор. Учётные записи коллег-HR доступны только для просмотра.
           </span>
         </p>
       ) : null}
@@ -132,17 +132,21 @@ function Employees() {
                   </td>
                   <td className="px-4 py-3 tabular-nums">{formatDate(employee.created_at)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" aria-label={`Изменить ${employee.full_name}`} leftIcon={<PencilLine className="size-4" aria-hidden />} onClick={() => setEditing(employee)}>
-                        Изменить
-                      </Button>
-                      <Button size="sm" variant="ghost" aria-label={`Пароль ${employee.full_name}`} leftIcon={<KeyRound className="size-4" aria-hidden />} onClick={() => setPasswordFor(employee)}>
-                        Пароль
-                      </Button>
-                      <Button size="sm" variant="ghost" leftIcon={<Power className="size-4" aria-hidden />} onClick={() => setToggling(employee)}>
-                        {employee.is_active ? 'Деактивировать' : 'Активировать'}
-                      </Button>
-                    </div>
+                    {employee.can_manage ? (
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" aria-label={`Изменить ${employee.full_name}`} leftIcon={<PencilLine className="size-4" aria-hidden />} onClick={() => setEditing(employee)}>
+                          Изменить
+                        </Button>
+                        <Button size="sm" variant="ghost" aria-label={`Пароль ${employee.full_name}`} leftIcon={<KeyRound className="size-4" aria-hidden />} onClick={() => setPasswordFor(employee)}>
+                          Пароль
+                        </Button>
+                        <Button size="sm" variant="ghost" leftIcon={<Power className="size-4" aria-hidden />} onClick={() => setToggling(employee)}>
+                          {employee.is_active ? 'Деактивировать' : 'Активировать'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-right text-xs text-ink-muted">Только просмотр</p>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -176,6 +180,11 @@ export function EmployeeForm({ employee, roles, onClose }: { employee: HREmploye
     password_confirm: '',
   })
   const [error, setError] = useState<string | null>(null)
+  // Тренер существует вместе с профилем тренера: эту роль нельзя ни снять,
+  // ни назначить существующему сотруднику (то же правило на сервере).
+  const roleOptions = !employee ? roles
+    : employee.role === 'teacher' ? roles.filter((r) => r.value === 'teacher')
+      : roles.filter((r) => r.value !== 'teacher')
   const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const submit = async (event: FormEvent) => {
@@ -214,7 +223,7 @@ export function EmployeeForm({ employee, roles, onClose }: { employee: HREmploye
         <Field id="hr-email" label="Email *"><Input id="hr-email" type="email" value={form.email} onChange={set('email')} required /></Field>
       </div>
       <Field id="hr-role" label="Должность *">
-        <Select id="hr-role" value={form.role} onChange={set('role')} required options={roles.map((r) => ({ value: r.value, label: r.label }))} />
+        <Select id="hr-role" value={form.role} onChange={set('role')} required options={roleOptions.map((r) => ({ value: r.value, label: r.label }))} />
       </Field>
       {employee ? null : (
         <div className="grid gap-3 sm:grid-cols-2">

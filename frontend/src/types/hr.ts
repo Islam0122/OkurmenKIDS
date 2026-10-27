@@ -1,4 +1,4 @@
-import type { StaffOnlyRole } from '@/types/auth'
+import type { UserRole } from '@/types/auth'
 
 /** `apps.users.hr.HREmployeeSerializer` — пароль никогда не возвращается. */
 export interface HREmployee {
@@ -8,15 +8,17 @@ export interface HREmployee {
   first_name: string
   last_name: string
   full_name: string
-  role: StaffOnlyRole
+  role: UserRole
   role_label: string
   is_active: boolean
+  /** false — коллега-HR: карточку видно, но менять нельзя. */
+  can_manage: boolean
   created_at: string
   last_login: string | null
 }
 
 export interface HRRoleOption {
-  value: StaffOnlyRole
+  value: UserRole
   label: string
 }
 
@@ -31,7 +33,7 @@ export interface HREmployeeInput {
   email: string
   first_name: string
   last_name: string
-  role: StaffOnlyRole
+  role: UserRole
 }
 
 export interface HREmployeeCreateInput extends HREmployeeInput {
@@ -391,7 +393,7 @@ export interface HireInput {
   email: string
   first_name: string
   last_name: string
-  role: StaffOnlyRole
+  role: UserRole
   password: string
   password_confirm: string
 }

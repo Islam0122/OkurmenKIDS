@@ -47,13 +47,17 @@ export function HrEmployeeCardPage() {
               <span className="text-sm text-ink-secondary">{e.role_label}</span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" leftIcon={<PencilLine className="size-4" aria-hidden />} onClick={() => setDialog('edit')}>Изменить</Button>
-            <Button size="sm" variant="secondary" leftIcon={<KeyRound className="size-4" aria-hidden />} onClick={() => setDialog('password')}>Пароль</Button>
-            <Button size="sm" variant={e.is_active ? 'ghost' : 'secondary'} leftIcon={<Power className="size-4" aria-hidden />} onClick={() => setDialog('toggle')}>
-              {e.is_active ? 'Деактивировать' : 'Активировать'}
-            </Button>
-          </div>
+          {e.can_manage ? (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" leftIcon={<PencilLine className="size-4" aria-hidden />} onClick={() => setDialog('edit')}>Изменить</Button>
+              <Button size="sm" variant="secondary" leftIcon={<KeyRound className="size-4" aria-hidden />} onClick={() => setDialog('password')}>Пароль</Button>
+              <Button size="sm" variant={e.is_active ? 'ghost' : 'secondary'} leftIcon={<Power className="size-4" aria-hidden />} onClick={() => setDialog('toggle')}>
+                {e.is_active ? 'Деактивировать' : 'Активировать'}
+              </Button>
+            </div>
+          ) : (
+            <Badge tone="muted">Только просмотр</Badge>
+          )}
         </div>
         <dl className="mt-5 grid gap-3 sm:grid-cols-2">
           {rows.map(([label, value]) => (
