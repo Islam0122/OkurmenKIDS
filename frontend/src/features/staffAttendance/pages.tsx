@@ -2,7 +2,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useAuth } from '@/hooks/useAuth'
-import { isStaffOnlyRole } from '@/lib/roles'
+import { hasCabinetInDevelopment, isStaffOnlyRole } from '@/lib/roles'
 import type { UserRole } from '@/types/auth'
 
 import { PersonalAttendancePage } from './PersonalAttendancePage'
@@ -32,7 +32,8 @@ export function OfficeAttendancePage() {
 }
 
 export function StaffAttendancePage() {
-  return <PersonalAttendancePage variant="staff" />
+  const { user } = useAuth()
+  return <PersonalAttendancePage variant="staff" cabinetNotice={hasCabinetInDevelopment(user?.role)} />
 }
 
 function variantFor(role: UserRole | undefined): PersonalVariant {
@@ -56,5 +57,5 @@ export function ScanLandingPage() {
   if (!OFFICE_CODE_RE.test(code)) {
     return <EmptyState title="Некорректная ссылка QR-кода" description="Отсканируйте QR-код офиса ещё раз или откройте свой кабинет посещаемости." />
   }
-  return <PersonalAttendancePage variant={variantFor(user?.role)} presetCode={code} onFlowDone={() => navigate(home, { replace: true })} />
+  return <PersonalAttendancePage variant={variantFor(user?.role)} cabinetNotice={hasCabinetInDevelopment(user?.role)} presetCode={code} onFlowDone={() => navigate(home, { replace: true })} />
 }

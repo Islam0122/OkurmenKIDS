@@ -10,6 +10,7 @@ import logging
 from datetime import date, timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -278,14 +279,10 @@ class AdminMetaView(APIView):
     @extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
     def get(self, request):
         config = AttendanceSettings.load()
-        scope = access.report_scope_name(request.user)
-        # HR видит в фильтре только роли в своём ведении; у остальных — как было.
-        allowed = access.report_roles(request.user) if scope == "hr" else None
         return Response({
             "timezone": config.timezone,
             "today": _today(config).isoformat(),
-            "roles": [{"value": v, "label": label} for v, label in User.Role.choices
-                      if v in config.tracked_roles and (allowed is None or v in allowed)],
+            "roles": [{"value": v, "label": label} for v, label in User.Role.choices if v in config.tracked_roles],
             "statuses": [{"value": v, "label": label} for v, label in reports.STATUS_LABELS.items()],
             "locations": [{"id": loc.id, "name": loc.name, "is_active": loc.is_active}
                           for loc in AttendanceLocation.objects.all()],
@@ -293,7 +290,7 @@ class AdminMetaView(APIView):
                 "can_view_reports": True,
                 "can_adjust": access.can_adjust(request.user),
                 "can_manage": access.can_manage(request.user),
-                "scope": scope,
+                "scope": "teachers" if access.report_scope(request.user) == Q(role=User.Role.TEACHER) else "all",
             },
         })
 

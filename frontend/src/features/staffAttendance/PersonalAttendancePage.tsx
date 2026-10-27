@@ -73,7 +73,13 @@ function useOfficeClock(serverTime: string | undefined): Date {
   return new Date(now.getTime() + offset)
 }
 
-export function PersonalAttendancePage({ variant, presetCode, onFlowDone }: { variant: PersonalVariant; presetCode?: string; onFlowDone?: () => void }) {
+export function PersonalAttendancePage({ variant, presetCode, onFlowDone, cabinetNotice = variant === 'staff' }: {
+  variant: PersonalVariant
+  presetCode?: string
+  onFlowDone?: () => void
+  /** «Ваш личный кабинет находится в разработке» — для ролей без своего кабинета. */
+  cabinetNotice?: boolean
+}) {
   const status = useMyAttendanceStatus()
   const [flowOpen, setFlowOpen] = useState(Boolean(presetCode))
   // Действие фиксируется при открытии: после отметки статус обновится, а
@@ -97,7 +103,7 @@ export function PersonalAttendancePage({ variant, presetCode, onFlowDone }: { va
 
   return (
     <div className="space-y-5">
-      {variant === 'staff' ? (
+      {cabinetNotice ? (
         <Card>
           <div role="status" className="flex items-center gap-3">
             <Construction className="size-5 shrink-0 text-brand-600" aria-hidden />

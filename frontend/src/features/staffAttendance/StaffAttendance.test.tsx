@@ -25,7 +25,7 @@ import { staffAttendanceApi } from '@/api/staffAttendance'
 
 import { AdminAttendancePage } from './AdminAttendancePage'
 import { formatDuration, formatTime, fromZonedInput, toZonedInput } from './format'
-import { homeFor, isStaffOnlyRole } from '@/lib/roles'
+import { hasCabinetInDevelopment, homeFor, isStaffOnlyRole } from '@/lib/roles'
 
 import { PersonalAttendancePage } from './PersonalAttendancePage'
 import { personalPathFor, workspaceFor } from './roles'
@@ -107,16 +107,27 @@ describe('время в часовом поясе офиса', () => {
 })
 
 describe('роли с базовым доступом (ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг)', () => {
-  const STAFF = ['dop', 'rop', 'rom', 'operations_director', 'hr_manager', 'sales_manager', 'marketing'] as const
+  const STAFF = ['dop', 'rop', 'rom', 'operations_director', 'sales_manager', 'marketing'] as const
 
   it('после входа ведут на страницу отметки, без перехода в LMS', () => {
     for (const role of STAFF) {
+      expect(hasCabinetInDevelopment(role)).toBe(true)
       expect(isStaffOnlyRole(role)).toBe(true)
       expect(homeFor(role, '/app/dashboard')).toBe('/attendance/staff')
       expect(homeFor(role, '/attendance/scan?office=abc')).toBe('/attendance/scan?office=abc')
       expect(personalPathFor(role)).toBe('/attendance/staff')
       expect(workspaceFor(role)).toBeNull()
     }
+  })
+
+  it('HR-менеджер после входа попадает в HR-кабинет', () => {
+    expect(isStaffOnlyRole('hr_manager')).toBe(true)
+    expect(hasCabinetInDevelopment('hr_manager')).toBe(false)
+    expect(homeFor('hr_manager', '/app/dashboard')).toBe('/hr')
+    expect(homeFor('hr_manager', '/hr/candidates/5')).toBe('/hr/candidates/5')
+    expect(homeFor('hr_manager', '/attendance/scan?office=abc')).toBe('/attendance/scan?office=abc')
+    expect(personalPathFor('hr_manager')).toBe('/attendance/staff')
+    expect(workspaceFor('hr_manager')).toEqual({ to: '/hr', label: 'HR-кабинет' })
   })
 
   it('не меняют маршруты существующих ролей', () => {
@@ -133,6 +144,12 @@ describe('роли с базовым доступом (ДОП, РОП, РОМ, �
     expect(await screen.findByText('Ваш личный кабинет находится в разработке')).toBeInTheDocument()
     expect(screen.getByText('Приход и уход — сотрудник')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Сканировать QR/ })).toBeInTheDocument()
+  })
+
+  it('HR видит свою отметку без сообщения о кабинете', async () => {
+    renderWithProviders(<PersonalAttendancePage variant="staff" cabinetNotice={false} />)
+    expect(await screen.findByText('Приход и уход — сотрудник')).toBeInTheDocument()
+    expect(screen.queryByText('Ваш личный кабинет находится в разработке')).not.toBeInTheDocument()
   })
 
   it('у остальных ролей сообщения нет', async () => {

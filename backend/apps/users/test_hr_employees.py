@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest import mock
 from zoneinfo import ZoneInfo
 
 from django.test import TestCase
@@ -227,35 +226,57 @@ class HREmployeesTests(TestCase):
         login("rop")
 
 
+class HREmployeeHistoryTests(TestCase):
+    def setUp(self):
+        self.hr = make("hr", User.Role.HR_MANAGER)
+        self.rop = make("rop", User.Role.ROP)
+        self.client = login("hr")
+
+    def test_actions_are_logged_without_passwords(self):
+        from apps.recruitment.models import HRActivity
+
+        self.client.patch(f"{API}/{self.rop.pk}/", {"role": "marketing", "first_name": "Новое"}, format="json")
+        self.client.post(f"{API}/{self.rop.pk}/set-password/", {"password": NEW_PASSWORD,
+                                                                 "password_confirm": NEW_PASSWORD}, format="json")
+        self.client.post(f"{API}/{self.rop.pk}/deactivate/")
+        self.client.post(f"{API}/{self.rop.pk}/activate/")
+        entries = list(HRActivity.objects.filter(employee=self.rop).order_by("id"))
+        self.assertEqual([e.kind for e in entries], ["employee_updated", "employee_password", "employee_deactivated",
+                                                     "employee_activated"])
+        self.assertIn("РОП → Маркетинг", entries[0].message)
+        self.assertTrue(all(e.actor_id == self.hr.pk for e in entries))
+        self.assertFalse(any(NEW_PASSWORD in e.message or PASSWORD in e.message for e in entries))
+
+    def test_card_shows_history_and_no_password(self):
+        self.client.post(f"{API}/{self.rop.pk}/deactivate/")
+        card = self.client.get(f"{API}/{self.rop.pk}/").data
+        self.assertFalse(card["is_active"])
+        self.assertIsNone(card["hired_from"])
+        self.assertEqual(card["history"][0]["kind"], "employee_deactivated")
+        self.assertNotIn("password", card)
+
+    def test_ordering_and_page_size(self):
+        User.objects.filter(pk=self.rop.pk).update(last_name="Якупов")
+        make("sales", User.Role.SALES_MANAGER, last_name="Аманов")
+        data = self.client.get(f"{API}/", {"ordering": "last_name", "page_size": 1}).data
+        self.assertEqual(data["count"], 2)
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["username"], "sales")
+
+
 class HRAttendanceScopeTests(TestCase):
-    """HR видит рабочее время только сотрудников в своём ведении."""
+    """HR не отвечает за приход и уход: отчёты посещаемости ему закрыты,
+    своя отметка прихода остаётся."""
 
     def setUp(self):
         self.hr = make("hr", User.Role.HR_MANAGER)
         self.rop = make("rop", User.Role.ROP)
-        self.accountant = make("buh", User.Role.ACCOUNTANT)
-        self.dop = make("dop", User.Role.DOP)
-        self.teacher = make("trainer", User.Role.TEACHER)
         self.client = login("hr")
 
-    def test_reports_limited_to_manageable_roles(self):
+    def test_attendance_reports_are_closed_for_hr(self):
         api = "/api/v1/staff-attendance/admin"
-        rows = self.client.get(f"{api}/records/", {"page_size": 100}).data["results"]
-        self.assertEqual({r["employee"]["id"] for r in rows}, {self.rop.pk})
-        self.assertEqual(self.client.get(f"{api}/employees/{self.rop.pk}/").status_code, 200)
-        for user in (self.accountant, self.dop, self.teacher):
-            self.assertEqual(self.client.get(f"{api}/employees/{user.pk}/").status_code, 404, user.role)
-        meta = self.client.get(f"{api}/meta/").data
-        self.assertEqual(meta["access"]["scope"], "hr")
-        self.assertFalse(meta["access"]["can_adjust"])
-        self.assertFalse(meta["access"]["can_manage"])
-        self.assertEqual({r["value"] for r in meta["roles"]}, set(User.HR_MANAGEABLE_ROLES))
-        self.assertEqual(self.client.get(f"{api}/locations/").status_code, 403)
-        with mock.patch("django.utils.timezone.now", return_value=datetime(2026, 10, 21, 12, tzinfo=TZ)):
-            overview = self.client.get(f"{api}/overview/", {"date": "2026-10-21"}).data
-        self.assertEqual(overview["total_employees"], 1)
+        for url in ("records/", "meta/", "overview/", f"employees/{self.rop.pk}/", "locations/"):
+            self.assertEqual(self.client.get(f"{api}/{url}").status_code, 403, url)
 
-    def test_other_staff_roles_still_have_no_reports(self):
-        client = APIClient()
-        client.force_authenticate(self.rop)
-        self.assertEqual(client.get("/api/v1/staff-attendance/admin/records/").status_code, 403)
+    def test_own_check_in_status_still_works(self):
+        self.assertEqual(self.client.get("/api/v1/staff-attendance/me/status/").status_code, 200)

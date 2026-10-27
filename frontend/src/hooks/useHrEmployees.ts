@@ -13,12 +13,16 @@ export function useHrEmployees(params: HREmployeesParams) {
   return useQuery({ queryKey: [KEY, 'list', params], queryFn: () => hrApi.list(params), placeholderData: keepPreviousData })
 }
 
+export function useHrEmployee(id: number) {
+  return useQuery({ queryKey: [KEY, 'card', id], queryFn: () => hrApi.employee(id) })
+}
+
 function useInvalidate() {
   const queryClient = useQueryClient()
-  // Новый или деактивированный сотрудник меняет и отчёты посещаемости.
+  // Действия с сотрудниками видны на главной HR (счётчики и лента событий).
   return () => Promise.all([
     queryClient.invalidateQueries({ queryKey: [KEY] }),
-    queryClient.invalidateQueries({ queryKey: ['staff-attendance'] }),
+    queryClient.invalidateQueries({ queryKey: ['hr'] }),
   ])
 }
 
@@ -32,9 +36,11 @@ export function useSaveHrEmployee() {
 }
 
 export function useSetHrEmployeePassword() {
+  const invalidate = useInvalidate()
   return useMutation({
     mutationFn: ({ id, password, passwordConfirm }: { id: number; password: string; passwordConfirm: string }) =>
       hrApi.setPassword(id, password, passwordConfirm),
+    onSuccess: invalidate,
   })
 }
 

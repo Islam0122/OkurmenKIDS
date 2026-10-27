@@ -110,7 +110,7 @@ function Dashboard({ mode }: { mode: 'admin' | 'management' }) {
       <PageHeader
         title={mode === 'management' ? 'Отчёты посещаемости' : 'Учёт посещаемости'}
         description="Приход, уход и рабочее время сотрудников"
-        badge={meta.access.scope === 'teachers' ? <Badge tone="info">Только тренеры</Badge> : meta.access.scope === 'hr' ? <Badge tone="info">Сотрудники в ведении HR</Badge> : undefined}
+        badge={meta.access.scope === 'teachers' ? <Badge tone="info">Только тренеры</Badge> : undefined}
         actions={
           <>
             <Button variant="secondary" leftIcon={<Download className="size-4" aria-hidden />} isLoading={exporting} onClick={() => void exportCsv()}>

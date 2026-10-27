@@ -41,6 +41,7 @@ export function personalPathFor(role: UserRole | undefined): string {
 
 /** Основной раздел роли — куда ведёт «назад в LMS»; null — другого раздела у роли нет. */
 export function workspaceFor(role: UserRole | undefined): { to: string; label: string } | null {
+  if (role === 'hr_manager') return { to: '/hr', label: 'HR-кабинет' }
   if (isStaffOnlyRole(role)) return null
   if (role === 'assistant') return { to: '/assistant', label: 'Assistant Workspace' }
   if (role === 'accountant' || role === 'director') return { to: '/accounting', label: 'Бухгалтерия' }
