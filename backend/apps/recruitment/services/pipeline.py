@@ -90,7 +90,12 @@ def set_status(application: Application, new_status: str, actor, *, message: str
 
 
 def _lock(application: Application) -> Application:
-    return Application.objects.select_for_update().select_related("candidate", "vacancy").get(pk=application.pk)
+    """Строка отклика под блокировкой до конца транзакции. Блокируется только
+    сам отклик (`of=("self",)`): вакансия — nullable FK, т. е. LEFT OUTER JOIN,
+    а PostgreSQL не умеет FOR UPDATE для nullable-стороны внешнего соединения.
+    Кандидат и вакансия всё равно читаются тем же запросом."""
+    return Application.objects.select_for_update(of=("self",)).select_related("candidate", "vacancy") \
+        .get(pk=application.pk)
 
 
 def _cancel_open_interviews(application: Application, actor, reason: str) -> None:
@@ -208,7 +213,9 @@ def schedule_interview(application: Application, actor, *, confirm: bool = False
 
 
 def _lock_interview(interview: Interview) -> Interview:
-    interview = Interview.objects.select_for_update().select_related("application__candidate").get(pk=interview.pk)
+    # Блокируется только встреча; отклик вызывающий блокирует отдельно (`_lock`).
+    interview = Interview.objects.select_for_update(of=("self",)).select_related("application__candidate") \
+        .get(pk=interview.pk)
     if interview.status != I.SCHEDULED:
         raise RecruitmentError("Собеседование уже проведено, перенесено или отменено.", "not_scheduled")
     return interview

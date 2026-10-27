@@ -34,7 +34,10 @@ def requestable_roles() -> list[tuple[str, str]]:
 
 
 def _lock(application: Application) -> Application:
-    return Application.objects.select_for_update().select_related("candidate", "vacancy").get(pk=application.pk)
+    # Только строка отклика: вакансия — nullable FK (LEFT OUTER JOIN), а
+    # PostgreSQL не блокирует nullable-сторону внешнего соединения.
+    return Application.objects.select_for_update(of=("self",)).select_related("candidate", "vacancy") \
+        .get(pk=application.pk)
 
 
 def check_hireable(application: Application) -> None:
