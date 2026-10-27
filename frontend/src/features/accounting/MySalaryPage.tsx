@@ -54,7 +54,7 @@ function rateText(rate: { amount: string | null; percentage: string | null; scop
 
 /**
  * «Моя зарплата» — собственные начисления и выплаты сотрудника (Assistant,
- * Team Lead, Trainer). Только чтение: сервер всегда берёт сотрудника из
+ * Team Lead, Trainer, HR-менеджер). Только чтение: сервер всегда берёт сотрудника из
  * текущей сессии, ни один id в запрос не передаётся.
  */
 export function MySalaryPage() {
