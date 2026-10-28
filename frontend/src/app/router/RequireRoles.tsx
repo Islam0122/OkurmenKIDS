@@ -9,7 +9,7 @@ import type { UserRole } from '@/types/auth'
 export function RequireRoles({ roles, redirectTo }: { roles: UserRole[]; redirectTo?: string }) {
   const { user } = useAuth()
   if (!user || !roles.includes(user.role)) {
-    const fallback = user?.role === 'accountant' ? '/accounting' : user?.role === 'hr_manager' ? '/hr' : isStaffOnlyRole(user?.role) ? '/attendance' : '/app/dashboard'
+    const fallback = user?.role === 'accountant' ? '/accounting' : user?.role === 'hr_manager' ? '/hr' : user?.role === 'marketing' ? '/marketing' : isStaffOnlyRole(user?.role) ? '/attendance' : '/app/dashboard'
     return <Navigate to={redirectTo ?? fallback} replace />
   }
   return <Outlet />

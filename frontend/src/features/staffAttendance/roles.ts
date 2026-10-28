@@ -10,8 +10,8 @@ export const VARIANT_ROLES: Record<PersonalVariant, UserRole[]> = {
   assistant: ['assistant'],
   // Администрация и офис: администраторы, директор, руководитель тренеров.
   office: ['admin', 'director', 'team_lead'],
-  // ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг: личные
-  // кабинеты в разработке — пока только отметка.
+  // ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг (у HR и
+  // маркетинга есть свои кабинеты, у остальных — в разработке).
   staff: STAFF_ONLY_ROLES,
 }
 
@@ -42,6 +42,7 @@ export function personalPathFor(role: UserRole | undefined): string {
 /** Основной раздел роли — куда ведёт «назад в LMS»; null — другого раздела у роли нет. */
 export function workspaceFor(role: UserRole | undefined): { to: string; label: string } | null {
   if (role === 'hr_manager') return { to: '/hr', label: 'HR-кабинет' }
+  if (role === 'marketing') return { to: '/marketing', label: 'Кабинет маркетинга' }
   if (isStaffOnlyRole(role)) return null
   if (role === 'assistant') return { to: '/assistant', label: 'Assistant Workspace' }
   if (role === 'accountant' || role === 'director') return { to: '/accounting', label: 'Бухгалтерия' }

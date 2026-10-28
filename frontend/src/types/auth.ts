@@ -2,8 +2,8 @@
  * `assistant` — ежедневные операции академии, только через Assistant Workspace (/assistant). */
 /** `accountant` — бухгалтерия (/accounting): расчёт зарплат, выплаты, отчёты.
  * `director` — утверждение начислений и финансовая сводка (/accounting). */
-/** Сотрудники с базовым доступом — пока только вход и отметка прихода и ухода
- * (/attendance/staff); личные кабинеты в разработке. */
+/** Сотрудники с базовым доступом — вход и отметка прихода и ухода
+ * (/attendance/staff); свой кабинет есть у HR (/hr) и маркетинга (/marketing). */
 export type StaffOnlyRole = 'dop' | 'rop' | 'rom' | 'operations_director' | 'hr_manager' | 'sales_manager' | 'marketing'
 export type UserRole = 'admin' | 'teacher' | 'team_lead' | 'assistant' | 'accountant' | 'director' | StaffOnlyRole
 

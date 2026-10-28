@@ -40,10 +40,11 @@ class User(AbstractUser):
         # Директор: сводная финансовая панель, утверждение/возврат начислений,
         # отчёты и журнал изменений бухгалтерии.
         DIRECTOR = "director", "Директор"
-        # Сотрудники с базовым доступом: пока только вход и отметка прихода
-        # и ухода (apps.staff_attendance, /attendance/staff во фронтенде).
-        # Личные кабинеты в разработке; всё остальное закрыто изоляцией —
-        # см. apps.accounting.access (STAFF_ONLY_ALLOWED_PREFIXES).
+        # Сотрудники с базовым доступом: вход и отметка прихода и ухода
+        # (apps.staff_attendance, /attendance/staff во фронтенде). Свой кабинет
+        # есть у HR (/hr) и маркетинга (/marketing), у остальных — в
+        # разработке; всё прочее закрыто изоляцией — см. apps.accounting.access
+        # (STAFF_ONLY_ALLOWED_PREFIXES).
         DOP = "dop", "ДОП"
         ROP = "rop", "РОП"
         ROM = "rom", "РОМ"
