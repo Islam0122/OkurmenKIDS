@@ -4,7 +4,7 @@
  * `director` — утверждение начислений и финансовая сводка (/accounting). */
 /** Сотрудники с базовым доступом — вход и отметка прихода и ухода
  * (/attendance/staff); свой кабинет есть у HR (/hr) и маркетинга (/marketing). */
-export type StaffOnlyRole = 'dop' | 'rop' | 'rom' | 'operations_director' | 'hr_manager' | 'sales_manager' | 'marketing'
+export type StaffOnlyRole = 'dop' | 'rop' | 'operations_director' | 'hr_manager' | 'sales_manager' | 'marketing'
 export type UserRole = 'admin' | 'teacher' | 'team_lead' | 'assistant' | 'accountant' | 'director' | StaffOnlyRole
 
 /** `apps.users.serializers.UserSerializer` — read-only in full. */

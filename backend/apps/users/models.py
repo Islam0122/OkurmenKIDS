@@ -47,7 +47,6 @@ class User(AbstractUser):
         # (STAFF_ONLY_ALLOWED_PREFIXES).
         DOP = "dop", "ДОП"
         ROP = "rop", "РОП"
-        ROM = "rom", "РОМ"
         OPERATIONS_DIRECTOR = "operations_director", "Операционный директор"
         HR_MANAGER = "hr_manager", "HR-менеджер"
         SALES_MANAGER = "sales_manager", "Менеджер по продажам"
@@ -110,7 +109,7 @@ class User(AbstractUser):
 
     # Roles that (for now) only sign in and mark arrival/departure.
     STAFF_ONLY_ROLES = (
-        Role.DOP, Role.ROP, Role.ROM, Role.OPERATIONS_DIRECTOR,
+        Role.DOP, Role.ROP, Role.OPERATIONS_DIRECTOR,
         Role.HR_MANAGER, Role.SALES_MANAGER, Role.MARKETING,
     )
     # Раздел «Сотрудники» HR-менеджера (apps.users.hr) — единый источник
@@ -121,7 +120,7 @@ class User(AbstractUser):
     HR_PROTECTED_ROLES = (Role.DIRECTOR, Role.ACCOUNTANT, Role.DOP, Role.OPERATIONS_DIRECTOR)
     HR_PRIVILEGED_ROLES = (Role.ADMIN,)
     HR_MANAGEABLE_ROLES = (
-        Role.TEACHER, Role.TEAM_LEAD, Role.ASSISTANT, Role.ROP, Role.ROM, Role.HR_MANAGER,
+        Role.TEACHER, Role.TEAM_LEAD, Role.ASSISTANT, Role.ROP, Role.HR_MANAGER,
         Role.SALES_MANAGER, Role.MARKETING,
     )
     # Roles that work only through the LMS, never through Django admin.

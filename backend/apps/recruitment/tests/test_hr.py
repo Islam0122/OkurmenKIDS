@@ -29,7 +29,7 @@ class AccessTests(RecruitmentFixture):
                        f"candidates/{app['candidate']}/notes/", f"candidates/{app['candidate']}/history/")
         others = [make(f"u_{role}", role) for role in (
             User.Role.ADMIN, User.Role.TEACHER, User.Role.TEAM_LEAD, User.Role.ASSISTANT, User.Role.ACCOUNTANT,
-            User.Role.DIRECTOR, User.Role.DOP, User.Role.ROP, User.Role.ROM, User.Role.OPERATIONS_DIRECTOR,
+            User.Role.DIRECTOR, User.Role.DOP, User.Role.ROP, User.Role.OPERATIONS_DIRECTOR,
             User.Role.SALES_MANAGER, User.Role.MARKETING)]
         others.append(make("hr_off", User.Role.HR_MANAGER, is_active=False))
         for user in others:

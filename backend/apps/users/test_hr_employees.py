@@ -23,7 +23,7 @@ def make(username: str, role: str, **extra) -> User:
 
 
 # Роли, которые HR назначает сам, и четыре, которые не назначает никогда.
-ALLOWED = ("teacher", "team_lead", "assistant", "rop", "rom", "hr_manager", "sales_manager", "marketing")
+ALLOWED = ("teacher", "team_lead", "assistant", "rop", "hr_manager", "sales_manager", "marketing")
 FORBIDDEN = ("director", "accountant", "dop", "operations_director")
 
 
@@ -101,7 +101,7 @@ class HREmployeesTests(TestCase):
         labels = {r["value"]: r["label"] for r in [*meta["roles"], *meta["protected_roles"]]}
         self.assertEqual(labels["dop"], "ДОП — директор отдела продаж")
         self.assertEqual(labels["rop"], "РОП — руководитель отдела продаж")
-        self.assertEqual(labels["rom"], "РОМ — руководитель отдела маркетинга")
+        self.assertNotIn("rom", labels)
         self.assertEqual(labels["director"], "Директор")
         self.assertEqual(labels["accountant"], "Бухгалтер")
         self.assertEqual(labels["operations_director"], "Операционный директор")

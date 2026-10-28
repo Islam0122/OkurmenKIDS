@@ -106,8 +106,8 @@ describe('время в часовом поясе офиса', () => {
   })
 })
 
-describe('роли с базовым доступом (ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг)', () => {
-  const STAFF = ['dop', 'rop', 'rom', 'operations_director', 'sales_manager'] as const
+describe('роли с базовым доступом (ДОП, РОП, операционный директор, HR, продажи, маркетинг)', () => {
+  const STAFF = ['dop', 'rop', 'operations_director', 'sales_manager'] as const
 
   it('после входа ведут на страницу отметки, без перехода в LMS', () => {
     for (const role of STAFF) {
