@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -78,12 +78,13 @@ describe('MySalaryPage', () => {
     vi.mocked(accountingApi.mySalary).mockResolvedValue(WITH_DATA)
     const user = userEvent.setup()
     renderWithProviders(<MySalaryPage />)
-    expect(await screen.findByText('Рассчитано, ожидает утверждения')).toBeInTheDocument()
+    // История — карточками на телефоне и таблицей с md: оба вида в DOM.
+    expect((await screen.findAllByText('Рассчитано, ожидает утверждения')).length).toBeGreaterThan(0)
     for (const label of ['Официально начислено', 'Фактически выплачено', 'Остаток к выплате', 'Ближайшая дата выплаты']) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0)
     }
     expect(screen.getByText(/40\s000\sсом в месяц/)).toBeInTheDocument()
-    expect(screen.getByText('Частично выплачено')).toBeInTheDocument()
+    expect(screen.getAllByText('Частично выплачено')).toHaveLength(2)
     expect(screen.getByText('Банковский перевод')).toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('Месяц'), '9')
@@ -160,9 +161,21 @@ describe('MySalaryPage — налоги и удержания', () => {
     expect(row).toHaveTextContent('3 000 сом')
     expect(row).toHaveTextContent('Удержано')
     expect(row).toHaveTextContent('01.11.2026')
-    const payroll = screen.getByText('01.10.2026–31.10.2026').closest('tr')!
+    const payroll = screen.getAllByText('01.10.2026–31.10.2026').map((el) => el.closest('tr')).find(Boolean)!
     await user.click(payroll)
     expect(screen.getByText('−3 000 сом')).toBeInTheDocument()
+  })
+
+  it('на телефоне история — карточками с суммами и детализацией', async () => {
+    vi.mocked(accountingApi.mySalary).mockResolvedValue(TAXED)
+    const user = userEvent.setup()
+    renderWithProviders(<MySalaryPage />)
+    const card = (await screen.findAllByText('01.10.2026–31.10.2026')).map((el) => el.closest('li')).find(Boolean)!
+    for (const label of ['Начислено', 'Выплачено', 'Остаток', 'Удержано']) expect(within(card).getByText(label)).toBeInTheDocument()
+    expect(card).toHaveTextContent('Плановая выплата')
+    await user.click(within(card).getByRole('button', { name: 'Показать детализацию' }))
+    expect(within(card).getByText('−3 000 сом')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Скрыть детализацию' })).toHaveAttribute('aria-expanded', 'true')
   })
 })
 

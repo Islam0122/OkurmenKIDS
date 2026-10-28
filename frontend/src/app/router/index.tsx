@@ -452,7 +452,7 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    // Кабинет маркетинга: обзор, контент-план, задачи, отчёты
+    // Кабинет маркетинга: обзор, контент-план, задачи, отчёты, своя зарплата
     // (backend: apps.marketing — только сотрудники маркетинга и администратор).
     // Приход и уход — существующий механизм apps.staff_attendance (/attendance).
     path: '/marketing',
@@ -469,6 +469,8 @@ export const router = createBrowserRouter([
               { path: 'content', lazy: async () => ({ Component: (await import('@/features/marketing/ContentPlanPage')).MarketingContentPlanPage }) },
               { path: 'tasks', lazy: async () => ({ Component: (await import('@/features/marketing/TasksPage')).MarketingTasksPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/marketing/ReportsPage')).MarketingReportsPage }) },
+              // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
+              { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: '*', element: <Navigate to="/marketing" replace /> },
             ],
           },
