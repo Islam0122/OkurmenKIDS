@@ -99,9 +99,10 @@ class AccessTests(MarketingFixture):
 
     def test_marketing_stays_isolated_from_the_rest_of_the_lms(self):
         client = jwt_client(self.marketer.username)
-        # Зарплаты, сотрудники HR, студенты и прочие разделы LMS закрыты.
-        for url in ("/api/v1/trainers/", "/api/v1/accounting/my/salary/", "/api/v1/accounting/",
-                    "/api/v1/assistant/", "/api/v1/subjects/"):
+        # Бухгалтерия, сотрудники HR, студенты и прочие разделы LMS закрыты;
+        # открыта только своя зарплата (/accounting/my/, test_my_salary_marketing).
+        self.assertEqual(client.get("/api/v1/accounting/my/salary/").status_code, 200)
+        for url in ("/api/v1/trainers/", "/api/v1/accounting/", "/api/v1/assistant/", "/api/v1/subjects/"):
             response = client.get(url)
             self.assertEqual(response.status_code, 403, url)
             self.assertEqual(response.json()["code"], "staff_only", url)

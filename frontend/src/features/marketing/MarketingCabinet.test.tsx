@@ -16,6 +16,10 @@ vi.mock('@/api/marketing', () => ({
   },
 }))
 
+vi.mock('@/api/accounting', () => ({
+  accountingApi: { mySalary: vi.fn(), downloadMySalaryPdf: vi.fn(), myPayoutPlan: vi.fn().mockResolvedValue({ results: [] }) },
+}))
+
 vi.mock('@/api/staffAttendance', () => ({
   staffAttendanceApi: { myStatus: vi.fn() },
 }))
@@ -30,7 +34,11 @@ vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 3, role: 'marketing', first_name: 'Аида', last_name: 'Маркетинг' }, status: 'authenticated', logout: vi.fn() }),
 }))
 
+import { accountingApi } from '@/api/accounting'
 import { marketingApi } from '@/api/marketing'
+import { MySalaryRedirect } from '@/app/router/MySalaryRedirect'
+import { MySalaryPage } from '@/features/accounting/MySalaryPage'
+import type { MySalary } from '@/types/accounting'
 import { staffAttendanceApi } from '@/api/staffAttendance'
 
 import { MarketingContentPlanPage } from './ContentPlanPage'
@@ -102,6 +110,20 @@ const myStatus = (over: Partial<MyStatus> = {}): MyStatus => ({
   ...over,
 })
 
+const zero = { gross: '0.00', tax: '0.00', other_deductions: '0.00', net: '0.00' }
+const NO_SALARY: MySalary = {
+  employee_name: 'Аида Маркетинг', has_profile: false, profile: null,
+  totals: { accrued: '0.00', deducted: '0.00', net: '0.00', paid: '0.00', due: '0.00', pending_approval: '0.00', estimated: '0.00', estimated_deductions: null, estimated_deductions_note: '' },
+  deductions: [],
+  earnings: {
+    as_of: '2026-10-21', schedule: [], not_included: { ...zero, note: '', items: [] }, earned: zero, official: zero, paid: '0.00',
+    company_owes: '0.00', earned_unpaid: '0.00', next_payment_date: null, difference: '0.00', difference_reasons: [], items: [], deductions: [],
+  },
+  next_planned_payment_date: null, estimates: [], last_payment: null,
+  current_month: { year: 2026, month: 10, label: 'Октябрь 2026', accrued: '0.00', periods: [] },
+  history: [], payments: [], filters: { year: null, month: null, period_type: null },
+}
+
 const page = <T,>(results: T[]) => ({ count: results.length, next: null, previous: null, results })
 
 beforeEach(() => {
@@ -113,14 +135,17 @@ beforeEach(() => {
   api.content.mockResolvedValue(page([post]))
   api.updateTask.mockResolvedValue({ ...task, status: 'done' })
   attendance.myStatus.mockResolvedValue(myStatus())
+  vi.mocked(accountingApi.mySalary).mockResolvedValue(NO_SALARY)
 })
 
 function renderCabinet(route = '/marketing') {
   return renderWithProviders(
     <Routes>
+      <Route path="/my-salary" element={<MySalaryRedirect />} />
       <Route path="/marketing" element={<MarketingLayout />}>
         <Route index element={<MarketingOverviewPage />} />
         <Route path="tasks" element={<MarketingTasksPage />} />
+        <Route path="my-salary" element={<MySalaryPage />} />
       </Route>
     </Routes>,
     { route },
@@ -128,13 +153,20 @@ function renderCabinet(route = '/marketing') {
 }
 
 describe('оболочка кабинета маркетинга', () => {
-  it('четыре раздела в меню и кнопка отметки прихода из существующего механизма', async () => {
+  it('пять разделов в меню и кнопка отметки прихода из существующего механизма', async () => {
     const user = userEvent.setup()
     renderCabinet()
-    for (const name of ['Обзор', 'Контент-план', 'Задачи', 'Отчёты']) {
-      // Боковое меню (ноутбук) и нижняя панель (телефон).
-      expect(screen.getAllByRole('link', { name })).toHaveLength(2)
-    }
+    const [sidebar, bottom] = screen.getAllByRole('navigation', { name: 'Разделы кабинета маркетинга' })
+    const links = (nav: HTMLElement) => within(nav).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')])
+    expect(links(sidebar)).toEqual([
+      ['Обзор', '/marketing'], ['Контент-план', '/marketing/content'], ['Задачи', '/marketing/tasks'],
+      ['Отчёты', '/marketing/reports'], ['Моя зарплата', '/marketing/my-salary'],
+    ])
+    // Нижняя панель телефона: те же адреса, короткие подписи.
+    expect(links(bottom)).toEqual([
+      ['Обзор', '/marketing'], ['План', '/marketing/content'], ['Задачи', '/marketing/tasks'],
+      ['Отчёты', '/marketing/reports'], ['Зарплата', '/marketing/my-salary'],
+    ])
     await user.click(await screen.findByRole('button', { name: 'Отметить приход' }))
     const dialog = await screen.findByRole('dialog', { name: 'Отметить приход' })
     expect(within(dialog).getByText('Поток отметки: check_in')).toBeInTheDocument()
@@ -148,6 +180,22 @@ describe('оболочка кабинета маркетинга', () => {
     renderCabinet()
     const button = await screen.findByRole('button', { name: 'Отметить уход' })
     expect(button).toHaveTextContent('08:55')
+  })
+})
+
+describe('моя зарплата', () => {
+  it('та же страница зарплаты: без начислений — пустое состояние, запрос без id сотрудника', async () => {
+    renderCabinet('/marketing/my-salary')
+    expect(await screen.findByRole('heading', { name: 'Моя зарплата' })).toBeInTheDocument()
+    expect(screen.getByText('Начислений пока нет')).toBeInTheDocument()
+    expect(screen.getByText('Зарплатный профиль ещё не настроен бухгалтерией.')).toBeInTheDocument()
+    expect(accountingApi.mySalary).toHaveBeenCalledWith({})
+  })
+
+  it('короткий адрес /my-salary ведёт маркетолога в его кабинет', async () => {
+    renderCabinet('/my-salary')
+    expect(await screen.findByRole('heading', { name: 'Моя зарплата' })).toBeInTheDocument()
+    expect(screen.getAllByRole('navigation', { name: 'Разделы кабинета маркетинга' })).toHaveLength(2)
   })
 })
 

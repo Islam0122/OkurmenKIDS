@@ -44,3 +44,15 @@
 `MarkFlow` (QR-код офиса → свежая геолокация → проверки сервера), что и
 страница `/attendance/staff`; статус рабочего дня — `GET
 /api/v1/staff-attendance/me/status/`. История — `/attendance/staff`.
+
+## Моя зарплата
+
+Пятый раздел кабинета (`/marketing/my-salary`, короткий адрес `/my-salary`) —
+та же страница и тот же API, что у тренеров, ассистентов и HR:
+`/api/v1/accounting/my/…` (`EmployeeSalaryProfile → Payroll → PayrollPayment`).
+Своего расчёта у маркетинга нет. Сотрудник всегда берётся из сессии —
+`employee`, `user` и другие id в запросе игнорируются. Middleware изоляции
+открывает маркетингу и HR только префикс `/api/v1/accounting/my/`
+(`apps.accounting.access.own_salary_roles`); остальная бухгалтерия — 403.
+Пока бухгалтерия не завела профиль и не рассчитала зарплату, раздел
+показывает пустое состояние без сумм.

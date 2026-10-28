@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { BarChart3, CalendarRange, ClipboardCheck, LayoutDashboard, LogOut, ScanLine } from 'lucide-react'
+import { BarChart3, CalendarRange, ClipboardCheck, LayoutDashboard, LogOut, ScanLine, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -14,23 +14,27 @@ import { WorkdayButton } from './Workday'
 interface NavItem {
   to: string
   label: string
+  /** Подпись в нижней панели телефона: пять пунктов должны уместиться в 320px. */
+  shortLabel?: string
   icon: LucideIcon
   end?: boolean
 }
 
-/** Четыре раздела кабинета маркетинга. Приход и уход — кнопка в шапке
- * (существующий механизм посещаемости), история — /attendance. */
+/** Разделы кабинета маркетинга. Приход и уход — кнопка в шапке
+ * (существующий механизм посещаемости), история — /attendance. «Моя
+ * зарплата» — только собственные начисления и выплаты (/accounting/my/). */
 export const MARKETING_NAV: NavItem[] = [
   { to: '/marketing', label: 'Обзор', icon: LayoutDashboard, end: true },
-  { to: '/marketing/content', label: 'Контент-план', icon: CalendarRange },
+  { to: '/marketing/content', label: 'Контент-план', shortLabel: 'План', icon: CalendarRange },
   { to: '/marketing/tasks', label: 'Задачи', icon: ClipboardCheck },
   { to: '/marketing/reports', label: 'Отчёты', icon: BarChart3 },
+  { to: '/marketing/my-salary', label: 'Моя зарплата', shortLabel: 'Зарплата', icon: Wallet },
 ]
 
 const ROW = 'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'
 
 /** Кабинет маркетинга — та же оболочка, что у HR и LMS: боковое меню на
- * ноутбуке, нижняя панель из четырёх разделов на телефоне. */
+ * ноутбуке, нижняя панель из пяти разделов на телефоне. */
 export function MarketingLayout() {
   const { user, logout } = useAuth()
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
@@ -108,21 +112,21 @@ export function MarketingLayout() {
         aria-label="Разделы кабинета маркетинга"
         className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
-        <div className="grid h-mobile-nav grid-cols-4">
+        <div className="grid h-mobile-nav grid-cols-5">
           {MARKETING_NAV.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                cn('relative flex min-w-0 flex-col items-center justify-center gap-1 text-xs font-medium transition-colors', isActive ? 'text-brand-600' : 'text-ink-muted hover:text-ink')
+                cn('relative flex min-w-0 flex-col items-center justify-center gap-1 text-2xs font-medium transition-colors', isActive ? 'text-brand-600' : 'text-ink-muted hover:text-ink')
               }
             >
               {({ isActive }) => (
                 <>
-                  <span className={cn('absolute inset-x-4 top-0 h-0.5 rounded-b-full', isActive ? 'bg-brand-500' : 'bg-transparent')} aria-hidden />
+                  <span className={cn('absolute inset-x-3 top-0 h-0.5 rounded-b-full', isActive ? 'bg-brand-500' : 'bg-transparent')} aria-hidden />
                   <item.icon className="size-5 shrink-0" aria-hidden />
-                  <span className="max-w-full truncate">{item.label}</span>
+                  <span className="max-w-full truncate">{item.shortLabel ?? item.label}</span>
                 </>
               )}
             </NavLink>

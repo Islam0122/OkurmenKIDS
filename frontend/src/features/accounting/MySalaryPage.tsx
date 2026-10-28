@@ -54,8 +54,9 @@ function rateText(rate: { amount: string | null; percentage: string | null; scop
 
 /**
  * «Моя зарплата» — собственные начисления и выплаты сотрудника (Assistant,
- * Team Lead, Trainer, HR-менеджер). Только чтение: сервер всегда берёт сотрудника из
- * текущей сессии, ни один id в запрос не передаётся.
+ * Team Lead, Trainer, HR-менеджер, маркетинг). Только чтение: сервер всегда берёт сотрудника из
+ * текущей сессии, ни один id в запрос не передаётся. На телефоне история и
+ * выплаты — списком карточек, с `md` — таблицами.
  */
 export function MySalaryPage() {
   const [filters, setFilters] = useState<MySalaryFilters>({})
@@ -205,12 +206,32 @@ export function MySalaryPage() {
             description={filtered ? 'Измените фильтры, чтобы увидеть другие периоды.'
               : 'Когда бухгалтерия рассчитает вашу зарплату, начисления появятся здесь.'}
           />
-        ) : <HistoryTable rows={d.history} />}
+        ) : (
+          <>
+            <HistoryList rows={d.history} />
+            <HistoryTable rows={d.history} />
+          </>
+        )}
       </Section>
 
       <Section title="Выплаты">
         {d.payments.length === 0 ? <p className="text-sm text-ink-muted">Выплат пока не было.</p> : (
-          <div className="card overflow-x-auto">
+          <>
+          <ul className="card divide-y divide-border md:hidden">
+            {d.payments.map((p) => (
+              <li key={p.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-ink">
+                    {formatDate(p.payment_date)}
+                    {p.is_advance ? <Badge className="ml-2" tone="info">аванс</Badge> : null}
+                  </p>
+                  <p className="text-xs text-ink-secondary">{[p.period_label, p.method].filter(Boolean).join(' · ')}</p>
+                </div>
+                <p className="shrink-0 font-semibold tabular-nums text-ink">{som(p.amount)}</p>
+              </li>
+            ))}
+          </ul>
+          <div className="card hidden overflow-x-auto md:block">
             <table className="data-table">
               <thead><tr><th>Дата</th><th>За период</th><th>Способ</th><th className="text-right">Сумма</th></tr></thead>
               <tbody>
@@ -225,16 +246,85 @@ export function MySalaryPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Section>
     </div>
   )
 }
 
+function hasDetails(row: MySalaryRow): boolean {
+  return row.lines.length + row.adjustments.length + row.deductions.length > 0
+}
+
+/** Из чего сложилась строка истории: начисления, корректировки, удержания. */
+function RowDetails({ row }: { row: MySalaryRow }) {
+  return (
+    <ul className="space-y-1">
+      {row.lines.map((l) => (
+        <li key={l.description} className="flex justify-between gap-3"><span>{l.description}</span><span className="whitespace-nowrap">{som(l.amount)}</span></li>
+      ))}
+      {row.adjustments.map((a) => (
+        <li key={`${a.kind}-${a.reason}`} className="flex justify-between gap-3 text-ink-secondary">
+          <span>{a.kind}: {a.reason}</span><span className="whitespace-nowrap">{som(a.amount)}</span>
+        </li>
+      ))}
+      {row.deductions.map((x) => (
+        <li key={`d-${x.name}`} className="flex justify-between gap-3 text-ink-secondary">
+          <span>
+            Удержание «{x.name}» ({x.kind_display.toLowerCase()}, за месяц {som(x.month_amount)})
+            {Number(x.remaining) > 0 ? ` — не удержано ${som(x.remaining)}` : ''}
+          </span>
+          <span className="whitespace-nowrap">−{som(x.amount)}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** История на телефоне: карточка на расчётный период, суммы — сеткой 2×2. */
+function HistoryList({ rows }: { rows: MySalaryRow[] }) {
+  const [open, setOpen] = useState<number | null>(null)
+  return (
+    <ul className="space-y-3 md:hidden">
+      {rows.map((row) => {
+        const key = row.payroll_id ?? 0
+        return (
+          <li key={key} className="card p-4">
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 font-medium text-ink">{row.period_label}</p>
+              <StatusBadge row={row} />
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              {([['Начислено', som(row.accrued)], ['Выплачено', som(row.paid)], ['Остаток', som(row.due)],
+                ['Удержано', row.deducted !== null && Number(row.deducted) > 0 ? som(row.deducted) : '—']] as const).map(([label, value]) => (
+                <div key={label} className="rounded-lg bg-surface-muted px-3 py-2">
+                  <dt className="text-xs text-ink-secondary">{label}</dt>
+                  <dd className="font-semibold tabular-nums text-ink">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-2 text-xs text-ink-secondary">Плановая выплата: {formatDate(row.planned_payment_date)}</p>
+            {hasDetails(row) ? (
+              <>
+                <button type="button" aria-expanded={open === key} onClick={() => setOpen(open === key ? null : key)}
+                  className="mt-2 min-h-10 text-sm font-medium text-brand-700">
+                  {open === key ? 'Скрыть детализацию' : 'Показать детализацию'}
+                </button>
+                {open === key ? <div className="mt-1 rounded-lg bg-surface-muted p-3 text-sm"><RowDetails row={row} /></div> : null}
+              </>
+            ) : null}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
   const [open, setOpen] = useState<number | null>(null)
   return (
-    <div className="card overflow-x-auto">
+    <div className="card hidden overflow-x-auto md:block">
       <table className="data-table">
         <thead>
           <tr><th>Период</th><th>Статус</th><th className="text-right">Начислено</th><th className="text-right">Удержано</th><th className="text-right">Выплачено</th><th className="text-right">Остаток</th><th>Плановая выплата</th></tr>
@@ -242,7 +332,7 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
         <tbody>
           {rows.map((row) => {
             const key = row.payroll_id ?? 0
-            const details = row.lines.length + row.adjustments.length + row.deductions.length > 0
+            const details = hasDetails(row)
             return (
               <Fragment key={key}>
                 <tr onClick={details ? () => setOpen(open === key ? null : key) : undefined} className={details ? 'cursor-pointer' : undefined}>
@@ -260,25 +350,7 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
                 {open === key ? (
                   <tr>
                     <td colSpan={7} className="bg-surface-muted text-sm">
-                      <ul className="space-y-1">
-                        {row.lines.map((l) => (
-                          <li key={l.description} className="flex justify-between gap-3"><span>{l.description}</span><span className="whitespace-nowrap">{som(l.amount)}</span></li>
-                        ))}
-                        {row.adjustments.map((a) => (
-                          <li key={`${a.kind}-${a.reason}`} className="flex justify-between gap-3 text-ink-secondary">
-                            <span>{a.kind}: {a.reason}</span><span className="whitespace-nowrap">{som(a.amount)}</span>
-                          </li>
-                        ))}
-                        {row.deductions.map((x) => (
-                          <li key={`d-${x.name}`} className="flex justify-between gap-3 text-ink-secondary">
-                            <span>
-                              Удержание «{x.name}» ({x.kind_display.toLowerCase()}, за месяц {som(x.month_amount)})
-                              {Number(x.remaining) > 0 ? ` — не удержано ${som(x.remaining)}` : ''}
-                            </span>
-                            <span className="whitespace-nowrap">−{som(x.amount)}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <RowDetails row={row} />
                     </td>
                   </tr>
                 ) : null}
