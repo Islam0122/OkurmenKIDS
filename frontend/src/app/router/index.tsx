@@ -452,6 +452,31 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    // Кабинет маркетинга: обзор, контент-план, задачи, отчёты
+    // (backend: apps.marketing — только сотрудники маркетинга и администратор).
+    // Приход и уход — существующий механизм apps.staff_attendance (/attendance).
+    path: '/marketing',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['marketing']} redirectTo="/attendance" />,
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/marketing/MarketingLayout')).MarketingLayout }),
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/marketing/OverviewPage')).MarketingOverviewPage }) },
+              { path: 'content', lazy: async () => ({ Component: (await import('@/features/marketing/ContentPlanPage')).MarketingContentPlanPage }) },
+              { path: 'tasks', lazy: async () => ({ Component: (await import('@/features/marketing/TasksPage')).MarketingTasksPage }) },
+              { path: 'reports', lazy: async () => ({ Component: (await import('@/features/marketing/ReportsPage')).MarketingReportsPage }) },
+              { path: '*', element: <Navigate to="/marketing" replace /> },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
     // Центральная панель учёта посещаемости, офисы с QR-кодами и настройки.
     // Права (отчёты / исправления / управление) — с backend, см. admin/meta.
     path: '/admin/attendance',

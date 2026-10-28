@@ -41,6 +41,8 @@ urlpatterns = [
     # HR-кабинет: вакансии, кандидаты, собеседования, отчёты (см. apps.recruitment).
     # Сотрудники HR — /api/v1/hr/employees/ (apps.users.hr).
     path("api/v1/hr/", include("apps.recruitment.urls")),
+    # Кабинет маркетинга: контент-план, задачи, главная, отчёты (см. apps.marketing).
+    path("api/v1/marketing/", include("apps.marketing.urls")),
     # Публичный карьерный сайт: опубликованные вакансии и отклики (без входа).
     path("api/v1/public/careers/", include("apps.recruitment.public_urls")),
 

@@ -30,9 +30,10 @@ export function isStaffOnlyRole(role: UserRole | undefined): role is StaffOnlyRo
 }
 
 /** Роли без своего кабинета: после входа — только отметка прихода и ухода.
- * У HR-менеджера есть HR-кабинет (/hr). */
+ * У HR-менеджера есть HR-кабинет (/hr), у маркетинга — кабинет маркетинга
+ * (/marketing). */
 export function hasCabinetInDevelopment(role: UserRole | undefined): boolean {
-  return isStaffOnlyRole(role) && role !== 'hr_manager'
+  return isStaffOnlyRole(role) && role !== 'hr_manager' && role !== 'marketing'
 }
 
 /** The Assistant works only in the Assistant Workspace (/assistant), never in /app. */
@@ -60,6 +61,7 @@ export function isAccountingRole(role: UserRole | undefined): boolean {
 export function homeFor(role: UserRole | undefined, target: string): string {
   if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance')) return '/accounting'
   if (role === 'hr_manager') return target.startsWith('/hr') || target.startsWith('/attendance') ? target : '/hr'
+  if (role === 'marketing') return target.startsWith('/marketing') || target.startsWith('/attendance') ? target : '/marketing'
   if (isStaffOnlyRole(role) && !target.startsWith('/attendance')) return '/attendance/staff'
   return target
 }

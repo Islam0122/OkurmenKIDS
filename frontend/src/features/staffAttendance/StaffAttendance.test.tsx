@@ -107,7 +107,7 @@ describe('время в часовом поясе офиса', () => {
 })
 
 describe('роли с базовым доступом (ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг)', () => {
-  const STAFF = ['dop', 'rop', 'rom', 'operations_director', 'sales_manager', 'marketing'] as const
+  const STAFF = ['dop', 'rop', 'rom', 'operations_director', 'sales_manager'] as const
 
   it('после входа ведут на страницу отметки, без перехода в LMS', () => {
     for (const role of STAFF) {
@@ -128,6 +128,17 @@ describe('роли с базовым доступом (ДОП, РОП, РОМ, �
     expect(homeFor('hr_manager', '/attendance/scan?office=abc')).toBe('/attendance/scan?office=abc')
     expect(personalPathFor('hr_manager')).toBe('/attendance/staff')
     expect(workspaceFor('hr_manager')).toEqual({ to: '/hr', label: 'HR-кабинет' })
+  })
+
+  it('маркетинг после входа попадает в кабинет маркетинга, отметка — прежняя', () => {
+    expect(isStaffOnlyRole('marketing')).toBe(true)
+    expect(hasCabinetInDevelopment('marketing')).toBe(false)
+    expect(homeFor('marketing', '/app/dashboard')).toBe('/marketing')
+    expect(homeFor('marketing', '/marketing/tasks')).toBe('/marketing/tasks')
+    expect(homeFor('marketing', '/hr')).toBe('/marketing')
+    expect(homeFor('marketing', '/attendance/scan?office=abc')).toBe('/attendance/scan?office=abc')
+    expect(personalPathFor('marketing')).toBe('/attendance/staff')
+    expect(workspaceFor('marketing')).toEqual({ to: '/marketing', label: 'Кабинет маркетинга' })
   })
 
   it('не меняют маршруты существующих ролей', () => {

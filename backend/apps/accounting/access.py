@@ -70,8 +70,8 @@ ALLOWED_PREFIXES = (
 
 # Сотрудники с базовым доступом (User.STAFF_ONLY_ROLES: ДОП, РОП, РОМ,
 # операционный директор, HR, продажи, маркетинг) изолированы тем же
-# middleware: личного кабинета у них пока нет — только вход и учёт прихода и
-# ухода. Отчёты посещаемости (admin/…) сами проверяют права
+# middleware: вход, учёт прихода и ухода и кабинет своей роли (у кого он
+# есть: HR, маркетинг). Отчёты посещаемости (admin/…) сами проверяют права
 # (apps.staff_attendance.access): без явно выданного права — 403.
 STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/auth/login/",
@@ -80,6 +80,8 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/staff-attendance/",
     # HR-кабинет: права проверяют apps.users.hr и apps.recruitment (IsHRManager).
     "/api/v1/hr/",
+    # Кабинет маркетинга: права проверяет apps.marketing (IsMarketingTeam).
+    "/api/v1/marketing/",
     # Публичный карьерный сайт — открыт всем, в том числе вошедшим сотрудникам.
     "/api/v1/public/careers/",
 )

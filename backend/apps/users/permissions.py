@@ -53,6 +53,13 @@ def is_hr_manager(user) -> bool:
     return bool(user.is_active and getattr(user, "role", None) == User.Role.HR_MANAGER)
 
 
+def is_marketing(user) -> bool:
+    """An active marketing staff account. Safe for AnonymousUser."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(user.is_active and getattr(user, "role", None) == User.Role.MARKETING)
+
+
 def hr_can_view(actor, target) -> bool:
     """May HR `actor` see `target` in «Сотрудники»? Another person whose role
     is in User.HR_MANAGEABLE_ROLES and who is not a privileged account."""
@@ -147,6 +154,16 @@ class IsHRManager(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         return is_hr_manager(request.user)
+
+
+class IsMarketingTeam(BasePermission):
+    """The marketing cabinet API (apps.marketing): an active marketing account,
+    or Admin (oversight). Other roles — including HR and sales — get 403."""
+
+    message = "Кабинет маркетинга доступен только сотрудникам отдела маркетинга."
+
+    def has_permission(self, request, view) -> bool:
+        return is_marketing(request.user) or is_admin_user(request.user)
 
 
 class IsAdminOrAssistant(BasePermission):
