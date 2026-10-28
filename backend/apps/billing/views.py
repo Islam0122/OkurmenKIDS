@@ -15,7 +15,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -56,6 +56,7 @@ from .services import (
     corrections,
     invoices,
     lessons,
+    month_edit,
     month_plan,
     payments,
     periods,
@@ -82,9 +83,17 @@ class BillingPagination(PageNumberPagination):
     max_page_size = 500
 
 
+class Conflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "Данные изменились — обновите страницу."
+    default_code = "stale"
+
+
 def _fail(exc: BillingError):
     if exc.code == "forbidden":
         raise PermissionDenied({"detail": exc.message, "code": exc.code})
+    if exc.code == "stale":
+        raise Conflict({"detail": exc.message, "code": exc.code})
     raise ValidationError({"detail": exc.message, "code": exc.code})
 
 
@@ -286,6 +295,23 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             return Response(_plan_json({**plan, "changed": False, "dry_run": True}))
         plan = _call(month_plan.set_month_plan, profile, actor=request.user, **data)
         return Response(_plan_json(plan))
+
+    @extend_schema(request=s.MonthEditSerializer, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"], url_path="month-edit")
+    def month_edit(self, request, pk=None):
+        """Изменить «Стандарт», «По плану» или «Начисление» одного учебного
+        месяца: `dry_run` — предпросмотр последствий, иначе сохранение
+        (бухгалтер, причина, версия графика против перезаписи, аудит)."""
+        data = dict(_valid(s.MonthEditSerializer, request))
+        result = _call(month_edit.edit_month, self.get_object(), actor=request.user, **data)
+        return Response(_plain(result))
+
+    @extend_schema(parameters=[OpenApiParameter("month", int)], responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["get"], url_path="month-history")
+    def month_history(self, request, pk=None):
+        """История сумм учебных месяцев договора (только чтение)."""
+        month = _int(request.query_params.get("month"), "month")
+        return Response(month_edit.month_history(self.get_object(), month))
 
     @extend_schema(request=s.StartDateSerializer, responses=OpenApiTypes.OBJECT)
     @action(detail=True, methods=["post"], url_path="start-date", permission_classes=[MoneyAccess])
@@ -1111,13 +1137,37 @@ def _plan_json(plan: dict) -> dict:
     return out
 
 
+def _plain(value):
+    """Decimal → строка во вложенных словарях и списках (ответ API)."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    return value
+
+
 def _schedule_json(schedule: dict | None) -> dict | None:
-    if schedule is None:
-        return None
-    plain = {k: (str(v) if isinstance(v, Decimal) else v) for k, v in schedule.items() if k != "months"}
-    plain["months"] = [{k: (str(v) if isinstance(v, Decimal) else v) for k, v in row.items()}
-                       for row in schedule["months"]]
-    return plain
+    return None if schedule is None else _plain(schedule)
+
+
+def _debt(profile: StudentBillingProfile) -> dict:
+    """«Долг на сегодня»: выставленные неоплаченные начисления (будущие месяцы
+    сюда не входят) — сколько их, сколько просрочено и ближайший срок."""
+    unpaid = list(profile.invoices.filter(status__in=Invoice.UNPAID_STATUSES).select_related("package")
+                  .order_by("package__number", "due_date", "pk"))
+    overdue = [i for i in unpaid if contracts.payment_stage(i) == "overdue"]
+    upcoming = next((i for i in unpaid if contracts.payment_stage(i) != "overdue"), None)
+    return {
+        "unpaid_count": len(unpaid), "overdue_count": len(overdue),
+        "next_due": None if upcoming is None else {
+            "invoice": upcoming.pk, "number": upcoming.number, "month_number": upcoming.package.month_number,
+            "balance": str(upcoming.balance), "due_lesson": upcoming.due_lesson,
+            "lessons_used": upcoming.package.lessons_used,
+            "due_date": None if upcoming.due_lesson else upcoming.due_date.isoformat(),
+        },
+    }
 
 
 def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
@@ -1156,8 +1206,9 @@ def contract_card(profile: StudentBillingProfile, *, with_money: bool) -> dict:
         "reservations": s.ReservationSerializer(profile.reservations.select_related("payment__receipt",
                                                                                     "profile__student"),
                                                 many=True).data,
-        "schedule": _schedule_json(contracts.payment_schedule(profile)),
+        "schedule": _schedule_json(month_edit.decorate(profile, contracts.payment_schedule(profile))),
         "progress": progress,
+        "debt": _debt(profile),
     }
     if with_money:
         payments_qs = StudentPayment.objects.filter(billing_profile=profile).select_related(
