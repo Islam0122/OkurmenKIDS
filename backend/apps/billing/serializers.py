@@ -220,6 +220,20 @@ class MonthPlanSerializer(serializers.Serializer):
     dry_run = serializers.BooleanField(required=False, default=False)
 
 
+class MonthEditSerializer(serializers.Serializer):
+    """Ручная корректировка одного учебного месяца (`services.month_edit`).
+    Пустое поле — не меняется; `version` — версия графика, с которой открыта форма."""
+
+    month_number = serializers.IntegerField(min_value=1)
+    standard_price = serializers.DecimalField(**MONEY, required=False, allow_null=True)
+    plan_amount = serializers.DecimalField(**MONEY, required=False, allow_null=True)
+    charge = serializers.DecimalField(**MONEY, required=False, allow_null=True)
+    difference = serializers.ChoiceField(choices=("course", "future"), required=False, default="course")
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+    version = serializers.CharField(required=False, allow_blank=True, default="")
+    dry_run = serializers.BooleanField(required=False, default=False)
+
+
 class StartDateSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     reason = serializers.CharField()
@@ -272,7 +286,8 @@ class PackageSerializer(serializers.ModelSerializer):
         if inv is None:
             return None
         return {"id": inv.pk, "number": inv.number, "status": inv.status, "balance": str(inv.balance),
-                "amount": str(inv.amount), "kind": inv.kind}
+                "amount": str(inv.amount), "amount_paid": str(inv.amount_paid),
+                "amount_adjusted": str(inv.amount_adjusted), "kind": inv.kind}
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -570,18 +585,23 @@ class ReservationSerializer(serializers.ModelSerializer):
     paid_date = serializers.DateField(source="payment.received_date", read_only=True, default=None)
     payment_status = serializers.CharField(source="payment.status", read_only=True, default=None)
     receipt_number = serializers.SerializerMethodField()
+    receipt = serializers.SerializerMethodField()
     paid_used = serializers.SerializerMethodField()
     paid_unused = serializers.SerializerMethodField()
 
     class Meta:
         model = Reservation
         fields = ("id", "profile", "student_name", "group", "expected_amount", "reserved_until", "status", "payment",
-                  "paid_amount", "paid_date", "payment_status", "receipt_number", "paid_used", "paid_unused",
+                  "paid_amount", "paid_date", "payment_status", "receipt_number", "receipt", "paid_used", "paid_unused",
                   "comment", "refunded_amount", "retained_amount", "cancel_reason", "cancelled_at", "created_at")
 
     def get_receipt_number(self, obj) -> str | None:
         receipt = getattr(obj.payment, "receipt", None) if obj.payment_id else None
         return receipt.number if receipt else None
+
+    def get_receipt(self, obj) -> int | None:
+        receipt = getattr(obj.payment, "receipt", None) if obj.payment_id else None
+        return receipt.pk if receipt else None
 
     def get_paid_used(self, obj) -> str | None:
         if not obj.payment_id:

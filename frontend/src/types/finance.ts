@@ -251,7 +251,8 @@ export interface StudyMonth {
   final_price: string
   started_on: string | null
   completed_on: string | null
-  invoice: { id: number; number: string; status: InvoiceStatus; balance: string; amount: string; kind: InvoiceKind } | null
+  invoice: { id: number; number: string; status: InvoiceStatus; balance: string; amount: string; kind: InvoiceKind
+    amount_paid?: string; amount_adjusted?: string } | null
   /** Предоплата за весь курс: доля «Весь курс» на этот месяц и сколько её оплачено (не отдельное начисление). */
   course_share?: { invoice: number; number: string; amount: string; paid: string; paid_in_full: boolean } | null
 }
@@ -393,6 +394,8 @@ export interface Reservation {
   paid_amount: string | null
   paid_date: string | null
   receipt_number: string | null
+  /** id чека платежа брони (страница чека). */
+  receipt?: number | null
   /** Сколько из платежа брони распределено на начисления. */
   paid_used: string | null
   /** Сколько из платежа брони осталось авансом. */
@@ -423,7 +426,103 @@ export interface PaymentSchedule {
     /** Цена месяца по плану договора (стандартная и после скидки); null — договор без плана. */
     standard_price: string | null; plan_amount: string | null
     status?: InvoiceStatus; status_display?: string; due_lesson?: number | null; due_date?: string | null
-    lessons_used?: number }[]
+    lessons_used?: number
+    /** Три разные суммы месяца (backend `month_edit.decorate`): стандарт, план, начисление (к оплате после корректировок). */
+    standard?: string | null; plan?: string | null; charge?: string | null
+    invoice_amount?: string | null; adjusted?: string; allocated?: string
+    /** Статус по актуальным данным: просрочка — по сроку и остатку начисления. */
+    ui_status?: MonthUiStatus; ui_status_display?: string
+    /** Суммы месяца меняли вручную (журнал аудита). */
+    manual?: boolean
+    /** Сохранённый план выставленного месяца расходится с его начислением. */
+    plan_mismatch?: boolean
+    editable?: { standard: boolean; plan: boolean; charge: boolean; blocked: string | null }
+  }[]
+  plan_total?: string
+  /** Сумма плана − итоговая стоимость (0 — сходится). */
+  plan_difference?: string
+  standard_total?: string
+  /** Почему суммы месяцев сейчас нельзя менять (null — можно). */
+  edit_blocked?: string | null
+  /** Версия графика: сохранение по устаревшей версии отклоняется (409). */
+  version?: string
+}
+
+export type MonthUiStatus = 'future' | 'draft' | 'awaiting' | 'partial' | 'paid' | 'overdue'
+export type ScheduleMonth = PaymentSchedule['months'][number]
+
+export interface MonthEditBody {
+  month_number: number
+  standard_price?: string | null
+  plan_amount?: string | null
+  charge?: string | null
+  /** course — разница меняет стоимость курса; future — распределяется на будущие месяцы. */
+  difference: 'course' | 'future'
+  reason?: string
+  version?: string
+  dry_run?: boolean
+}
+
+export interface MonthEditState {
+  standard: string | null; plan: string; charge: string | null; paid: string; balance: string
+  invoice: string | null; status: MonthUiStatus; state: string
+}
+
+export interface CourseEditState {
+  final_course_price: string; standard_course_price: string; discount_amount: string; plan_total: string
+  invoiced: string; future: string; due_now: string; overdue: string; net_to_pay: string; credit: string
+  allocated: string; received: string
+}
+
+export interface MonthEditResult {
+  changed: boolean
+  dry_run: boolean
+  month_number: number
+  fields?: string[]
+  warnings: string[]
+  version: string | null
+  reissued?: { from: string; to: string; from_id: number; to_id: number } | null
+  month: { before: MonthEditState; after: MonthEditState }
+  course: { before: CourseEditState; after: CourseEditState }
+  other_months: { month_number: number; plan_before: string; plan_after: string }[]
+}
+
+export interface MonthHistoryEntry {
+  id: number
+  created_at: string
+  actor: string
+  action: string
+  entity_type: string
+  entity_id: number
+  invoice_number: string | null
+  old_values: Record<string, unknown>
+  new_values: Record<string, unknown>
+  reason: string
+}
+
+export interface CreditEntry {
+  id: number
+  kind: string
+  kind_display: string
+  amount: string
+  payment: number | null
+  comment: string
+  created_at: string
+}
+
+export interface InvoiceDetail extends Invoice {
+  allocations: { id: number; payment: number; amount: string; source: string; status: 'ACTIVE' | 'REVERSED'
+    created_at: string; reversed_at: string | null; reverse_reason: string }[]
+  adjustments: { id: number; amount: string; reason: string; status: 'APPLIED' | 'VOID'; effective_date: string
+    created_at: string }[]
+}
+
+/** «Долг на сегодня»: только выставленные неоплаченные начисления. */
+export interface CardDebt {
+  unpaid_count: number
+  overdue_count: number
+  next_due: { invoice: number; number: string; month_number: number | null; balance: string; due_lesson: number | null
+    lessons_used: number; due_date: string | null } | null
 }
 
 export interface MonthPlanBody {
@@ -470,6 +569,7 @@ export interface ContractCard {
   payments?: Payment[]
   contacts?: Contact[]
   credit?: string
+  debt?: CardDebt
 }
 
 export interface PaymentPreview {

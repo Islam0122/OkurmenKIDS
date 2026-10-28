@@ -8,7 +8,12 @@ import type {
   Contract,
   ContractBody,
   ContractCard,
+  CreditEntry,
+  InvoiceDetail,
   LessonBreakdown,
+  MonthEditBody,
+  MonthEditResult,
+  MonthHistoryEntry,
   FinanceDashboard,
   FinanceMe,
   FinanceOptions,
@@ -106,6 +111,13 @@ export const financeApi = {
     post<Payment>(`/payments/${id}/refund/`, { amount, reason }, { 'Idempotency-Key': idempotencyKey }),
   payReservation: (id: number, body: { amount: string; received_date: string; method: string; payer_name?: string },
     idempotencyKey: string) => post(`/reservations/${id}/pay/`, body, { 'Idempotency-Key': idempotencyKey }),
+  /** Изменить «Стандарт» / «По плану» / «Начисление» месяца (`dry_run` — последствия без сохранения). */
+  editMonth: (profile: number, body: MonthEditBody) => post<MonthEditResult>(`/profiles/${profile}/month-edit/`, body),
+  monthHistory: (profile: number, month?: number) =>
+    get<MonthHistoryEntry[]>(`/profiles/${profile}/month-history/`, { month }),
+  /** Журнал свободного аванса договора: поступления, распределения, сторно, возвраты. */
+  credit: (profile: number) => get<{ balance: string; entries: CreditEntry[] }>(`/profiles/${profile}/credit/`),
+  invoice: (id: number) => get<InvoiceDetail>(`/invoices/${id}/`),
   /** План стоимости учебных месяцев договора (`dry_run` — предпросмотр). */
   saveMonthPlan: (profile: number, body: MonthPlanBody) => post<MonthPlanResult>(`/profiles/${profile}/month-plan/`, body),
   editReservation: (id: number, body: { expected_amount?: string; reserved_until?: string | null; reason: string }) =>

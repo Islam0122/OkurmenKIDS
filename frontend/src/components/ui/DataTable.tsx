@@ -18,7 +18,7 @@ export interface DataTableProps<T> {
 
 export function DataTable<T>({ columns, rows, getRowKey, onRowClick }: DataTableProps<T>) {
   return (
-    <div className="card overflow-x-auto">
+    <div className="card relative overflow-x-auto">
       <table className="data-table">
         <thead>
           <tr>

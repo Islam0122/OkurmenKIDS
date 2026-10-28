@@ -484,7 +484,7 @@ describe('StudentCardPage — бронь и платежи', () => {
     const table = await screen.findByRole('table', { name: 'Платежи и чеки' })
     const rows = within(table).getAllByRole('row')
     expect(rows).toHaveLength(2)  // заголовок + одна операция
-    expect(rows[0]).toHaveTextContent('ДатаТип операцииСуммаСпособ оплатыСтатусКто принялНомер чекаДействия')
+    expect(rows[0]).toHaveTextContent('ДатаТип операцииНазначениеСуммаСпособ оплатыСтатусКто принялНомер чекаДействия')
     expect(rows[1]).toHaveTextContent('25.08.2026')
     expect(rows[1]).toHaveTextContent('Бронь')
     expect(rows[1]).toHaveTextContent('Банковский перевод')
@@ -495,7 +495,8 @@ describe('StudentCardPage — бронь и платежи', () => {
     expect(screen.getByText(/= итоговая стоимость 38\s000/)).toBeInTheDocument()
     const schedule = screen.getByRole('table', { name: 'График оплаты' })
     expect(within(schedule).getAllByRole('row')).toHaveLength(5)
-    expect(schedule).toHaveTextContent('будет выставлен')
+    expect(schedule).toHaveTextContent('Будет выставлен')
+    expect(within(schedule).getAllByText('—').length).toBeGreaterThan(0)  // будущий месяц — без начисления
   })
 })
 
@@ -628,7 +629,7 @@ describe('StudentCardPage — предоплата за весь курс и к�
     const { unmount } = openCard()
     expect(await screen.findByRole('button', { name: 'Добавить платёж' })).toBeInTheDocument()
     expect(screen.queryByTestId('course-paid')).not.toBeInTheDocument()
-    expect(screen.getAllByText('ждёт оплаты «Весь курс»')).toHaveLength(3)
+    expect(within(screen.getByRole('table', { name: 'График оплаты' })).getAllByText('ждёт оплаты «Весь курс»')).toHaveLength(3)
     unmount()
     vi.mocked(financeApi.card).mockResolvedValue({ ...prepaidCard(), schedule: null, months: [],
       contract: { ...prepaidCard().contract, payment_mode: 'MONTHLY', payment_mode_display: 'Помесячно' },
