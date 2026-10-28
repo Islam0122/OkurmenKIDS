@@ -49,7 +49,6 @@ TAGS = ["HR employees"]
 ROLE_TITLES = {
     User.Role.DOP: "ДОП — директор отдела продаж",
     User.Role.ROP: "РОП — руководитель отдела продаж",
-    User.Role.ROM: "РОМ — руководитель отдела маркетинга",
     User.Role.TEAM_LEAD: "Руководитель тренеров (Team Lead)",
 }
 

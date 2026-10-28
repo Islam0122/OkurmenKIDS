@@ -28,7 +28,7 @@ const rop: HREmployee = {
 const ROLES: HRRoleOption[] = [
   { value: 'teacher', label: 'Тренер' }, { value: 'team_lead', label: 'Руководитель тренеров (Team Lead)' },
   { value: 'assistant', label: 'Ассистент' }, { value: 'rop', label: 'РОП — руководитель отдела продаж' },
-  { value: 'rom', label: 'РОМ — руководитель отдела маркетинга' }, { value: 'hr_manager', label: 'HR-менеджер' },
+  { value: 'hr_manager', label: 'HR-менеджер' },
   { value: 'sales_manager', label: 'Менеджер по продажам' }, { value: 'marketing', label: 'Маркетинг' },
 ]
 

@@ -12,7 +12,6 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   director: 'Директор',
   dop: 'ДОП',
   rop: 'РОП',
-  rom: 'РОМ',
   operations_director: 'Операционный директор',
   hr_manager: 'HR-менеджер',
   sales_manager: 'Менеджер по продажам',
@@ -22,7 +21,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
 /** Mirrors `User.STAFF_ONLY_ROLES`: these roles only sign in and mark
  * arrival/departure (backend: apps.accounting.access isolates the rest). */
 export const STAFF_ONLY_ROLES: StaffOnlyRole[] = [
-  'dop', 'rop', 'rom', 'operations_director', 'hr_manager', 'sales_manager', 'marketing',
+  'dop', 'rop', 'operations_director', 'hr_manager', 'sales_manager', 'marketing',
 ]
 
 export function isStaffOnlyRole(role: UserRole | undefined): role is StaffOnlyRole {

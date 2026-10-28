@@ -10,7 +10,7 @@ export const VARIANT_ROLES: Record<PersonalVariant, UserRole[]> = {
   assistant: ['assistant'],
   // Администрация и офис: администраторы, директор, руководитель тренеров.
   office: ['admin', 'director', 'team_lead'],
-  // ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг (у HR и
+  // ДОП, РОП, операционный директор, HR, продажи, маркетинг (у HR и
   // маркетинга есть свои кабинеты, у остальных — в разработке).
   staff: STAFF_ONLY_ROLES,
 }

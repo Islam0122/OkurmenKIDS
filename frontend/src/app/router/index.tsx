@@ -408,7 +408,7 @@ export const router = createBrowserRouter([
             children: [{ path: 'office', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).OfficeAttendancePage }) }],
           },
           {
-            // ДОП, РОП, РОМ, операционный директор, HR, продажи, маркетинг.
+            // ДОП, РОП, операционный директор, HR, продажи, маркетинг.
             element: <RequireRoles roles={STAFF_ONLY_ROLES} redirectTo="/attendance" />,
             children: [{ path: 'staff', lazy: async () => ({ Component: (await import('@/features/staffAttendance/pages')).StaffAttendancePage }) }],
           },

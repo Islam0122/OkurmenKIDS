@@ -34,7 +34,7 @@ class StaffOnlyRolesTests(AttendanceFixture):
 
     def test_all_new_roles_exist_once(self):
         labels = dict(User.Role.choices)
-        expected = {"dop": "ДОП", "rop": "РОП", "rom": "РОМ", "operations_director": "Операционный директор",
+        expected = {"dop": "ДОП", "rop": "РОП", "operations_director": "Операционный директор",
                     "hr_manager": "HR-менеджер", "sales_manager": "Менеджер по продажам", "marketing": "Маркетинг"}
         for value, label in expected.items():
             self.assertEqual(labels[value], label)
@@ -124,14 +124,18 @@ class StaffOnlyRolesTests(AttendanceFixture):
     def test_existing_settings_get_new_roles_from_migration(self):
         from django.apps import apps as django_apps
 
-        migration = importlib.import_module("apps.staff_attendance.migrations.0003_track_staff_only_roles")
+        # 0003 ещё добавляла упразднённую роль РОМ — 0004 её убирает.
+        migrations = [importlib.import_module(f"apps.staff_attendance.migrations.{name}")
+                      for name in ("0003_track_staff_only_roles", "0004_remove_rom_role")]
         self.config.tracked_roles = [User.Role.TEACHER, User.Role.ACCOUNTANT]
         self.config.save()
-        migration.forwards(django_apps, None)
+        for migration in migrations:
+            migration.forwards(django_apps, None)
         tracked = AttendanceSettings.load().tracked_roles
         self.assertEqual(tracked[:2], [User.Role.TEACHER, User.Role.ACCOUNTANT])
         self.assertEqual(set(tracked[2:]), set(User.STAFF_ONLY_ROLES))
-        migration.forwards(django_apps, None)
+        for migration in migrations:
+            migration.forwards(django_apps, None)
         self.assertEqual(AttendanceSettings.load().tracked_roles, tracked)
 
     def test_django_admin_lists_new_roles(self):
