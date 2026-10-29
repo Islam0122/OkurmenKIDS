@@ -1,6 +1,6 @@
 # Обучающее видео «Кабинет маркетинга»
 
-Ролик (~7 минут, 1920×1080, русская озвучка и субтитры) объясняет руководителям и
+Ролик (~6 минут, 1920×1080, русская озвучка и субтитры) объясняет руководителям и
 сотрудникам учебного центра, как устроен раздел «Маркетинг» в LMS OkurmenKIDS,
 как с ним работать и чего в нём пока нет. Все экранные сцены сняты в **реальном
 интерфейсе** LMS (локальный запуск на демо-данных), слайды нарисованы скриптом.
@@ -12,7 +12,7 @@
 | `storyboard.md` | раскадровка: сцены, длительность, действия на экране |
 | `subtitles.srt` | субтитры с тайм-кодами |
 | `scenes.py` | **единый источник** сценария: реплики, слайды, раскадровка |
-| `tts.py` | офлайн-озвучка RHVoice → `build/narration.wav`, `build/timing.json` |
+| `tts.py` | офлайн-озвучка нейросетевым голосом Piper → `build/narration.wav`, `build/timing.json` |
 | `record.cjs` | запись интерфейса: Playwright + CDP-скринкаст, действия привязаны к репликам |
 | `compose.py` | монтаж: приближения, подписи, субтитры, переходы, кодирование |
 | `docs.py` | генерирует `script.md`, `storyboard.md`, `subtitles.srt` |
@@ -25,13 +25,13 @@
 
 ## Как пересобрать
 
-Нужны: Python 3.12+, Node 20+, FFmpeg, Chromium для Playwright, RHVoice с русскими голосами.
+Нужны: Python 3.12+, Node 20+, FFmpeg, Chromium для Playwright. Голос Piper (~80 МБ) `tts.py` скачает сам.
 
 ```bash
 # один раз
-sudo apt-get install -y ffmpeg rhvoice rhvoice-russian
+sudo apt-get install -y ffmpeg
 python3 -m venv .venv && . .venv/bin/activate
-pip install -r backend/requirements.txt numpy pillow
+pip install -r backend/requirements.txt numpy pillow piper-tts
 (cd frontend && npm ci)
 npm i -g playwright && npx playwright install chromium   # если Playwright ещё не установлен
 
@@ -63,8 +63,12 @@ PYTHON=.venv/bin/python ./marketing_video/build.sh
 * Люди в кадре вымышленные (Алина Демидова, Тимур Садыков, Мира Ким), почты — `@example.com`,
   ссылки на посты — `https://example.com/…`. Пароль демо-учётки в кадре скрыт точками и в
   субтитры/сценарий не попадает (это проверяет `verify.py`).
-* Озвучка синтезирована офлайн (RHVoice, голос `aleksandr-hq`): облачные TTS
-  (Microsoft, Google) в среде сборки были недоступны. Фоновой музыки нет — свободной
+* Озвучка синтезирована офлайн нейросетевым голосом Piper `ru_RU-dmitri-medium`
+  (модель из GitHub-релиза sherpa-onnx): облачные TTS (Microsoft, Google) в среде
+  сборки недоступны. Другой голос: `TTS_VOICE=ruslan|denis|irina`, темп —
+  `TTS_LENGTH_SCALE` (по умолчанию 1.12), прежний синтезатор — `TTS_ENGINE=rhvoice`
+  (нужны пакеты `rhvoice rhvoice-russian`). После смены голоса нужна полная
+  пересборка: меняются длительности реплик. Фоновой музыки нет — свободной
   библиотеки музыки в среде не было, добавлять неизвестные треки не стали.
 
 ## Что показано в видео — карта функциональности

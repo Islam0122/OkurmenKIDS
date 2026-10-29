@@ -30,8 +30,8 @@ def where(scene) -> str:
 
 def script_md() -> str:
     out = [f"# {TITLE} — сценарий озвучивания", "",
-           f"Длительность: **{mmss(TIMING['total'])}**. Голос: RHVoice «aleksandr-hq» (офлайн-синтез), "
-           "темп 110 %. Тайм-коды — начало реплики в итоговом ролике.", "",
+           f"Длительность: **{mmss(TIMING['total'])}**. Голос: нейросетевой Piper `ru_RU-dmitri-medium` "
+           "(офлайн-синтез). Тайм-коды — начало реплики в итоговом ролике.", "",
            "Факты сверены с кодом: `backend/apps/marketing`, `frontend/src/features/marketing`, "
            "`backend/docs/marketing.md`. В ролике использованы обезличенные демонстрационные данные "
            "(`marketing_video/demo/seed_demo.py`).", ""]

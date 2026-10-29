@@ -26,7 +26,7 @@ wait_url() {
   echo "Не дождался $1" >&2; return 1
 }
 
-echo "== 1. Озвучка (RHVoice)"
+echo "== 1. Озвучка (Piper)"
 "$PY" tts.py
 "$PY" docs.py
 
