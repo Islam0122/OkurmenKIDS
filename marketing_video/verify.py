@@ -1,5 +1,6 @@
 """Проверка готового ролика: файл открывается, параметры потоков, длительность
-совпадает с таймлайном озвучки, громкость в норме, субтитры синхронны,
+совпадает с таймлайном озвучки, громкость в норме, начало каждой реплики
+совпадает с субтитром,
 нет запрещённых строк (пароль демо-учётки, токены), сохраняет контрольные кадры.
 
 Запуск: python marketing_video/verify.py
@@ -51,20 +52,21 @@ def main() -> int:
     if not -19 <= integrated <= -13 or peak > -0.5:
         problems.append("громкость вне нормы")
 
-    # Синхронизация: в каждой реплике есть речь, в паузах между сценами — тишина.
+    # Синхронизация: перед каждой репликой есть пауза, и речь начинается ровно
+    # с субтитром (конец паузы ±0,1 c от начала реплики). Паузы внутри фраз
+    # (запятые) не мешают проверке.
     sil = subprocess.run(["ffmpeg", "-i", str(MP4), "-map", "0:a", "-af", "silencedetect=n=-40dB:d=0.25", "-f", "null", "-"],
                          capture_output=True, text=True).stderr
-    starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", sil)]
     ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", sil)]
-    silences = list(zip(starts, ends))
-    bad = 0
-    lines = [(s["start"] + ln["start"], ln["duration"], ln["text"]) for s in timing["scenes"] for ln in s["lines"]]
-    for start, dur, text in lines:
-        mid = start + dur / 2
-        if any(s0 <= mid <= s1 for s0, s1 in silences):
+    bad, worst = 0, 0.0
+    lines = [(s["start"] + ln["start"], ln["text"]) for s in timing["scenes"] for ln in s["lines"]]
+    for start, text in lines:
+        drift = min(abs(e - start) for e in ends)
+        worst = max(worst, drift)
+        if drift > 0.1:
             bad += 1
-            print(f"  ! тишина посреди реплики {start:.1f} c: {text[:50]}")
-    print(f"Реплик: {len(lines)}, рассинхронизаций: {bad}")
+            print(f"  ! речь не совпадает с субтитром на {start:.1f} c (сдвиг {drift:.2f} c): {text[:50]}")
+    print(f"Реплик: {len(lines)}, рассинхронизаций: {bad}, наибольший сдвиг начала речи: {worst * 1000:.0f} мс")
     if bad:
         problems.append("озвучка не совпадает с субтитрами")
 

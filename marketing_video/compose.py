@@ -389,10 +389,12 @@ def encode_part(args):
     part, f0, f1 = args
     global REC_DATA
     REC_DATA = Recording()
-    out = BUILD / "parts" / f"part{part:02d}.mp4"
+    # MPEG-TS: части склеиваются протоколом concat без потери кадров
+    # (concat-демуксер по MP4 терял кадры на стыках).
+    out = BUILD / "parts" / f"part{part:02d}.ts"
     ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
                            "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                           "-pix_fmt", "yuv420p", "-tune", "stillimage", "-g", str(FPS * 4), str(out)],
+                           "-pix_fmt", "yuv420p", "-tune", "stillimage", "-g", str(FPS * 4), "-f", "mpegts", str(out)],
                           stdin=subprocess.PIPE)
     for n in range(f0, f1):
         ff.stdin.write(frame(n / FPS).tobytes())
@@ -408,6 +410,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=float, nargs="*", help="сохранить кадры на этих секундах в build/preview")
     ap.add_argument("--jobs", type=int, default=4)
+    ap.add_argument("--mux-only", action="store_true", help="только склеить готовые части и добавить звук")
     args = ap.parse_args()
 
     if args.preview is not None:
@@ -420,14 +423,17 @@ def main():
 
     total_frames = int(math.ceil(TIMING["total"] * FPS))
     (BUILD / "parts").mkdir(exist_ok=True)
-    jobs = max(1, args.jobs)
-    bounds = [round(total_frames * k / jobs) for k in range(jobs + 1)]
-    with Pool(jobs) as pool:
-        parts = pool.map(encode_part, [(k, bounds[k], bounds[k + 1]) for k in range(jobs)])
-    concat = BUILD / "parts" / "list.txt"
-    concat.write_text("".join(f"file '{p}'\n" for p in parts))
+    if args.mux_only:
+        parts = sorted(str(p) for p in (BUILD / "parts").glob("part*.ts"))
+    else:
+        for old in (BUILD / "parts").glob("part*"):
+            old.unlink()
+        jobs = max(1, args.jobs)
+        bounds = [round(total_frames * k / jobs) for k in range(jobs + 1)]
+        with Pool(jobs) as pool:
+            parts = pool.map(encode_part, [(k, bounds[k], bounds[k + 1]) for k in range(jobs)])
     srt = ROOT / "subtitles.srt"
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat),
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", "concat:" + "|".join(parts),
            "-i", str(BUILD / "narration.wav")]
     if srt.exists():
         cmd += ["-i", str(srt)]
@@ -437,7 +443,7 @@ def main():
                 "-metadata:s:s:0", "title=Русские субтитры", "-disposition:s:0", "0"]
     cmd += ["-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
             "-metadata", f"title={TITLE}", "-metadata:s:a:0", "language=rus", "-movflags", "+faststart",
-            "-shortest", str(OUT)]
+            str(OUT)]
     subprocess.run(cmd, check=True)
     print("Готово:", OUT)
 
