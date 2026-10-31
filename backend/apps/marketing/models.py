@@ -10,6 +10,11 @@
 * MarketingTask — задача отдела: срок, приоритет, статус, ответственный.
   «Просрочено» не хранится, а вычисляется: открытая задача со сроком в прошлом.
   Момент выполнения (`completed_at`) ставит сервер.
+* Campaign — рекламная кампания: канал, ответственный, даты, бюджет, лиды и
+  результат (продажи). CRM в системе нет, поэтому лиды и продажи кампании
+  вносит маркетинг; стоимость лида (CPL) и конверсия вычисляются, не хранятся.
+  Бюджет — финансовые данные: API отдаёт его только тем, кому он разрешён
+  (apps.marketing.serializers.can_view_budget).
 
 Ответственный — существующий `users.User` с ролью «Маркетинг». Отдельной
 таблицы сотрудников нет; приход и уход — apps.staff_attendance.
@@ -17,6 +22,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q
 
@@ -141,3 +147,55 @@ class MarketingTask(models.Model):
 
     def is_overdue(self, today) -> bool:
         return self.status in self.OPEN_STATUSES and self.due_date is not None and self.due_date < today
+
+
+class Campaign(models.Model):
+    class Status(models.TextChoices):
+        PLANNED = "planned", "Запланирована"
+        ACTIVE = "active", "Идёт"
+        PAUSED = "paused", "Приостановлена"
+        FINISHED = "finished", "Завершена"
+        CANCELLED = "cancelled", "Отменена"
+
+    name = models.CharField(max_length=200, verbose_name="Название")
+    channel = models.CharField(max_length=12, choices=Channel.choices, default=Channel.INSTAGRAM, verbose_name="Канал")
+    responsible = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="marketing_campaigns",
+        verbose_name="Ответственный",
+    )
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PLANNED, db_index=True,
+                              verbose_name="Статус")
+    start_date = models.DateField(db_index=True, verbose_name="Дата запуска")
+    end_date = models.DateField(null=True, blank=True, verbose_name="Дата окончания")
+    budget = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)],
+                                 verbose_name="Бюджет, сом")
+    spent = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)],
+                                verbose_name="Израсходовано, сом")
+    leads = models.PositiveIntegerField(default=0, verbose_name="Лидов")
+    sales = models.PositiveIntegerField(default=0, verbose_name="Продаж")
+    result = models.TextField(blank=True, verbose_name="Результат")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="+", verbose_name="Кем создана")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создана")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Изменена")
+
+    class Meta:
+        verbose_name = "Рекламная кампания"
+        verbose_name_plural = "Рекламные кампании"
+        ordering = ["-start_date", "-id"]
+        constraints = [
+            models.CheckConstraint(condition=Q(end_date__isnull=True) | Q(end_date__gte=models.F("start_date")),
+                                   name="marketing_campaign_dates"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def cost_per_lead(self):
+        """CPL — израсходовано / лиды; нет лидов — нет значения (не 0)."""
+        return (self.spent / self.leads).quantize(self.spent.__class__("0.01")) if self.leads else None
+
+    @property
+    def conversion(self) -> float | None:
+        return round(self.sales / self.leads * 100, 1) if self.leads else None

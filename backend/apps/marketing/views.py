@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from django.db.models import Case, F, IntegerField, Value, When
+from django.db.models import Case, F, IntegerField, Q, Value, When
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -26,8 +26,8 @@ from rest_framework.views import APIView
 from apps.users.permissions import IsMarketingTeam
 
 from . import reports
-from .models import Channel, ContentItem, MarketingTask
-from .serializers import ContentItemSerializer, MarketingTaskSerializer, can_delete, meta_payload
+from .models import Campaign, Channel, ContentItem, MarketingTask
+from .serializers import CampaignSerializer, ContentItemSerializer, MarketingTaskSerializer, can_delete, meta_payload
 
 TAGS = ["Marketing"]
 PERMISSIONS = [IsAuthenticated, IsMarketingTeam]
@@ -152,6 +152,45 @@ class MarketingTaskViewSet(_DeleteByAuthorMixin, viewsets.ModelViewSet):
                                When(priority=MarketingTask.Priority.MEDIUM, then=Value(1)), default=Value(2),
                                output_field=IntegerField()),
         ).order_by("done_rank", F("due_date").asc(nulls_last=True), "priority_rank", "-created_at")
+
+
+@extend_schema(tags=TAGS)
+class CampaignViewSet(_DeleteByAuthorMixin, viewsets.ModelViewSet):
+    """Рекламные кампании. Фильтры: status, channel, responsible, date_from /
+    date_to (пересечение с периодом кампании), search. Бюджет, расход и CPL
+    видят только те, кому разрешены финансовые данные (can_view_budget)."""
+
+    serializer_class = CampaignSerializer
+    permission_classes = PERMISSIONS
+    pagination_class = MarketingPagination
+    http_method_names = ["get", "post", "patch", "delete"]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["name", "result"]
+    ordering_fields = ["start_date", "leads", "created_at", "name"]
+
+    def get_queryset(self):
+        qs = Campaign.objects.select_related("responsible", "created_by")
+        p = self.request.query_params
+        if p.get("status") in Campaign.Status.values:
+            qs = qs.filter(status=p["status"])
+        if p.get("channel") in Channel.values:
+            qs = qs.filter(channel=p["channel"])
+        if (p.get("responsible") or "").isdigit():
+            qs = qs.filter(responsible_id=int(p["responsible"]))
+        if (d := parse_date(p.get("date_to"))):
+            qs = qs.filter(start_date__lte=d)
+        if (d := parse_date(p.get("date_from"))):
+            qs = qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=d))
+        return qs
+
+    def perform_update(self, serializer):
+        # Без права на финансы бюджет не меняется, даже если поле пришло.
+        from .serializers import FINANCIAL_CAMPAIGN_FIELDS, can_view_budget
+
+        if not can_view_budget(self.request.user):
+            for field in FINANCIAL_CAMPAIGN_FIELDS:
+                serializer.validated_data.pop(field, None)
+        serializer.save()
 
 
 @extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)

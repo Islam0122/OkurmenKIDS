@@ -63,6 +63,8 @@ LOCAL_APPS = [
     "apps.recruitment.apps.RecruitmentConfig",
     # Кабинет маркетинга: контент-план, задачи, отчёты.
     "apps.marketing.apps.MarketingConfig",
+    # Операционный директор: задачи, отчёты, KPI, контроль отделов, проблемы.
+    "apps.operations.apps.OperationsConfig",
 ]
 
 INSTALLED_APPS = (
@@ -310,6 +312,15 @@ RECRUITMENT_CONSENT_VERSION = env("RECRUITMENT_CONSENT_VERSION", default="2026-1
 # `manage.py purge_candidate_data` удаляет персональные данные по этому сроку.
 RECRUITMENT_RETENTION_DAYS = env.int("RECRUITMENT_RETENTION_DAYS", default=365)
 
+# Операционный модуль (apps.operations): куда доставлять уведомления помимо
+# раздела «Уведомления» (путь к функции, принимающей Notification). Пусто —
+# только в LMS. Для Telegram — apps.operations.services.notifications.telegram_backend
+# (нужны OPERATIONS_TELEGRAM_BOT_TOKEN и chat_id сотрудников, см. docs/operations.md).
+OPERATIONS_NOTIFICATION_BACKEND = env("OPERATIONS_NOTIFICATION_BACKEND", default="")
+OPERATIONS_TELEGRAM_BOT_TOKEN = env("OPERATIONS_TELEGRAM_BOT_TOKEN", default="")
+# Вложения задач: максимальный размер файла, МБ.
+OPERATIONS_ATTACHMENT_MAX_MB = env.int("OPERATIONS_ATTACHMENT_MAX_MB", default=10)
+
 # Celery (config/celery.py). Без брокера задачи выполняются синхронно.
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="")
 CELERY_TASK_ALWAYS_EAGER = not CELERY_BROKER_URL
@@ -325,6 +336,8 @@ CELERY_BEAT_SCHEDULE = {
     "billing-daily": {"task": "billing.run_daily", "schedule": 60 * 60 * 6},
     # Открытые сессии прошлых дней → «Нет ухода» (apps.staff_attendance).
     "staff-attendance-close-stale": {"task": "staff_attendance.close_stale_sessions", "schedule": 60 * 60},
+    # Операционный модуль: повторяющиеся задачи, напоминания, поиск проблем.
+    "operations-hourly": {"task": "operations.run_periodic", "schedule": 60 * 60},
 }
 
 FRONTEND_BASE_URL = env(

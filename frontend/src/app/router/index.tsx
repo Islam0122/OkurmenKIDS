@@ -303,6 +303,61 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    // Кабинет операционного директора — ему, директору и администратору
+    // (backend: apps.operations.permissions.CanOversee).
+    path: '/operations',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['operations_director', 'director', 'admin']} />,
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/operations/OperationsLayout')).OperationsLayout }),
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/operations/DashboardPage')).OperationsDashboardPage }) },
+              { path: 'team-leads', lazy: async () => ({ Component: (await import('@/features/operations/AcademyStaffPage')).OperationsTeamLeadsPage }) },
+              { path: 'students', lazy: async () => ({ Component: (await import('@/features/operations/AcademyStaffPage')).OperationsStudentsPage }) },
+              { path: 'trainers', lazy: async () => ({ Component: (await import('@/features/operations/TrainersPage')).OperationsTrainersPage }) },
+              { path: 'trainers/:id', lazy: async () => ({ Component: (await import('@/features/operations/TrainersPage')).OperationsTrainerDetailPage }) },
+              { path: 'sales', lazy: async () => ({ Component: (await import('@/features/operations/DepartmentsPages')).OperationsSalesPage }) },
+              { path: 'sales-head', lazy: async () => ({ Component: (await import('@/features/operations/DepartmentsPages')).OperationsHeadOfSalesPage }) },
+              { path: 'marketing', lazy: async () => ({ Component: (await import('@/features/operations/DepartmentsPages')).OperationsMarketingPage }) },
+              { path: 'hr', lazy: async () => ({ Component: (await import('@/features/operations/DepartmentsPages')).OperationsHrPage }) },
+              { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/operations/ControlPages')).OperationsAttendancePage }) },
+              { path: 'tasks', lazy: async () => ({ Component: (await import('@/features/tasks/TasksBoardPage')).TasksBoardPage }) },
+              { path: 'daily', lazy: async () => ({ Component: (await import('@/features/operations/ControlPages')).OperationsDailyPage }) },
+              { path: 'kpi', lazy: async () => ({ Component: (await import('@/features/operations/ControlPages')).OperationsKpiPage }) },
+              { path: 'reports', lazy: async () => ({ Component: (await import('@/features/operations/AdminPages')).OperationsReportsPage }) },
+              { path: 'issues', lazy: async () => ({ Component: (await import('@/features/operations/AdminPages')).OperationsIssuesPage }) },
+              { path: 'settings', lazy: async () => ({ Component: (await import('@/features/operations/AdminPages')).OperationsSettingsPage }) },
+              { path: 'employees', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsEmployeesPage }) },
+              { path: 'employees/:id', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsEmployeePage }) },
+              { path: 'departments/:key', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsDepartmentPage }) },
+              { path: '*', element: <Navigate to="/operations" replace /> },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Свои задачи, отчёты и уведомления — у каждого сотрудника (backend:
+    // /api/v1/tasks/, /work-reports/ — чужие записи сервер не отдаёт).
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        lazy: async () => ({ Component: (await import('@/features/tasks/WorkspaceLayout')).WorkspaceLayout }),
+        children: [
+          { path: '/tasks', lazy: async () => ({ Component: (await import('@/features/tasks/MyTasksPage')).MyTasksPage }) },
+          { path: '/tasks/:id', lazy: async () => ({ Component: (await import('@/features/tasks/TaskDetailPage')).TaskDetailPage }) },
+          { path: '/work-reports', lazy: async () => ({ Component: (await import('@/features/tasks/WorkReportsPage')).WorkReportsPage }) },
+        ],
+      },
+    ],
+  },
+  {
     // Бухгалтерия — Бухгалтер, Директор; Администратор только просматривает
     // (backend: apps.accounting.permissions). Свой layout, как у ассистента.
     path: '/accounting',
@@ -469,6 +524,7 @@ export const router = createBrowserRouter([
               { path: 'content', lazy: async () => ({ Component: (await import('@/features/marketing/ContentPlanPage')).MarketingContentPlanPage }) },
               { path: 'tasks', lazy: async () => ({ Component: (await import('@/features/marketing/TasksPage')).MarketingTasksPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/marketing/ReportsPage')).MarketingReportsPage }) },
+              { path: 'campaigns', lazy: async () => ({ Component: (await import('@/features/marketing/CampaignsPage')).MarketingCampaignsPage }) },
               // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
               { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: '*', element: <Navigate to="/marketing" replace /> },

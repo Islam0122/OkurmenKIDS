@@ -9,6 +9,7 @@ from . import views
 router = DefaultRouter()
 router.register("content", views.ContentItemViewSet, basename="marketing-content")
 router.register("tasks", views.MarketingTaskViewSet, basename="marketing-task")
+router.register("campaigns", views.CampaignViewSet, basename="marketing-campaign")
 
 urlpatterns = [
     path("meta/", views.MetaView.as_view(), name="marketing-meta"),

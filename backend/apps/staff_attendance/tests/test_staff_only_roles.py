@@ -80,13 +80,24 @@ class StaffOnlyRolesTests(AttendanceFixture):
         self.assertEqual(client.get(f"{API}/admin/employees/{sales.pk}/").status_code, 403)
 
     def test_rest_of_system_is_closed(self):
-        client = jwt_client(self.staff[User.Role.OPERATIONS_DIRECTOR].username)
+        client = jwt_client(self.staff[User.Role.ROP].username)
         for url in ("/api/v1/trainers/", "/api/v1/accounting/", "/api/v1/assistant/", "/api/v1/subjects/"):
             response = client.get(url)
             self.assertEqual(response.status_code, 403, url)
             self.assertEqual(response.json()["code"], "staff_only", url)
         for url in ("/admin/records/", "/admin/locations/", "/admin/settings/"):
             self.assertEqual(client.get(f"{API}{url}").status_code, 403, url)
+
+    def test_operations_director_reads_reports_but_does_not_manage(self):
+        # Операционный директор контролирует посещаемость всех сотрудников
+        # (apps.operations), но офисы, QR и настройки — по-прежнему администратор.
+        client = jwt_client(self.staff[User.Role.OPERATIONS_DIRECTOR].username)
+        self.assertEqual(client.get("/api/v1/trainers/").json()["code"], "staff_only")
+        self.assertEqual(client.get(f"{API}/admin/records/").status_code, 200)
+        self.assertEqual(client.get(f"{API}/admin/locations/").status_code, 403)
+        # Настройки читают все, кто видит отчёты; менять — только администратор.
+        self.assertEqual(client.get(f"{API}/admin/settings/").status_code, 200)
+        self.assertEqual(client.patch(f"{API}/admin/settings/", {"late_grace_minutes": 5}, format="json").status_code, 403)
 
     def test_explicit_permission_still_grants_reports(self):
         hr = self.staff[User.Role.HR_MANAGER]

@@ -11,6 +11,7 @@ import { cn } from '@/utils/cn'
 import { getMobileMoreNav } from './navItems'
 import { NewsBell } from './NewsBell'
 import { TeamLeadNav } from './TeamLeadNav'
+import { WorkTools } from '@/features/tasks/WorkTools'
 
 export function Header() {
   const { user, logout } = useAuth()
@@ -40,6 +41,7 @@ export function Header() {
         </button>
 
         {/* News is the Trainer feed (backend: IsTeacher) — not a Team Lead's. */}
+        <WorkTools />
         {isTeamLead(user?.role) ? null : <NewsBell />}
 
         <div className="hidden items-center gap-2 sm:flex">

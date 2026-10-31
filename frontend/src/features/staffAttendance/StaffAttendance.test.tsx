@@ -107,7 +107,7 @@ describe('время в часовом поясе офиса', () => {
 })
 
 describe('роли с базовым доступом (ДОП, РОП, операционный директор, HR, продажи, маркетинг)', () => {
-  const STAFF = ['dop', 'rop', 'operations_director', 'sales_manager'] as const
+  const STAFF = ['dop', 'rop', 'sales_manager'] as const
 
   it('после входа ведут на страницу отметки, без перехода в LMS', () => {
     for (const role of STAFF) {
@@ -117,6 +117,18 @@ describe('роли с базовым доступом (ДОП, РОП, опер�
       expect(homeFor(role, '/attendance/scan?office=abc')).toBe('/attendance/scan?office=abc')
       expect(personalPathFor(role)).toBe('/attendance/staff')
       expect(workspaceFor(role)).toBeNull()
+    }
+  })
+
+  it('операционный директор после входа попадает в свой кабинет, задачи — у всех', () => {
+    expect(isStaffOnlyRole('operations_director')).toBe(true)
+    expect(hasCabinetInDevelopment('operations_director')).toBe(false)
+    expect(homeFor('operations_director', '/app/dashboard')).toBe('/operations')
+    expect(homeFor('operations_director', '/operations/trainers/3')).toBe('/operations/trainers/3')
+    expect(homeFor('operations_director', '/attendance/scan?office=abc')).toBe('/attendance/scan?office=abc')
+    expect(workspaceFor('operations_director')).toEqual({ to: '/operations', label: 'Кабинет операционного директора' })
+    for (const role of [...STAFF, 'accountant', 'hr_manager', 'marketing'] as const) {
+      expect(homeFor(role, '/tasks/12')).toBe('/tasks/12')
     }
   })
 

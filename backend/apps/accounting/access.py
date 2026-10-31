@@ -54,6 +54,14 @@ BILLING_ACCOUNTANT_PERMISSIONS = tuple(
 BILLING_DIRECTOR_GROUP = "BillingDirector"
 BILLING_DIRECTOR_PERMISSIONS = tuple(f"view_{m}" for m in _BILLING_VIEW)
 
+# Личные задачи, отчёты и уведомления есть у каждого сотрудника (apps.operations):
+# чужие записи представления не отдают (404).
+PERSONAL_WORK_PREFIXES = (
+    "/api/v1/tasks/",
+    "/api/v1/work-reports/",
+    "/api/v1/notifications/",
+)
+
 # Что изолированной роли можно открыть. Всё остальное — 403.
 ALLOWED_PREFIXES = (
     "/api/v1/accounting/",
@@ -65,13 +73,15 @@ ALLOWED_PREFIXES = (
     "/api/v1/staff-attendance/me/",
     # Публичный карьерный сайт — открыт всем, в том числе вошедшим сотрудникам.
     "/api/v1/public/careers/",
+    # Свои задачи, отчёты и уведомления (apps.operations; права — в представлениях).
+    *PERSONAL_WORK_PREFIXES,
 )
 
 
-# Сотрудники с базовым доступом (User.STAFF_ONLY_ROLES: ДОП, РОП, РОМ,
+# Сотрудники с базовым доступом (User.STAFF_ONLY_ROLES: ДОП, РОП,
 # операционный директор, HR, продажи, маркетинг) изолированы тем же
-# middleware: вход, учёт прихода и ухода и кабинет своей роли (у кого он
-# есть: HR, маркетинг). Отчёты посещаемости (admin/…) сами проверяют права
+# middleware: вход, учёт прихода и ухода, свои задачи и отчёты и кабинет
+# своей роли (у кого он есть: HR, маркетинг, операционный директор). Отчёты посещаемости (admin/…) сами проверяют права
 # (apps.staff_attendance.access): без явно выданного права — 403.
 STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/auth/login/",
@@ -84,6 +94,9 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/marketing/",
     # Публичный карьерный сайт — открыт всем, в том числе вошедшим сотрудникам.
     "/api/v1/public/careers/",
+    # Кабинет операционного директора: права проверяет apps.operations (CanOversee).
+    "/api/v1/operations/",
+    *PERSONAL_WORK_PREFIXES,
 )
 
 

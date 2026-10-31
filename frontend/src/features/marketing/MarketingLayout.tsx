@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { BarChart3, CalendarRange, ClipboardCheck, LayoutDashboard, LogOut, ScanLine, Wallet } from 'lucide-react'
+import { BarChart3, CalendarRange, ClipboardCheck, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -10,6 +10,7 @@ import { ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/utils/cn'
 
 import { WorkdayButton } from './Workday'
+import { WorkTools } from '@/features/tasks/WorkTools'
 
 interface NavItem {
   to: string
@@ -31,6 +32,12 @@ export const MARKETING_NAV: NavItem[] = [
   { to: '/marketing/my-salary', label: 'Моя зарплата', shortLabel: 'Зарплата', icon: Wallet },
 ]
 
+/** Только в боковом меню: нижняя панель телефона вмещает пять разделов, на
+ * телефоне «Кампании» открываются из «Обзора». */
+export const MARKETING_SIDEBAR_EXTRA: NavItem[] = [
+  { to: '/marketing/campaigns', label: 'Кампании', icon: Target },
+]
+
 const ROW = 'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'
 
 /** Кабинет маркетинга — та же оболочка, что у HR и LMS: боковое меню на
@@ -47,7 +54,7 @@ export function MarketingLayout() {
           <span className="font-semibold text-ink">Маркетинг</span>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3" aria-label="Разделы кабинета маркетинга">
-          {MARKETING_NAV.map((item) => (
+          {[...MARKETING_NAV, ...MARKETING_SIDEBAR_EXTRA].map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -78,6 +85,7 @@ export function MarketingLayout() {
             <span className="truncate font-semibold text-ink lg:hidden">Маркетинг</span>
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <WorkTools />
             <WorkdayButton />
             <div className="hidden items-center gap-2 sm:flex">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700" aria-hidden>

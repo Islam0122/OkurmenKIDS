@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { useAuth } from '@/hooks/useAuth'
 import { ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/utils/cn'
+import { WorkTools } from '@/features/tasks/WorkTools'
 
 interface NavItem {
   to: string
@@ -145,6 +146,7 @@ export function AccountingLayout() {
             <span className="truncate font-semibold text-ink lg:hidden">Бухгалтерия</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <WorkTools />
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
