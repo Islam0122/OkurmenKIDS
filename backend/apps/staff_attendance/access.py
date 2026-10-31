@@ -6,7 +6,7 @@ permissions модели AttendanceSession позволяют дополните
 
 * отметка прихода/ухода и своя история — любой активный сотрудник, чья роль
   отмечена в настройках (по умолчанию — все роли LMS). Только свои данные.
-* отчёты — Администратор и Директор (все сотрудники), Team Lead (только
+* отчёты — Администратор, Директор и Операционный директор (все сотрудники), Team Lead (только
   тренеры — он руководит тренерами), либо право `view_attendance_reports`.
 * исправления записей — Администратор или право `adjust_attendance`.
 * офисы, QR-коды, настройки, личные расписания — Администратор или право
@@ -42,7 +42,8 @@ def report_scope(user) -> Q | None:
     """Фильтр пользователей, чьи отчёты доступны `user`; None — никаких."""
     if not _active(user):
         return None
-    if is_admin_user(user) or user.role == User.Role.DIRECTOR or user.has_perm(PERM_REPORTS):
+    if is_admin_user(user) or user.role in (User.Role.DIRECTOR, User.Role.OPERATIONS_DIRECTOR) \
+            or user.has_perm(PERM_REPORTS):
         return Q()
     if user.role == User.Role.TEAM_LEAD:
         return Q(role=User.Role.TEACHER)

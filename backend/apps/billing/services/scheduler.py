@@ -122,6 +122,12 @@ def run_all(*, on: dt.date | None = None, report: bool = True, staff_attendance:
 
         results["recurring_expenses"] = _safe(
             lambda: {"created": len(generate_recurring(on.year, on.month)["created"])}, "recurring_expenses")
+        renew(run_id)
+        # Операционный модуль: повторяющиеся задачи, напоминания о дедлайнах,
+        # поиск проблем — каждый шаг идемпотентен (apps.operations.services.scheduler).
+        from apps.operations.services.scheduler import run_periodic
+
+        results["operations"] = _safe(run_periodic, "operations")
     finally:
         failed = any(isinstance(v, dict) and "error" in v for v in results.values())
         summary = {"status": "done", "on": on.isoformat(), "run_id": str(run_id), "tasks": results, "failed": failed}

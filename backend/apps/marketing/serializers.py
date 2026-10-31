@@ -6,7 +6,7 @@ from rest_framework import serializers
 from apps.users.models import User
 from apps.users.permissions import is_admin_user
 
-from .models import Channel, ContentFormat, ContentItem, MarketingTask
+from .models import Campaign, Channel, ContentFormat, ContentItem, MarketingTask
 
 
 def person(user) -> dict | None:
@@ -142,6 +142,76 @@ class MarketingTaskSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+def can_view_budget(user) -> bool:
+    """Бюджет и стоимость лида кампаний — финансовые данные: маркетинг (ведёт
+    кампании), администратор и директор; операционный директор — если это
+    разрешено в настройках операционного модуля."""
+    if not (user and user.is_authenticated and user.is_active):
+        return False
+    if is_admin_user(user) or user.role in (User.Role.MARKETING, User.Role.DIRECTOR):
+        return True
+    if user.role == User.Role.OPERATIONS_DIRECTOR:
+        from apps.operations.models import OperationsSettings
+
+        return OperationsSettings.load().operations_director_sees_marketing_budget
+    return False
+
+
+FINANCIAL_CAMPAIGN_FIELDS = ("budget", "spent", "cost_per_lead")
+
+
+class CampaignSerializer(serializers.ModelSerializer):
+    responsible = TeamMemberField(allow_null=True, required=False)
+    responsible_info = serializers.SerializerMethodField()
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    channel_label = serializers.CharField(source="get_channel_display", read_only=True)
+    cost_per_lead = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
+    conversion = serializers.FloatField(read_only=True, allow_null=True)
+    can_delete = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Campaign
+        fields = ["id", "name", "channel", "channel_label", "responsible", "responsible_info", "status",
+                  "status_label", "start_date", "end_date", "budget", "spent", "leads", "sales", "cost_per_lead",
+                  "conversion", "result", "created_at", "updated_at", "can_delete"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def get_responsible_info(self, obj):
+        return person(obj.responsible)
+
+    def get_can_delete(self, obj):
+        return can_delete(self.context.get("request"), obj)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if not can_view_budget(getattr(request, "user", None)):
+            for field in FINANCIAL_CAMPAIGN_FIELDS:
+                data.pop(field, None)
+        return data
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Укажите название кампании.")
+        return value
+
+    def validate(self, attrs):
+        start = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end = attrs["end_date"] if "end_date" in attrs else getattr(self.instance, "end_date", None)
+        if start and end and end < start:
+            raise serializers.ValidationError({"end_date": "Окончание раньше даты запуска."})
+        leads = attrs.get("leads", getattr(self.instance, "leads", 0))
+        sales = attrs.get("sales", getattr(self.instance, "sales", 0))
+        if sales > leads:
+            raise serializers.ValidationError({"sales": "Продаж не может быть больше, чем лидов."})
+        return attrs
+
+    def create(self, validated_data):
+        validated_data["created_by"] = self.context["request"].user
+        return super().create(validated_data)
+
+
 def meta_payload(user) -> dict:
     return {
         "channels": choices(Channel),
@@ -149,6 +219,8 @@ def meta_payload(user) -> dict:
         "content_statuses": choices(ContentItem.Status),
         "task_statuses": choices(MarketingTask.Status),
         "priorities": choices(MarketingTask.Priority),
+        "campaign_statuses": choices(Campaign.Status),
+        "can_view_budget": can_view_budget(user),
         "team": [person(member) for member in team_queryset()],
         "me": user.pk,
         "today": timezone.localdate().isoformat(),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.contrib import admin
 
-from .models import ContentItem, MarketingTask
+from .models import Campaign, ContentItem, MarketingTask
 
 
 @admin.register(ContentItem)
@@ -24,3 +24,11 @@ class MarketingTaskAdmin(admin.ModelAdmin):
     search_fields = ("title", "description")
     raw_id_fields = ("responsible", "created_by")
     readonly_fields = ("completed_at", "created_at", "updated_at")
+
+
+@admin.register(Campaign)
+class CampaignAdmin(admin.ModelAdmin):
+    list_display = ("name", "channel", "status", "start_date", "end_date", "leads", "sales", "responsible")
+    list_filter = ("status", "channel")
+    search_fields = ("name", "result")
+    raw_id_fields = ("responsible", "created_by")
