@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { marketingApi } from '@/api/marketing'
-import type { ContentInput, ContentParams, ReportPeriod, TaskInput, TasksParams } from '@/types/marketing'
+import type { CampaignInput, ContentInput, ContentParams, ReportPeriod, TaskInput, TasksParams } from '@/types/marketing'
 
 /** Кабинет маркетинга (apps.marketing). Любое изменение обновляет все данные
  * кабинета: главная, контент-план, задачи и отчёты связаны между собой. */
@@ -58,4 +58,21 @@ export function useSaveTask() {
 export function useDeleteTask() {
   const invalidate = useInvalidate()
   return useMutation({ mutationFn: marketingApi.deleteTask, onSuccess: invalidate })
+}
+
+export function useCampaigns(params: { status?: string; page?: number; page_size?: number }) {
+  return useQuery({ queryKey: [KEY, 'campaigns', params], queryFn: () => marketingApi.campaigns(params), placeholderData: keepPreviousData })
+}
+
+export function useSaveCampaign() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number | null; body: CampaignInput }) => marketingApi.saveCampaign(id, body),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteCampaign() {
+  const invalidate = useInvalidate()
+  return useMutation({ mutationFn: marketingApi.deleteCampaign, onSuccess: invalidate })
 }

@@ -321,6 +321,8 @@ class KPITargetSerializer(serializers.ModelSerializer):
         employee = attrs["employee"] if "employee" in attrs else getattr(self.instance, "employee", None)
         if employee is not None:
             attrs["department"] = department = department_of(employee)
+        if not department:
+            raise serializers.ValidationError({"department": "Укажите отдел или сотрудника."})
         if metric.departments and department not in metric.departments:
             raise serializers.ValidationError({"metric": "Этот показатель не относится к выбранному отделу."})
         if employee is None and not metric.department_level:

@@ -27,7 +27,37 @@ export interface MarketingMeta {
   team: TeamMember[]
   me: number
   today: string
+  /** Есть, когда бэкенд знает о кампаниях (apps.marketing.Campaign). */
+  campaign_statuses?: Choice<CampaignStatus>[]
+  can_view_budget?: boolean
 }
+
+export type CampaignStatus = 'planned' | 'active' | 'paused' | 'finished' | 'cancelled'
+
+/** Рекламная кампания. Бюджет, расход и CPL сервер отдаёт только тем, кому
+ * разрешены финансовые данные маркетинга. */
+export interface Campaign {
+  id: number
+  name: string
+  channel: Channel
+  channel_label: string
+  responsible: number | null
+  responsible_info: TeamMember | null
+  status: CampaignStatus
+  status_label: string
+  start_date: string
+  end_date: string | null
+  budget?: string
+  spent?: string
+  leads: number
+  sales: number
+  cost_per_lead?: string | null
+  conversion: number | null
+  result: string
+  can_delete: boolean
+}
+
+export type CampaignInput = Partial<Pick<Campaign, 'name' | 'channel' | 'responsible' | 'status' | 'start_date' | 'end_date' | 'budget' | 'spent' | 'leads' | 'sales' | 'result'>>
 
 export interface ContentItem {
   id: number

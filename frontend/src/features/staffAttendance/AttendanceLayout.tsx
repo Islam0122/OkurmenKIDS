@@ -11,6 +11,7 @@ import { ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/utils/cn'
 
 import { personalPathFor, workspaceFor } from './roles'
+import { WorkTools } from '@/features/tasks/WorkTools'
 
 interface Tab {
   to: string
@@ -48,6 +49,7 @@ export function AttendanceLayout() {
               <p className="max-w-48 truncate text-sm font-medium text-ink">{user?.first_name} {user?.last_name}</p>
               <p className="text-xs text-ink-secondary">{user ? ROLE_LABEL[user.role] : ''}</p>
             </div>
+            <WorkTools />
             {workspace ? (
               <Link
                 to={workspace.to}

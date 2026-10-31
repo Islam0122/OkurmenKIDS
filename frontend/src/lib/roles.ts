@@ -28,12 +28,22 @@ export function isStaffOnlyRole(role: UserRole | undefined): role is StaffOnlyRo
   return (STAFF_ONLY_ROLES as (UserRole | undefined)[]).includes(role)
 }
 
-/** Роли без своего кабинета: после входа — только отметка прихода и ухода.
- * У HR-менеджера есть HR-кабинет (/hr), у маркетинга — кабинет маркетинга
- * (/marketing). */
+/** Роли без своего кабинета: после входа — отметка прихода и ухода, свои
+ * задачи и отчёты (/tasks). У HR-менеджера есть HR-кабинет (/hr), у
+ * маркетинга — кабинет маркетинга (/marketing), у операционного директора —
+ * /operations. */
 export function hasCabinetInDevelopment(role: UserRole | undefined): boolean {
-  return isStaffOnlyRole(role) && role !== 'hr_manager' && role !== 'marketing'
+  return isStaffOnlyRole(role) && role !== 'hr_manager' && role !== 'marketing' && role !== 'operations_director'
 }
+
+/** Кабинет операционного директора (/operations) — ему, директору и
+ * администратору. Mirrors `apps.operations.permissions.can_oversee`. */
+export function canOverseeOperations(role: UserRole | undefined): boolean {
+  return role === 'operations_director' || role === 'director' || role === 'admin'
+}
+
+/** Свои задачи, отчёты и уведомления (/tasks, /work-reports) есть у каждого сотрудника. */
+export const PERSONAL_WORK_PATHS = ['/tasks', '/work-reports']
 
 /** The Assistant works only in the Assistant Workspace (/assistant), never in /app. */
 export function isAssistant(role: UserRole | undefined): boolean {
@@ -58,9 +68,11 @@ export function isAccountingRole(role: UserRole | undefined): boolean {
 /** Where a role lands after sign-in. The Accountant lives only in /accounting
  * (backend: apps.accounting.access — every LMS URL answers it 403). */
 export function homeFor(role: UserRole | undefined, target: string): string {
-  if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance')) return '/accounting'
-  if (role === 'hr_manager') return target.startsWith('/hr') || target.startsWith('/attendance') ? target : '/hr'
-  if (role === 'marketing') return target.startsWith('/marketing') || target.startsWith('/attendance') ? target : '/marketing'
-  if (isStaffOnlyRole(role) && !target.startsWith('/attendance')) return '/attendance/staff'
+  const personal = PERSONAL_WORK_PATHS.some((path) => target.startsWith(path))
+  if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance') && !personal) return '/accounting'
+  if (role === 'hr_manager') return target.startsWith('/hr') || target.startsWith('/attendance') || personal ? target : '/hr'
+  if (role === 'marketing') return target.startsWith('/marketing') || target.startsWith('/attendance') || personal ? target : '/marketing'
+  if (role === 'operations_director') return target.startsWith('/operations') || target.startsWith('/attendance') || personal ? target : '/operations'
+  if (isStaffOnlyRole(role) && !target.startsWith('/attendance') && !personal) return '/attendance/staff'
   return target
 }

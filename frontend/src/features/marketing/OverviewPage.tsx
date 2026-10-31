@@ -66,6 +66,7 @@ export function MarketingOverviewPage() {
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button variant="secondary" className="max-sm:h-11" leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => setTask(null)}>Задача</Button>
           <Button className="max-sm:h-11" leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => setContent({})}>Публикация</Button>
+          <Link to="/marketing/campaigns" className="col-span-2 flex h-11 items-center justify-center rounded-lg border border-brand-200 text-sm font-medium text-brand-700 hover:bg-brand-50 sm:h-10 sm:px-4">Кампании</Link>
         </div>
       </section>
 

@@ -153,16 +153,16 @@ function renderCabinet(route = '/marketing') {
 }
 
 describe('оболочка кабинета маркетинга', () => {
-  it('пять разделов в меню и кнопка отметки прихода из существующего механизма', async () => {
+  it('разделы в меню и кнопка отметки прихода из существующего механизма', async () => {
     const user = userEvent.setup()
     renderCabinet()
     const [sidebar, bottom] = screen.getAllByRole('navigation', { name: 'Разделы кабинета маркетинга' })
     const links = (nav: HTMLElement) => within(nav).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')])
     expect(links(sidebar)).toEqual([
       ['Обзор', '/marketing'], ['Контент-план', '/marketing/content'], ['Задачи', '/marketing/tasks'],
-      ['Отчёты', '/marketing/reports'], ['Моя зарплата', '/marketing/my-salary'],
+      ['Отчёты', '/marketing/reports'], ['Моя зарплата', '/marketing/my-salary'], ['Кампании', '/marketing/campaigns'],
     ])
-    // Нижняя панель телефона: те же адреса, короткие подписи.
+    // Нижняя панель телефона (пять разделов; «Кампании» — из «Обзора»): те же адреса, короткие подписи.
     expect(links(bottom)).toEqual([
       ['Обзор', '/marketing'], ['План', '/marketing/content'], ['Задачи', '/marketing/tasks'],
       ['Отчёты', '/marketing/reports'], ['Зарплата', '/marketing/my-salary'],

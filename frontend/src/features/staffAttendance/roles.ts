@@ -43,6 +43,7 @@ export function personalPathFor(role: UserRole | undefined): string {
 export function workspaceFor(role: UserRole | undefined): { to: string; label: string } | null {
   if (role === 'hr_manager') return { to: '/hr', label: 'HR-кабинет' }
   if (role === 'marketing') return { to: '/marketing', label: 'Кабинет маркетинга' }
+  if (role === 'operations_director') return { to: '/operations', label: 'Кабинет операционного директора' }
   if (isStaffOnlyRole(role)) return null
   if (role === 'assistant') return { to: '/assistant', label: 'Assistant Workspace' }
   if (role === 'accountant' || role === 'director') return { to: '/accounting', label: 'Бухгалтерия' }

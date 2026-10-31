@@ -11,6 +11,7 @@ import { ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/utils/cn'
 
 import { RemindersBell } from './Reminders'
+import { WorkTools } from '@/features/tasks/WorkTools'
 
 interface NavItem {
   to: string
@@ -95,6 +96,7 @@ export function HrLayout() {
             <span className="truncate font-semibold text-ink lg:hidden">HR-кабинет</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <WorkTools />
             <RemindersBell />
             <button
               type="button"

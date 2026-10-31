@@ -14,6 +14,7 @@ import { ASSISTANT_MOBILE_PRIMARY, ASSISTANT_PROFILE, ASSISTANT_SECTIONS } from 
 import type { AssistantNavItem } from './assistantNav'
 import { CommandPalette } from './CommandPalette'
 import { CreateMenu } from './CreateMenu'
+import { WorkTools } from '@/features/tasks/WorkTools'
 
 const ROW = 'flex h-9 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'
 
@@ -106,6 +107,7 @@ export function AssistantLayout() {
               <kbd className="rounded border border-border bg-surface px-1.5 text-2xs font-medium text-ink-secondary">Ctrl K</kbd>
             </button>
             <div className="flex shrink-0 items-center gap-2">
+              <WorkTools />
               <button type="button" onClick={() => setSearchOpen(true)} aria-label="Поиск"
                 className="flex size-9 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-hover md:hidden">
                 <Search className="size-5" aria-hidden />
