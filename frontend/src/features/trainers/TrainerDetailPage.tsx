@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { BookOpen, CalendarCheck, ClipboardCheck, FileCheck2, GraduationCap, NotebookPen, Users } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 
@@ -16,7 +15,7 @@ import { StatGrid } from '@/components/ui/StatGrid'
 import { KpiBadge, MetricValue, PeriodSelect, pct, periodCaption } from '@/features/analytics/reportUi'
 import { KPI_STATUS_CARD_TONE } from '@/features/kpi/kpiStatus'
 import { useReportTeacher } from '@/hooks/useReports'
-import type { ReportPeriodKey } from '@/types/reports'
+import { reportPeriodParams, useReportPeriod } from '@/features/analytics/reportPeriod'
 import { formatDate } from '@/utils/format'
 import { ResultsOverview, ResultsTable } from '@/features/results/resultsUi'
 
@@ -26,8 +25,8 @@ export function TrainerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const teacherId = Number(id)
   const navigate = useNavigate()
-  const [period, setPeriod] = useState<ReportPeriodKey>('this_month')
-  const { data, isPending, isError, refetch } = useReportTeacher(teacherId, { period })
+  const [period, setPeriod] = useReportPeriod()
+  const { data, isPending, isError, refetch } = useReportTeacher(teacherId, reportPeriodParams(period))
 
   if (isPending) return <LoadingState label="Загружаем тренера…" />
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />

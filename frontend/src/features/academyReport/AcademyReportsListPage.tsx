@@ -11,7 +11,8 @@ import { useToast } from '@/components/ui/Toast'
 import { PeriodSelect, ReportExportButtons } from '@/features/analytics/reportUi'
 import { useAcademyReportsList, useCreateAcademyReport } from '@/hooks/useAcademyReports'
 import { useAuth } from '@/hooks/useAuth'
-import type { ReportPeriodKey } from '@/types/reports'
+import { DEFAULT_REPORT_PERIOD, reportPeriodParams } from '@/features/analytics/reportPeriod'
+import type { ReportPeriodChoice } from '@/features/analytics/reportPeriod'
 import { extractErrorMessage } from '@/lib/apiError'
 import { getYearOptions, MONTH_OPTIONS } from '@/features/reports/months'
 
@@ -23,7 +24,7 @@ const YEAR_OPTIONS = getYearOptions()
 /** Отчёт по тренерам, группам, студентам и предметам + KPI, посещаемость и
  * ДЗ за период — PDF/Excel from the Reports API (Admin and Team Lead). */
 function ReportsExportCard() {
-  const [period, setPeriod] = useState<ReportPeriodKey>('this_month')
+  const [period, setPeriod] = useState<ReportPeriodChoice>(DEFAULT_REPORT_PERIOD)
   return (
     <div className="mb-6 card card-body flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
@@ -34,7 +35,7 @@ function ReportsExportCard() {
         <div className="w-48">
           <PeriodSelect value={period} onChange={setPeriod} />
         </div>
-        <ReportExportButtons params={{ period }} />
+        <ReportExportButtons params={reportPeriodParams(period)} />
       </div>
     </div>
   )

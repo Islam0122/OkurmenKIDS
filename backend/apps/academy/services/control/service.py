@@ -17,6 +17,7 @@ from django.utils import timezone
 from apps.users.models import Subject, Teacher
 
 from apps.academy.models import Attendance, Group, Homework, HomeworkResult, Lesson, Student
+from apps.academy.services import student_roster
 from apps.academy.services.reports.filters import ReportFilters, period_options
 
 from . import rules
@@ -140,15 +141,27 @@ class ControlService:
         lesson_ids = [lesson.id for lesson in lessons]
         group_ids = {lesson.group_id for lesson in lessons}
 
-        students_by_group: dict[int, list[StudentRef]] = defaultdict(list)
-        for row in (
-            Student.objects.filter(group_id__in=group_ids, is_active=True)
-            .order_by("last_name", "first_name", "id")
-            .values("id", "first_name", "last_name", "group_id")
-        ):
-            students_by_group[row["group_id"]].append(
-                StudentRef(row["id"], _student_name(row["first_name"], row["last_name"]))
-            )
+        # Who was expected on each lesson: the group's active students *on
+        # the lesson's date* (services.student_roster), never today's roster —
+        # a September lesson is checked against September's students.
+        history = student_roster.RosterHistory(group_ids)
+        rosters: dict[dt.date, dict] = {}
+        for day in {min(lesson.date, self.today) for lesson in lessons}:
+            rosters[day] = history.on(day)
+        roster_ids = set().union(*(set(r) for r in rosters.values())) if rosters else set()
+        names = {
+            row["id"]: row
+            for row in Student.objects.filter(id__in=roster_ids).values("id", "first_name", "last_name")
+        }
+        students_on: dict[tuple[dt.date, int], list[StudentRef]] = defaultdict(list)
+        for day, roster in rosters.items():
+            active = [entry for entry in roster.values() if entry.is_active and entry.student_id in names]
+            active.sort(key=lambda e: (names[e.student_id]["last_name"], names[e.student_id]["first_name"], e.student_id))
+            for entry in active:
+                row = names[entry.student_id]
+                students_on[(day, entry.group_id)].append(
+                    StudentRef(entry.student_id, _student_name(row["first_name"], row["last_name"]))
+                )
 
         attendance: dict[int, dict[int, dt.datetime]] = defaultdict(dict)
         for row in Attendance.objects.filter(lesson_id__in=lesson_ids).values(
@@ -178,7 +191,7 @@ class ControlService:
                 lesson,
                 today=self.today,
                 now_time=self.now_time,
-                students=students_by_group.get(lesson.group_id, []),
+                students=students_on.get((min(lesson.date, self.today), lesson.group_id), []),
                 attendance=attendance.get(lesson.id, {}),
                 homeworks=homeworks.get(lesson.id, []),
                 results=results.get(lesson.id, []),

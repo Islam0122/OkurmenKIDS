@@ -14,7 +14,8 @@ import { SearchInput } from '@/components/ui/SearchInput'
 import { Tabs } from '@/components/ui/Tabs'
 import { KpiBadge, MetricValue, PeriodSelect, ReportPagination, pct, periodCaption } from '@/features/analytics/reportUi'
 import { useReportTeachers } from '@/hooks/useReports'
-import type { ReportPeriodKey, ReportTeacherRow } from '@/types/reports'
+import { reportPeriodParams, useReportPeriod, withReportPeriod } from '@/features/analytics/reportPeriod'
+import type { ReportTeacherRow } from '@/types/reports'
 
 type View = 'all' | 'kpi' | 'load'
 
@@ -72,12 +73,13 @@ const COLUMNS: Record<View, DataTableColumn<ReportTeacherRow>[]> = {
 export function TrainersListPage() {
   const navigate = useNavigate()
   const [view, setView] = useState<View>('all')
-  const [period, setPeriod] = useState<ReportPeriodKey>('this_month')
+  // ?period=2026-09 — kept on refresh, sent as the month's exact range.
+  const [period, setPeriod] = useReportPeriod()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
 
   const { data, isPending, isError, refetch } = useReportTeachers({
-    period,
+    ...reportPeriodParams(period),
     q: search.trim() || undefined,
     sort: DEFAULT_SORT[view],
     page,
@@ -132,7 +134,7 @@ export function TrainersListPage() {
             columns={COLUMNS[view]}
             rows={data.results}
             getRowKey={(row) => row.id}
-            onRowClick={(row) => navigate(`/app/trainers/${row.id}`)}
+            onRowClick={(row) => navigate(withReportPeriod(`/app/trainers/${row.id}`, period))}
           />
           <ReportPagination page={data} onPageChange={setPage} />
         </div>

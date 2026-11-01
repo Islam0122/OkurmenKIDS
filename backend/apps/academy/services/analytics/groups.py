@@ -1,17 +1,19 @@
 """Group KPIs (spec §3 GROUPS).
 
-Status counts (`active_groups`/`paused_groups`/...) and capacity are
-inherently point-in-time snapshots — there is no historical Group.status
-trail (and none is being added — spec forbids new models), so both the
-current and comparison snapshot read the same live status/roster: when a
-comparison period is requested these fields correctly come back "stable"
-rather than a fabricated trend (same reasoning as students.py's docstring).
+Status counts (`active_groups`/`paused_groups`/...) are inherently
+point-in-time snapshots — there is no historical Group.status trail, so
+both the current and comparison snapshot read the same live status. The
+students *in* each group, however, are the roster of the period
+(services.student_roster — group and status on the period's last day),
+never today's live roster: a past month must not show the current
+students (same reasoning as students.py's docstring).
 """
 from __future__ import annotations
 
 from django.db.models import Count, Q
 
 from apps.academy.models import Group
+from apps.academy.services import student_roster
 from .metrics import build_metric
 from .period import DateRange
 from .scope import AnalyticsScope
@@ -23,11 +25,13 @@ NEAR_CAPACITY_THRESHOLD = 0.9
 
 
 def _snapshot(scope: AnalyticsScope, date_range: DateRange) -> dict:
-    groups = list(
-        scope.groups_qs().annotate(
-            _active_students=Count("students", filter=Q(students__is_active=True), distinct=True)
-        )
+    groups = list(scope.groups_qs())
+    roster = student_roster.roster_on(
+        student_roster.roster_date(date_range.end), group_ids=[g.id for g in groups]
     )
+    by_group = student_roster.counts_by_group(roster, date_range.start, date_range.end)
+    for group in groups:
+        group._active_students = by_group.get(group.id, {}).get("active", 0)
     total = len(groups)
     by_status = {choice: 0 for choice in Group.Status.values}
     for group in groups:

@@ -26,7 +26,6 @@ import type {
   ReportGroupRow,
   ReportPage,
   ReportParams,
-  ReportPeriodKey,
   ReportStudentRow,
   ReportSubjectRow,
   ReportTeacherRow,
@@ -34,6 +33,8 @@ import type {
 
 import { TestPerformanceReport } from '@/features/results/TestPerformanceReport'
 import { KPI_LEVEL_LABEL, KpiBadge, MetricValue, PeriodSelect, ReportExportButtons, ReportPagination, pct, periodCaption } from './reportUi'
+import { reportPeriodParams, useReportPeriod, withReportPeriod } from './reportPeriod'
+import type { ReportPeriodChoice } from './reportPeriod'
 
 type Section = 'teachers' | 'groups' | 'students' | 'subjects' | 'tests'
 
@@ -112,12 +113,14 @@ export function AnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const rawSection = searchParams.get('tab')
   const section: Section = isSection(rawSection) ? rawSection : 'teachers'
-  const [period, setPeriod] = useState<ReportPeriodKey>('this_month')
+  // The period lives in the URL (?period=2026-09): it survives a refresh and
+  // is sent as an exact date range, so every figure below is for it alone.
+  const [period, setPeriod] = useReportPeriod()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
 
-  const base: ReportParams = { period }
-  const tableParams: ReportParams = { period, q: search.trim() || undefined, page }
+  const base: ReportParams = reportPeriodParams(period)
+  const tableParams: ReportParams = { ...base, q: search.trim() || undefined, page }
   const overview = useReportOverview(base)
 
   return (
@@ -149,6 +152,8 @@ export function AnalyticsPage() {
         </FilterField>
       </FilterBar>
 
+      {overview.isPending ? <LoadingState label="Считаем показатели за период…" /> : null}
+      {overview.isError ? <ErrorState onRetry={() => void overview.refetch()} /> : null}
       {overview.data ? (
         <StatGrid columns={4} className="mb-6">
           <StatCard label="Тренеров" value={overview.data.teachers.total} icon={UserCog} />
@@ -167,14 +172,22 @@ export function AnalyticsPage() {
         items={TABS}
         value={section}
         onChange={(next) => {
-          setSearchParams({ tab: next }, { replace: true })
+          // Only the tab changes — the selected period (?period=) stays.
+          setSearchParams(
+            (prev) => {
+              const params = new URLSearchParams(prev)
+              params.set('tab', next)
+              return params
+            },
+            { replace: true },
+          )
           setPage(1)
         }}
       />
 
-      {section === 'teachers' ? <TeachersSection params={tableParams} onPage={setPage} /> : null}
-      {section === 'groups' ? <GroupsSection params={tableParams} onPage={setPage} /> : null}
-      {section === 'students' ? <StudentsSection params={tableParams} onPage={setPage} /> : null}
+      {section === 'teachers' ? <TeachersSection params={tableParams} period={period} onPage={setPage} /> : null}
+      {section === 'groups' ? <GroupsSection params={tableParams} period={period} onPage={setPage} /> : null}
+      {section === 'students' ? <StudentsSection params={tableParams} period={period} onPage={setPage} /> : null}
       {section === 'subjects' ? <SubjectsSection params={tableParams} onPage={setPage} /> : null}
       {section === 'tests' ? <TestPerformanceReport /> : null}
     </div>
@@ -184,20 +197,34 @@ export function AnalyticsPage() {
 interface SectionProps {
   params: ReportParams
   onPage: (page: number) => void
+  /** Carried to the trainer/group page, so it opens on the same period. */
+  period?: ReportPeriodChoice
 }
 
-function TeachersSection({ params, onPage }: SectionProps) {
+function TeachersSection({ params, period = 'this_month', onPage }: SectionProps) {
   const navigate = useNavigate()
   const query = useReportTeachers({ ...params, sort: '-kpi' })
   return (
-    <ReportTable query={query} columns={TEACHER_COLUMNS} onPage={onPage} onRowClick={(row) => navigate(`/app/trainers/${row.id}`)} />
+    <ReportTable
+      query={query}
+      columns={TEACHER_COLUMNS}
+      onPage={onPage}
+      onRowClick={(row) => navigate(withReportPeriod(`/app/trainers/${row.id}`, period))}
+    />
   )
 }
 
-function GroupsSection({ params, onPage }: SectionProps) {
+function GroupsSection({ params, period = 'this_month', onPage }: SectionProps) {
   const navigate = useNavigate()
   const query = useReportGroups({ ...params, sort: '-kpi' })
-  return <ReportTable query={query} columns={GROUP_COLUMNS} onPage={onPage} onRowClick={(row) => navigate(`/app/groups/${row.id}`)} />
+  return (
+    <ReportTable
+      query={query}
+      columns={GROUP_COLUMNS}
+      onPage={onPage}
+      onRowClick={(row) => navigate(withReportPeriod(`/app/groups/${row.id}`, period))}
+    />
+  )
 }
 
 function StudentsSection({ params, onPage }: SectionProps) {

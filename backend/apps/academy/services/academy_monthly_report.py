@@ -19,12 +19,13 @@ Student lifecycle action (services.student_status.pause_student/
 continue_student) — it is simply not one of this report's metrics any
 more, by design, not because the feature was removed.
 
-Group counts (total/active/completed groups, and how many students
-currently sit in each) reuse `services.analytics.groups._snapshot` — the
-one existing computation of "what is a Group's current status/roster" —
-rather than a second implementation here; they are always a live,
-point-in-time count of the current database state (spec: "не хранить
-устаревшие данные"), never scoped to the selected month.
+Group counts (total/active/completed groups) reuse
+`services.analytics.groups._snapshot` — the one existing computation of
+"what is a Group's status" — and are the live Group.status (there is no
+status history). The students counted in them, like `students_count`, are
+the selected month's roster (services.student_roster — enrolled, grouped
+and with their status on the month's last day), never today's students:
+September must not show October's numbers.
 """
 from __future__ import annotations
 
@@ -343,9 +344,9 @@ def _completed_count(date_range: DateRange) -> dict:
 
 
 def _group_stats(scope: AnalyticsScope, date_range: DateRange) -> dict:
-    """Total/active/paused/completed/cancelled groups and how many students
-    currently sit in active vs. completed ones — always the *current*
-    database state (spec: "текущие метрики — не за месяц"), reusing
+    """Total/active/paused/completed/cancelled groups (live Group.status)
+    and how many of the month's students (roster on its last day) sit in
+    active vs. completed ones, reusing
     `analytics.groups._snapshot` rather than a second group-counting
     implementation. Every group contributes to exactly one status bucket,
     and `total` always equals `active + paused + completed + cancelled`

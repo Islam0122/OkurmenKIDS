@@ -13,6 +13,7 @@ from django.test import Client as DjangoClient
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import load_workbook
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -120,6 +121,13 @@ class ReportsTestBase(TestCase):
         # Homework on l5: s3 submitted, score 10.
         hw2 = Homework.objects.create(lesson=self.l5, title="HW2")
         HomeworkResult.objects.create(homework=hw2, student=self.s3, status=HomeworkResult.Status.SUBMITTED, score=10)
+
+        # Everyone above studies since 1 September 2026 — the roster of a
+        # period is read on its last day (services.student_roster), so a
+        # record stamped with the real "today" would not be September's.
+        Student.objects.update(
+            created_at=timezone.make_aware(dt.datetime(2026, 9, 1, 9)), enrollment_date=dt.date(2026, 9, 1)
+        )
 
         # Dana left PRO-01 in September.
         StudentStatusEvent.objects.create(

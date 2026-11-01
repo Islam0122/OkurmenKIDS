@@ -49,7 +49,7 @@ from apps.users.models import Subject, Teacher
 
 from apps.academy.models import Attendance, Course, Group, GroupTeacher, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
 from .filters import ReportFilters
-from apps.academy.services import trainer_history
+from apps.academy.services import student_roster, trainer_history
 from apps.academy.services.kpi_engine import KPICounts, KPIEngine, KPIResult, from_counts
 
 from .kpi import kpi_weights, rate, weights_description
@@ -353,23 +353,16 @@ def report_teacher_ids(filters: ReportFilters, group_ids: list[int]) -> list[int
 # Student movement per group
 # ---------------------------------------------------------------------------
 
-def _enrolled_in_period_q(filters: ReportFilters) -> Q:
-    """"New student" = the record was created in the period — the same
-    definition the Analytics Dashboard and the Academy Monthly Report use
-    (services.analytics.students), so the three never disagree."""
-    return Q(created_at__date__gte=filters.start, created_at__date__lte=filters.end)
+def _roster(filters: ReportFilters, group_ids=None) -> dict:
+    """Students of the period — enrolled, grouped and with the status they
+    had on the period's last day (services.student_roster), never today's
+    live roster: September's report must not show October's students."""
+    as_of = student_roster.roster_date(filters.end, filters.today)
+    return student_roster.roster_on(as_of, group_ids=group_ids)
 
 
 def _student_counts_by_group(filters: ReportFilters, group_ids) -> dict[int, dict]:
-    rows = (
-        Student.objects.filter(group_id__in=group_ids).order_by().values("group_id")
-        .annotate(
-            total=Count("id"),
-            active=Count("id", filter=Q(status=Student.Status.ACTIVE)),
-            new=Count("id", filter=_enrolled_in_period_q(filters)),
-        )
-    )
-    return {row["group_id"]: row for row in rows}
+    return student_roster.counts_by_group(_roster(filters, group_ids), filters.start, filters.end)
 
 
 def _event_pairs(filters: ReportFilters, event_types, group_ids=None) -> set[tuple[int | None, int]]:
@@ -698,25 +691,39 @@ def subject_summary(subject_rows: list[dict]) -> dict:
 # Students
 # ---------------------------------------------------------------------------
 
-def build_student_rows(filters: ReportFilters, students, *, lessons=None) -> list[dict]:
+def build_student_rows(filters: ReportFilters, students, *, lessons=None, roster=None) -> list[dict]:
     """Per-student period figures for an already-selected list of students
     (a page of a group's roster, or every student of the report for the
-    Excel export) — two grouped queries for the whole list."""
+    Excel export) — two grouped queries for the whole list. With `roster`
+    (services.student_roster) the group and status are the ones the student
+    had in the period, not today's."""
     students = list(students)
     ids = {s.id for s in students}
     stats = _period_stats(filters, "student", lessons=lessons, only_keys=ids) if ids else {}
+    roster = roster or {}
+    group_names = dict(
+        Group.objects.filter(id__in={e.group_id for e in roster.values() if e.group_id}).values_list("id", "name")
+    ) if roster else {}
+    status_labels = dict(Student.Status.choices)
     rows = []
     for student in students:
         s = stats.get(student.id, PeriodStats())
+        entry = roster.get(student.id)
+        if entry is not None:
+            group_id, status = entry.group_id, entry.status
+            group_name = group_names.get(group_id, "—") if group_id else "—"
+        else:
+            group_id, status = student.group_id, student.status
+            group_name = student.group.name if student.group_id else "—"
         rows.append(
             {
                 "id": student.id,
                 "name": str(student),
-                "group": student.group.name if student.group_id else "—",
-                "group_id": student.group_id,
-                "status": student.status,
-                "status_display": student.get_status_display(),
-                "is_active": student.status == Student.Status.ACTIVE,
+                "group": group_name,
+                "group_id": group_id,
+                "status": status,
+                "status_display": status_labels.get(status, status),
+                "is_active": status == Student.Status.ACTIVE,
                 "enrollment_date": student.enrollment_date,
                 "attendance_total": s.attendance_total,
                 "attended": s.attendance_present + s.attendance_late,
@@ -746,18 +753,8 @@ def build_overview(filters: ReportFilters, *, group_rows=None, teacher_rows=None
         subject_rows = build_subject_rows(filters, group_ids)
     weights = kpi_weights()
 
-    if _has_scope_filters(filters):
-        students_qs = Student.objects.filter(group_id__in=group_ids)
-        event_groups = group_ids
-    else:
-        students_qs = Student.objects.all()
-        event_groups = None
-    counts = students_qs.aggregate(
-        total=Count("id"),
-        active=Count("id", filter=Q(status=Student.Status.ACTIVE)),
-        paused=Count("id", filter=Q(status=Student.Status.PAUSED)),
-        new=Count("id", filter=_enrolled_in_period_q(filters)),
-    )
+    event_groups = group_ids if _has_scope_filters(filters) else None
+    counts = student_roster.totals(_roster(filters, event_groups), filters.start, filters.end)
     left = {sid for _g, sid in _event_pairs(filters, [StudentStatusEvent.EventType.DEACTIVATED], event_groups)}
     returned = {sid for _g, sid in _event_pairs(filters, _RETURN_EVENTS, event_groups)}
     completed = {sid for _g, sid in _event_pairs(filters, [StudentStatusEvent.EventType.COMPLETED], event_groups)}
@@ -933,8 +930,9 @@ def group_student_rows(group: Group, filters: ReportFilters) -> list[dict]:
     """Every student on the group's roster with their period figures for
     this group's lessons (two grouped queries for the whole roster)."""
     group_filters = dataclasses.replace(filters, group_id=group.id)
-    students = Student.objects.filter(group=group).select_related("group").order_by("last_name", "first_name")
-    return build_student_rows(group_filters, students, lessons=group_filters.scope().lessons_qs())
+    roster = _roster(filters, [group.id])
+    students = Student.objects.filter(id__in=list(roster)).select_related("group").order_by("last_name", "first_name")
+    return build_student_rows(group_filters, students, lessons=group_filters.scope().lessons_qs(), roster=roster)
 
 
 def build_teacher_detail(teacher: Teacher, filters: ReportFilters) -> dict:
@@ -1021,10 +1019,13 @@ def build_full_report(filters: ReportFilters) -> dict:
 
 
 def build_all_student_rows(filters: ReportFilters, group_ids) -> list[dict]:
-    students = Student.objects.filter(group_id__in=group_ids).select_related("group").order_by(
-        "group__name", "last_name", "first_name"
-    )
-    return build_student_rows(filters, students)
+    """Every student of the period in the report's groups (roster on the
+    period's last day — services.student_roster)."""
+    roster = _roster(filters, group_ids)
+    students = Student.objects.filter(id__in=list(roster)).select_related("group").order_by("last_name", "first_name")
+    rows = build_student_rows(filters, students, roster=roster)
+    rows.sort(key=lambda row: row["group"])  # stable: by name inside a group
+    return rows
 
 
 __all__ = [
