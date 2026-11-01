@@ -9,20 +9,16 @@ import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
 import { KPI_STATUS_BADGE_TONE } from '@/features/kpi/kpiStatus'
 import { extractErrorMessage } from '@/lib/apiError'
-import type { KpiLevel, ReportFiltersInfo, ReportPage, ReportParams, ReportPeriodKey } from '@/types/reports'
+import type { KpiLevel, ReportFiltersInfo, ReportPage, ReportParams } from '@/types/reports'
 import { formatDateShort, formatRuPercent } from '@/utils/format'
+
+import { reportPeriodOptions } from './reportPeriod'
+import type { ReportPeriodChoice } from './reportPeriod'
 
 /** Presentation helpers shared by the Team Lead / Admin analytics pages
  * (Тренеры, Аналитика, Отчёты). Every figure and KPI level comes from the
  * backend Reports API (services.reports / services.kpi_engine) — nothing
  * here re-computes a KPI. */
-
-export const PERIOD_OPTIONS: { value: ReportPeriodKey; label: string }[] = [
-  { value: 'this_week', label: 'Эта неделя' },
-  { value: 'this_month', label: 'Этот месяц' },
-  { value: 'last_month', label: 'Прошлый месяц' },
-  { value: 'this_quarter', label: 'Этот квартал' },
-]
 
 export const KPI_LEVEL_LABEL: Record<KpiLevel, string> = {
   good: 'Хороший',
@@ -46,13 +42,16 @@ export function KpiBadge({ value, level }: { value: number | null; level: KpiLev
   return <Badge tone={KPI_STATUS_BADGE_TONE[level]}>{value === null ? KPI_LEVEL_LABEL[level] : pct(value)}</Badge>
 }
 
-export function PeriodSelect({ value, onChange }: { value: ReportPeriodKey; onChange: (value: ReportPeriodKey) => void }) {
+/** Relative presets plus concrete calendar months («Сентябрь 2026») —
+ * see reportPeriod.ts; turn the value into API params with
+ * `reportPeriodParams`. */
+export function PeriodSelect({ value, onChange }: { value: ReportPeriodChoice; onChange: (value: ReportPeriodChoice) => void }) {
   return (
     <Select
       aria-label="Период"
       value={value}
-      onChange={(event) => onChange(event.target.value as ReportPeriodKey)}
-      options={PERIOD_OPTIONS}
+      onChange={(event) => onChange(event.target.value as ReportPeriodChoice)}
+      options={reportPeriodOptions(new Date(), value)}
     />
   )
 }

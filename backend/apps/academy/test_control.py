@@ -28,6 +28,7 @@ from apps.users.models import Subject, Teacher, User
 
 TODAY = dt.date(2026, 9, 30)
 NOON = dt.time(12, 0)
+SINCE = dt.date(2025, 1, 1)
 SEPT = {"period": "custom", "start_date": "2026-09-01", "end_date": "2026-10-31"}
 # API tests run against the real clock, so their lessons live safely in the past.
 PAST = {"period": "custom", "start_date": "2025-03-01", "end_date": "2025-03-31"}
@@ -60,9 +61,11 @@ class ControlTestBase(TestCase):
         self.gt1_soft = GroupTeacher.objects.create(group=self.g1, teacher=self.aizhan, subject=self.soft)
         self.gt2 = GroupTeacher.objects.create(group=self.g2, teacher=self.almaz, subject=self.python)
 
-        self.s1 = Student.objects.create(first_name="Сумая", last_name="Камалидинова", group=self.g1)
-        self.s2 = Student.objects.create(first_name="Али", last_name="Азамат уулу", group=self.g1)
-        self.s3 = Student.objects.create(first_name="Артём", last_name="Иванов", group=self.g2)
+        # Studying since the groups started: a lesson expects the students
+        # enrolled on its own date (services.student_roster).
+        self.s1 = Student.objects.create(first_name="Сумая", last_name="Камалидинова", group=self.g1, enrollment_date=SINCE)
+        self.s2 = Student.objects.create(first_name="Али", last_name="Азамат уулу", group=self.g1, enrollment_date=SINCE)
+        self.s3 = Student.objects.create(first_name="Артём", last_name="Иванов", group=self.g2, enrollment_date=SINCE)
 
     _n = 0
 
@@ -259,7 +262,7 @@ class ControlRulesTests(ControlTestBase):
     def test_multiple_groups_and_trainers(self):
         g3 = Group.objects.create(name="Next 2", course=self.course, start_date=dt.date(2025, 1, 1))
         gt3 = GroupTeacher.objects.create(group=g3, teacher=self.aizhan, subject=self.python)
-        Student.objects.create(first_name="Нурсултан", group=g3)
+        Student.objects.create(first_name="Нурсултан", group=g3, enrollment_date=SINCE)
         self.fill(self.lesson(self.gt1, dt.date(2026, 9, 28)))
         self.fill(self.lesson(gt3, dt.date(2026, 9, 28)), attendance=False)
         self.lesson(self.gt2, dt.date(2026, 9, 28), Lesson.Status.SCHEDULED)
@@ -572,7 +575,7 @@ class ControlTeachersTests(ControlTestBase):
         zara = make_teacher("zara")
         g3 = Group.objects.create(name="Z-1", course=self.course, start_date=dt.date(2025, 1, 1))
         gt3 = GroupTeacher.objects.create(group=g3, teacher=zara, subject=self.python)
-        Student.objects.create(first_name="Z", group=g3)
+        Student.objects.create(first_name="Z", group=g3, enrollment_date=SINCE)
         self.fill(self.lesson(self.gt1, dt.date(2026, 9, 28)))
         self.fill(self.lesson(self.gt1_soft, dt.date(2026, 9, 28)), attendance=False)
         self.fill(self.lesson(gt3, dt.date(2026, 9, 28)))

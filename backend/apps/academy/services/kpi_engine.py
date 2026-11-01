@@ -51,7 +51,8 @@ from django.utils import timezone
 
 from typing import TYPE_CHECKING
 
-from apps.academy.models import Attendance, HomeworkResult, Lesson, Student, StudentStatusEvent
+from apps.academy.models import Attendance, HomeworkResult, Lesson, StudentStatusEvent
+from apps.academy.services import student_roster
 
 if TYPE_CHECKING:  # the analytics package imports this module — import lazily at runtime
     from apps.academy.services.analytics.scope import AnalyticsScope
@@ -263,18 +264,29 @@ class KPIEngine:
         )
 
         groups = scope.groups_qs()
-        students_active = Student.objects.filter(group__in=groups, status=Student.Status.ACTIVE).count()
-        students_left = (
+        # Students of the period (services.student_roster): enrolled, in
+        # these groups and with this status on the period's last day — never
+        # today's live roster, or a past month's retention would be computed
+        # on the current students.
+        roster = student_roster.roster_on(
+            student_roster.roster_date(rng.end, today), group_ids=list(groups.values_list("id", flat=True))
+        )
+        students_active = sum(1 for entry in roster.values() if entry.is_active)
+        left_ids = set(
             StudentStatusEvent.objects.filter(
                 event_type=StudentStatusEvent.EventType.DEACTIVATED,
                 event_date__gte=rng.start,
                 event_date__lte=rng.end,
                 group__in=groups,
             )
-            .exclude(student__status=Student.Status.ACTIVE)
-            .values("student_id")
+            .values_list("student_id", flat=True)
             .distinct()
-            .count()
+        )
+        # Left in the period and not back by its end (a student who left and
+        # returned within the month did not leave it).
+        students_left = sum(
+            1 for student_id in left_ids
+            if not (student_id in roster and roster[student_id].is_active)
         )
 
         from apps.academy.services.analytics import assessments

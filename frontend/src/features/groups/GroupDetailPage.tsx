@@ -26,7 +26,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useReportGroup } from '@/hooks/useReports'
 import { seesWholeAcademy } from '@/lib/roles'
 import { KpiBadge, MetricValue, PeriodSelect, pct, periodCaption } from '@/features/analytics/reportUi'
-import type { ReportPeriodKey } from '@/types/reports'
+import { reportPeriodParams, useReportPeriod } from '@/features/analytics/reportPeriod'
 import { useGroup, useGroupSchedule } from '@/hooks/useGroups'
 import { useHomeworkList } from '@/hooks/useHomework'
 import { useAnalyticsDashboard } from '@/hooks/useKPI'
@@ -405,8 +405,8 @@ function KpiTab({ groupId }: { groupId: number }) {
 /** Group → Trainers / Students results / KPI for a period, read-only. */
 function AnalyticsTab({ groupId }: { groupId: number }) {
   const navigate = useNavigate()
-  const [period, setPeriod] = useState<ReportPeriodKey>('this_month')
-  const { data, isPending, isError, refetch } = useReportGroup(groupId, { period, page_size: 200 })
+  const [period, setPeriod] = useReportPeriod()
+  const { data, isPending, isError, refetch } = useReportGroup(groupId, { ...reportPeriodParams(period), page_size: 200 })
 
   return (
     <div className="space-y-6">

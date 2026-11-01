@@ -189,9 +189,13 @@ class AcademyTestBase(TestCase):
         sync_and_generate(self.group1)
         sync_and_generate(self.group2)
 
-        self.student1 = Student.objects.create(first_name="Алина", last_name="Иванова", group=self.group1)
-        self.student2 = Student.objects.create(first_name="Мансур", last_name="Алиев", group=self.group1)
-        self.student3 = Student.objects.create(first_name="Айбек", last_name="Токтогулов", group=self.group2)
+        # Studying since August 2026 — before the September lessons the
+        # period tests read (a period's roster is taken on its last day,
+        # services.student_roster; the real "today" would fall after it).
+        since = dt.date(2026, 8, 1)
+        self.student1 = Student.objects.create(first_name="Алина", last_name="Иванова", group=self.group1, enrollment_date=since)
+        self.student2 = Student.objects.create(first_name="Мансур", last_name="Алиев", group=self.group1, enrollment_date=since)
+        self.student3 = Student.objects.create(first_name="Айбек", last_name="Токтогулов", group=self.group2, enrollment_date=since)
 
         self.admin_client = APIClient()
         self.admin_client.force_authenticate(self.admin)
@@ -6993,7 +6997,7 @@ class AcademyReportMovementMetricsTests(AcademyTestBase):
         """Reactivating a student afterwards must not retroactively remove
         their departure — `left` counts every DEACTIVATED event exactly as
         before, independent of what happens to the student later."""
-        deactivate_student(self.student1, reason="no_interest", comment="")
+        deactivate_student(self.student1, reason="no_interest", comment="", event_date=dt.date(2026, 9, 10))
         reactivate_student(self.student1, group=self.group1, event_date=dt.date(2026, 9, 20), comment="")
         stats = compute_academy_monthly_stats(2026, 9)
         self.assertEqual(stats["movement"]["left"], 1)
@@ -7215,15 +7219,24 @@ class AcademyReportGroupStatsTests(AcademyTestBase):
         self.assertEqual(self.group2.students_count, 2)
 
     def test_group_stats_are_current_not_month_scoped(self):
-        """group_stats reads live Group.status — unlike `movement.left`/
-        `completed`, it must not change depending on which month is
-        selected."""
+        """Group *statuses* in group_stats are live Group.status (there is no
+        status history) — they must not change with the selected month. The
+        students counted in those groups are the month's own roster
+        (services.student_roster): a month before anyone enrolled has none,
+        never today's students (regression: September showed October's)."""
         self.group2.status = Group.Status.COMPLETED
         self.group2.save(update_fields=["status"])
 
         stats_this_month = compute_academy_monthly_stats(2026, 9)
         stats_other_month = compute_academy_monthly_stats(2020, 1)
-        self.assertEqual(stats_this_month["group_stats"], stats_other_month["group_stats"])
+        status_keys = ("total", "active", "paused", "completed", "cancelled")
+        self.assertEqual(
+            {k: stats_this_month["group_stats"][k] for k in status_keys},
+            {k: stats_other_month["group_stats"][k] for k in status_keys},
+        )
+        self.assertEqual(stats_this_month["group_stats"]["students_active"], 2)
+        self.assertEqual(stats_other_month["group_stats"]["students_active"], 0)
+        self.assertEqual(stats_other_month["students_count"], 0)
 
 
 # ---------------------------------------------------------------------------
