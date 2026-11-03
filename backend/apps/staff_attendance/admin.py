@@ -1,8 +1,20 @@
 """Django admin: справочник офисов и настроек; сессии, события и исправления —
 только просмотр (исправления делаются через API с обязательной причиной)."""
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.db.models import Q
+from django.forms.models import model_to_dict
+from django.http import JsonResponse
+from django.urls import path
+from django.utils import timezone
+from django.utils.html import format_html
 
+from apps.users.models import User
+
+from .admin_forms import WorkScheduleAdminForm, employee_card, employee_label
 from .models import (
+    WEEKDAY_SHORT,
     AttendanceAdjustment,
     AttendanceAdminLog,
     AttendanceEvent,
@@ -48,9 +60,171 @@ class AttendanceSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(AttendanceWorkSchedule)
 class AttendanceWorkScheduleAdmin(admin.ModelAdmin):
-    list_display = ("user", "work_start", "work_end", "work_days", "is_active")
-    raw_id_fields = ("user",)
+    """Личные расписания: форма для HR — сотрудник через поиск, дни недели
+    карточками, часы по дням, перерыв, льготное время и период действия.
+    Шаблон: templates/admin/staff_attendance/attendanceworkschedule/."""
+
+    form = WorkScheduleAdminForm
+    list_display = ("employee", "days_display", "hours_display", "break_display", "grace_display",
+                    "period_display", "status_display")
+    list_display_links = ("employee",)
+    list_filter = ("is_active", "user__role")
+    search_fields = ("user__username", "user__first_name", "user__last_name", "note")
+    list_select_related = ("user", "user__salary_profile", "user__teacher_profile")
     readonly_fields = ("updated_at", "updated_by")
+    ordering = ("user__last_name", "user__first_name")
+    SEARCH_PAGE_SIZE = 20
+
+    class Media:
+        css = {"all": ("admin/css/vendor/select2/select2.min.css", "staff_attendance/admin/schedule.css")}
+        js = ("admin/js/vendor/jquery/jquery.min.js", "admin/js/vendor/select2/select2.full.min.js",
+              "admin/js/vendor/select2/i18n/ru.js", "admin/js/jquery.init.js",
+              "staff_attendance/admin/schedule.js")
+
+    # -- список ------------------------------------------------------------
+
+    @admin.display(description="Сотрудник", ordering="user__last_name")
+    def employee(self, obj):
+        card = employee_card(obj.user)
+        sub = " · ".join(p for p in (card["position"], card["department"]) if p)
+        return format_html('<strong>{}</strong><div class="ok-ws-list-sub">{}</div>', card["full_name"], sub)
+
+    @admin.display(description="Рабочие дни")
+    def days_display(self, obj):
+        return format_days(obj.work_days)
+
+    @admin.display(description="Часы")
+    def hours_display(self, obj):
+        hours = {obj.hours_for(d) for d in obj.work_days or []}
+        hours.discard(None)
+        if len(hours) > 1:
+            return format_html('{}–{} <span class="ok-badge ok-badge-info">по дням</span>',
+                               f"{obj.work_start:%H:%M}", f"{obj.work_end:%H:%M}")
+        return f"{obj.work_start:%H:%M}–{obj.work_end:%H:%M}"
+
+    @admin.display(description="Перерыв")
+    def break_display(self, obj):
+        if obj.break_start and obj.break_end:
+            return f"{obj.break_start:%H:%M}–{obj.break_end:%H:%M}"
+        return "—"
+
+    @admin.display(description="Льгота", ordering="late_grace_minutes")
+    def grace_display(self, obj):
+        if obj.late_grace_minutes is None:
+            return format_html('<span class="ok-ws-muted">{}</span>', "общая")
+        return f"{obj.late_grace_minutes} мин"
+
+    @admin.display(description="Период действия")
+    def period_display(self, obj):
+        if not obj.valid_from and not obj.valid_until:
+            return "Бессрочно"
+        start = f"с {obj.valid_from:%d.%m.%Y}" if obj.valid_from else ""
+        end = f"по {obj.valid_until:%d.%m.%Y}" if obj.valid_until else ""
+        return " ".join(p for p in (start, end) if p)
+
+    @admin.display(description="Статус", ordering="is_active")
+    def status_display(self, obj):
+        today = timezone.localdate()
+        if not obj.is_active:
+            return format_html('<span class="ok-badge ok-badge-muted"><span class="ok-badge-dot"></span>{}</span>',
+                               "Выключено")
+        if obj.valid_from and today < obj.valid_from:
+            return format_html('<span class="ok-badge ok-badge-info"><span class="ok-badge-dot"></span>{}</span>',
+                               "Запланировано")
+        if obj.valid_until and today > obj.valid_until:
+            return format_html('<span class="ok-badge ok-badge-warning"><span class="ok-badge-dot"></span>{}</span>',
+                               "Истекло")
+        return format_html('<span class="ok-badge ok-badge-success"><span class="ok-badge-dot"></span>{}</span>',
+                           "Действует")
+
+    # -- поиск сотрудника (Select2) ---------------------------------------
+
+    def get_urls(self):
+        info = self.opts.app_label, self.opts.model_name
+        return [
+            path("employee-search/", self.admin_site.admin_view(self.employee_search_view),
+                 name="%s_%s_employee_search" % info),
+            *super().get_urls(),
+        ]
+
+    def employee_search_view(self, request):
+        if not (self.has_add_permission(request) or self.has_change_permission(request)):
+            raise PermissionDenied
+        term = (request.GET.get("term") or "").strip()
+        try:
+            page = max(1, int(request.GET.get("page") or 1))
+        except ValueError:
+            page = 1
+        try:
+            current = int(request.GET.get("current") or 0)
+        except ValueError:
+            current = 0
+        qs = (User.objects.filter(is_active=True)
+              .select_related("salary_profile", "teacher_profile", "attendance_schedule")
+              .order_by("last_name", "first_name", "username"))
+        for word in term.split()[:5]:
+            qs = qs.filter(Q(first_name__icontains=word) | Q(last_name__icontains=word)
+                           | Q(username__icontains=word) | Q(email__icontains=word)
+                           | Q(salary_profile__position__icontains=word)
+                           | Q(teacher_profile__position__icontains=word))
+        offset = (page - 1) * self.SEARCH_PAGE_SIZE
+        users = list(qs[offset:offset + self.SEARCH_PAGE_SIZE + 1])
+        results = []
+        for user in users[:self.SEARCH_PAGE_SIZE]:
+            card = employee_card(user)
+            has_schedule = hasattr(user, "attendance_schedule") and user.pk != current
+            results.append({**card, "text": employee_label(user), "has_schedule": has_schedule,
+                            "disabled": has_schedule})
+        return JsonResponse({"results": results, "pagination": {"more": len(users) > self.SEARCH_PAGE_SIZE}})
+
+    # -- сохранение: кто изменил + журнал, как в API -----------------------
+
+    def save_model(self, request, obj, form, change):
+        from .views import _diff, _log
+
+        before = model_to_dict(AttendanceWorkSchedule.objects.get(pk=obj.pk)) if change else {}
+        obj.updated_by = request.user
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            _log(request.user, "schedule_update", obj, _diff(before, model_to_dict(obj)))
+
+    def delete_model(self, request, obj):
+        from .views import _diff, _log
+
+        with transaction.atomic():
+            _log(request.user, "schedule_delete", obj, _diff({}, model_to_dict(obj)))
+            super().delete_model(request, obj)
+
+    def render_change_form(self, request, context, add=False, change=False, form_url="", obj=None):
+        config = AttendanceSettings.load()
+        context.update({
+            "global_grace": config.late_grace_minutes,
+            "global_hours": f"{config.work_start:%H:%M}–{config.work_end:%H:%M}",
+            "global_days": format_days(config.work_days),
+        })
+        return super().render_change_form(request, context, add, change, form_url, obj)
+
+
+def format_days(days) -> str:
+    """[0, 1, 2, 3, 4] → «Пн–Пт», [0, 2, 4] → «Пн, Ср, Пт»."""
+    days = sorted(set(days or []))
+    if not days:
+        return "—"
+    groups, run = [], [days[0]]
+    for day in days[1:]:
+        if day == run[-1] + 1:
+            run.append(day)
+        else:
+            groups.append(run)
+            run = [day]
+    groups.append(run)
+    parts = []
+    for group in groups:
+        if len(group) >= 3:
+            parts.append(f"{WEEKDAY_SHORT[group[0]]}–{WEEKDAY_SHORT[group[-1]]}")
+        else:
+            parts.extend(WEEKDAY_SHORT[d] for d in group)
+    return ", ".join(parts)
 
 
 @admin.register(AttendanceSession)

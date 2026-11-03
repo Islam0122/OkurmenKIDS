@@ -150,25 +150,35 @@ class SettingsSerializer(serializers.ModelSerializer):
 
 class WorkScheduleSerializer(serializers.ModelSerializer):
     work_days = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), allow_empty=True)
+    day_hours = serializers.JSONField(required=False)
     employee = serializers.SerializerMethodField()
 
     class Meta:
         model = AttendanceWorkSchedule
-        fields = ["id", "user", "employee", "work_start", "work_end", "work_days", "late_grace_minutes",
-                  "is_active", "note", "updated_at"]
+        fields = ["id", "user", "employee", "work_start", "work_end", "work_days", "break_start", "break_end",
+                  "day_hours", "late_grace_minutes", "valid_from", "valid_until", "is_active", "note", "updated_at"]
         read_only_fields = ["id", "user", "employee", "updated_at"]
 
     def get_employee(self, obj) -> dict:
         return employee_brief(obj.user)
 
     def validate(self, attrs):
-        start = attrs.get("work_start", getattr(self.instance, "work_start", None))
-        end = attrs.get("work_end", getattr(self.instance, "work_end", None))
-        if start and end and end <= start:
-            raise serializers.ValidationError({"work_end": "Окончание рабочего дня должно быть позже начала."})
         if "work_days" in attrs:
             validate_weekdays(attrs["work_days"])
             attrs["work_days"] = sorted(set(attrs["work_days"]))
+        # Все правила (время, перерыв, часы по дням, период) — в модели:
+        # те же проверки, что и в Django admin.
+        probe = copy.copy(self.instance) if self.instance else AttendanceWorkSchedule()
+        for key, value in attrs.items():
+            setattr(probe, key, value)
+        if probe.work_start is None or probe.work_end is None:
+            missing = {f: "Обязательное поле." for f in ("work_start", "work_end") if getattr(probe, f) is None}
+            raise serializers.ValidationError(missing)
+        try:
+            probe.full_clean(exclude=["user", "updated_by"], validate_unique=False)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict) from exc
+        attrs["day_hours"] = probe.day_hours  # нормализованный вид
         return attrs
 
 
