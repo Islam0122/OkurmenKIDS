@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import secrets
+from dataclasses import dataclass
 from datetime import time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -183,9 +184,99 @@ class AttendanceLocation(models.Model):
         return self.name
 
 
+WEEKDAY_LABELS = ("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
+WEEKDAY_SHORT = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+DAY_HOURS_KEYS = ("start", "end", "break_start", "break_end")
+
+
+@dataclass(frozen=True)
+class DayHours:
+    """Рабочие часы одного дня личного расписания (время офиса)."""
+
+    start: time
+    end: time
+    break_start: time | None = None
+    break_end: time | None = None
+
+    def as_json(self) -> dict:
+        def fmt(value):
+            return value.strftime("%H:%M") if value else None
+
+        return {"start": fmt(self.start), "end": fmt(self.end),
+                "break_start": fmt(self.break_start), "break_end": fmt(self.break_end)}
+
+
+def _parse_time(value, field: str, day_label: str) -> time | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, time):
+        return value.replace(second=0, microsecond=0)
+    if isinstance(value, str):
+        try:
+            return time.fromisoformat(value).replace(second=0, microsecond=0)
+        except ValueError:
+            pass
+    raise ValidationError(f"{day_label}: неверное время «{value}» в поле {field}.")
+
+
+def check_day_hours(hours: DayHours, day_label: str = "") -> dict[str, str]:
+    """Ошибки одного дня {поле: сообщение}; пусто — день корректен."""
+    prefix = f"{day_label}: " if day_label else ""
+    errors: dict[str, str] = {}
+    if hours.end <= hours.start:
+        errors["end"] = f"{prefix}окончание рабочего дня должно быть позже начала."
+    if (hours.break_start is None) != (hours.break_end is None):
+        key = "break_end" if hours.break_end is None else "break_start"
+        errors[key] = f"{prefix}укажите и начало, и конец перерыва (или оставьте оба пустыми)."
+    elif hours.break_start is not None:
+        if hours.break_end <= hours.break_start:
+            errors["break_end"] = f"{prefix}конец перерыва должен быть позже его начала."
+        elif hours.break_start < hours.start or hours.break_end > hours.end:
+            errors["break_start"] = f"{prefix}перерыв должен быть внутри рабочего времени."
+    return errors
+
+
+def parse_day_hours(value) -> dict[str, DayHours]:
+    """Проверяет и разбирает `AttendanceWorkSchedule.day_hours`:
+    {"0".."6": {"start": "HH:MM", "end": "HH:MM", "break_start": "HH:MM"|null, "break_end": ...}}."""
+    if value in (None, ""):
+        return {}
+    if not isinstance(value, dict):
+        raise ValidationError("Часы по дням — объект {номер дня: {start, end, break_start, break_end}}.")
+    parsed: dict[str, DayHours] = {}
+    for key, raw in value.items():
+        key = str(key)
+        if key not in {str(d) for d in ALL_WEEKDAYS}:
+            raise ValidationError(f"Неизвестный день недели «{key}» (допустимо 0…6).")
+        label = WEEKDAY_LABELS[int(key)]
+        if not isinstance(raw, dict) or set(raw) - set(DAY_HOURS_KEYS):
+            raise ValidationError(f"{label}: ожидаются поля start, end, break_start, break_end.")
+        start = _parse_time(raw.get("start"), "start", label)
+        end = _parse_time(raw.get("end"), "end", label)
+        if start is None or end is None:
+            raise ValidationError(f"{label}: укажите начало и окончание рабочего дня.")
+        hours = DayHours(start, end, _parse_time(raw.get("break_start"), "break_start", label),
+                         _parse_time(raw.get("break_end"), "break_end", label))
+        errors = check_day_hours(hours, label)
+        if errors:
+            raise ValidationError(list(errors.values()))
+        parsed[key] = hours
+    return parsed
+
+
+def validate_day_hours(value) -> None:
+    parse_day_hours(value)
+
+
 class AttendanceWorkSchedule(models.Model):
-    """Личное расписание сотрудника. Нет записи или она выключена — действует
-    общее расписание из настроек (или занятия тренера, если это включено)."""
+    """Личное расписание сотрудника. Нет записи, она выключена или сегодня
+    вне периода действия — действует общее расписание из настроек (или
+    занятия тренера, если это включено).
+
+    Часы дня: `work_start`/`work_end` (+ перерыв `break_start`/`break_end`) —
+    базовые для всех рабочих дней; `day_hours` хранит только дни, у которых
+    часы отличаются от базовых. Старые записи (`day_hours` пуст) работают
+    как раньше."""
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attendance_schedule",
@@ -194,10 +285,21 @@ class AttendanceWorkSchedule(models.Model):
     work_start = models.TimeField(verbose_name="Начало рабочего дня")
     work_end = models.TimeField(verbose_name="Окончание рабочего дня")
     work_days = models.JSONField(default=default_work_days, validators=[validate_weekdays], verbose_name="Рабочие дни")
+    break_start = models.TimeField(null=True, blank=True, verbose_name="Начало перерыва")
+    break_end = models.TimeField(null=True, blank=True, verbose_name="Конец перерыва")
+    day_hours = models.JSONField(
+        default=dict, blank=True, validators=[validate_day_hours], verbose_name="Часы по дням",
+        help_text="Дни с часами, отличными от базовых: {\"5\": {\"start\": \"10:00\", \"end\": \"15:00\", "
+                  "\"break_start\": null, \"break_end\": null}}.",
+    )
     late_grace_minutes = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MaxValueValidator(240)],
         verbose_name="Льготное время, мин", help_text="Пусто — как в общих настройках.",
     )
+    valid_from = models.DateField(null=True, blank=True, verbose_name="Действует с",
+                                  help_text="Пусто — без ограничения.")
+    valid_until = models.DateField(null=True, blank=True, verbose_name="Действует по",
+                                   help_text="Включительно. Пусто — бессрочно.")
     is_active = models.BooleanField(default=True, verbose_name="Действует")
     note = models.CharField(max_length=255, blank=True, verbose_name="Комментарий")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Изменено")
@@ -213,9 +315,44 @@ class AttendanceWorkSchedule(models.Model):
     def __str__(self):
         return f"{self.user}: {self.work_start:%H:%M}–{self.work_end:%H:%M}"
 
+    @property
+    def base_hours(self) -> DayHours:
+        return DayHours(self.work_start, self.work_end, self.break_start, self.break_end)
+
+    def hours_for(self, weekday: int) -> DayHours | None:
+        """Часы дня недели (0 — пн) или None, если день не рабочий."""
+        if weekday not in (self.work_days or []):
+            return None
+        try:
+            override = parse_day_hours(self.day_hours).get(str(weekday))
+        except ValidationError:
+            override = None  # повреждённая запись не должна ломать расчёт: берём базовые часы
+        return override or self.base_hours
+
+    def is_effective_on(self, day) -> bool:
+        return (self.is_active and (self.valid_from is None or self.valid_from <= day)
+                and (self.valid_until is None or day <= self.valid_until))
+
     def clean(self):
-        if self.work_end <= self.work_start:
-            raise ValidationError({"work_end": "Окончание рабочего дня должно быть позже начала."})
+        errors: dict[str, list[str]] = {}
+        if self.work_start and self.work_end:
+            for field, message in check_day_hours(self.base_hours).items():
+                errors.setdefault({"start": "work_start", "end": "work_end"}.get(field, field), []).append(message)
+        if self.valid_from and self.valid_until and self.valid_until < self.valid_from:
+            errors.setdefault("valid_until", []).append("Дата окончания не может быть раньше даты начала.")
+        try:
+            overrides = parse_day_hours(self.day_hours)
+        except ValidationError as exc:
+            errors.setdefault("day_hours", []).extend(exc.messages)
+        else:
+            # Храним только отличия от базовых часов в едином формате. Часы
+            # нерабочих дней отбрасываются: клиент, который меняет только
+            # work_days, не должен получать ошибку из-за старых часов дня.
+            working = {str(d) for d in (self.work_days or [])}
+            self.day_hours = {k: h.as_json() for k, h in sorted(overrides.items())
+                              if k in working and h != self.base_hours}
+        if errors:
+            raise ValidationError(errors)
 
 
 class AttendanceSession(models.Model):

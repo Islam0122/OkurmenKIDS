@@ -1,7 +1,9 @@
 """Ожидаемое рабочее время сотрудника в конкретный день.
 
 Порядок источников:
-1. Личное расписание (AttendanceWorkSchedule), если оно включено.
+1. Личное расписание (AttendanceWorkSchedule), если оно включено и день
+   попадает в период его действия. Часы берутся для конкретного дня недели
+   (`hours_for`): базовые или отдельные часы этого дня.
 2. Для тренера — занятия LMS этого дня, если в настройках включено
    `teacher_schedule_from_lessons` (начало первого занятия минус «прийти
    заранее», конец последнего). День без занятий — не рабочий.
@@ -13,7 +15,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 
 from django.db.models import Q
@@ -27,6 +29,9 @@ class WorkWindow:
     end: datetime
     grace_minutes: int
     source: str  # personal | lessons | default
+    # Перерыв — только справочно (личное расписание); опоздание от него не зависит.
+    break_start: datetime | None = None
+    break_end: datetime | None = None
 
     @property
     def late_after(self) -> datetime:
@@ -43,7 +48,11 @@ class ScheduleResolver:
         self.tz = config.tzinfo
         ids = [u.pk for u in users]
         self.personal = {
-            s.user_id: s for s in AttendanceWorkSchedule.objects.filter(user_id__in=ids, is_active=True)
+            s.user_id: s
+            for s in AttendanceWorkSchedule.objects.filter(user_id__in=ids, is_active=True).filter(
+                Q(valid_from__isnull=True) | Q(valid_from__lte=day),
+                Q(valid_until__isnull=True) | Q(valid_until__gte=day),
+            )
         }
         self.lessons: dict[int, tuple] = {}
         if config.teacher_schedule_from_lessons:
@@ -52,11 +61,15 @@ class ScheduleResolver:
     def window(self, user) -> WorkWindow | None:
         personal = self.personal.get(user.pk)
         if personal is not None:
-            if self.day.weekday() not in (personal.work_days or []):
+            hours = personal.hours_for(self.day.weekday())
+            if hours is None:
                 return None
             grace = personal.late_grace_minutes
-            return self._make(personal.work_start, personal.work_end,
-                              self.config.late_grace_minutes if grace is None else grace, "personal")
+            win = self._make(hours.start, hours.end,
+                             self.config.late_grace_minutes if grace is None else grace, "personal")
+            if hours.break_start and hours.break_end:
+                win = replace(win, break_start=self._at(hours.break_start), break_end=self._at(hours.break_end))
+            return win
         if self.config.teacher_schedule_from_lessons and user.role == "teacher":
             bounds = self.lessons.get(user.pk)
             if not bounds:
@@ -68,6 +81,9 @@ class ScheduleResolver:
         if self.day.weekday() not in (self.config.work_days or []):
             return None
         return self._make(self.config.work_start, self.config.work_end, self.config.late_grace_minutes, "default")
+
+    def _at(self, moment) -> datetime:
+        return datetime.combine(self.day, moment, tzinfo=self.tz)
 
     def _make(self, start, end, grace, source) -> WorkWindow:
         return WorkWindow(

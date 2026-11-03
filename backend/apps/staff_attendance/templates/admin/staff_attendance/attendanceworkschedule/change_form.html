@@ -1,0 +1,255 @@
+{% extends "admin/change_form.html" %}
+{% load admin_urls %}
+{% comment %}
+  Личное расписание сотрудника — форма для HR.
+  Поля и проверки: apps/staff_attendance/admin_forms.py (WorkScheduleAdminForm).
+  Поведение (Select2, дни, копирование часов, итоги): static/staff_attendance/admin/schedule.js.
+  Без JavaScript форма тоже работает: все поля — обычные input, сервер проверяет всё.
+{% endcomment %}
+
+{% block bodyclass %}{{ block.super }} ok-ws-page{% endblock %}
+
+{% block content_title %}Личное расписание сотрудника{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Главная</a></li>
+  <li class="breadcrumb-item"><a href="{% url opts|admin_urlname:'changelist' %}">Личные расписания сотрудников</a></li>
+  <li class="breadcrumb-item active">{% if add %}Новое расписание{% else %}{{ original.user.get_full_name|default:original.user.username }}{% endif %}</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+{% if not add and not has_change_permission %}
+  {{ block.super }}
+{% else %}
+{% with form=adminform.form %}
+<div class="ok-form-container ok-set ok-ws">
+  <form action="{{ form_url }}" method="post" id="{{ opts.model_name }}_form" novalidate data-ok-loading data-ws-form>
+    {% csrf_token %}
+    {% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+    {% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+
+    <header class="ok-set-head">
+      <span class="ok-sch-card-icon is-lg"><i class="bi bi-calendar-week"></i></span>
+      <div class="ok-set-head-text">
+        <div class="ok-sch-label">Учёт рабочего времени</div>
+        <h2 class="ok-set-title">{% if add %}Новое личное расписание{% else %}{{ original.user.get_full_name|default:original.user.username }}{% endif %}</h2>
+        <p class="ok-set-subtitle">Расписание заменяет общий график ({{ global_days }}, {{ global_hours }}) для одного сотрудника: по нему считаются опоздания и рабочие дни.</p>
+      </div>
+      <div class="ok-ws-summary" data-ws-summary aria-live="polite"></div>
+    </header>
+
+    {% if errors %}
+      <div class="ok-alert ok-alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle"></i>
+        {% if errors|length == 1 %}Исправьте ошибку ниже.{% else %}Исправьте ошибки ниже.{% endif %}
+        {% for error in form.non_field_errors %}<div class="mt-1"><strong>{{ error }}</strong></div>{% endfor %}
+        {% for error in form.hidden_errors %}<div class="mt-1"><strong>{{ error }}</strong></div>{% endfor %}
+      </div>
+    {% endif %}
+
+    {# ---- 1. Сотрудник ---- #}
+    <section class="ok-card ok-set-card" id="ws-employee">
+      <div class="ok-set-card-head">
+        <h3><span class="ok-ws-step">1</span> Сотрудник</h3>
+        <p>Поиск по имени, фамилии, логину или должности. Сотрудники, у которых уже есть расписание, недоступны.</p>
+      </div>
+      <div class="ok-ws-body{% if form.user.errors %} has-error{% endif %}">
+        <label class="ok-set-label" for="{{ form.user.id_for_label }}">{{ form.user.label }} <span class="ok-ws-req">*</span></label>
+        <div class="ok-ws-employee" data-current-user="{{ original.user_id|default:'' }}">{{ form.user }}</div>
+        {% for error in form.user.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+      </div>
+    </section>
+
+    {# ---- 2. Рабочие дни ---- #}
+    <section class="ok-card ok-set-card" id="ws-days">
+      <div class="ok-set-card-head ok-ws-head-row">
+        <div>
+          <h3><span class="ok-ws-step">2</span> Рабочие дни</h3>
+          <p>Отметьте дни, в которые сотрудник работает. В остальные дни опоздания и пропуски не считаются.</p>
+        </div>
+        <div class="ok-ws-presets" role="group" aria-label="Быстрый выбор дней">
+          <button type="button" class="ok-ws-chip" data-days-preset="0,1,2,3,4">Пн–Пт</button>
+          <button type="button" class="ok-ws-chip" data-days-preset="0,1,2,3,4,5">Пн–Сб</button>
+          <button type="button" class="ok-ws-chip" data-days-preset="0,1,2,3,4,5,6">Все дни</button>
+          <button type="button" class="ok-ws-chip is-ghost" data-days-preset="">Сбросить</button>
+        </div>
+      </div>
+      <div class="ok-ws-body{% if form.work_days.errors %} has-error{% endif %}">
+        <div class="ok-ws-days" role="group" aria-label="Рабочие дни">
+          {% for card in form.day_cards %}
+            <label class="ok-ws-day{% if card.selected %} is-on{% endif %}{% if card.weekday >= 5 %} is-weekend{% endif %}" data-day-card="{{ card.weekday }}">
+              {{ card.widget.tag }}
+              <span class="ok-ws-day-short" aria-hidden="true">{{ card.short }}</span>
+              <span class="ok-ws-day-name">{{ card.widget.choice_label }}</span>
+              <span class="ok-ws-day-state"><i class="bi bi-check-lg"></i><span class="ok-ws-day-on">Рабочий</span><span class="ok-ws-day-off">Выходной</span></span>
+            </label>
+          {% endfor %}
+        </div>
+        {% for error in form.work_days.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+      </div>
+    </section>
+
+    {# ---- 3. График работы ---- #}
+    <section class="ok-card ok-set-card" id="ws-hours">
+      <div class="ok-set-card-head ok-ws-head-row">
+        <div>
+          <h3><span class="ok-ws-step">3</span> График работы</h3>
+          <p>Время начала и окончания по дням (часовой пояс офиса). Часы можно задать разные для каждого дня.</p>
+        </div>
+        <button type="button" class="ok-btn-secondary ok-btn-sm" data-copy-hours>
+          <i class="bi bi-copy"></i> <span data-copy-label>Скопировать понедельник на все дни</span>
+        </button>
+      </div>
+      <div class="ok-ws-table" role="table" aria-label="Часы работы по дням">
+        <div class="ok-ws-tr ok-ws-th" role="row">
+          <span role="columnheader">День</span><span role="columnheader">Начало</span><span role="columnheader">Окончание</span><span role="columnheader" class="ok-ws-dur">Часов</span>
+        </div>
+        {% for row in form.day_rows %}
+          <div class="ok-ws-tr{% if not row.selected %} is-off{% endif %}{% if row.hours_errors %} has-error{% endif %}" role="row" data-hours-row="{{ row.weekday }}"{% if not row.selected %} hidden{% endif %}>
+            <span class="ok-ws-dayname" role="cell"><span class="ok-ws-day-dot">{{ row.short }}</span>{{ row.label }}</span>
+            <span role="cell"><label class="visually-hidden" for="{{ row.start.id_for_label }}">{{ row.start.label }}</label>{{ row.start }}</span>
+            <span role="cell"><label class="visually-hidden" for="{{ row.end.id_for_label }}">{{ row.end.label }}</label>{{ row.end }}</span>
+            <span role="cell" class="ok-ws-dur" data-duration></span>
+            {% if row.hours_errors %}<div class="ok-ws-row-errors" role="cell">{% for error in row.hours_errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}</div>{% endif %}
+          </div>
+        {% endfor %}
+        <div class="ok-ws-empty" data-hours-empty{% if form.selected_days %} hidden{% endif %}>Выберите рабочие дни в разделе 2 — здесь появятся строки для часов.</div>
+      </div>
+      <div class="ok-ws-total" data-week-total aria-live="polite"></div>
+    </section>
+
+    {# ---- 4. Перерыв ---- #}
+    <section class="ok-card ok-set-card" id="ws-break">
+      <div class="ok-set-card-head">
+        <h3><span class="ok-ws-step">4</span> Перерыв</h3>
+        <p>Необязательно. Перерыв должен быть внутри рабочего времени; на расчёт опозданий он не влияет.</p>
+      </div>
+      <div class="ok-ws-body">
+        <div class="ok-ws-segment" role="radiogroup" aria-label="{{ form.break_mode.label }}">
+          {% for radio in form.break_mode %}
+            <label class="ok-ws-seg">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>
+          {% endfor %}
+        </div>
+
+        <div class="ok-ws-break-panel" data-break-panel="same">
+          <div class="ok-ws-pair">
+            <div class="{% if form.break_start.errors %}has-error{% endif %}">
+              <label class="ok-set-label" for="{{ form.break_start.id_for_label }}">Начало перерыва</label>
+              {{ form.break_start }}
+            </div>
+            <div class="{% if form.break_end.errors %}has-error{% endif %}">
+              <label class="ok-set-label" for="{{ form.break_end.id_for_label }}">Конец перерыва</label>
+              {{ form.break_end }}
+            </div>
+          </div>
+          {% for error in form.break_start.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+          {% for error in form.break_end.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="ok-ws-break-panel" data-break-panel="per_day">
+          <div class="ok-ws-table is-compact" role="table" aria-label="Перерыв по дням">
+            <div class="ok-ws-tr ok-ws-th" role="row">
+              <span role="columnheader">День</span><span role="columnheader">Начало перерыва</span><span role="columnheader">Конец перерыва</span><span role="columnheader" class="ok-ws-dur">Минут</span>
+            </div>
+            {% for row in form.day_rows %}
+              <div class="ok-ws-tr{% if row.break_errors %} has-error{% endif %}" role="row" data-break-row="{{ row.weekday }}"{% if not row.selected %} hidden{% endif %}>
+                <span class="ok-ws-dayname" role="cell"><span class="ok-ws-day-dot">{{ row.short }}</span>{{ row.label }}</span>
+                <span role="cell"><label class="visually-hidden" for="{{ row.break_start.id_for_label }}">{{ row.break_start.label }}</label>{{ row.break_start }}</span>
+                <span role="cell"><label class="visually-hidden" for="{{ row.break_end.id_for_label }}">{{ row.break_end.label }}</label>{{ row.break_end }}</span>
+                <span role="cell" class="ok-ws-dur" data-break-duration></span>
+                {% if row.break_errors %}<div class="ok-ws-row-errors" role="cell">{% for error in row.break_errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}</div>{% endif %}
+              </div>
+            {% endfor %}
+          </div>
+          <p class="ok-ws-hint">Оставьте оба поля пустыми, если в этот день перерыва нет.</p>
+        </div>
+      </div>
+    </section>
+
+    {# ---- 5. Настройки опоздания ---- #}
+    <section class="ok-card ok-set-card" id="ws-late">
+      <div class="ok-set-card-head">
+        <h3><span class="ok-ws-step">5</span> Настройки опоздания</h3>
+        <p>Сколько минут после начала дня приход ещё не считается опозданием.</p>
+      </div>
+      <div class="ok-set-row{% if form.late_grace_minutes.errors %} has-error{% endif %}">
+        <div class="ok-set-text">
+          <label class="ok-set-label" for="{{ form.late_grace_minutes.id_for_label }}">{{ form.late_grace_minutes.label }}</label>
+          <p class="ok-set-desc">Например, 10: начало в 09:00, приход в 09:08 — вовремя, в 09:25 — опоздание 25 минут. Пусто — как в общих настройках посещаемости (сейчас {{ global_grace }} мин).</p>
+        </div>
+        <div class="ok-set-control">
+          <div class="ok-set-affix">{{ form.late_grace_minutes }}<span class="ok-set-affix-unit">мин</span></div>
+          {% for error in form.late_grace_minutes.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+        </div>
+      </div>
+    </section>
+
+    {# ---- 6. Период действия ---- #}
+    <section class="ok-card ok-set-card" id="ws-period">
+      <div class="ok-set-card-head">
+        <h3><span class="ok-ws-step">6</span> Период действия</h3>
+        <p>Вне периода и при выключенном расписании действует общий график. Даты включительно; пустые — без ограничения.</p>
+      </div>
+      <div class="ok-ws-body">
+        <div class="ok-ws-pair">
+          <div class="{% if form.valid_from.errors %}has-error{% endif %}">
+            <label class="ok-set-label" for="{{ form.valid_from.id_for_label }}">{{ form.valid_from.label }}</label>
+            {{ form.valid_from }}
+            {% for error in form.valid_from.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+          </div>
+          <div class="{% if form.valid_until.errors %}has-error{% endif %}">
+            <label class="ok-set-label" for="{{ form.valid_until.id_for_label }}">{{ form.valid_until.label }}</label>
+            {{ form.valid_until }}
+            {% for error in form.valid_until.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="ok-set-row">
+        <div class="ok-set-text">
+          <label class="ok-set-label" for="{{ form.is_active.id_for_label }}">{{ form.is_active.label }}</label>
+          <p class="ok-set-desc">Выключите, чтобы временно вернуть сотрудника на общий график, не удаляя расписание.</p>
+        </div>
+        <div class="ok-set-control">
+          <label class="ok-sch-switch ok-set-switch">
+            {{ form.is_active }}
+            <span class="ok-sch-switch-track" aria-hidden="true"></span>
+            <span class="ok-set-switch-on">Активно</span>
+            <span class="ok-set-switch-off">Неактивно</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    {# ---- 7. Дополнительная информация ---- #}
+    <section class="ok-card ok-set-card" id="ws-extra">
+      <div class="ok-set-card-head">
+        <h3><span class="ok-ws-step">7</span> Дополнительная информация</h3>
+        <p>Видно только администраторам.</p>
+      </div>
+      <div class="ok-ws-body{% if form.note.errors %} has-error{% endif %}">
+        <label class="ok-set-label" for="{{ form.note.id_for_label }}">{{ form.note.label }}</label>
+        {{ form.note }}
+        {% for error in form.note.errors %}<div class="ok-error-text"><i class="bi bi-exclamation-circle"></i> {{ error }}</div>{% endfor %}
+      </div>
+    </section>
+
+    <div class="ok-form-actions ok-set-actions">
+      <div class="ok-set-actions-meta">
+        {% if not add %}<span><i class="bi bi-clock-history"></i> Изменено {{ original.updated_at|date:"d.m.Y H:i" }}{% if original.updated_by %} · {{ original.updated_by }}{% endif %}</span>{% endif %}
+        {% if not add and has_delete_permission %}
+          <a href="{% url opts|admin_urlname:'delete' original.pk|admin_urlquote %}" class="ok-set-delete"><i class="bi bi-trash"></i> Удалить</a>
+        {% endif %}
+      </div>
+      <div class="ok-set-actions-buttons">
+        <a href="{% url opts|admin_urlname:'changelist' %}" class="ok-btn-secondary">Отмена</a>
+        {% if add %}<button type="submit" name="_addanother" class="ok-btn-secondary">Сохранить и добавить ещё</button>{% endif %}
+        <button type="submit" name="_save" class="ok-btn-primary"><i class="bi bi-check2"></i> Сохранить расписание</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endwith %}
+{% endif %}
+{% endblock %}

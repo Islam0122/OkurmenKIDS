@@ -1,0 +1,147 @@
+/* Личное расписание сотрудника (Django admin).
+ * Цвета, радиусы и тени — токены темы okurmenkids/css/theme.css (--ok-*),
+ * поэтому светлая и тёмная темы работают автоматически. */
+
+.ok-ws { max-width: 980px; }
+.ok-ws .ok-set-card { margin-bottom: 1rem; }
+.ok-ws .ok-set-head { align-items: center; }
+
+.ok-ws-summary {
+  flex-shrink: 0; max-width: 300px; padding: 0.45rem 0.8rem; border-radius: 999px;
+  background: var(--ok-primary-soft); color: var(--ok-primary); font-size: 0.8rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.ok-ws-summary:empty { display: none; }
+
+.ok-ws-step {
+  display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem;
+  border-radius: 50%; background: var(--ok-primary-soft); color: var(--ok-primary);
+  font-size: 0.8rem; font-weight: 800; flex-shrink: 0;
+}
+.ok-ws-req { color: var(--ok-danger); }
+.ok-ws-head-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem 1rem; }
+.ok-ws-body { padding: 1rem 1.35rem 1.15rem; }
+.ok-ws-body > .ok-set-label { margin-bottom: 0.4rem; }
+.ok-ws-body.has-error { background: var(--ok-danger-soft); }
+.ok-ws .ok-error-text { margin-top: 0.35rem; }
+.ok-ws-hint { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--ok-text-muted); }
+.ok-ws-muted { color: var(--ok-text-muted); }
+.ok-ws-list-sub { font-size: 0.78rem; color: var(--ok-text-muted); }
+
+/* -- Сотрудник (Select2) -------------------------------------------------- */
+.ok-ws-employee .select2-container { width: 100% !important; max-width: 560px !important; }
+.ok-ws-employee .select2-container .select2-selection__rendered { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ok-ws-employee .select2-container .select2-selection--single { height: 2.75rem !important; border-color: var(--ok-border-strong); border-radius: var(--ok-radius-sm); background: var(--ok-surface); }
+.ok-ws-employee .select2-container .select2-selection__rendered { line-height: 2.5rem; padding-left: 0.8rem; color: var(--ok-text); font-weight: 600; }
+.ok-ws-employee .select2-container .select2-selection__arrow { height: 2.5rem; }
+.ok-ws-employee .select2-container--focus .select2-selection--single,
+.ok-ws-employee .select2-container--open .select2-selection--single { border-color: var(--ok-primary); box-shadow: 0 0 0 3px var(--ok-primary-soft); }
+.has-error .ok-ws-employee .select2-selection--single { border-color: var(--ok-danger); }
+.select2-dropdown { border-color: var(--ok-border-strong); border-radius: var(--ok-radius-sm); background: var(--ok-surface); color: var(--ok-text); }
+.select2-results__option--highlighted.select2-results__option--selectable,
+.select2-container--default .select2-results__option--highlighted[aria-selected] { background: var(--ok-primary) !important; color: var(--ok-on-primary) !important; }
+.select2-results__option--highlighted .ok-ws-opt-meta, .select2-results__option--highlighted .ok-ws-opt-flag { color: inherit; opacity: 0.85; }
+.select2-results__option--disabled .ok-ws-opt { opacity: 0.55; }
+.ok-ws-opt-name { font-weight: 600; }
+.ok-ws-opt-meta { font-size: 0.78rem; color: var(--ok-text-muted); }
+.ok-ws-opt-flag { font-size: 0.74rem; color: var(--ok-warning); font-weight: 600; }
+
+/* -- Дни недели ------------------------------------------------------------ */
+.ok-ws-presets { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.ok-ws-chip {
+  padding: 0.3rem 0.7rem; border: 1px solid var(--ok-border-strong); border-radius: 999px; background: var(--ok-surface);
+  color: var(--ok-text-secondary); font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;
+}
+.ok-ws-chip:hover { border-color: var(--ok-primary); color: var(--ok-primary); }
+.ok-ws-chip.is-ghost { border-style: dashed; }
+
+.ok-ws-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.5rem; }
+.ok-ws-day {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; margin: 0;
+  padding: 0.7rem 0.3rem 0.6rem; border: 1.5px solid var(--ok-border); border-radius: var(--ok-radius);
+  background: var(--ok-surface); cursor: pointer; user-select: none; transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ok-ws-day input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.ok-ws-day:hover { border-color: var(--ok-border-strong); background: var(--ok-surface-hover); }
+.ok-ws-day:focus-within { outline: 2px solid var(--ok-primary); outline-offset: 2px; }
+.ok-ws-day-short { font-size: 1.05rem; font-weight: 800; color: var(--ok-text-secondary); }
+.ok-ws-day-name { font-size: 0.72rem; color: var(--ok-text-muted); }
+.ok-ws-day-state { display: inline-flex; align-items: center; gap: 0.2rem; margin-top: 0.2rem; font-size: 0.68rem; font-weight: 700; color: var(--ok-text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+.ok-ws-day-state i, .ok-ws-day-on { display: none; }
+.ok-ws-day.is-weekend .ok-ws-day-short { color: var(--ok-text-muted); }
+
+/* Выбранный день: зелёная заливка. :has — для работы без JS. */
+.ok-ws-day.is-on, .ok-ws-day:has(input:checked) { border-color: var(--ok-primary); background: var(--ok-primary-soft); }
+.ok-ws-day.is-on .ok-ws-day-short, .ok-ws-day:has(input:checked) .ok-ws-day-short { color: var(--ok-primary); }
+.ok-ws-day.is-on .ok-ws-day-state, .ok-ws-day:has(input:checked) .ok-ws-day-state { color: var(--ok-primary); }
+.ok-ws-day.is-on .ok-ws-day-state i, .ok-ws-day.is-on .ok-ws-day-on,
+.ok-ws-day:has(input:checked) .ok-ws-day-state i, .ok-ws-day:has(input:checked) .ok-ws-day-on { display: inline; }
+.ok-ws-day.is-on .ok-ws-day-off, .ok-ws-day:has(input:checked) .ok-ws-day-off { display: none; }
+.ok-ws .ok-ws-body.has-error .ok-ws-day { border-color: var(--ok-danger); }
+
+/* -- Таблицы часов --------------------------------------------------------- */
+.ok-ws-table { padding: 0.35rem 1.35rem 0.6rem; }
+.ok-ws-tr {
+  display: grid; grid-template-columns: minmax(130px, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) 90px; gap: 0.4rem 0.75rem;
+  align-items: center; padding: 0.45rem 0; border-top: 1px solid var(--ok-border);
+}
+.ok-ws-tr[hidden] { display: none; }
+.ok-ws-th { border-top: 0; padding: 0.35rem 0; font-size: 0.72rem; font-weight: 700; color: var(--ok-text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.ok-ws-tr.has-error { background: var(--ok-danger-soft); margin: 0 -0.6rem; padding-left: 0.6rem; padding-right: 0.6rem; border-radius: var(--ok-radius-sm); }
+.ok-ws-dayname { display: flex; align-items: center; gap: 0.55rem; font-weight: 600; color: var(--ok-text); font-size: 0.9rem; }
+.ok-ws-day-dot {
+  display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: var(--ok-radius-sm);
+  background: var(--ok-primary-soft); color: var(--ok-primary); font-size: 0.75rem; font-weight: 800;
+}
+.ok-ws-dur { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--ok-text-secondary); }
+.ok-ws-dur.is-bad { color: var(--ok-danger); font-weight: 600; }
+.ok-ws-row-errors { grid-column: 1 / -1; }
+.ok-ws-empty { padding: 1rem 0; font-size: 0.85rem; color: var(--ok-text-muted); text-align: center; }
+.ok-ws-empty[hidden] { display: none; }
+.ok-ws-total {
+  padding: 0.7rem 1.35rem; border-top: 1px solid var(--ok-border); background: var(--ok-surface-hover);
+  font-size: 0.85rem; font-weight: 600; color: var(--ok-primary); font-variant-numeric: tabular-nums;
+  border-radius: 0 0 var(--ok-radius-lg) var(--ok-radius-lg);
+}
+.ok-ws-total:empty { display: none; }
+.ok-ws-table.is-compact { padding: 0.25rem 0 0; }
+
+.ok-form-container.ok-ws input.ok-ws-time,
+.ok-form-container.ok-ws input[type="date"],
+.ok-form-container.ok-ws input[type="number"] { width: 100%; max-width: 100%; min-height: 2.4rem; font-variant-numeric: tabular-nums; }
+.ok-form-container.ok-ws textarea { width: 100%; min-height: 3.6rem; resize: vertical; }
+[data-copy-hours].is-done { border-color: var(--ok-primary); color: var(--ok-primary); }
+[data-copy-hours]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* -- Перерыв: сегментированный переключатель ------------------------------ */
+.ok-ws-segment {
+  display: inline-flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.25rem; margin-bottom: 0.9rem;
+  background: var(--ok-surface-hover); border: 1px solid var(--ok-border); border-radius: var(--ok-radius);
+}
+.ok-ws-seg { position: relative; margin: 0; cursor: pointer; }
+.ok-ws-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.ok-ws-seg span { display: block; padding: 0.4rem 0.85rem; border-radius: var(--ok-radius-sm); font-size: 0.84rem; font-weight: 600; color: var(--ok-text-secondary); }
+.ok-ws-seg input:checked + span { background: var(--ok-surface); color: var(--ok-primary); box-shadow: var(--ok-shadow); }
+.ok-ws-seg input:focus-visible + span { outline: 2px solid var(--ok-primary); outline-offset: 1px; }
+.ok-ws-break-panel[hidden] { display: none; }
+
+.ok-ws-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 0.75rem 1rem; }
+.ok-ws-pair .ok-set-label { margin-bottom: 0.3rem; font-size: 0.84rem; }
+.ok-ws-pair .has-error input { border-color: var(--ok-danger); }
+.ok-ws-tr.has-error input:invalid, .ok-ws-tr.has-error input { border-color: var(--ok-danger); }
+
+/* -- Адаптивность ---------------------------------------------------------- */
+@media (max-width: 720px) {
+  .ok-ws .ok-set-head { flex-wrap: wrap; }
+  .ok-ws-summary { max-width: none; width: 100%; }
+  .ok-ws-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ok-ws-day-name { display: none; }
+  .ok-ws-table { padding-left: 1rem; padding-right: 1rem; }
+  .ok-ws-tr { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; }
+  .ok-ws-tr .ok-ws-dayname { grid-column: 1 / -1; }
+  .ok-ws-th span:first-child { display: none; }
+  .ok-ws-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ok-ws .ok-set-row { grid-template-columns: 1fr; }
+  .ok-ws .ok-set-actions-buttons { flex-wrap: wrap; width: 100%; }
+  .ok-ws .ok-set-actions-buttons > * { flex: 1 1 auto; text-align: center; }
+}
