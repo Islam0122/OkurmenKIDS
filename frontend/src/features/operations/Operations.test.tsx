@@ -7,7 +7,7 @@ import { renderWithProviders } from '@/test/testUtils'
 import type { AttendanceRow, AttendanceSchedule, Dashboard, MyTasks, OpsMeta, StaffAttendanceResponse, TaskDetail, TaskListItem, TasksMeta, TrainersResponse } from '@/types/operations'
 
 vi.mock('@/api/operations', () => ({
-  operationsApi: { meta: vi.fn(), dashboard: vi.fn(), trainers: vi.fn(), attendance: vi.fn() },
+  operationsApi: { meta: vi.fn(), dashboard: vi.fn(), trainers: vi.fn(), attendance: vi.fn(), attendancePermissions: vi.fn(), createAttendancePermission: vi.fn(), cancelAttendancePermission: vi.fn() },
   tasksApi: { meta: vi.fn(), my: vi.fn(), get: vi.fn(), act: vi.fn(), list: vi.fn() },
   notificationsApi: { unreadCount: vi.fn().mockResolvedValue({ count: 2 }), list: vi.fn().mockResolvedValue({ count: 0, results: [], next: null, previous: null }) },
   workReportsApi: {},
@@ -157,6 +157,61 @@ describe('посещаемость сотрудников', () => {
     expect(cell('Бектур Больничный')).toHaveTextContent('Больничный')
     expect(cell('Салтанат Без графика')).toHaveTextContent('Не задано')
     expect(ops.attendance).toHaveBeenCalledWith(expect.objectContaining({ period: 'today' }))
+    // Без права выдавать разрешения кнопки «Отпросился» нет.
+    expect(screen.queryByRole('button', { name: 'Отпросился' })).not.toBeInTheDocument()
+  })
+
+  it('«Отпросился»: разрешённое опоздание из строки — запрос со временем офиса, детали в строке', async () => {
+    const late = row(1, 'Айбек Вовремя', { kind: 'work', label: '10:30', expected_start: '10:30', expected_end: '19:00', grace_minutes: 10, late_after: '10:40', source: 'personal', source_label: 'Личный график', base_expected_start: '10:00', base_expected_end: '19:00' },
+      { status: 'permitted_late', status_label: 'Разрешено опоздать', permissions: [{ id: 7, kind: 'late_arrival', kind_label: 'Опоздание', starts_at: '2026-10-31T10:00:00+06:00', ends_at: '2026-10-31T10:30:00+06:00', period_label: '31.10 10:00–10:30', reason: 'Врач', comment: '', approved_by: 'Олег Директор' }] })
+    ops.attendance.mockResolvedValue({ ...response, rows: [late], can_manage_permissions: true })
+    ops.createAttendancePermission.mockResolvedValue({} as never)
+    renderWithProviders(<OperationsAttendancePage />, { route: '/operations/attendance?period=today' })
+    const tr = (await screen.findByText('Айбек Вовремя')).closest('tr') as HTMLElement
+    expect(within(tr).getByText('Разрешено опоздать')).toBeInTheDocument()
+    expect(within(tr).getByText('Опоздание: 31.10 10:00–10:30 — Врач')).toBeInTheDocument()
+    await userEvent.click(within(tr).getByRole('button', { name: /Отпросился: Айбек Вовремя/ }))
+    const dialog = await screen.findByRole('dialog')
+    const save = within(dialog).getByRole('button', { name: 'Сохранить' })
+    expect(save).toBeDisabled()
+    await userEvent.type(within(dialog).getByLabelText('Придёт к'), '11:15')
+    await userEvent.type(within(dialog).getByLabelText('Причина'), 'Пробки')
+    await userEvent.click(save)
+    await waitFor(() => expect(ops.createAttendancePermission).toHaveBeenCalled())
+    expect(ops.createAttendancePermission.mock.calls[0][0]).toEqual({ user: 1, kind: 'late_arrival', starts_at: '2026-10-31T10:00', ends_at: '2026-10-31T11:15', reason: 'Пробки', comment: '' })
+  })
+
+  it('«Отпросился»: весь день и отмена из истории с причиной', async () => {
+    ops.attendance.mockResolvedValue({ ...response, can_manage_permissions: true })
+    ops.createAttendancePermission.mockResolvedValue({} as never)
+    ops.cancelAttendancePermission.mockResolvedValue({} as never)
+    ops.attendancePermissions.mockResolvedValue({
+      filters: dashboard.filters, kinds: [], statuses: [], can_manage: true,
+      results: [{ id: 9, kind: 'full_day', kind_label: 'Весь день', starts_at: '2026-10-30T00:00:00+06:00', ends_at: '2026-10-31T00:00:00+06:00', period_label: '30.10', reason: 'Свадьба', comment: '',
+        user: { id: 3, full_name: 'Нурлан Отпуск', role_label: 'Ассистент', department: 'academy' }, status: 'approved', status_label: 'Утверждено', created_at: '2026-10-29T12:00:00+06:00', created_by: { id: 1, full_name: 'Олег Директор' },
+        approved_at: '2026-10-29T12:00:00+06:00', approved_by: { id: 1, full_name: 'Олег Директор' }, cancelled_at: null, cancelled_by: null, cancel_reason: '' }],
+    })
+    renderWithProviders(<OperationsAttendancePage />, { route: '/operations/attendance?period=today' })
+    await screen.findByText('Айбек Вовремя')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Отпросился' })[0])
+    let dialog = await screen.findByRole('dialog')
+    await userEvent.selectOptions(within(dialog).getByRole('combobox'), '5')
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Весь день' }))
+    await userEvent.type(within(dialog).getByLabelText('Причина'), 'Семейные обстоятельства')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(ops.createAttendancePermission).toHaveBeenCalled())
+    expect(ops.createAttendancePermission.mock.calls[0][0]).toEqual({ user: 5, kind: 'full_day', starts_at: '2026-10-31T00:00', ends_at: '2026-10-31T23:59', reason: 'Семейные обстоятельства', comment: '' })
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Отпросился' }))
+    const historyRow = (await screen.findByText('Нурлан Отпуск')).closest('tr') as HTMLElement
+    expect(historyRow).toHaveTextContent('создал Олег Директор')
+    await userEvent.click(within(historyRow).getByRole('button', { name: 'Отменить' }))
+    dialog = await screen.findByRole('dialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Отменить разрешение' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByLabelText('Причина отмены'), 'Ошибка')
+    await userEvent.click(confirm)
+    await waitFor(() => expect(ops.cancelAttendancePermission).toHaveBeenCalledWith(9, 'Ошибка'))
   })
 })
 

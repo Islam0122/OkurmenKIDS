@@ -343,7 +343,7 @@ class AdjustmentTests(AttendanceFixture):
 
 class LocationAndSettingsTests(AttendanceFixture):
     def test_admin_manages_locations_with_log(self):
-        admin = self.as_user(self.admin)
+        admin = self.as_root()
         created = admin.post(f"{API}/admin/locations/", {
             "name": "Филиал Восток", "latitude": 42.87, "longitude": 74.65, "radius_m": 150}, format="json")
         self.assertEqual(created.status_code, 201, created.data)
@@ -359,7 +359,7 @@ class LocationAndSettingsTests(AttendanceFixture):
                          {"location_create", "location_update"})
 
     def test_qr_svg_contains_only_public_url(self):
-        response = self.as_user(self.admin).get(f"{API}/admin/locations/{self.office.pk}/qr.svg")
+        response = self.as_root().get(f"{API}/admin/locations/{self.office.pk}/qr.svg")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "image/svg+xml")
         self.assertIn("<svg", response.content.decode())
@@ -371,7 +371,7 @@ class LocationAndSettingsTests(AttendanceFixture):
         self.assertEqual(self.office.radius_m, 100)
 
     def test_settings_validation_and_update(self):
-        admin = self.as_user(self.admin)
+        admin = self.as_root()
         ok = admin.patch(f"{API}/admin/settings/", {"late_grace_minutes": 5, "work_days": [0, 1, 2, 3, 4, 4]},
                          format="json")
         self.assertEqual(ok.status_code, 200, ok.data)
@@ -382,7 +382,7 @@ class LocationAndSettingsTests(AttendanceFixture):
         self.assertTrue(AttendanceAdminLog.objects.filter(action="settings_update").exists())
 
     def test_personal_schedule_crud(self):
-        admin = self.as_user(self.admin)
+        admin = self.as_root()
         put = admin.put(f"{API}/admin/employees/{self.accountant.pk}/schedule/", {
             "work_start": "10:00", "work_end": "17:00", "work_days": [0, 1, 2, 3, 4]}, format="json")
         self.assertEqual(put.status_code, 200, put.data)

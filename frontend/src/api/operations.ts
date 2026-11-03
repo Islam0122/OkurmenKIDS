@@ -1,6 +1,9 @@
 import { apiClient } from '@/api/client'
 import type { Paginated } from '@/types/common'
 import type {
+  AttendancePermission,
+  AttendancePermissionInput,
+  AttendancePermissionsResponse,
   Dashboard,
   DailyControl,
   DepartmentDetail,
@@ -76,6 +79,12 @@ export const operationsApi = {
   hr: (params: Params) => apiClient.get<HrResponse>(`${OPS}/hr/`, { params }).then((r) => r.data),
   attendance: (params: Params) =>
     apiClient.get<StaffAttendanceResponse>(`${OPS}/attendance/`, { params }).then((r) => r.data),
+  attendancePermissions: (params: Params) =>
+    apiClient.get<AttendancePermissionsResponse>(`${OPS}/attendance/permissions/`, { params }).then((r) => r.data),
+  createAttendancePermission: (body: AttendancePermissionInput) =>
+    apiClient.post<AttendancePermission>(`${OPS}/attendance/permissions/`, body).then((r) => r.data),
+  cancelAttendancePermission: (id: number, reason: string) =>
+    apiClient.post<AttendancePermission>(`${OPS}/attendance/permissions/${id}/cancel/`, { reason }).then((r) => r.data),
   daily: (date?: string) => apiClient.get<DailyControl>(`${OPS}/daily/`, { params: { date } }).then((r) => r.data),
   kpi: (params: Params) => apiClient.get<KpiOverview>(`${OPS}/kpi/`, { params }).then((r) => r.data),
   kpiHistory: (params: Params) =>

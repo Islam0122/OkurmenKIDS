@@ -21,7 +21,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from ..models import AttendanceSession, AttendanceSettings
-from .schedule import DayPlan, ScheduleData, ScheduleResolver, WorkWindow
+from .schedule import DayPlan, PlanKind, ScheduleData, ScheduleResolver, WorkWindow, late_minutes
 
 
 class Status:
@@ -33,6 +33,10 @@ class Status:
     DAY_OFF = "day_off"
     # До начала учёта (запуск модуля или дата регистрации сотрудника).
     NOT_TRACKED = "not_tracked"
+    # Весь рабочий день отпущен разрешением «Отпросился» — не отсутствие.
+    EXCUSED = "excused"
+    # Суперпользователь исключил сотрудника из расчётов посещаемости.
+    EXCLUDED = "excluded"
     # Флаги-фильтры (у строки одновременно с основным статусом).
     LATE = "late"
     ADJUSTED = "adjusted"
@@ -46,6 +50,8 @@ STATUS_LABELS = {
     Status.NO_CHECK_OUT: "Нет ухода",
     Status.DAY_OFF: "Выходной",
     Status.NOT_TRACKED: "Учёт не вёлся",
+    Status.EXCUSED: "Отсутствует по разрешению",
+    Status.EXCLUDED: "Не учитывается",
     Status.LATE: "Опоздание",
     Status.ADJUSTED: "Исправлена запись",
 }
@@ -83,7 +89,8 @@ class DayRow:
 
 
 def employees(config: AttendanceSettings, scope: Q, *, search: str = "", role: str = "") -> QuerySet:
-    qs = get_user_model().objects.filter(is_active=True, role__in=config.tracked_roles or []).filter(scope)
+    qs = (get_user_model().objects.filter(is_active=True, role__in=config.tracked_roles or []).filter(scope)
+          .exclude(attendance_profile__tracking_enabled=False))
     if role:
         qs = qs.filter(role=role)
     if search:
@@ -122,6 +129,11 @@ def build_row(user, day: date, sessions: list, window: WorkWindow | None, now: d
         row.last_out = max(outs) if outs else None
         row.duration_seconds = sum(_session_seconds(s, now) for s in ordered)
         row.late_minutes = ordered[0].late_minutes
+        if plan is not None and plan.permissions:
+            # Разрешение могли выдать уже после прихода: опоздание считается
+            # тем же правилом от сдвинутого начала и только уменьшается.
+            # Сама сессия (история отметок) не меняется.
+            row.late_minutes = min(row.late_minutes, late_minutes(row.first_in, window))
         row.is_adjusted = any(s.is_adjusted for s in ordered)
         statuses = {s.status for s in ordered}
         if AttendanceSession.Status.OPEN in statuses:
@@ -134,7 +146,7 @@ def build_row(user, day: date, sessions: list, window: WorkWindow | None, now: d
             row.status = Status.DAY_FINISHED
         return row
     if window is None:
-        row.status = Status.DAY_OFF
+        row.status = Status.EXCUSED if plan is not None and plan.kind == PlanKind.EXCUSED else Status.DAY_OFF
     elif day > today or (day == today and now < window.end):
         row.status = Status.NOT_ARRIVED
     else:
@@ -167,8 +179,11 @@ def range_rows(config: AttendanceSettings, users: list, date_from: date, date_to
         resolver = ScheduleResolver(config, users, day, data=data)
         for user in users:
             plan = resolver.plan(user)
-            rows.append(build_row(user, day, by_key.get((user.pk, day), []), plan.window, now, today,
-                                  since[user.pk], plan=plan))
+            row = build_row(user, day, by_key.get((user.pk, day), []), plan.window, now, today,
+                            since[user.pk], plan=plan)
+            if user.pk in data.excluded:
+                row.status, row.late_minutes = Status.EXCLUDED, 0
+            rows.append(row)
         day += timedelta(days=1)
     return rows
 
@@ -185,6 +200,7 @@ def overview(rows: list[DayRow]) -> dict:
         "no_check_out": sum(1 for r in rows if r.status == Status.NO_CHECK_OUT),
         "day_off": sum(1 for r in rows if r.status == Status.DAY_OFF),
         "not_tracked": sum(1 for r in rows if r.status == Status.NOT_TRACKED),
+        "excused": sum(1 for r in rows if r.status == Status.EXCUSED),
         "adjusted": sum(1 for r in rows if r.is_adjusted),
     }
 
@@ -223,6 +239,7 @@ def month_stats(config: AttendanceSettings, user, year: int, month: int, *, now:
     first, last = month_bounds(year, month)
     last = min(last, today)
     rows = range_rows(config, [user], first, last, now=now) if first <= last else []
+    rows = [r for r in rows if r.status != Status.EXCLUDED]  # исключён из расчётов суперпользователем
     worked = [r for r in rows if r.sessions]
     return {
         "year": year,

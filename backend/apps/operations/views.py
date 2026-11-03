@@ -11,13 +11,14 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
-from rest_framework import mixins, status, viewsets
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -25,6 +26,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.marketing.serializers import can_view_budget
+from apps.staff_attendance import access as sa_access
+from apps.staff_attendance.models import AttendancePermission, AttendanceSettings
+from apps.staff_attendance.services import permissions as permission_service
 from apps.users.models import Teacher, User
 
 from . import kpi_registry
@@ -263,7 +267,99 @@ class StaffAttendanceView(_OpsView):
             "statuses": [{"value": k, "label": v} for k, v in staff.LABELS.items()],
             # Отпуска и больничные — исключения из графика (staff_attendance).
             "leave_tracking": True,
+            # Кнопка «Отпросился»: создавать и отменять разрешения.
+            "can_manage_permissions": sa_access.can_grant_permissions(request.user),
         })
+
+
+class PermissionInputSerializer(serializers.Serializer):
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True),
+                                              error_messages={"does_not_exist": "Сотрудник не найден."})
+    kind = serializers.ChoiceField(choices=AttendancePermission.Kind.choices)
+    starts_at = serializers.DateTimeField()
+    ends_at = serializers.DateTimeField()
+    reason = serializers.CharField(max_length=255)
+    comment = serializers.CharField(allow_blank=True, required=False, default="")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Время без пояса (input datetime-local) — время офиса, а не сервера.
+        tz = AttendanceSettings.load().tzinfo
+        for key in ("starts_at", "ends_at"):
+            self.fields[key].timezone = tz
+
+
+def permission_payload(perm: AttendancePermission, tz) -> dict:
+    who = lambda u: {"id": u.pk, "full_name": u.get_full_name() or u.username} if u else None  # noqa: E731
+    return {
+        **staff.permission_brief(perm, tz),
+        "user": {**who(perm.user), "role_label": perm.user.get_role_display(),
+                 "department": org.department_of(perm.user)},
+        "status": perm.status,
+        "status_label": perm.get_status_display(),
+        "created_at": perm.created_at,
+        "created_by": who(perm.created_by),
+        "approved_at": perm.approved_at,
+        "approved_by": who(perm.approved_by),
+        "cancelled_at": perm.cancelled_at,
+        "cancelled_by": who(perm.cancelled_by),
+        "cancel_reason": perm.cancel_reason,
+    }
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AttendancePermissionsView(_OpsView):
+    """«Отпросился». GET — история за период (все, кому доступен кабинет);
+    POST — создать и утвердить (операционный директор или суперпользователь)."""
+
+    def get(self, request):
+        f = _filters(request, "this_month")
+        tz = AttendanceSettings.load().tzinfo
+        start = dt.datetime.combine(f.start, dt.time(0, 0), tzinfo=tz)
+        end = dt.datetime.combine(f.end, dt.time(0, 0), tzinfo=tz) + dt.timedelta(days=1)
+        qs = (AttendancePermission.objects.filter(starts_at__lt=end, ends_at__gt=start, user__in=f.users_qs())
+              .select_related("user", "created_by", "approved_by", "cancelled_by").order_by("-starts_at", "-pk"))
+        if request.query_params.get("status") in AttendancePermission.Status.values:
+            qs = qs.filter(status=request.query_params["status"])
+        if request.query_params.get("kind") in AttendancePermission.Kind.values:
+            qs = qs.filter(kind=request.query_params["kind"])
+        return Response({
+            "filters": f.as_dict(),
+            "results": [permission_payload(p, tz) for p in qs[:500]],
+            "kinds": _choices(AttendancePermission.Kind),
+            "statuses": _choices(AttendancePermission.Status),
+            "can_manage": sa_access.can_grant_permissions(request.user),
+        })
+
+    def post(self, request):
+        if not sa_access.can_grant_permissions(request.user):
+            return Response({"detail": "Разрешения «Отпросился» выдаёт операционный директор."},
+                            status=status.HTTP_403_FORBIDDEN)
+        data = PermissionInputSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        if values["user"] not in staff.tracked_users(User.objects.filter(pk=values["user"].pk)):
+            raise ValidationError({"user": "Сотрудник не участвует в учёте посещаемости."})
+        try:
+            perm = permission_service.create(request.user, **values)
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.message_dict) from exc
+        return Response(permission_payload(perm, AttendanceSettings.load().tzinfo), status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AttendancePermissionCancelView(_OpsView):
+    def post(self, request, pk: int):
+        if not sa_access.can_grant_permissions(request.user):
+            return Response({"detail": "Отменять разрешения может операционный директор."},
+                            status=status.HTTP_403_FORBIDDEN)
+        perm = get_object_or_404(AttendancePermission, pk=pk)
+        try:
+            perm = permission_service.cancel(request.user, perm, request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.message_dict) from exc
+        perm = AttendancePermission.objects.select_related("user", "created_by", "approved_by", "cancelled_by").get(pk=perm.pk)
+        return Response(permission_payload(perm, AttendanceSettings.load().tzinfo))
 
 
 @extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)

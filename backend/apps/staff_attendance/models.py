@@ -428,6 +428,130 @@ class AttendanceScheduleException(models.Model):
             raise ValidationError(errors)
 
 
+class AttendanceEmployeeSettings(models.Model):
+    """Настройки учёта одного сотрудника. Меняет только суперпользователь
+    (Django admin). Нет записи — действуют общие настройки (учёт по роли).
+
+    * tracking_enabled = False — сотрудник не отмечает приход и уход и не
+      появляется в отчётах, даже если его роль отслеживается.
+    * excluded_from_calculations = True — отмечаться может, отметки видны,
+      но в посещаемость, опоздания, отсутствия и KPI его дни не входят.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attendance_profile",
+        verbose_name="Сотрудник",
+    )
+    tracking_enabled = models.BooleanField(default=True, verbose_name="Учёт прихода и ухода включён")
+    excluded_from_calculations = models.BooleanField(
+        default=False, verbose_name="Не учитывать в расчётах",
+        help_text="Отметки сохраняются, но не влияют на посещаемость, опоздания, отсутствия и KPI.",
+    )
+    note = models.CharField(max_length=255, blank=True, verbose_name="Комментарий")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Изменено")
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        verbose_name="Кем изменено",
+    )
+
+    class Meta:
+        verbose_name = "Учёт сотрудника"
+        verbose_name_plural = "Учёт сотрудников (включение, исключение из расчётов)"
+
+    def __str__(self):
+        return str(self.user)
+
+
+class AttendancePermission(models.Model):
+    """«Отпросился»: разрешение не быть на работе в указанный интервал.
+
+    Интервал [starts_at, ends_at) — время, за которое сотрудника не
+    наказывают: если он покрывает начало рабочего дня — ожидаемый приход
+    сдвигается на его конец, если конец дня — ожидаемый уход на его начало,
+    весь день — день не считается отсутствием. Отметки по QR не меняются и
+    не создаются. Запись создаёт уполномоченный (операционный директор или
+    суперпользователь) — она сразу утверждена им; отмена — с причиной, запись
+    остаётся в истории."""
+
+    class Kind(models.TextChoices):
+        FULL_DAY = "full_day", "Весь день"
+        PARTIAL_DAY = "partial_day", "Часть дня"
+        LATE_ARRIVAL = "late_arrival", "Опоздание"
+        EARLY_DEPARTURE = "early_departure", "Ранний уход"
+
+    class Status(models.TextChoices):
+        APPROVED = "approved", "Утверждено"
+        CANCELLED = "cancelled", "Отменено"
+
+    MAX_DAYS = 31
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="attendance_permissions",
+                             verbose_name="Сотрудник")
+    kind = models.CharField(max_length=20, choices=Kind.choices, verbose_name="Вид")
+    starts_at = models.DateTimeField(verbose_name="С")
+    ends_at = models.DateTimeField(verbose_name="По")
+    reason = models.CharField(max_length=255, verbose_name="Причина")
+    comment = models.TextField(blank=True, verbose_name="Комментарий")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPROVED, db_index=True,
+                              verbose_name="Статус")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+",
+                                   verbose_name="Кто создал")
+    approved_at = models.DateTimeField(null=True, blank=True, verbose_name="Когда утверждено")
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="+", verbose_name="Кто утвердил")
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Когда отменено")
+    cancelled_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name="+", verbose_name="Кто отменил")
+    cancel_reason = models.CharField(max_length=255, blank=True, verbose_name="Причина отмены")
+
+    class Meta:
+        verbose_name = "Разрешение «Отпросился»"
+        verbose_name_plural = "Разрешения «Отпросился»"
+        ordering = ["-starts_at", "-id"]
+        indexes = [models.Index(fields=["user", "status", "starts_at", "ends_at"], name="staff_att_perm_user_idx")]
+        constraints = [
+            models.CheckConstraint(condition=Q(ends_at__gt=F("starts_at")), name="staff_att_perm_end_after_start"),
+        ]
+
+    def __str__(self):
+        return f"{self.user}: {self.get_kind_display()} {self.starts_at:%d.%m.%Y %H:%M}"
+
+    def clean(self):
+        from datetime import datetime, timedelta
+
+        errors: dict[str, str] = {}
+        if self.starts_at and self.ends_at:
+            tz = AttendanceSettings.load().tzinfo
+            start, end = dj_timezone.localtime(self.starts_at, tz), dj_timezone.localtime(self.ends_at, tz)
+            if self.kind == self.Kind.FULL_DAY:
+                # Весь день: с начала первого дня до конца последнего (по часовому поясу офиса).
+                first, last = start.date(), end.date()
+                if end.time() == time(0, 0) and last > first:
+                    last -= timedelta(days=1)  # «по 05.11 00:00» — значит, по 04.11 включительно
+                start = datetime.combine(first, time(0, 0), tzinfo=tz)
+                end = datetime.combine(last, time(0, 0), tzinfo=tz) + timedelta(days=1)
+                self.starts_at, self.ends_at = start, end
+                if (end - start).days > self.MAX_DAYS:
+                    errors["ends_at"] = f"Не больше {self.MAX_DAYS} дней; для отпуска используйте исключения из графика."
+            elif end <= start:
+                errors["ends_at"] = "Окончание должно быть позже начала."
+            elif end.date() != start.date() and not (end.time() == time(0, 0) and end.date() == start.date() + timedelta(days=1)):
+                errors["ends_at"] = "Разрешение на часть дня — в пределах одного дня."
+            if not errors and self.user_id and self.status == self.Status.APPROVED:
+                overlap = (AttendancePermission.objects.filter(
+                    user_id=self.user_id, status=self.Status.APPROVED,
+                    starts_at__lt=self.ends_at, ends_at__gt=self.starts_at).exclude(pk=self.pk).first())
+                if overlap:
+                    errors["starts_at"] = (f"Пересекается с другим разрешением: {overlap.get_kind_display().lower()} "
+                                           f"{dj_timezone.localtime(overlap.starts_at, tz):%d.%m %H:%M}–"
+                                           f"{dj_timezone.localtime(overlap.ends_at, tz):%H:%M}.")
+        if not (self.reason or "").strip():
+            errors["reason"] = "Укажите причину."
+        if errors:
+            raise ValidationError(errors)
+
+
 class AttendanceSession(models.Model):
     class Status(models.TextChoices):
         OPEN = "open", "На работе"

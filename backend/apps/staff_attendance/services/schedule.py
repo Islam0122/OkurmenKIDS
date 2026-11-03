@@ -11,6 +11,12 @@
    заранее», конец последнего). День без занятий — не рабочий.
 3. Общее расписание из настроек.
 
+Поверх плана рабочего дня — утверждённые разрешения «Отпросился»
+(AttendancePermission): интервал, покрывающий начало дня, сдвигает
+ожидаемый приход на свой конец; покрывающий конец дня — ожидаемый уход на
+своё начало; весь рабочий день — день «по разрешению», не отсутствие.
+Несколько разрешений, идущих встык, складываются. Отметки по QR не меняются.
+
 `ScheduleResolver.plan()` — полный ответ «что по графику в этот день»
 (`DayPlan`: рабочий день / выходной / отпуск / больничный / не задано и
 почему); `window()` — только окно рабочего времени в часовом поясе офиса
@@ -24,11 +30,18 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.db.models import Q
+from django.utils import timezone
 
-from ..models import AttendanceScheduleException, AttendanceSettings, AttendanceWorkSchedule
+from ..models import (
+    AttendanceEmployeeSettings,
+    AttendancePermission,
+    AttendanceScheduleException,
+    AttendanceSettings,
+    AttendanceWorkSchedule,
+)
 
 
 @dataclass(frozen=True)
@@ -52,8 +65,10 @@ class PlanKind:
     VACATION = "vacation"
     SICK_LEAVE = "sick_leave"
     NOT_SET = "not_set"  # ни одного источника графика (общий график без рабочих дней)
+    EXCUSED = "excused"  # весь рабочий день покрыт разрешением «Отпросился»
 
-    LABELS = {DAY_OFF: "Выходной", VACATION: "Отпуск", SICK_LEAVE: "Больничный", NOT_SET: "Не задано"}
+    LABELS = {DAY_OFF: "Выходной", VACATION: "Отпуск", SICK_LEAVE: "Больничный", NOT_SET: "Не задано",
+              EXCUSED: "По разрешению"}
 
 
 @dataclass(frozen=True)
@@ -63,6 +78,11 @@ class DayPlan:
     # personal | lessons | default | exception | None
     source: str | None = None
     exception: AttendanceScheduleException | None = None
+    # Утверждённые разрешения, затрагивающие этот день, и окно до их учёта.
+    permissions: tuple = ()
+    base_window: WorkWindow | None = None
+    # Часовой пояс офиса (заполнен, когда есть разрешения): для вывода их времени без запроса настроек.
+    tz: object = None
 
     @property
     def is_working(self) -> bool:
@@ -95,6 +115,17 @@ class ScheduleData:
         self.lessons: dict[tuple[int, date], tuple] = {}
         if config.teacher_schedule_from_lessons:
             self.lessons = _teacher_lesson_bounds(ids, start, end)
+        tz = config.tzinfo
+        range_start = datetime.combine(start, time(0, 0), tzinfo=tz)
+        range_end = datetime.combine(end, time(0, 0), tzinfo=tz) + timedelta(days=1)
+        self.permissions: dict[int, list[AttendancePermission]] = defaultdict(list)
+        for perm in (AttendancePermission.objects.filter(
+                user_id__in=ids, status=AttendancePermission.Status.APPROVED,
+                starts_at__lt=range_end, ends_at__gt=range_start)
+                .select_related("created_by", "approved_by").order_by("starts_at", "pk")):
+            self.permissions[perm.user_id].append(perm)
+        self.excluded: set[int] = set(AttendanceEmployeeSettings.objects.filter(
+            user_id__in=ids, excluded_from_calculations=True).values_list("user_id", flat=True))
 
 
 class ScheduleResolver:
@@ -111,6 +142,25 @@ class ScheduleResolver:
         return self.plan(user).window
 
     def plan(self, user) -> DayPlan:
+        return self._with_permissions(self._base_plan(user), user)
+
+    def _with_permissions(self, plan: DayPlan, user) -> DayPlan:
+        day_start = datetime.combine(self.day, time(0, 0), tzinfo=self.tz)
+        day_end = day_start + timedelta(days=1)
+        perms = tuple(p for p in self.data.permissions.get(user.pk, ())
+                      if p.starts_at < day_end and p.ends_at > day_start)
+        if not perms:
+            return plan
+        win = plan.window
+        if win is None:
+            return replace(plan, permissions=perms, tz=self.tz)
+        start, end = adjust_window(win.start, win.end, [(p.starts_at, p.ends_at) for p in perms])
+        if start is None:
+            return replace(plan, kind=PlanKind.EXCUSED, window=None, permissions=perms, base_window=win, tz=self.tz)
+        adjusted = replace(win, start=timezone.localtime(start, self.tz), end=timezone.localtime(end, self.tz))
+        return replace(plan, window=adjusted, permissions=perms, base_window=win, tz=self.tz)
+
+    def _base_plan(self, user) -> DayPlan:
         config, day = self.config, self.day
         personal = self.data.personal.get(user.pk)
         if personal is not None and not personal.is_effective_on(day):
@@ -164,6 +214,32 @@ class ScheduleResolver:
             grace_minutes=int(grace or 0),
             source=source,
         )
+
+
+def adjust_window(start: datetime, end: datetime, intervals) -> tuple[datetime | None, datetime | None]:
+    """Окно рабочего дня [start, end) с учётом отпущенных интервалов.
+
+    Интервалы объединяются (пересекающиеся и встык); объединённый интервал,
+    содержащий начало дня, сдвигает начало на свой конец, содержащий конец
+    дня — конец на своё начало. Интервал в середине дня окно не меняет.
+    (None, None) — отпущен весь рабочий день."""
+    clipped = sorted((max(a, start), min(b, end)) for a, b in intervals if a < end and b > start)
+    merged: list[list[datetime]] = []
+    for a, b in clipped:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    new_start, new_end = start, end
+    for a, b in merged:
+        if a <= new_start < b:
+            new_start = b
+    for a, b in reversed(merged):
+        if a < new_end <= b:
+            new_end = a
+    if new_start >= new_end:
+        return None, None
+    return new_start, new_end
 
 
 def _teacher_lesson_bounds(user_ids, start: date, end: date) -> dict[tuple[int, date], tuple]:
