@@ -355,6 +355,79 @@ class AttendanceWorkSchedule(models.Model):
             raise ValidationError(errors)
 
 
+class AttendanceScheduleException(models.Model):
+    """Исключение из графика сотрудника на дату или период: отпуск,
+    больничный, выходной (отгул) или особые часы. Действует поверх личного
+    и общего расписания. Записи вносит администратор / HR — запись и есть
+    утверждённое решение; заявок и согласования в LMS нет."""
+
+    class Kind(models.TextChoices):
+        VACATION = "vacation", "Отпуск"
+        SICK_LEAVE = "sick_leave", "Больничный"
+        DAY_OFF = "day_off", "Выходной (отгул)"
+        CUSTOM_HOURS = "custom_hours", "Особые часы"
+
+    LEAVE_KINDS = (Kind.VACATION, Kind.SICK_LEAVE)
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attendance_exceptions",
+        verbose_name="Сотрудник",
+    )
+    kind = models.CharField(max_length=20, choices=Kind.choices, verbose_name="Вид")
+    date_from = models.DateField(verbose_name="С")
+    date_to = models.DateField(verbose_name="По", help_text="Включительно. Один день — та же дата.")
+    work_start = models.TimeField(null=True, blank=True, verbose_name="Начало дня",
+                                  help_text="Только для «Особые часы».")
+    work_end = models.TimeField(null=True, blank=True, verbose_name="Окончание дня",
+                                help_text="Только для «Особые часы».")
+    note = models.CharField(max_length=255, blank=True, verbose_name="Комментарий")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        verbose_name="Кем создано",
+    )
+
+    class Meta:
+        verbose_name = "Исключение из графика"
+        verbose_name_plural = "Исключения из графика (отпуск, больничный, отгул)"
+        ordering = ["-date_from", "-id"]
+        indexes = [models.Index(fields=["user", "date_from", "date_to"], name="staff_att_exc_user_dates_idx")]
+        constraints = [
+            models.CheckConstraint(condition=Q(date_to__gte=F("date_from")), name="staff_att_exc_dates_order"),
+        ]
+
+    def __str__(self):
+        period = f"{self.date_from:%d.%m.%Y}" if self.date_from == self.date_to else \
+            f"{self.date_from:%d.%m.%Y}–{self.date_to:%d.%m.%Y}"
+        return f"{self.user}: {self.get_kind_display()} {period}"
+
+    def covers(self, day) -> bool:
+        return self.date_from <= day <= self.date_to
+
+    def clean(self):
+        errors: dict[str, str] = {}
+        if self.date_from and self.date_to and self.date_to < self.date_from:
+            errors["date_to"] = "Дата окончания не может быть раньше даты начала."
+        if self.kind == self.Kind.CUSTOM_HOURS:
+            if self.work_start is None:
+                errors["work_start"] = "Укажите начало рабочего дня."
+            if self.work_end is None:
+                errors["work_end"] = "Укажите окончание рабочего дня."
+            if self.work_start and self.work_end and self.work_end <= self.work_start:
+                errors["work_end"] = "Окончание рабочего дня должно быть позже начала."
+        else:
+            # Часы нужны только для «Особые часы»: в остальных случаях день нерабочий.
+            self.work_start = self.work_end = None
+        if not errors and self.user_id and self.date_from and self.date_to:
+            overlap = (AttendanceScheduleException.objects.filter(
+                user_id=self.user_id, date_from__lte=self.date_to, date_to__gte=self.date_from)
+                .exclude(pk=self.pk).first())
+            if overlap:
+                errors["date_from"] = f"Пересекается с другим исключением: {overlap}."
+        if errors:
+            raise ValidationError(errors)
+
+
 class AttendanceSession(models.Model):
     class Status(models.TextChoices):
         OPEN = "open", "На работе"

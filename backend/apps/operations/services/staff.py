@@ -10,11 +10,16 @@
     NOT_CHECKED_OUT  пришёл, но не отметил уход (прошлые дни)
     NOT_ARRIVED      сегодня, рабочее время ещё идёт — не нарушение
     DAY_OFF          нерабочий день по расписанию
+    VACATION         отпуск (исключение из графика)
+    SICK_LEAVE       больничный (исключение из графика)
     NOT_TRACKED      учёт ещё не вёлся
 
-ON_LEAVE и REMOTE: в LMS нет учёта отпусков и удалённой работы — вопрос к
-руководству (docs/operations.md); до появления данных такие дни выглядят
-как обычные рабочие.
+Отпуска, больничные и отгулы — исключения из графика
+(staff_attendance.AttendanceScheduleException). Удалённой работы в LMS нет.
+
+«По графику» (`schedule` в строке) — план дня из того же ScheduleResolver,
+по которому при отметке по QR считается опоздание: время прихода, льготные
+минуты и источник (личный график / общий / по занятиям / исключение).
 """
 from __future__ import annotations
 
@@ -22,23 +27,31 @@ import datetime as dt
 
 from apps.staff_attendance.models import AttendanceSettings
 from apps.staff_attendance.services import reports as sa
+from apps.staff_attendance.services.schedule import PlanKind
 from apps.users.models import User
 
-from ..departments import department_of
+from ..departments import Department, department_of
 
 PRESENT, LATE, ABSENT, NOT_CHECKED_OUT, NOT_ARRIVED, DAY_OFF, NOT_TRACKED = (
     "present", "late", "absent", "not_checked_out", "not_arrived", "day_off", "not_tracked")
+VACATION, SICK_LEAVE = PlanKind.VACATION, PlanKind.SICK_LEAVE
 
 LABELS = {
     PRESENT: "Присутствует", LATE: "Опоздание", ABSENT: "Отсутствует", NOT_CHECKED_OUT: "Нет отметки ухода",
-    NOT_ARRIVED: "Ещё не пришёл", DAY_OFF: "Выходной", NOT_TRACKED: "Учёт не вёлся",
+    NOT_ARRIVED: "Ещё не пришёл", DAY_OFF: "Выходной", VACATION: "Отпуск", SICK_LEAVE: "Больничный",
+    NOT_TRACKED: "Учёт не вёлся",
+}
+
+SOURCE_LABELS = {
+    "personal": "Личный график", "default": "Общий график", "lessons": "По занятиям", "exception": "Исключение",
 }
 MAX_RANGE_DAYS = sa.MAX_RANGE_DAYS
 
 
 def ops_status(row: sa.DayRow) -> str:
     if row.status == sa.Status.DAY_OFF:
-        return DAY_OFF
+        kind = row.plan.kind if row.plan else None
+        return kind if kind in (VACATION, SICK_LEAVE) else DAY_OFF
     if row.status == sa.Status.NOT_TRACKED:
         return NOT_TRACKED
     if row.status == sa.Status.NO_CHECK_IN:
@@ -70,7 +83,8 @@ def serialize_row(row: sa.DayRow) -> dict:
     return {
         "user": {"id": row.user.pk, "full_name": row.user.get_full_name() or row.user.username,
                  "role": row.user.role, "role_label": row.user.get_role_display(),
-                 "department": department_of(row.user)},
+                 "department": department_of(row.user),
+                 "department_label": Department(department_of(row.user)).label},
         "date": row.day.isoformat(),
         "status": status,
         "status_label": LABELS[status],
@@ -80,12 +94,46 @@ def serialize_row(row: sa.DayRow) -> dict:
         "late_minutes": row.late_minutes,
         "expected_start": row.window.start if row.window else None,
         "expected_end": row.window.end if row.window else None,
+        "schedule": schedule_info(row),
         "location": location.name if location else None,
         # Геозона проверена сервером при отметке (иначе отметку бы не приняли);
         # для ручных записей администратора проверки не было.
         "geo_verified": bool(row.sessions) and all(getattr(s, "source", "") != "manual" for s in row.sessions),
         "distance_m": distance,
         "adjusted": row.is_adjusted,
+    }
+
+
+def schedule_info(row: sa.DayRow) -> dict:
+    """«По графику»: когда сотрудник должен прийти в этот день. Время — в
+    часовом поясе офиса (строкой, чтобы браузер не пересчитывал его в свой
+    пояс). kind: work | day_off | vacation | sick_leave | not_set."""
+    plan = row.plan
+    window = plan.window if plan else None
+    kind = plan.kind if plan else PlanKind.NOT_SET
+    exception = plan.exception if plan else None
+    source = plan.source if plan else None
+    if window is not None:
+        label = f"{window.start:%H:%M}"
+    else:
+        label = PlanKind.LABELS.get(kind, "Не задано")
+    hint = SOURCE_LABELS.get(source, "")
+    if source == "lessons" and window is None:
+        hint = "Нет занятий"
+    if exception is not None:
+        if kind in (VACATION, SICK_LEAVE):
+            hint = exception.note  # «Отпуск» / «Больничный» уже в label
+        else:
+            hint = exception.get_kind_display() + (f": {exception.note}" if exception.note else "")
+    return {
+        "kind": kind,
+        "label": label,
+        "expected_start": f"{window.start:%H:%M}" if window else None,
+        "expected_end": f"{window.end:%H:%M}" if window else None,
+        "grace_minutes": window.grace_minutes if window else None,
+        "late_after": f"{window.late_after:%H:%M}" if window else None,
+        "source": source,
+        "source_label": hint,
     }
 
 

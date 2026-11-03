@@ -9,7 +9,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Select } from '@/components/ui/Select'
 import { useOpsMeta } from '@/hooks/useOperations'
 import { extractErrorMessage } from '@/lib/apiError'
-import type { OpsFiltersParams, OpsPeriod, Priority, TaskStatus } from '@/types/operations'
+import type { AttendanceSchedule, AttendanceScheduleKind, OpsFiltersParams, OpsPeriod, Priority, TaskStatus } from '@/types/operations'
 import { cn } from '@/utils/cn'
 import { formatRuPercent } from '@/utils/format'
 
@@ -141,9 +141,37 @@ export function PriorityBadge({ priority, label }: { priority: Priority; label: 
 
 const LEVEL_TONE: Record<string, BadgeTone> = {
   good: 'success', ok: 'success', attention: 'warning', low: 'danger', problem: 'danger', no_data: 'muted', upcoming: 'muted',
-  present: 'success', late: 'warning', absent: 'danger', not_checked_out: 'warning', not_arrived: 'muted', day_off: 'muted', not_tracked: 'muted',
+  present: 'success', late: 'warning', absent: 'danger', not_checked_out: 'warning', not_arrived: 'muted', day_off: 'muted', not_tracked: 'muted', vacation: 'info', sick_leave: 'info',
   normal: 'success', risk: 'danger', open: 'danger', in_progress: 'info', resolved: 'success', dismissed: 'muted',
   submitted: 'success', missing: 'danger', pending: 'muted', accepted: 'success', returned: 'warning', draft: 'muted',
+}
+
+const SCHEDULE_TONE: Record<Exclude<AttendanceScheduleKind, 'work'>, BadgeTone> = {
+  day_off: 'muted', vacation: 'info', sick_leave: 'info', not_set: 'warning',
+}
+
+/** Ячейка «По графику»: время ожидаемого прихода или причина, почему день нерабочий. */
+export function ScheduleCell({ schedule }: { schedule: AttendanceSchedule }) {
+  if (schedule.kind !== 'work' || !schedule.expected_start) {
+    return (
+      <span title={schedule.source_label || undefined}>
+        <Badge tone={SCHEDULE_TONE[schedule.kind as Exclude<AttendanceScheduleKind, 'work'>] ?? 'warning'}>{schedule.label}</Badge>
+        {schedule.source_label ? <span className="mt-0.5 block text-xs text-ink-muted">{schedule.source_label}</span> : null}
+      </span>
+    )
+  }
+  const hint = [
+    schedule.grace_minutes ? `льгота ${schedule.grace_minutes} мин` : null,
+    schedule.source_label || null,
+  ].filter(Boolean).join(' · ')
+  const title = `По графику ${schedule.expected_start}–${schedule.expected_end}` +
+    (schedule.late_after && schedule.grace_minutes ? `, опоздание — приход после ${schedule.late_after}` : '')
+  return (
+    <span title={title}>
+      <span className="font-medium tabular-nums">{schedule.expected_start}</span>
+      {hint ? <span className="block text-xs text-ink-muted">{hint}</span> : null}
+    </span>
+  )
 }
 
 export function LevelBadge({ level, label }: { level: string; label: string }) {

@@ -261,7 +261,8 @@ class StaffAttendanceView(_OpsView):
             "employees": [{"user": staff.serialize_row(items[0])["user"], **staff.summarize(items)}
                           for items in by_employee.values()],
             "statuses": [{"value": k, "label": v} for k, v in staff.LABELS.items()],
-            "leave_tracking": False,
+            # Отпуска и больничные — исключения из графика (staff_attendance).
+            "leave_tracking": True,
         })
 
 

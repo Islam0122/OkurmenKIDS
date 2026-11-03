@@ -656,8 +656,23 @@ export interface HrResponse {
   documents_tracked: boolean
 }
 
+export type AttendanceScheduleKind = 'work' | 'day_off' | 'vacation' | 'sick_leave' | 'not_set'
+
+export interface AttendanceSchedule {
+  kind: AttendanceScheduleKind
+  /** «09:00», «Выходной», «Отпуск», «Больничный», «Не задано». */
+  label: string
+  expected_start: string | null
+  expected_end: string | null
+  grace_minutes: number | null
+  /** Приход позже этого времени — опоздание. */
+  late_after: string | null
+  source: 'personal' | 'default' | 'lessons' | 'exception' | null
+  source_label: string
+}
+
 export interface AttendanceRow {
-  user: { id: number; full_name: string; role: string; role_label: string; department: Department }
+  user: { id: number; full_name: string; role: string; role_label: string; department: Department; department_label?: string }
   date: string
   status: string
   status_label: string
@@ -667,6 +682,8 @@ export interface AttendanceRow {
   late_minutes: number
   expected_start: string | null
   expected_end: string | null
+  /** «По графику»: план дня из личного / общего графика и исключений. Время — в поясе офиса. */
+  schedule: AttendanceSchedule
   location: string | null
   geo_verified: boolean
   distance_m: number | null
