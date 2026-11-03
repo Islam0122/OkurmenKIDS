@@ -142,12 +142,13 @@ export function PriorityBadge({ priority, label }: { priority: Priority; label: 
 const LEVEL_TONE: Record<string, BadgeTone> = {
   good: 'success', ok: 'success', attention: 'warning', low: 'danger', problem: 'danger', no_data: 'muted', upcoming: 'muted',
   present: 'success', late: 'warning', absent: 'danger', not_checked_out: 'warning', not_arrived: 'muted', day_off: 'muted', not_tracked: 'muted', vacation: 'info', sick_leave: 'info',
+  excused_absence: 'info', permitted_late: 'info', permitted_early_leave: 'info', permitted_partial: 'info', excluded: 'muted',
   normal: 'success', risk: 'danger', open: 'danger', in_progress: 'info', resolved: 'success', dismissed: 'muted',
   submitted: 'success', missing: 'danger', pending: 'muted', accepted: 'success', returned: 'warning', draft: 'muted',
 }
 
 const SCHEDULE_TONE: Record<Exclude<AttendanceScheduleKind, 'work'>, BadgeTone> = {
-  day_off: 'muted', vacation: 'info', sick_leave: 'info', not_set: 'warning',
+  day_off: 'muted', vacation: 'info', sick_leave: 'info', not_set: 'warning', excused: 'info',
 }
 
 /** Ячейка «По графику»: время ожидаемого прихода или причина, почему день нерабочий. */

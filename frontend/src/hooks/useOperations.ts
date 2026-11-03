@@ -29,6 +29,7 @@ export const useOpsHeadOfSales = (p: Params) => useOps('sales-head', () => opera
 export const useOpsMarketing = (p: Params) => useOps('marketing', () => operationsApi.marketing(p), p)
 export const useOpsHr = (p: Params) => useOps('hr', () => operationsApi.hr(p), p)
 export const useOpsAttendance = (p: Params) => useOps('attendance', () => operationsApi.attendance(p), p)
+export const useOpsAttendancePermissions = (p: Params) => useOps('attendance-permissions', () => operationsApi.attendancePermissions(p), p)
 export const useOpsDaily = (date?: string) => useOps('daily', () => operationsApi.daily(date), date)
 export const useOpsKpi = (p: Params) => useOps('kpi', () => operationsApi.kpi(p), p)
 export const useOpsKpiHistory = (p: Params, enabled: boolean) => useOps('kpi-history', () => operationsApi.kpiHistory(p), p, enabled)
@@ -46,6 +47,15 @@ function useInvalidate(...keys: string[]) {
 export function useSaveTarget() {
   const invalidate = useInvalidate(OPS)
   return useMutation({ mutationFn: ({ id, body }: { id: number | null; body: KpiTargetInput }) => operationsApi.saveTarget(id, body), onSuccess: invalidate })
+}
+
+/** «Отпросился»: создание и отмена обновляют посещаемость, дашборд и KPI. */
+export function useAttendancePermissionActions() {
+  const invalidate = useInvalidate(OPS)
+  return {
+    create: useMutation({ mutationFn: operationsApi.createAttendancePermission, onSuccess: invalidate }),
+    cancel: useMutation({ mutationFn: ({ id, reason }: { id: number; reason: string }) => operationsApi.cancelAttendancePermission(id, reason), onSuccess: invalidate }),
+  }
 }
 
 export function useDeleteTarget() {

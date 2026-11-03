@@ -12,7 +12,17 @@
     DAY_OFF          нерабочий день по расписанию
     VACATION         отпуск (исключение из графика)
     SICK_LEAVE       больничный (исключение из графика)
+    EXCUSED_ABSENCE  «Отсутствует по разрешению»: весь рабочий день отпущен
+    PERMITTED_LATE   «Разрешено опоздать»: пришёл не позже сдвинутого начала
+    PERMITTED_EARLY  «Разрешён ранний уход»
+    PERMITTED_PARTIAL «Отпросился»: отпущен на часть дня
+    EXCLUDED         суперпользователь исключил сотрудника из расчётов
     NOT_TRACKED      учёт ещё не вёлся
+
+Разрешения «Отпросился» учитываются в staff_attendance (ScheduleResolver):
+сдвигают ожидаемый приход/уход, полный день — не отсутствие; опоздание
+пересчитывается тем же правилом. Статусы «по разрешению» засчитываются как
+присутствие вовремя: в посещаемость, пунктуальность и KPI — без штрафа.
 
 Отпуска, больничные и отгулы — исключения из графика
 (staff_attendance.AttendanceScheduleException). Удалённой работы в LMS нет.
@@ -25,6 +35,8 @@ from __future__ import annotations
 
 import datetime as dt
 
+from django.utils.timezone import localtime
+
 from apps.staff_attendance.models import AttendanceSettings
 from apps.staff_attendance.services import reports as sa
 from apps.staff_attendance.services.schedule import PlanKind
@@ -35,11 +47,16 @@ from ..departments import Department, department_of
 PRESENT, LATE, ABSENT, NOT_CHECKED_OUT, NOT_ARRIVED, DAY_OFF, NOT_TRACKED = (
     "present", "late", "absent", "not_checked_out", "not_arrived", "day_off", "not_tracked")
 VACATION, SICK_LEAVE = PlanKind.VACATION, PlanKind.SICK_LEAVE
+EXCUSED_ABSENCE, PERMITTED_LATE, PERMITTED_EARLY, PERMITTED_PARTIAL, EXCLUDED = (
+    "excused_absence", "permitted_late", "permitted_early_leave", "permitted_partial", "excluded")
+PERMITTED = (PERMITTED_LATE, PERMITTED_EARLY, PERMITTED_PARTIAL)
 
 LABELS = {
     PRESENT: "Присутствует", LATE: "Опоздание", ABSENT: "Отсутствует", NOT_CHECKED_OUT: "Нет отметки ухода",
     NOT_ARRIVED: "Ещё не пришёл", DAY_OFF: "Выходной", VACATION: "Отпуск", SICK_LEAVE: "Больничный",
-    NOT_TRACKED: "Учёт не вёлся",
+    EXCUSED_ABSENCE: "Отсутствует по разрешению", PERMITTED_LATE: "Разрешено опоздать",
+    PERMITTED_EARLY: "Разрешён ранний уход", PERMITTED_PARTIAL: "Отпросился",
+    EXCLUDED: "Не учитывается", NOT_TRACKED: "Учёт не вёлся",
 }
 
 SOURCE_LABELS = {
@@ -49,6 +66,10 @@ MAX_RANGE_DAYS = sa.MAX_RANGE_DAYS
 
 
 def ops_status(row: sa.DayRow) -> str:
+    if row.status == sa.Status.EXCLUDED:
+        return EXCLUDED
+    if row.status == sa.Status.EXCUSED:
+        return EXCUSED_ABSENCE
     if row.status == sa.Status.DAY_OFF:
         kind = row.plan.kind if row.plan else None
         return kind if kind in (VACATION, SICK_LEAVE) else DAY_OFF
@@ -60,13 +81,32 @@ def ops_status(row: sa.DayRow) -> str:
         return NOT_ARRIVED
     if row.status == sa.Status.NO_CHECK_OUT:
         return NOT_CHECKED_OUT
-    return LATE if row.is_late else PRESENT
+    if row.is_late:
+        return LATE
+    return _permission_status(row) or PRESENT
+
+
+def _permission_status(row: sa.DayRow) -> str | None:
+    """Пришёл вовремя по графику с учётом разрешения — какое разрешение
+    сработало. Нарушения (опоздание сверх разрешённого, нет ухода, нет
+    прихода) разрешение не скрывает."""
+    plan = row.plan
+    if plan is None or not plan.permissions or plan.base_window is None or plan.window is None:
+        return None
+    base, win = plan.base_window, plan.window
+    if win.start > base.start:
+        return PERMITTED_LATE
+    if win.end < base.end:
+        return PERMITTED_EARLY
+    return PERMITTED_PARTIAL
 
 
 def tracked_users(qs=None) -> list:
     config = AttendanceSettings.load()
     qs = qs if qs is not None else User.objects.all()
-    return list(qs.filter(is_active=True, role__in=config.tracked_roles or []).order_by("first_name", "last_name"))
+    return list(qs.filter(is_active=True, role__in=config.tracked_roles or [])
+                .exclude(attendance_profile__tracking_enabled=False)  # учёт выключен суперпользователем
+                .order_by("first_name", "last_name"))
 
 
 def rows(users: list, start: dt.date, end: dt.date, *, now=None) -> list[sa.DayRow]:
@@ -101,7 +141,37 @@ def serialize_row(row: sa.DayRow) -> dict:
         "geo_verified": bool(row.sessions) and all(getattr(s, "source", "") != "manual" for s in row.sessions),
         "distance_m": distance,
         "adjusted": row.is_adjusted,
+        "permissions": [permission_brief(p, _office_tz(row)) for p in (row.plan.permissions if row.plan else ())],
     }
+
+
+def _office_tz(row: sa.DayRow):
+    # Пояс офиса приходит с планом дня — без запроса настроек на каждую строку.
+    tz = row.plan.tz if row.plan else None
+    return tz or AttendanceSettings.load().tzinfo
+
+
+def permission_brief(perm, tz=None) -> dict:
+    tz = tz or AttendanceSettings.load().tzinfo
+    start, end = localtime(perm.starts_at, tz), localtime(perm.ends_at, tz)
+    return {
+        "id": perm.pk,
+        "kind": perm.kind,
+        "kind_label": perm.get_kind_display(),
+        "starts_at": start.isoformat(),
+        "ends_at": end.isoformat(),
+        "period_label": _period_label(perm.kind, start, end),
+        "reason": perm.reason,
+        "comment": perm.comment,
+        "approved_by": str(perm.approved_by) if perm.approved_by_id else None,
+    }
+
+
+def _period_label(kind: str, start, end) -> str:
+    if kind == "full_day":
+        last = (end - dt.timedelta(minutes=1)).date()
+        return f"{start:%d.%m}" if last == start.date() else f"{start:%d.%m}–{last:%d.%m}"
+    return f"{start:%d.%m} {start:%H:%M}–{end:%H:%M}" if end.time() != dt.time(0, 0) else f"{start:%d.%m} {start:%H:%M}–24:00"
 
 
 def schedule_info(row: sa.DayRow) -> dict:
@@ -125,9 +195,15 @@ def schedule_info(row: sa.DayRow) -> dict:
             hint = exception.note  # «Отпуск» / «Больничный» уже в label
         else:
             hint = exception.get_kind_display() + (f": {exception.note}" if exception.note else "")
+    if kind == PlanKind.EXCUSED and plan.permissions:
+        hint = "Отпросился: " + plan.permissions[0].reason
+    base = plan.base_window if plan else None
     return {
         "kind": kind,
         "label": label,
+        # До учёта разрешения «Отпросился» (если оно сдвинуло часы), иначе null.
+        "base_expected_start": f"{base.start:%H:%M}" if base else None,
+        "base_expected_end": f"{base.end:%H:%M}" if base else None,
         "expected_start": f"{window.start:%H:%M}" if window else None,
         "expected_end": f"{window.end:%H:%M}" if window else None,
         "grace_minutes": window.grace_minutes if window else None,
@@ -138,20 +214,27 @@ def schedule_info(row: sa.DayRow) -> dict:
 
 
 def summarize(day_rows: list[sa.DayRow]) -> dict:
+    """Сводка. Дни «по разрешению» засчитываются как присутствие вовремя,
+    полный день по разрешению, отпуск и больничный — не рабочие дни;
+    исключённые из расчётов сотрудники не влияют ни на что."""
     counts = {key: 0 for key in LABELS}
     worked = late = 0
     for row in day_rows:
-        counts[ops_status(row)] += 1
+        status = ops_status(row)
+        counts[status] += 1
+        if status == EXCLUDED:
+            continue
         worked += row.duration_seconds
         late += row.late_minutes
-    expected = counts[PRESENT] + counts[LATE] + counts[ABSENT] + counts[NOT_CHECKED_OUT]
-    attended = counts[PRESENT] + counts[LATE] + counts[NOT_CHECKED_OUT]
+    permitted = sum(counts[k] for k in PERMITTED)
+    expected = counts[PRESENT] + counts[LATE] + counts[ABSENT] + counts[NOT_CHECKED_OUT] + permitted
+    attended = counts[PRESENT] + counts[LATE] + counts[NOT_CHECKED_OUT] + permitted
     return {
         "counts": counts,
         "expected_days": expected,
         "attended_days": attended,
         "attendance_rate": round(attended / expected * 100, 1) if expected else None,
-        "punctuality_rate": round(counts[PRESENT] / attended * 100, 1) if attended else None,
+        "punctuality_rate": round((counts[PRESENT] + permitted) / attended * 100, 1) if attended else None,
         "worked_hours": round(worked / 3600, 1),
         "late_minutes": late,
     }

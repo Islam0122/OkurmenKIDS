@@ -149,7 +149,7 @@ class ScheduleApiTests(AttendanceFixture):
         return f"{API}/admin/employees/{user.pk}/schedule/"
 
     def test_put_with_new_fields(self):
-        admin = self.as_user(self.admin)
+        admin = self.as_root()
         response = admin.put(self.url(self.accountant), {
             "work_start": "09:00", "work_end": "18:00", "work_days": [0, 1, 2, 3, 4, 5],
             "break_start": "13:00", "break_end": "14:00",
@@ -162,7 +162,7 @@ class ScheduleApiTests(AttendanceFixture):
         self.assertEqual(response.data["valid_from"], "2026-11-01")
 
     def test_put_rejects_invalid_values(self):
-        admin = self.as_user(self.admin)
+        admin = self.as_root()
         base = {"work_start": "09:00", "work_end": "18:00", "work_days": [0, 1, 2, 3, 4]}
         for extra, field in (({"break_start": "08:00", "break_end": "09:30"}, "break_start"),
                              ({"break_start": "13:00"}, "break_end"),
@@ -175,7 +175,7 @@ class ScheduleApiTests(AttendanceFixture):
         self.assertFalse(AttendanceWorkSchedule.objects.exists())
 
     def test_partial_update_keeps_existing_values(self):
-        admin = self.as_user(self.admin)
+        admin = self.as_root()
         schedule(self.accountant, work_days=[0, 1, 5], day_hours={"5": {"start": "10:00", "end": "14:00"}})
         # Старый клиент меняет только дни: часы субботы отбрасываются без ошибки.
         response = admin.put(self.url(self.accountant), {"work_days": [0, 1]}, format="json")

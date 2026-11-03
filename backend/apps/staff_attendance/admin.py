@@ -1,5 +1,13 @@
-"""Django admin: справочник офисов и настроек; сессии, события и исправления —
-только просмотр (исправления делаются через API с обязательной причиной)."""
+"""Django admin учёта прихода и ухода.
+
+* Конфигурация — офисы и QR, общие настройки (требования к отметке: GPS,
+  офисная сеть), личные расписания, исключения из графика, учёт сотрудника
+  (включение, исключение из расчётов) — добавлять, менять и удалять может
+  ТОЛЬКО суперпользователь (`SuperuserConfigAdmin`). Остальным, у кого есть
+  право просмотра, — только просмотр. Те же правила в API (access.can_manage).
+* Сессии, события, исправления, журнал и разрешения «Отпросился» — только
+  просмотр: исправления — через API с причиной, разрешения — в кабинете
+  операционного директора (с аудитом)."""
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
@@ -17,13 +25,29 @@ from .models import (
     WEEKDAY_SHORT,
     AttendanceAdjustment,
     AttendanceAdminLog,
+    AttendanceEmployeeSettings,
     AttendanceEvent,
+    AttendancePermission,
     AttendanceLocation,
     AttendanceScheduleException,
     AttendanceSession,
     AttendanceSettings,
     AttendanceWorkSchedule,
 )
+
+
+class SuperuserConfigAdmin(admin.ModelAdmin):
+    """Изменять конфигурацию учёта может только суперпользователь —
+    независимо от роли и выданных Django-прав."""
+
+    def has_add_permission(self, request, *args):
+        return request.user.is_active and request.user.is_superuser and super().has_add_permission(request, *args)
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser and super().has_delete_permission(request, obj)
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -38,7 +62,7 @@ class ReadOnlyAdmin(admin.ModelAdmin):
 
 
 @admin.register(AttendanceLocation)
-class AttendanceLocationAdmin(admin.ModelAdmin):
+class AttendanceLocationAdmin(SuperuserConfigAdmin):
     list_display = ("name", "latitude", "longitude", "radius_m", "is_active", "code")
     list_filter = ("is_active",)
     readonly_fields = ("code", "created_at", "updated_at")
@@ -48,19 +72,19 @@ class AttendanceLocationAdmin(admin.ModelAdmin):
 
 
 @admin.register(AttendanceSettings)
-class AttendanceSettingsAdmin(admin.ModelAdmin):
+class AttendanceSettingsAdmin(SuperuserConfigAdmin):
     list_display = ("__str__", "timezone", "work_start", "work_end", "late_grace_minutes", "max_gps_accuracy_m")
     readonly_fields = ("updated_at", "updated_by")
 
     def has_add_permission(self, request):
-        return not AttendanceSettings.objects.exists()
+        return super().has_add_permission(request) and not AttendanceSettings.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False
 
 
 @admin.register(AttendanceWorkSchedule)
-class AttendanceWorkScheduleAdmin(admin.ModelAdmin):
+class AttendanceWorkScheduleAdmin(SuperuserConfigAdmin):
     """Личные расписания: форма для HR — сотрудник через поиск, дни недели
     карточками, часы по дням, перерыв, льготное время и период действия.
     Шаблон: templates/admin/staff_attendance/attendanceworkschedule/."""
@@ -229,7 +253,7 @@ def format_days(days) -> str:
 
 
 @admin.register(AttendanceScheduleException)
-class AttendanceScheduleExceptionAdmin(admin.ModelAdmin):
+class AttendanceScheduleExceptionAdmin(SuperuserConfigAdmin):
     """Отпуск, больничный, отгул или особые часы сотрудника на дату / период.
     Действует поверх личного и общего графика: в эти дни опоздания и
     «нет прихода» не считаются (или считаются от особых часов)."""
@@ -272,6 +296,47 @@ class AttendanceScheduleExceptionAdmin(admin.ModelAdmin):
         with transaction.atomic():
             _log(request.user, "schedule_exception_delete", obj, _diff({}, model_to_dict(obj)))
             super().delete_model(request, obj)
+
+
+@admin.register(AttendanceEmployeeSettings)
+class AttendanceEmployeeSettingsAdmin(SuperuserConfigAdmin):
+    """Учёт конкретного сотрудника: включён ли (отмечается ли он вообще) и
+    учитывается ли в расчётах посещаемости, опозданий и KPI."""
+
+    list_display = ("user", "tracking_enabled", "excluded_from_calculations", "note", "updated_at", "updated_by")
+    list_filter = ("tracking_enabled", "excluded_from_calculations", "user__role")
+    search_fields = ("user__username", "user__first_name", "user__last_name", "note")
+    autocomplete_fields = ("user",)
+    list_select_related = ("user", "updated_by")
+    readonly_fields = ("updated_at", "updated_by")
+
+    def save_model(self, request, obj, form, change):
+        from .views import _diff, _log
+
+        before = model_to_dict(AttendanceEmployeeSettings.objects.get(pk=obj.pk)) if change else {}
+        obj.updated_by = request.user
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            _log(request.user, "employee_settings_update", obj, _diff(before, model_to_dict(obj)))
+
+    def delete_model(self, request, obj):
+        from .views import _diff, _log
+
+        with transaction.atomic():
+            _log(request.user, "employee_settings_delete", obj, _diff({}, model_to_dict(obj)))
+            super().delete_model(request, obj)
+
+
+@admin.register(AttendancePermission)
+class AttendancePermissionAdmin(ReadOnlyAdmin):
+    """История «Отпросился». Создание и отмена — в кабинете операционного
+    директора (API пишет аудит); здесь — только просмотр."""
+
+    list_display = ("user", "kind", "starts_at", "ends_at", "status", "reason", "approved_by", "cancelled_by")
+    list_filter = ("status", "kind", "user__role")
+    search_fields = ("user__username", "user__first_name", "user__last_name", "reason")
+    list_select_related = ("user", "approved_by", "cancelled_by")
+    date_hierarchy = "starts_at"
 
 
 @admin.register(AttendanceSession)

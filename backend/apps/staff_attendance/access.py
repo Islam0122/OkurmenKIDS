@@ -9,8 +9,13 @@ permissions модели AttendanceSession позволяют дополните
 * отчёты — Администратор, Директор и Операционный директор (все сотрудники), Team Lead (только
   тренеры — он руководит тренерами), либо право `view_attendance_reports`.
 * исправления записей — Администратор или право `adjust_attendance`.
-* офисы, QR-коды, настройки, личные расписания — Администратор или право
-  `manage_attendance`.
+* офисы, QR-коды и требования к отметке, общие настройки, личные расписания,
+  исключения из графика, включение/исключение сотрудника из учёта — ТОЛЬКО
+  суперпользователь Django (`is_superuser`). Роль «Администратор» и право
+  `manage_attendance` этого больше не дают: так конфигурацию учёта нельзя
+  изменить в обход суперпользователя ни через API, ни через Django admin.
+* разрешения «Отпросился» — создаёт и отменяет операционный директор или
+  суперпользователь; смотрят все, кому доступны отчёты.
 """
 from __future__ import annotations
 
@@ -20,7 +25,7 @@ from rest_framework.permissions import BasePermission
 from apps.users.models import User
 from apps.users.permissions import is_admin_user
 
-from .models import AttendanceSettings
+from .models import AttendanceEmployeeSettings, AttendanceSettings
 
 PERM_REPORTS = "staff_attendance.view_attendance_reports"
 PERM_ADJUST = "staff_attendance.adjust_attendance"
@@ -35,7 +40,9 @@ def can_check_in(user, config: AttendanceSettings | None = None) -> bool:
     if not _active(user):
         return False
     config = config or AttendanceSettings.load()
-    return user.role in (config.tracked_roles or [])
+    if user.role not in (config.tracked_roles or []):
+        return False
+    return not AttendanceEmployeeSettings.objects.filter(user=user, tracking_enabled=False).exists()
 
 
 def report_scope(user) -> Q | None:
@@ -59,7 +66,15 @@ def can_adjust(user) -> bool:
 
 
 def can_manage(user) -> bool:
-    return _active(user) and (is_admin_user(user) or user.has_perm(PERM_MANAGE))
+    """Конфигурация учёта — только суперпользователь."""
+    return _active(user) and bool(getattr(user, "is_superuser", False))
+
+
+def can_grant_permissions(user) -> bool:
+    """Создавать и отменять разрешения «Отпросился»: операционный директор
+    или суперпользователь."""
+    return _active(user) and (bool(getattr(user, "is_superuser", False))
+                              or user.role == User.Role.OPERATIONS_DIRECTOR)
 
 
 class CanCheckIn(BasePermission):
@@ -84,7 +99,7 @@ class CanAdjust(BasePermission):
 
 
 class CanManage(BasePermission):
-    message = "Управлять офисами и настройками посещаемости может только администратор."
+    message = "Настройки учёта посещаемости может менять только суперпользователь."
 
     def has_permission(self, request, view) -> bool:
         return can_manage(request.user)

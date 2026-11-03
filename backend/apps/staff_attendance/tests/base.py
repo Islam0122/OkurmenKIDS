@@ -62,6 +62,14 @@ class AttendanceFixture(TestCase):
         self.admin = make_user("office_admin", User.Role.ADMIN)
         self.client = APIClient()
 
+    def as_root(self) -> APIClient:
+        """Клиент суперпользователя: только он меняет конфигурацию учёта
+        (офисы, QR, настройки, расписания). Создаётся по требованию, чтобы
+        не менять состав сотрудников в остальных тестах."""
+        root = User.objects.filter(username="sa_root").first() or User.objects.create_superuser(
+            username="sa_root", email="sa_root@okurmen.kg", password=PASSWORD, is_active=True)
+        return self.as_user(root)
+
     def as_user(self, user) -> APIClient:
         client = APIClient()
         client.force_authenticate(user)

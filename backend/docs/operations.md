@@ -33,7 +33,7 @@
 * Чужая задача, отчёт, вложение или уведомление возвращают 404, чтобы по id нельзя было узнать о существовании записи (защита от IDOR).
 * Вложения хранятся в закрытом каталоге (тот же `PrivateStorage`, что у резюме) и скачиваются только через API после проверки прав на задачу.
 * Middleware изоляции (`apps.accounting.access`) пропускает к `/api/v1/tasks|work-reports|notifications/` все роли, включая бухгалтера. К `/api/v1/operations/` пропускаются роли с базовым доступом, а дальше права проверяет `CanOversee`.
-* Операционный директор получил отчёты учёта прихода (`staff_attendance.access.report_scope`). Офисы, QR-коды и изменение настроек остаются за администратором.
+* Операционный директор получил отчёты учёта прихода (`staff_attendance.access.report_scope`). Он видит посещаемость, время «По графику» и роли сотрудников, создаёт и отменяет «Отпросился» (только он и суперпользователь; директор и администратор — только просмотр). Офисы, QR-коды, настройки, расписания, исключения и включение/исключение сотрудника из учёта меняет только суперпользователь Django.
 * Бюджет, расход и CPL кампаний, а также выручка продаж — финансовые данные. Их видят маркетинг, администратор и директор. Операционный директор видит их, только если это включено в настройках (по умолчанию включено).
 
 ## Модели
@@ -80,7 +80,10 @@ KPI-счётчики (продажи, задачи) сравниваются с 
 | `GET operations/trainers/`, `trainers/{id}/` | контроль тренеров (`subject`, `group`, `kpi_level`, `journal_status`, `warning`, `q`) |
 | `GET operations/team-leads/`, `assistants/`, `students/problems/` | академия |
 | `GET operations/sales/`, `sales/head/`, `marketing/`, `hr/` | отделы |
-| `GET operations/attendance/` | посещаемость сотрудников; в каждой строке `schedule` — «По графику»: время прихода (`expected_start`, пояс офиса), льгота, источник (личный / общий график / занятия / исключение) или `kind` = `day_off` / `vacation` / `sick_leave` / `not_set` |
+| `GET operations/attendance/permissions/` | история «Отпросился» за период (фильтры периода, отдела, должности, сотрудника; `status`, `kind`) |
+| `POST operations/attendance/permissions/` | создать и утвердить: `user`, `kind` (`full_day` / `partial_day` / `late_arrival` / `early_departure`), `starts_at`, `ends_at` (время без пояса — время офиса), `reason`, `comment` |
+| `POST operations/attendance/permissions/{id}/cancel/` | отменить с причиной (`reason`) |
+| `GET operations/attendance/` | посещаемость сотрудников; в каждой строке `schedule` — «По графику»: время прихода (`expected_start`, пояс офиса), льгота, источник (личный / общий график / занятия / исключение) или `kind` = `day_off` / `vacation` / `sick_leave` / `excused` / `not_set`; `permissions` — «Отпросился» этого дня; статусы `excused_absence`, `permitted_late`, `permitted_early_leave`, `permitted_partial`, `excluded` |
 | `GET operations/daily/?date=` | ежедневный контроль |
 | `GET operations/kpi/`, `kpi/history/`, CRUD `kpi/targets/` | KPI |
 | `GET operations/reports/`, `reports/export/?kind=&export_format=csv\|xlsx` | отчёты и выгрузка |

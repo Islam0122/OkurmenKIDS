@@ -16,9 +16,10 @@ import { useDeleteTarget, useOpsAttendance, useOpsDaily, useOpsKpi, useOpsKpiHis
 import { extractErrorMessage } from '@/lib/apiError'
 import type { KpiTargetInput, KpiValue, MetricInfo } from '@/types/operations'
 
+import { PermissionDetails, PermissionModal, PermissionsHistory, type PermissionDraft } from './AttendancePermissions'
 import { Counter, LevelBadge, Note, OpsFilters, PriorityBadge, Progress, QueryView, ScheduleCell, Section, Table, dateTime, num, pct, shortDate, time, useOpsFilters } from './shared'
 
-type AttendanceView = 'daily' | 'departments' | 'employees'
+type AttendanceView = 'daily' | 'departments' | 'employees' | 'permissions'
 
 /** /operations/attendance — посещаемость сотрудников из существующего учёта
  * прихода и ухода по QR (второй системы отметки нет). */
@@ -26,10 +27,13 @@ export function OperationsAttendancePage() {
   const filters = useOpsFilters('today')
   const query = useOpsAttendance(filters.params)
   const [view, setView] = useState<AttendanceView>('daily')
+  const [draft, setDraft] = useState<PermissionDraft | null>(null)
   const { raw, set } = filters
+  const canGrant = Boolean(query.data?.can_manage_permissions)
   return (
     <div className="space-y-4">
-      <PageHeader title="Посещаемость сотрудников" description="Приход и уход по QR-коду офиса с учётом графика, выходных и льготного времени" />
+      <PageHeader title="Посещаемость сотрудников" description="Приход и уход по QR-коду офиса с учётом графика, выходных и льготного времени"
+        actions={canGrant ? <Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => setDraft({})}>Отпросился</Button> : undefined} />
       <OpsFilters filters={filters} show={['department', 'role']}>
         <div className="col-span-2 md:w-56"><SearchInput value={raw.get('q') ?? ''} onChange={(v) => set({ q: v })} placeholder="Поиск сотрудника" /></div>
         <div className="md:w-48"><Select aria-label="Статус" placeholder="Все статусы" value={raw.get('status') ?? ''} options={query.data?.statuses ?? []} onChange={(e) => set({ status: e.target.value })} /></div>
@@ -47,10 +51,10 @@ export function OperationsAttendancePage() {
                 <StatCard label="Нет ухода" value={c.not_checked_out ?? 0} />
                 <StatCard label="Отработано" value={`${num(data.summary.worked_hours)} ч`} />
               </div>
-              <SegmentedControl aria-label="Вид" value={view} onChange={setView} options={[{ value: 'daily', label: 'По дням' }, { value: 'departments', label: 'По отделам' }, { value: 'employees', label: 'По сотрудникам' }]} />
+              <SegmentedControl aria-label="Вид" value={view} onChange={setView} options={[{ value: 'daily', label: 'По дням' }, { value: 'departments', label: 'По отделам' }, { value: 'employees', label: 'По сотрудникам' }, { value: 'permissions', label: 'Отпросился' }]} />
               {view === 'daily' ? (
                 <Section title="Отметки" padding={false}>
-                  <Table empty={!data.rows.length} headers={['Сотрудник', 'Отдел', 'Должность', 'Дата', 'По графику', 'Приход', 'Уход', 'Часы', 'Опоздание', 'Статус', 'Геолокация']}>
+                  <Table empty={!data.rows.length} headers={['Сотрудник', 'Отдел', 'Должность', 'Дата', 'По графику', 'Приход', 'Уход', 'Часы', 'Опоздание', 'Статус', 'Геолокация', ...(canGrant ? [''] : [])]}>
                     {data.rows.map((r) => (
                       <tr key={`${r.user.id}-${r.date}`}>
                         <td><Link to={`/operations/employees/${r.user.id}`} className="font-medium hover:text-brand-700">{r.user.full_name}</Link></td>
@@ -62,8 +66,10 @@ export function OperationsAttendancePage() {
                         <td className="tabular-nums">{time(r.check_out)}</td>
                         <td className="tabular-nums">{r.worked_minutes ? num(Math.round(r.worked_minutes / 6) / 10) : '—'}</td>
                         <td><Counter value={r.late_minutes} tone="warning" />{r.late_minutes ? ' мин' : ''}</td>
-                        <td><LevelBadge level={r.status} label={r.status_label} />{r.adjusted ? <span className="ml-1 text-xs text-ink-muted">испр.</span> : null}</td>
+                        <td className="min-w-48"><span className="whitespace-nowrap"><LevelBadge level={r.status} label={r.status_label} /></span>{r.adjusted ? <span className="ml-1 text-xs text-ink-muted">испр.</span> : null}<PermissionDetails permissions={r.permissions} /></td>
                         <td className="text-xs">{r.check_in ? (r.geo_verified ? `✓ ${r.location ?? 'офис'}${r.distance_m !== null ? `, ${Math.round(r.distance_m)} м` : ''}` : 'вручную') : '—'}</td>
+                        {canGrant ? <td className="text-right"><Button variant="ghost" size="sm" aria-label={`Отпросился: ${r.user.full_name}, ${shortDate(r.date)}`}
+                          onClick={() => setDraft({ user: r.user.id, date: r.date, expectedStart: r.schedule?.base_expected_start ?? r.schedule?.expected_start, expectedEnd: r.schedule?.base_expected_end ?? r.schedule?.expected_end })}>Отпросился</Button></td> : null}
                       </tr>
                     ))}
                   </Table>
@@ -83,7 +89,9 @@ export function OperationsAttendancePage() {
                   </Table>
                 </Section>
               ) : null}
-              <Note>«По графику» — время прихода из личного расписания сотрудника (или общего графика, если личного нет) с учётом исключений: отпуск, больничный, отгул, особые часы. Опоздание считается от этого времени, если приход позже льготного времени. Отсутствие прихода не считается нарушением, пока рабочее время по графику не закончилось.</Note>
+              {view === 'permissions' ? <PermissionsHistory params={filters.params} /> : null}
+              <Note>«По графику» — время прихода из личного расписания сотрудника (или общего графика, если личного нет) с учётом исключений: отпуск, больничный, отгул, особые часы. Опоздание считается от этого времени, если приход позже льготного времени. «Отпросился» сдвигает ожидаемый приход или уход либо освобождает весь день — без штрафа и без изменения отметок. Отсутствие прихода не считается нарушением, пока рабочее время по графику не закончилось.</Note>
+              {draft ? <PermissionModal draft={draft} onClose={() => setDraft(null)} /> : null}
             </div>
           )
         }}

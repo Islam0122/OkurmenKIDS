@@ -656,7 +656,7 @@ export interface HrResponse {
   documents_tracked: boolean
 }
 
-export type AttendanceScheduleKind = 'work' | 'day_off' | 'vacation' | 'sick_leave' | 'not_set'
+export type AttendanceScheduleKind = 'work' | 'day_off' | 'vacation' | 'sick_leave' | 'not_set' | 'excused'
 
 export interface AttendanceSchedule {
   kind: AttendanceScheduleKind
@@ -669,6 +669,58 @@ export interface AttendanceSchedule {
   late_after: string | null
   source: 'personal' | 'default' | 'lessons' | 'exception' | null
   source_label: string
+  /** Часы до учёта «Отпросился», если разрешение их сдвинуло. */
+  base_expected_start?: string | null
+  base_expected_end?: string | null
+}
+
+export type AttendancePermissionKind = 'full_day' | 'partial_day' | 'late_arrival' | 'early_departure'
+
+/** Разрешение «Отпросился» в строке посещаемости. */
+export interface AttendancePermissionBrief {
+  id: number
+  kind: AttendancePermissionKind
+  kind_label: string
+  starts_at: string
+  ends_at: string
+  period_label: string
+  reason: string
+  comment: string
+  approved_by: string | null
+}
+
+type PersonRef = { id: number; full_name: string }
+
+/** Запись истории «Отпросился» (с аудитом). */
+export interface AttendancePermission extends Omit<AttendancePermissionBrief, 'approved_by'> {
+  user: PersonRef & { role_label: string; department: Department }
+  approved_by: PersonRef | null
+  status: 'approved' | 'cancelled'
+  status_label: string
+  created_at: string
+  created_by: PersonRef | null
+  approved_at: string | null
+  cancelled_at: string | null
+  cancelled_by: PersonRef | null
+  cancel_reason: string
+}
+
+export interface AttendancePermissionInput {
+  user: number
+  kind: AttendancePermissionKind
+  /** Время офиса без пояса: «2026-11-03T09:00». */
+  starts_at: string
+  ends_at: string
+  reason: string
+  comment?: string
+}
+
+export interface AttendancePermissionsResponse {
+  filters: FiltersEcho
+  results: AttendancePermission[]
+  kinds: Option[]
+  statuses: Option[]
+  can_manage: boolean
 }
 
 export interface AttendanceRow {
@@ -688,6 +740,8 @@ export interface AttendanceRow {
   geo_verified: boolean
   distance_m: number | null
   adjusted: boolean
+  /** Утверждённые «Отпросился», затрагивающие этот день. */
+  permissions?: AttendancePermissionBrief[]
 }
 
 export interface StaffAttendanceResponse {
@@ -698,6 +752,8 @@ export interface StaffAttendanceResponse {
   employees: (AttendanceSummary & { user: AttendanceRow['user'] })[]
   statuses: Option[]
   leave_tracking: boolean
+  /** Может ли текущий пользователь создавать и отменять «Отпросился». */
+  can_manage_permissions?: boolean
 }
 
 export interface DailyControl {
