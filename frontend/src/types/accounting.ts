@@ -452,6 +452,10 @@ export interface MySalaryRow {
   status_display: string
   is_final: boolean
   /** null — суммы ещё не рассчитаны («Ожидает расчёта»). */
+  /** Основная зарплата — строки расчёта; null, пока сумм нет. */
+  base_amount?: string | null
+  /** Бонусы и доплаты — применённые корректировки со знаком «+». */
+  bonuses?: string | null
   accrued: string | null
   paid: string | null
   due: string | null
@@ -493,7 +497,7 @@ export interface MySalary {
   last_payment: { payment_date: string; amount: string } | null
   current_month: { year: number; month: number; label: string; accrued: string; periods: MySalaryRow[] }
   history: MySalaryRow[]
-  payments: { id: number; payment_date: string; amount: string; method: string; is_advance: boolean; reference: string; period_label: string; payroll_id: number }[]
+  payments: { id: number; payment_date: string; amount: string; method: string; is_advance: boolean; reference: string; period_label: string; payroll_id: number; comment?: string }[]
   filters: { year: number | null; month: number | null; period_type: PeriodType | null }
 }
 

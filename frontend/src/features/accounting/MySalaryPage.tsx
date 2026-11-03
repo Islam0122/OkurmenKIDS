@@ -226,6 +226,7 @@ export function MySalaryPage() {
                     {p.is_advance ? <Badge className="ml-2" tone="info">аванс</Badge> : null}
                   </p>
                   <p className="text-xs text-ink-secondary">{[p.period_label, p.method].filter(Boolean).join(' · ')}</p>
+                  {p.comment ? <p className="text-xs text-ink-secondary">Комментарий бухгалтера: {p.comment}</p> : null}
                 </div>
                 <p className="shrink-0 font-semibold tabular-nums text-ink">{som(p.amount)}</p>
               </li>
@@ -233,13 +234,14 @@ export function MySalaryPage() {
           </ul>
           <div className="card hidden overflow-x-auto md:block">
             <table className="data-table">
-              <thead><tr><th>Дата</th><th>За период</th><th>Способ</th><th className="text-right">Сумма</th></tr></thead>
+              <thead><tr><th>Дата</th><th>За период</th><th>Способ</th><th>Комментарий бухгалтера</th><th className="text-right">Сумма</th></tr></thead>
               <tbody>
                 {d.payments.map((p) => (
                   <tr key={p.id}>
                     <td>{formatDate(p.payment_date)}{p.is_advance ? <Badge className="ml-2" tone="info">аванс</Badge> : null}</td>
                     <td>{p.period_label}</td>
                     <td>{p.method}</td>
+                    <td className="text-sm text-ink-secondary">{p.comment || '—'}</td>
                     <td className="text-right font-medium">{som(p.amount)}</td>
                   </tr>
                 ))}
@@ -296,8 +298,9 @@ function HistoryList({ rows }: { rows: MySalaryRow[] }) {
               <StatusBadge row={row} />
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              {([['Начислено', som(row.accrued)], ['Выплачено', som(row.paid)], ['Остаток', som(row.due)],
-                ['Удержано', row.deducted !== null && Number(row.deducted) > 0 ? som(row.deducted) : '—']] as const).map(([label, value]) => (
+              {([['Основная зарплата', som(row.base_amount ?? null)], ['Бонусы', row.bonuses && Number(row.bonuses) > 0 ? som(row.bonuses) : '—'],
+                ['Начислено', som(row.accrued)], ['Удержано', row.deducted !== null && Number(row.deducted) > 0 ? som(row.deducted) : '—'],
+                ['Выплачено', som(row.paid)], ['Остаток', som(row.due)]] as const).map(([label, value]) => (
                 <div key={label} className="rounded-lg bg-surface-muted px-3 py-2">
                   <dt className="text-xs text-ink-secondary">{label}</dt>
                   <dd className="font-semibold tabular-nums text-ink">{value}</dd>
@@ -327,7 +330,7 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
     <div className="card hidden overflow-x-auto md:block">
       <table className="data-table">
         <thead>
-          <tr><th>Период</th><th>Статус</th><th className="text-right">Начислено</th><th className="text-right">Удержано</th><th className="text-right">Выплачено</th><th className="text-right">Остаток</th><th>Плановая выплата</th></tr>
+          <tr><th>Период</th><th className="text-right">Основная зарплата</th><th className="text-right">Бонусы</th><th className="text-right">Удержания</th><th className="text-right">Начислено</th><th className="text-right">Выплачено</th><th className="text-right">Остаток</th><th>Статус</th><th>Плановая выплата</th></tr>
         </thead>
         <tbody>
           {rows.map((row) => {
@@ -340,16 +343,18 @@ function HistoryTable({ rows }: { rows: MySalaryRow[] }) {
                     {row.period_label}
                     {details ? <p className="text-xs text-ink-muted">{open === key ? 'скрыть' : 'показать'} детализацию</p> : null}
                   </td>
-                  <td><StatusBadge row={row} /></td>
-                  <td className="text-right">{som(row.accrued)}</td>
+                  <td className="text-right">{som(row.base_amount ?? null)}</td>
+                  <td className="text-right">{row.bonuses && Number(row.bonuses) > 0 ? som(row.bonuses) : '—'}</td>
                   <td className="text-right">{row.deducted !== null && Number(row.deducted) > 0 ? som(row.deducted) : '—'}</td>
+                  <td className="text-right font-medium">{som(row.accrued)}</td>
                   <td className="text-right">{som(row.paid)}</td>
                   <td className="text-right">{som(row.due)}</td>
+                  <td className="whitespace-nowrap"><StatusBadge row={row} /></td>
                   <td className="whitespace-nowrap">{formatDate(row.planned_payment_date)}</td>
                 </tr>
                 {open === key ? (
                   <tr>
-                    <td colSpan={7} className="bg-surface-muted text-sm">
+                    <td colSpan={9} className="bg-surface-muted text-sm">
                       <RowDetails row={row} />
                     </td>
                   </tr>
