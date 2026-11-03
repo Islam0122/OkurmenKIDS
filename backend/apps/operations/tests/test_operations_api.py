@@ -50,10 +50,15 @@ class AccessTests(OpsTestCase):
             for endpoint in ("dashboard/", "trainers/", "kpi/targets/", "settings/"):
                 self.assertEqual(client.get(f"{API}/{endpoint}").status_code, 403, f"{user.role} {endpoint}")
 
-    def test_operations_director_still_cannot_reach_payroll(self):
+    def test_operations_director_sees_only_own_salary_not_payroll(self):
+        # «Моя зарплата» (/accounting/my/…, только свои данные) открыта;
+        # бухгалтерия, чужие начисления и LMS — закрыты.
         client = jwt_client(self.od.username)
-        self.assertEqual(client.get("/api/v1/accounting/my/").status_code, 403)
-        self.assertEqual(client.get("/api/v1/students/").status_code, 403)
+        self.assertEqual(client.get("/api/v1/accounting/my/salary/").status_code, 200)
+        for url in ("/api/v1/accounting/payrolls/", "/api/v1/accounting/employees/",
+                    "/api/v1/accounting/salary-profiles/", "/api/v1/accounting/payments/",
+                    "/api/v1/accounting/earnings/", "/api/v1/students/"):
+            self.assertEqual(client.get(url).status_code, 403, url)
 
     def test_operations_director_gets_staff_attendance_reports(self):
         self.assertEqual(jwt_client(self.od.username).get("/api/v1/staff-attendance/admin/overview/").status_code, 200)

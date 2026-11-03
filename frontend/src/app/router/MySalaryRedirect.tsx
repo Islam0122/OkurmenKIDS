@@ -9,6 +9,7 @@ export function MySalaryRedirect() {
     assistant: '/assistant/my-salary',
     hr_manager: '/hr/my-salary',
     marketing: '/marketing/my-salary',
+    operations_director: '/operations/my-salary',
     team_lead: '/app/my-salary',
     teacher: '/app/my-salary',
   }[user?.role ?? ''] ?? '/app/dashboard'

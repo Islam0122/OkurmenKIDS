@@ -334,6 +334,8 @@ export const router = createBrowserRouter([
               { path: 'employees', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsEmployeesPage }) },
               { path: 'employees/:id', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsEmployeePage }) },
               { path: 'departments/:key', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsDepartmentPage }) },
+              // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
+              { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: '*', element: <Navigate to="/operations" replace /> },
             ],
           },

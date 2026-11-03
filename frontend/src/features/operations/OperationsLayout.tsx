@@ -18,6 +18,7 @@ import {
   TrendingUp,
   UserCog,
   Users,
+  Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
@@ -151,6 +152,8 @@ const FOOTER: ShellNavItem[] = [
   { to: '/tasks', label: 'Мои задачи', icon: ClipboardList },
   { to: '/operations/employees', label: 'Все сотрудники', icon: UserCog },
   { to: '/attendance', label: 'Моя отметка прихода', icon: ScanLine },
+  // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/: только свои, только чтение).
+  { to: '/operations/my-salary', label: 'Моя зарплата', icon: Wallet },
 ]
 
 export function OperationsLayout() {

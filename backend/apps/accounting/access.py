@@ -100,7 +100,7 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
 )
 
 
-# Ролям со своим кабинетом (HR-менеджер, маркетинг) дополнительно открыта
+# Ролям со своим кабинетом (HR-менеджер, маркетинг, операционный директор) дополнительно открыта
 # «Моя зарплата»: /accounting/my/ — только собственные начисления и выплаты,
 # только чтение (сотрудник — request.user). Остальная бухгалтерия для них
 # закрыта правами представлений (403); прочие роли с базовым доступом
@@ -111,7 +111,7 @@ OWN_SALARY_PREFIXES = ("/api/v1/accounting/my/",)
 def own_salary_roles() -> tuple[str, ...]:
     from apps.users.models import User
 
-    return (User.Role.HR_MANAGER, User.Role.MARKETING)
+    return (User.Role.HR_MANAGER, User.Role.MARKETING, User.Role.OPERATIONS_DIRECTOR)
 
 
 def is_staff_only(user) -> bool:

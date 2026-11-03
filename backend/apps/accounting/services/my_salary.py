@@ -99,6 +99,12 @@ def _row(payroll: Payroll) -> dict:
         "status": status,
         "status_display": STATUS_LABELS[status],
         "is_final": payroll.is_locked,
+        # Разбивка «Начислено» по тем же записям расчёта: основная часть —
+        # строки расчёта (total_accrued), бонусы и доплаты — применённые
+        # корректировки со знаком «+». Отрицательные корректировки видны в
+        # детализации и уже вычтены в «Начислено».
+        "base_amount": _money(payroll.total_accrued) if shown else None,
+        "bonuses": _money(sum((a.amount for a in adjustments if a.amount > 0), ZERO)) if shown else None,
         "accrued": _money(accrued) if shown else None,
         "paid": _money(payroll.total_paid) if shown else None,
         "due": _money(payroll.amount_due) if shown else None,
@@ -123,6 +129,7 @@ def _payments(employee, payrolls_qs) -> list[dict]:
     return [
         {"id": p.pk, "payment_date": p.payment_date.isoformat(), "amount": _money(p.amount),
          "method": p.get_payment_method_display(), "is_advance": p.is_advance, "reference": p.reference,
+         "comment": p.comment,  # комментарий бухгалтера к выплате
          "period_label": period_label(p.payroll.period), "payroll_id": p.payroll_id}
         for p in payments
     ]
@@ -177,6 +184,7 @@ def build(employee, *, year: int | None = None, month: int | None = None, period
             "period_label": f"{start:%d.%m.%Y}–{end:%d.%m.%Y}", "status": AWAITING,
             "status_display": STATUS_LABELS[AWAITING], "is_final": False, "accrued": None, "paid": None,
             "due": None, "lines": [], "adjustments": [], "deducted": None, "deductions": [],
+            "base_amount": None, "bonuses": None,
             "planned_payment_date": (lambda d: d.isoformat() if d else None)(
                 planned_date_for_period(PayrollPeriod(year=today.year, month=today.month, period_type=half,
                                                       start_date=start, end_date=end))),
