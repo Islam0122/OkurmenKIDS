@@ -19,6 +19,7 @@ from .models import (
     AttendanceAdminLog,
     AttendanceEvent,
     AttendanceLocation,
+    AttendanceScheduleException,
     AttendanceSession,
     AttendanceSettings,
     AttendanceWorkSchedule,
@@ -225,6 +226,52 @@ def format_days(days) -> str:
         else:
             parts.extend(WEEKDAY_SHORT[d] for d in group)
     return ", ".join(parts)
+
+
+@admin.register(AttendanceScheduleException)
+class AttendanceScheduleExceptionAdmin(admin.ModelAdmin):
+    """Отпуск, больничный, отгул или особые часы сотрудника на дату / период.
+    Действует поверх личного и общего графика: в эти дни опоздания и
+    «нет прихода» не считаются (или считаются от особых часов)."""
+
+    list_display = ("user", "kind", "period_display", "hours_display", "note", "created_by")
+    list_filter = ("kind", "user__role")
+    search_fields = ("user__username", "user__first_name", "user__last_name", "note")
+    autocomplete_fields = ("user",)
+    date_hierarchy = "date_from"
+    list_select_related = ("user", "created_by")
+    readonly_fields = ("created_at", "created_by")
+    fields = ("user", "kind", ("date_from", "date_to"), ("work_start", "work_end"), "note",
+              ("created_at", "created_by"))
+
+    @admin.display(description="Период", ordering="date_from")
+    def period_display(self, obj):
+        if obj.date_from == obj.date_to:
+            return f"{obj.date_from:%d.%m.%Y}"
+        return f"{obj.date_from:%d.%m.%Y} – {obj.date_to:%d.%m.%Y}"
+
+    @admin.display(description="Часы")
+    def hours_display(self, obj):
+        if obj.work_start and obj.work_end:
+            return f"{obj.work_start:%H:%M}–{obj.work_end:%H:%M}"
+        return "—"
+
+    def save_model(self, request, obj, form, change):
+        from .views import _diff, _log
+
+        before = model_to_dict(AttendanceScheduleException.objects.get(pk=obj.pk)) if change else {}
+        if not change:
+            obj.created_by = request.user
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            _log(request.user, "schedule_exception_update", obj, _diff(before, model_to_dict(obj)))
+
+    def delete_model(self, request, obj):
+        from .views import _diff, _log
+
+        with transaction.atomic():
+            _log(request.user, "schedule_exception_delete", obj, _diff({}, model_to_dict(obj)))
+            super().delete_model(request, obj)
 
 
 @admin.register(AttendanceSession)

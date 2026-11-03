@@ -16,7 +16,7 @@ import { useDeleteTarget, useOpsAttendance, useOpsDaily, useOpsKpi, useOpsKpiHis
 import { extractErrorMessage } from '@/lib/apiError'
 import type { KpiTargetInput, KpiValue, MetricInfo } from '@/types/operations'
 
-import { Counter, LevelBadge, Note, OpsFilters, PriorityBadge, Progress, QueryView, Section, Table, dateTime, num, pct, shortDate, time, useOpsFilters } from './shared'
+import { Counter, LevelBadge, Note, OpsFilters, PriorityBadge, Progress, QueryView, ScheduleCell, Section, Table, dateTime, num, pct, shortDate, time, useOpsFilters } from './shared'
 
 type AttendanceView = 'daily' | 'departments' | 'employees'
 
@@ -50,13 +50,14 @@ export function OperationsAttendancePage() {
               <SegmentedControl aria-label="Вид" value={view} onChange={setView} options={[{ value: 'daily', label: 'По дням' }, { value: 'departments', label: 'По отделам' }, { value: 'employees', label: 'По сотрудникам' }]} />
               {view === 'daily' ? (
                 <Section title="Отметки" padding={false}>
-                  <Table empty={!data.rows.length} headers={['Сотрудник', 'Отдел', 'Должность', 'Дата', 'Приход', 'Уход', 'Часы', 'Опоздание', 'Статус', 'Геолокация']}>
+                  <Table empty={!data.rows.length} headers={['Сотрудник', 'Отдел', 'Должность', 'Дата', 'По графику', 'Приход', 'Уход', 'Часы', 'Опоздание', 'Статус', 'Геолокация']}>
                     {data.rows.map((r) => (
                       <tr key={`${r.user.id}-${r.date}`}>
                         <td><Link to={`/operations/employees/${r.user.id}`} className="font-medium hover:text-brand-700">{r.user.full_name}</Link></td>
-                        <td className="text-sm">{r.user.department}</td>
+                        <td className="text-sm">{r.user.department_label ?? r.user.department}</td>
                         <td className="text-sm">{r.user.role_label}</td>
                         <td className="whitespace-nowrap">{shortDate(r.date)}</td>
+                        <td className="whitespace-nowrap"><ScheduleCell schedule={r.schedule} /></td>
                         <td className="tabular-nums">{time(r.check_in)}</td>
                         <td className="tabular-nums">{time(r.check_out)}</td>
                         <td className="tabular-nums">{r.worked_minutes ? num(Math.round(r.worked_minutes / 6) / 10) : '—'}</td>
@@ -82,7 +83,7 @@ export function OperationsAttendancePage() {
                   </Table>
                 </Section>
               ) : null}
-              <Note>Статусы «Отпуск» и «Удалённо» появятся, когда в LMS начнётся учёт отпусков и удалённой работы: сейчас таких данных нет. Отсутствие прихода не считается нарушением, пока рабочее время по графику не закончилось.</Note>
+              <Note>«По графику» — время прихода из личного расписания сотрудника (или общего графика, если личного нет) с учётом исключений: отпуск, больничный, отгул, особые часы. Опоздание считается от этого времени, если приход позже льготного времени. Отсутствие прихода не считается нарушением, пока рабочее время по графику не закончилось.</Note>
             </div>
           )
         }}
@@ -138,8 +139,8 @@ export function OperationsDailyPage() {
                 </Table>
               </Section>
               <Section title="Посещаемость: отсутствуют и опоздали" padding={false}>
-                <Table empty={!data.attendance.absent.length && !data.attendance.late.length} headers={['Сотрудник', 'Статус', 'Приход', 'Опоздание']}>
-                  {[...data.attendance.absent, ...data.attendance.late].map((r) => <tr key={`${r.user.id}-${r.status}`}><td>{r.user.full_name}</td><td><LevelBadge level={r.status} label={r.status_label} /></td><td>{time(r.check_in)}</td><td>{r.late_minutes ? `${r.late_minutes} мин` : '—'}</td></tr>)}
+                <Table empty={!data.attendance.absent.length && !data.attendance.late.length} headers={['Сотрудник', 'Статус', 'По графику', 'Приход', 'Опоздание']}>
+                  {[...data.attendance.absent, ...data.attendance.late].map((r) => <tr key={`${r.user.id}-${r.status}`}><td>{r.user.full_name}</td><td><LevelBadge level={r.status} label={r.status_label} /></td><td className="whitespace-nowrap">{r.schedule ? <ScheduleCell schedule={r.schedule} /> : '—'}</td><td>{time(r.check_in)}</td><td>{r.late_minutes ? `${r.late_minutes} мин` : '—'}</td></tr>)}
                 </Table>
               </Section>
               <Section title="Проблемные студенты" padding={false}>

@@ -4,10 +4,10 @@ import { Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { renderWithProviders } from '@/test/testUtils'
-import type { Dashboard, MyTasks, OpsMeta, TaskDetail, TaskListItem, TasksMeta, TrainersResponse } from '@/types/operations'
+import type { AttendanceRow, AttendanceSchedule, Dashboard, MyTasks, OpsMeta, StaffAttendanceResponse, TaskDetail, TaskListItem, TasksMeta, TrainersResponse } from '@/types/operations'
 
 vi.mock('@/api/operations', () => ({
-  operationsApi: { meta: vi.fn(), dashboard: vi.fn(), trainers: vi.fn() },
+  operationsApi: { meta: vi.fn(), dashboard: vi.fn(), trainers: vi.fn(), attendance: vi.fn() },
   tasksApi: { meta: vi.fn(), my: vi.fn(), get: vi.fn(), act: vi.fn(), list: vi.fn() },
   notificationsApi: { unreadCount: vi.fn().mockResolvedValue({ count: 2 }), list: vi.fn().mockResolvedValue({ count: 0, results: [], next: null, previous: null }) },
   workReportsApi: {},
@@ -21,6 +21,7 @@ import { operationsApi, tasksApi } from '@/api/operations'
 
 import { MyTasksPage } from '../tasks/MyTasksPage'
 import { TaskDetailPage } from '../tasks/TaskDetailPage'
+import { OperationsAttendancePage } from './ControlPages'
 import { OperationsDashboardPage } from './DashboardPage'
 import { OPERATIONS_NAV, OperationsLayout } from './OperationsLayout'
 import { OperationsTrainersPage } from './TrainersPage'
@@ -118,6 +119,44 @@ describe('кабинет операционного директора', () => {
     const row = (await screen.findAllByText('Айжан Тренер'))[0].closest('tr') as HTMLElement
     expect(within(row).getByText('KPI ниже цели')).toBeInTheDocument()
     expect(within(row).getByText('цель 80%')).toBeInTheDocument()
+  })
+})
+
+describe('посещаемость сотрудников', () => {
+  const off = { expected_start: null, expected_end: null, grace_minutes: null, late_after: null }
+  function row(id: number, name: string, schedule: AttendanceSchedule, over: Partial<AttendanceRow> = {}): AttendanceRow {
+    return {
+      user: { ...person, id, full_name: name }, date: '2026-10-31', status: 'present', status_label: 'Присутствует',
+      check_in: null, check_out: null, worked_minutes: 0, late_minutes: 0, expected_start: null, expected_end: null,
+      schedule, location: null, geo_verified: false, distance_m: null, adjusted: false, ...over,
+    }
+  }
+  const response: StaffAttendanceResponse = {
+    filters: dashboard.filters, summary: attendance, departments: [], employees: [], statuses: [], leave_tracking: true,
+    rows: [
+      row(1, 'Айбек Вовремя', { kind: 'work', label: '10:00', expected_start: '10:00', expected_end: '19:00', grace_minutes: 10, late_after: '10:10', source: 'personal', source_label: 'Личный график' },
+        { status: 'late', status_label: 'Опоздание', late_minutes: 15 }),
+      row(2, 'Айдана Выходной', { kind: 'day_off', label: 'Выходной', ...off, source: 'personal', source_label: 'Личный график' }, { status: 'day_off', status_label: 'Выходной' }),
+      row(3, 'Нурлан Отпуск', { kind: 'vacation', label: 'Отпуск', ...off, source: 'exception', source_label: 'Отпуск' }, { status: 'vacation', status_label: 'Отпуск' }),
+      row(4, 'Бектур Больничный', { kind: 'sick_leave', label: 'Больничный', ...off, source: 'exception', source_label: 'Больничный' }, { status: 'sick_leave', status_label: 'Больничный' }),
+      row(5, 'Салтанат Без графика', { kind: 'not_set', label: 'Не задано', ...off, source: null, source_label: '' }, { status: 'day_off', status_label: 'Выходной' }),
+    ],
+  }
+
+  it('колонка «По графику» стоит между «Дата» и «Приход» и показывает данные сервера', async () => {
+    ops.attendance.mockResolvedValue(response)
+    renderWithProviders(<OperationsAttendancePage />, { route: '/operations/attendance?period=today' })
+    await screen.findByText('Айбек Вовремя')
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers.slice(3, 6)).toEqual(['Дата', 'По графику', 'Приход'])
+    const cell = (name: string) => within(screen.getByText(name).closest('tr') as HTMLElement).getAllByRole('cell')[4]
+    expect(cell('Айбек Вовремя')).toHaveTextContent('10:00')
+    expect(cell('Айбек Вовремя')).toHaveTextContent('льгота 10 мин · Личный график')
+    expect(cell('Айдана Выходной')).toHaveTextContent('Выходной')
+    expect(cell('Нурлан Отпуск')).toHaveTextContent('Отпуск')
+    expect(cell('Бектур Больничный')).toHaveTextContent('Больничный')
+    expect(cell('Салтанат Без графика')).toHaveTextContent('Не задано')
+    expect(ops.attendance).toHaveBeenCalledWith(expect.objectContaining({ period: 'today' }))
   })
 })
 

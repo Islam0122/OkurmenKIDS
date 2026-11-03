@@ -21,7 +21,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from ..models import AttendanceSession, AttendanceSettings
-from .schedule import ScheduleResolver, WorkWindow
+from .schedule import DayPlan, ScheduleData, ScheduleResolver, WorkWindow
 
 
 class Status:
@@ -65,6 +65,8 @@ class DayRow:
     duration_seconds: int = 0
     late_minutes: int = 0
     is_adjusted: bool = False
+    # План дня по графику (рабочий / выходной / отпуск / больничный / не задано).
+    plan: DayPlan | None = None
 
     @property
     def is_late(self) -> bool:
@@ -108,10 +110,10 @@ def tracked_since(config: AttendanceSettings, user) -> date:
 
 
 def build_row(user, day: date, sessions: list, window: WorkWindow | None, now: datetime, today: date,
-              since: date | None = None) -> DayRow:
+              since: date | None = None, plan: DayPlan | None = None) -> DayRow:
     if since is not None and day < since and not sessions:
-        return DayRow(user=user, day=day, status=Status.NOT_TRACKED)
-    row = DayRow(user=user, day=day, sessions=sessions, window=window)
+        return DayRow(user=user, day=day, status=Status.NOT_TRACKED, plan=plan)
+    row = DayRow(user=user, day=day, sessions=sessions, window=window, plan=plan)
     if sessions:
         ordered = sorted(sessions, key=lambda s: (s.checked_in_at, s.pk))
         row.sessions = ordered
@@ -141,22 +143,32 @@ def build_row(user, day: date, sessions: list, window: WorkWindow | None, now: d
 
 
 def day_rows(config: AttendanceSettings, users: list, day: date, *, now: datetime | None = None) -> list[DayRow]:
-    now = now or timezone.now()
-    today = timezone.localtime(now, config.tzinfo).date()
-    by_user = defaultdict(list)
-    for session in AttendanceSession.objects.filter(user__in=users, work_date=day).select_related("location"):
-        by_user[session.user_id].append(session)
-    resolver = ScheduleResolver(config, users, day)
-    return [build_row(u, day, by_user.get(u.pk, []), resolver.window(u), now, today, tracked_since(config, u))
-            for u in users]
+    return range_rows(config, users, day, day, now=now)
 
 
 def range_rows(config: AttendanceSettings, users: list, date_from: date, date_to: date,
                *, now: datetime | None = None) -> list[DayRow]:
+    """Строки сотрудник × день за период. Сессии, личные расписания,
+    исключения и занятия тренеров загружаются одним запросом каждое на весь
+    период — число запросов не зависит ни от числа сотрудников, ни от дней."""
+    if not users or date_from > date_to:
+        return []
+    now = now or timezone.now()
+    today = timezone.localtime(now, config.tzinfo).date()
+    by_key = defaultdict(list)
+    for session in AttendanceSession.objects.filter(
+            user__in=users, work_date__range=(date_from, date_to)).select_related("location"):
+        by_key[(session.user_id, session.work_date)].append(session)
+    data = ScheduleData(config, users, date_from, date_to)
+    since = {u.pk: tracked_since(config, u) for u in users}
     rows = []
     day = date_from
     while day <= date_to:
-        rows.extend(day_rows(config, users, day, now=now))
+        resolver = ScheduleResolver(config, users, day, data=data)
+        for user in users:
+            plan = resolver.plan(user)
+            rows.append(build_row(user, day, by_key.get((user.pk, day), []), plan.window, now, today,
+                                  since[user.pk], plan=plan))
         day += timedelta(days=1)
     return rows
 
