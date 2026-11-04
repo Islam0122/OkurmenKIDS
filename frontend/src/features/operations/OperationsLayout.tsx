@@ -1,6 +1,7 @@
 import { Suspense, useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
+  Award,
   BarChart3,
   Briefcase,
   CalendarCheck,
@@ -9,6 +10,7 @@ import {
   GraduationCap,
   Headset,
   LayoutDashboard,
+  LineChart,
   ListTodo,
   LogOut,
   Megaphone,
@@ -18,6 +20,7 @@ import {
   TrendingUp,
   UserCog,
   Users,
+  UsersRound,
   Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -57,6 +60,19 @@ export const OPERATIONS_NAV: ShellNavItem[] = [
   { to: '/operations/settings', label: 'Настройки', icon: Settings2 },
 ]
 
+/** Раздел «Академия» — группы, студенты, успеваемость, месячные результаты (только просмотр). */
+export const ACADEMY_NAV: ShellNavItem[] = [
+  { to: '/operations/academy/groups', label: 'Группы', icon: UsersRound },
+  { to: '/operations/academy/students', label: 'Студенты', icon: GraduationCap },
+  { to: '/operations/academy/performance', label: 'Успеваемость', icon: LineChart },
+  { to: '/operations/academy/monthly', label: 'Месячные результаты', icon: Award },
+]
+
+export interface ShellNavSection {
+  title: string
+  items: ShellNavItem[]
+}
+
 const ROW = 'flex h-9 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'
 
 function NavRow({ item, onNavigate }: { item: ShellNavItem; onNavigate?: () => void }) {
@@ -73,12 +89,18 @@ function NavRow({ item, onNavigate }: { item: ShellNavItem; onNavigate?: () => v
   )
 }
 
-function NavList({ items, footer, onNavigate, label }: { items: ShellNavItem[]; footer: ShellNavItem[]; onNavigate?: () => void; label: string }) {
+function NavList({ items, sections = [], footer, onNavigate, label }: { items: ShellNavItem[]; sections?: ShellNavSection[]; footer: ShellNavItem[]; onNavigate?: () => void; label: string }) {
   const { logout } = useAuth()
   return (
     <div className="flex h-full flex-col">
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3" aria-label={label}>
         {items.map((item) => <NavRow key={item.to} item={item} onNavigate={onNavigate} />)}
+        {sections.map((section) => (
+          <div key={section.title} role="group" aria-label={section.title} className="pt-3">
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">{section.title}</p>
+            {section.items.map((item) => <NavRow key={item.to} item={item} onNavigate={onNavigate} />)}
+          </div>
+        ))}
       </nav>
       <div className="space-y-0.5 border-t border-border px-3 py-3">
         {footer.map((item) => <NavRow key={item.to} item={item} onNavigate={onNavigate} />)}
@@ -93,7 +115,7 @@ function NavList({ items, footer, onNavigate, label }: { items: ShellNavItem[]; 
 
 /** Общая оболочка кабинета (та же, что у HR и маркетинга): меню слева на
  * ноутбуке, выезжающее меню на телефоне, уведомления в шапке. */
-export function WorkShell({ title, items, footer, label, children }: { title: string; items: ShellNavItem[]; footer: ShellNavItem[]; label: string; children?: ReactNode }) {
+export function WorkShell({ title, items, sections, footer, label, children }: { title: string; items: ShellNavItem[]; sections?: ShellNavSection[]; footer: ShellNavItem[]; label: string; children?: ReactNode }) {
   const { user } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
@@ -106,7 +128,7 @@ export function WorkShell({ title, items, footer, label, children }: { title: st
           <span className="truncate font-semibold text-ink">{title}</span>
         </div>
         <div className="min-h-0 flex-1">
-          <NavList items={items} footer={footer} label={label} />
+          <NavList items={items} sections={sections} footer={footer} label={label} />
         </div>
       </aside>
 
@@ -141,7 +163,7 @@ export function WorkShell({ title, items, footer, label, children }: { title: st
 
       <Drawer isOpen={menuOpen} onClose={() => setMenuOpen(false)} title="Меню" side="left">
         <div className="-m-4 h-[calc(100%+2rem)] sm:-m-5 sm:h-[calc(100%+2.5rem)]">
-          <NavList items={items} footer={footer} label={label} onNavigate={() => setMenuOpen(false)} />
+          <NavList items={items} sections={sections} footer={footer} label={label} onNavigate={() => setMenuOpen(false)} />
         </div>
       </Drawer>
     </div>
@@ -157,5 +179,5 @@ const FOOTER: ShellNavItem[] = [
 ]
 
 export function OperationsLayout() {
-  return <WorkShell title="Операции" items={OPERATIONS_NAV} footer={FOOTER} label="Разделы кабинета операционного директора" />
+  return <WorkShell title="Операции" items={OPERATIONS_NAV} sections={[{ title: 'Академия', items: ACADEMY_NAV }]} footer={FOOTER} label="Разделы кабинета операционного директора" />
 }

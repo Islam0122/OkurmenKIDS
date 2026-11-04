@@ -1,6 +1,15 @@
 import { apiClient } from '@/api/client'
 import type { Paginated } from '@/types/common'
 import type {
+  AcademyGroupDetail,
+  AcademyGroupsResponse,
+  AcademyMeta,
+  AcademyMonthlyResponse,
+  AcademyPerformanceResponse,
+  AcademyStudentProfile,
+  AcademyStudentsResponse,
+} from '@/types/operationsAcademy'
+import type {
   AttendancePermission,
   AttendancePermissionInput,
   AttendancePermissionsResponse,
@@ -79,6 +88,14 @@ export const operationsApi = {
   hr: (params: Params) => apiClient.get<HrResponse>(`${OPS}/hr/`, { params }).then((r) => r.data),
   attendance: (params: Params) =>
     apiClient.get<StaffAttendanceResponse>(`${OPS}/attendance/`, { params }).then((r) => r.data),
+  // Академия — только чтение.
+  academyMeta: () => apiClient.get<AcademyMeta>(`${OPS}/academy/meta/`).then((r) => r.data),
+  academyGroups: (params: Params) => apiClient.get<AcademyGroupsResponse>(`${OPS}/academy/groups/`, { params }).then((r) => r.data),
+  academyGroup: (id: number, params: Params) => apiClient.get<AcademyGroupDetail>(`${OPS}/academy/groups/${id}/`, { params }).then((r) => r.data),
+  academyStudents: (params: Params) => apiClient.get<AcademyStudentsResponse>(`${OPS}/academy/students/`, { params }).then((r) => r.data),
+  academyStudent: (id: number, params: Params) => apiClient.get<AcademyStudentProfile>(`${OPS}/academy/students/${id}/`, { params }).then((r) => r.data),
+  academyPerformance: (params: Params) => apiClient.get<AcademyPerformanceResponse>(`${OPS}/academy/performance/`, { params }).then((r) => r.data),
+  academyMonthly: (params: Params) => apiClient.get<AcademyMonthlyResponse>(`${OPS}/academy/monthly/`, { params }).then((r) => r.data),
   attendancePermissions: (params: Params) =>
     apiClient.get<AttendancePermissionsResponse>(`${OPS}/attendance/permissions/`, { params }).then((r) => r.data),
   createAttendancePermission: (body: AttendancePermissionInput) =>
