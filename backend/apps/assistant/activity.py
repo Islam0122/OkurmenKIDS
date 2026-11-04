@@ -68,6 +68,11 @@ DEFAULT_THRESHOLDS = {
     # Too little data to judge: fewer marked lessons / due homeworks than this.
     "min_marked_lessons": 2,
     "min_due_homework": 1,
+    # Кабинет операционного директора («Требуют внимания»): средний балл
+    # тестов ниже этого (0–100) и снижение посещаемости / ДЗ к прошлому
+    # периоду на столько процентных пунктов.
+    "low_test_score": 50,
+    "decline_points": 15,
 }
 
 STATUS_NORMAL = "normal"

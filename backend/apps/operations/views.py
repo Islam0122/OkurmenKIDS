@@ -56,7 +56,7 @@ from .serializers import (
     SettingsSerializer,
     person,
 )
-from .services import academy, exports, issues as issue_service, org, overview, period as period_service, staff
+from .services import academy, academy_cabinet, exports, issues as issue_service, org, overview, period as period_service, staff
 from .task_views import OpsPagination
 
 PERMISSIONS = [IsAuthenticated, CanOversee]
@@ -360,6 +360,88 @@ class AttendancePermissionCancelView(_OpsView):
             raise ValidationError(exc.message_dict) from exc
         perm = AttendancePermission.objects.select_related("user", "created_by", "approved_by", "cancelled_by").get(pk=perm.pk)
         return Response(permission_payload(perm, AttendanceSettings.load().tzinfo))
+
+
+# ---------------------------------------------------------------------------
+# Академия: группы, студенты, успеваемость, месячные результаты (только чтение)
+# ---------------------------------------------------------------------------
+
+def can_view_student_finance(user) -> bool:
+    """Договоры и оплаты студентов — только просмотр: операционный директор
+    (так решено для его кабинета) и те, кому оплата обучения и так показывает
+    деньги (billing.permissions.can_view_money: бухгалтер, директор)."""
+    from apps.billing.permissions import can_view_money
+
+    from .permissions import is_operations_director
+
+    return is_operations_director(user) or can_view_money(user)
+
+
+class _AcademyView(_OpsView):
+    """Только GET: ни одного действия, меняющего группы, студентов, оценки,
+    посещаемость, договоры или оплаты (POST/PUT/PATCH/DELETE → 405)."""
+
+    http_method_names = ["get", "head", "options"]
+
+    def filters(self, request, default="this_month"):
+        return _filters(request, default)
+
+    def handle_exception(self, exc):
+        from apps.academy.services.reports import ReportFilterError
+
+        if isinstance(exc, ReportFilterError):
+            exc = ValidationError({"period": str(exc)})
+        return super().handle_exception(exc)
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AcademyMetaView(_AcademyView):
+    def get(self, request):
+        return Response({**academy_cabinet.options(), "finance_visible": can_view_student_finance(request.user)})
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AcademyGroupsView(_AcademyView):
+    def get(self, request):
+        return Response(academy_cabinet.groups_page(self.filters(request), request.query_params))
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AcademyGroupDetailView(_AcademyView):
+    def get(self, request, pk: int):
+        from apps.academy.models import Group
+
+        group = get_object_or_404(Group.objects.select_related("course"), pk=pk)
+        return Response(academy_cabinet.group_detail(group, self.filters(request), request.query_params))
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AcademyStudentsView(_AcademyView):
+    def get(self, request):
+        return Response(academy_cabinet.students_page(self.filters(request), request.query_params,
+                                                      with_finance=can_view_student_finance(request.user)))
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AcademyStudentDetailView(_AcademyView):
+    def get(self, request, pk: int):
+        from apps.academy.models import Student
+
+        student = get_object_or_404(Student.objects.select_related("group__course"), pk=pk)
+        return Response(academy_cabinet.student_profile(student, self.filters(request),
+                                                        with_finance=can_view_student_finance(request.user)))
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AcademyPerformanceView(_AcademyView):
+    def get(self, request):
+        return Response(academy_cabinet.performance(self.filters(request), request.query_params))
+
+
+@extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
+class AcademyMonthlyView(_AcademyView):
+    def get(self, request):
+        return Response(academy_cabinet.monthly(self.filters(request), request.query_params))
 
 
 @extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)

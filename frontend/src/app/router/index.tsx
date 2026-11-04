@@ -334,6 +334,14 @@ export const router = createBrowserRouter([
               { path: 'employees', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsEmployeesPage }) },
               { path: 'employees/:id', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsEmployeePage }) },
               { path: 'departments/:key', lazy: async () => ({ Component: (await import('@/features/operations/PeoplePages')).OperationsDepartmentPage }) },
+              // Академия — только просмотр (backend: /operations/academy/…).
+              { path: 'academy', element: <Navigate to="/operations/academy/groups" replace /> },
+              { path: 'academy/groups', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyGroupsPage }) },
+              { path: 'academy/groups/:id', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyGroupPage }) },
+              { path: 'academy/students', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyStudentsPage }) },
+              { path: 'academy/students/:id', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyStudentPage }) },
+              { path: 'academy/performance', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyPerformancePage }) },
+              { path: 'academy/monthly', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyMonthlyPage }) },
               // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
               { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: '*', element: <Navigate to="/operations" replace /> },

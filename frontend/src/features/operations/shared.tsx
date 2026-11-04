@@ -27,7 +27,7 @@ export function useOpsFilters(defaultPeriod: OpsPeriod = 'this_month') {
   const [search, setSearch] = useSearchParams()
   const period = (search.get('period') as OpsPeriod | null) ?? defaultPeriod
   const params: OpsFiltersParams & Record<string, string | undefined> = { period }
-  for (const key of ['start_date', 'end_date', 'department', 'role', 'employee', 'subject', 'group', 'kpi_level', 'journal_status', 'warning', 'q', 'status', 'kind']) {
+  for (const key of ['start_date', 'end_date', 'department', 'role', 'employee', 'subject', 'group', 'kpi_level', 'journal_status', 'warning', 'q', 'status', 'kind', 'program', 'teacher', 'search', 'page', 'ordering']) {
     const value = search.get(key)
     if (value) params[key] = value
   }
