@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { ArrowRightLeft, UserCheck, UserX } from 'lucide-react'
 
 import { assistantApi } from '@/api/assistant'
@@ -9,6 +10,7 @@ import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { useAssistantFormMutation, useAssistantOptions } from '@/hooks/useAssistant'
 import { extractErrorMessage } from '@/lib/apiError'
+import { formatDate, som } from '@/features/accounting/shared'
 import type { BulkAction, BulkResult, Ref, StudentStatus } from '@/types/assistant'
 
 import { Field, FormError, ModalActions, todayIso } from '../ui'
@@ -40,6 +42,61 @@ function ReasonSelect({ value, onChange, id }: { value: string; onChange: (value
   return <Select id={id} value={value} onChange={(event) => onChange(event.target.value)} options={options} placeholder="Выберите причину" />
 }
 
+/** Кто уходит и его деньги — до подтверждения (те же суммы увидит бухгалтерия в «Архиве студентов»). */
+function DeactivationSummary({ studentId, fallback }: { studentId: number; fallback: StudentLite }) {
+  const preview = useQuery({
+    queryKey: ['assistant', 'deactivation-preview', studentId],
+    queryFn: () => assistantApi.deactivationPreview(studentId),
+    staleTime: 0,
+  })
+  const data = preview.data
+  const rows: [string, string | null | undefined, string?][] = data ? [
+    ['Стоимость договора', data.finance.contract_price],
+    ['Начислено', data.finance.invoiced],
+    ['Оплачено', data.finance.paid],
+    ['Скидки', data.finance.discount],
+    ['Текущая задолженность', data.finance.due_now, Number(data.finance.due_now) > 0 ? 'text-danger font-semibold' : undefined],
+    ['Переплата', data.finance.overpayment, Number(data.finance.overpayment) > 0 ? 'text-brand-700 font-semibold' : undefined],
+  ] : []
+  return (
+    <div className="space-y-3">
+      <dl className="grid gap-x-4 gap-y-2 rounded-lg bg-surface-muted px-3 py-2 text-sm sm:grid-cols-2">
+        <div className="min-w-0"><dt className="field-label">ФИО</dt><dd className="font-medium text-ink">{data?.full_name ?? fallback.full_name}</dd></div>
+        <div className="min-w-0"><dt className="field-label">Текущая группа</dt><dd className="text-ink">{data?.group?.name ?? fallback.group?.name ?? 'Без группы'}</dd></div>
+        <div className="min-w-0"><dt className="field-label">Направление</dt><dd className="text-ink">{data ? (data.subjects.join(', ') || data.course || '—') : '…'}</dd></div>
+        <div className="min-w-0"><dt className="field-label">Дата начала обучения</dt><dd className="text-ink">{data ? formatDate(data.enrollment_date) : '…'}</dd></div>
+        <div className="min-w-0 sm:col-span-2"><dt className="field-label">Договор</dt><dd className="text-ink">
+          {data ? (data.contracts.length ? data.contracts.map((c) => `№${c.number} · ${c.subject ?? c.plan} · ${c.status_display}`).join('; ') : 'Без договора оплаты') : '…'}
+        </dd></div>
+      </dl>
+      <div>
+        <p className="mb-1.5 text-sm font-medium text-ink">Финансовая информация</p>
+        {preview.isLoading ? <p className="text-sm text-ink-secondary">Загрузка финансов…</p> : null}
+        {preview.isError ? <p className="text-sm text-danger">Не удалось загрузить финансы: {extractErrorMessage(preview.error)}</p> : null}
+        {data ? (
+          <>
+            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {rows.map(([label, value, tone]) => (
+                <div key={label} className="rounded-lg border border-border px-3 py-1.5">
+                  <dt className="text-xs text-ink-secondary">{label}</dt>
+                  <dd className={`tabular-nums text-sm ${tone ?? 'text-ink'}`}>{value === null || value === undefined ? '—' : som(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-2 text-xs text-ink-secondary">
+              Задолженность не списывается: после деактивации студент появится в бухгалтерии в «Архиве студентов»,
+              начисления за будущие занятия прекратятся.
+              {Number(data.on_stop.voided_on_stop) > 0
+                ? ` Не начатые месяцы (${som(data.on_stop.voided_on_stop)}) будут аннулированы — долгом они не станут, оплата за них вернётся в аванс.`
+                : ''}
+            </p>
+          </>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function DeactivateModal({ student, onClose }: { student: StudentLite; onClose: () => void }) {
   const [reason, setReason] = useState('')
   const [date, setDate] = useState(todayIso())
@@ -49,25 +106,22 @@ export function DeactivateModal({ student, onClose }: { student: StudentLite; on
     () => assistantApi.deactivate(student.id, {
       reason, event_date: date || null, comment, expected_return_date: reason === PAUSE && returnDate ? returnDate : null,
     }),
-    reason === PAUSE ? `${student.full_name}: поставлен(а) на паузу` : `${student.full_name}: студент деактивирован`,
+    reason === PAUSE ? `${student.full_name}: поставлен(а) на паузу` : `${student.full_name}: студент деактивирован и перенесён в архив`,
   )
   const commentRequired = reason === 'other'
   const canSubmit = reason !== '' && (!commentRequired || comment.trim() !== '')
 
   return (
-    <Modal isOpen onClose={onClose} title="Деактивировать студента" icon={<UserX className="size-5 text-danger" aria-hidden />}>
+    <Modal isOpen onClose={onClose} title="Деактивировать студента" size="lg" icon={<UserX className="size-5 text-danger" aria-hidden />}>
       <form
         onSubmit={(event) => {
           event.preventDefault()
-          if (canSubmit) mutation.mutate(undefined, { onSuccess: onClose })
+          if (canSubmit && !mutation.isPending) mutation.mutate(undefined, { onSuccess: onClose })
         }}
         className="space-y-4"
       >
-        <div className="rounded-lg bg-surface-muted px-3 py-2 text-sm">
-          <p className="font-medium text-ink">{student.full_name}</p>
-          <p className="text-ink-secondary">{student.group?.name ?? 'Без группы'}</p>
-        </div>
-        <Field label="Причина" htmlFor="deactivate-reason" required>
+        <DeactivationSummary studentId={student.id} fallback={student} />
+        <Field label="Причина деактивации" htmlFor="deactivate-reason" required>
           <ReasonSelect id="deactivate-reason" value={reason} onChange={setReason} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -80,15 +134,15 @@ export function DeactivateModal({ student, onClose }: { student: StudentLite; on
             </Field>
           ) : null}
         </div>
-        <Field label="Комментарий" htmlFor="deactivate-comment" required={commentRequired}>
+        <Field label={commentRequired ? 'Комментарий (укажите причину)' : 'Комментарий'} htmlFor="deactivate-comment" required={commentRequired}>
           <Textarea id="deactivate-comment" rows={3} value={comment} onChange={(event) => setComment(event.target.value)} />
         </Field>
-        <p className="text-xs text-ink-secondary">Студент не удаляется: посещаемость, ДЗ, стипендии и история сохраняются.</p>
+        <p className="text-xs text-ink-secondary">Студент не удаляется: платежи, договоры, начисления, посещаемость и история сохраняются.</p>
         <FormError message={mutation.error ? extractErrorMessage(mutation.error) : null} />
         <ModalActions>
           <Button type="button" variant="secondary" onClick={onClose}>Отмена</Button>
           <Button type="submit" variant="danger" disabled={!canSubmit || mutation.isPending} isLoading={mutation.isPending}>
-            {reason === PAUSE ? 'Поставить на паузу' : 'Деактивировать'}
+            {reason === PAUSE ? 'Поставить на паузу' : 'Подтвердить деактивацию'}
           </Button>
         </ModalActions>
       </form>

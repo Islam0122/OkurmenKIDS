@@ -7,7 +7,7 @@ from decimal import Decimal
 from django.db import models
 from rest_framework import serializers
 
-from apps.academy.models import Course, Student
+from apps.academy.models import Course, Group, Student
 from apps.accounting.models import StudentPayment
 from apps.users.models import Subject, User
 
@@ -241,6 +241,15 @@ class StartDateSerializer(serializers.Serializer):
 
 class BillingReasonSerializer(serializers.Serializer):
     reason = serializers.CharField()
+
+
+class ArchiveRestoreSerializer(serializers.Serializer):
+    """Восстановление студента из архива: группа обязательна (как у
+    ассистента при повторной активации)."""
+
+    group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all())
+    event_date = serializers.DateField(required=False, allow_null=True)
+    comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
 
 
 class StopSerializer(serializers.Serializer):

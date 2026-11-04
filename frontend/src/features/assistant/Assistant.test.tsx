@@ -13,6 +13,7 @@ vi.mock('@/api/assistant', () => ({
     students: vi.fn(),
     student: vi.fn(),
     deactivate: vi.fn(),
+    deactivationPreview: vi.fn(),
     transfer: vi.fn(),
     bulk: vi.fn(),
     dashboard: vi.fn(),
@@ -64,6 +65,15 @@ function row(overrides: Partial<StudentRow> = {}): StudentRow {
   }
 }
 
+const PREVIEW = {
+  id: 7, full_name: 'Islam Duishobaev', status: 'active', status_display: 'Активен', group: { id: 1, name: 'PRO-01' },
+  course: 'Python', subjects: ['IT'], enrollment_date: '2026-09-01',
+  contracts: [{ id: 31, number: 31, subject: 'IT', plan: 'IT курс', status: 'ACTIVE', status_display: 'Обучается', start_date: '2026-09-01' }],
+  finance: { contract_price: '30000.00', invoiced: '30000.00', paid: '20000.00', discount: '0.00', adjusted: '0.00',
+    debt: '10000.00', due_now: '10000.00', overpayment: '0.00', contracts_count: 1, has_debt: true },
+  on_stop: { live_contracts: 1, voided_on_stop: '0.00' },
+}
+
 function detail(overrides: Partial<StudentDetail> = {}): StudentDetail {
   return {
     ...row(), created_at: '2026-09-01T10:00:00Z', teachers: ['Islam'], group_status: 'Активна', schedule: [],
@@ -91,6 +101,7 @@ describe('Assistant Workspace', () => {
 
   it('deactivates a student from the profile: reason → confirm, never a delete', async () => {
     vi.mocked(assistantApi.student).mockResolvedValue(detail())
+    vi.mocked(assistantApi.deactivationPreview).mockResolvedValue(PREVIEW)
     vi.mocked(assistantApi.deactivate).mockResolvedValue(detail({ status: 'withdrawn', status_display: 'Деактивирован' }))
     const user = userEvent.setup()
     renderWithProviders(
@@ -102,7 +113,11 @@ describe('Assistant Workspace', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Деактивировать' }))
     const dialog = await screen.findByRole('dialog')
-    const submit = within(dialog).getByRole('button', { name: 'Деактивировать' })
+    // До подтверждения видны группа, договор и деньги — задолженность не списывается.
+    expect(await within(dialog).findByText(/№31 · IT · Обучается/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Текущая задолженность')).toBeInTheDocument()
+    expect(within(dialog).getByText(/10\s000/)).toBeInTheDocument()
+    const submit = within(dialog).getByRole('button', { name: 'Подтвердить деактивацию' })
     expect(submit).toBeDisabled()
     await user.selectOptions(within(dialog).getByLabelText(/Причина/), 'financial_issues')
     await user.click(submit)
@@ -113,6 +128,7 @@ describe('Assistant Workspace', () => {
 
   it('«Другая причина» needs a comment before deactivating', async () => {
     vi.mocked(assistantApi.student).mockResolvedValue(detail())
+    vi.mocked(assistantApi.deactivationPreview).mockResolvedValue(PREVIEW)
     const user = userEvent.setup()
     renderWithProviders(
       <AssistantActionsProvider>
@@ -123,9 +139,9 @@ describe('Assistant Workspace', () => {
     await user.click(await screen.findByRole('button', { name: 'Деактивировать' }))
     const dialog = await screen.findByRole('dialog')
     await user.selectOptions(within(dialog).getByLabelText(/Причина/), 'other')
-    expect(within(dialog).getByRole('button', { name: 'Деактивировать' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Подтвердить деактивацию' })).toBeDisabled()
     await user.type(within(dialog).getByLabelText(/Комментарий/), 'Уехал')
-    expect(within(dialog).getByRole('button', { name: 'Деактивировать' })).toBeEnabled()
+    expect(within(dialog).getByRole('button', { name: 'Подтвердить деактивацию' })).toBeEnabled()
   })
 
   it('selects students and runs one bulk transfer for all of them', async () => {

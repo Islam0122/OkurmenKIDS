@@ -624,6 +624,22 @@ STOP_EVENTS = {StudentStatusEvent.EventType.DEACTIVATED, StudentStatusEvent.Even
 RETURN_EVENTS = {StudentStatusEvent.EventType.REACTIVATED, StudentStatusEvent.EventType.CONTINUED}
 
 
+def _log_archive_event(event: StudentStatusEvent) -> None:
+    """Журнал бухгалтерии: студент ушёл в «Архив студентов» / вернулся из
+    него (кто, когда, почему; долг и договоры не меняются этим событием)."""
+    if event.event_type == StudentStatusEvent.EventType.DEACTIVATED:
+        action, old, new = "billing_student_archived", {"status": event.previous_status}, {"status": "withdrawn"}
+    elif event.event_type == StudentStatusEvent.EventType.REACTIVATED:
+        action, old, new = "billing_student_restored", {"status": event.previous_status}, {"status": "active"}
+    else:
+        return
+    new.update({"event": event.pk, "event_date": event.event_date, "group": event.group_id,
+                "reason": event.reason})
+    text = event.get_reason_display() if event.reason else event.get_event_type_display()
+    audit.log(event.performed_by, event.student, action, old=old, new=new,
+              reason=f"{text}{': ' + event.comment if event.comment else ''}")
+
+
 def on_student_status_event(event_id: int) -> None:
     """Реакция на событие статуса студента в LMS (вызывается после коммита):
 
@@ -639,6 +655,7 @@ def on_student_status_event(event_id: int) -> None:
         return
     profiles = StudentBillingProfile.objects.filter(student_id=event.student_id)
     reason = f"{event.get_event_type_display()} ({event.event_date:%d.%m.%Y})"
+    _log_archive_event(event)
     if event.event_type in STOP_EVENTS:
         for profile in profiles.exclude(status__in=StudentBillingProfile.CLOSED_STATUSES):
             deactivate_billing_profile(profile, actor=event.performed_by, on_date=event.event_date, reason=reason,
