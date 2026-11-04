@@ -375,6 +375,38 @@ class _StudentActionView(AssistantView):
         return Response(selectors.student_detail(student))
 
 
+@extend_schema(tags=TAGS, responses={200: dict})
+class StudentDeactivationPreviewView(AssistantView):
+    """Окно «Деактивировать»: кто уходит (группа, направление, дата начала,
+    договоры) и его деньги до подтверждения — итоги по договорам из той же
+    формулы, что у бухгалтерии (`billing.services.archive.student_finance`
+    → `contracts.money_summary`). Только чтение, без денежных операций."""
+
+    def get(self, request, pk):
+        from apps.billing.models import StudentBillingProfile
+        from apps.billing.services import archive
+
+        student = get_object_or_404(Student.objects.select_related("group__course"), pk=pk)
+        profiles = list(StudentBillingProfile.objects.filter(student=student).select_related("subject", "plan")
+                        .order_by("-start_date", "-pk"))
+        group = student.group
+        return Response({
+            "id": student.pk, "full_name": str(student), "status": student.status,
+            "status_display": student.get_status_display(),
+            "group": None if group is None else {"id": group.pk, "name": group.name},
+            "course": None if group is None else group.course.name,
+            "subjects": archive.subjects_of(student, profiles),
+            "enrollment_date": student.enrollment_date.isoformat() if student.enrollment_date else None,
+            "contracts": [
+                {"id": p.pk, "number": p.pk, "subject": p.subject.name if p.subject_id else None, "plan": p.plan.name,
+                 "status": p.status, "status_display": p.get_status_display(),
+                 "start_date": p.start_date.isoformat()} for p in profiles
+            ],
+            "finance": archive.student_finance(student, profiles),
+            "on_stop": archive.stop_preview(student),
+        })
+
+
 @extend_schema(tags=TAGS, request=DeactivateSerializer, responses={200: dict})
 class StudentDeactivateView(_StudentActionView):
     """Never deletes the student: their status changes (withdrawn, or paused

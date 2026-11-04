@@ -81,6 +81,32 @@ export interface DeactivateInput {
   comment?: string
 }
 
+/** Окно деактивации: кто уходит и его деньги по договорам (как у бухгалтерии). */
+export interface DeactivationPreview {
+  id: number
+  full_name: string
+  status: string
+  status_display: string
+  group: { id: number; name: string } | null
+  course: string | null
+  subjects: string[]
+  enrollment_date: string | null
+  contracts: { id: number; number: number; subject: string | null; plan: string; status: string; status_display: string; start_date: string }[]
+  finance: {
+    contract_price: string | null
+    invoiced: string
+    paid: string
+    discount: string
+    adjusted: string
+    debt: string
+    due_now: string
+    overpayment: string
+    contracts_count: number
+    has_debt: boolean
+  }
+  on_stop: { live_contracts: number; voided_on_stop: string }
+}
+
 export interface ActivateInput {
   group?: number | null
   event_date?: string | null
@@ -119,6 +145,7 @@ export const assistantApi = {
   student: (id: number) => get<StudentDetail>(`/students/${id}/`),
   createStudent: (body: StudentInput) => post<StudentDetail>('/students/', body),
   updateStudent: (id: number, body: Partial<StudentInput>) => patch<StudentDetail>(`/students/${id}/`, body),
+  deactivationPreview: (id: number) => get<DeactivationPreview>(`/students/${id}/deactivation-preview/`),
   deactivate: (id: number, body: DeactivateInput) => post<StudentDetail>(`/students/${id}/deactivate/`, body),
   activate: (id: number, body: ActivateInput) => post<StudentDetail>(`/students/${id}/activate/`, body),
   transfer: (id: number, body: TransferInput) => post<StudentDetail>(`/students/${id}/transfer/`, body),

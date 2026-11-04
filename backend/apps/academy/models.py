@@ -312,6 +312,9 @@ class StudentStatusEvent(models.Model):
 
     class Reason(models.TextChoices):
         # Reasons for leaving — the list a deactivation offers (DEACTIVATION_REASONS).
+        SELF_WITHDRAWAL = "self_withdrawal", "Самостоятельный отказ от обучения"
+        STOPPED_ATTENDING = "stopped_attending", "Перестал посещать занятия"
+        UNREACHABLE = "unreachable", "Не удалось связаться"
         FINANCIAL_ISSUES = "financial_issues", "Финансовые трудности"
         TRANSPORT = "transport", "Неудобный адрес или транспорт"
         SCHEDULE = "schedule", "Неудобное расписание"
@@ -436,8 +439,9 @@ class StudentStatusEvent(models.Model):
     REASON_REQUIRED_TYPES = ("deactivated", "paused")
     # What a new deactivation may name — the earlier reasons stay valid on old records and pauses.
     DEACTIVATION_REASONS = (
-        "financial_issues", "transport", "schedule", "disliked_classes", "disliked_teacher", "no_interest",
-        "low_motivation", "other_academy", "relocation", "graduated", "other",
+        "self_withdrawal", "financial_issues", "stopped_attending", "other_academy", "relocation", "unreachable",
+        "transport", "schedule", "disliked_classes", "disliked_teacher", "no_interest",
+        "low_motivation", "graduated", "other",
     )
     UNKNOWN_REASON_LABEL = "Не указана"
 

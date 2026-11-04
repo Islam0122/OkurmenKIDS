@@ -29,6 +29,8 @@ urlpatterns = [
     path("students/", views.StudentListView.as_view(), name="students"),
     path("students/bulk/", views.StudentBulkView.as_view(), name="students-bulk"),
     path("students/<int:pk>/", views.StudentDetailView.as_view(), name="student-detail"),
+    path("students/<int:pk>/deactivation-preview/", views.StudentDeactivationPreviewView.as_view(),
+         name="student-deactivation-preview"),
     path("students/<int:pk>/deactivate/", views.StudentDeactivateView.as_view(), name="student-deactivate"),
     path("students/<int:pk>/activate/", views.StudentActivateView.as_view(), name="student-activate"),
     path("students/<int:pk>/transfer/", views.StudentTransferView.as_view(), name="student-transfer"),

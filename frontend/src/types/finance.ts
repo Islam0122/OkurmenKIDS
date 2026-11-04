@@ -46,6 +46,8 @@ export interface FinanceOptions {
   contract_statuses: Option[]
   contact_channels: Option[]
   contact_results: Option[]
+  /** Причины деактивации (фильтр «Архива студентов»), включая прежние. */
+  deactivation_reasons?: Option[]
 }
 
 export interface FocusInvoice {
@@ -893,4 +895,204 @@ export interface PrepaymentsResponse {
     definitions: Record<string, string>
   }
   results: PrepaymentRow[]
+}
+
+// ---------------------------------------------------------------------------
+// Архив студентов (деактивированные студенты LMS и их деньги по договорам)
+// ---------------------------------------------------------------------------
+
+export interface UserRef { id: number; name: string }
+export interface NamedRef { id: number; name: string }
+
+/** Итоги по всем договорам студента (backend `archive.student_finance` → `money_summary`). */
+export interface StudentFinance {
+  /** Итоговая стоимость договоров; null — тариф без итоговой стоимости курса. */
+  contract_price: string | null
+  invoiced: string
+  paid: string
+  discount: string
+  /** Корректировки / списания начислений. */
+  adjusted: string
+  /** Остаток задолженности. */
+  debt: string
+  /** Выставлено и не оплачено на сегодня. */
+  due_now: string
+  /** Свободный аванс (переплата). */
+  overpayment: string
+  contracts_count: number
+  has_debt: boolean
+}
+
+export interface ArchiveContractLite {
+  id: number
+  number: number
+  status: ContractStatus
+  status_display: string
+  subject: string | null
+  plan: string
+}
+
+export interface ArchiveRow {
+  id: number
+  name: string
+  group: NamedRef | null
+  subjects: string[]
+  contracts: ArchiveContractLite[]
+  finance: StudentFinance
+  deactivated_on: string | null
+  reason: string
+  reason_display: string
+  status: string
+  status_display: string
+}
+
+export interface ArchiveStatistics {
+  total: number
+  debt_total: string
+  with_debt: number
+  without_debt: number
+  paid_total: string
+  overpayment_total: string
+}
+
+export interface ArchiveFilters {
+  search?: string
+  contract?: string
+  group?: number
+  subject?: number
+  reason?: string
+  debt?: 'yes' | 'no'
+  date_from?: string
+  date_to?: string
+  page?: number
+}
+
+export interface ArchivePage {
+  count: number
+  page: number
+  page_size: number
+  results: ArchiveRow[]
+  statistics: ArchiveStatistics
+}
+
+export interface StatusEventRow {
+  id: number
+  type: string
+  type_display: string
+  date: string
+  reason: string
+  reason_display: string
+  comment: string
+  group: NamedRef | null
+  from_group: NamedRef | null
+  performed_by: UserRef | null
+  created_at: string
+  last_activity_date: string | null
+  study_days: number | null
+}
+
+export interface ArchivePaymentRow {
+  id: number
+  date: string
+  amount: string
+  kind: string
+  kind_display: string
+  method: string
+  method_display: string
+  status: string
+  status_display: string
+  accepted_by: UserRef | null
+  comment: string
+  reference: string
+  transaction: string
+  receipt: { id: number; number: string | null } | null
+  contract: number | null
+  created_at: string
+}
+
+export interface ArchiveInvoiceRow {
+  id: number
+  number: string | null
+  date: string
+  period_date: string
+  reason: string
+  lessons_total: number
+  lessons_used: number
+  amount: string
+  paid: string
+  adjusted: string
+  balance: string
+  status: InvoiceStatus
+  status_display: string
+  void_reason: string
+  contract: number
+}
+
+export interface ArchiveContract {
+  id: number
+  number: number
+  status: ContractStatus
+  status_display: string
+  subject: string | null
+  plan: string
+  payment_mode_display: string
+  start_date: string
+  stopped_on: string | null
+  stop_reason: string
+  stop_source_display: string
+  standard_course_price: string | null
+  final_course_price: string | null
+  discount_amount: string
+  discount_reason: string
+  parent_name: string
+  parent_phone: string
+  responsible_accountant: UserRef | null
+  totals: Omit<StudentFinance, 'contracts_count' | 'has_debt'>
+  terms_history: { id: number; status: string; status_display: string; reason: string; final_course_price: string | null
+    discount_amount: string; requested_by: UserRef | null; requested_at: string; decided_by: UserRef | null
+    decision_comment: string }[]
+  adjustments: { id: number; invoice: string | null; amount: string; reason: string; status: string
+    status_display: string; date: string; created_by: UserRef | null }[]
+  documents: { id: number; number: string | null; kind_display: string; status_display: string; issued_at: string }[]
+}
+
+export interface ArchiveDetail {
+  student: {
+    id: number
+    name: string
+    first_name: string
+    last_name: string
+    phone: string
+    parent_phone: string
+    parent_name: string
+    last_group: NamedRef | null
+    subjects: string[]
+    enrollment_date: string | null
+    status: string
+    status_display: string
+    is_archived: boolean
+  }
+  deactivation: StatusEventRow | null
+  finance: StudentFinance
+  contracts: ArchiveContract[]
+  payments: ArchivePaymentRow[]
+  invoices: ArchiveInvoiceRow[]
+  status_history: StatusEventRow[]
+  study: {
+    groups: { id: number; name: string; since: string | null }[]
+    transfers: StatusEventRow[]
+    attended_lessons: number
+    last_attendance: string | null
+  }
+  can_restore: boolean
+}
+
+export interface RestoreCheck {
+  can_restore: boolean
+  groups: { id: number; name: string; course: string; status: string; students_count: number; max_students: number | null }[]
+  resumable_contracts: { id: number; subject: string | null; plan: string; status_display: string }[]
+  closed_contracts: { id: number; subject: string | null; plan: string; status_display: string }[]
+  needs_new_contract: boolean
+  warnings: string[]
+  finance: StudentFinance
 }

@@ -47,6 +47,7 @@ from .permissions import (
     capabilities,
     is_billing_accountant,
     is_manager,
+    is_system_admin,
 )
 from .services import (
     BillingError,
@@ -1045,6 +1046,8 @@ class OptionsView(APIView):
             "invoice_statuses": [{"value": v, "label": label} for v, label in Invoice.Status.choices],
             "contact_channels": [{"value": v, "label": label} for v, label in BillingContactLog.Channel.choices],
             "contact_results": [{"value": v, "label": label} for v, label in BillingContactLog.Result.choices],
+            # Для фильтра архива: все причины, включая прежние (они остаются на старых записях).
+            "deactivation_reasons": _deactivation_reasons(),
         })
 
 
@@ -1101,6 +1104,8 @@ AUDIT_LABELS = {
     "billing_consumption_reverse": "Сторно списания урока", "billing_contact": "Контакт с родителем",
     "billing_receipt_issue": "Выдан чек", "billing_receipt_print": "Печать чека",
     "billing_receipt_cancel": "Чек аннулирован", "billing_settings_update": "Изменены настройки",
+    "billing_student_archived": "Студент деактивирован (в архиве)",
+    "billing_student_restored": "Студент восстановлен из архива",
 }
 
 
@@ -1342,3 +1347,142 @@ class SettingsView(APIView):
         data = _valid(s.BillingSettingsSerializer, request, partial=True)
         obj = _call(billing_settings.update_settings, actor=request.user, **data)
         return Response(s.BillingSettingsSerializer(obj).data)
+
+
+# ---------------------------------------------------------------------------
+# Архив студентов (деактивированные): список, KPI, карточка, восстановление
+# ---------------------------------------------------------------------------
+
+def _deactivation_reasons() -> list[dict]:
+    from apps.academy.models import StudentStatusEvent
+
+    main = list(StudentStatusEvent.DEACTIVATION_REASONS)
+    rest = [v for v in StudentStatusEvent.Reason.values if v not in main]
+    return [{"value": v, "label": StudentStatusEvent.Reason(v).label} for v in main + rest]
+
+
+def _archive_rows(request) -> list[dict]:
+    from .services import archive
+
+    for name in ("group", "subject"):
+        _int(request.query_params.get(name), name)
+    try:
+        return archive.archive_rows(request.query_params)
+    except ValueError as exc:
+        raise ValidationError({"detail": str(exc)})
+
+
+ARCHIVE_PARAMS = [
+    OpenApiParameter("search", str, description="ФИО или телефон"),
+    OpenApiParameter("contract", str, description="№ договора, номер начисления или чека"),
+    OpenApiParameter("group", int), OpenApiParameter("subject", int, description="Направление"),
+    OpenApiParameter("reason", str, description="Причина деактивации"),
+    OpenApiParameter("debt", str, enum=["yes", "no"]),
+    OpenApiParameter("date_from", OpenApiTypes.DATE), OpenApiParameter("date_to", OpenApiTypes.DATE),
+]
+
+
+@extend_schema(tags=TAG, parameters=[*ARCHIVE_PARAMS, OpenApiParameter("page", int),
+                                     OpenApiParameter("page_size", int)], responses=OpenApiTypes.OBJECT)
+class ArchiveListView(APIView):
+    """«Архив студентов»: деактивированные студенты (статус в LMS) и их
+    деньги по договорам. Бухгалтер и директор (просмотр); менеджеру,
+    тренеру — 403. Ответ содержит и KPI по тому же фильтру (`statistics`)."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        from .services import archive
+
+        rows = _archive_rows(request)
+        return Response({**_paginate(request, rows), "statistics": archive.statistics(rows)})
+
+
+@extend_schema(tags=TAG, parameters=ARCHIVE_PARAMS, responses=OpenApiTypes.OBJECT)
+class ArchiveStatisticsView(APIView):
+    """KPI архива: всего, сумма долга, с долгом / без, получено платежей."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request):
+        from .services import archive
+
+        return Response(archive.statistics(_archive_rows(request)))
+
+
+def _archived_student(pk: int):
+    from apps.academy.models import Student
+
+    return get_object_or_404(Student, pk=pk)
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)
+class ArchiveDetailView(APIView):
+    """Карточка архивного студента: основное, деньги, платежи, начисления,
+    договоры (условия, скидки, корректировки, чеки), история обучения и
+    деактиваций. Открывается и после восстановления — история не теряется."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request, pk: int):
+        from .services import archive
+
+        data = archive.archive_detail(_archived_student(pk))
+        data["can_restore"] = is_system_admin(request.user)
+        return Response(data)
+
+
+@extend_schema(tags=TAG, responses=OpenApiTypes.OBJECT)
+class ArchiveRestoreCheckView(APIView):
+    """Проверки перед восстановлением: открытые группы, какие договоры
+    возобновятся, нужен ли новый договор. Ничего не меняет."""
+
+    permission_classes = [MoneyAccess]
+
+    def get(self, request, pk: int):
+        from .services import archive
+
+        return Response(archive.restore_check(_archived_student(pk)))
+
+
+@extend_schema(tags=TAG, request=s.ArchiveRestoreSerializer, responses=OpenApiTypes.OBJECT)
+class ArchiveRestoreView(APIView):
+    """Восстановить студента: статус снова ACTIVE, выбранная группа.
+    Выполняет тот же сервис, что «Активировать» у ассистента
+    (`student_status.reactivate_student`): история деактивации, платежи,
+    договоры и начисления сохраняются; договор, остановленный уходом,
+    возобновляется сигналом после коммита — старые начисления не
+    создаются повторно. Только администратор системы (управление статусами);
+    бухгалтеру и директору — 403."""
+
+    permission_classes = [MoneyAccess]
+
+    def post(self, request, pk: int):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from apps.academy.models import Group, Student
+        from apps.academy.services import student_status
+
+        from .services import archive
+
+        if not is_system_admin(request.user):
+            raise PermissionDenied({"detail": "Восстановить студента может администратор системы или ассистент.",
+                                    "code": "forbidden"})
+        student = _archived_student(pk)
+        data = _valid(s.ArchiveRestoreSerializer, request)
+        group = data["group"]
+        if group.status not in (Group.Status.ACTIVE, Group.Status.PAUSED):
+            raise ValidationError({"group": f"Группа «{group.name}» закрыта — выберите другую."})
+        if student.status != Student.Status.WITHDRAWN:
+            raise Conflict({"detail": "Студент не в архиве — восстанавливать нечего.", "code": "not_archived"})
+        try:
+            student_status.reactivate_student(
+                student, group=group, event_date=data.get("event_date") or timezone.localdate(),
+                comment=data.get("comment", ""), performed_by=request.user,
+            )
+        except DjangoValidationError as exc:
+            raise Conflict({"detail": " ".join(exc.messages), "code": "invalid_state"})
+        student.refresh_from_db()
+        result = archive.archive_detail(student)
+        result["can_restore"] = True
+        return Response(result)

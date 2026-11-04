@@ -1,6 +1,7 @@
 import { Suspense, useState } from 'react'
 import {
   AlarmClock,
+  Archive,
   ArrowLeft,
   BarChart3,
   Banknote,
@@ -54,6 +55,7 @@ export const FINANCE_NAV: FinanceNavItem[] = [
   { to: '/finance/soon', label: 'Скоро оплата', icon: AlarmClock, badge: 'soon', tone: 'warning', access: 'money' },
   { to: '/finance/overdue', label: 'Просроченные', icon: TriangleAlert, badge: 'overdue', tone: 'danger', access: 'money' },
   { to: '/finance/students', label: 'Все студенты', icon: Users, access: 'all' },
+  { to: '/finance/archive', label: 'Архив студентов', icon: Archive, access: 'money' },
   { to: '/finance/payments', label: 'Платежи', icon: Banknote, access: 'money' },
   { to: '/finance/prepayments', label: 'Авансы', icon: PiggyBank, access: 'money' },
   { to: '/finance/receipts', label: 'Чеки', icon: ReceiptText, access: 'money' },

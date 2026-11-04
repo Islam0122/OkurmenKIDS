@@ -3,6 +3,10 @@ import { newIdempotencyKey } from '@/api/accounting'
 import type { Paginated } from '@/types/common'
 import type {
   Analytics,
+  ArchiveDetail,
+  ArchiveFilters,
+  ArchivePage,
+  ArchiveStatistics,
   AuditEntry,
   AuditRow,
   Contract,
@@ -38,6 +42,7 @@ import type {
   QueuePage,
   SoonQueuePage,
   Receipt,
+  RestoreCheck,
 } from '@/types/finance'
 
 const BASE = '/accounting/billing'
@@ -138,5 +143,13 @@ export const financeApi = {
     post(`/plans/${id}/versions/`, body),
   audit: (params: Params) => get<Paginated<AuditRow>>('/audit-log/', params),
   settings: () => get<FinanceSettings>('/settings/'),
+  /** Архив студентов: деактивированные студенты, их деньги и KPI по тому же фильтру. */
+  archive: (filters: ArchiveFilters & { page_size?: number }) => get<ArchivePage>('/archive/', { ...filters }),
+  archiveStatistics: (filters: ArchiveFilters) => get<ArchiveStatistics>('/archive/statistics/', { ...filters }),
+  archiveStudent: (id: number) => get<ArchiveDetail>(`/archive/${id}/`),
+  restoreCheck: (id: number) => get<RestoreCheck>(`/archive/${id}/restore-check/`),
+  /** Восстановить студента (администратор системы): статус ACTIVE, история и деньги сохраняются. */
+  restoreStudent: (id: number, body: { group: number; event_date?: string | null; comment?: string }) =>
+    post<ArchiveDetail>(`/archive/${id}/restore/`, body),
   updateSettings: (body: Partial<FinanceSettings>) => patch<FinanceSettings>('/settings/', body),
 }

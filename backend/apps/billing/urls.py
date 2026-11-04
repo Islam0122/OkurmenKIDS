@@ -39,5 +39,10 @@ urlpatterns = [
     path("queues/<str:queue>/", views.QueueView.as_view(), name="queue"),
     path("analytics/", views.AnalyticsView.as_view(), name="analytics"),
     path("settings/", views.SettingsView.as_view(), name="settings"),
+    path("archive/", views.ArchiveListView.as_view(), name="archive"),
+    path("archive/statistics/", views.ArchiveStatisticsView.as_view(), name="archive-statistics"),
+    path("archive/<int:pk>/", views.ArchiveDetailView.as_view(), name="archive-detail"),
+    path("archive/<int:pk>/restore-check/", views.ArchiveRestoreCheckView.as_view(), name="archive-restore-check"),
+    path("archive/<int:pk>/restore/", views.ArchiveRestoreView.as_view(), name="archive-restore"),
     path("", include(router.urls)),
 ]
