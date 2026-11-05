@@ -2,23 +2,22 @@
 
 Снимок — не копия студентов, групп или посещаемости: только итоговые цифры
 одного дня, посчитанные из существующих моделей apps.academy
-(services.metrics). Зачем он хранится, а не считается на лету: количество
-активных групп и студентов — это состояние «на тот день»; при деактивации
-студента или закрытии группы прошлые дни не должны меняться задним числом.
+(services.metrics) — по расписанию именно этого дня и составу групп на этот
+день (журнал StudentStatusEvent). Хранится, чтобы прошлые месяцы читались из
+базы, а не пересчитывались по текущему состоянию.
 
 Жизненный цикл (services.snapshots):
 
 * ``provisional`` — сегодняшний день и дни в пределах
-  ``PERFORMANCE_FINALIZE_DELAY_DAYS``: проценты пересчитываются при каждом
-  запуске (тренеры отмечают посещаемость и ДЗ с опозданием), а количество
-  групп и студентов обновляется только в сам этот день;
+  ``PERFORMANCE_FINALIZE_DELAY_DAYS``: пересчитываются при каждом запуске
+  (тренеры отмечают посещаемость и проверяют ДЗ с опозданием);
 * ``final`` — зафиксирован, больше никогда не пересчитывается.
 
 Ручная корректировка (только сотрудники с правом, см. permissions) задаёт
 значения отдельных полей; эти поля перечислены в ``manual_fields`` и
 автоматический пересчёт их не трогает.
 
-Отсутствие данных — ``NULL``, а не 0: день без занятий не равен «0 %».
+Отсутствие данных — ``NULL``, а не 0: день без занятий — «Нет занятий», а не «0 %».
 """
 from __future__ import annotations
 
@@ -32,34 +31,46 @@ class DailyPerformanceSnapshot(models.Model):
         FINAL = "final", "Зафиксирован"
 
     # Поля, которые можно скорректировать вручную.
-    EDITABLE_FIELDS = ("attendance_percent", "homework_percent", "active_groups", "active_students")
+    EDITABLE_FIELDS = (
+        "scheduled_groups", "held_groups", "scheduled_students", "attended_students",
+        "attendance_percent", "homework_percent",
+    )
 
     date = models.DateField(unique=True, verbose_name="Дата")
 
+    scheduled_groups = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Групп по расписанию",
+        help_text="Группы с неотменёнными занятиями в этот день.",
+    )
+    held_groups = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Групп с проведёнными занятиями",
+    )
+    scheduled_students = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Студентов по расписанию",
+        help_text="Уникальные активные студенты групп с занятиями в этот день (состав на эту дату).",
+    )
+    attended_students = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Посетили занятия",
+        help_text="Уникальные студенты с отметкой «Присутствовал» или «Опоздал».",
+    )
+    expected_students = models.PositiveIntegerField(
+        default=0, verbose_name="Ожидались на занятиях",
+        help_text="Студенты занятий, которые должны были состояться (знаменатель посещаемости).",
+    )
     attendance_percent = models.DecimalField(
         max_digits=5, decimal_places=1, null=True, blank=True, verbose_name="Посещаемость, %",
-        help_text="Присутствовал + опоздал от всех отметок за день. Пусто — в этот день не было отметок.",
+        help_text="Посетили / ожидались. Пусто — в этот день не было занятий.",
     )
-    attendance_marked = models.PositiveIntegerField(default=0, verbose_name="Отметок посещаемости")
-    attendance_attended = models.PositiveIntegerField(default=0, verbose_name="Из них присутствовали")
 
     homework_percent = models.DecimalField(
         max_digits=5, decimal_places=1, null=True, blank=True, verbose_name="Домашние задания, %",
-        help_text="Сдано (в срок, с опозданием, проверено) от всех результатов ДЗ, внесённых за день.",
+        help_text="Сдано (в срок, с опозданием, проверено) от всех результатов ДЗ, заданного в этот день.",
     )
     homework_results = models.PositiveIntegerField(default=0, verbose_name="Результатов ДЗ")
     homework_done = models.PositiveIntegerField(default=0, verbose_name="Из них сдано")
 
-    lessons_count = models.PositiveIntegerField(default=0, verbose_name="Занятий (без отменённых)")
-
-    active_groups = models.PositiveIntegerField(
-        null=True, blank=True, verbose_name="Активных групп",
-        help_text="Состояние на этот день. Пусто — в тот день снимок не делался.",
-    )
-    active_students = models.PositiveIntegerField(
-        null=True, blank=True, verbose_name="Активных студентов",
-        help_text="Состояние на этот день. Пусто — в тот день снимок не делался.",
-    )
+    lessons_count = models.PositiveIntegerField(default=0, verbose_name="Занятий по расписанию")
+    held_lessons_count = models.PositiveIntegerField(default=0, verbose_name="Проведено занятий")
 
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PROVISIONAL, db_index=True, verbose_name="Состояние",

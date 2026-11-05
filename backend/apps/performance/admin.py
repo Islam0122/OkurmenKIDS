@@ -8,22 +8,22 @@ from .services.access_keys import issue_key
 @admin.register(DailyPerformanceSnapshot)
 class DailyPerformanceSnapshotAdmin(admin.ModelAdmin):
     list_display = (
-        "date", "attendance_percent", "homework_percent", "active_groups", "active_students",
-        "lessons_count", "status", "manual_fields",
+        "date", "scheduled_groups", "held_groups", "scheduled_students", "attended_students",
+        "attendance_percent", "homework_percent", "status", "manual_fields",
     )
     list_filter = ("status",)
     date_hierarchy = "date"
     ordering = ("-date",)
     readonly_fields = (
-        "date", "attendance_marked", "attendance_attended", "homework_results", "homework_done",
-        "lessons_count", "status", "manual_fields", "corrected_by", "corrected_at", "computed_at",
-        "created_at", "updated_at",
+        "date", "expected_students", "homework_results", "homework_done", "lessons_count", "held_lessons_count",
+        "status", "manual_fields", "corrected_by", "corrected_at", "computed_at", "created_at", "updated_at",
     )
     fields = (
         "date", "status",
-        ("attendance_percent", "attendance_marked", "attendance_attended"),
+        ("scheduled_groups", "held_groups", "lessons_count", "held_lessons_count"),
+        ("scheduled_students", "attended_students", "expected_students"),
+        "attendance_percent",
         ("homework_percent", "homework_results", "homework_done"),
-        ("active_groups", "active_students", "lessons_count"),
         "manual_comment", "manual_fields", "corrected_by", "corrected_at", "computed_at", "created_at", "updated_at",
     )
 

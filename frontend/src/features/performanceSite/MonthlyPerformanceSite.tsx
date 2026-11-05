@@ -17,7 +17,7 @@ import { cn } from '@/utils/cn'
 
 import { dashboardKeyStorage } from './dashboardKey'
 import { MONTHS, formatDateTime } from './format'
-import { CorrectionModal, DailyTable, KpiCard, METRICS } from './parts'
+import { CARDS, CorrectionModal, DailyTable, KpiCard } from './parts'
 import { PerformanceChart } from './PerformanceChart'
 
 export const MONTHLY_PERFORMANCE_PATH = '/monthly-performance'
@@ -27,8 +27,8 @@ const PROJECT_TZ = 'Asia/Bishkek'
 const CHARTS: { key: TrendKey; title: string; kind: 'percent' | 'count' }[] = [
   { key: 'attendance', title: 'График посещаемости', kind: 'percent' },
   { key: 'homework', title: 'Выполнение домашних заданий', kind: 'percent' },
-  { key: 'students', title: 'Динамика количества студентов', kind: 'count' },
-  { key: 'groups', title: 'Динамика количества групп', kind: 'count' },
+  { key: 'students', title: 'Студенты по расписанию дня', kind: 'count' },
+  { key: 'groups', title: 'Группы по расписанию дня', kind: 'count' },
 ]
 
 function nowInProject(): { year: number; month: number } {
@@ -260,19 +260,19 @@ function Dashboard({ dashboardKey, onKey }: { dashboardKey: string | null; onKey
   const updated = dataUpdatedAt ? formatDateTime(new Date(dataUpdatedAt), PROJECT_TZ).time : '—'
   const years = data?.available_years ?? [current.year]
   const isCurrent = year === current.year && month === current.month
+  // Любой месяц: прошлые — с историей, будущие — пустая календарная сетка.
   const monthOptions = MONTHS.map((label, index) => ({ value: String(index + 1), label }))
-    .filter((option) => year < current.year || Number(option.value) <= current.month)
 
   return (
     <div className={cn('min-h-dvh bg-surface', tv && 'fixed inset-0 z-40 overflow-auto')} data-testid={tv ? 'tv-mode' : undefined}>
       {/* Шапка сайта */}
       <header className={cn('border-b border-border bg-surface', !tv && 'sticky top-0 z-30')}>
-        <div className={cn('mx-auto flex w-full flex-wrap items-center justify-between gap-x-6 gap-y-3', tv ? 'px-8 py-4' : 'max-w-[1600px] px-4 py-3 sm:px-6')}>
+        <div className={cn('mx-auto flex w-full flex-wrap items-center justify-between gap-x-6 gap-y-3', tv ? 'px-8 py-3' : 'max-w-[1600px] px-4 py-3 sm:px-6')}>
           <div className="flex min-w-0 items-center gap-3">
             <img src={logo} alt="" className={cn('shrink-0 object-contain', tv ? 'size-16' : 'size-11')} />
             <div className="min-w-0">
               <p className={cn('font-extrabold tracking-[0.2em] text-brand-700', tv ? 'text-xl' : 'text-xs')}>OKURMENKIDS</p>
-              <h1 className={cn('font-bold leading-tight text-ink', tv ? 'text-5xl' : 'text-xl sm:text-2xl')}>Общая статистика академии</h1>
+              <h1 className={cn('font-bold leading-tight text-ink', tv ? 'text-4xl' : 'text-xl sm:text-2xl')}>Общая статистика академии</h1>
               <p className={cn('text-ink-secondary', tv ? 'text-2xl' : 'text-sm')}>{MONTHS[month - 1]} {year}</p>
             </div>
           </div>
@@ -340,7 +340,7 @@ function Dashboard({ dashboardKey, onKey }: { dashboardKey: string | null; onKey
               <Select aria-label="Год" className="w-28" value={String(year)} options={years.map((y) => ({ value: String(y), label: String(y) }))}
                 onChange={(event) => {
                   const nextYear = Number(event.target.value)
-                  update({ year: String(nextYear), month: String(nextYear === current.year ? Math.min(month, current.month) : month) })
+                  update({ year: String(nextYear), month: String(month) })
                 }} />
             </label>
             <Button variant="ghost" onClick={() => update({ year: null, month: null })} disabled={isCurrent}>
@@ -350,7 +350,7 @@ function Dashboard({ dashboardKey, onKey }: { dashboardKey: string | null; onKey
         ) : null}
       </header>
 
-      <main className={cn('mx-auto w-full', tv ? 'flex flex-col gap-5 px-8 py-5' : 'max-w-[1600px] space-y-6 px-4 py-6 sm:px-6')}>
+      <main className={cn('mx-auto w-full', tv ? 'flex flex-col gap-4 px-8 py-4' : 'max-w-[1600px] space-y-6 px-4 py-6 sm:px-6')}>
         {isLoading ? (
           <LoadingState label="Загружаем статистику…" />
         ) : isError || !data ? (
@@ -358,10 +358,15 @@ function Dashboard({ dashboardKey, onKey }: { dashboardKey: string | null; onKey
         ) : (
           <>
             <div className={cn('grid', tv ? 'grid-cols-4 gap-5' : 'grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4')}>
-              {METRICS.map((metric) => (
-                <KpiCard key={metric.key} metric={metric} card={data.summary[metric.key]} tv={tv} />
+              {CARDS.map((card) => (
+                <KpiCard key={card.key} card={card} data={data.summary[card.key]} tv={tv} />
               ))}
             </div>
+            {data.is_future_month ? (
+              <p className="rounded-xl bg-info-soft px-4 py-3 text-sm text-info" role="status">
+                Этот месяц ещё не наступил — показана календарная сетка без показателей.
+              </p>
+            ) : null}
             <DailyTable data={data} tv={tv} onEdit={data.can_edit && !tv ? setEditDay : undefined} />
             <div className={cn('grid', tv ? 'grid-cols-4 gap-5' : 'grid-cols-1 gap-4 lg:grid-cols-2')}>
               {CHARTS.map((chart) => (
@@ -372,12 +377,13 @@ function Dashboard({ dashboardKey, onKey }: { dashboardKey: string | null; onKey
                   points={data.trends[chart.key].points}
                   average={data.trends[chart.key].average}
                   daysInMonth={data.days.length}
+                  connectGaps={chart.kind === 'count'}
                   tv={tv}
                 />
               ))}
             </div>
             {tv ? (
-              <p className="text-right text-lg text-ink-muted">
+              <p className="-mt-2 text-right text-base text-ink-muted">
                 Последнее обновление: {updated} · обновляется каждые 5 минут · выход — Esc
               </p>
             ) : (

@@ -17,6 +17,8 @@ export interface PerformanceChartProps {
   daysInMonth: number
   average: number | null
   kind: 'percent' | 'count'
+  /** Соединять точки через дни без значения (для количества — дни без занятий). */
+  connectGaps?: boolean
   tv?: boolean
 }
 
@@ -31,13 +33,13 @@ export function niceMax(value: number): number {
   return Math.max(4, Math.ceil(step) * 4)
 }
 
-export function PerformanceChart({ title, points, daysInMonth, average, kind, tv = false }: PerformanceChartProps) {
+export function PerformanceChart({ title, points, daysInMonth, average, kind, connectGaps = false, tv = false }: PerformanceChartProps) {
   const titleId = useId()
   const [hover, setHover] = useState<number | null>(null)
   // На телевизоре график ниже (вся панель — в один экран 1920×1080); подписи осей крупные везде.
   // На телевизоре четыре графика в ряд — узкий viewBox, чтобы подписи осей оставались крупными.
   const WIDTH = tv ? 480 : 800
-  const HEIGHT = tv ? 250 : 280
+  const HEIGHT = tv ? 210 : 280
   const font = tv ? 20 : 18
   const percent = kind === 'percent'
   const format = (value: number | null) => (percent ? formatPct(value) : formatCount(value))
@@ -55,6 +57,7 @@ export function PerformanceChart({ title, points, daysInMonth, average, kind, tv
   let current: TrendPoint[] = []
   for (const point of points) {
     if (point.value === null) {
+      if (connectGaps) continue
       if (current.length) segments.push(current)
       current = []
     } else current.push(point)
@@ -73,7 +76,7 @@ export function PerformanceChart({ title, points, daysInMonth, average, kind, tv
   const hovered = hover !== null ? points.find((p) => p.day === hover) : undefined
 
   return (
-    <section className={cn('card min-w-0', tv ? 'px-5 py-4' : 'card-body')} aria-labelledby={titleId}>
+    <section className={cn('card min-w-0', tv ? 'px-5 py-3' : 'card-body')} aria-labelledby={titleId}>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 id={titleId} className={cn('font-semibold text-ink', tv ? 'text-2xl' : 'section-title')}>{title}</h2>
         {average !== null ? (
