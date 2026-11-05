@@ -72,6 +72,29 @@ class DailyPerformanceSnapshot(models.Model):
     lessons_count = models.PositiveIntegerField(default=0, verbose_name="Занятий по расписанию")
     held_lessons_count = models.PositiveIntegerField(default=0, verbose_name="Проведено занятий")
 
+    # Значения первой версии панели (до учёта расписания дня, миграция 0003):
+    # сохранены как были, ничем не используются и не пересчитываются.
+    legacy_active_groups = models.PositiveIntegerField(
+        null=True, blank=True, editable=False, verbose_name="Активных групп (первая версия)",
+    )
+    legacy_active_students = models.PositiveIntegerField(
+        null=True, blank=True, editable=False, verbose_name="Активных студентов (первая версия)",
+    )
+    legacy_attendance_marked = models.PositiveIntegerField(
+        default=0, editable=False, verbose_name="Отметок посещаемости (первая версия)",
+    )
+    legacy_attendance_attended = models.PositiveIntegerField(
+        default=0, editable=False, verbose_name="Присутствовали (первая версия)",
+    )
+    legacy_attendance_percent = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True, editable=False,
+        verbose_name="Посещаемость, % (первая версия)",
+    )
+    legacy_homework_percent = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True, editable=False,
+        verbose_name="Домашние задания, % (первая версия)",
+    )
+
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PROVISIONAL, db_index=True, verbose_name="Состояние",
     )
