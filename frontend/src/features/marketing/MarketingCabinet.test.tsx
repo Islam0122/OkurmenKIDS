@@ -161,6 +161,7 @@ describe('оболочка кабинета маркетинга', () => {
     expect(links(sidebar)).toEqual([
       ['Обзор', '/marketing'], ['Контент-план', '/marketing/content'], ['Задачи', '/marketing/tasks'],
       ['Отчёты', '/marketing/reports'], ['Моя зарплата', '/marketing/my-salary'], ['Кампании', '/marketing/campaigns'],
+      ['Общая статистика', '/dashboard/monthly-performance'],
     ])
     // Нижняя панель телефона (пять разделов; «Кампании» — из «Обзора»): те же адреса, короткие подписи.
     expect(links(bottom)).toEqual([
