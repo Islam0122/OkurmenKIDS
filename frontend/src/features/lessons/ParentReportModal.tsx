@@ -11,25 +11,9 @@ import { useToast } from '@/components/ui/Toast'
 import { useParentReport } from '@/hooks/useLessons'
 import { homeworkUrlFor } from '@/lib/returnTo'
 import type { ParentLessonReport, ParentReportType } from '@/types/academy'
+import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
 import { formatDate } from '@/utils/format'
-
-async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
-  const area = document.createElement('textarea')
-  area.value = text
-  area.setAttribute('readonly', '')
-  area.style.position = 'fixed'
-  area.style.opacity = '0'
-  document.body.appendChild(area)
-  area.select()
-  const ok = document.execCommand('copy')
-  area.remove()
-  if (!ok) throw new Error('copy failed')
-}
 
 /**
  * «Мини-отчёт родителям»: pick the report author → preview → edit → copy. The trainer

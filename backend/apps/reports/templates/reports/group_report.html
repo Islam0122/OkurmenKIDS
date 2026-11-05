@@ -1,0 +1,88 @@
+{% load l10n %}<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<title>{{ L.title_group }} — {{ header.group }}</title>
+{% include "reports/_styles.html" %}
+</head>
+<body>
+{% localize off %}
+{% for page in pages %}
+<section class="page" data-page="{{ page.number }}">
+  <header class="header{% if not page.first %} compact{% endif %}">
+    <div class="brand">
+      <span class="logo"><img src="{{ assets.logo }}" alt=""></span>
+      <div>
+        <div class="brand-name"><b>Okurmen</b>KIDS</div>
+        <div class="title">{{ L.title_group }}{% if not page.first %} · {{ L.continued }}{% endif %}</div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-item"><div class="meta-label">{{ icons.users }}{{ L.group }}</div><div class="meta-value">{{ header.group }}</div></div>
+      {% if page.first and header.course %}
+        <div class="meta-item"><div class="meta-label">{{ icons.cap }}{{ L.course }}</div><div class="meta-value">{{ header.course }}</div></div>
+      {% endif %}
+      <div class="meta-item"><div class="meta-label">{{ icons.calendar }}{{ L.period }}</div><div class="meta-value">{{ header.period }}</div></div>
+      {% if page.first %}
+        <div class="meta-item"><div class="meta-label">{{ L.lessons }}</div><div class="meta-value">{{ header.lessons }}</div></div>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if page.show_kpis %}
+    <div class="kpis">{% for kpi in kpis %}{% include "reports/_kpi.html" %}{% endfor %}</div>
+  {% endif %}
+
+  {% if page.students %}
+    <div class="table-card">
+      <table>
+        <colgroup>
+          <col style="width: 52px"><col style="width: 318px"><col style="width: 132px"><col style="width: 226px">
+          <col style="width: 226px"><col style="width: 128px"><col style="width: 132px"><col>
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="c-no">{{ L.col_no }}</th><th>{{ L.col_student }}</th><th>{{ L.col_lessons }}</th>
+            <th>{{ L.col_attendance }}</th><th>{{ L.col_homework }}</th><th>{{ L.col_score }}</th>
+            <th>{{ L.col_tests }}</th><th>{{ L.col_status }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in page.students %}
+            <tr>
+              <td class="c-no">{{ row.no }}</td>
+              <td class="c-name {{ row.name_class }}"><span>{{ row.name }}</span></td>
+              <td>{{ row.lessons }}</td>
+              <td>
+                {% if row.attendance.has_data %}
+                  <div class="cell-bar"><div class="bar tone-{{ row.attendance.tone }}"><span style="width: {{ row.attendance.bar }}%"></span></div><span class="v">{{ row.attendance.text }}</span></div>
+                {% else %}<span class="no-data">{{ row.attendance.text }}</span>{% endif %}
+              </td>
+              <td>
+                {% if row.homework.has_data %}
+                  <div class="cell-bar"><div class="bar tone-{{ row.homework.tone }}"><span style="width: {{ row.homework.bar }}%"></span></div><span class="v">{{ row.homework.text }}</span></div>
+                {% else %}<span class="no-data">{{ row.homework.text }}</span>{% endif %}
+              </td>
+              <td>{% if row.score_has_data %}<b>{{ row.score }}</b>{% else %}<span class="no-data">{{ row.score }}</span>{% endif %}</td>
+              <td>{% if row.tests_has_data %}<b>{{ row.tests }}</b>{% else %}<span class="no-data">{{ row.tests }}</span>{% endif %}</td>
+              <td><span class="pill {{ row.status.tone }}">{{ row.status.label }}</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if page.show_sections and sections %}
+    {% include "reports/_sections.html" %}
+  {% endif %}
+
+  <footer class="footer">
+    <span><b>OkurmenKIDS</b> · {{ header.generated }}{% if header.trainers %} · {{ L.trainer }}: {{ header.trainers }}{% endif %}</span>
+    {% if page_count > 1 %}<span>{{ page.label }}</span>{% endif %}
+  </footer>
+</section>
+{% endfor %}
+{% endlocalize %}
+</body>
+</html>

@@ -23,6 +23,8 @@ urlpatterns = [
     # apps.news.urls contributes the Teacher-facing news feed.
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.academy.urls")),
+    # Отчёты для родителей: groups/{id}/parent-reports/…, parent-reports/ (см. apps.reports).
+    path("api/v1/", include("apps.reports.urls")),
     path("api/v1/", include("apps.news.urls")),
     path("api/v1/", include("apps.feedback.urls")),
     path("api/v1/", include("apps.scholarships.urls")),
