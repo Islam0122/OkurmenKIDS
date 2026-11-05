@@ -20,6 +20,7 @@ import { ExamCard } from '@/features/exams/ExamCard'
 import { useExamList } from '@/hooks/useExams'
 import { AcademicConfigSummary, GroupAcademicConfig } from './GroupAcademicConfig'
 import { StudentProgress } from './StudentProgress'
+import { ParentReportsSection } from '@/features/parentReports/ParentReportsSection'
 import type { DateRange } from './StudentProgress'
 import type { StudentProgressParams } from '@/types/studentProgress'
 import { useAuth } from '@/hooks/useAuth'
@@ -333,10 +334,28 @@ function HomeworkTab({ groupId }: { groupId: number }) {
   )
 }
 
+type KpiView = 'metrics' | 'reports'
+
+const KPI_VIEWS: { value: KpiView; label: string }[] = [
+  { value: 'metrics', label: 'Показатели' },
+  { value: 'reports', label: 'Отчёты' },
+]
+
+/** Group → KPI: the live figures («Показатели») and the parent reports built from them («Отчёты»). */
+function KpiTab({ groupId }: { groupId: number }) {
+  const [view, setView] = useState<KpiView>('metrics')
+  return (
+    <div>
+      <SegmentedControl<KpiView> aria-label="Раздел KPI" className="mb-4" value={view} onChange={setView} options={KPI_VIEWS} />
+      {view === 'reports' ? <ParentReportsSection groupId={groupId} /> : <KpiMetrics groupId={groupId} />}
+    </div>
+  )
+}
+
 /** Computed live from this group's own Lesson/Attendance/HomeworkResult
  * records for the chosen period — nothing stored, nothing to recalculate.
  * «Прогресс студентов» below follows the same period switch. */
-function KpiTab({ groupId }: { groupId: number }) {
+function KpiMetrics({ groupId }: { groupId: number }) {
   const [periodKey, setPeriodKey] = useState<KPIPeriodKey>('this_month')
   // A manual «С — По» range from «Прогресс студентов»; null = the quick period.
   const [customRange, setCustomRange] = useState<DateRange | null>(null)

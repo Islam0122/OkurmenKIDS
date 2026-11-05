@@ -13,12 +13,12 @@ export interface ModalProps {
   /** Optional small icon shown before the title (decorative). */
   icon?: ReactNode
   children: ReactNode
-  /** `md` (512px) for forms/confirmations, `lg` (672px) for richer content. */
-  size?: 'md' | 'lg'
+  /** `md` (512px) for forms/confirmations, `lg` (672px) for richer content, `xl` (1024px) for wide previews. */
+  size?: 'md' | 'lg' | 'xl'
   className?: string
 }
 
-const SIZE_CLASSES = { md: 'max-w-lg', lg: 'max-w-2xl' } as const
+const SIZE_CLASSES = { md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-5xl' } as const
 
 /**
  * The one dialog. Always 16px from every screen edge on a phone, capped at

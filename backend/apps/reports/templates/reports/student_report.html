@@ -1,0 +1,74 @@
+{% load l10n %}<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<title>{{ L.title_student }} — {{ student.name }}</title>
+{% include "reports/_styles.html" %}
+</head>
+<body>
+{% localize off %}
+<section class="page" data-page="1">
+  <header class="header tall">
+    <div class="brand">
+      <span class="logo"><img src="{{ assets.logo }}" alt=""></span>
+      <div style="min-width: 0">
+        <div class="brand-name"><b>Okurmen</b>KIDS · {{ L.title_student }}</div>
+        <div class="student-name {{ student.name_class }}">{{ student.name }}</div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-item"><div class="meta-label">{{ icons.users }}{{ L.group }}</div><div class="meta-value">{{ header.group }}</div></div>
+      {% if header.course %}
+        <div class="meta-item"><div class="meta-label">{{ icons.cap }}{{ L.course }}</div><div class="meta-value">{{ header.course }}</div></div>
+      {% endif %}
+      <div class="meta-item"><div class="meta-label">{{ icons.calendar }}{{ L.period }}</div><div class="meta-value">{{ header.period }}</div></div>
+      <div class="meta-item" style="background: #fff"><div class="meta-label" style="color: var(--ink-2)">{{ L.col_status }}</div>
+        <div class="meta-value"><span class="pill {{ student.status.tone }}" style="padding: 1px 10px">{{ student.status.label }}</span></div></div>
+    </div>
+  </header>
+
+  <div class="kpis five">{% for kpi in kpis %}{% include "reports/_kpi.html" %}{% endfor %}</div>
+
+  <div class="middle{% if not compare_rows %} single{% endif %}">
+    {% if compare_rows %}
+      <div class="card">
+        <div class="card-title">{{ icons.trend }}{{ L.comparison }}</div>
+        <div class="cmp-row head"><span></span><span>{{ L.previous }}</span><span>{{ L.current }}</span><span>{{ L.change }}</span></div>
+        {% for row in compare_rows %}
+          <div class="cmp-row">
+            <span>{{ row.label }}</span>
+            <span class="muted-text">{{ row.previous }}</span>
+            <span class="now">{{ row.current }}</span>
+            <span>{% if row.change %}<span class="chip {{ row.change.trend }}">{{ row.change.icon }}{{ row.change.text }}</span>{% else %}<span class="muted-text">—</span>{% endif %}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <div class="card">
+      <div class="card-title">{{ icons.tests }}{{ L.test_results }}</div>
+      {% if tests %}
+        {% for test in tests %}
+          <div class="test-row">
+            <span class="test-title">{{ test.title }}</span>
+            <span class="muted-text">{{ test.date }}</span>
+            <b>{{ test.score }}</b>
+            <span>{% if test.passed is True %}<span class="pill good">{{ L.passed }}</span>{% elif test.passed is False %}<span class="pill bad">{{ L.failed }}</span>{% endif %}</span>
+          </div>
+        {% endfor %}
+        {% if more_tests %}<div class="muted-text" style="padding-top: 10px">{{ more_tests }}</div>{% endif %}
+      {% else %}
+        <div class="empty">{{ L.no_data }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if sections %}{% include "reports/_sections.html" with tall=True %}{% endif %}
+
+  <footer class="footer">
+    <span><b>OkurmenKIDS</b> · {{ header.generated }}{% if header.trainers %} · {{ L.trainer }}: {{ header.trainers }}{% endif %}</span>
+    <span>{{ header.group }}</span>
+  </footer>
+</section>
+{% endlocalize %}
+</body>
+</html>

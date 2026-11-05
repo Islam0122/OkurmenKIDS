@@ -13,6 +13,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
+# Headless Chromium for the parent report PNGs (apps.reports, Playwright).
+# Installed to a shared path so the unprivileged "django" user can run it;
+# --with-deps pulls the system libraries and fonts Chromium needs.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN python -m playwright install --with-deps chromium \
+    && chmod -R a+rx /ms-playwright
+
 COPY . .
 
 RUN chown -R django:django /app

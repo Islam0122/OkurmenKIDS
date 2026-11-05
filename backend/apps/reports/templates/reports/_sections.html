@@ -1,0 +1,8 @@
+<div class="sections{% if tall %} tall{% endif %}"{% if sections_px %} style="height: auto; flex: 1 1 {{ sections_px }}px; min-height: {{ sections_px }}px; max-height: {{ sections_max }}px"{% endif %}>
+  {% for section in sections %}
+    <div class="section {{ section.key }}{% if section.dense %} dense{% endif %}">
+      <div class="section-title">{{ section.icon }}{{ section.title }}</div>
+      <ul>{% for item in section.items %}<li>{{ item }}</li>{% endfor %}</ul>
+    </div>
+  {% endfor %}
+</div>

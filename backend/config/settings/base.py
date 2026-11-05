@@ -65,6 +65,8 @@ LOCAL_APPS = [
     "apps.marketing.apps.MarketingConfig",
     # Операционный директор: задачи, отчёты, KPI, контроль отделов, проблемы.
     "apps.operations.apps.OperationsConfig",
+    # Отчёты для родителей: аналитика, рекомендации, PNG и текст для WhatsApp.
+    "apps.reports.apps.ReportsConfig",
 ]
 
 INSTALLED_APPS = (
@@ -233,6 +235,8 @@ REST_FRAMEWORK = {
         # Публичный карьерный сайт (apps.recruitment.public, по IP, без входа).
         "careers_read": env("CAREERS_READ_RATE", default="1200/hour"),
         "careers_apply": env("CAREERS_APPLY_RATE", default="10/hour"),
+        # Отчёты для родителей: генерация PNG в headless Chromium (apps.reports).
+        "parent_report_generate": env("PARENT_REPORT_GENERATE_RATE", default="60/hour"),
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -668,3 +672,8 @@ ATTENDANCE_QR_BASE_URL = env("ATTENDANCE_QR_BASE_URL", default="")
 # Брать IP клиента из X-Forwarded-For (только за доверенным прокси, который
 # перезаписывает заголовок) — нужно для проверки офисной сети.
 ATTENDANCE_TRUST_X_FORWARDED_FOR = env.bool("ATTENDANCE_TRUST_X_FORWARDED_FOR", default=False)
+
+
+# Отчёты для родителей (apps.reports): путь к Chromium для Playwright, если
+# браузер установлен не через `playwright install` (например, системный пакет).
+REPORTS_CHROMIUM_EXECUTABLE = env("REPORTS_CHROMIUM_EXECUTABLE", default="") or None

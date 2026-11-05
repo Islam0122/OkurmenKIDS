@@ -1,0 +1,15 @@
+<div class="kpi">
+  <div class="kpi-top">
+    <span class="kpi-icon">{{ kpi.icon }}</span>
+    <span class="kpi-label">{{ kpi.label }}</span>
+  </div>
+  <div class="kpi-value-row">
+    <span class="kpi-value{% if not kpi.has_data %} no-data{% endif %}">{{ kpi.value }}</span>
+    {% if kpi.suffix %}<span class="kpi-suffix">{{ kpi.suffix }}</span>{% endif %}
+    {% if kpi.change %}<span class="chip {{ kpi.change.trend }}">{{ kpi.change.icon }}{{ kpi.change.text }}</span>{% endif %}
+  </div>
+  {% if kpi.bar is not None %}
+    <div class="bar tone-{{ kpi.tone }}"><span style="width: {{ kpi.bar }}%"></span></div>
+  {% endif %}
+  <div class="kpi-sub">{% if kpi.sub %}{{ kpi.sub }}{% else %}&nbsp;{% endif %}</div>
+</div>
