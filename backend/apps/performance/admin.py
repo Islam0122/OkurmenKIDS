@@ -1,7 +1,8 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils import timezone
 
-from .models import DailyPerformanceSnapshot
+from .models import DailyPerformanceSnapshot, DashboardAccessKey
+from .services.access_keys import issue_key
 
 
 @admin.register(DailyPerformanceSnapshot)
@@ -37,3 +38,24 @@ class DailyPerformanceSnapshotAdmin(admin.ModelAdmin):
             obj.corrected_by = request.user
             obj.corrected_at = timezone.now()
         super().save_model(request, obj, form, change)
+
+
+@admin.register(DashboardAccessKey)
+class DashboardAccessKeyAdmin(admin.ModelAdmin):
+    list_display = ("name", "prefix", "is_active", "expires_at", "last_used_at", "created_by", "created_at")
+    list_filter = ("is_active",)
+    fields = ("name", "is_active", "expires_at", "prefix", "last_used_at", "created_by", "created_at")
+    readonly_fields = ("prefix", "last_used_at", "created_by", "created_at")
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            return super().save_model(request, obj, form, change)
+        # Новый ключ: показываем один раз — в базе остаётся только хеш.
+        key, raw = issue_key(obj.name, created_by=request.user, expires_at=obj.expires_at)
+        obj.pk = key.pk
+        obj.key_hash, obj.prefix = key.key_hash, key.prefix
+        messages.warning(
+            request,
+            f"Ключ создан. Сохраните его — он больше не будет показан: {raw} . "
+            f"Адрес для телевизора: <сайт>/monthly-performance?key={raw}",
+        )

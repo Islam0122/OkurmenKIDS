@@ -66,6 +66,26 @@ this repo, root directory `frontend`, the same `vercel.json`, with
 `VITE_API_BASE_URL`. On the backend add the domain to `SCHEDULE_SITE_ORIGINS`
 (CORS). No second backend or database.
 
+## OkurmenKIDS — Общая статистика (academy statistics site)
+
+A separate site, **not an LMS cabinet page** (no LMS sidebar, own layout):
+`/monthly-performance` — daily attendance, homework completion, active groups
+and active students for a month, with four charts and a TV mode (`?tv=1`,
+1920×1080, auto-refresh every 5 minutes, Esc to exit). It reads only
+`/api/v1/monthly-performance/*` (aggregates only, no personal data).
+
+Access: a staff login (the same as the LMS) or a read-only dashboard key for
+an office TV — `/monthly-performance?key=<key>&tv=1` (the key is remembered in
+the browser and removed from the address bar). Keys are created with
+`python manage.py create_dashboard_key "Телевизор в офисе"` or in Django admin;
+see `backend/docs/performance.md`.
+
+**Own domain** (e.g. `stats.okurmenkids.com`): a Vercel project on this repo,
+root directory `frontend`, with `VITE_APP_MODE=statistics` (so `/` opens the
+statistics) and the same `VITE_API_BASE_URL`; add the domain to
+`STATISTICS_SITE_ORIGINS` on the backend. The existing `vercel.json` rewrite
+already serves `/monthly-performance` on a direct page refresh.
+
 ## OkurmenKIDS Leaderboard (public leaderboard site)
 
 A public, read-only leaderboard — **no login**: `/leaderboard` (top students)

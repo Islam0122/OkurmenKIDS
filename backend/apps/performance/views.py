@@ -4,7 +4,10 @@
     GET   /api/v1/monthly-performance/snapshots/?year=&month= показатели по дням месяца
     PATCH /api/v1/monthly-performance/snapshots/<YYYY-MM-DD>/ ручная корректировка (только с правом)
     GET   /api/v1/monthly-performance/summary/?year=&month=   карточки и изменение за день
-    GET   /api/v1/monthly-performance/trends/?year=&month=    динамика посещаемости и ДЗ
+    GET   /api/v1/monthly-performance/trends/?year=&month=    динамика посещаемости, ДЗ, групп и студентов
+
+Доступ: сотрудник (JWT) или ключ «только чтение» в заголовке X-Dashboard-Key
+(отдельный сайт /monthly-performance, телевизор в офисе) — см. permissions.
 
 Без параметров — текущий месяц по часовому поясу проекта. Все расчёты —
 services.dashboard / services.metrics; просмотр — любой сотрудник.
@@ -20,10 +23,13 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
+from .authentication import DashboardKeyAuthentication
+
 from .models import DailyPerformanceSnapshot
-from .permissions import CanEditPerformanceOrReadOnly, CanViewPerformance, can_edit_performance
+from .permissions import CanEditPerformanceOrReadOnly, CanViewPerformance, can_edit_performance, is_key_access
 from .services import dashboard
 from .services.snapshots import backfill, capture_today
 
@@ -50,12 +56,19 @@ def parse_month(params) -> tuple[int, int]:
 
 
 class _MonthView(APIView):
+    # Ключ доступа (X-Dashboard-Key) — первым: телевизор не зависит от срока JWT.
+    authentication_classes = [DashboardKeyAuthentication, *api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [CanViewPerformance]
 
     def payload(self, request) -> dict:
         year, month = parse_month(request.query_params)
         data = dashboard.month_payload(year, month)
-        data["can_edit"] = can_edit_performance(request.user)
+        key = is_key_access(request)
+        data["can_edit"] = not key and can_edit_performance(request.user)
+        data["access"] = (
+            {"mode": "key", "name": request.auth.name} if key
+            else {"mode": "user", "name": request.user.get_full_name() or request.user.get_username()}
+        )
         return data
 
 
@@ -69,7 +82,7 @@ class MonthlyPerformanceView(_MonthView):
 class SnapshotListView(_MonthView):
     def get(self, request):
         data = self.payload(request)
-        return Response({k: data[k] for k in ("year", "month", "month_label", "generated_at", "can_edit", "days")})
+        return Response({k: data[k] for k in ("year", "month", "month_label", "generated_at", "can_edit", "access", "days")})
 
 
 @extend_schema(tags=["Analytics"], parameters=MONTH_PARAMS, responses={200: OpenApiTypes.OBJECT})

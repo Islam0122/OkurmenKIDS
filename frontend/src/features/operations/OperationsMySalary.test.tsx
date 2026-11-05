@@ -72,7 +72,7 @@ describe('«Моя зарплата» в кабинете операционно
     const nav = screen.getAllByRole('navigation', { name: 'Разделы кабинета операционного директора' })[0]
     const footer = nav.parentElement?.querySelector('.border-t') as HTMLElement
     const links = within(footer).getAllByRole('link').map((a) => a.textContent)
-    expect(links).toEqual(['Мои задачи', 'Общая статистика', 'Все сотрудники', 'Моя отметка прихода', 'Моя зарплата'])
+    expect(links).toEqual(['Мои задачи', 'Все сотрудники', 'Моя отметка прихода', 'Моя зарплата'])
     expect(within(footer).getByRole('link', { name: 'Моя зарплата' })).toHaveAttribute('href', '/operations/my-salary')
     expect(within(nav).queryByRole('link', { name: 'Моя зарплата' })).not.toBeInTheDocument()
   })

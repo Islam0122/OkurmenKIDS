@@ -22,13 +22,14 @@ export const router = createBrowserRouter([
     children: [{ index: true, lazy: async () => ({ Component: (await import('./MySalaryRedirect')).MySalaryRedirect }) }],
   },
   {
-    // «Общая статистика» академии — всем вошедшим сотрудникам (backend: apps.performance).
-    // Свой каркас: меню LMS у тренеров/тимлида/администратора, простая шапка у остальных;
-    // ?tv=1 — режим телевизора.
-    path: '/dashboard/monthly-performance',
-    element: <ProtectedRoute />,
+    // «OkurmenKIDS — Общая статистика» — ОТДЕЛЬНЫЙ сайт, не страница кабинета:
+    // свой layout, без меню LMS и без ProtectedRoute. Доступ проверяет сама
+    // страница: вход сотрудника или ключ «только чтение» (X-Dashboard-Key) для
+    // телевизора; backend отдаёт только итоговые цифры (apps.performance).
+    // ?tv=1 — режим телевизора, ?key=… — ключ (запоминается и убирается из адреса).
+    path: '/monthly-performance',
     errorElement: <RouteErrorPage />,
-    children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/monthlyPerformance/MonthlyPerformancePage')).MonthlyPerformancePage }) }],
+    lazy: async () => ({ Component: (await import('@/features/performanceSite/MonthlyPerformanceSite')).MonthlyPerformanceSite }),
   },
   { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {

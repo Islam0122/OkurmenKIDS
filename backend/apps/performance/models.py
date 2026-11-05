@@ -90,3 +90,35 @@ class DailyPerformanceSnapshot(models.Model):
     @property
     def is_final(self) -> bool:
         return self.status == self.Status.FINAL
+
+
+class DashboardAccessKey(models.Model):
+    """Ключ доступа «только чтение» к отдельному сайту «Общая статистика»
+    (например, для телевизора в офисе, где никто не входит в LMS).
+
+    Ключ открывает только GET /api/v1/monthly-performance/* — и больше ничего:
+    это не пользователь, ни один другой эндпоинт LMS его не принимает.
+    В базе хранится только SHA-256 ключа; сам ключ показывается один раз при
+    создании (Django admin или `manage.py create_dashboard_key`).
+    """
+
+    name = models.CharField(max_length=120, verbose_name="Название", help_text="Например: «Телевизор в офисе».")
+    key_hash = models.CharField(max_length=64, unique=True, editable=False, verbose_name="Хеш ключа")
+    prefix = models.CharField(max_length=8, editable=False, verbose_name="Начало ключа")
+    is_active = models.BooleanField(default=True, verbose_name="Активен")
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Действует до",
+                                      help_text="Пусто — бессрочно (пока ключ активен).")
+    last_used_at = models.DateTimeField(null=True, blank=True, editable=False, verbose_name="Последнее использование")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        editable=False, verbose_name="Создал",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
+
+    class Meta:
+        verbose_name = "Ключ доступа к общей статистике"
+        verbose_name_plural = "Общая статистика: ключи доступа"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.prefix}…)"

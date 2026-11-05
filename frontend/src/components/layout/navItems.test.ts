@@ -8,7 +8,6 @@ describe('navigation by role', () => {
   it('gives a Team Lead the academy-wide sections', () => {
     expect(labels('team_lead')).toEqual([
       'Dashboard',
-      'Общая статистика',
       'Расписание',
       'Тренеры',
       'Группы',
@@ -44,7 +43,6 @@ describe('navigation by role', () => {
   it('gives a Trainer the teaching sections and monitoring', () => {
     expect(labels('teacher')).toEqual([
       'Сегодня',
-      'Общая статистика',
       'Расписание',
       'Мои группы',
       'Экзамены',

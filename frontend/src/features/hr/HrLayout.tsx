@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react'
-import { BarChart3, Briefcase, CalendarDays, ExternalLink, LayoutDashboard, LogOut, Menu, Presentation, ScanLine, UserSearch, Users, Wallet } from 'lucide-react'
+import { BarChart3, Briefcase, CalendarDays, ExternalLink, LayoutDashboard, LogOut, Menu, ScanLine, UserSearch, Users, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -30,7 +30,6 @@ export const HR_NAV: NavItem[] = [
   { to: '/hr/interviews', label: 'Собеседования', icon: CalendarDays },
   { to: '/hr/vacancies', label: 'Вакансии', icon: Briefcase },
   { to: '/hr/reports', label: 'Отчёты', icon: BarChart3 },
-  { to: '/dashboard/monthly-performance', label: 'Общая статистика', icon: Presentation },
   { to: '/hr/my-salary', label: 'Моя зарплата', icon: Wallet },
 ]
 

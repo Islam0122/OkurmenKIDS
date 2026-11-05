@@ -1,7 +1,11 @@
-import { apiClient } from '@/api/client'
+import axios from 'axios'
 
-/** «Общая статистика» (backend: apps.performance). Всё считается на сервере;
- * отсутствие данных — `null`, а не 0. */
+import { API_BASE_URL, apiClient } from '@/api/client'
+
+/** «Общая статистика» (backend: apps.performance) — отдельный сайт
+ * /monthly-performance. Всё считается на сервере; отсутствие данных — `null`,
+ * а не 0. Доступ — JWT сотрудника (общий с LMS) или ключ «только чтение»
+ * в заголовке `X-Dashboard-Key` (телевизор в офисе). */
 
 export type PerformanceMetric = 'attendance_percent' | 'homework_percent' | 'active_groups' | 'active_students'
 
@@ -55,12 +59,17 @@ export interface MonthlyPerformance {
   timezone: string
   days: PerformanceDay[]
   summary: Record<PerformanceMetric, PerformanceCard>
-  trends: {
-    attendance: { points: TrendPoint[]; average: number | null }
-    homework: { points: TrendPoint[]; average: number | null }
-  }
+  trends: Record<TrendKey, TrendSeries>
   available_years: number[]
   can_edit: boolean
+  access: { mode: 'key' | 'user'; name: string }
+}
+
+export type TrendKey = 'attendance' | 'homework' | 'groups' | 'students'
+
+export interface TrendSeries {
+  points: TrendPoint[]
+  average: number | null
 }
 
 export interface MonthParams {
@@ -70,10 +79,20 @@ export interface MonthParams {
 
 export type CorrectionPayload = Partial<Record<PerformanceMetric, number | null>> & { comment?: string }
 
+export const DASHBOARD_KEY_HEADER = 'X-Dashboard-Key'
+
+/** Запросы по ключу — без JWT и без обновления/сброса сессии LMS: неверный
+ * ключ телевизора никогда не разлогинит сотрудника в этом браузере. */
+const keyClient = axios.create({ baseURL: API_BASE_URL })
+
 export const monthlyPerformanceApi = {
-  /** `GET /monthly-performance/` — дни месяца, карточки и графики одним запросом. */
-  month: (params: MonthParams): Promise<MonthlyPerformance> =>
-    apiClient.get<MonthlyPerformance>('/monthly-performance/', { params }).then((r) => r.data),
+  /** `GET /monthly-performance/` — дни месяца, карточки и графики одним запросом.
+   * С ключом — только ключ (телевизор не зависит от срока входа сотрудника). */
+  month: (params: MonthParams, dashboardKey?: string | null): Promise<MonthlyPerformance> =>
+    (dashboardKey
+      ? keyClient.get<MonthlyPerformance>('/monthly-performance/', { params, headers: { [DASHBOARD_KEY_HEADER]: dashboardKey } })
+      : apiClient.get<MonthlyPerformance>('/monthly-performance/', { params })
+    ).then((r) => r.data),
   /** `PATCH /monthly-performance/snapshots/<date>/` — ручная корректировка (только с правом). */
   correct: (date: string, payload: CorrectionPayload) =>
     apiClient.patch(`/monthly-performance/snapshots/${date}/`, payload).then((r) => r.data),
