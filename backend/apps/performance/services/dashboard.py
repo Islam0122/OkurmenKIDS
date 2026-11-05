@@ -84,7 +84,12 @@ def month_days(year: int, month: int, *, now: dt.datetime | None = None) -> list
     today = timezone.localdate(now)
     last = calendar.monthrange(year, month)[1]
     first_day, last_day = dt.date(year, month, 1), dt.date(year, month, last)
-    snapshots = {s.date: s for s in DailyPerformanceSnapshot.objects.filter(date__range=(first_day, last_day))}
+    snapshots = {
+        s.date: s for s in DailyPerformanceSnapshot.objects.filter(date__range=(first_day, last_day))
+        # Снимок первой версии (до миграции 0003, ещё не пересчитан планировщиком) —
+        # показатели по расписанию дня считаются на лету.
+        if s.scheduled_groups is not None or "scheduled_groups" in (s.manual_fields or [])
+    }
 
     # Что считать на лету: сегодня и прошедшие дни без снимка.
     to_compute = [d for d in (first_day + dt.timedelta(days=i) for i in range(last))

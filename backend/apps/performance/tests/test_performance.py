@@ -288,6 +288,15 @@ class SnapshotTests(PerformanceFixture):
             self.assertEqual(backfill(dt.date(2026, 10, 1), TODAY, now=NOW), 0)
         self.assertEqual(DailyPerformanceSnapshot.objects.count(), 36)
 
+    def test_celery_task_skips_while_migrations_are_pending(self):
+        from apps.performance.tasks import capture_daily_snapshots_task
+
+        with mock.patch("apps.billing.services.scheduler.pending_migrations",
+                        return_value=["performance.0003_schedule_based_metrics"]):
+            result = capture_daily_snapshots_task.apply().get()
+        self.assertEqual(result["status"], "skipped_migrations")
+        self.assertFalse(DailyPerformanceSnapshot.objects.exists())
+
     def test_celery_task_runs_capture(self):
         from apps.performance.tasks import capture_daily_snapshots_task
 
@@ -317,6 +326,15 @@ class DashboardTests(PerformanceFixture):
         self.assertFalse(DailyPerformanceSnapshot.objects.exists())  # чтение ничего не пишет
         self.assertEqual(days[4]["status"], "computed")
         self.assertEqual(days[5]["scheduled_groups"], 1)
+
+    def test_first_version_snapshot_is_computed_on_read(self):
+        """Снимок до миграции 0003 (без показателей по расписанию) не показывает «Нет данных»."""
+        self.week()
+        DailyPerformanceSnapshot.objects.create(date=MON, legacy_active_groups=4, status="provisional")
+        with frozen(NOW):
+            days = dashboard.month_days(2026, 10, now=NOW)
+        self.assertEqual((days[4]["status"], days[4]["scheduled_groups"], days[4]["scheduled_students"]),
+                         ("computed", 1, 3))
 
     def test_month_without_records_is_no_data(self):
         with frozen(NOW):

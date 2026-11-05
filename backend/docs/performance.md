@@ -150,3 +150,24 @@ Django-правом `performance.change_dailyperformancesnapshot`:
 весь экран, крупные шрифты и карточки, четыре графика в ряд, часы. Рассчитан
 на 1920×1080 — вся панель помещается в один экран без прокрутки. Выход — Esc
 или «×».
+
+## Миграции и деплой
+
+* `0001_initial` и `0002_dashboardaccesskey` — первая версия (уже применены на
+  проде; файлы неизменны). `0003_schedule_based_metrics` переводит снимки на
+  показатели по расписанию дня **без потери данных**: старые колонки
+  переименованы в `legacy_active_groups`, `legacy_active_students`,
+  `legacy_attendance_marked`, `legacy_attendance_attended`, прежние проценты
+  скопированы в `legacy_attendance_percent` / `legacy_homework_percent`, ручные
+  корректировки перенесены (`active_*` → `scheduled_*`), остальные снимки
+  помечены «предварительными» и пересчитываются планировщиком.
+* Никогда не переписывать применённую миграцию — только новая миграция.
+  (Ошибка «column …scheduled_groups does not exist» на проде возникла именно
+  из-за переписанной `0001_initial`: Django считал её применённой и не менял
+  таблицу.)
+* Веб-сервис Railway при старте выполняет
+  `python manage.py migrate_with_lock --noinput` (до gunicorn): на PostgreSQL
+  миграции идут под advisory lock — одна реплика применяет, остальные ждут.
+* Планировщики не стартуют расчёт, пока миграции не применены:
+  `run_scheduled_tasks` — `skipped_migrations`, задача Celery
+  `performance.capture_daily_snapshots` — тоже `skipped_migrations`.
