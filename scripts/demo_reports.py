@@ -41,6 +41,9 @@ from pathlib import Path
 
 from playwright.sync_api import Locator, Page, expect, sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import narration  # noqa: E402  (scripts/narration.py)
+
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = os.environ.get("DEMO_FRONTEND_URL", "http://127.0.0.1:5173").rstrip("/")
 API = os.environ.get("DEMO_API_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -198,15 +201,31 @@ OVERLAY_JS = r"""
 class Director:
     """Smooth pointer movement + pauses, so every action is visible on video."""
 
-    def __init__(self, page: Page):
+    def __init__(self, page: Page, voice_durations: dict[str, float] | None = None):
         self.page = page
         self.x, self.y = VIEWPORT["width"] * 0.5, VIEWPORT["height"] * 0.55
         self.started = time.monotonic()
         self.marks: list[tuple[str, float]] = []
+        self.voice_durations = voice_durations or {}
+        self.voice_starts: dict[str, float] = {}
 
-    def mark(self, scene: str) -> None:
-        self.marks.append((scene, time.monotonic() - self.started))
+    def now(self) -> float:
+        return time.monotonic() - self.started
+
+    def mark(self, scene: str, line: str | None = None) -> None:
+        """Start of a scene; `line` — its narration line starts here too."""
+        self.marks.append((scene, self.now()))
+        if line and line in self.voice_durations:
+            self.voice_starts[line] = self.now()
         print(f"  [{self.marks[-1][1]:5.1f}s] {scene}")
+
+    def hold(self, line: str, *, gap: float = 0.3) -> None:
+        """Wait until the narration line has been spoken (the scene never outruns the voice)."""
+        if line not in self.voice_starts:
+            return
+        remaining = self.voice_starts[line] + self.voice_durations[line] + gap - self.now()
+        if remaining > 0:
+            self.pause(remaining)
 
     def pause(self, seconds: float) -> None:
         self.page.wait_for_timeout(int(seconds * 1000))
@@ -249,16 +268,17 @@ class Director:
 # ---------------------------------------------------------------------------
 
 def scene_intro(d: Director, page: Page) -> None:
-    d.mark("1 Intro")
+    d.mark("1 Intro", "intro")
     d.card("OkurmenKIDS", "Monthly Reports Generator", "Monthly Student Reports · Отчёты для родителей")
     d.pause(2.4)
     d.hide_card()
     d.pause(0.7)
     d.click(page.get_by_role("link", name="Мои группы").first, wait=0.9)
+    d.hold("intro")
 
 
 def scene_kpi(d: Director, page: Page) -> None:
-    d.mark("2 Open KPI")
+    d.mark("2 Open KPI", "kpi")
     d.caption("Тренер открывает группу → вкладка KPI")
     d.click(page.get_by_role("link", name=GROUP_NAME).first, wait=0.8)
     d.click(page.get_by_role("tab", name="KPI"), wait=0.5)
@@ -270,10 +290,11 @@ def scene_kpi(d: Director, page: Page) -> None:
     d.scroll(520, steps=14)
     d.pause(1.1)
     d.scroll(-520, steps=8)
+    d.hold("kpi")
 
 
 def scene_generate(d: Director, page: Page) -> Locator:
-    d.mark("3 Generate report")
+    d.mark("3 Generate report", "generate")
     d.caption("KPI → Отчёты → «Создать отчёт»")
     d.click(page.get_by_role("radio", name="Отчёты"), wait=0.6)
     d.click(page.get_by_role("button", name="Создать отчёт"), wait=0.6)
@@ -287,12 +308,13 @@ def scene_generate(d: Director, page: Page) -> Locator:
     d.click(dialog.get_by_role("radio", name="Прошлый месяц"), wait=0.4)
     d.click(dialog.get_by_role("radio", name="Русский"), wait=0.3)
     d.click(dialog.get_by_role("radio", name="Изображение и текст"), wait=0.6)
+    d.hold("generate", gap=0.1)
     d.click(dialog.get_by_role("button", name="Предпросмотр данных"), wait=0.3)
     return dialog
 
 
 def scene_analytics(d: Director, page: Page, dialog: Locator) -> None:
-    d.mark("4 Automatic analytics")
+    d.mark("4 Automatic analytics", "analytics")
     panel = dialog.get_by_role("region", name="Предпросмотр")
     expect(panel).to_be_visible(timeout=30_000)
     d.caption("Всё считается локально: Python + Django ORM", "без внешних AI API и ключей — по данным LMS")
@@ -310,13 +332,14 @@ def scene_analytics(d: Director, page: Page, dialog: Locator) -> None:
     d.click(dialog.get_by_role("button", name="Сгенерировать отчёт"), wait=0.2)
     expect(dialog.get_by_text("Формируем отчёт…")).to_be_visible()
     d.caption("Сервер считает статистику и рисует PNG", "headless Chromium · Django-шаблон")
+    d.hold("analytics", gap=0.1)
 
 
 def scene_png(d: Director, page: Page, dialog: Locator) -> None:
     image = dialog.get_by_role("img", name="Отчёт, страница 1")
     expect(image).to_be_visible(timeout=90_000)
     page.wait_for_function("(img) => img.complete && img.naturalWidth > 0", arg=image.element_handle())
-    d.mark("5 PNG report")
+    d.mark("5 PNG report", "png")
     d.caption("Готовый отчёт OkurmenKIDS — 1600×1100 PNG")
     d.move(image)
     d.pause(1.0)
@@ -336,12 +359,13 @@ def scene_png(d: Director, page: Page, dialog: Locator) -> None:
     d.caption("Сильные стороны и рекомендации родителям")
     page.evaluate("window.__demo.zoom(1.75, 50, 100)")
     d.pause(2.0)
+    d.hold("png", gap=0.0)
     page.evaluate("window.__demo.hideView()")
     d.pause(0.4)
 
 
 def scene_text(d: Director, page: Page, dialog: Locator) -> None:
-    d.mark("6 WhatsApp text")
+    d.mark("6 WhatsApp text", "text")
     textbox = dialog.get_by_role("textbox", name="Текст для WhatsApp")
     languages = dialog.get_by_role("radiogroup", name="Язык текста")
     d.caption("Текст для WhatsApp — можно переключить язык")
@@ -364,10 +388,11 @@ def scene_text(d: Director, page: Page, dialog: Locator) -> None:
     expect(page.get_by_text("Текст скопирован")).to_be_visible(timeout=5_000)
     d.caption("Скопировано — осталось вставить в чат родителей")
     d.pause(1.0)
+    d.hold("text", gap=0.2)
 
 
 def scene_download_history(d: Director, page: Page, dialog: Locator) -> Path:
-    d.mark("7 Download + history")
+    d.mark("7 Download + history", "history")
     d.caption("Скачать PNG")
     download_button = dialog.get_by_role("button", name="Скачать PNG")
     d.scroll(-300, steps=8)
@@ -394,15 +419,17 @@ def scene_download_history(d: Director, page: Page, dialog: Locator) -> Path:
     page.keyboard.press("Escape")
     d.pause(0.4)
     d.hide_caption()
-    d.mark("Final card")
+    d.hold("history", gap=0.1)
+    d.mark("Final card", "final")
     d.card("IT • Education • Future", "OkurmenKIDS", "One Click. Complete Report.")
     d.pause(3.0)
+    d.hold("final", gap=0.9)
     return target
 
 
 # ---------------------------------------------------------------------------
 
-def record(tokens: dict, headed: bool) -> tuple[Path, float]:
+def record(tokens: dict, headed: bool, voice_durations: dict[str, float]) -> tuple[Path, float, dict[str, float], float]:
     OUT.mkdir(parents=True, exist_ok=True)
     raw_dir = Path(tempfile.mkdtemp(prefix="okurmen-demo-"))
     with sync_playwright() as pw:
@@ -420,7 +447,7 @@ def record(tokens: dict, headed: bool) -> tuple[Path, float]:
         page = context.new_page()
         video_started = time.monotonic()
         page.goto(f"{FRONTEND}/app", wait_until="networkidle")
-        director = Director(page)
+        director = Director(page, voice_durations)
         director.card("OkurmenKIDS", "Monthly Reports Generator", "Monthly Student Reports · Отчёты для родителей")
         lead_in = time.monotonic() - video_started  # blank frames before the title card — trimmed later
         director.started = time.monotonic()
@@ -439,23 +466,86 @@ def record(tokens: dict, headed: bool) -> tuple[Path, float]:
             browser.close()
         raw = Path(video.path())
     print(f"Recorded {duration:.1f}s (+{lead_in:.1f}s lead-in); final report PNG: {screenshot}")
-    return raw, lead_in
+    return raw, lead_in, director.voice_starts, duration
 
 
-def encode(raw: Path, lead_in: float) -> list[Path]:
+def _voice_filter(clips: list[tuple[float, Path]]) -> tuple[list[str], str]:
+    """ffmpeg inputs + filter graph: every narration clip at its scene's time, then a
+    gentle voice chain — rumble cut, a touch of warmth and air, soft compression,
+    a very small room, loudness normalised for web video (-16 LUFS)."""
+    inputs, chains, labels = [], [], []
+    for index, (start, path) in enumerate(clips, start=1):
+        inputs += ["-i", str(path)]
+        delay = max(0, int(start * 1000))
+        chains.append(f"[{index}:a]aresample=48000,aformat=channel_layouts=mono,adelay={delay}:all=1[v{index}]")
+        labels.append(f"[v{index}]")
+    graph = ";".join(chains) + ";" + "".join(labels) + (
+        f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0,"
+        "highpass=f=75,equalizer=f=180:t=q:w=1.1:g=1.5,equalizer=f=5200:t=q:w=1.5:g=1.8,"
+        "acompressor=threshold=-21dB:ratio=2.6:attack=6:release=140:makeup=2,"
+        "aecho=0.88:0.5:28|46:0.07|0.04,"
+        "loudnorm=I=-16:TP=-1.5:LRA=7,aresample=48000,apad[aout]"
+    )
+    return inputs, graph
+
+
+def write_subtitles(clips: list[tuple[str, float, float]], path: Path) -> None:
+    def stamp(seconds: float) -> str:
+        ms = int(round(seconds * 1000))
+        return f"{ms // 3_600_000:02d}:{ms // 60_000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+    blocks = [
+        f"{index}\n{stamp(start)} --> {stamp(start + duration)}\n{narration.display_text(line)}\n"
+        for index, (line, start, duration) in enumerate(clips, start=1)
+    ]
+    path.write_text("\n".join(blocks), encoding="utf-8")
+
+
+def encode(raw: Path, lead_in: float, voice: dict | None) -> list[Path]:
     webm, mp4 = OUT / f"{VIDEO_NAME}.webm", OUT / f"{VIDEO_NAME}.mp4"
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         shutil.copy(raw, webm)
-        print(f"FFmpeg не найден — сохранена исходная запись {webm}. Конвертация:\n"
+        print(f"FFmpeg не найден — сохранена исходная запись {webm} (без озвучки). Конвертация:\n"
               f"  ffmpeg -i {webm} -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart {mp4}")
         return [webm]
     start = f"{max(0.0, lead_in):.2f}"
-    subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-ss", start, "-i", str(raw), "-c:v", "libvpx-vp9", "-b:v", "0",
-                    "-crf", "34", "-row-mt", "1", "-deadline", "good", "-cpu-used", "4", "-an", str(webm)], check=True)
-    subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-ss", start, "-i", str(raw), "-c:v", "libx264", "-preset", "slow",
-                    "-crf", "22", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", str(mp4)], check=True)
-    return [webm, mp4]
+    audio_in: list[str] = []
+    audio_map: list[str] = ["-an"]
+    if voice:
+        audio_in, graph = _voice_filter([(voice["starts"][line], voice["clips"][line].path) for line in voice["starts"]])
+        audio_map = ["-filter_complex", graph, "-map", "0:v", "-map", "[aout]", "-shortest"]
+    common = [ffmpeg, "-y", "-loglevel", "error", "-ss", start, "-i", str(raw), *audio_in, *audio_map]
+    subprocess.run([*common, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "34", "-row-mt", "1", "-deadline", "good",
+                    "-cpu-used", "4", *(["-c:a", "libopus", "-b:a", "128k"] if voice else []), str(webm)], check=True)
+    subprocess.run([*common, "-c:v", "libx264", "-preset", "slow", "-crf", "22", "-pix_fmt", "yuv420p",
+                    *(["-c:a", "aac", "-b:a", "192k"] if voice else []), "-movflags", "+faststart", str(mp4)], check=True)
+    outputs = [webm, mp4]
+    if voice:
+        srt = OUT / f"{VIDEO_NAME}.ru.srt"
+        write_subtitles([(line, t, voice["clips"][line].duration) for line, t in voice["starts"].items()], srt)
+        outputs.append(srt)
+    return outputs
+
+
+def prepare_voice() -> dict | None:
+    """Synthesise the narration before recording, so each scene can wait for its line."""
+    name = os.environ.get("DEMO_VOICE", "irina")
+    if name == "none":
+        print("Озвучка отключена (DEMO_VOICE=none).")
+        return None
+    if name not in narration.VOICES:
+        raise DemoError(f"Неизвестный голос «{name}». Доступны: {', '.join(narration.VOICES)} или none.")
+    try:
+        import sherpa_onnx  # noqa: F401
+    except ImportError as exc:
+        raise DemoError("Для озвучки нужен sherpa-onnx: pip install 'sherpa-onnx==1.12.40' soundfile numpy "
+                        "(или DEMO_VOICE=none — видео без голоса)") from exc
+    print(f"Voiceover (голос {name}, локальный синтез):")
+    clips = narration.synthesize(Path(tempfile.mkdtemp(prefix="okurmen-voice-")), voice=name)
+    for clip in clips.values():
+        print(f"  ✓ {clip.scene:9s} {clip.duration:4.1f}s")
+    return {"clips": clips}
 
 
 def main() -> int:
@@ -465,9 +555,16 @@ def main() -> int:
         return 2
     try:
         state = preflight(password)
+        voice = prepare_voice()
+        durations = {line: clip.duration for line, clip in voice["clips"].items()} if voice else {}
         print("Recording:")
-        raw, lead_in = record(state["tokens"], headed=os.environ.get("DEMO_HEADED") == "1")
-        for path in encode(raw, lead_in):
+        raw, lead_in, voice_starts, _ = record(state["tokens"], os.environ.get("DEMO_HEADED") == "1", durations)
+        if voice:
+            missing = set(durations) - set(voice_starts)
+            if missing:
+                raise DemoError(f"Сцены без озвучки: {', '.join(sorted(missing))}")
+            voice["starts"] = voice_starts
+        for path in encode(raw, lead_in, voice):
             print(f"  → {path} ({path.stat().st_size / 1_048_576:.1f} МБ)")
     except DemoError as exc:
         print(f"\n✗ Демо остановлено: {exc}", file=sys.stderr)
