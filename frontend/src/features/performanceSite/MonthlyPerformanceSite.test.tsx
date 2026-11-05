@@ -27,40 +27,47 @@ const api = vi.mocked(monthlyPerformanceApi)
 
 function day(n: number, extra: Partial<PerformanceDay> = {}): PerformanceDay {
   const future = n > 5
+  const sunday = n === 1
   return {
     date: `2026-11-${String(n).padStart(2, '0')}`, day: n, weekday: ((n + 6) % 7) + 1, is_today: n === 5, is_future: future,
-    attendance_percent: null, attendance_marked: 0, attendance_attended: 0,
-    homework_percent: null, homework_results: 0, homework_done: 0, lessons_count: 0,
-    active_groups: null, active_students: null,
+    has_data: !future, no_lessons: sunday,
+    scheduled_groups: future ? null : sunday ? 0 : 2, held_groups: future ? null : sunday ? 0 : 2,
+    scheduled_students: future ? null : sunday ? 0 : 18, attended_students: future ? null : sunday ? 0 : 15,
+    expected_students: future ? null : sunday ? 0 : 18,
+    attendance_percent: future || sunday ? null : 83.3, homework_percent: future || sunday ? null : 85,
+    homework_results: future ? null : 20, homework_done: future ? null : 17,
+    lessons_count: future ? null : sunday ? 0 : 2, held_lessons_count: future ? null : sunday ? 0 : 2,
     status: future ? 'future' : n === 5 ? 'live' : 'final', manual_fields: [], manual_comment: '', computed_at: null,
     ...extra,
   }
 }
 
-function series(days: PerformanceDay[], field: 'attendance_percent' | 'homework_percent' | 'active_groups' | 'active_students') {
+type SeriesField = 'attendance_percent' | 'homework_percent' | 'scheduled_groups' | 'scheduled_students'
+
+function series(days: PerformanceDay[], field: SeriesField) {
   return days.filter((d) => !d.is_future).map((d) => ({ date: d.date, day: d.day, value: d[field] }))
 }
 
 function payload(overrides: Partial<MonthlyPerformance> = {}): MonthlyPerformance {
   const days = Array.from({ length: 30 }, (_, i) => day(i + 1))
-  days[3] = day(4, { attendance_percent: 80, homework_percent: 90, active_groups: 4, active_students: 40 })
-  days[4] = day(5, { attendance_percent: 85, homework_percent: 92.5, active_groups: 4, active_students: 42, manual_fields: ['active_students'] })
+  days[3] = day(4, { attendance_percent: 80, homework_percent: 90, scheduled_groups: 2, held_groups: 1, scheduled_students: 15, attended_students: 12 })
+  days[4] = day(5, { attendance_percent: 85, homework_percent: 92.5, scheduled_groups: 2, held_groups: 2, scheduled_students: 18, attended_students: 15, manual_fields: ['scheduled_students'] })
   return {
-    year: 2026, month: 11, month_label: 'Ноябрь', today: '2026-11-05', is_current_month: true,
+    year: 2026, month: 11, month_label: 'Ноябрь', today: '2026-11-05', is_current_month: true, is_future_month: false,
     generated_at: '2026-11-05T10:00:00+06:00', timezone: 'Asia/Bishkek', days,
     summary: {
       attendance_percent: { value: 85, date: '2026-11-05', previous_value: 80, previous_date: '2026-11-04', change: 5, month_average: 82.5 },
       homework_percent: { value: 92.5, date: '2026-11-05', previous_value: 90, previous_date: '2026-11-04', change: 2.5, month_average: 91.2 },
-      active_groups: { value: 4, date: '2026-11-05', previous_value: 4, previous_date: '2026-11-04', change: 0 },
-      active_students: { value: 42, date: '2026-11-05', previous_value: 40, previous_date: '2026-11-04', change: 2 },
+      scheduled_groups: { value: 2, date: '2026-11-05', previous_value: 2, previous_date: '2026-11-04', change: 0, held_groups: 2 },
+      scheduled_students: { value: 18, date: '2026-11-05', previous_value: 15, previous_date: '2026-11-04', change: 3, attended_students: 15 },
     },
     trends: {
       attendance: { points: series(days, 'attendance_percent'), average: 82.5 },
       homework: { points: series(days, 'homework_percent'), average: 91.3 },
-      groups: { points: series(days, 'active_groups'), average: 4 },
-      students: { points: series(days, 'active_students'), average: 41 },
+      groups: { points: series(days, 'scheduled_groups'), average: 2 },
+      students: { points: series(days, 'scheduled_students'), average: 16.5 },
     },
-    available_years: [2026, 2025],
+    available_years: [2027, 2026, 2025],
     can_edit: false,
     access: { mode: 'user', name: 'Айгуль' },
     ...overrides,
@@ -68,12 +75,16 @@ function payload(overrides: Partial<MonthlyPerformance> = {}): MonthlyPerformanc
 }
 
 function emptyPayload(): MonthlyPerformance {
-  const days = Array.from({ length: 31 }, (_, i) => ({ ...day(i + 1), date: `2026-10-${String(i + 1).padStart(2, '0')}`, is_future: false, is_today: false, status: 'missing' as const }))
+  const days = Array.from({ length: 31 }, (_, i) => ({
+    ...day(i + 1), date: `2026-08-${String(i + 1).padStart(2, '0')}`, is_future: false, is_today: false, has_data: false, no_lessons: false,
+    status: 'missing' as const, scheduled_groups: null, held_groups: null, scheduled_students: null, attended_students: null,
+    attendance_percent: null, homework_percent: null,
+  }))
   const empty = { value: null, date: null, previous_value: null, previous_date: null, change: null }
   const none = { points: days.map((d) => ({ date: d.date, day: d.day, value: null })), average: null }
   return {
-    ...payload(), month: 10, month_label: 'Октябрь', is_current_month: false, days,
-    summary: { attendance_percent: { ...empty, month_average: null }, homework_percent: { ...empty, month_average: null }, active_groups: empty, active_students: empty },
+    ...payload(), month: 8, month_label: 'Август', is_current_month: false, days,
+    summary: { attendance_percent: { ...empty, month_average: null }, homework_percent: { ...empty, month_average: null }, scheduled_groups: empty, scheduled_students: empty },
     trends: { attendance: none, homework: none, groups: none, students: none },
   }
 }
@@ -116,7 +127,7 @@ describe('сайт «Общая статистика»', () => {
     expect(api.month).toHaveBeenCalledWith({ year: 2026, month: 11 }, null)
     expect(screen.getByText('OKURMENKIDS')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Общая статистика академии' })).toBeInTheDocument()
-    expect(screen.getByText('Ноябрь 2026')).toBeInTheDocument()
+    expect(screen.getAllByText('Ноябрь 2026')).toHaveLength(2) // шапка и таблица
     expect(screen.getByTestId('clock')).toHaveTextContent(/\d{2}:\d{2}/)
     for (const name of ['Выбрать месяц', 'Обновить данные', 'Полноэкранный режим', 'Режим телевизора']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument()
@@ -125,24 +136,32 @@ describe('сайт «Общая статистика»', () => {
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
     expect(screen.queryByText('Сегодня')).not.toBeInTheDocument()
 
-    for (const label of ['Посещаемость', 'Выполнение домашних заданий', 'Активные группы', 'Активные студенты']) {
+    for (const label of ['Посещаемость', 'Выполнение домашних заданий', 'Групп по расписанию', 'Студентов по расписанию']) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0)
     }
     expect(screen.getByText('Изменение за день: +5 п.п.')).toBeInTheDocument()
-    expect(screen.getByText('Изменение за день: +2')).toBeInTheDocument()
+    expect(screen.getByText('Изменение к 4 ноября: +3')).toBeInTheDocument()
+    expect(screen.getByText(/проведено 2 из 2/)).toBeInTheDocument()
+    expect(screen.getByText(/посетили 15/)).toBeInTheDocument()
 
     const table = screen.getByRole('table')
     expect(within(table).getAllByRole('columnheader')).toHaveLength(31) // «Ноябрь» + 30 дней
     expect(within(table).getByRole('columnheader', { name: '5' })).toHaveAttribute('aria-current', 'date')
-    for (const label of ['Посещаемость (%)', 'Домашние задания (%)', 'Количество групп', 'Количество студентов']) {
-      expect(within(table).getByRole('rowheader', { name: label })).toBeInTheDocument()
-    }
-    // Прошедшие дни без данных выделены и подписаны «—», а не 0.
-    const attendance = within(table).getByRole('row', { name: /Посещаемость/ })
-    expect(attendance.querySelectorAll('td[data-missing]').length).toBe(3)
+    expect(within(table).getAllByRole('rowheader').map((h) => h.textContent)).toEqual([
+      'Групп по расписанию', 'Проведено занятий в группах', 'Студентов по расписанию', 'Посетили занятия',
+      'Посещаемость', 'Домашние задания',
+    ])
+    // Все прошедшие дни месяца показаны (1–5 ноября), будущие — пустые.
+    const scheduled = within(table).getByRole('row', { name: /^Групп по расписанию/ })
+    expect(Array.from(scheduled.querySelectorAll('td')).map((td) => td.textContent).slice(0, 7)).toEqual(['0', '2', '2', '2', '2', '', ''])
+    // Воскресенье без занятий: группы и студенты 0, посещаемость — «Нет занятий», ДЗ — «Нет данных».
+    const attendance = within(table).getByRole('row', { name: /^Посещаемость/ })
+    expect(attendance.querySelectorAll('td')[0]).toHaveTextContent('Нет занятий')
+    expect(within(table).getByRole('row', { name: /^Домашние задания/ }).querySelectorAll('td')[0]).toHaveTextContent('Нет данных')
+    expect(within(attendance).getAllByText('83%')).toHaveLength(2) // 2 и 3 ноября
     expect(within(table).queryByTitle('Скорректировать показатели')).not.toBeInTheDocument()
 
-    for (const title of ['График посещаемости', 'Выполнение домашних заданий', 'Динамика количества студентов', 'Динамика количества групп']) {
+    for (const title of ['График посещаемости', 'Выполнение домашних заданий', 'Студенты по расписанию дня', 'Группы по расписанию дня']) {
       expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument()
     }
   })
@@ -189,12 +208,25 @@ describe('сайт «Общая статистика»', () => {
     expect(auth.login).toHaveBeenCalledWith('aigul', 'secret')
   })
 
-  it('пустой месяц — «нет данных», а не нули', async () => {
+  it('месяц без данных — «Нет данных», а не нули', async () => {
     api.month.mockResolvedValue(emptyPayload())
-    renderSite('/monthly-performance?year=2026&month=10')
+    renderSite('/monthly-performance?year=2026&month=8')
     expect(await screen.findAllByText('Нет данных за этот месяц')).toHaveLength(4)
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
     expect(screen.getAllByText('Нет данных для сравнения')).toHaveLength(4)
+    const table = screen.getByRole('table')
+    expect(within(table).getByRole('row', { name: /^Групп по расписанию/ }).querySelectorAll('td')[0]).toHaveTextContent('Нет данных')
+    expect(table.querySelectorAll('td[data-missing]').length).toBe(31 * 6)
+  })
+
+  it('будущий месяц — календарная сетка без показателей', async () => {
+    const days = Array.from({ length: 31 }, (_, i) => ({ ...day(10), date: `2026-12-${String(i + 1).padStart(2, '0')}`, day: i + 1, is_future: true, has_data: false }))
+    api.month.mockResolvedValue({ ...emptyPayload(), month: 12, month_label: 'Декабрь', is_future_month: true, days })
+    renderSite('/monthly-performance?year=2026&month=12')
+    expect(await screen.findByText(/Этот месяц ещё не наступил/)).toBeInTheDocument()
+    const table = screen.getByRole('table')
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(32)
+    expect(Array.from(table.querySelectorAll('td')).every((td) => td.textContent === '')).toBe(true)
   })
 
   it('выбор месяца и обновление данных', async () => {
@@ -207,6 +239,10 @@ describe('сайт «Общая статистика»', () => {
     await waitFor(() => expect(api.month).toHaveBeenLastCalledWith({ year: 2026, month: 10 }, null))
     await user.selectOptions(screen.getByLabelText('Год'), '2025')
     await waitFor(() => expect(api.month).toHaveBeenLastCalledWith({ year: 2025, month: 10 }, null))
+    // Будущие месяцы тоже можно выбрать (пустая сетка).
+    await user.selectOptions(screen.getByLabelText('Год'), '2026')
+    await user.selectOptions(screen.getByLabelText('Месяц'), '12')
+    await waitFor(() => expect(api.month).toHaveBeenLastCalledWith({ year: 2026, month: 12 }, null))
     const calls = api.month.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Обновить данные' }))
     await waitFor(() => expect(api.month.mock.calls.length).toBe(calls + 1))
@@ -249,11 +285,11 @@ describe('сайт «Общая статистика»', () => {
     const table = await screen.findByRole('table')
     await user.click(within(table).getAllByTitle('Скорректировать показатели')[3])
     const dialog = await screen.findByRole('dialog', { name: 'Корректировка за 4 ноября' })
-    const groups = within(dialog).getByLabelText('Количество групп')
-    await user.clear(groups)
-    await user.type(groups, '5')
+    const held = within(dialog).getByLabelText('Проведено занятий в группах')
+    await user.clear(held)
+    await user.type(held, '2')
     await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(api.correct).toHaveBeenCalledWith('2026-11-04', { comment: '', active_groups: 5 }))
+    await waitFor(() => expect(api.correct).toHaveBeenCalledWith('2026-11-04', { comment: '', held_groups: 2 }))
   })
 
   it('шкала количества — «круглый» максимум', () => {

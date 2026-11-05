@@ -349,9 +349,10 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 # «Общая статистика» (apps.performance): сколько дней после окончания дня
-# снимок ещё пересчитывается (тренеры отмечают посещаемость и ДЗ с опозданием),
-# прежде чем окончательно зафиксироваться.
-PERFORMANCE_FINALIZE_DELAY_DAYS = env.int("PERFORMANCE_FINALIZE_DELAY_DAYS", default=1)
+# снимок ещё пересчитывается (тренеры отмечают посещаемость и проверяют ДЗ
+# с опозданием — обычно на следующем занятии группы), прежде чем
+# окончательно зафиксироваться.
+PERFORMANCE_FINALIZE_DELAY_DAYS = env.int("PERFORMANCE_FINALIZE_DELAY_DAYS", default=7)
 
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",

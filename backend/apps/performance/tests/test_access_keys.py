@@ -13,7 +13,7 @@ from apps.performance.models import DashboardAccessKey
 from apps.performance.services.access_keys import hash_key, issue_key
 from apps.users.models import User
 
-from .test_performance import URL, PerformanceFixture, at, frozen, make_user
+from .test_performance import NOW, URL, PerformanceFixture, frozen, make_user
 
 
 class DashboardKeyTests(PerformanceFixture):
@@ -27,7 +27,7 @@ class DashboardKeyTests(PerformanceFixture):
         return self.client.get(URL + path, params, **headers)
 
     def test_key_opens_every_read_endpoint(self):
-        with frozen(at(self.D2, 12)):
+        with frozen(NOW):
             for suffix in ("", "snapshots/", "summary/", "trends/"):
                 response = self.get(suffix)
                 self.assertEqual(response.status_code, 200, (suffix, response.content[:200]))
@@ -64,16 +64,19 @@ class DashboardKeyTests(PerformanceFixture):
             self.assertIn(response.status_code, (401, 403), path)
 
     def test_response_has_no_personal_data(self):
-        with frozen(at(self.D2, 12)):
-            body = self.get().content.decode()
-        for student in self.students:
+        self.week()
+        with frozen(NOW):
+            body = self.get("", year=2026, month=10).content.decode()
+        self.assertIn('"scheduled_students":3', body.replace(" ", ""))
+        for student in self.a + self.b:
             self.assertNotIn(student.first_name, body)
-        self.assertNotIn(self.group.name, body)
+        self.assertNotIn(self.prog1.name, body)
+        self.assertNotIn(self.prog2.name, body)
 
     def test_staff_jwt_still_works_without_key(self):
         user = make_user("hr", User.Role.HR_MANAGER)
         self.client.force_authenticate(user)
-        with frozen(at(self.D2, 12)):
+        with frozen(NOW):
             data = self.client.get(URL).data
         self.assertEqual(data["access"]["mode"], "user")
 

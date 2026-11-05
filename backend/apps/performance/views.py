@@ -31,7 +31,7 @@ from .authentication import DashboardKeyAuthentication
 from .models import DailyPerformanceSnapshot
 from .permissions import CanEditPerformanceOrReadOnly, CanViewPerformance, can_edit_performance, is_key_access
 from .services import dashboard
-from .services.snapshots import backfill, capture_today
+from .services.snapshots import capture_day
 
 MONTH_PARAMS = [
     OpenApiParameter("year", OpenApiTypes.INT, description="Год (по умолчанию — текущий)"),
@@ -48,10 +48,9 @@ def parse_month(params) -> tuple[int, int]:
         raise ValidationError({"detail": "Год и месяц должны быть числами."}) from None
     if not 1 <= month <= 12:
         raise ValidationError({"month": "Месяц должен быть от 1 до 12."})
-    if not 2000 <= year <= today.year:
+    # Будущий месяц — календарная сетка без показателей (services.dashboard).
+    if not 2000 <= year <= today.year + 1:
         raise ValidationError({"year": "Недопустимый год."})
-    if (year, month) > (today.year, today.month):
-        raise ValidationError({"month": "Нельзя выбрать будущий месяц."})
     return year, month
 
 
@@ -100,15 +99,23 @@ class TrendsView(_MonthView):
 
 
 class CorrectionSerializer(serializers.Serializer):
+    scheduled_groups = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    held_groups = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    scheduled_students = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    attended_students = serializers.IntegerField(min_value=0, required=False, allow_null=True)
     attendance_percent = serializers.DecimalField(
         max_digits=4, decimal_places=1, min_value=0, max_value=100, required=False, allow_null=True)
     homework_percent = serializers.DecimalField(
         max_digits=4, decimal_places=1, min_value=0, max_value=100, required=False, allow_null=True)
-    active_groups = serializers.IntegerField(min_value=0, required=False, allow_null=True)
-    active_students = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    # Прежние имена (до учёта расписания дня).
+    active_groups = serializers.IntegerField(min_value=0, required=False, allow_null=True, write_only=True)
+    active_students = serializers.IntegerField(min_value=0, required=False, allow_null=True, write_only=True)
     comment = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate(self, attrs):
+        for alias, field in dashboard.ALIASES.items():
+            if alias in attrs:
+                attrs.setdefault(field, attrs.pop(alias))
         if not any(field in attrs for field in DailyPerformanceSnapshot.EDITABLE_FIELDS):
             raise serializers.ValidationError("Укажите хотя бы один показатель.")
         return attrs
@@ -130,10 +137,7 @@ class SnapshotCorrectionView(APIView):
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
 
-        if date == today:
-            capture_today()
-        else:
-            backfill(date, date)
+        capture_day(date)  # снимок дня есть (или создан из записей LMS) — дальше только ручные поля
         with transaction.atomic():
             snapshot = DailyPerformanceSnapshot.objects.select_for_update().get(date=date)
             manual = list(snapshot.manual_fields or [])

@@ -7,11 +7,23 @@ import { API_BASE_URL, apiClient } from '@/api/client'
  * а не 0. Доступ — JWT сотрудника (общий с LMS) или ключ «только чтение»
  * в заголовке `X-Dashboard-Key` (телевизор в офисе). */
 
-export type PerformanceMetric = 'attendance_percent' | 'homework_percent' | 'active_groups' | 'active_students'
+/** Показатели дня — по расписанию именно этого дня (занятия группы в этот
+ * день) и составу групп на эту дату. */
+export type PerformanceMetric =
+  | 'scheduled_groups'
+  | 'held_groups'
+  | 'scheduled_students'
+  | 'attended_students'
+  | 'attendance_percent'
+  | 'homework_percent'
+
+/** Метрики карточек. */
+export type CardMetric = 'attendance_percent' | 'homework_percent' | 'scheduled_groups' | 'scheduled_students'
 
 /** live — сегодня (считается на лету), provisional — ещё уточняется,
- * final — зафиксирован, missing — снимка нет, future — день ещё не наступил. */
-export type PerformanceDayStatus = 'live' | 'provisional' | 'final' | 'missing' | 'future'
+ * final — зафиксирован, computed — снимка ещё нет, восстановлено из записей
+ * LMS, missing — данных нет, future — день ещё не наступил. */
+export type PerformanceDayStatus = 'live' | 'provisional' | 'final' | 'computed' | 'missing' | 'future'
 
 export interface PerformanceDay {
   date: string
@@ -19,15 +31,21 @@ export interface PerformanceDay {
   weekday: number
   is_today: boolean
   is_future: boolean
+  /** Есть показатели (не будущий день и не «нет данных»). */
+  has_data: boolean
+  /** В этот день по расписанию не было занятий. */
+  no_lessons: boolean
+  scheduled_groups: number | null
+  held_groups: number | null
+  scheduled_students: number | null
+  attended_students: number | null
+  expected_students: number | null
   attendance_percent: number | null
-  attendance_marked: number
-  attendance_attended: number
   homework_percent: number | null
-  homework_results: number
-  homework_done: number
-  lessons_count: number
-  active_groups: number | null
-  active_students: number | null
+  homework_results: number | null
+  homework_done: number | null
+  lessons_count: number | null
+  held_lessons_count: number | null
   status: PerformanceDayStatus
   manual_fields: PerformanceMetric[]
   manual_comment: string
@@ -41,6 +59,10 @@ export interface PerformanceCard {
   previous_date: string | null
   change: number | null
   month_average?: number | null
+  /** Для «Групп по расписанию» — сколько из них провели занятие в тот день. */
+  held_groups?: number | null
+  /** Для «Студентов по расписанию» — сколько из них посетили занятия. */
+  attended_students?: number | null
 }
 
 export interface TrendPoint {
@@ -55,10 +77,11 @@ export interface MonthlyPerformance {
   month_label: string
   today: string
   is_current_month: boolean
+  is_future_month: boolean
   generated_at: string
   timezone: string
   days: PerformanceDay[]
-  summary: Record<PerformanceMetric, PerformanceCard>
+  summary: Record<CardMetric, PerformanceCard>
   trends: Record<TrendKey, TrendSeries>
   available_years: number[]
   can_edit: boolean
