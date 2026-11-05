@@ -1,4 +1,4 @@
-import { ArrowLeft, ClipboardList, FileText, Presentation, ScanLine } from 'lucide-react'
+import { ArrowLeft, ClipboardList, FileText, ScanLine } from 'lucide-react'
 
 import { useAuth } from '@/hooks/useAuth'
 import { workspaceFor } from '@/features/staffAttendance/roles'
@@ -14,7 +14,6 @@ export function WorkspaceLayout() {
   const items: ShellNavItem[] = [
     { to: '/tasks', label: 'Мои задачи', icon: ClipboardList, end: true },
     { to: '/work-reports', label: 'Мои отчёты', icon: FileText },
-    { to: '/dashboard/monthly-performance', label: 'Общая статистика', icon: Presentation },
   ]
   const footer: ShellNavItem[] = [
     { to: home, label: 'Вернуться в кабинет', icon: ArrowLeft },

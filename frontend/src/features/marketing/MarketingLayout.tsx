@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { BarChart3, CalendarRange, ClipboardCheck, LayoutDashboard, LogOut, Presentation, ScanLine, Target, Wallet } from 'lucide-react'
+import { BarChart3, CalendarRange, ClipboardCheck, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -36,7 +36,6 @@ export const MARKETING_NAV: NavItem[] = [
  * телефоне «Кампании» открываются из «Обзора». */
 export const MARKETING_SIDEBAR_EXTRA: NavItem[] = [
   { to: '/marketing/campaigns', label: 'Кампании', icon: Target },
-  { to: '/dashboard/monthly-performance', label: 'Общая статистика', icon: Presentation },
 ]
 
 const ROW = 'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'

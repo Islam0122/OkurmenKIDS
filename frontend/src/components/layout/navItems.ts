@@ -10,7 +10,6 @@ import {
   FileText,
   GraduationCap,
   LineChart,
-  Presentation,
   LayoutDashboard,
   ListChecks,
   Megaphone,
@@ -60,8 +59,6 @@ export interface NavItem {
  */
 export const NAV_ITEMS: NavItem[] = [
   { to: '/app/dashboard', label: 'Сегодня', icon: LayoutDashboard, roleLabels: { team_lead: 'Dashboard' } },
-  // «Общая статистика» академии (TV-панель) — всем ролям.
-  { to: '/dashboard/monthly-performance', label: 'Общая статистика', shortLabel: 'Статистика', icon: Presentation },
   { to: '/app/schedule', label: 'Расписание', icon: CalendarDays, roles: ['admin', 'teacher', 'team_lead'] },
   { to: '/app/trainers', label: 'Тренеры', icon: UserCog, roles: ['admin', 'team_lead'] },
   { to: '/app/groups', label: 'Мои группы', shortLabel: 'Группы', icon: Users, roleLabels: { team_lead: 'Группы' } },

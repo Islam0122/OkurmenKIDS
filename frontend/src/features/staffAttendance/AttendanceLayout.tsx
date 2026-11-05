@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { ArrowLeft, ClipboardList, LogOut, MapPinned, Presentation, Settings2, UserRound } from 'lucide-react'
+import { ArrowLeft, ClipboardList, LogOut, MapPinned, Settings2, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 
@@ -29,11 +29,7 @@ export function AttendanceLayout() {
   const access = meta.data?.access
   const workspace = workspaceFor(user?.role)
 
-  const tabs: Tab[] = [
-    { to: personalPathFor(user?.role), label: 'Мой кабинет', icon: UserRound },
-    // «Общая статистика» академии — всем сотрудникам (в т. ч. ролям без своего кабинета).
-    { to: '/dashboard/monthly-performance', label: 'Общая статистика', icon: Presentation },
-  ]
+  const tabs: Tab[] = [{ to: personalPathFor(user?.role), label: 'Мой кабинет', icon: UserRound }]
   if (access?.can_view_reports) tabs.push({ to: '/admin/attendance', label: 'Учёт сотрудников', icon: ClipboardList, end: true })
   if (access?.can_manage) {
     tabs.push({ to: '/admin/attendance/locations', label: 'Офисы и QR', icon: MapPinned })

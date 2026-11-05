@@ -6,7 +6,6 @@ import {
   GraduationCap,
   LayoutDashboard,
   MessageSquareText,
-  Presentation,
   ScanLine,
   ShieldAlert,
   User,
@@ -59,10 +58,7 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
   },
   {
     title: 'Отчёты',
-    items: [
-      { to: '/assistant/reports', label: 'Месячный отчёт', icon: FileBarChart },
-      { to: '/dashboard/monthly-performance', label: 'Общая статистика', icon: Presentation },
-    ],
+    items: [{ to: '/assistant/reports', label: 'Месячный отчёт', icon: FileBarChart }],
   },
   {
     // Свои начисления и выплаты — только чтение (backend: /accounting/my/salary/).

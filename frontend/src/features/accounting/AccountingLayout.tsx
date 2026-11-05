@@ -1,7 +1,7 @@
 import { Suspense, useState } from 'react'
 import {
   ArrowLeft, ArrowLeftRight, Banknote, BarChart3, BookOpenCheck, CalendarClock, Calculator, Coins, FileText, History,
-  LayoutDashboard, LineChart, LogOut, Menu, Presentation, ReceiptText, ScanLine, Settings2, Tags, Wallet,
+  LayoutDashboard, LineChart, LogOut, Menu, ReceiptText, ScanLine, Settings2, Tags, Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
@@ -72,7 +72,7 @@ export const ACCOUNTING_SECTIONS: NavSection[] = [
     ],
   },
   // Свой приход и уход по QR-коду офиса (/attendance ведёт на страницу своей роли).
-  { items: [{ to: '/attendance', label: 'Приход и уход', icon: ScanLine }, { to: '/dashboard/monthly-performance', label: 'Общая статистика', icon: Presentation }] },
+  { items: [{ to: '/attendance', label: 'Приход и уход', icon: ScanLine }] },
 ]
 
 /** Плоский список пунктов меню (порядок — как в разделах). */

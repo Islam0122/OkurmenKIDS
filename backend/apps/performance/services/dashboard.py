@@ -160,6 +160,8 @@ def trends(days: list[dict]) -> dict:
     return {
         "attendance": {"points": series("attendance_percent"), "average": average("attendance_percent")},
         "homework": {"points": series("homework_percent"), "average": average("homework_percent")},
+        "groups": {"points": series("active_groups"), "average": average("active_groups")},
+        "students": {"points": series("active_students"), "average": average("active_students")},
     }
 
 

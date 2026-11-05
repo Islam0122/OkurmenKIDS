@@ -14,6 +14,10 @@ CORS_ALLOWED_ORIGINS = [
     # e.g. https://leaderboard.okurmenkids.com — comma-separated. Public,
     # read-only: it calls GET /api/v1/public/leaderboard/* only.
     *[o.strip().rstrip("/") for o in os.getenv("LEADERBOARD_SITE_ORIGINS", "").split(",") if o.strip()],
+    # The standalone «OkurmenKIDS — Общая статистика» site (VITE_APP_MODE=statistics),
+    # e.g. https://stats.okurmenkids.com — comma-separated. Reads only
+    # /api/v1/monthly-performance/* with a staff JWT or a read-only X-Dashboard-Key.
+    *[o.strip().rstrip("/") for o in os.getenv("STATISTICS_SITE_ORIGINS", "").split(",") if o.strip()],
 ]
 
 CORS_ALLOW_METHODS = [
@@ -40,6 +44,8 @@ CORS_ALLOW_HEADERS = [
     "x-attempt-token",
     # Accounting: a repeated payment request returns the same payment.
     "idempotency-key",
+    # «Общая статистика»: read-only dashboard key (apps.performance).
+    "x-dashboard-key",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
