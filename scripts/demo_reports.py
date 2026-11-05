@@ -42,6 +42,7 @@ from pathlib import Path
 from playwright.sync_api import Locator, Page, expect, sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import music  # noqa: E402  (scripts/music.py)
 import narration  # noqa: E402  (scripts/narration.py)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -469,22 +470,33 @@ def record(tokens: dict, headed: bool, voice_durations: dict[str, float]) -> tup
     return raw, lead_in, director.voice_starts, duration
 
 
-def _voice_filter(clips: list[tuple[float, Path]]) -> tuple[list[str], str]:
-    """ffmpeg inputs + filter graph: every narration clip at its scene's time, then a
-    gentle voice chain — rumble cut, a touch of warmth and air, soft compression,
-    a very small room, loudness normalised for web video (-16 LUFS)."""
+def _voice_filter(clips: list[tuple[float, Path]], music: Path | None) -> tuple[list[str], str]:
+    """ffmpeg inputs + filter graph: every narration clip at its scene's time, an ad-style
+    voice chain (rumble cut, warmth, presence, firm compression, a small room) and,
+    if given, the music bed — ducked under the voice by sidechain compression.
+    Loudness is normalised to -14 LUFS (promo / social video)."""
     inputs, chains, labels = [], [], []
     for index, (start, path) in enumerate(clips, start=1):
         inputs += ["-i", str(path)]
         delay = max(0, int(start * 1000))
         chains.append(f"[{index}:a]aresample=48000,aformat=channel_layouts=mono,adelay={delay}:all=1[v{index}]")
         labels.append(f"[v{index}]")
-    graph = ";".join(chains) + ";" + "".join(labels) + (
-        f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0,"
-        "highpass=f=75,equalizer=f=180:t=q:w=1.1:g=1.5,equalizer=f=5200:t=q:w=1.5:g=1.8,"
-        "acompressor=threshold=-21dB:ratio=2.6:attack=6:release=140:makeup=2,"
-        "aecho=0.88:0.5:28|46:0.07|0.04,"
-        "loudnorm=I=-16:TP=-1.5:LRA=7,aresample=48000,apad[aout]"
+    voice = (
+        "".join(labels) + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0,"
+        "highpass=f=80,equalizer=f=190:t=q:w=1.1:g=1.5,equalizer=f=3200:t=q:w=1.3:g=2.5,"
+        "equalizer=f=7500:t=q:w=1.5:g=1.2,acompressor=threshold=-22dB:ratio=3.2:attack=4:release=110:makeup=2.5,"
+        "aecho=0.9:0.45:24|41:0.06|0.035,apad,aformat=channel_layouts=stereo,aresample=48000"
+    )
+    if music is None:
+        graph = ";".join(chains) + ";" + voice + ",loudnorm=I=-14:TP=-1.2:LRA=8[aout]"
+        return inputs, graph
+    music_index = len(clips) + 1
+    inputs += ["-i", str(music)]
+    graph = ";".join(chains) + ";" + voice + ",asplit=2[vmix][vsc];" + (
+        f"[{music_index}:a]aresample=48000,aformat=channel_layouts=stereo,volume=-13.5dB,"
+        "equalizer=f=2800:t=q:w=1.2:g=-3.5,aecho=0.8:0.55:55|90:0.16|0.1[mus];"
+        "[mus][vsc]sidechaincompress=threshold=0.015:ratio=6:attack=30:release=500[mduck];"
+        "[vmix][mduck]amix=inputs=2:normalize=0:duration=first,loudnorm=I=-14:TP=-1.2:LRA=9,aresample=48000[aout]"
     )
     return inputs, graph
 
@@ -501,7 +513,7 @@ def write_subtitles(clips: list[tuple[str, float, float]], path: Path) -> None:
     path.write_text("\n".join(blocks), encoding="utf-8")
 
 
-def encode(raw: Path, lead_in: float, voice: dict | None) -> list[Path]:
+def encode(raw: Path, lead_in: float, voice: dict | None, duration: float) -> list[Path]:
     webm, mp4 = OUT / f"{VIDEO_NAME}.webm", OUT / f"{VIDEO_NAME}.mp4"
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -513,7 +525,13 @@ def encode(raw: Path, lead_in: float, voice: dict | None) -> list[Path]:
     audio_in: list[str] = []
     audio_map: list[str] = ["-an"]
     if voice:
-        audio_in, graph = _voice_filter([(voice["starts"][line], voice["clips"][line].path) for line in voice["starts"]])
+        music_path = None
+        if os.environ.get("DEMO_MUSIC", "1") != "0":
+            music_path = music.write(duration + 0.5, Path(tempfile.mkdtemp(prefix="okurmen-music-")) / "music.wav")
+            print(f"  ♪ фоновая музыка {duration:.0f}s (синтез, scripts/music.py)")
+        audio_in, graph = _voice_filter(
+            [(voice["starts"][line], voice["clips"][line].path) for line in voice["starts"]], music_path,
+        )
         audio_map = ["-filter_complex", graph, "-map", "0:v", "-map", "[aout]", "-shortest"]
     common = [ffmpeg, "-y", "-loglevel", "error", "-ss", start, "-i", str(raw), *audio_in, *audio_map]
     subprocess.run([*common, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "34", "-row-mt", "1", "-deadline", "good",
@@ -528,20 +546,40 @@ def encode(raw: Path, lead_in: float, voice: dict | None) -> list[Path]:
     return outputs
 
 
+def _recorded_voice(folder: Path) -> dict:
+    """A human voiceover: one recording per scene (intro.wav, kpi.mp3, … — any format ffmpeg reads)."""
+    clips = {}
+    for scene in narration.LINES:
+        found = sorted(folder.glob(f"{scene}.*"))
+        if not found:
+            raise DemoError(f"Нет записи для сцены «{scene}» в {folder} (ожидается {scene}.wav / .mp3 / .m4a)")
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(found[0])],
+                               capture_output=True, text=True, check=True)
+        clips[scene] = narration.Clip(scene, found[0], float(probe.stdout.strip()))
+        print(f"  ✓ {scene:9s} {clips[scene].duration:4.1f}s  {found[0].name}")
+    return {"clips": clips}
+
+
 def prepare_voice() -> dict | None:
-    """Synthesise the narration before recording, so each scene can wait for its line."""
+    """Narration before recording, so each scene can wait for its line:
+    synthesised locally (DEMO_VOICE=irina|dmitri|denis|ruslan), a human recording
+    (DEMO_VOICE=files:/path/to/folder) or none (DEMO_VOICE=none)."""
     name = os.environ.get("DEMO_VOICE", "irina")
     if name == "none":
         print("Озвучка отключена (DEMO_VOICE=none).")
         return None
+    if name.startswith("files:"):
+        folder = Path(name.removeprefix("files:")).expanduser()
+        print(f"Voiceover (запись диктора из {folder}):")
+        return _recorded_voice(folder)
     if name not in narration.VOICES:
-        raise DemoError(f"Неизвестный голос «{name}». Доступны: {', '.join(narration.VOICES)} или none.")
+        raise DemoError(f"Неизвестный голос «{name}». Доступны: {', '.join(narration.VOICES)}, files:<папка> или none.")
     try:
         import sherpa_onnx  # noqa: F401
     except ImportError as exc:
-        raise DemoError("Для озвучки нужен sherpa-onnx: pip install 'sherpa-onnx==1.12.40' soundfile numpy "
+        raise DemoError("Для озвучки нужен sherpa-onnx: pip install 'sherpa-onnx==1.12.40' soundfile numpy scipy "
                         "(или DEMO_VOICE=none — видео без голоса)") from exc
-    print(f"Voiceover (голос {name}, локальный синтез):")
+    print(f"Voiceover (голос {name}, подача {narration.STYLE}, локальный синтез):")
     clips = narration.synthesize(Path(tempfile.mkdtemp(prefix="okurmen-voice-")), voice=name)
     for clip in clips.values():
         print(f"  ✓ {clip.scene:9s} {clip.duration:4.1f}s")
@@ -558,13 +596,13 @@ def main() -> int:
         voice = prepare_voice()
         durations = {line: clip.duration for line, clip in voice["clips"].items()} if voice else {}
         print("Recording:")
-        raw, lead_in, voice_starts, _ = record(state["tokens"], os.environ.get("DEMO_HEADED") == "1", durations)
+        raw, lead_in, voice_starts, duration = record(state["tokens"], os.environ.get("DEMO_HEADED") == "1", durations)
         if voice:
             missing = set(durations) - set(voice_starts)
             if missing:
                 raise DemoError(f"Сцены без озвучки: {', '.join(sorted(missing))}")
             voice["starts"] = voice_starts
-        for path in encode(raw, lead_in, voice):
+        for path in encode(raw, lead_in, voice, duration):
             print(f"  → {path} ({path.stat().st_size / 1_048_576:.1f} МБ)")
     except DemoError as exc:
         print(f"\n✗ Демо остановлено: {exc}", file=sys.stderr)
