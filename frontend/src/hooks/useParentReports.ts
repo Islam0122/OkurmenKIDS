@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { parentReportsApi, type ParentReportListParams } from '@/api/parentReports'
-import type { ParentReportConfig, ParentReportDetail, ParentReportTextUpdate } from '@/types/parentReports'
+import type { ParentReportConfig, ParentReportDetail, ParentReportLanguage, ParentReportTextUpdate } from '@/types/parentReports'
 
 const KEY = ['parent-reports'] as const
 
@@ -68,5 +68,16 @@ export function useParentReportImage(reportId: number, imageId: number | null) {
     enabled: imageId !== null,
     staleTime: Infinity,
     gcTime: 5 * 60 * 1000,
+  })
+}
+
+/** The report's message in another language, from its stored snapshot. `language` null = not needed. */
+export function useParentReportTranslatedText(reportId: number, language: ParentReportLanguage | null, studentId: number | null) {
+  return useQuery({
+    queryKey: [...KEY, 'text', reportId, language, studentId],
+    queryFn: async () =>
+      (await parentReportsApi.translatedText(reportId, { language: language as ParentReportLanguage, student_id: studentId ?? undefined })).text,
+    enabled: language !== null,
+    staleTime: Infinity,
   })
 }

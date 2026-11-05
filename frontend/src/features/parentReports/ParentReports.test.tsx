@@ -142,6 +142,24 @@ describe('ParentReportsSection', () => {
     expect(within(dialog).getByRole('button', { name: 'Скачать PNG' })).toBeInTheDocument()
   })
 
+  it('switches the WhatsApp text between Russian and Kyrgyz', async () => {
+    const user = userEvent.setup()
+    vi.mocked(parentReportsApi.generate).mockResolvedValue(buildReport())
+    vi.mocked(parentReportsApi.translatedText).mockResolvedValue({ text: 'Саламатсыздарбы, урматтуу ата-энелер! 🌟' })
+    renderWithProviders(<ParentReportsSection groupId={5} />)
+    await user.click(await screen.findByRole('button', { name: 'Создать отчёт' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Сгенерировать отчёт' }))
+    const languages = await within(dialog).findByRole('radiogroup', { name: 'Язык текста' })
+    const textbox = within(dialog).getByRole('textbox', { name: 'Текст для WhatsApp' })
+    expect(textbox).toHaveValue('Уважаемые родители! 🌟')
+    await user.click(within(languages).getByRole('radio', { name: 'Кыргызча' }))
+    await waitFor(() => expect(textbox).toHaveValue('Саламатсыздарбы, урматтуу ата-энелер! 🌟'))
+    expect(parentReportsApi.translatedText).toHaveBeenCalledWith(42, { language: 'ky', student_id: undefined })
+    await user.click(within(languages).getByRole('radio', { name: 'Русский' }))
+    await waitFor(() => expect(textbox).toHaveValue('Уважаемые родители! 🌟'))
+  })
+
   it('blocks a custom period whose start is after its end', async () => {
     const user = userEvent.setup()
     renderWithProviders(<ParentReportsSection groupId={5} />)

@@ -8,13 +8,19 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { useToast } from '@/components/ui/Toast'
-import { useParentReportImage, useRegenerateParentReport, useSaveParentReportText } from '@/hooks/useParentReports'
-import type { ParentReportDetail, ParentReportImage } from '@/types/parentReports'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import {
+  useParentReportImage,
+  useParentReportTranslatedText,
+  useRegenerateParentReport,
+  useSaveParentReportText,
+} from '@/hooks/useParentReports'
+import type { ParentReportDetail, ParentReportImage, ParentReportLanguage } from '@/types/parentReports'
 import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
 import { formatDateShort } from '@/utils/format'
 
-import { STUDENT_STATUS_LABEL, STUDENT_STATUS_TONE, fmtPercent, fmtScore } from './reportConfig'
+import { LANGUAGE_OPTIONS, STUDENT_STATUS_LABEL, STUDENT_STATUS_TONE, fmtPercent, fmtScore } from './reportConfig'
 
 interface ReportResultProps {
   report: ParentReportDetail
@@ -190,8 +196,13 @@ function TextEditor({ report, studentId, canEdit }: { report: ParentReportDetail
   const key = studentId === null ? null : String(studentId)
   const generated = key === null ? report.text : (report.student_texts[key] ?? '')
   const stored = key === null ? report.final_text : (report.edited_student_texts[key] ?? generated)
+  // The message in the other language is rendered by the server from the
+  // report's stored snapshot (nothing recalculated, nothing saved).
+  const [language, setLanguage] = useState<ParentReportLanguage>(report.language)
+  const translated = useParentReportTranslatedText(report.id, language === report.language ? null : language, studentId)
+  const source = language === report.language ? stored : (translated.data ?? '')
   const [text, setText] = useState(stored)
-  useEffect(() => setText(stored), [stored])
+  useEffect(() => setText(source), [source])
 
   const hasText = useMemo(() => Boolean(generated || stored), [generated, stored])
   if (!hasText) {
@@ -218,7 +229,16 @@ function TextEditor({ report, studentId, canEdit }: { report: ParentReportDetail
 
   return (
     <section aria-label="Текст для WhatsApp" className="space-y-2">
-      <h3 className="text-sm font-medium text-ink">Текст для WhatsApp</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-medium text-ink">Текст для WhatsApp</h3>
+        <SegmentedControl<ParentReportLanguage>
+          aria-label="Язык текста"
+          value={language}
+          onChange={setLanguage}
+          options={LANGUAGE_OPTIONS}
+        />
+      </div>
+      {translated.isFetching ? <p className="text-xs text-ink-muted">Формируем текст…</p> : null}
       <Textarea
         aria-label="Текст для WhatsApp"
         value={text}
