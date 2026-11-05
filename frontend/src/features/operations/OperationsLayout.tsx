@@ -22,6 +22,7 @@ import {
   Users,
   UsersRound,
   Wallet,
+  Presentation,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
@@ -172,6 +173,8 @@ export function WorkShell({ title, items, sections, footer, label, children }: {
 
 const FOOTER: ShellNavItem[] = [
   { to: '/tasks', label: 'Мои задачи', icon: ClipboardList },
+  // «Общая статистика» академии (TV-панель) — общая страница для всех сотрудников.
+  { to: '/dashboard/monthly-performance', label: 'Общая статистика', icon: Presentation },
   { to: '/operations/employees', label: 'Все сотрудники', icon: UserCog },
   { to: '/attendance', label: 'Моя отметка прихода', icon: ScanLine },
   // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/: только свои, только чтение).

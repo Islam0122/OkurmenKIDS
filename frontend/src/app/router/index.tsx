@@ -21,6 +21,15 @@ export const router = createBrowserRouter([
     errorElement: <RouteErrorPage />,
     children: [{ index: true, lazy: async () => ({ Component: (await import('./MySalaryRedirect')).MySalaryRedirect }) }],
   },
+  {
+    // «Общая статистика» академии — всем вошедшим сотрудникам (backend: apps.performance).
+    // Свой каркас: меню LMS у тренеров/тимлида/администратора, простая шапка у остальных;
+    // ?tv=1 — режим телевизора.
+    path: '/dashboard/monthly-performance',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/monthlyPerformance/MonthlyPerformancePage')).MonthlyPerformancePage }) }],
+  },
   { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {
     path: '/app',

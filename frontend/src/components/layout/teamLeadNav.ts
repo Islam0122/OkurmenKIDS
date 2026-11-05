@@ -25,6 +25,7 @@ import {
   Wallet,
   ScanLine,
   UserCheck,
+  Presentation,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -54,6 +55,8 @@ export interface TeamLeadSection {
 
 export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
   { key: 'home', label: 'Главная', icon: House /* house */, to: '/app/dashboard' },
+  // «Общая статистика» академии (TV-панель) — открыта всем сотрудникам.
+  { key: 'performance', label: 'Общая статистика', icon: Presentation /* easel */, to: '/dashboard/monthly-performance' },
   // The day-to-day board: lessons, trainers' colors, rooms, conflicts (read only).
   { key: 'schedule', label: 'Расписание', icon: CalendarDays /* calendar-week */, to: '/app/schedule' },
   {

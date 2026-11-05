@@ -10,6 +10,7 @@
 * снимок финансового отчёта и сверка — один раз в сутки (по дате проекта,
   Asia/Bishkek), повторные запуски в тот же день его не перестраивают;
 * посещаемость сотрудников — закрыть открытые сессии прошлых дней.
+* «Общая статистика» — снимок показателей академии за день (apps.performance).
 
 Защита от повторной обработки:
 
@@ -128,6 +129,12 @@ def run_all(*, on: dt.date | None = None, report: bool = True, staff_attendance:
         from apps.operations.services.scheduler import run_periodic
 
         results["operations"] = _safe(run_periodic, "operations")
+        renew(run_id)
+        # «Общая статистика»: снимок за сегодня, пересчёт и фиксация прошлых
+        # дней (одна строка на дату — повтор безопасен, apps.performance).
+        from apps.performance.services.snapshots import capture as capture_performance
+
+        results["performance_snapshots"] = _safe(capture_performance, "performance_snapshots")
     finally:
         failed = any(isinstance(v, dict) and "error" in v for v in results.values())
         summary = {"status": "done", "on": on.isoformat(), "run_id": str(run_id), "tasks": results, "failed": failed}

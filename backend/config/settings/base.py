@@ -67,6 +67,8 @@ LOCAL_APPS = [
     "apps.operations.apps.OperationsConfig",
     # Отчёты для родителей: аналитика, рекомендации, PNG и текст для WhatsApp.
     "apps.reports.apps.ReportsConfig",
+    # «Общая статистика»: ежедневные снимки показателей академии (TV-панель).
+    "apps.performance.apps.PerformanceConfig",
 ]
 
 INSTALLED_APPS = (
@@ -342,7 +344,14 @@ CELERY_BEAT_SCHEDULE = {
     "staff-attendance-close-stale": {"task": "staff_attendance.close_stale_sessions", "schedule": 60 * 60},
     # Операционный модуль: повторяющиеся задачи, напоминания, поиск проблем.
     "operations-hourly": {"task": "operations.run_periodic", "schedule": 60 * 60},
+    # «Общая статистика»: снимок за сегодня + закрытие прошлых дней (apps.performance).
+    "performance-daily-snapshots": {"task": "performance.capture_daily_snapshots", "schedule": 60 * 30},
 }
+
+# «Общая статистика» (apps.performance): сколько дней после окончания дня
+# снимок ещё пересчитывается (тренеры отмечают посещаемость и ДЗ с опозданием),
+# прежде чем окончательно зафиксироваться.
+PERFORMANCE_FINALIZE_DELAY_DAYS = env.int("PERFORMANCE_FINALIZE_DELAY_DAYS", default=1)
 
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",

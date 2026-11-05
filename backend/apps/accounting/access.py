@@ -62,6 +62,9 @@ PERSONAL_WORK_PREFIXES = (
     "/api/v1/notifications/",
 )
 
+# «Общая статистика» (apps.performance) открыта каждому сотруднику; правка — по правам в представлениях.
+MONTHLY_PERFORMANCE_PREFIX = "/api/v1/monthly-performance/"
+
 # Что изолированной роли можно открыть. Всё остальное — 403.
 ALLOWED_PREFIXES = (
     "/api/v1/accounting/",
@@ -73,6 +76,8 @@ ALLOWED_PREFIXES = (
     "/api/v1/staff-attendance/me/",
     # Публичный карьерный сайт — открыт всем, в том числе вошедшим сотрудникам.
     "/api/v1/public/careers/",
+    # «Общая статистика» академии — просмотр для всех сотрудников (apps.performance).
+    MONTHLY_PERFORMANCE_PREFIX,
     # Свои задачи, отчёты и уведомления (apps.operations; права — в представлениях).
     *PERSONAL_WORK_PREFIXES,
 )
@@ -94,6 +99,8 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/marketing/",
     # Публичный карьерный сайт — открыт всем, в том числе вошедшим сотрудникам.
     "/api/v1/public/careers/",
+    # «Общая статистика» академии — просмотр для всех сотрудников (apps.performance).
+    MONTHLY_PERFORMANCE_PREFIX,
     # Кабинет операционного директора: права проверяет apps.operations (CanOversee).
     "/api/v1/operations/",
     *PERSONAL_WORK_PREFIXES,
