@@ -56,6 +56,7 @@ const MATRIX: GroupMatrix = {
   capabilities: { role: 'teacher', can_edit: true, can_comment: true, can_view_history: true, can_export: true },
   legend: [],
   filtered: false,
+  trainers: [{ id: 1, name: 'Islam' }, { id: 2, name: 'Aizada' }],
 }
 
 const CELL: CellDetail = {
@@ -88,6 +89,15 @@ describe('AttendanceMatrix', () => {
     expect(screen.getByText('Посетил + сдал ДЗ').parentElement).toHaveTextContent('33%')
     expect(screen.getAllByText('Предупреждение').length).toBeGreaterThan(0)
     expect(api.group).toHaveBeenCalledWith(5, expect.objectContaining({ period: 'month' }))
+    expect(screen.getByRole('heading', { name: 'Prog SOFT 1' })).toBeInTheDocument()
+    expect(screen.getByText('Программатика · 2 студента')).toBeInTheDocument()
+  })
+
+  it('filters by trainer when the group has several', async () => {
+    renderWithProviders(<AttendanceMatrix groupId={5} />)
+    await screen.findByText('Июнь 2026')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Тренер' }), '2')
+    await waitFor(() => expect(api.group).toHaveBeenLastCalledWith(5, expect.objectContaining({ teacher: 2 })))
   })
 
   it('switches the period and filters by status on the server', async () => {

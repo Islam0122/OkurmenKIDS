@@ -299,7 +299,7 @@ class ExportTests(MatrixBase):
         r = self.as_user(od).get(f"{BASE}/overview/export/", {"date": MONTH.isoformat()})
         self.assertEqual(r.status_code, 200)
         wb = load_workbook(io.BytesIO(r.content))
-        self.assertEqual(wb.sheetnames, ["Группы", "Тренеры", "Проблемные студенты", "Динамика"])
+        self.assertEqual(wb.sheetnames, ["Группы", "Тренеры", "Проблемные студенты", "Уважительные причины", "Ассистенты", "Динамика"])
         groups = {wb["Группы"].cell(row=i, column=1).value for i in range(5, 7)}
         self.assertEqual(groups, {self.group.name, self.other.name})
 
@@ -329,3 +329,44 @@ class OverviewTests(MatrixBase):
         self.assertEqual([g["id"] for g in r["groups"]], [self.group.pk])
         meta = self.as_user(admin).get(f"{BASE}/meta/").json()
         self.assertEqual({s["name"] for s in meta["subjects"]}, {"Python", "English"})
+
+
+class ReviewTests(MatrixBase):
+    """Team Lead: checks excused reasons, assistants' work and the history."""
+
+    def test_excused_reasons_assistants_and_history_in_overview(self):
+        self.mark(self.lessons[0], self.s1, "excused", excuse_reason="Справка от врача")
+        self.mark(self.lessons[1], self.s2, "excused")  # an old mark with no reason
+        a = user("asel", User.Role.ASSISTANT)
+        GroupAssistant.objects.create(group=self.group, assistant=a, can_edit=True)
+        r = self.as_user(a).put(f"{BASE}/cell/", {"lesson": self.lessons[2].pk, "student": self.s3.pk,
+                                                  "attendance": "absent", "comment": "Не дозвонились"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        tl = user("lead", User.Role.TEAM_LEAD)
+        TeamLeadDirection.objects.create(team_lead=tl, subject=self.python)
+        data = self.as_user(tl).get(f"{BASE}/overview/", {"date": MONTH.isoformat()}).json()
+        reasons = {e["student"]["id"]: e for e in data["excused"]}
+        self.assertEqual(reasons[self.s1.pk]["reason"], "Справка от врача")
+        self.assertTrue(reasons[self.s2.pk]["missing_reason"])
+        self.assertEqual(len(data["assistants"]), 1)
+        self.assertEqual((data["assistants"][0]["user"]["id"], data["assistants"][0]["changes"],
+                          data["assistants"][0]["comments"], data["assistants"][0]["groups"]), (a.pk, 1, 1, [self.group.name]))
+        self.assertEqual(data["history"][0]["actor"]["id"], a.pk)
+        self.assertIn("Отсутствовал", [c["after"] for c in data["history"][0]["changes"]])
+
+    def test_review_is_scoped_to_the_direction(self):
+        self.mark(self.other_lesson, self.o1, "excused", excuse_reason="Семья")
+        tl = user("lead", User.Role.TEAM_LEAD)
+        TeamLeadDirection.objects.create(team_lead=tl, subject=self.python)
+        data = self.as_user(tl).get(f"{BASE}/overview/", {"date": MONTH.isoformat()}).json()
+        self.assertEqual(data["excused"], [])
+
+    def test_group_matrix_lists_trainers_for_the_filter(self):
+        gt2 = GroupTeacher.objects.create(group=self.group, teacher=self.aibek, subject=self.english)
+        self.lesson(self.group, gt2, self.aibek, 0, MONTH + dt.timedelta(days=1))
+        admin = self.admin
+        data = self.matrix(admin).json()
+        self.assertEqual({t["id"] for t in data["trainers"]}, {self.islam.pk, self.aibek.pk})
+        filtered = self.matrix(admin, teacher=self.aibek.pk).json()
+        self.assertEqual(len(filtered["columns"]), 1)
+        self.assertEqual(len(filtered["trainers"]), 2)  # options stay complete

@@ -154,6 +154,8 @@ export interface GroupMatrix {
   capabilities: MatrixCapabilities
   legend: { code: CellCode; label: string }[]
   filtered: boolean
+  /** Every trainer of the period's lessons — options of the trainer filter. */
+  trainers: { id: number; name: string }[]
 }
 
 export interface MatrixParams {
@@ -268,6 +270,39 @@ export interface Overview {
   ranking: RankingRow[]
   trend: { year: number; month: number; label: string; percent: number | null; marked: number; absent: number }[]
   thresholds: Thresholds
+  excused: ExcusedEntry[]
+  assistants: AssistantActivity[]
+  history: JournalEntry[]
+}
+
+export interface ExcusedEntry {
+  id: number
+  student: { id: number; name: string }
+  group: { id: number; name: string }
+  lesson_id: number
+  date: string
+  reason: string
+  comment: string
+  missing_reason: boolean
+  updated_by: UserRef | null
+}
+
+export interface AssistantActivity {
+  user: UserRef
+  changes: number
+  attendance_changes: number
+  homework_changes: number
+  comments: number
+  students: number
+  groups: string[]
+  last_change: string | null
+}
+
+export interface JournalEntry extends CellHistoryEntry {
+  student: { id: number; name: string }
+  group: { id: number; name: string }
+  lesson_id: number
+  date: string
 }
 
 export interface OverviewParams {
