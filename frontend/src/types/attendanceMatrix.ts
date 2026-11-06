@@ -319,7 +319,7 @@ export interface OverviewParams {
 
 export interface MatrixMeta {
   role: MatrixRole | null
-  groups: { id: number; name: string; status: string }[]
+  groups: { id: number; name: string; status: string; course: string; subject_ids: number[]; teacher_ids: number[] }[]
   subjects: { id: number; name: string }[]
   teachers: { id: number; name: string }[]
 }

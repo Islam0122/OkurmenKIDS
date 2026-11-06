@@ -457,3 +457,47 @@ class SubjectFilterTests(MatrixBase):
         self.assertEqual([c["lesson_id"] for c in none["columns"]], [bare.pk])
         export = self.as_user(admin).get(f"{BASE}/groups/{self.group.pk}/export/", {"date": MONTH.isoformat(), "subject": self.python.pk})
         self.assertEqual(export.status_code, 200)
+
+
+class AttendanceTablesTests(MatrixBase):
+    """One table for Assistant, Team Lead and Operations director — only the scope differs."""
+
+    def test_meta_lists_groups_with_their_subjects_and_trainers(self):
+        od = user("ops", User.Role.OPERATIONS_DIRECTOR)
+        meta = self.as_user(od).get(f"{BASE}/meta/").json()
+        groups = {g["id"]: g for g in meta["groups"]}
+        self.assertEqual(set(groups), {self.group.pk, self.other.pk})
+        self.assertEqual(groups[self.group.pk]["subject_ids"], [self.python.pk])
+        self.assertEqual(groups[self.other.pk]["teacher_ids"], [self.aibek.pk])
+
+    def test_team_lead_sees_only_the_subjects_of_the_direction(self):
+        gt2 = GroupTeacher.objects.create(group=self.group, teacher=self.aibek, subject=self.english)
+        en = self.lesson(self.group, gt2, self.aibek, 0, MONTH + dt.timedelta(days=1))
+        tl = user("lead", User.Role.TEAM_LEAD)
+        TeamLeadDirection.objects.create(team_lead=tl, subject=self.python)
+        data = self.matrix(tl).json()
+        self.assertNotIn(en.pk, [c["lesson_id"] for c in data["columns"]])
+        self.assertEqual([s["name"] for s in data["subjects"]], ["Python"])
+        # The Operations director sees every subject of the same group.
+        od = user("ops", User.Role.OPERATIONS_DIRECTOR)
+        self.assertIn(en.pk, [c["lesson_id"] for c in self.matrix(od).json()["columns"]])
+
+    def test_same_table_for_the_three_roles(self):
+        hw = Homework.objects.create(lesson=self.lessons[0], title="HW", deadline=self.lessons[0].date)
+        HomeworkResult.objects.create(homework=hw, student=self.s1, status="submitted")
+        self.mark(self.lessons[0], self.s1, "present")
+        a = user("asel", User.Role.ASSISTANT)
+        GroupAssistant.objects.create(group=self.group, assistant=a)
+        tl = user("lead", User.Role.TEAM_LEAD)
+        od = user("ops", User.Role.OPERATIONS_DIRECTOR)
+        tables = [self.matrix(u).json() for u in (a, tl, od)]
+        for t in tables:
+            row = next(r for r in t["rows"] if r["student"]["id"] == self.s1.pk)
+            self.assertEqual((row["cells"][0]["code"], row["cells"][0]["homework"]), ("done", "done"))
+        strip = lambda cols: [{k: v for k, v in c.items() if k != "can_edit"} for c in cols]  # noqa: E731
+        self.assertEqual(strip(tables[0]["columns"]), strip(tables[1]["columns"]))
+        self.assertEqual([t["capabilities"]["can_edit"] for t in tables], [True, False, False])  # only the scope/rights differ
+        self.assertEqual(tables[1]["summary"], tables[2]["summary"])
+        for u in (a, tl, od):
+            r = self.as_user(u).get(f"{BASE}/groups/{self.group.pk}/export/", {"date": MONTH.isoformat()})
+            self.assertEqual(r.status_code, 200)

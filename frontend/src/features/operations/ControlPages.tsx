@@ -21,7 +21,7 @@ import { Counter, LevelBadge, Note, OpsFilters, PriorityBadge, Progress, QueryVi
 
 type AttendanceView = 'daily' | 'departments' | 'employees' | 'permissions'
 
-/** /operations/attendance — посещаемость сотрудников из существующего учёта
+/** /operations/staff-attendance — посещаемость сотрудников из существующего учёта
  * прихода и ухода по QR (второй системы отметки нет). */
 export function OperationsAttendancePage() {
   const filters = useOpsFilters('today')

@@ -16,7 +16,6 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Menu } from '@/components/ui/Menu'
 import { Modal } from '@/components/ui/Modal'
 import { SearchInput } from '@/components/ui/SearchInput'
-import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Select } from '@/components/ui/Select'
 import { Tabs } from '@/components/ui/Tabs'
 import { Textarea } from '@/components/ui/Textarea'
@@ -334,22 +333,9 @@ export function AssistantGroupDetailPage() {
   )
 }
 
-type AttendanceView = 'matrix' | 'lessons'
-
-/** The monthly attendance & homework matrix of the group (only for a group
- * the Assistant is assigned to — backend: apps.attendance_matrix.access),
- * and the existing per-lesson view. */
+/** The same attendance table as the Team Lead and the Operations director
+ * see (backend: apps.attendance_matrix); the Assistant's own per-lesson log
+ * stays as «Журнал занятий». */
 function AttendanceViews({ group }: { group: GroupDetail }) {
-  const [view, setView] = useState<AttendanceView>('matrix')
-  return (
-    <div className="space-y-4">
-      <SegmentedControl
-        aria-label="Вид посещаемости"
-        options={[{ value: 'matrix', label: 'Таблица за период' }, { value: 'lessons', label: 'По занятиям' }]}
-        value={view}
-        onChange={setView}
-      />
-      {view === 'matrix' ? <AttendanceMatrix groupId={group.id} /> : <GroupAttendanceTab group={group} />}
-    </div>
-  )
+  return <AttendanceMatrix groupId={group.id} extraViews={[{ value: 'journal', label: 'Журнал занятий', render: () => <GroupAttendanceTab group={group} /> }]} />
 }

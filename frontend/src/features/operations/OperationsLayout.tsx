@@ -52,7 +52,7 @@ export const OPERATIONS_NAV: ShellNavItem[] = [
   { to: '/operations/sales-head', label: 'РОП', icon: TrendingUp },
   { to: '/operations/marketing', label: 'Маркетинг', icon: Megaphone },
   { to: '/operations/hr', label: 'HR и сотрудники', icon: Briefcase },
-  { to: '/operations/attendance', label: 'Посещаемость сотрудников', icon: ScanLine },
+  { to: '/operations/staff-attendance', label: 'Посещаемость сотрудников', icon: ScanLine },
   { to: '/operations/tasks', label: 'Задачи', icon: ListTodo },
   { to: '/operations/daily', label: 'Ежедневный контроль', icon: CalendarCheck },
   { to: '/operations/kpi', label: 'KPI и аналитика', icon: BarChart3 },
@@ -68,7 +68,8 @@ export const ACADEMY_NAV: ShellNavItem[] = [
   { to: '/operations/academy/performance', label: 'Успеваемость', icon: LineChart },
   { to: '/operations/academy/monthly', label: 'Месячные результаты', icon: Award },
   // Месячная матрица посещаемости и ДЗ всех групп (backend: apps.attendance_matrix).
-  { to: '/operations/academy/attendance', label: 'Посещаемость и ДЗ', icon: ClipboardCheck },
+  { to: '/operations/attendance', label: 'Посещаемость групп', icon: ClipboardCheck },
+  { to: '/operations/academy/attendance', label: 'Сводка посещаемости', icon: BarChart3 },
 ]
 
 export interface ShellNavSection {

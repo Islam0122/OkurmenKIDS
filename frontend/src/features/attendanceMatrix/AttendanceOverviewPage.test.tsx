@@ -41,7 +41,7 @@ const OVERVIEW: Overview = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  api.meta.mockResolvedValue({ role: 'team_lead', groups: [{ id: 5, name: 'Prog SOFT 1', status: 'active' }], subjects: [], teachers: [] })
+  api.meta.mockResolvedValue({ role: 'team_lead', groups: [{ id: 5, name: 'Prog SOFT 1', status: 'active', course: 'Программатика', subject_ids: [3], teacher_ids: [1] }], subjects: [], teachers: [] })
   api.overview.mockResolvedValue(OVERVIEW)
 })
 

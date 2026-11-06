@@ -282,6 +282,27 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    // Team Lead: таблицы посещаемости групп своего направления — в том же
+    // макете, что и /app (backend: apps.attendance_matrix.access).
+    path: '/team-lead',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <AppLayout />,
+        children: [
+          {
+            element: <RequireRoles roles={['team_lead', 'admin']} />,
+            children: [
+              { index: true, element: <Navigate to="/team-lead/attendance" replace /> },
+              { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/rolePages')).TeamLeadAttendancePage }) },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
     // Assistant Workspace — daily academy operations (backend: apps.assistant,
     // IsAdminOrAssistant). Its own layout; never the Team Lead / Trainer pages.
     path: '/assistant',
@@ -308,7 +329,8 @@ export const router = createBrowserRouter([
               { path: 'control', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ControlPage')).AssistantControlPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/assistant/pages/MonthlyReportPage')).AssistantMonthlyReportPage }) },
               { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/assistant/pages/AttendancePage')).AssistantAttendancePage }) },
-              { path: 'attendance-matrix', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/AttendanceOverviewPage')).AttendanceOverviewPage }) },
+              { path: 'attendance-matrix', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/rolePages')).AssistantAttendanceTablesPage }) },
+              { path: 'attendance-summary', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/AttendanceOverviewPage')).AttendanceOverviewPage }) },
               { path: 'scholarships', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ScholarshipsPage')).AssistantScholarshipsPage }) },
               { path: 'surveys', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveysPage')).AssistantSurveysPage }) },
               { path: 'surveys/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveyDetailPage')).AssistantSurveyDetailPage }) },
@@ -343,7 +365,10 @@ export const router = createBrowserRouter([
               { path: 'sales-head', lazy: async () => ({ Component: (await import('@/features/operations/DepartmentsPages')).OperationsHeadOfSalesPage }) },
               { path: 'marketing', lazy: async () => ({ Component: (await import('@/features/operations/DepartmentsPages')).OperationsMarketingPage }) },
               { path: 'hr', lazy: async () => ({ Component: (await import('@/features/operations/DepartmentsPages')).OperationsHrPage }) },
-              { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/operations/ControlPages')).OperationsAttendancePage }) },
+              // Посещаемость групп — таблицы по датам занятий (backend: apps.attendance_matrix).
+              { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/rolePages')).OperationsAttendanceTablesPage }) },
+              // Посещаемость сотрудников (раньше — /operations/attendance).
+              { path: 'staff-attendance', lazy: async () => ({ Component: (await import('@/features/operations/ControlPages')).OperationsAttendancePage }) },
               { path: 'tasks', lazy: async () => ({ Component: (await import('@/features/tasks/TasksBoardPage')).TasksBoardPage }) },
               { path: 'daily', lazy: async () => ({ Component: (await import('@/features/operations/ControlPages')).OperationsDailyPage }) },
               { path: 'kpi', lazy: async () => ({ Component: (await import('@/features/operations/ControlPages')).OperationsKpiPage }) },

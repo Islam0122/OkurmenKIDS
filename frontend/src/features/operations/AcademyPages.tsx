@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
 import { TrendChart } from '@/components/charts/TrendChart'
+import { AttendanceMatrix } from '@/features/attendanceMatrix/AttendanceMatrix'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -184,6 +185,13 @@ export function OperationsAcademyGroupPage() {
                   </tr>
                 ))}
               </Table>
+            </Section>
+            {/* Полноценная таблица посещаемости по датам занятий — та же, что у ассистента и Team Lead. */}
+            <Section
+              title="Посещаемость по датам занятий"
+              actions={<Link to={`/operations/attendance?group=${d.group.id}`} className="text-sm font-medium text-brand-700 hover:underline">Открыть отдельно</Link>}
+            >
+              <AttendanceMatrix groupId={d.group.id} />
             </Section>
             <div className="grid gap-4 lg:grid-cols-2">
               <Section title="Расписание" padding={false}>

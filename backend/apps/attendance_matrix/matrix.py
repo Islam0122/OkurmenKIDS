@@ -778,16 +778,34 @@ def overview_meta(user) -> dict:
         own = access.lead_subject_ids(user)
         if own:
             subject_ids &= set(own)
+    # Every program of the groups — current and past — so a group can be
+    # found by any subject or trainer it ever had (history included).
     teachers = (
-        GroupTeacher.objects.filter(group__in=group_ids, is_active=True)
-        .select_related("teacher__user").order_by("teacher__user__first_name")
+        GroupTeacher.objects.filter(group__in=group_ids)
+        .select_related("teacher__user").order_by("-is_active", "teacher__user__first_name")
     )
     seen = {}
+    group_subjects: dict[int, set] = defaultdict(set)
+    group_teachers: dict[int, set] = defaultdict(set)
     for gt in teachers:
         seen.setdefault(gt.teacher_id, str(gt.teacher))
+        group_teachers[gt.group_id].add(gt.teacher_id)
+        if gt.subject_id:
+            group_subjects[gt.group_id].add(gt.subject_id)
+    for gid, sid in Group.objects.filter(pk__in=group_ids, course__subjects__isnull=False).values_list("pk", "course__subjects"):
+        group_subjects[gid].add(sid)
+    from apps.academy.models import GroupSubject
+
+    for gid, sid in GroupSubject.objects.filter(group__in=group_ids).values_list("group_id", "subject_id"):
+        group_subjects[gid].add(sid)
     return {
         "role": access.role_of(user),
-        "groups": [{"id": g.pk, "name": g.name, "status": g.status} for g in groups],
+        "groups": [
+            {"id": g.pk, "name": g.name, "status": g.status, "course": g.course.name if g.course_id else "",
+             "subject_ids": sorted(group_subjects[g.pk] & subject_ids),
+             "teacher_ids": sorted(group_teachers[g.pk])}
+            for g in groups.select_related("course")
+        ],
         "subjects": [{"id": s.pk, "name": s.name} for s in Subject.objects.filter(pk__in=subject_ids).order_by("name")],
         "teachers": [{"id": pk, "name": name} for pk, name in sorted(seen.items(), key=lambda x: x[1])],
     }
