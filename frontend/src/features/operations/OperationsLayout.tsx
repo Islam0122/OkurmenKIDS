@@ -5,6 +5,7 @@ import {
   BarChart3,
   Briefcase,
   CalendarCheck,
+  ClipboardCheck,
   ClipboardList,
   FileSpreadsheet,
   GraduationCap,
@@ -66,6 +67,8 @@ export const ACADEMY_NAV: ShellNavItem[] = [
   { to: '/operations/academy/students', label: 'Студенты', icon: GraduationCap },
   { to: '/operations/academy/performance', label: 'Успеваемость', icon: LineChart },
   { to: '/operations/academy/monthly', label: 'Месячные результаты', icon: Award },
+  // Месячная матрица посещаемости и ДЗ всех групп (backend: apps.attendance_matrix).
+  { to: '/operations/academy/attendance', label: 'Посещаемость и ДЗ', icon: ClipboardCheck },
 ]
 
 export interface ShellNavSection {

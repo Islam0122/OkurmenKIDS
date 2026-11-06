@@ -1659,6 +1659,24 @@ class Attendance(models.Model):
         verbose_name="Комментарий",
     )
 
+    # «Уважительная причина» — why an EXCUSED student was away. Kept apart
+    # from the trainer's free comment so neither overwrites the other
+    # (apps.attendance_matrix).
+    excuse_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Причина отсутствия",
+    )
+
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Кто изменил",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 

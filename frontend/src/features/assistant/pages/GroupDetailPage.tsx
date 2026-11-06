@@ -16,6 +16,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Menu } from '@/components/ui/Menu'
 import { Modal } from '@/components/ui/Modal'
 import { SearchInput } from '@/components/ui/SearchInput'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Select } from '@/components/ui/Select'
 import { Tabs } from '@/components/ui/Tabs'
 import { Textarea } from '@/components/ui/Textarea'
@@ -25,6 +26,7 @@ import type { GroupDetail, StudentRow } from '@/types/assistant'
 import { formatDate, formatDateShort, pluralize } from '@/utils/format'
 
 import { SubjectStartDatesModal } from '@/features/groups/SubjectStartDatesModal'
+import { AttendanceMatrix } from '@/features/attendanceMatrix/AttendanceMatrix'
 
 import { useAssistantActions } from '../actions/AssistantActions'
 import { GroupAttendanceTab, GroupHomeworkTab } from '../records/GroupRecordTabs'
@@ -283,7 +285,7 @@ export function AssistantGroupDetailPage() {
         )
       ) : null}
 
-      {tab === 'attendance' ? <GroupAttendanceTab group={group} /> : null}
+      {tab === 'attendance' ? <AttendanceViews group={group} /> : null}
       {tab === 'homework' ? <GroupHomeworkTab group={group} /> : null}
 
       {tab === 'lessons' ? (
@@ -328,6 +330,26 @@ export function AssistantGroupDetailPage() {
       {tab === 'history' ? <Card title="История"><HistoryList rows={group.history} /></Card> : null}
 
       {editing ? <EditGroupModal group={group} onClose={() => setEditing(false)} /> : null}
+    </div>
+  )
+}
+
+type AttendanceView = 'matrix' | 'lessons'
+
+/** The monthly attendance & homework matrix of the group (only for a group
+ * the Assistant is assigned to — backend: apps.attendance_matrix.access),
+ * and the existing per-lesson view. */
+function AttendanceViews({ group }: { group: GroupDetail }) {
+  const [view, setView] = useState<AttendanceView>('matrix')
+  return (
+    <div className="space-y-4">
+      <SegmentedControl
+        aria-label="Вид посещаемости"
+        options={[{ value: 'matrix', label: 'Таблица за период' }, { value: 'lessons', label: 'По занятиям' }]}
+        value={view}
+        onChange={setView}
+      />
+      {view === 'matrix' ? <AttendanceMatrix groupId={group.id} /> : <GroupAttendanceTab group={group} />}
     </div>
   )
 }

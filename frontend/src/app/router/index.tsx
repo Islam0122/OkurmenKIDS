@@ -88,6 +88,14 @@ export const router = createBrowserRouter([
                 },
               },
               {
+                // Месячная матрица посещаемости и ДЗ по группам направления (backend: apps.attendance_matrix).
+                path: 'attendance-monitoring',
+                lazy: async () => {
+                  const { AttendanceOverviewPage } = await import('@/features/attendanceMatrix/AttendanceOverviewPage')
+                  return { Component: AttendanceOverviewPage }
+                },
+              },
+              {
                 // Рабочий журнал Team Lead (backend: apps.worklog, author-only writes).
                 path: 'worklog',
                 lazy: async () => {
@@ -300,6 +308,7 @@ export const router = createBrowserRouter([
               { path: 'control', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ControlPage')).AssistantControlPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/assistant/pages/MonthlyReportPage')).AssistantMonthlyReportPage }) },
               { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/assistant/pages/AttendancePage')).AssistantAttendancePage }) },
+              { path: 'attendance-matrix', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/AttendanceOverviewPage')).AttendanceOverviewPage }) },
               { path: 'scholarships', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ScholarshipsPage')).AssistantScholarshipsPage }) },
               { path: 'surveys', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveysPage')).AssistantSurveysPage }) },
               { path: 'surveys/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveyDetailPage')).AssistantSurveyDetailPage }) },
@@ -352,6 +361,7 @@ export const router = createBrowserRouter([
               { path: 'academy/students/:id', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyStudentPage }) },
               { path: 'academy/performance', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyPerformancePage }) },
               { path: 'academy/monthly', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyMonthlyPage }) },
+              { path: 'academy/attendance', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/AttendanceOverviewPage')).AttendanceOverviewPage }) },
               // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
               { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: '*', element: <Navigate to="/operations" replace /> },

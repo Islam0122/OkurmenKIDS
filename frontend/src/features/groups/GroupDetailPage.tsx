@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Tabs } from '@/components/ui/Tabs'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useAttendanceList } from '@/hooks/useAttendance'
+import { AttendanceMatrix } from '@/features/attendanceMatrix/AttendanceMatrix'
 import { CreateSessionModal } from '@/features/exams/CreateSessionModal'
 import { ExamCard } from '@/features/exams/ExamCard'
 import { useExamList } from '@/hooks/useExams'
@@ -289,7 +290,26 @@ function ScheduleTab({ groupId }: { groupId: number }) {
   )
 }
 
+type AttendanceView = 'matrix' | 'log'
+
+const ATTENDANCE_VIEWS: { value: AttendanceView; label: string }[] = [
+  { value: 'matrix', label: 'Таблица за период' },
+  { value: 'log', label: 'Журнал отметок' },
+]
+
+/** The monthly matrix (attendance + homework, backend: apps.attendance_matrix);
+ * the plain list of marks stays one click away. */
 function AttendanceTab({ groupId }: { groupId: number }) {
+  const [view, setView] = useState<AttendanceView>('matrix')
+  return (
+    <div className="space-y-4">
+      <SegmentedControl aria-label="Вид посещаемости" options={ATTENDANCE_VIEWS} value={view} onChange={setView} />
+      {view === 'matrix' ? <AttendanceMatrix groupId={groupId} /> : <AttendanceLog groupId={groupId} />}
+    </div>
+  )
+}
+
+function AttendanceLog({ groupId }: { groupId: number }) {
   const { data, isPending, isError, refetch } = useAttendanceList({ group: groupId, ordering: '-lesson__date' })
 
   if (isPending) return <LoadingState label="Загружаем посещаемость…" />
