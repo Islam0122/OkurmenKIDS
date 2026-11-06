@@ -40,6 +40,8 @@ urlpatterns = [
     path("api/v1/assistant/", include("apps.assistant.urls")),
     # Месячная матрица посещаемости и ДЗ — все роли академии (apps.attendance_matrix).
     path("api/v1/attendance-matrix/", include("apps.attendance_matrix.urls")),
+    # Учебные месяцы программ и прогресс групп (apps.academic_progress).
+    path("api/v1/academic-progress/", include("apps.academic_progress.urls")),
     # Бухгалтерия и зарплаты (см. apps.accounting).
     path("api/v1/accounting/", include("apps.accounting.urls")),
     # Учёт прихода и ухода сотрудников по QR-коду офиса (см. apps.staff_attendance).

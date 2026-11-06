@@ -4,6 +4,9 @@ import { Link, useParams } from 'react-router-dom'
 
 import { TrendChart } from '@/components/charts/TrendChart'
 import { AttendanceMatrix } from '@/features/attendanceMatrix/AttendanceMatrix'
+import { CourseProgressCell, GroupStudyMonths, StudyMonthCell } from '@/features/academicProgress/ui'
+
+const PROGRAMS_PATH = '/operations/academy/programs'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -121,7 +124,7 @@ export function OperationsAcademyGroupsPage() {
               <StatCard label="Период" value={data.filters.label} hint={`${shortDate(data.filters.start)} — ${shortDate(data.filters.end)}`} />
             </div>
             <Section title="Группы" padding={false}>
-              <Table empty={!data.results.length} headers={['Группа', 'Программа', 'Тренер', 'Студентов', 'Старт', 'Пройдено', 'Осталось', 'Посещаемость', 'Успеваемость', 'KPI', 'Статус']}>
+              <Table empty={!data.results.length} headers={['Группа', 'Программа', 'Тренер', 'Студентов', 'Старт', 'Учебный месяц', 'Общий прогресс курса', 'Посещаемость', 'Успеваемость', 'KPI', 'Статус']}>
                 {data.results.map((g) => (
                   <tr key={g.id}>
                     <td><Link to={`/operations/academy/groups/${g.id}`} className="font-medium hover:text-brand-700">{g.name}</Link></td>
@@ -129,8 +132,8 @@ export function OperationsAcademyGroupsPage() {
                     <td className="text-sm">{g.trainer_names}</td>
                     <td className="tabular-nums">{g.students.active}</td>
                     <td className="whitespace-nowrap">{shortDate(g.start_date)}</td>
-                    <td className="tabular-nums">{g.plan.completed}{g.plan.planned ? <span className="text-xs text-ink-muted"> / {g.plan.planned}</span> : null}</td>
-                    <td className="tabular-nums">{g.plan.remaining ?? '—'}</td>
+                    <td><StudyMonthCell progress={g.academic} settingsPath={PROGRAMS_PATH} /></td>
+                    <td><CourseProgressCell progress={g.academic} legacy={g.plan} /></td>
                     <td><Progress value={g.attendance_rate} /></td>
                     <td><Progress value={g.progress_rate} /></td>
                     <td><Level level={g.kpi_level} /></td>
@@ -140,7 +143,7 @@ export function OperationsAcademyGroupsPage() {
               </Table>
               <Pager page={data.page} pages={data.pages} count={data.count} onPage={(p) => filters.set({ page: String(p) })} />
             </Section>
-            <Note>Посещаемость, ДЗ, тесты, успеваемость и KPI — из отчётов академии за выбранный период; «Пройдено / Осталось» — по плану программы группы.</Note>
+            <Note>Посещаемость, ДЗ, тесты, успеваемость и KPI — из отчётов академии за выбранный период; «Учебный месяц» — по проведённым занятиям и настройкам учебных месяцев программы; «Общий прогресс курса» — проведено из запланированного.</Note>
           </div>
         )}
       </QueryView>
@@ -164,7 +167,11 @@ export function OperationsAcademyGroupPage() {
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
               <StatCard label="Активных студентов" value={d.students.active} hint={`новых ${d.students.new}, ушли ${d.students.left}`} />
               <StatCard label="Старт группы" value={shortDate(d.group.start_date)} hint={d.group.status_display} />
-              <StatCard label="Пройдено занятий" value={d.plan.completed} hint={d.plan.planned ? `из ${d.plan.planned} · осталось ${d.plan.remaining}` : 'план программы не задан'} />
+              <StatCard
+                label="Учебный месяц"
+                value={d.academic.month ? (d.academic.status === 'completed' ? 'Пройден' : d.academic.month.label) : 'Настройка'}
+                hint={d.academic.month ? `${d.academic.month.subject?.name ?? ''} ${d.academic.month.done} / ${d.academic.month.planned} · курс ${d.academic.course?.done} / ${d.academic.course?.planned}`.trim() : d.academic.reason || `пройдено ${d.plan.completed}${d.plan.planned ? ` из ${d.plan.planned}` : ''}`}
+              />
               <StatCard label="Посещаемость" value={pct(d.attendance.rate)} hint={`${d.attendance.present + d.attendance.late} из ${d.attendance.total} отметок`} />
               <StatCard label="ДЗ выполнено" value={pct(d.homework.completion_rate)} hint={`средний балл ${num(d.homework.average_score)}`} />
               <StatCard label="XP за период" value={num(d.xp_total)} hint={`достижений: ${d.achievements.length}`} />
@@ -185,6 +192,9 @@ export function OperationsAcademyGroupPage() {
                   </tr>
                 ))}
               </Table>
+            </Section>
+            <Section title="Учебные месяцы" actions={<Link to={PROGRAMS_PATH} className="text-sm font-medium text-brand-700 hover:underline">Настройки программы</Link>}>
+              <GroupStudyMonths groupId={d.group.id} settingsPath={PROGRAMS_PATH} />
             </Section>
             {/* Полноценная таблица посещаемости по датам занятий — та же, что у ассистента и Team Lead. */}
             <Section

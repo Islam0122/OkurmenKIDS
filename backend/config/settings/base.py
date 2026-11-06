@@ -56,6 +56,7 @@ LOCAL_APPS = [
     "apps.worklog.apps.WorklogConfig",
     "apps.assistant.apps.AssistantConfig",
     "apps.attendance_matrix.apps.AttendanceMatrixConfig",
+    "apps.academic_progress.apps.AcademicProgressConfig",
     "apps.accounting.apps.AccountingConfig",
     "apps.billing.apps.BillingConfig",
     "apps.leaderboard.apps.LeaderboardConfig",

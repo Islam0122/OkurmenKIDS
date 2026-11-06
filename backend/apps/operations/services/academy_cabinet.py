@@ -49,6 +49,7 @@ from apps.academy.services.reports import (
     filter_options,
 )
 from apps.academy.services.reports.service import report_group_ids
+from apps.academic_progress import progress as academic_progress
 from apps.assistant import activity
 
 from .period import OpsFilters
@@ -300,11 +301,16 @@ def groups_page(f: OpsFilters, params) -> dict:
     page = paginate(rows, params)
     ids = [r["id"] for r in page["results"]]
     trainers = trainers_by_group(ids)
-    plans = plan_progress_for(list(Group.objects.filter(pk__in=ids)))
+    page_groups = list(Group.objects.filter(pk__in=ids))
+    plans = plan_progress_for(page_groups)
+    # Учебный месяц и прогресс по учебным месяцам программы (apps.academic_progress);
+    # «plan» — прежний общий прогресс по плану занятий — остаётся как был.
+    academic = academic_progress.progress_for(page_groups, today=f.today)
     results = []
     for row in page["results"]:
         item = _group_list_row(row, trainers.get(row["id"], []))
         item["plan"] = plans[row["id"]]
+        item["academic"] = academic[row["id"]]
         results.append(item)
     rated = [r for r in rows if r["attendance_rate"] is not None]
     return {
@@ -410,6 +416,7 @@ def group_detail(group: Group, f: OpsFilters, params) -> dict:
         **detail,
         "trainers": trainers_by_group([group.pk]).get(group.pk, []),
         "plan": _plan_progress(group, f.today),
+        "academic": academic_progress.group_progress(group, today=f.today),
         "schedule": _schedule(group),
         "lesson_history": _lesson_history(group, rf),
         "student_progress": progress["students"],

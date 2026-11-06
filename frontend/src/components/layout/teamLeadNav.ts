@@ -92,6 +92,7 @@ export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
       { label: 'Посещаемость', to: '/app/attendance', icon: ClipboardCheck /* clipboard-check */ },
       { label: 'Посещаемость групп', to: '/team-lead/attendance', icon: Table2 },
       { label: 'Сводка посещаемости', to: '/app/attendance-monitoring', icon: Table2 },
+      { label: 'Настройки программ', to: '/team-lead/programs', icon: Table2 },
       { label: 'Домашние задания', to: '/app/homework', icon: NotebookPen /* journal-text */ },
     ],
   },

@@ -296,6 +296,8 @@ export const router = createBrowserRouter([
             children: [
               { index: true, element: <Navigate to="/team-lead/attendance" replace /> },
               { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/rolePages')).TeamLeadAttendancePage }) },
+              // Настройки учебной программы — в рамках направлений Team Lead (backend: apps.academic_progress).
+              { path: 'programs', lazy: async () => ({ Component: (await import('@/features/academicProgress/ProgramSettingsPage')).ProgramSettingsPage }) },
             ],
           },
         ],
@@ -386,6 +388,7 @@ export const router = createBrowserRouter([
               { path: 'academy/students/:id', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyStudentPage }) },
               { path: 'academy/performance', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyPerformancePage }) },
               { path: 'academy/monthly', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyMonthlyPage }) },
+              { path: 'academy/programs', lazy: async () => ({ Component: (await import('@/features/academicProgress/ProgramSettingsPage')).ProgramSettingsPage }) },
               { path: 'academy/attendance', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/AttendanceOverviewPage')).AttendanceOverviewPage }) },
               // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
               { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
