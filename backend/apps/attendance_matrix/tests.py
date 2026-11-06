@@ -439,3 +439,21 @@ class LegacyDataTests(MatrixBase):
         call_command("audit_attendance_matrix", stdout=out)
         self.assertIn("Не попало в таблицу: 0", out.getvalue())
         self.assertEqual(Attendance.objects.count(), 3)  # read-only
+
+
+class SubjectFilterTests(MatrixBase):
+    def test_subject_buttons_and_filter(self):
+        gt2 = GroupTeacher.objects.create(group=self.group, teacher=self.aibek, subject=self.english)
+        en = self.lesson(self.group, gt2, self.aibek, 0, MONTH + dt.timedelta(days=1))
+        bare = self.lesson(self.group, self.gt, self.islam, 40, MONTH + dt.timedelta(days=12))
+        Lesson.objects.filter(pk=bare.pk).update(subject=None)
+        admin = self.admin
+        data = self.matrix(admin).json()
+        self.assertEqual([(s["name"], s["lessons"]) for s in data["subjects"]], [("English", 1), ("Python", 5), ("Без предмета", 1)])
+        only_en = self.matrix(admin, subject=self.english.pk).json()
+        self.assertEqual([c["lesson_id"] for c in only_en["columns"]], [en.pk])
+        self.assertEqual(len(only_en["subjects"]), 3)  # the buttons stay
+        none = self.matrix(admin, subject="none").json()
+        self.assertEqual([c["lesson_id"] for c in none["columns"]], [bare.pk])
+        export = self.as_user(admin).get(f"{BASE}/groups/{self.group.pk}/export/", {"date": MONTH.isoformat(), "subject": self.python.pk})
+        self.assertEqual(export.status_code, 200)

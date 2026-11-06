@@ -158,6 +158,8 @@ export interface GroupMatrix {
   filtered: boolean
   /** Every trainer of the period's lessons — options of the trainer filter. */
   trainers: { id: number; name: string }[]
+  /** Subjects of the period's lessons — the buttons above the table («IT», «English», …). */
+  subjects: { id: number | 'none'; name: string; lessons: number }[]
 }
 
 export interface MatrixParams {
@@ -168,6 +170,7 @@ export interface MatrixParams {
   homework?: 'done' | 'missed' | ''
   level?: WarningLevel | ''
   teacher?: number
+  subject?: number | 'none'
 }
 
 export interface UserRef {

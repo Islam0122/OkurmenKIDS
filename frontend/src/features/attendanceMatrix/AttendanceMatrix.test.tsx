@@ -57,6 +57,7 @@ const MATRIX: GroupMatrix = {
   legend: [],
   filtered: false,
   trainers: [{ id: 1, name: 'Islam' }, { id: 2, name: 'Aizada' }],
+  subjects: [{ id: 3, name: 'IT', lessons: 2 }, { id: 4, name: 'English', lessons: 1 }],
 }
 
 const CELL: CellDetail = {
@@ -110,11 +111,16 @@ describe('AttendanceMatrix', () => {
     expect(head).toHaveAttribute('title', expect.stringContaining('Занятие отменено'))
   })
 
-  it('filters by trainer when the group has several', async () => {
+  it('subject buttons instead of a trainer dropdown', async () => {
     renderWithProviders(<AttendanceMatrix groupId={5} />)
     await screen.findByText('Июнь 2026')
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Тренер' }), '2')
-    await waitFor(() => expect(api.group).toHaveBeenLastCalledWith(5, expect.objectContaining({ teacher: 2 })))
+    expect(screen.queryByRole('combobox', { name: 'Тренер' })).not.toBeInTheDocument()
+    const subjects = screen.getByRole('radiogroup', { name: 'Предмет' })
+    expect(within(subjects).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Все предметы', 'IT', 'English'])
+    await userEvent.click(within(subjects).getByRole('radio', { name: 'English' }))
+    await waitFor(() => expect(api.group).toHaveBeenLastCalledWith(5, expect.objectContaining({ subject: 4 })))
+    await userEvent.click(within(subjects).getByRole('radio', { name: 'Все предметы' }))
+    await waitFor(() => expect(api.group).toHaveBeenLastCalledWith(5, expect.objectContaining({ subject: undefined })))
   })
 
   it('switches the period and filters by status on the server', async () => {

@@ -56,7 +56,7 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
   const [status, setStatus] = useState('')
   const [homework, setHomework] = useState('')
   const [level, setLevel] = useState('')
-  const [teacher, setTeacher] = useState('')
+  const [subject, setSubject] = useState('')
   const [target, setTarget] = useState<CellTarget | null>(null)
   const [exporting, setExporting] = useState(false)
   const { showToast } = useToast()
@@ -67,7 +67,7 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
     status: status as MatrixParams['status'],
     homework: homework as MatrixParams['homework'],
     level: level as MatrixParams['level'],
-    teacher: teacher ? Number(teacher) : undefined,
+    subject: subject === '' ? undefined : subject === 'none' ? 'none' : Number(subject),
   }
   const { data, isPending, isError, error, refetch, isFetching } = useGroupMatrix(groupId, params)
 
@@ -143,15 +143,20 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
 
       <SummaryCards data={data} />
 
-      <div className={cn('grid grid-cols-1 gap-3 sm:grid-cols-2', data.trainers.length > 1 ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
+      {data.subjects.length > 1 ? (
+        <SegmentedControl
+          aria-label="Предмет"
+          options={[{ value: '', label: 'Все предметы' }, ...data.subjects.map((s) => ({ value: String(s.id), label: s.name }))]}
+          value={subject}
+          onChange={setSubject}
+        />
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SearchInput value={search} onChange={setSearch} placeholder="Поиск студента" />
         <Select aria-label="Статус посещаемости" options={STATUS_FILTER} placeholder="Все статусы" value={status} onChange={(e) => setStatus(e.target.value)} />
         <Select aria-label="Домашние задания" options={HOMEWORK_FILTER} placeholder="Домашние задания: все" value={homework} onChange={(e) => setHomework(e.target.value)} />
         <Select aria-label="Предупреждения" options={LEVEL_FILTER} placeholder="Предупреждения: все" value={level} onChange={(e) => setLevel(e.target.value)} />
-        {data.trainers.length > 1 ? (
-          <Select aria-label="Тренер" placeholder="Все тренеры" value={teacher} onChange={(e) => setTeacher(e.target.value)}
-            options={data.trainers.map((t) => ({ value: String(t.id), label: t.name }))} />
-        ) : null}
       </div>
 
       <Legend />

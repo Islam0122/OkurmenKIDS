@@ -536,12 +536,24 @@ def group_matrix(user, group: Group, params) -> dict:
         bounds = lessons.aggregate(first=Min("date"), last=Max("date"))
         today = timezone.localdate()
         start, end = bounds["first"] or today, bounds["last"] or today
-    # Trainer filter options: every trainer of the period's lessons, before filtering.
+    # Filter options — every trainer and subject of the period's lessons,
+    # taken before filtering so the buttons never disappear.
     trainers = {}
-    for lesson in lessons.exclude(status=Lesson.Status.CANCELLED).select_related("teacher__user", "group_teacher__teacher__user"):
+    subjects: dict = {}
+    for lesson in lessons.exclude(status=Lesson.Status.CANCELLED).select_related(
+            "subject", "teacher__user", "group_teacher__teacher__user"):
         t = lesson.effective_teacher
         if t is not None:
             trainers[t.pk] = str(t)
+        key = lesson.subject_id or "none"
+        entry = subjects.setdefault(key, {"id": key, "name": lesson.subject.name if lesson.subject_id else "Без предмета",
+                                          "lessons": 0})
+        entry["lessons"] += 1
+    subject = str(params.get("subject") or "")
+    if subject == "none":
+        lessons = lessons.filter(subject__isnull=True)
+    elif subject.isdigit():
+        lessons = lessons.filter(subject_id=int(subject))
     teacher = params.get("teacher")
     if str(teacher or "").isdigit():
         from apps.academy.services.trainer_history import taught_by_q
@@ -589,6 +601,8 @@ def group_matrix(user, group: Group, params) -> dict:
         "legend": [{"code": code, "label": CELL_LABELS[code]} for code in CELL_CODES],
         "filtered": len(rows) != len(data["rows"]),
         "trainers": [{"id": pk, "name": name} for pk, name in sorted(trainers.items(), key=lambda x: x[1])],
+        # Subject buttons above the table («IT», «English», …); «Без предмета» last.
+        "subjects": sorted(subjects.values(), key=lambda x: (x["id"] == "none", x["name"])),
     }
 
 
