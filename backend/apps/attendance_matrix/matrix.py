@@ -36,6 +36,36 @@ from . import access
 from .models import MatrixSettings
 
 ATTENDED = (Attendance.Status.PRESENT, Attendance.Status.LATE)
+
+# Attendance written before the matrix (imports, admin, old screens) may be
+# spelled differently: «PRESENT», « Late », «attended», «был»... Every read
+# goes through `normalize_status`, so no historical mark is lost or counted
+# as an absence by mistake. The stored value is never rewritten here.
+STATUS_ALIASES = {
+    Attendance.Status.PRESENT: ("present", "attended", "attend", "was", "yes", "p", "+", "присутствовал",
+                                "присутствовала", "присутствие", "был", "была", "пришёл", "пришел"),
+    Attendance.Status.LATE: ("late", "опоздал", "опоздала", "опоздание"),
+    Attendance.Status.EXCUSED: ("excused", "excuse", "e", "уважительная", "уважительная причина", "уваж", "уваж."),
+    Attendance.Status.ABSENT: ("absent", "missed", "no", "a", "-", "n", "отсутствовал", "отсутствовала",
+                               "отсутствие", "не был", "не была", "пропуск", "не пришёл", "не пришел"),
+}
+_STATUS_LOOKUP = {alias: str(status) for status, aliases in STATUS_ALIASES.items() for alias in aliases}
+
+
+def normalize_status(value) -> str | None:
+    """The canonical Attendance status of a stored value, or None when it
+    cannot be recognised (reported by `audit_attendance_matrix`)."""
+    if value is None:
+        return None
+    return _STATUS_LOOKUP.get(str(value).strip().lower())
+
+
+def status_q(status: str, field: str = "status") -> Q:
+    """Database filter matching `status` in every recognised spelling."""
+    q = Q()
+    for alias in STATUS_ALIASES[status]:
+        q |= Q(**{f"{field}__iexact": alias})
+    return q
 HW_DONE = (HomeworkResult.Status.SUBMITTED, HomeworkResult.Status.CHECKED, HomeworkResult.Status.LATE)
 
 CELL_CODES = ("done", "partial", "excused", "absent", "empty", "planned", "no_lesson")
@@ -54,7 +84,7 @@ MONTHS = (
     "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 )
 WEEKDAYS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
-PERIODS = ("day", "week", "month")
+PERIODS = ("day", "week", "month", "all")
 
 
 class MatrixError(ValueError):
@@ -78,6 +108,8 @@ def period_bounds(period: str, anchor: dt.date) -> tuple[dt.date, dt.date]:
     if period == "month":
         start = anchor.replace(day=1)
         return start, start.replace(day=calendar.monthrange(start.year, start.month)[1])
+    if period == "all":
+        return dt.date(2000, 1, 1), dt.date(2100, 12, 31)  # narrowed to the real lessons by the caller
     raise MatrixError("Неверный период.")
 
 
@@ -102,6 +134,8 @@ def parse_period(params) -> tuple[str, dt.date, dt.date]:
 
 
 def period_label(period: str, start: dt.date, end: dt.date) -> str:
+    if period == "all":
+        return f"Всё время · {start:%d.%m.%Y} – {end:%d.%m.%Y}"
     if period == "month":
         return f"{MONTHS[start.month - 1]} {start.year}"
     if period == "week":
@@ -288,14 +322,22 @@ def compute(groups: list[Group], lessons_qs, *, today: dt.date | None = None, se
     """{group_id: {"lessons", "students", "rows", "columns", "summary"}}."""
     today = today or timezone.localdate()
     settings = settings or MatrixSettings.load()
+    # A cancelled lesson never happened and is not a column — unless it
+    # carries marks: then it is shown (read-only, outside the statistics) so
+    # no existing record disappears.
     lessons = list(
-        lessons_qs.exclude(status=Lesson.Status.CANCELLED).select_related(*LESSON_RELATED).order_by("date", "start_time", "pk")
+        lessons_qs.filter(~Q(status=Lesson.Status.CANCELLED) | Q(attendance_records__isnull=False))
+        .distinct().select_related(*LESSON_RELATED).order_by("date", "start_time", "pk")
     )
     lessons_by_group: dict[int, list[Lesson]] = defaultdict(list)
     for lesson in lessons:
         lessons_by_group[lesson.group_id].append(lesson)
 
-    attendance = {(a.lesson_id, a.student_id): a for a in Attendance.objects.filter(lesson__in=lessons)}
+    attendance = {}
+    for a in Attendance.objects.filter(lesson__in=lessons):
+        a.status = normalize_status(a.status)  # in memory only — never saved from here
+        if a.status is not None:
+            attendance[(a.lesson_id, a.student_id)] = a
     homeworks: dict[int, list[Homework]] = defaultdict(list)
     for hw in Homework.objects.filter(lesson__in=lessons).order_by("pk"):
         homeworks[hw.lesson_id].append(hw)
@@ -341,6 +383,7 @@ def _group_matrix(group, lessons, students, attendance, homeworks, results, toda
             "teacher": teacher_name(lesson),
             "teacher_id": getattr(lesson.effective_teacher, "pk", None),
             "status": lesson.status,
+            "cancelled": lesson.status == Lesson.Status.CANCELLED,
             "held": held,
             "editable_day": lesson.date <= today,
             "has_homework": bool(homeworks.get(lesson.pk)) and not lesson.homework_not_required,
@@ -355,6 +398,10 @@ def _group_matrix(group, lessons, students, attendance, homeworks, results, toda
         out_day = left.get(student.pk)
         for i, lesson in enumerate(lessons):
             mark = attendance.get((lesson.pk, student.pk))
+            if columns[i]["cancelled"] and mark is None:
+                cells.append({"lesson_id": lesson.pk, "code": "no_lesson", "attendance": None, "homework": "none",
+                              "has_comment": False})
+                continue
             enrolled = (join is None or lesson.date >= join) and (out_day is None or lesson.date < out_day)
             if student.group_id != group.pk and mark is None:
                 enrolled = enrolled and out_day is not None
@@ -371,7 +418,7 @@ def _group_matrix(group, lessons, students, attendance, homeworks, results, toda
                 "has_comment": bool(mark and (mark.comment or mark.excuse_reason)),
             })
             # Statistics: only real lessons of this student.
-            if code in ("no_lesson", "planned"):
+            if code in ("no_lesson", "planned") or columns[i]["cancelled"]:
                 continue
             stats.lessons += 1
             cs = col_stats[i]
@@ -482,6 +529,13 @@ def group_matrix(user, group: Group, params) -> dict:
     period, start, end = parse_period(params)
     settings = MatrixSettings.load()
     lessons = access.scoped_lessons(user, [group.pk]).filter(date__gte=start, date__lte=end)
+    if period == "all":
+        # The whole history of the group: from its first lesson to its last.
+        from django.db.models import Max, Min
+
+        bounds = lessons.aggregate(first=Min("date"), last=Max("date"))
+        today = timezone.localdate()
+        start, end = bounds["first"] or today, bounds["last"] or today
     # Trainer filter options: every trainer of the period's lessons, before filtering.
     trainers = {}
     for lesson in lessons.exclude(status=Lesson.Status.CANCELLED).select_related("teacher__user", "group_teacher__teacher__user"):
@@ -606,6 +660,8 @@ def overview(user, params) -> dict:
                                           "present": 0, "excused": 0, "absent": 0, "unmarked": 0,
                                           "hw_done": 0, "hw_due": 0})
             t["groups"].add(group.name)
+            if col["cancelled"]:
+                continue
             if col["held"]:
                 t["lessons"] += 1
             for r in d["rows"]:
@@ -674,6 +730,9 @@ def trend(user, groups_qs, end: dt.date, months: int = 6, teacher: int | None = 
         buckets[(cursor.year, cursor.month)] = {"present": 0, "marked": 0, "absent": 0}
         cursor = (cursor.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
     for row in Attendance.objects.filter(lesson__in=lessons).values("lesson__date", "status"):
+        row["status"] = normalize_status(row["status"])
+        if row["status"] is None:
+            continue
         b = buckets.get((row["lesson__date"].year, row["lesson__date"].month))
         if b is None:
             continue

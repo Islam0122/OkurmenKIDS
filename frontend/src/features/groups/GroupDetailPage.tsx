@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import type { BadgeTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
+import { Pagination } from '@/components/ui/Pagination'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -310,26 +311,37 @@ function AttendanceTab({ groupId }: { groupId: number }) {
 }
 
 function AttendanceLog({ groupId }: { groupId: number }) {
-  const { data, isPending, isError, refetch } = useAttendanceList({ group: groupId, ordering: '-lesson__date' })
+  // Paginated by the API (20 per page) — every page is reachable, so no
+  // older mark is hidden behind the first page.
+  const [page, setPage] = useState(1)
+  const { data, isPending, isError, refetch } = useAttendanceList({ group: groupId, ordering: '-lesson__date', page })
 
   if (isPending) return <LoadingState label="Загружаем посещаемость…" />
   if (isError) return <ErrorState onRetry={() => void refetch()} />
-  if (data.results.length === 0) return <EmptyState title="Посещаемость ещё не отмечалась" />
+  if (data.results.length === 0 && page === 1) return <EmptyState title="Посещаемость ещё не отмечалась" />
 
   return (
-    <DataTable
-      getRowKey={(record) => record.id ?? `${record.student}-${record.lesson}`}
-      rows={data.results}
-      columns={[
-        { key: 'date', header: 'Дата', render: (record) => formatDateShort(record.lesson_date) },
-        { key: 'student', header: 'Студент', render: (record) => record.student_name },
-        {
-          key: 'status',
-          header: 'Статус',
-          render: (record) => (record.status ? <Badge tone={record.status === 'present' ? 'success' : record.status === 'absent' ? 'danger' : 'warning'}>{ATTENDANCE_STATUS_LABELS[record.status]}</Badge> : '—'),
-        },
-      ]}
-    />
+    <div className="space-y-2">
+      <DataTable
+        getRowKey={(record) => record.id ?? `${record.student}-${record.lesson}`}
+        rows={data.results}
+        columns={[
+          { key: 'date', header: 'Дата', render: (record) => formatDateShort(record.lesson_date) },
+          { key: 'student', header: 'Студент', render: (record) => record.student_name },
+          {
+            key: 'status',
+            header: 'Статус',
+            render: (record) =>
+              record.status ? (
+                <Badge tone={record.status === 'present' ? 'success' : record.status === 'absent' ? 'danger' : 'warning'}>
+                  {ATTENDANCE_STATUS_LABELS[record.status] ?? record.status_display ?? record.status}
+                </Badge>
+              ) : '—',
+          },
+        ]}
+      />
+      <Pagination page={page} pageSize={20} totalCount={data.count} onPageChange={setPage} />
+    </div>
   )
 }
 

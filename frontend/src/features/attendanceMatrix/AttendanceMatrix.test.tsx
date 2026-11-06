@@ -33,7 +33,7 @@ const row = (id: number, name: string, codes: MatrixRow['cells'][number]['code']
 
 const col = (i: number, date: string, weekday: string) => ({
   lesson_id: 100 + i, date, weekday, start: '16:00', end: '17:30', lesson_number: i + 1, topic: `Тема ${i + 1}`, subject: 'Python',
-  teacher: 'Islam', teacher_id: 1, status: 'completed', held: true, editable_day: true, has_homework: false, can_edit: true,
+  teacher: 'Islam', teacher_id: 1, status: 'completed', cancelled: false, held: true, editable_day: true, has_homework: false, can_edit: true,
   stats: { present: 1, excused: 0, absent: 1, unmarked: 0, hw_missed: 0, marked: 2, percent: 50 },
 })
 
@@ -91,6 +91,23 @@ describe('AttendanceMatrix', () => {
     expect(api.group).toHaveBeenCalledWith(5, expect.objectContaining({ period: 'month' }))
     expect(screen.getByRole('heading', { name: 'Prog SOFT 1' })).toBeInTheDocument()
     expect(screen.getByText('Программатика · 2 студента')).toBeInTheDocument()
+  })
+
+  it('«Всё время» asks for the whole history and hides the month navigation', async () => {
+    renderWithProviders(<AttendanceMatrix groupId={5} />)
+    await screen.findByText('Июнь 2026')
+    api.group.mockResolvedValue({ ...MATRIX, period: { ...MATRIX.period, kind: 'all', label: 'Всё время · 12.06.2026 – 15.06.2026' } })
+    await userEvent.click(screen.getByRole('radio', { name: 'Всё время' }))
+    await waitFor(() => expect(api.group).toHaveBeenLastCalledWith(5, expect.objectContaining({ period: 'all' })))
+    expect(await screen.findByText('Всё время · 12.06.2026 – 15.06.2026')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Предыдущий период' })).not.toBeInTheDocument()
+  })
+
+  it('a cancelled lesson with old marks is shown, marked as cancelled', async () => {
+    api.group.mockResolvedValue({ ...MATRIX, columns: MATRIX.columns.map((c, i) => (i === 1 ? { ...c, cancelled: true, status: 'cancelled' } : c)) })
+    renderWithProviders(<AttendanceMatrix groupId={5} />)
+    const head = (await screen.findByText('13.06')).closest('th') as HTMLElement
+    expect(head).toHaveAttribute('title', expect.stringContaining('Занятие отменено'))
   })
 
   it('filters by trainer when the group has several', async () => {

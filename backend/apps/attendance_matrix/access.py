@@ -3,13 +3,18 @@
 Everything is decided here, on the server — the frontend only hides buttons.
 
 * **Admin** (or superuser) — every group, edits everything.
-* **Trainer** — the groups they teach (``Group.objects.for_teacher``); in a
+* **Trainer** — the groups they teach (``Group.objects.for_teacher``) plus
+  every group they ever gave a lesson in (a finished or handed-over group
+  keeps its history visible to its trainer); in a
   group the columns are only the lessons they give themselves (a colleague's
   program in the same group stays private, see ``LessonQuerySet.for_teacher``)
   and they edit exactly those.
-* **Assistant** — only the groups they are assigned to (``GroupAssistant``).
+* **Assistant** — the groups they are assigned to (``GroupAssistant``).
   ``can_edit`` on the assignment lets them mark attendance/homework;
-  otherwise they may only add comments. Never another group.
+  otherwise they may only add comments. Never another group once assigned.
+  An assistant with no assignment yet keeps the academy-wide *read-only*
+  view the Assistant Workspace always gave them — so existing attendance
+  never disappears for them; they change nothing until assigned.
 * **Team Lead** — the groups of their directions (``TeamLeadDirection``; no
   direction assigned — the whole academy, as before). Read-only unless
   ``MatrixSettings.team_lead_can_edit``.
@@ -77,8 +82,12 @@ def visible_groups(user) -> QuerySet[Group]:
             return qs
         return qs.filter(pk__in=Group.objects.filter(direction_q(subjects)).values("pk"))
     if role == TEACHER:
-        return qs.filter(pk__in=Group.objects.for_teacher(user.teacher_profile).values("pk"))
+        teacher = user.teacher_profile
+        taught = Lesson.objects.for_teacher(teacher).values("group_id")
+        return qs.filter(Q(pk__in=Group.objects.for_teacher(teacher).values("pk")) | Q(pk__in=taught))
     if role == ASSISTANT:
+        if not GroupAssistant.objects.filter(assistant=user).exists():
+            return qs  # not assigned yet: read-only, as in the Assistant Workspace
         return qs.filter(assistant_assignments__assistant=user).distinct()
     return qs.none()
 

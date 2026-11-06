@@ -24,6 +24,7 @@ const PERIOD_OPTIONS: { value: MatrixPeriod; label: string }[] = [
   { value: 'day', label: 'День' },
   { value: 'week', label: 'Неделя' },
   { value: 'month', label: 'Месяц' },
+  { value: 'all', label: 'Всё время' },
 ]
 
 const STATUS_FILTER = [
@@ -102,6 +103,13 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-ink-secondary">Период</span>
+        {period === 'all' ? (
+          <span className="flex h-10 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-ink">
+            <CalendarDays className="size-4 text-ink-muted" aria-hidden />
+            {data.period.label}
+          </span>
+        ) : (
+          <>
         <label className="relative flex h-10 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-ink">
           <CalendarDays className="size-4 text-ink-muted" aria-hidden />
           <span className="capitalize">{data.period.label}</span>
@@ -121,6 +129,8 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
             <ChevronRight className="size-4" aria-hidden />
           </button>
         </div>
+          </>
+        )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <SegmentedControl aria-label="Период таблицы" options={PERIOD_OPTIONS} value={period} onChange={setPeriod} />
           {data.capabilities.can_export ? (
@@ -271,11 +281,11 @@ function MatrixTable({ data, rows, onOpen, dimmed }: { data: GroupMatrix; rows: 
 
 function ColumnHead({ col }: { col: MatrixColumn }) {
   const weekend = col.weekday === 'Сб' || col.weekday === 'Вс'
-  const title = [col.topic || `Занятие ${col.lesson_number}`, col.subject, col.teacher, `${col.start}–${col.end}`].filter(Boolean).join(' · ')
+  const title = [col.cancelled ? 'Занятие отменено — отметки сохранены, в статистику не входят' : '', col.topic || `Занятие ${col.lesson_number}`, col.subject, col.teacher, `${col.start}–${col.end}`].filter(Boolean).join(' · ')
   return (
-    <th scope="col" title={title} className={cn('min-w-12 px-1 py-2 text-center font-medium', weekend ? 'bg-brand-50 text-brand-700' : 'bg-surface-muted text-ink-secondary')}>
+    <th scope="col" title={title} className={cn('min-w-12 px-1 py-2 text-center font-medium', col.cancelled ? 'bg-surface-hover text-ink-muted' : weekend ? 'bg-brand-50 text-brand-700' : 'bg-surface-muted text-ink-secondary')}>
       <span className="block text-xs">{col.weekday}</span>
-      <span className="block whitespace-nowrap text-xs text-ink">{shortDate(col.date)}</span>
+      <span className={cn('block whitespace-nowrap text-xs', col.cancelled ? 'text-ink-muted line-through' : 'text-ink')}>{shortDate(col.date)}</span>
     </th>
   )
 }
