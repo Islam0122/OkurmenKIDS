@@ -1,4 +1,5 @@
 import {
+  Table2,
   Award,
   CalendarDays,
   ClipboardCheck,
@@ -52,6 +53,8 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
     items: [
       { to: '/assistant/control', label: 'Контроль', icon: ShieldAlert },
       { to: '/assistant/attendance', label: 'Посещаемость', icon: ClipboardCheck },
+      // Матрица посещаемости и ДЗ групп, в которые назначен ассистент (backend: apps.attendance_matrix).
+      { to: '/assistant/attendance-matrix', label: 'Посещаемость и ДЗ', icon: Table2 },
       { to: '/assistant/scholarships', label: 'Стипендии', icon: Award },
       { to: '/assistant/surveys', label: 'Опросы', icon: MessageSquareText },
     ],

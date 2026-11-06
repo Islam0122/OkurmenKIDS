@@ -19,6 +19,7 @@ import {
   School,
   ScrollText,
   ShieldCheck,
+  Table2,
   User,
   UserCog,
   Users,
@@ -65,6 +66,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/students', label: 'Студенты', icon: GraduationCap, roles: ['admin', 'team_lead'] },
   { to: '/app/lessons', label: 'Занятия', icon: BookOpen, roles: ['admin', 'team_lead'] },
   { to: '/app/attendance', label: 'Посещаемость', icon: ClipboardCheck, roles: ['admin', 'team_lead'] },
+  { to: '/app/attendance-monitoring', label: 'Посещаемость и ДЗ', icon: Table2, roles: ['admin', 'team_lead'] },
   { to: '/app/homework', label: 'Домашние задания', icon: NotebookPen, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'ДЗ' } },
   // Test sessions: a Trainer's own groups, monitored live (backend-scoped);
   // Admin / Team Lead — every session, plus create / start / take one.

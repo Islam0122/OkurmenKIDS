@@ -103,6 +103,9 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     MONTHLY_PERFORMANCE_PREFIX,
     # Кабинет операционного директора: права проверяет apps.operations (CanOversee).
     "/api/v1/operations/",
+    # Матрица посещаемости и ДЗ: из этих ролей её видит только операционный
+    # директор — права проверяет apps.attendance_matrix.access.
+    "/api/v1/attendance-matrix/",
     *PERSONAL_WORK_PREFIXES,
 )
 
