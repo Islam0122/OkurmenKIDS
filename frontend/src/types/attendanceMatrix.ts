@@ -5,7 +5,7 @@
 export type CellCode = 'done' | 'partial' | 'excused' | 'absent' | 'empty' | 'planned' | 'no_lesson'
 export type MatrixAttendance = 'present' | 'late' | 'excused' | 'absent'
 export type MatrixHomework = 'done' | 'missed' | 'pending' | 'none'
-export type MatrixPeriod = 'day' | 'week' | 'month'
+export type MatrixPeriod = 'day' | 'week' | 'month' | 'all'
 export type WarningLevel = 'critical' | 'attention' | 'warning'
 export type MatrixRole = 'admin' | 'teacher' | 'assistant' | 'team_lead' | 'operations_director'
 
@@ -37,6 +37,8 @@ export interface MatrixColumn {
   teacher: string
   teacher_id: number | null
   status: string
+  /** A cancelled lesson that still carries marks: shown read-only, outside the statistics. */
+  cancelled: boolean
   held: boolean
   editable_day: boolean
   has_homework: boolean

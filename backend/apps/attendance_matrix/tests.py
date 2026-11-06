@@ -167,7 +167,12 @@ class AccessTests(MatrixBase):
 
     def test_assistant_only_assigned_groups_and_edit_by_permission(self):
         a = user("asel", User.Role.ASSISTANT)
-        self.assertEqual(self.matrix(a).status_code, 404)
+        # Not assigned anywhere yet: the whole academy, read-only (existing data never disappears).
+        caps = self.matrix(a).json()["capabilities"]
+        self.assertEqual((caps["can_edit"], caps["can_comment"]), (False, False))
+        r = self.as_user(a).put(f"{BASE}/cell/", {"lesson": self.lessons[0].pk, "student": self.s1.pk,
+                                                  "comment": "x"}, format="json")
+        self.assertEqual(r.status_code, 403)
         assignment = GroupAssistant.objects.create(group=self.group, assistant=a, can_edit=False)
         data = self.matrix(a).json()
         self.assertEqual((data["capabilities"]["can_edit"], data["capabilities"]["can_comment"]), (False, True))
@@ -370,3 +375,67 @@ class ReviewTests(MatrixBase):
         filtered = self.matrix(admin, teacher=self.aibek.pk).json()
         self.assertEqual(len(filtered["columns"]), 1)
         self.assertEqual(len(filtered["trainers"]), 2)  # options stay complete
+
+
+class LegacyDataTests(MatrixBase):
+    """Attendance that existed before the matrix must all be visible
+    (bug: «старые данные не отображаются»). Nothing here is written."""
+
+    def test_assistant_without_assignment_still_sees_history_read_only(self):
+        self.mark(self.lessons[0], self.s1, "present")
+        a = user("asel", User.Role.ASSISTANT)
+        data = self.matrix(a).json()
+        self.assertEqual(data["rows"][0]["cells"][0]["attendance"] if data["rows"][0]["student"]["id"] == self.s1.pk
+                         else next(r for r in data["rows"] if r["student"]["id"] == self.s1.pk)["cells"][0]["attendance"], "present")
+        self.assertFalse(data["capabilities"]["can_edit"])
+        self.assertEqual(self.matrix(a, group=self.other).status_code, 200)
+
+    def test_trainer_sees_groups_they_taught_after_the_schedule_ended(self):
+        self.mark(self.lessons[0], self.s1, "present")
+        GroupSchedule.objects.filter(group=self.group).update(is_active=False)
+        GroupTeacher.objects.filter(group=self.group).update(is_active=False)
+        r = self.matrix(self.islam.user)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.json()["columns"]), 5)
+
+    def test_marks_of_a_cancelled_lesson_are_shown_but_not_counted(self):
+        self.mark(self.lessons[0], self.s1, "present")
+        Lesson.objects.filter(pk=self.lessons[0].pk).update(status=Lesson.Status.CANCELLED)
+        data = self.matrix(self.admin).json()
+        col = next(c for c in data["columns"] if c["lesson_id"] == self.lessons[0].pk)
+        self.assertEqual(col["status"], "cancelled")
+        self.assertFalse(col["can_edit"])
+        row = next(r for r in data["rows"] if r["student"]["id"] == self.s1.pk)
+        self.assertEqual(row["cells"][0]["attendance"], "present")
+        self.assertEqual(row["stats"]["present"], 0)
+
+    def test_old_status_spellings_are_read_correctly(self):
+        for lesson, raw in zip(self.lessons, ["PRESENT", " Late ", "Excused", "ABSENT", "attended"]):
+            Attendance.objects.create(lesson=lesson, student=self.s1, status="present")
+            Attendance.objects.filter(lesson=lesson, student=self.s1).update(status=raw)
+        row = next(r for r in self.matrix(self.admin).json()["rows"] if r["student"]["id"] == self.s1.pk)
+        self.assertEqual([c["attendance"] for c in row["cells"]], ["present", "late", "excused", "absent", "present"])
+        self.assertEqual((row["stats"]["present"], row["stats"]["excused"], row["stats"]["absent"]), (3, 1, 1))
+
+    def test_whole_history_period(self):
+        old = self.lesson(self.group, self.gt, self.islam, 30, MONTH - dt.timedelta(days=200))
+        self.mark(old, self.s1, "absent")
+        data = self.matrix(self.admin, period="all").json()
+        self.assertEqual(data["columns"][0]["lesson_id"], old.pk)
+        self.assertEqual(len(data["columns"]), 6)
+
+    def test_every_mark_of_the_database_reaches_the_matrix(self):
+        """The audit command's own check: marks in DB == marks in the matrix."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        self.mark(self.lessons[0], self.s1, "present")
+        moved = Student.objects.create(first_name="Moved", group=self.other, enrollment_date=MONTH)
+        self.mark(self.lessons[1], moved, "absent")  # transferred since — still a mark of this group
+        Lesson.objects.filter(pk=self.lessons[2].pk).update(status=Lesson.Status.CANCELLED)
+        self.mark(self.lessons[2], self.s2, "excused")
+        out = StringIO()
+        call_command("audit_attendance_matrix", stdout=out)
+        self.assertIn("Не попало в таблицу: 0", out.getvalue())
+        self.assertEqual(Attendance.objects.count(), 3)  # read-only

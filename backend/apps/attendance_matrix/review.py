@@ -9,6 +9,7 @@ from collections import defaultdict
 from apps.academy.models import Attendance, Lesson
 
 from .cells import FIELD_LABELS, _display, _user_ref
+from .matrix import status_q
 from .models import AttendanceChangeLog
 
 LIMIT = 200
@@ -22,7 +23,7 @@ def excused(lessons) -> list[dict]:
     """Every «уважительная причина» of the period with its reason —
     a missing reason is flagged so it can be checked."""
     rows = (
-        Attendance.objects.filter(lesson__in=_live(lessons), status=Attendance.Status.EXCUSED)
+        Attendance.objects.filter(status_q(Attendance.Status.EXCUSED), lesson__in=_live(lessons))
         .select_related("student", "lesson__group", "updated_by")
         .order_by("-lesson__date", "student__last_name")[:LIMIT]
     )

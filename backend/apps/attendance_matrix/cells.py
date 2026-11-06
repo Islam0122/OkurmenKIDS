@@ -14,7 +14,7 @@ from apps.academy.models import Attendance, Homework, HomeworkResult, Lesson, St
 from apps.academy.services import lesson_lifecycle
 
 from . import access
-from .matrix import HW_DONE, HW_LABELS, homework_status, is_held
+from .matrix import HW_DONE, HW_LABELS, homework_status, is_held, normalize_status
 from .models import AttendanceChangeLog, MatrixSettings
 
 ATTENDANCE_LABELS = dict(Attendance.Status.choices)
@@ -108,7 +108,7 @@ def detail(user, lesson: Lesson, student: Student) -> dict:
             "status_display": lesson.get_status_display(),
             "held": is_held(lesson, today),
         },
-        "attendance": mark.status if mark else None,
+        "attendance": normalize_status(mark.status) if mark else None,
         "excuse_reason": mark.excuse_reason if mark else "",
         "comment": mark.comment if mark else "",
         "homework": hw,
@@ -149,7 +149,7 @@ def update(user, lesson: Lesson, student: Student, data: dict) -> dict:
 
     mark = Attendance.objects.select_for_update().filter(lesson=lesson, student=student).first()
     before = {
-        "attendance": mark.status if mark else None,
+        "attendance": normalize_status(mark.status) if mark else None,
         "excuse_reason": mark.excuse_reason if mark else "",
         "comment": mark.comment if mark else "",
     }
