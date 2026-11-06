@@ -1,3 +1,5 @@
+import type { AcademicProgress } from '@/types/academicProgress'
+
 /** Раздел «Академия» кабинета операционного директора (backend:
  * /api/v1/operations/academy/…, только чтение; цифры — из Reports / KPI,
  * «Прогресс студентов», оплаты обучения, рейтинга XP и стипендий). */
@@ -49,6 +51,8 @@ export interface AcademyGroupRow {
   kpi_level: string
   has_data: boolean
   plan: GroupPlan
+  /** Учебный месяц и прогресс по учебным месяцам программы (apps.academic_progress). */
+  academic: AcademicProgress
 }
 
 export interface AcademyGroupsResponse extends Paged<AcademyGroupRow> {
@@ -94,6 +98,7 @@ export interface AcademyGroupDetail {
   tests: { attempts: number; passed: number; average_score: Rate }
   trainers: { id: number; name: string; subject: string | null }[]
   plan: GroupPlan
+  academic: AcademicProgress
   schedule: { day: string; start: string; end: string; subject: string | null; trainer: string | null; room: string | null; is_active: boolean }[]
   lesson_history: { id: number; date: string; number: number | null; start: string | null; topic: string; subject: string | null; trainer: string | null; status: string; status_display: string; attendance: { marked: number; attended: number } }[]
   student_progress: StudentProgressRow[]

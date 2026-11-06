@@ -106,6 +106,8 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     # Матрица посещаемости и ДЗ: из этих ролей её видит только операционный
     # директор — права проверяет apps.attendance_matrix.access.
     "/api/v1/attendance-matrix/",
+    # Настройки учебных программ: права проверяет apps.academic_progress.access.
+    "/api/v1/academic-progress/",
     *PERSONAL_WORK_PREFIXES,
 )
 

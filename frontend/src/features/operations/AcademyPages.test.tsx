@@ -37,7 +37,7 @@ beforeEach(() => {
 })
 
 describe('раздел «Академия» кабинета операционного директора', () => {
-  it('в меню есть раздел «Академия» с шестью пунктами', () => {
+  it('в меню есть раздел «Академия» с семью пунктами', () => {
     renderWithProviders(<Routes><Route path="/operations" element={<OperationsLayout />}><Route index element={<p>Dashboard</p>} /></Route></Routes>, { route: '/operations' })
     const section = screen.getAllByRole('group', { name: 'Академия' })[0]
     expect(within(section).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
@@ -45,6 +45,7 @@ describe('раздел «Академия» кабинета операцион�
       ['Успеваемость', '/operations/academy/performance'], ['Месячные результаты', '/operations/academy/monthly'],
       ['Посещаемость групп', '/operations/attendance'],
       ['Сводка посещаемости', '/operations/academy/attendance'],
+      ['Настройки программ', '/operations/academy/programs'],
     ])
   })
 
@@ -56,13 +57,33 @@ describe('раздел «Академия» кабинета операцион�
         trainers: [{ id: 9, name: 'Айбек Тренер' }], trainer_names: 'Айбек Тренер', students: { total: 12, active: 12, left: 0, new: 1, returned: 0 },
         lessons: { total: 8, held: 8, cancelled: 0, due: 8 }, attendance_rate: 87.5, homework_rate: 70, test_score_rate: 80, progress_rate: 75,
         kpi: 78, kpi_level: 'attention', has_data: true, plan: { completed: 40, planned: 144, remaining: 104, progress: 27.8 },
+        academic: {
+          configured: true, status: 'in_progress', status_display: 'Идёт обучение', reason: '', lessons_in_lms: 15, lessons_before_lms: 0,
+          history_confirmed: false, last_lesson_date: '2026-11-02', months: [],
+          month: { number: 2, label: '2-й месяц', subject: { id: 1, name: 'NEXT' }, planned: 12, done: 3, remaining: 9, progress: 25, state: 'current', first_date: null, last_date: null, next_lesson: 4 },
+          course: { done: 15, planned: 72, remaining: 57, progress: 20.8, extra: 0 },
+        },
+      }, {
+        id: 4, name: 'Group B', program: 'Old', program_id: 2, status: 'active', status_display: 'Активна', start_date: '2025-09-01',
+        trainers: [], trainer_names: '', students: { total: 5, active: 5, left: 0, new: 0, returned: 0 },
+        lessons: { total: 8, held: 8, cancelled: 0, due: 8 }, attendance_rate: 80, homework_rate: 70, test_score_rate: 80, progress_rate: 75,
+        kpi: 78, kpi_level: 'good', has_data: true, plan: { completed: 24, planned: 72, remaining: 48, progress: 33.3 },
+        academic: {
+          configured: false, status: 'needs_setup', status_display: 'Требуется настройка', reason: 'Для программы группы не настроены учебные месяцы.',
+          lessons_in_lms: 24, lessons_before_lms: 0, history_confirmed: false, last_lesson_date: null, months: [], month: null, course: null,
+        },
       }],
     }
     ops.academyGroups.mockResolvedValue(response)
     renderWithProviders(<OperationsAcademyGroupsPage />, { route: '/operations/academy/groups?period=this_month' })
     const row = (await screen.findByRole('link', { name: 'Group A' })).closest('tr') as HTMLElement
     expect(row).toHaveTextContent('Айбек Тренер')
-    expect(row).toHaveTextContent('104')
+    // Учебный месяц вместо «40 / 144»; общий прогресс — отдельной колонкой.
+    expect(row).toHaveTextContent('2-й месяц3 / 12 занятийNEXT · осталось 9')
+    expect(row).toHaveTextContent('15 / 72')
+    const old = screen.getByRole('link', { name: 'Group B' }).closest('tr') as HTMLElement
+    expect(within(old).getByRole('link', { name: /Требуется настройка/ })).toHaveAttribute('href', '/operations/academy/programs')
+    expect(old).toHaveTextContent('24 / 72')  // the old overall progress stays
     expect(within(row).getByRole('link', { name: 'Group A' })).toHaveAttribute('href', '/operations/academy/groups/3')
     await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Программа' }), '1')
     await waitFor(() => expect(ops.academyGroups).toHaveBeenLastCalledWith(expect.objectContaining({ program: '1', period: 'this_month' })))
