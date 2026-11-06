@@ -100,7 +100,7 @@ function Content({ data }: { data: Dashboard }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Section title="Посещаемость сотрудников" actions={<Link to="/operations/attendance" className="text-sm font-medium text-brand-700 hover:underline">Подробнее</Link>}>
+        <Section title="Посещаемость сотрудников" actions={<Link to="/operations/staff-attendance" className="text-sm font-medium text-brand-700 hover:underline">Подробнее</Link>}>
           {data.attendance.today ? (
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div><dt className="field-label">Пришли сегодня</dt><dd className="text-lg font-semibold tabular-nums">{data.attendance.today.attended_days}</dd></div>

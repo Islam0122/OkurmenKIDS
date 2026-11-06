@@ -99,8 +99,16 @@ def can_view_group(user, group: Group) -> bool:
 def scoped_lessons(user, group_ids) -> QuerySet[Lesson]:
     """The lessons of `group_ids` that `user` may see as matrix columns."""
     qs = Lesson.objects.filter(group_id__in=group_ids)
-    if role_of(user) == TEACHER:
+    role = role_of(user)
+    if role == TEACHER:
         qs = qs.filter(pk__in=Lesson.objects.for_teacher(user.teacher_profile).values("pk"))
+    elif role == TEAM_LEAD:
+        # «Все предметы своего направления»: a Team Lead with directions sees
+        # those subjects' lessons (and lessons with no subject recorded, so
+        # no history is hidden) — not, say, the English of an IT group.
+        subjects = lead_subject_ids(user)
+        if subjects:
+            qs = qs.filter(Q(subject_id__in=subjects) | Q(subject__isnull=True))
     return qs
 
 

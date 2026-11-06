@@ -111,6 +111,27 @@ describe('AttendanceMatrix', () => {
     expect(head).toHaveAttribute('title', expect.stringContaining('Занятие отменено'))
   })
 
+  it('«По занятиям»: one row per lesson, a lesson lists every student and opens the cell', async () => {
+    renderWithProviders(<AttendanceMatrix groupId={5} />)
+    await screen.findByText('Июнь 2026')
+    await userEvent.click(screen.getByRole('radio', { name: 'По занятиям' }))
+    const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+    expect(rows.map((r) => within(r).getAllByRole('cell')[0].textContent)).toEqual(['Пн, 15.06', 'Сб, 13.06', 'Пт, 12.06'])
+    expect(rows[2]).toHaveTextContent('50%')
+    await userEvent.click(within(rows[2]).getByRole('button', { name: 'Пт, 12.06' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Талант Аманжолов').closest('button')).toHaveTextContent('Не пришёл без причины')
+    await userEvent.click(within(dialog).getByText('Талант Аманжолов'))
+    await waitFor(() => expect(api.cell).toHaveBeenCalledWith(100, 2))
+  })
+
+  it('an extra view (e.g. the trainer journal) sits in the same switch', async () => {
+    renderWithProviders(<AttendanceMatrix groupId={5} extraViews={[{ value: 'log', label: 'Журнал отметок', render: () => <p>журнал</p> }]} />)
+    await screen.findByText('Июнь 2026')
+    await userEvent.click(screen.getByRole('radio', { name: 'Журнал отметок' }))
+    expect(screen.getByText('журнал')).toBeInTheDocument()
+  })
+
   it('subject buttons instead of a trainer dropdown', async () => {
     renderWithProviders(<AttendanceMatrix groupId={5} />)
     await screen.findByText('Июнь 2026')

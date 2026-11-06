@@ -291,23 +291,10 @@ function ScheduleTab({ groupId }: { groupId: number }) {
   )
 }
 
-type AttendanceView = 'matrix' | 'log'
-
-const ATTENDANCE_VIEWS: { value: AttendanceView; label: string }[] = [
-  { value: 'matrix', label: 'Таблица за период' },
-  { value: 'log', label: 'Журнал отметок' },
-]
-
-/** The monthly matrix (attendance + homework, backend: apps.attendance_matrix);
- * the plain list of marks stays one click away. */
+/** The shared table (backend: apps.attendance_matrix) with «Таблица за
+ * период» / «По занятиям»; the plain list of marks stays one click away. */
 function AttendanceTab({ groupId }: { groupId: number }) {
-  const [view, setView] = useState<AttendanceView>('matrix')
-  return (
-    <div className="space-y-4">
-      <SegmentedControl aria-label="Вид посещаемости" options={ATTENDANCE_VIEWS} value={view} onChange={setView} />
-      {view === 'matrix' ? <AttendanceMatrix groupId={groupId} /> : <AttendanceLog groupId={groupId} />}
-    </div>
-  )
+  return <AttendanceMatrix groupId={groupId} extraViews={[{ value: 'log', label: 'Журнал отметок', render: () => <AttendanceLog groupId={groupId} /> }]} />
 }
 
 function AttendanceLog({ groupId }: { groupId: number }) {

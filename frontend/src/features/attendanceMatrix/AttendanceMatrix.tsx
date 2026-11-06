@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { AlertTriangle, BookX, Lock, CalendarDays, Check, ChevronLeft, ChevronRight, Download, Trophy, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { Modal } from '@/components/ui/Modal'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Select } from '@/components/ui/Select'
@@ -18,7 +20,7 @@ import { pluralize } from '@/utils/format'
 
 import { CellModal } from './CellModal'
 import type { CellTarget } from './CellModal'
-import { CELL_STYLE, CellIcon, LEVEL_STYLE, Legend, SummaryCard, WarningDot, pct, percentTone, shortDate, todayIso } from './ui'
+import { CELL_STYLE, CellIcon, HOMEWORK_LABEL, LEVEL_STYLE, Legend, SummaryCard, WarningDot, pct, percentTone, shortDate, todayIso } from './ui'
 
 const PERIOD_OPTIONS: { value: MatrixPeriod; label: string }[] = [
   { value: 'day', label: 'День' },
@@ -49,14 +51,42 @@ const LEVEL_FILTER = [
  * for every role; the server decides what each may see and change
  * (backend: apps.attendance_matrix.access).
  */
-export function AttendanceMatrix({ groupId }: { groupId: number }) {
+export interface ExtraView {
+  value: string
+  label: string
+  render: () => ReactNode
+}
+
+export interface AttendanceMatrixProps {
+  groupId: number
+  /** Controlled month/date (a page-level month picker); otherwise the table keeps its own. */
+  date?: string
+  onDateChange?: (date: string) => void
+  /** Controlled subject ('' — all, an id, or 'none'); otherwise the subject buttons keep their own. */
+  subject?: string
+  onSubjectChange?: (subject: string) => void
+  /** Only this trainer's lessons (a page-level trainer filter). */
+  teacher?: number
+  /** Extra views next to «Таблица за период» / «По занятиям», e.g. the trainer's «Журнал отметок». */
+  extraViews?: ExtraView[]
+}
+
+type View = 'matrix' | 'lessons' | (string & {})
+
+export function AttendanceMatrix({ groupId, date: dateProp, onDateChange, subject: subjectProp, onSubjectChange, teacher, extraViews = [] }: AttendanceMatrixProps) {
+  const [view, setView] = useState<View>('matrix')
   const [period, setPeriod] = useState<MatrixPeriod>('month')
-  const [date, setDate] = useState(todayIso())
+  const [ownDate, setOwnDate] = useState(dateProp ?? todayIso())
+  const date = dateProp ?? ownDate
+  const setDate = (value: string) => (onDateChange ? onDateChange(value) : setOwnDate(value))
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [homework, setHomework] = useState('')
   const [level, setLevel] = useState('')
-  const [subject, setSubject] = useState('')
+  const [ownSubject, setOwnSubject] = useState('')
+  const subject = subjectProp ?? ownSubject
+  const setSubject = (value: string) => (onSubjectChange ? onSubjectChange(value) : setOwnSubject(value))
+  const [lessonOpen, setLessonOpen] = useState<number | null>(null)
   const [target, setTarget] = useState<CellTarget | null>(null)
   const [exporting, setExporting] = useState(false)
   const { showToast } = useToast()
@@ -68,6 +98,7 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
     homework: homework as MatrixParams['homework'],
     level: level as MatrixParams['level'],
     subject: subject === '' ? undefined : subject === 'none' ? 'none' : Number(subject),
+    teacher,
   }
   const { data, isPending, isError, error, refetch, isFetching } = useGroupMatrix(groupId, params)
 
@@ -87,14 +118,33 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
     }
   }
 
+  const viewSwitch = (
+    <SegmentedControl
+      aria-label="Вид посещаемости"
+      options={[{ value: 'matrix', label: 'Таблица за период' }, { value: 'lessons', label: 'По занятиям' }, ...extraViews.map(({ value, label }) => ({ value, label }))]}
+      value={view}
+      onChange={setView}
+    />
+  )
+  const extra = extraViews.find((v) => v.value === view)
+  if (extra) {
+    return (
+      <div className="space-y-4">
+        {viewSwitch}
+        {extra.render()}
+      </div>
+    )
+  }
+
   if (isPending) return <LoadingState label="Загружаем посещаемость…" />
   if (isError && isNotFound(error)) {
-    return <EmptyState icon={Lock} title="Таблица этой группы вам недоступна" description="Ассистент видит таблицу групп, в которые он назначен." />
+    return <EmptyState icon={Lock} title="Таблица этой группы вам недоступна" description="Ассистент видит группы, в которые назначен; Team Lead — группы своего направления." />
   }
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />
 
   return (
     <div className="space-y-5">
+      {viewSwitch}
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 className="text-lg font-semibold text-ink">{data.group.name}</h2>
         <span className="text-sm text-ink-secondary">
@@ -163,11 +213,15 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
 
       {data.columns.length === 0 ? (
         <EmptyState icon={CalendarDays} title="В этом периоде нет занятий" description="Выходные и дни без занятий в таблицу не попадают." />
+      ) : view === 'lessons' ? (
+        <LessonsTable data={data} onOpen={setLessonOpen} dimmed={isFetching} />
       ) : rows.length === 0 ? (
         <EmptyState title="Нет студентов по выбранным фильтрам" />
       ) : (
         <MatrixTable data={data} rows={rows} onOpen={setTarget} dimmed={isFetching} />
       )}
+
+      <LessonMarksModal data={data} rows={rows} lessonId={lessonOpen} onClose={() => setLessonOpen(null)} onOpenCell={(t) => { setLessonOpen(null); setTarget(t) }} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RankingCard data={data} />
@@ -345,5 +399,89 @@ function AttentionCard({ data }: { data: GroupMatrix }) {
         <p className="mt-3 flex items-center gap-1.5 text-xs text-danger"><X className="size-3.5" aria-hidden />Критично: {data.summary.warnings.critical}</p>
       ) : null}
     </section>
+  )
+}
+
+const LESSON_TH = 'px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-ink-muted'
+const LESSON_TD = 'border-t border-border px-3 py-2.5'
+
+/** «По занятиям»: one row per lesson of the period — the same data as the table, turned around. */
+function LessonsTable({ data, onOpen, dimmed }: { data: GroupMatrix; onOpen: (lessonId: number) => void; dimmed: boolean }) {
+  const columns = [...data.columns].reverse()
+  return (
+    <div className={cn('card overflow-x-auto transition-opacity', dimmed && 'opacity-60')}>
+      <table className="w-full min-w-[860px] text-sm">
+        <thead className="bg-surface-muted">
+          <tr>{['Дата', 'Время', 'Предмет', 'Тема', 'Тренер', 'Прис.', 'Уваж.', 'Отс.', 'Нет данных', 'ДЗ ✕', '%'].map((h) => <th key={h} className={LESSON_TH}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {columns.map((col) => (
+            <tr key={col.lesson_id} className={cn('cursor-pointer hover:bg-surface-hover', col.cancelled && 'text-ink-muted')} onClick={() => onOpen(col.lesson_id)}>
+              <td className={LESSON_TD}>
+                <button type="button" className="whitespace-nowrap font-medium text-brand-700 hover:underline" onClick={(e) => { e.stopPropagation(); onOpen(col.lesson_id) }}>
+                  {col.weekday}, {shortDate(col.date)}
+                </button>
+                {col.cancelled ? <span className="block text-xs">отменено</span> : !col.held ? <span className="block text-xs text-ink-muted">впереди</span> : null}
+              </td>
+              <td className={cn(LESSON_TD, 'whitespace-nowrap tabular-nums')}>{col.start}–{col.end}</td>
+              <td className={LESSON_TD}>{col.subject || '—'}</td>
+              <td className={cn(LESSON_TD, 'max-w-56 truncate')} title={col.topic}>{col.topic || `Занятие ${col.lesson_number}`}</td>
+              <td className={cn(LESSON_TD, 'text-ink-secondary')}>{col.teacher || '—'}</td>
+              <td className={LESSON_TD}>{col.stats.present}</td>
+              <td className={LESSON_TD}>{col.stats.excused}</td>
+              <td className={cn(LESSON_TD, col.stats.absent ? 'font-medium text-danger' : '')}>{col.stats.absent}</td>
+              <td className={cn(LESSON_TD, col.stats.unmarked ? 'text-warning' : 'text-ink-muted')}>{col.stats.unmarked}</td>
+              <td className={LESSON_TD}>{col.has_homework ? col.stats.hw_missed : '—'}</td>
+              <td className={cn(LESSON_TD, 'font-semibold', percentTone(col.stats.percent))}>{col.stats.marked ? pct(col.stats.percent) : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Every student's mark on one lesson; a student opens the cell (reason, comment, history). */
+function LessonMarksModal({ data, rows, lessonId, onClose, onOpenCell }: {
+  data: GroupMatrix
+  rows: MatrixRow[]
+  lessonId: number | null
+  onClose: () => void
+  onOpenCell: (target: CellTarget) => void
+}) {
+  const index = data.columns.findIndex((c) => c.lesson_id === lessonId)
+  const col = index >= 0 ? data.columns[index] : null
+  return (
+    <Modal isOpen={col !== null} onClose={onClose} title={col ? `${col.weekday}, ${shortDate(col.date)} · ${col.subject || 'Занятие'}` : ''} size="lg">
+      {col ? (
+        <div className="space-y-3">
+          <p className="text-sm text-ink-secondary">
+            {[col.topic || `Занятие ${col.lesson_number}`, col.teacher, `${col.start}–${col.end}`, col.cancelled ? 'занятие отменено' : ''].filter(Boolean).join(' · ')}
+          </p>
+          <ul className="divide-y divide-border">
+            {rows.map((row) => {
+              const cell = row.cells[index]
+              const interactive = cell.code !== 'no_lesson' && cell.code !== 'planned'
+              return (
+                <li key={row.student.id}>
+                  <button
+                    type="button"
+                    disabled={!interactive}
+                    onClick={() => onOpenCell({ lesson: col.lesson_id, student: row.student.id })}
+                    className="flex w-full items-center gap-3 py-2 text-left text-sm enabled:hover:bg-surface-hover disabled:cursor-default"
+                  >
+                    <CellIcon code={cell.code} size="sm" />
+                    <span className="min-w-0 flex-1 truncate text-ink">{row.student.name}</span>
+                    <span className="text-ink-secondary">{CELL_STYLE[cell.code].label}</span>
+                    {cell.homework !== 'none' ? <span className="w-28 text-right text-xs text-ink-muted">ДЗ: {HOMEWORK_LABEL[cell.homework].toLowerCase()}</span> : <span className="w-28" />}
+                    {cell.has_comment ? <span className="size-2 rounded-full bg-info" title="Есть комментарий или причина" /> : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </Modal>
   )
 }
