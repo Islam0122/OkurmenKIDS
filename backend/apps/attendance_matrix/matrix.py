@@ -482,6 +482,12 @@ def group_matrix(user, group: Group, params) -> dict:
     period, start, end = parse_period(params)
     settings = MatrixSettings.load()
     lessons = access.scoped_lessons(user, [group.pk]).filter(date__gte=start, date__lte=end)
+    # Trainer filter options: every trainer of the period's lessons, before filtering.
+    trainers = {}
+    for lesson in lessons.exclude(status=Lesson.Status.CANCELLED).select_related("teacher__user", "group_teacher__teacher__user"):
+        t = lesson.effective_teacher
+        if t is not None:
+            trainers[t.pk] = str(t)
     teacher = params.get("teacher")
     if str(teacher or "").isdigit():
         from apps.academy.services.trainer_history import taught_by_q
@@ -528,6 +534,7 @@ def group_matrix(user, group: Group, params) -> dict:
         "capabilities": caps,
         "legend": [{"code": code, "label": CELL_LABELS[code]} for code in CELL_CODES],
         "filtered": len(rows) != len(data["rows"]),
+        "trainers": [{"id": pk, "name": name} for pk, name in sorted(trainers.items(), key=lambda x: x[1])],
     }
 
 
@@ -554,6 +561,7 @@ def overview(user, params) -> dict:
     groups_with_lessons = set(lessons.values_list("group_id", flat=True))
     groups = [g for g in groups_qs.order_by("name") if g.pk in groups_with_lessons]
     data = compute(groups, lessons, settings=settings)
+    from . import review  # cells → matrix: imported here to avoid a cycle
 
     group_rows, problems, all_rows = [], [], []
     trainers: dict[int, dict] = {}
@@ -643,6 +651,9 @@ def overview(user, params) -> dict:
         "ranking": ranking(all_rows),
         "trend": trend(user, groups_qs, end, teacher=int(teacher) if str(teacher or "").isdigit() else None),
         "thresholds": thresholds(settings),
+        "excused": review.excused(lessons),
+        "assistants": review.assistants(lessons),
+        "history": review.history(lessons),
     }
 
 

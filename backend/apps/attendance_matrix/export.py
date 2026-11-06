@@ -202,6 +202,29 @@ def overview_workbook(data: dict, title: str) -> bytes:
     for col, width in zip("ABCDEFGH", (28, 20, 16, 10, 10, 12, 14, 50)):
         ps.column_dimensions[col].width = width
 
+    ex = wb.create_sheet("Уважительные причины")
+    _head(ex, 1, ["Дата", "Студент", "Группа", "Причина", "Комментарий", "Отметил"])
+    for i, e in enumerate(data.get("excused", []), start=2):
+        values = [e["date"].strftime("%d.%m.%Y"), e["student"]["name"], e["group"]["name"],
+                  e["reason"] or "не указана", e["comment"], (e["updated_by"] or {}).get("name", "")]
+        for col, value in enumerate(values, start=1):
+            c = ex.cell(row=i, column=col, value=value)
+            c.border = BORDER
+        if e["missing_reason"]:
+            ex.cell(row=i, column=4).fill = _fill(LEVEL_FILL["attention"])
+    for col, width in zip("ABCDEF", (12, 28, 20, 40, 30, 22)):
+        ex.column_dimensions[col].width = width
+
+    asst = wb.create_sheet("Ассистенты")
+    _head(asst, 1, ["Ассистент", "Группы", "Изменений", "Посещаемость", "ДЗ", "Комментарии", "Студентов"])
+    for i, a in enumerate(data.get("assistants", []), start=2):
+        values = [a["user"]["name"], ", ".join(a["groups"]), a["changes"], a["attendance_changes"],
+                  a["homework_changes"], a["comments"], a["students"]]
+        for col, value in enumerate(values, start=1):
+            asst.cell(row=i, column=col, value=value).border = BORDER
+    for col, width in zip("ABCDEFG", (24, 34, 11, 14, 8, 13, 11)):
+        asst.column_dimensions[col].width = width
+
     dyn = wb.create_sheet("Динамика")
     _head(dyn, 1, ["Месяц", "Посещаемость", "Отметок", "Пропусков"])
     for i, m in enumerate(data["trend"], start=2):

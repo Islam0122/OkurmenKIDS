@@ -81,11 +81,11 @@ NOT_SUBMITTED или срок прошёл без результата (без �
 | Метод | Путь | Что |
 |---|---|---|
 | GET | `meta/` | группы, направления, тренеры для фильтров |
-| GET | `groups/{id}/?period=day\|week\|month&date=YYYY-MM-DD` | матрица группы; фильтры `search`, `status`, `homework`, `level`, `teacher` |
+| GET | `groups/{id}/?period=day\|week\|month&date=YYYY-MM-DD` | матрица группы; фильтры `search`, `status`, `homework`, `level`, `teacher` (варианты — `trainers` в ответе) |
 | GET | `groups/{id}/export/` | то же в Excel (цвета сохранены) |
 | GET | `cell/?lesson=&student=` | ячейка: студент, группа, дата, статусы, причина, комментарий, кто/когда изменил, история |
 | PUT | `cell/` | `{lesson, student, attendance?, excuse_reason?, comment?, homework?: done\|missed}` |
-| GET | `overview/?date=&subject=&teacher=&group=` | сводка за месяц: группы, тренеры, проблемные студенты, рейтинг, динамика за 6 месяцев |
+| GET | `overview/?date=&subject=&teacher=&group=` | сводка за месяц: группы, тренеры, проблемные студенты, рейтинг, динамика за 6 месяцев, уважительные причины (`excused`, без причины помечены), работа ассистентов (`assistants`), журнал изменений (`history`) |
 | GET | `overview/export/` | сводка в Excel |
 | GET/PATCH | `settings/` | пороги (админ, опер. директор); права на изменение (только админ) |
 

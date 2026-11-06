@@ -14,6 +14,7 @@ import { useGroupMatrix } from '@/hooks/useAttendanceMatrix'
 import { extractErrorMessage, isNotFound } from '@/lib/apiError'
 import type { GroupMatrix, MatrixColumn, MatrixParams, MatrixPeriod, MatrixRow } from '@/types/attendanceMatrix'
 import { cn } from '@/utils/cn'
+import { pluralize } from '@/utils/format'
 
 import { CellModal } from './CellModal'
 import type { CellTarget } from './CellModal'
@@ -54,6 +55,7 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
   const [status, setStatus] = useState('')
   const [homework, setHomework] = useState('')
   const [level, setLevel] = useState('')
+  const [teacher, setTeacher] = useState('')
   const [target, setTarget] = useState<CellTarget | null>(null)
   const [exporting, setExporting] = useState(false)
   const { showToast } = useToast()
@@ -64,6 +66,7 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
     status: status as MatrixParams['status'],
     homework: homework as MatrixParams['homework'],
     level: level as MatrixParams['level'],
+    teacher: teacher ? Number(teacher) : undefined,
   }
   const { data, isPending, isError, error, refetch, isFetching } = useGroupMatrix(groupId, params)
 
@@ -91,6 +94,12 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-lg font-semibold text-ink">{data.group.name}</h2>
+        <span className="text-sm text-ink-secondary">
+          {[data.group.course, `${data.group.students_count} ${pluralize(data.group.students_count, 'студент', 'студента', 'студентов')}`].filter(Boolean).join(' · ')}
+        </span>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-ink-secondary">Период</span>
         <label className="relative flex h-10 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-ink">
@@ -124,11 +133,15 @@ export function AttendanceMatrix({ groupId }: { groupId: number }) {
 
       <SummaryCards data={data} />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={cn('grid grid-cols-1 gap-3 sm:grid-cols-2', data.trainers.length > 1 ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
         <SearchInput value={search} onChange={setSearch} placeholder="Поиск студента" />
         <Select aria-label="Статус посещаемости" options={STATUS_FILTER} placeholder="Все статусы" value={status} onChange={(e) => setStatus(e.target.value)} />
         <Select aria-label="Домашние задания" options={HOMEWORK_FILTER} placeholder="Домашние задания: все" value={homework} onChange={(e) => setHomework(e.target.value)} />
         <Select aria-label="Предупреждения" options={LEVEL_FILTER} placeholder="Предупреждения: все" value={level} onChange={(e) => setLevel(e.target.value)} />
+        {data.trainers.length > 1 ? (
+          <Select aria-label="Тренер" placeholder="Все тренеры" value={teacher} onChange={(e) => setTeacher(e.target.value)}
+            options={data.trainers.map((t) => ({ value: String(t.id), label: t.name }))} />
+        ) : null}
       </div>
 
       <Legend />

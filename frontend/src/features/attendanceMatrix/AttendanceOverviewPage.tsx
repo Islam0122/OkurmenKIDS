@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, ArrowLeft, BookX, CalendarDays, ChevronLeft, ChevronRight, Download, Percent, Settings2, UserX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertCircle, AlertTriangle, ArrowLeft, BookX, CalendarDays, ChevronLeft, ChevronRight, Download, Percent, Settings2, UserX } from 'lucide-react'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Modal } from '@/components/ui/Modal'
+import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
 import { attendanceMatrixApi } from '@/api/attendanceMatrix'
@@ -16,9 +17,9 @@ import type { MatrixSettings, Overview, OverviewParams } from '@/types/attendanc
 import { cn } from '@/utils/cn'
 
 import { AttendanceMatrix } from './AttendanceMatrix'
-import { LEVEL_STYLE, SummaryCard, WarningDot, monthAnchor, pct, percentTone, todayIso } from './ui'
+import { LEVEL_STYLE, SummaryCard, WarningDot, formatDateTime, monthAnchor, pct, percentTone, shortDate, todayIso } from './ui'
 
-type View = 'groups' | 'trainers' | 'students'
+type View = 'groups' | 'trainers' | 'students' | 'excused' | 'assistants' | 'history'
 
 /**
  * «Посещаемость и ДЗ» across groups: a Team Lead sees the groups of their
@@ -45,18 +46,19 @@ export function AttendanceOverviewPage({ title = 'Посещаемость и Д
   }
   const { data, isPending, isError, refetch, isFetching } = useMatrixOverview(params, openGroup === null)
 
+  // Opening a group (or going back) starts at the top — not on the first render.
+  const mounted = useRef(false)
   useEffect(() => {
-    window.scrollTo?.({ top: 0 })
+    if (mounted.current) window.scrollTo?.({ top: 0 })
+    mounted.current = true
   }, [openGroup])
 
   if (openGroup !== null) {
-    const name = meta.data?.groups.find((g) => g.id === openGroup)?.name ?? 'Группа'
     return (
       <div>
         <button type="button" onClick={() => setOpenGroup(null)} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline">
           <ArrowLeft className="size-4" aria-hidden />Все группы
         </button>
-        <PageHeader title={name} description="Месячная посещаемость и домашние задания" />
         <AttendanceMatrix groupId={openGroup} />
       </div>
     )
@@ -116,8 +118,15 @@ export function AttendanceOverviewPage({ title = 'Посещаемость и Д
         <div className={cn('space-y-5 transition-opacity', isFetching && 'opacity-60')}>
           <OverviewCards data={data} />
           <Trend data={data} />
-          <div className="flex gap-1 border-b border-border" role="tablist">
-            {([['groups', `Группы (${data.groups.length})`], ['trainers', `Тренеры (${data.trainers.length})`], ['students', `Проблемные студенты (${data.problem_students.length})`]] as const).map(([key, label]) => (
+          <div className="flex gap-1 overflow-x-auto border-b border-border" role="tablist">
+            {([
+              ['groups', `Группы (${data.groups.length})`],
+              ['trainers', `Тренеры (${data.trainers.length})`],
+              ['students', `Проблемные студенты (${data.problem_students.length})`],
+              ['excused', `Уважительные причины (${data.excused.length})`],
+              ['assistants', `Ассистенты (${data.assistants.length})`],
+              ['history', 'Журнал изменений'],
+            ] as const).map(([key, label]) => (
               <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => setView(key)}
                 className={cn('-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium', view === key ? 'border-brand-500 text-brand-700' : 'border-transparent text-ink-secondary hover:text-ink')}>
                 {label}
@@ -127,6 +136,9 @@ export function AttendanceOverviewPage({ title = 'Посещаемость и Д
           {view === 'groups' ? <GroupsTable data={data} onOpen={setOpenGroup} /> : null}
           {view === 'trainers' ? <TrainersTable data={data} /> : null}
           {view === 'students' ? <ProblemStudents data={data} onOpen={setOpenGroup} /> : null}
+          {view === 'excused' ? <ExcusedTable data={data} onOpen={setOpenGroup} /> : null}
+          {view === 'assistants' ? <AssistantsTable data={data} /> : null}
+          {view === 'history' ? <Journal data={data} onOpen={setOpenGroup} /> : null}
         </div>
       ) : null}
 
@@ -245,15 +257,25 @@ function TrainersTable({ data }: { data: Overview }) {
 }
 
 function ProblemStudents({ data, onOpen }: { data: Overview; onOpen: (id: number) => void }) {
+  const [query, setQuery] = useState('')
+  const [level, setLevel] = useState('')
   if (data.problem_students.length === 0) return <EmptyState title="Студентов с предупреждениями нет" />
+  const q = query.trim().toLowerCase()
+  const rows = data.problem_students.filter((p) => (!q || p.student.name.toLowerCase().includes(q)) && (!level || p.level === level))
   return (
+    <div className="space-y-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <SearchInput value={query} onChange={setQuery} placeholder="Поиск студента" />
+      <Select aria-label="Уровень" placeholder="Все уровни" value={level} onChange={(e) => setLevel(e.target.value)}
+        options={(['critical', 'attention', 'warning'] as const).map((l) => ({ value: l, label: LEVEL_STYLE[l].label }))} />
+    </div>
     <div className="card overflow-x-auto">
       <table className="w-full min-w-[720px] text-sm">
         <thead className="bg-surface-muted">
           <tr>{['Студент', 'Группа', 'Статус', 'Пропуски', 'Подряд', 'Не сдано ДЗ', 'Посещаемость', 'Причины'].map((h) => <th key={h} className={TH}>{h}</th>)}</tr>
         </thead>
         <tbody>
-          {data.problem_students.map((p) => (
+          {rows.map((p) => (
             <tr key={`${p.group.id}-${p.student.id}`}>
               <td className={cn(TD, 'font-medium text-ink')}>{p.student.name}</td>
               <td className={TD}><button type="button" className="text-brand-700 hover:underline" onClick={() => onOpen(p.group.id)}>{p.group.name}</button></td>
@@ -267,6 +289,7 @@ function ProblemStudents({ data, onOpen }: { data: Overview; onOpen: (id: number
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   )
 }
@@ -331,5 +354,103 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
         </div>
       )}
     </Modal>
+  )
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: 'Администратор', teacher: 'Тренер', assistant: 'Ассистент', team_lead: 'Team Lead', operations_director: 'Опер. директор',
+}
+
+function ExcusedTable({ data, onOpen }: { data: Overview; onOpen: (id: number) => void }) {
+  const [onlyMissing, setOnlyMissing] = useState(false)
+  if (data.excused.length === 0) return <EmptyState title="Уважительных причин за месяц нет" />
+  const missing = data.excused.filter((e) => e.missing_reason).length
+  const rows = onlyMissing ? data.excused.filter((e) => e.missing_reason) : data.excused
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-sm text-ink-secondary">
+        <input type="checkbox" className="size-4 accent-brand-500" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} />
+        Только без указанной причины ({missing})
+      </label>
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead className="bg-surface-muted">
+            <tr>{['Дата', 'Студент', 'Группа', 'Причина', 'Комментарий', 'Отметил'].map((h) => <th key={h} className={TH}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((e) => (
+              <tr key={e.id}>
+                <td className={TD}>{shortDate(e.date)}</td>
+                <td className={cn(TD, 'font-medium text-ink')}>{e.student.name}</td>
+                <td className={TD}><button type="button" className="text-brand-700 hover:underline" onClick={() => onOpen(e.group.id)}>{e.group.name}</button></td>
+                <td className={TD}>
+                  {e.missing_reason ? (
+                    <span className="inline-flex items-center gap-1 text-warning"><AlertCircle className="size-4" aria-hidden />Не указана</span>
+                  ) : e.reason}
+                </td>
+                <td className={cn(TD, 'text-ink-secondary')}>{e.comment || '—'}</td>
+                <td className={cn(TD, 'text-ink-secondary')}>{e.updated_by?.name ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function AssistantsTable({ data }: { data: Overview }) {
+  if (data.assistants.length === 0) {
+    return <EmptyState title="Ассистенты в этом месяце отметок не меняли" description="Здесь видно, сколько отметок, ДЗ и комментариев изменил каждый ассистент." />
+  }
+  return (
+    <div className="card overflow-x-auto">
+      <table className="w-full min-w-[720px] text-sm">
+        <thead className="bg-surface-muted">
+          <tr>{['Ассистент', 'Группы', 'Изменений', 'Посещаемость', 'ДЗ', 'Комментарии', 'Студентов', 'Последнее'].map((h) => <th key={h} className={TH}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {data.assistants.map((a) => (
+            <tr key={a.user.id}>
+              <td className={cn(TD, 'font-medium text-ink')}>{a.user.name}</td>
+              <td className={cn(TD, 'max-w-56 truncate text-ink-secondary')} title={a.groups.join(', ')}>{a.groups.join(', ')}</td>
+              <td className={cn(TD, 'font-semibold')}>{a.changes}</td>
+              <td className={TD}>{a.attendance_changes}</td>
+              <td className={TD}>{a.homework_changes}</td>
+              <td className={TD}>{a.comments}</td>
+              <td className={TD}>{a.students}</td>
+              <td className={cn(TD, 'text-ink-secondary')}>{formatDateTime(a.last_change)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function Journal({ data, onOpen }: { data: Overview; onOpen: (id: number) => void }) {
+  if (data.history.length === 0) return <EmptyState title="Изменений через таблицу за месяц не было" />
+  return (
+    <ol className="card divide-y divide-border">
+      {data.history.map((h) => (
+        <li key={h.id} className="flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:gap-4">
+          <div className="shrink-0 text-xs text-ink-muted sm:w-44">
+            <p>{formatDateTime(h.at)}</p>
+            <p>{h.actor?.name ?? 'Система'} · {ROLE_LABEL[h.actor_role] ?? h.actor_role}</p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-ink">
+              <span className="font-medium">{h.student.name}</span>
+              {' · '}
+              <button type="button" className="text-brand-700 hover:underline" onClick={() => onOpen(h.group.id)}>{h.group.name}</button>
+              {' · занятие '}{shortDate(h.date)}
+            </p>
+            <ul className="text-ink-secondary">
+              {h.changes.map((c) => <li key={c.field}>{c.label}: {c.before} → {c.after}</li>)}
+            </ul>
+          </div>
+        </li>
+      ))}
+    </ol>
   )
 }
