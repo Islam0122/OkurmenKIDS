@@ -8,6 +8,7 @@ import {
   ClipboardList,
   FileQuestion,
   FileText,
+  FolderKanban,
   GraduationCap,
   LineChart,
   LayoutDashboard,
@@ -81,6 +82,8 @@ export const NAV_ITEMS: NavItem[] = [
   // Посещаемость / ДЗ / баллы по каждому тренеру и группе.
   { to: '/app/control', label: 'Контроль', icon: ShieldCheck },
   { to: '/app/analytics', label: 'Аналитика', icon: LineChart, roles: ['admin', 'team_lead'] },
+  // Проекты студентов: тренер добавляет, Team Lead и Admin просматривают (backend: apps.projects).
+  { to: '/trainer/projects', label: 'Проекты', icon: FolderKanban, roles: ['admin', 'teacher', 'team_lead'] },
   { to: '/app/reports', label: 'Мои отчёты', icon: FileText, roles: ['teacher'] },
   // «Моя зарплата»: свои начисления и выплаты (backend: /accounting/my/salary/).
   { to: '/app/my-salary', label: 'Моя зарплата', shortLabel: 'Зарплата', icon: Wallet, roles: ['teacher', 'team_lead'] },

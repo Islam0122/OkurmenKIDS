@@ -305,6 +305,30 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    // Проекты студентов: тренер регистрирует работы своих студентов, Team Lead
+    // и администратор просматривают (backend: apps.projects.access).
+    path: '/trainer',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <AppLayout />,
+        children: [
+          {
+            element: <RequireRoles roles={['teacher', 'team_lead', 'admin']} />,
+            children: [
+              { index: true, element: <Navigate to="/trainer/projects" replace /> },
+              { path: 'projects', lazy: async () => ({ Component: (await import('@/features/projects/ProjectsPage')).ProjectsPage }) },
+              { path: 'projects/new', lazy: async () => ({ Component: (await import('@/features/projects/ProjectFormPage')).ProjectFormPage }) },
+              { path: 'projects/:id', lazy: async () => ({ Component: (await import('@/features/projects/ProjectDetailPage')).ProjectDetailPage }) },
+              { path: 'projects/:id/edit', lazy: async () => ({ Component: (await import('@/features/projects/ProjectFormPage')).ProjectFormPage }) },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
     // Assistant Workspace — daily academy operations (backend: apps.assistant,
     // IsAdminOrAssistant). Its own layout; never the Team Lead / Trainer pages.
     path: '/assistant',
@@ -390,6 +414,9 @@ export const router = createBrowserRouter([
               { path: 'academy/monthly', lazy: async () => ({ Component: (await import('@/features/operations/AcademyPages')).OperationsAcademyMonthlyPage }) },
               { path: 'academy/programs', lazy: async () => ({ Component: (await import('@/features/academicProgress/ProgramSettingsPage')).ProgramSettingsPage }) },
               { path: 'academy/attendance', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/AttendanceOverviewPage')).AttendanceOverviewPage }) },
+              // Проекты студентов — только просмотр опубликованных (backend: apps.projects.access).
+              { path: 'academy/projects', lazy: async () => ({ Component: (await import('@/features/projects/ProjectsPage')).ProjectsPage }) },
+              { path: 'academy/projects/:id', lazy: async () => ({ Component: (await import('@/features/projects/ProjectDetailPage')).ProjectDetailPage }) },
               // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
               { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: '*', element: <Navigate to="/operations" replace /> },
