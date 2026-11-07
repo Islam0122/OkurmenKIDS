@@ -108,6 +108,9 @@ STAFF_ONLY_ALLOWED_PREFIXES = (
     "/api/v1/attendance-matrix/",
     # Настройки учебных программ: права проверяет apps.academic_progress.access.
     "/api/v1/academic-progress/",
+    # Проекты студентов: из этих ролей их (только опубликованные, только
+    # чтение) видит операционный директор — права проверяет apps.projects.access.
+    "/api/v1/projects/",
     *PERSONAL_WORK_PREFIXES,
 )
 
