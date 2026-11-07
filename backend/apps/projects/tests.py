@@ -218,3 +218,66 @@ class ImageTests(Base):
     def test_only_author_uploads(self):
         self.assertEqual(self.upload(self.other_user).status_code, 404)  # another trainer's group: not visible
         self.assertEqual(self.upload(self.lead).status_code, 403)
+
+
+class RoleAccessThroughMiddlewareTests(Base):
+    """Real JWT requests: they pass through AccountingIsolationMiddleware the
+    way the browser's do (force_authenticate would bypass it — the middleware
+    only sees the Authorization header)."""
+
+    ENDPOINTS = (BASE + "?page=1", BASE + "options/", BASE + "stats/")
+
+    def setUp(self):
+        super().setUp()
+        self.published = StudentProject.objects.create(student=self.student, group=self.group,
+                                                       created_by=self.trainer_user, title="Shop", status="published")
+        StudentProject.objects.create(student=self.student, group=self.group, created_by=self.trainer_user,
+                                      title="Draft", status="draft")
+
+    def jwt(self, user) -> APIClient:
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(user).access_token}")
+        return client
+
+    def assert_reads(self, user, expected_titles):
+        client = self.jwt(user)
+        for url in self.ENDPOINTS:
+            r = client.get(url)
+            self.assertEqual(r.status_code, 200, f"{user.role} {url}: {r.status_code} {getattr(r, 'data', r.content)}")
+        r = client.get(BASE)
+        self.assertEqual(sorted(p["title"] for p in r.data["results"]), expected_titles)
+        self.assertEqual(client.get(f"{BASE}{self.published.pk}/").status_code, 200)
+
+    def test_operations_director_reads_published_only(self):
+        ops = make_user("ops", User.Role.OPERATIONS_DIRECTOR)
+        self.assert_reads(ops, ["Shop"])
+        client = self.jwt(ops)
+        self.assertFalse(client.get(BASE + "options/").data["can_create"])
+        self.assertEqual(client.get(BASE + "stats/").data["total_projects"], 1)
+        self.assertEqual(client.post(BASE, {"student": self.student.pk, "title": "x"}, format="json").status_code, 403)
+        self.assertEqual(client.patch(f"{BASE}{self.published.pk}/", {"title": "x"}, format="json").status_code, 403)
+        self.assertEqual(client.delete(f"{BASE}{self.published.pk}/").status_code, 403)
+
+    def test_academy_roles_read(self):
+        self.assert_reads(self.trainer_user, ["Draft", "Shop"])
+        self.assert_reads(self.lead, ["Shop"])
+        self.assert_reads(self.director, ["Shop"])
+        self.assert_reads(self.admin, ["Draft", "Shop"])
+
+    def test_trainer_creates_through_middleware(self):
+        r = self.jwt(self.trainer_user).post(BASE, {"student": self.student.pk, "title": "New"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+
+    def test_roles_without_access_get_403(self):
+        roles = [User.Role.ASSISTANT, User.Role.ACCOUNTANT, User.Role.DOP, User.Role.ROP,
+                 User.Role.HR_MANAGER, User.Role.SALES_MANAGER, User.Role.MARKETING]
+        for role in roles:
+            client = self.jwt(make_user(f"u_{role}", role))
+            for url in self.ENDPOINTS:
+                self.assertEqual(client.get(url).status_code, 403, f"{role} {url}")
+
+    def test_no_token_is_401(self):
+        for url in self.ENDPOINTS:
+            self.assertEqual(APIClient().get(url).status_code, 401, url)
