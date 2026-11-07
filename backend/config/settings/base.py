@@ -71,6 +71,8 @@ LOCAL_APPS = [
     "apps.reports.apps.ReportsConfig",
     # «Общая статистика»: ежедневные снимки показателей академии (TV-панель).
     "apps.performance.apps.PerformanceConfig",
+    # Проекты студентов: регистрирует тренер, просматривают Team Lead и директор.
+    "apps.projects.apps.ProjectsConfig",
 ]
 
 INSTALLED_APPS = (

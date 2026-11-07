@@ -37,7 +37,7 @@ beforeEach(() => {
 })
 
 describe('раздел «Академия» кабинета операционного директора', () => {
-  it('в меню есть раздел «Академия» с семью пунктами', () => {
+  it('в меню есть раздел «Академия» с восемью пунктами', () => {
     renderWithProviders(<Routes><Route path="/operations" element={<OperationsLayout />}><Route index element={<p>Dashboard</p>} /></Route></Routes>, { route: '/operations' })
     const section = screen.getAllByRole('group', { name: 'Академия' })[0]
     expect(within(section).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
@@ -45,6 +45,7 @@ describe('раздел «Академия» кабинета операцион�
       ['Успеваемость', '/operations/academy/performance'], ['Месячные результаты', '/operations/academy/monthly'],
       ['Посещаемость групп', '/operations/attendance'],
       ['Сводка посещаемости', '/operations/academy/attendance'],
+      ['Проекты студентов', '/operations/academy/projects'],
       ['Настройки программ', '/operations/academy/programs'],
     ])
   })

@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   FileSpreadsheet,
+  FolderKanban,
   GraduationCap,
   Headset,
   LayoutDashboard,
@@ -70,6 +71,8 @@ export const ACADEMY_NAV: ShellNavItem[] = [
   // Месячная матрица посещаемости и ДЗ всех групп (backend: apps.attendance_matrix).
   { to: '/operations/attendance', label: 'Посещаемость групп', icon: ClipboardCheck },
   { to: '/operations/academy/attendance', label: 'Сводка посещаемости', icon: BarChart3 },
+  // Опубликованные проекты студентов (backend: apps.projects, только просмотр).
+  { to: '/operations/academy/projects', label: 'Проекты студентов', icon: FolderKanban },
   // Учебные месяцы программ: предмет и число занятий в месяце (backend: apps.academic_progress).
   { to: '/operations/academy/programs', label: 'Настройки программ', icon: Settings2 },
 ]

@@ -23,6 +23,7 @@ import {
   CircleCheck,
   BookOpen,
   FileQuestion,
+  FolderKanban,
   Wallet,
   ScanLine,
   UserCheck,
@@ -94,6 +95,7 @@ export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
       { label: 'Сводка посещаемости', to: '/app/attendance-monitoring', icon: Table2 },
       { label: 'Настройки программ', to: '/team-lead/programs', icon: Table2 },
       { label: 'Домашние задания', to: '/app/homework', icon: NotebookPen /* journal-text */ },
+      { label: 'Проекты студентов', to: '/trainer/projects', icon: FolderKanban },
     ],
   },
   {
