@@ -205,14 +205,13 @@ export function ProjectsPage() {
 
       <StatsRow stats={stats.data} isPending={stats.isPending} />
 
-      <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center">
-        <div className="flex min-w-0 items-center gap-2 xl:w-80 xl:shrink-0">
-          <div className="min-w-0 flex-1">
-            <SearchInput value={search} onChange={setSearch} placeholder="Поиск по проекту, студенту, технологии…" aria-label="Поиск проектов" />
-          </div>
-          <div className="xl:hidden"><ViewToggle value={view} onChange={changeView} /></div>
+      {/* One row on desktop; on smaller screens search + view toggle, then the filters. */}
+      <div className="mb-5 flex flex-wrap items-center gap-3 xl:flex-nowrap">
+        <div className="order-1 min-w-0 flex-1 xl:w-80 xl:flex-none">
+          <SearchInput value={search} onChange={setSearch} placeholder="Поиск по проекту, студенту, технологии…" aria-label="Поиск проектов" />
         </div>
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="order-2 xl:order-4"><ViewToggle value={view} onChange={changeView} /></div>
+        <div className="order-3 grid w-full min-w-0 grid-cols-2 gap-3 md:grid-cols-4 xl:w-auto xl:flex-1">
           <Select aria-label="Группа" placeholder="Все группы" value={group}
             onChange={(e) => update({ group: e.target.value })}
             options={(options.data?.groups ?? []).map((g) => ({ value: String(g.id), label: g.name }))} />
@@ -226,11 +225,10 @@ export function ProjectsPage() {
             options={(options.data?.technologies ?? []).map((t) => ({ value: t, label: t }))} />
         </div>
         {hasFilters ? (
-          <Button variant="ghost" size="sm" className="self-start xl:self-auto" onClick={() => { setSearch(''); setParams({}, { replace: true }) }}>
+          <Button variant="ghost" size="sm" className="order-4 xl:order-3" onClick={() => { setSearch(''); setParams({}, { replace: true }) }}>
             Сбросить
           </Button>
         ) : null}
-        <div className="hidden xl:block"><ViewToggle value={view} onChange={changeView} /></div>
       </div>
 
       {list.isError ? <ErrorState title="Не удалось загрузить проекты" onRetry={() => void list.refetch()} /> : null}
