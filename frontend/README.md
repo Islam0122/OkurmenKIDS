@@ -97,3 +97,34 @@ XP rules and the group methodology).
 **Own domain** (e.g. `leaderboard.okurmenkids.com`): a Vercel project on this
 repo, root directory `frontend`, with `VITE_APP_MODE=leaderboard` and the same
 `VITE_API_BASE_URL`; add the domain to `LEADERBOARD_SITE_ORIGINS` on the backend.
+
+## OKURMEN DIGITAL (application launcher)
+
+One dark screen that launches every academy application: `/portal`
+(and `/portal/programs` for «Our Programs»). No login is needed to see it;
+the header has a Login button, or the signed-in user with a log-out button.
+
+| Card | Default destination |
+|---|---|
+| LMS | `/app/dashboard` (sign-in; a signed-in employee lands in their own cabinet) |
+| Training & Exams | `https://training-portal-theta.vercel.app/` |
+| Schedule | `/schedule` |
+| Leaderboard | `/leaderboard` |
+| Our Programs | `/portal/programs` |
+| News | `/app/news` (sign-in; hidden for roles without the LMS) |
+| Monthly Performance | `https://okurmen-kids-drab.vercel.app/monthly-performance` |
+
+Every destination, label and program lives in `src/features/portal/config.ts`.
+Each can be overridden at build time — an app route of this build or an
+absolute URL of another deployment: `VITE_PORTAL_LMS_URL`,
+`VITE_PORTAL_TRAINING_URL`, `VITE_PORTAL_SCHEDULE_URL`,
+`VITE_PORTAL_LEADERBOARD_URL`, `VITE_PORTAL_NEWS_URL`,
+`VITE_PORTAL_PERFORMANCE_URL`, `VITE_PORTAL_PROGRAMS_URL`. Absolute URLs open
+in a new tab; keys `1`–`7` open the cards.
+
+**Own domain** (e.g. `digital.okurmenkids.com`): a Vercel project on this repo,
+root directory `frontend`, with `VITE_APP_MODE=portal` (so `/` opens the
+launcher) and the same `VITE_API_BASE_URL`; add the domain to
+`PORTAL_SITE_ORIGINS` on the backend. Schedule, Leaderboard, Programs, the LMS
+and News are served by that same build. On the existing LMS deployment the
+launcher is already available at `/portal` with no extra setup.

@@ -31,6 +31,16 @@ export const router = createBrowserRouter([
     errorElement: <RouteErrorPage />,
     lazy: async () => ({ Component: (await import('@/features/performanceSite/MonthlyPerformanceSite')).MonthlyPerformanceSite }),
   },
+  {
+    // OKURMEN DIGITAL — public launcher of every academy application (features/portal).
+    path: '/portal',
+    errorElement: <RouteErrorPage />,
+    children: [
+      { index: true, lazy: async () => ({ Component: (await import('@/features/portal/PortalPage')).PortalPage }) },
+      { path: 'programs', lazy: async () => ({ Component: (await import('@/features/portal/ProgramsPage')).ProgramsPage }) },
+      { path: '*', element: <Navigate to="/portal" replace /> },
+    ],
+  },
   { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {
     path: '/app',

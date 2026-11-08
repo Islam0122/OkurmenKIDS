@@ -63,6 +63,18 @@
   --color-ok-line: #e7e2d8;
   --color-ok-ink: #1b1732;
   --color-ok-muted: #5d5a70;
+  /* OKURMEN DIGITAL portal (features/portal) — dark launcher, one green accent. */
+  --color-pd-bg: #09090b;
+  --color-pd-panel: #111113;
+  --color-pd-panel-hover: #161619;
+  --color-pd-line: #232327;
+  --color-pd-line-strong: #34343a;
+  --color-pd-ink: #f4f4f5;
+  --color-pd-muted: #a1a1aa;
+  --color-pd-faint: #71717a;
+  --color-pd-green: #4ade80;
+  --color-pd-green-deep: #16a34a;
+
   --font-display: "Manrope Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   /* Caption for the phone bottom bar only: five labels must fit in 320px. */
@@ -245,4 +257,13 @@
     font-weight: 600;
     color: var(--color-ok-ink);
   }
+}
+
+/* OKURMEN DIGITAL: thin 48px grid that fades out towards the edges. */
+@utility pd-grid {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 100%);
 }
