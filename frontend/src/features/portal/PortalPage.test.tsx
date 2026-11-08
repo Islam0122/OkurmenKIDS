@@ -144,8 +144,9 @@ describe('OKURMEN DIGITAL portal', () => {
   it('shows the four «More from Okurmen» services without inventing URLs', () => {
     renderPortal()
     expect(screen.getByRole('heading', { name: 'More from Okurmen' })).toBeInTheDocument()
-    // Student Projects: a protected route of this build — guests go through the login.
-    expect(service('projects')).toHaveAttribute('href', '/login')
+    // Student Projects: the public gallery of this build — never the login page.
+    expect(service('projects')).toHaveAttribute('href', '/projects')
+    expect(service('projects')).not.toHaveAttribute('target')
     // Careers: the public careers site of this build, in a new tab.
     expect(service('careers')).toHaveAttribute('href', '/careers')
     expect(service('careers')).toHaveAttribute('target', '_blank')
@@ -155,22 +156,19 @@ describe('OKURMEN DIGITAL portal', () => {
     expect(service('feedback')).toHaveAttribute('aria-disabled')
   })
 
-  it('sends signed-in staff to their own projects and feedback pages', () => {
+  it('opens the public gallery for everyone and the survey manager for assistants and admins', () => {
     mockUseAuth.mockReturnValue({ user: user('admin'), status: 'authenticated', logout: vi.fn() })
     renderPortal()
-    expect(service('projects')).toHaveAttribute('href', '/trainer/projects')
+    expect(service('projects')).toHaveAttribute('href', '/projects')
     expect(service('feedback')).toHaveAttribute('href', '/assistant/surveys')
-
-    const ops = { ...user('operations_director') }
-    const projects = PORTAL_SERVICES.find((item) => item.id === 'projects')!
-    expect(resolveService(projects, ops)).toEqual({ kind: 'open', href: '/operations/academy/projects', external: false })
   })
 
-  it('hides Student Projects from roles without access to it', () => {
-    mockUseAuth.mockReturnValue({ user: user('accountant'), status: 'authenticated', logout: vi.fn() })
-    renderPortal()
-    expect(service('projects')).toBeNull()
-    expect(service('careers')).not.toBeNull()
+  it('shows Student Projects to every role, signed in or not', () => {
+    const projects = PORTAL_SERVICES.find((item) => item.id === 'projects')!
+    for (const role of ['accountant', 'teacher', 'operations_director'] as const) {
+      expect(resolveService(projects, user(role))).toEqual({ kind: 'open', href: '/projects', external: false })
+    }
+    expect(resolveService(projects, null)).toEqual({ kind: 'open', href: '/projects', external: false })
   })
 
   it('carries the OKURMENKIDS DIGITAL brand in the header, footer, About and the document title', async () => {

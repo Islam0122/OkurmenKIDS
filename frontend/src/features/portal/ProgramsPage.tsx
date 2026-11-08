@@ -10,7 +10,7 @@ import { PortalShell } from './PortalShell'
 /** «Our Programs» — the academy's learning directions, on the same white screen. */
 export function ProgramsPage() {
   return (
-    <PortalShell page="programs">
+    <PortalShell title={(t) => t.apps.programs.name}>
       <Programs />
     </PortalShell>
   )

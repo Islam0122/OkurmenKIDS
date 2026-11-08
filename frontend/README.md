@@ -121,7 +121,7 @@ Under the grid, **More from Okurmen** has four compact services:
 
 | Service | Destination |
 |---|---|
-| Student Projects | `/trainer/projects` (trainer, Team Lead, admin; sign-in) or `/operations/academy/projects` (operations director, director); hidden for other roles |
+| Student Projects | `/projects` — the public gallery (below), for everyone |
 | Our Feedback | no public address exists (surveys are answered by per-survey links) — assistant and admin open `/assistant/surveys`; others see «Soon» until `VITE_PORTAL_FEEDBACK_URL` is set |
 | Our Website | «Soon» until `VITE_PORTAL_WEBSITE_URL` is set — the official site URL is not configured anywhere in the project |
 | Our Careers | `/careers` (the careers site of this build), in a new tab |
@@ -141,3 +141,25 @@ launcher) and the same `VITE_API_BASE_URL`; add the domain to
 `PORTAL_SITE_ORIGINS` on the backend. Schedule, Leaderboard, Programs, the LMS
 and News are served by that same build. On the existing LMS deployment the
 launcher is already available at `/portal` with no extra setup.
+
+## Student Projects (public gallery)
+
+`/projects` and `/projects/<key>` — a public, read-only gallery of the
+projects trainers have **published** in the LMS. **No login**, never a
+redirect to `/login`. Search, technology filters (HTML/CSS, JavaScript,
+React, Python, Other — `?q=` and `?category=` stay in the URL), «Show more»
+paging, a details page with screenshots, a full-size viewer and the demo link,
+and loading / empty / no-results / error / not-found states.
+
+Projects are still created, edited and published only in the LMS
+(`/trainer/projects`); moving a project back to «Черновик» removes it from
+the gallery at once.
+
+It reads only `GET /api/v1/public/projects/` and `GET /api/v1/public/projects/<key>/`
+(no auth, rate-limited, cached) — a closed whitelist of fields: title,
+descriptions, technologies, date, demo link, images, the group name and the
+student as «First name + initial» (no name at all when the student's
+«Показывать в публичном рейтинге» switch is off). Never: trainer comments,
+ratings, GitHub/Figma links, contacts, database ids. The trainer's name
+appears only with `PUBLIC_PROJECTS_SHOW_TRAINER=true` on the backend (see
+`backend/docs/public_projects.md`).

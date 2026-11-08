@@ -36,9 +36,49 @@ interface Section {
   text: string
 }
 
+export interface GalleryText {
+  title: string
+  description: string
+  search: string
+  searchLabel: string
+  clearSearch: string
+  filtersLabel: string
+  filters: Record<'all' | 'html-css' | 'javascript' | 'react' | 'python' | 'other', string>
+  found: (count: number) => string
+  view: string
+  student: string
+  group: string
+  trainer: string
+  date: string
+  technologies: string
+  hiddenStudent: string
+  loadMore: string
+  loading: string
+  emptyTitle: string
+  emptyText: string
+  noResultsTitle: string
+  noResultsText: string
+  reset: string
+  errorTitle: string
+  errorText: string
+  retry: string
+  back: string
+  notFoundTitle: string
+  notFoundText: string
+  demo: string
+  about: string
+  gallery: string
+  noImages: string
+  screenshot: (index: number, total: number) => string
+  open: (index: number) => string
+  prev: string
+  next: string
+}
+
 export interface Messages {
   brand: { home: string }
-  nav: { language: string; about: string; help: string; privacy: string; login: string; logout: string; time: string; checking: string }
+  nav: { language: string; about: string; help: string; privacy: string; login: string; logout: string; time: string; checking: string; home: string }
+  gallery: GalleryText
   hero: { tagline: string; hello: (name: string) => string; title: { before: string; accent: string; after: string }; description: string; appsLabel: string }
   card: { signIn: string; signInRequired: string; newTab: string; soon: string; explore: string }
   apps: Record<PortalAppId, AppText & { description?: string }>
@@ -68,7 +108,45 @@ const DEVELOPER = BRAND.developer
 
 const en: Messages = {
   brand: { home: 'OkurmenKids Digital — home' },
-  nav: { language: 'Language', about: 'About', help: 'Help', privacy: 'Privacy', login: 'Login', logout: 'Log out', time: 'Bishkek time', checking: 'Checking session' },
+  nav: { language: 'Language', about: 'About', help: 'Help', privacy: 'Privacy', login: 'Login', logout: 'Log out', time: 'Bishkek time', checking: 'Checking session', home: 'Home' },
+  gallery: {
+    title: 'Student Projects',
+    description: 'Discover amazing projects created by students of Okurmen Kids Academy.',
+    search: 'Project, technology, group…',
+    searchLabel: 'Search projects',
+    clearSearch: 'Clear search',
+    filtersLabel: 'Filter by technology',
+    filters: { all: 'All Projects', 'html-css': 'HTML/CSS', javascript: 'JavaScript', react: 'React', python: 'Python', other: 'Other' },
+    found: (n) => `${n} ${n === 1 ? 'project' : 'projects'}`,
+    view: 'View Project',
+    student: 'Student',
+    group: 'Group',
+    trainer: 'Trainer',
+    date: 'Project date',
+    technologies: 'Technologies',
+    hiddenStudent: 'Okurmen Kids student',
+    loadMore: 'Show more projects',
+    loading: 'Loading projects…',
+    emptyTitle: 'No projects yet',
+    emptyText: 'Projects appear here as soon as trainers publish them.',
+    noResultsTitle: 'Nothing found',
+    noResultsText: 'Try another search or technology.',
+    reset: 'Reset filters',
+    errorTitle: 'Could not load projects',
+    errorText: 'Check your internet connection and try again.',
+    retry: 'Try again',
+    back: 'All projects',
+    notFoundTitle: 'Project not found',
+    notFoundText: 'It may have been unpublished, or the link is incorrect.',
+    demo: 'Open live demo',
+    about: 'About the project',
+    gallery: 'Screenshots',
+    noImages: 'No screenshots yet',
+    screenshot: (i, n) => `Screenshot ${i} of ${n}`,
+    open: (i) => `Open screenshot ${i}`,
+    prev: 'Previous',
+    next: 'Next',
+  },
   hero: {
     tagline: 'Everything you need to learn, teach and grow.',
     hello: (name) => `Hello, ${name}`,
@@ -160,7 +238,45 @@ const en: Messages = {
 
 const ru: Messages = {
   brand: { home: 'OkurmenKids Digital — на главную' },
-  nav: { language: 'Язык', about: 'О проекте', help: 'Помощь', privacy: 'Конфиденциальность', login: 'Войти', logout: 'Выйти', time: 'Время в Бишкеке', checking: 'Проверяем сессию' },
+  nav: { language: 'Язык', about: 'О проекте', help: 'Помощь', privacy: 'Конфиденциальность', login: 'Войти', logout: 'Выйти', time: 'Время в Бишкеке', checking: 'Проверяем сессию', home: 'На главную' },
+  gallery: {
+    title: 'Проекты студентов',
+    description: 'Удивительные проекты, созданные студентами академии Okurmen Kids.',
+    search: 'Проект, технология, группа…',
+    searchLabel: 'Поиск проектов',
+    clearSearch: 'Очистить поиск',
+    filtersLabel: 'Фильтр по технологии',
+    filters: { all: 'Все проекты', 'html-css': 'HTML/CSS', javascript: 'JavaScript', react: 'React', python: 'Python', other: 'Другое' },
+    found: (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'проект' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'проекта' : 'проектов'}`,
+    view: 'Смотреть проект',
+    student: 'Студент',
+    group: 'Группа',
+    trainer: 'Тренер',
+    date: 'Дата проекта',
+    technologies: 'Технологии',
+    hiddenStudent: 'Студент Okurmen Kids',
+    loadMore: 'Показать ещё',
+    loading: 'Загружаем проекты…',
+    emptyTitle: 'Проектов пока нет',
+    emptyText: 'Проекты появятся здесь, как только тренеры их опубликуют.',
+    noResultsTitle: 'Ничего не найдено',
+    noResultsText: 'Попробуйте другой запрос или технологию.',
+    reset: 'Сбросить фильтры',
+    errorTitle: 'Не удалось загрузить проекты',
+    errorText: 'Проверьте подключение к интернету и попробуйте ещё раз.',
+    retry: 'Попробовать снова',
+    back: 'Все проекты',
+    notFoundTitle: 'Проект не найден',
+    notFoundText: 'Возможно, его сняли с публикации или ссылка неверна.',
+    demo: 'Открыть демо',
+    about: 'О проекте',
+    gallery: 'Скриншоты',
+    noImages: 'Скриншотов пока нет',
+    screenshot: (i, n) => `Скриншот ${i} из ${n}`,
+    open: (i) => `Открыть скриншот ${i}`,
+    prev: 'Назад',
+    next: 'Вперёд',
+  },
   hero: {
     tagline: 'Всё, чтобы учиться, учить и расти.',
     hello: (name) => `Здравствуйте, ${name}`,
@@ -252,7 +368,45 @@ const ru: Messages = {
 
 const kg: Messages = {
   brand: { home: 'OkurmenKids Digital — башкы бет' },
-  nav: { language: 'Тил', about: 'Долбоор жөнүндө', help: 'Жардам', privacy: 'Купуялык', login: 'Кирүү', logout: 'Чыгуу', time: 'Бишкек убактысы', checking: 'Сессия текшерилүүдө' },
+  nav: { language: 'Тил', about: 'Долбоор жөнүндө', help: 'Жардам', privacy: 'Купуялык', login: 'Кирүү', logout: 'Чыгуу', time: 'Бишкек убактысы', checking: 'Сессия текшерилүүдө', home: 'Башкы бет' },
+  gallery: {
+    title: 'Студенттердин долбоорлору',
+    description: 'Okurmen Kids академиясынын студенттери түзгөн кызыктуу долбоорлор.',
+    search: 'Долбоор, технология, топ…',
+    searchLabel: 'Долбоорлорду издөө',
+    clearSearch: 'Издөөнү тазалоо',
+    filtersLabel: 'Технология боюнча чыпкалоо',
+    filters: { all: 'Бардык долбоорлор', 'html-css': 'HTML/CSS', javascript: 'JavaScript', react: 'React', python: 'Python', other: 'Башка' },
+    found: (n) => `${n} долбоор`,
+    view: 'Долбоорду көрүү',
+    student: 'Студент',
+    group: 'Топ',
+    trainer: 'Тренер',
+    date: 'Долбоордун күнү',
+    technologies: 'Технологиялар',
+    hiddenStudent: 'Okurmen Kids студенти',
+    loadMore: 'Дагы көрсөтүү',
+    loading: 'Долбоорлор жүктөлүүдө…',
+    emptyTitle: 'Азырынча долбоорлор жок',
+    emptyText: 'Тренерлер жарыялаганда долбоорлор ушул жерде пайда болот.',
+    noResultsTitle: 'Эч нерсе табылган жок',
+    noResultsText: 'Башка суроо же технология менен аракет кылыңыз.',
+    reset: 'Чыпкаларды тазалоо',
+    errorTitle: 'Долбоорлорду жүктөө мүмкүн болгон жок',
+    errorText: 'Интернет байланышын текшерип, кайра аракет кылыңыз.',
+    retry: 'Кайра аракет кылуу',
+    back: 'Бардык долбоорлор',
+    notFoundTitle: 'Долбоор табылган жок',
+    notFoundText: 'Балким, ал жарыялоодон алынган же шилтеме туура эмес.',
+    demo: 'Демону ачуу',
+    about: 'Долбоор жөнүндө',
+    gallery: 'Скриншоттор',
+    noImages: 'Азырынча скриншоттор жок',
+    screenshot: (i, n) => `${n} скриншоттун ${i}-си`,
+    open: (i) => `${i}-скриншотту ачуу`,
+    prev: 'Мурунку',
+    next: 'Кийинки',
+  },
   hero: {
     tagline: 'Окуу, окутуу жана өсүү үчүн баары бир жерде.',
     hello: (name) => `Саламатсызбы, ${name}`,

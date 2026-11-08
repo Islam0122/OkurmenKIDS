@@ -137,14 +137,11 @@ export interface PortalService {
 
 export const PORTAL_SERVICES: PortalService[] = [
   {
-    // Проекты студентов (features/projects): тренер, Team Lead и администратор — /trainer/projects,
-    // операционный директор и директор — опубликованные проекты в своём кабинете.
+    // Публичная галерея опубликованных проектов (features/projectsSite, /projects) — без входа.
+    // Тренеры по-прежнему ведут и публикуют проекты в LMS (/trainer/projects).
     id: 'projects',
     icon: FolderKanban,
-    href: env(ENV.VITE_PORTAL_PROJECTS_URL, '/trainer/projects'),
-    roleHrefs: { operations_director: '/operations/academy/projects', director: '/operations/academy/projects' },
-    requiresAuth: true,
-    roles: ['teacher', 'team_lead', 'admin', 'operations_director', 'director'],
+    href: env(ENV.VITE_PORTAL_PROJECTS_URL, '/projects'),
   },
   {
     // Опросы обратной связи (apps.feedback) отвечают по личной ссылке на каждый опрос — общего

@@ -1,7 +1,7 @@
 import '@fontsource-variable/manrope'
 
 import { useCallback, useState, type ReactNode } from 'react'
-import { ChevronDown, CircleHelp, Globe, Info, LogIn, LogOut } from 'lucide-react'
+import { ChevronDown, CircleHelp, Globe, House, Info, LogIn, LogOut } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
 import logo from '@/assets/logo-careers.png'
@@ -14,26 +14,37 @@ import type { User } from '@/types/auth'
 import { cn } from '@/utils/cn'
 
 import { PORTAL_PATH } from './config'
-import { LANGS, LanguageProvider, useI18n, type Lang } from './i18n'
+import { LANGS, LanguageProvider, useI18n, type Lang, type Messages } from './i18n'
 import { InfoModals, type InfoModalId } from './InfoModals'
 
 const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pd-green'
 
-/** White full-screen frame shared by the launcher and the programs page: header, footer, dialogs. */
-export function PortalShell({ children, page }: { children: ReactNode; page?: 'programs' }) {
+/** White full-screen frame shared by the launcher, programs and projects pages: header, footer, dialogs. */
+interface ShellProps {
+  children: ReactNode
+  /** Page name after «OkurmenKids Digital — » in the tab title (default: the brand subtitle). */
+  title?: string | ((t: Messages) => string)
+  /** Show a «Home» button that leads back to the launcher. */
+  backHome?: boolean
+}
+
+export function PortalShell({ children, title, backHome = false }: ShellProps) {
   return (
     <LanguageProvider>
-      <Frame page={page}>{children}</Frame>
+      <Frame title={title} backHome={backHome}>
+        {children}
+      </Frame>
     </LanguageProvider>
   )
 }
 
-function Frame({ children, page }: { children: ReactNode; page?: 'programs' }) {
+function Frame({ children, title, backHome }: Omit<ShellProps, 'backHome'> & { backHome: boolean }) {
   const { t } = useI18n()
+  const page = typeof title === 'function' ? title(t) : title
   const [modal, setModal] = useState<InfoModalId | null>(null)
   const close = useCallback(() => setModal(null), [])
 
-  useDocumentMeta({ title: brandTitle(page === 'programs' ? t.apps.programs.name : 'Образовательная экосистема'), description: BRAND.description })
+  useDocumentMeta({ title: brandTitle(page || 'Образовательная экосистема'), description: BRAND.description })
 
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-x-hidden bg-pd-bg font-display text-pd-ink antialiased selection:bg-pd-green/20">
@@ -42,7 +53,7 @@ function Frame({ children, page }: { children: ReactNode; page?: 'programs' }) {
         aria-hidden
         className="pointer-events-none fixed left-1/2 top-[-20rem] -z-10 h-[32rem] w-[56rem] max-w-[140vw] -translate-x-1/2 rounded-full bg-pd-green/[0.07] blur-3xl"
       />
-      <PortalHeader onOpen={setModal} />
+      <PortalHeader onOpen={setModal} backHome={backHome} />
       {children}
       <PortalFooter onOpen={setModal} />
       <InfoModals open={modal} onClose={close} />
@@ -50,7 +61,7 @@ function Frame({ children, page }: { children: ReactNode; page?: 'programs' }) {
   )
 }
 
-function PortalHeader({ onOpen }: { onOpen: (id: InfoModalId) => void }) {
+function PortalHeader({ onOpen, backHome }: { onOpen: (id: InfoModalId) => void; backHome: boolean }) {
   const { user, status, logout } = useAuth()
   const { t } = useI18n()
   const location = useLocation()
@@ -76,9 +87,23 @@ function PortalHeader({ onOpen }: { onOpen: (id: InfoModalId) => void }) {
         </Link>
 
         <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1.5" aria-label={BRAND.name}>
+          {backHome ? (
+            <Link
+              to={PORTAL_PATH}
+              aria-label={t.nav.home}
+              title={t.nav.home}
+              className={cn(
+                'inline-flex h-9 items-center gap-1.5 rounded-lg border border-pd-line bg-pd-panel px-2 text-sm font-medium text-pd-ink pd-shadow transition hover:border-pd-green-line hover:text-pd-green md:px-3',
+                focusRing,
+              )}
+            >
+              <House className="size-4" aria-hidden />
+              <span className="hidden md:inline">{t.nav.home}</span>
+            </Link>
+          ) : null}
           <LanguageSelect />
-          <HeaderButton icon={Info} label={t.nav.about} onClick={() => onOpen('about')} />
-          <HeaderButton icon={CircleHelp} label={t.nav.help} onClick={() => onOpen('help')} />
+          <HeaderButton icon={Info} label={t.nav.about} onClick={() => onOpen('about')} compact={backHome} />
+          <HeaderButton icon={CircleHelp} label={t.nav.help} onClick={() => onOpen('help')} compact={backHome} />
           <span className="mx-0.5 hidden h-5 w-px bg-pd-line sm:block" aria-hidden />
           {status === 'authenticated' && user ? (
             <UserChip user={user} onLogout={logout} logoutLabel={t.nav.logout} />
@@ -104,7 +129,8 @@ function PortalHeader({ onOpen }: { onOpen: (id: InfoModalId) => void }) {
   )
 }
 
-function HeaderButton({ icon: Icon, label, onClick }: { icon: typeof Info; label: string; onClick: () => void }) {
+/** `compact`: leave the header on phones (the footer has the same links) — pages with a «Home» button need the room. */
+function HeaderButton({ icon: Icon, label, onClick, compact = false }: { icon: typeof Info; label: string; onClick: () => void; compact?: boolean }) {
   return (
     <button
       type="button"
@@ -113,6 +139,7 @@ function HeaderButton({ icon: Icon, label, onClick }: { icon: typeof Info; label
       aria-label={label}
       title={label}
       className={cn(
+        compact && 'max-sm:hidden',
         'inline-flex h-9 items-center gap-1.5 rounded-lg px-1.5 text-sm max-[359px]:hidden sm:px-2 font-medium text-pd-muted transition hover:bg-zinc-100 hover:text-pd-ink md:px-2.5',
         focusRing,
       )}

@@ -41,6 +41,16 @@ export const router = createBrowserRouter([
       { path: '*', element: <Navigate to="/portal" replace /> },
     ],
   },
+  {
+    // Публичная галерея опубликованных проектов студентов (без входа) — OKURMENKIDS DIGITAL.
+    // Создание, правка и публикация остаются в LMS (/trainer/projects). Backend: apps.projects.public.
+    path: '/projects',
+    errorElement: <RouteErrorPage />,
+    children: [
+      { index: true, lazy: async () => ({ Component: (await import('@/features/projectsSite/ProjectsGalleryPage')).ProjectsGalleryPage }) },
+      { path: ':key', lazy: async () => ({ Component: (await import('@/features/projectsSite/ProjectDetailPage')).ProjectDetailPage }) },
+    ],
+  },
   { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {
     path: '/app',

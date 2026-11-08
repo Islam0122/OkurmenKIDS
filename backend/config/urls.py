@@ -34,6 +34,8 @@ urlpatterns = [
     path("api/v1/", include("apps.worklog.urls")),
     # Проекты студентов — projects/, projects/{id}/images/ (см. apps.projects).
     path("api/v1/", include("apps.projects.urls")),
+    # Публичная галерея опубликованных проектов (без входа, только GET) — apps.projects.public.
+    path("api/v1/public/projects/", include("apps.projects.public_urls")),
     # «Общая статистика» академии: ежедневные показатели и TV-режим (см. apps.performance).
     path("api/v1/monthly-performance/", include("apps.performance.urls")),
     # Public leaderboard (no login, GET only) — see apps.leaderboard.
