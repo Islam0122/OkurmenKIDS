@@ -68,7 +68,7 @@ export function isAccountingRole(role: UserRole | undefined): boolean {
 /** Where a role lands after sign-in. The Accountant lives only in /accounting
  * (backend: apps.accounting.access — every LMS URL answers it 403). */
 export function homeFor(role: UserRole | undefined, target: string): string {
-  // The public OKURMEN DIGITAL launcher is a valid return target for every role.
+  // The public OKURMENKIDS DIGITAL launcher is a valid return target for every role.
   if (target === '/portal' || target.startsWith('/portal/')) return target
   const personal = PERSONAL_WORK_PATHS.some((path) => target.startsWith(path))
   if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance') && !personal) return '/accounting'

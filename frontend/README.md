@@ -98,7 +98,7 @@ XP rules and the group methodology).
 repo, root directory `frontend`, with `VITE_APP_MODE=leaderboard` and the same
 `VITE_API_BASE_URL`; add the domain to `LEADERBOARD_SITE_ORIGINS` on the backend.
 
-## OKURMEN DIGITAL (application launcher)
+## OKURMENKIDS DIGITAL (application launcher)
 
 One white screen that launches every academy application: `/portal`
 (and `/portal/programs` for «Our Programs»). No login is needed to see it.

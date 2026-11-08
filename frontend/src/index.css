@@ -63,7 +63,7 @@
   --color-ok-line: #e7e2d8;
   --color-ok-ink: #1b1732;
   --color-ok-muted: #5d5a70;
-  /* OKURMEN DIGITAL portal (features/portal) — white, emerald accent. */
+  /* OKURMENKIDS DIGITAL portal (features/portal) — white, emerald accent. */
   --color-pd-bg: #ffffff;
   --color-pd-panel: #ffffff;
   --color-pd-subtle: #fafafa;
@@ -261,7 +261,7 @@
   }
 }
 
-/* OKURMEN DIGITAL: thin light-gray 48px grid that fades out towards the edges. */
+/* OKURMENKIDS DIGITAL: thin light-gray 48px grid that fades out towards the edges. */
 @utility pd-grid {
   background-image:
     linear-gradient(to right, rgb(10 10 10 / 0.045) 1px, transparent 1px),
@@ -270,7 +270,7 @@
   mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 100%);
 }
 
-/* OKURMEN DIGITAL: soft layered card shadows (Vercel/Linear-like). */
+/* OKURMENKIDS DIGITAL: soft layered card shadows (Vercel/Linear-like). */
 @utility pd-shadow {
   box-shadow: 0 1px 2px rgb(10 10 10 / 0.04), 0 1px 1px rgb(10 10 10 / 0.02);
 }
@@ -278,6 +278,6 @@
   box-shadow: 0 1px 2px rgb(10 10 10 / 0.04), 0 12px 32px -12px rgb(10 10 10 / 0.14);
 }
 
-/* OKURMEN DIGITAL: compact layout on short desktop screens (e.g. 1280×720, 1366×768 minus browser chrome). */
+/* OKURMENKIDS DIGITAL: compact layout on short desktop screens (e.g. 1280×720, 1366×768 minus browser chrome). */
 @custom-variant short (@media (min-width: 1024px) and (max-height: 800px));
 @custom-variant tiny (@media (min-width: 1024px) and (max-height: 680px));

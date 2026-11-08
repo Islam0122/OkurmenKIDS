@@ -15,7 +15,7 @@ const gridVariants = {
   show: { transition: { staggerChildren: 0.045, delayChildren: 0.08 } },
 }
 
-/** OKURMEN DIGITAL — one screen, every academy application. */
+/** OKURMENKIDS DIGITAL — one screen, every academy application. */
 export function PortalPage() {
   return (
     <PortalShell>

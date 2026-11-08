@@ -23,7 +23,7 @@ import type { User, UserRole } from '@/types/auth'
 import type { ProgramId } from './i18n'
 
 /**
- * OKURMEN DIGITAL — the single source of truth for every application the
+ * OKURMENKIDS DIGITAL — the single source of truth for every application the
  * portal launches. Change a destination here (or through the matching
  * `VITE_PORTAL_*_URL` variable at build time) and the launcher follows.
  *

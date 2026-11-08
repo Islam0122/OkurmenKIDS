@@ -44,7 +44,7 @@ describe('OKURMEN DIGITAL portal', () => {
 
   it('shows all seven applications to a guest, with a login button', () => {
     renderPortal()
-    expect(screen.getByRole('heading', { name: /welcome to okurmen digital/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /welcome to okurmenkids digital/i })).toBeInTheDocument()
     expect(within(screen.getByRole('list', { name: 'Academy applications' })).getAllByRole('listitem')).toHaveLength(7)
     expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login')
   })
@@ -97,7 +97,7 @@ describe('OKURMEN DIGITAL portal', () => {
   it('switches the language and remembers it', async () => {
     renderPortal()
     await userEvent.selectOptions(screen.getByLabelText('Language'), 'ru')
-    expect(screen.getByRole('heading', { name: /добро пожаловать в okurmen digital/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /добро пожаловать в okurmenkids digital/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Войти' })).toBeInTheDocument()
     expect(document.documentElement.lang).toBe('ru')
     expect(window.localStorage.getItem('okurmen-digital:lang')).toBe('ru')
@@ -111,7 +111,7 @@ describe('OKURMEN DIGITAL portal', () => {
     renderPortal()
     const about = screen.getAllByRole('button', { name: 'About' })[0]
     await userEvent.click(about)
-    const dialog = screen.getByRole('dialog', { name: 'About Okurmen Digital' })
+    const dialog = screen.getByRole('dialog', { name: 'About OkurmenKids Digital' })
     expect(within(dialog).getByText('15.09.2026')).toBeInTheDocument()
     expect(within(dialog).getAllByText('Islam Duishobaev').length).toBeGreaterThan(0)
     expect(within(dialog).getByText('PostgreSQL')).toBeInTheDocument()
@@ -171,6 +171,21 @@ describe('OKURMEN DIGITAL portal', () => {
     renderPortal()
     expect(service('projects')).toBeNull()
     expect(service('careers')).not.toBeNull()
+  })
+
+  it('carries the OKURMENKIDS DIGITAL brand in the header, footer, About and the document title', async () => {
+    renderPortal()
+    expect(screen.getAllByText('OKURMENKIDS', { exact: false }).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('DIGITAL')[0]).toHaveClass('text-pd-green')
+    expect(screen.getAllByText('ОБРАЗОВАТЕЛЬНАЯ ЭКОСИСТЕМА').length).toBeGreaterThan(0)
+    expect(screen.getByText('© 2026 OkurmenKids Digital. All rights reserved.')).toBeInTheDocument()
+    expect(screen.getByText('Created by Islam Duishobaev.')).toBeInTheDocument()
+    expect(document.title).toBe('OkurmenKids Digital — Образовательная экосистема')
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'About' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'About OkurmenKids Digital' })
+    expect(within(dialog).getByText('© 2026 OkurmenKids Digital. All rights reserved.')).toBeInTheDocument()
+    expect(within(dialog).getByText('ОБРАЗОВАТЕЛЬНАЯ ЭКОСИСТЕМА')).toBeInTheDocument()
   })
 
   it('treats an unconfigured destination as unavailable instead of inventing a URL', () => {

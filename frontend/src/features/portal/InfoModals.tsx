@@ -1,6 +1,7 @@
 import { CircleHelp, Code2, Info, KeyRound, LayoutGrid, LifeBuoy, LogIn, MousePointerClick, ShieldCheck, Target } from 'lucide-react'
 
 import logo from '@/assets/logo-careers.png'
+import { BRAND } from '@/lib/brand'
 
 import { useI18n } from './i18n'
 import { PortalModal } from './PortalModal'
@@ -8,7 +9,6 @@ import { PortalModal } from './PortalModal'
 export type InfoModalId = 'about' | 'help' | 'privacy'
 
 const TECHNOLOGIES = ['Python', 'Django', 'React', 'TypeScript', 'PostgreSQL', 'Docker', 'REST API']
-const DEVELOPER = 'Islam Duishobaev'
 
 interface InfoModalsProps {
   open: InfoModalId | null
@@ -39,7 +39,7 @@ function AboutModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       onClose={onClose}
       size="lg"
       title={a.title}
-      subtitle={a.subtitle}
+      subtitle={BRAND.subtitle}
       icon={<img src={logo} alt="" className="size-8 object-contain" />}
       footer={
         <div className="space-y-0.5 text-center text-xs text-pd-faint">
@@ -76,7 +76,7 @@ function AboutModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                 ID
               </span>
               <div>
-                <p className="font-semibold">{DEVELOPER}</p>
+                <p className="font-semibold">{BRAND.developer}</p>
                 <p className="flex items-center gap-1.5 text-sm text-pd-muted">
                   <Code2 className="size-3.5 text-pd-green" aria-hidden />
                   {a.developerRole}
