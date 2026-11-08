@@ -83,15 +83,21 @@ describe('OKURMEN DIGITAL portal', () => {
     expect(screen.getAllByText('Aibek Asanov').length).toBeGreaterThan(0)
     expect(screen.queryByRole('link', { name: 'Login' })).not.toBeInTheDocument()
     expect(card('lms')).toHaveAttribute('href', '/app/dashboard')
-    expect(card('news')).toHaveAttribute('href', '/app/news')
+    expect(card('news')).toHaveAttribute('href', '/news')
   })
 
-  it('hides LMS-only apps from roles without the LMS and sends them to their own cabinet', () => {
+  it('sends roles without the LMS to their own cabinet; public news stays open to everyone', () => {
     mockUseAuth.mockReturnValue({ user: user('accountant'), status: 'authenticated', logout: vi.fn() })
     renderPortal()
-    expect(card('news')).toBeNull()
-    expect(document.querySelectorAll('[data-app]')).toHaveLength(6)
+    expect(card('news')).toHaveAttribute('href', '/news')
+    expect(document.querySelectorAll('[data-app]')).toHaveLength(7)
     expect(card('lms')).toHaveAttribute('href', '/accounting')
+  })
+
+  it('opens public News for a guest without the login page', () => {
+    renderPortal()
+    expect(card('news')).toHaveAttribute('href', '/news')
+    expect(card('news')?.getAttribute('aria-label')).not.toContain('sign in required')
   })
 
   it('switches the language and remembers it', async () => {

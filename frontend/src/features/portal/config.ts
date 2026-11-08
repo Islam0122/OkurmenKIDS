@@ -73,8 +73,6 @@ function env(value: string | undefined, fallback: string | null): string | null 
 
 const ENV = import.meta.env
 
-/** Roles that work inside the LMS cabinet (/app). Others are redirected to their own cabinet by AppLayout. */
-const LMS_ROLES: UserRole[] = ['admin', 'teacher', 'team_lead']
 
 export const PORTAL_APPS: PortalApp[] = [
   {
@@ -99,11 +97,11 @@ export const PORTAL_APPS: PortalApp[] = [
     href: env(ENV.VITE_PORTAL_LEADERBOARD_URL, '/leaderboard'),
   },
   {
+    // Публичные новости академии (features/newsSite, /news) — без входа. Внутренние
+    // уведомления тренерам остаются в LMS (/app/news).
     id: 'news',
     icon: Megaphone,
-    href: env(ENV.VITE_PORTAL_NEWS_URL, '/app/news'),
-    requiresAuth: true,
-    roles: LMS_ROLES,
+    href: env(ENV.VITE_PORTAL_NEWS_URL, '/news'),
   },
   {
     id: 'performance',

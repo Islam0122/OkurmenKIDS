@@ -113,7 +113,7 @@ languages live in `src/features/portal/i18n.tsx`.
 | Training & Exams | `https://training-portal-theta.vercel.app/` |
 | Schedule | `/schedule` |
 | Leaderboard | `/leaderboard` |
-| News | `/app/news` (sign-in; hidden for roles without the LMS) |
+| News | `/news` — public academy news (below), for everyone |
 | Monthly Performance | `https://okurmen-kids-drab.vercel.app/monthly-performance` |
 | Our Programs | `/portal/programs` |
 
@@ -163,3 +163,19 @@ student as «First name + initial» (no name at all when the student's
 ratings, GitHub/Figma links, contacts, database ids. The trainer's name
 appears only with `PUBLIC_PROJECTS_SHOW_TRAINER=true` on the backend (see
 `backend/docs/public_projects.md`).
+
+## Academy News (public)
+
+`/news` and `/news/<slug>` — public academy news, **no login**. A featured
+story, search and categories (Academy Events, Student Achievements,
+Competitions, Education, Announcements, Activities — kept in the URL),
+«Show more» paging; the article page has a large cover, readable text, a
+photo gallery in the photos' own proportions with captions and a lightbox
+(arrows, Esc), sharing (phone share sheet, Telegram, WhatsApp, Facebook, copy
+link) and related news. Loading, empty, no-results, error and not-found
+states. Photos come as WebP copies (640 / 1600 px, `srcset`, lazy loading).
+
+Articles are written in the Django admin («Новости академии (публичный
+сайт)»): cover, several photos at once, captions, category, draft / publish
+/ scheduled date / unpublish — see `backend/docs/academy_news.md`. The LMS's
+internal notices for trainers stay at `/app/news`.
