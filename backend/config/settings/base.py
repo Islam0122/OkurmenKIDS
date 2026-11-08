@@ -73,6 +73,8 @@ LOCAL_APPS = [
     "apps.performance.apps.PerformanceConfig",
     # Проекты студентов: регистрирует тренер, просматривают Team Lead и директор.
     "apps.projects.apps.ProjectsConfig",
+    # Публичные новости академии для OkurmenKids Digital (/news) — не путать с apps.news.
+    "apps.academy_news.apps.AcademyNewsConfig",
 ]
 
 INSTALLED_APPS = (
@@ -237,6 +239,7 @@ REST_FRAMEWORK = {
         "public_schedule": env("PUBLIC_SCHEDULE_RATE", default="1200/hour"),
         "public_leaderboard": env("PUBLIC_LEADERBOARD_RATE", default="1200/hour"),
         "public_projects": env("PUBLIC_PROJECTS_RATE", default="1200/hour"),
+        "public_news": env("PUBLIC_NEWS_RATE", default="1200/hour"),
         # Отметка прихода/ухода сотрудника (apps.staff_attendance, на пользователя).
         "staff_attendance_mark": env("STAFF_ATTENDANCE_MARK_RATE", default="30/hour"),
         # Публичный карьерный сайт (apps.recruitment.public, по IP, без входа).
@@ -684,6 +687,9 @@ PUBLIC_LEADERBOARD_CACHE_SECONDS = env.int("PUBLIC_LEADERBOARD_CACHE_SECONDS", d
 # ---------------------------------------------------------------------------
 PUBLIC_PROJECTS_SHOW_TRAINER = env.bool("PUBLIC_PROJECTS_SHOW_TRAINER", default=False)
 PUBLIC_PROJECTS_CACHE_SECONDS = env.int("PUBLIC_PROJECTS_CACHE_SECONDS", default=120)
+
+# Public academy news (/news on OkurmenKids Digital) — see apps.academy_news.
+PUBLIC_NEWS_CACHE_SECONDS = env.int("PUBLIC_NEWS_CACHE_SECONDS", default=120)
 
 # ---------------------------------------------------------------------------
 # Учёт прихода и ухода сотрудников по QR-коду (apps.staff_attendance).

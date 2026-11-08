@@ -36,6 +36,44 @@ interface Section {
   text: string
 }
 
+export interface NewsText {
+  title: string
+  description: string
+  featured: string
+  readMore: string
+  search: string
+  searchLabel: string
+  clearSearch: string
+  filtersLabel: string
+  categories: Record<'all' | 'events' | 'achievements' | 'competitions' | 'education' | 'announcements' | 'activities', string>
+  latest: string
+  found: (count: number) => string
+  photos: (count: number) => string
+  loadMore: string
+  loading: string
+  emptyTitle: string
+  emptyText: string
+  noResultsTitle: string
+  noResultsText: string
+  reset: string
+  errorTitle: string
+  errorText: string
+  retry: string
+  back: string
+  notFoundTitle: string
+  notFoundText: string
+  author: string
+  gallery: string
+  share: string
+  copyLink: string
+  copied: string
+  related: string
+  photo: (index: number, total: number) => string
+  open: (index: number) => string
+  prev: string
+  next: string
+}
+
 export interface GalleryText {
   title: string
   description: string
@@ -79,6 +117,7 @@ export interface Messages {
   brand: { home: string }
   nav: { language: string; about: string; help: string; privacy: string; login: string; logout: string; time: string; checking: string; home: string }
   gallery: GalleryText
+  news: NewsText
   hero: { tagline: string; hello: (name: string) => string; title: { before: string; accent: string; after: string }; description: string; appsLabel: string }
   card: { signIn: string; signInRequired: string; newTab: string; soon: string; explore: string }
   apps: Record<PortalAppId, AppText & { description?: string }>
@@ -109,6 +148,43 @@ const DEVELOPER = BRAND.developer
 const en: Messages = {
   brand: { home: 'OkurmenKids Digital — home' },
   nav: { language: 'Language', about: 'About', help: 'Help', privacy: 'Privacy', login: 'Login', logout: 'Log out', time: 'Bishkek time', checking: 'Checking session', home: 'Home' },
+  news: {
+    title: 'Academy News',
+    description: 'Stay updated with the latest news, events and achievements from Okurmen Kids Academy.',
+    featured: 'Featured',
+    readMore: 'Read More',
+    search: 'Search news…',
+    searchLabel: 'Search news',
+    clearSearch: 'Clear search',
+    filtersLabel: 'Filter by category',
+    categories: { all: 'All News', events: 'Academy Events', achievements: 'Student Achievements', competitions: 'Competitions', education: 'Education', announcements: 'Announcements', activities: 'Activities' },
+    latest: 'Latest news',
+    found: (n) => `${n} ${n === 1 ? 'article' : 'articles'}`,
+    photos: (n) => `${n} ${n === 1 ? 'photo' : 'photos'}`,
+    loadMore: 'Show more news',
+    loading: 'Loading news…',
+    emptyTitle: 'No news yet',
+    emptyText: 'Academy news will appear here as soon as it is published.',
+    noResultsTitle: 'Nothing found',
+    noResultsText: 'Try another search or category.',
+    reset: 'Reset filters',
+    errorTitle: 'Could not load news',
+    errorText: 'Check your internet connection and try again.',
+    retry: 'Try again',
+    back: 'All news',
+    notFoundTitle: 'Article not found',
+    notFoundText: 'It may not be published yet, or the link is incorrect.',
+    author: 'Author',
+    gallery: 'Photo gallery',
+    share: 'Share',
+    copyLink: 'Copy link',
+    copied: 'Link copied',
+    related: 'Related news',
+    photo: (i, n) => `Photo ${i} of ${n}`,
+    open: (i) => `Enlarge photo ${i}`,
+    prev: 'Previous',
+    next: 'Next',
+  },
   gallery: {
     title: 'Student Projects',
     description: 'Discover amazing projects created by students of Okurmen Kids Academy.',
@@ -239,6 +315,43 @@ const en: Messages = {
 const ru: Messages = {
   brand: { home: 'OkurmenKids Digital — на главную' },
   nav: { language: 'Язык', about: 'О проекте', help: 'Помощь', privacy: 'Конфиденциальность', login: 'Войти', logout: 'Выйти', time: 'Время в Бишкеке', checking: 'Проверяем сессию', home: 'На главную' },
+  news: {
+    title: 'Новости академии',
+    description: 'Последние новости, события и достижения академии Okurmen Kids.',
+    featured: 'Главное',
+    readMore: 'Читать далее',
+    search: 'Поиск новостей…',
+    searchLabel: 'Поиск новостей',
+    clearSearch: 'Очистить поиск',
+    filtersLabel: 'Фильтр по категории',
+    categories: { all: 'Все новости', events: 'Мероприятия академии', achievements: 'Достижения студентов', competitions: 'Соревнования', education: 'Обучение', announcements: 'Объявления', activities: 'Активности' },
+    latest: 'Последние новости',
+    found: (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'новость' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'новости' : 'новостей'}`,
+    photos: (n) => `${n} фото`,
+    loadMore: 'Показать ещё',
+    loading: 'Загружаем новости…',
+    emptyTitle: 'Новостей пока нет',
+    emptyText: 'Новости академии появятся здесь сразу после публикации.',
+    noResultsTitle: 'Ничего не найдено',
+    noResultsText: 'Попробуйте другой запрос или категорию.',
+    reset: 'Сбросить фильтры',
+    errorTitle: 'Не удалось загрузить новости',
+    errorText: 'Проверьте подключение к интернету и попробуйте ещё раз.',
+    retry: 'Попробовать снова',
+    back: 'Все новости',
+    notFoundTitle: 'Новость не найдена',
+    notFoundText: 'Возможно, она ещё не опубликована или ссылка неверна.',
+    author: 'Автор',
+    gallery: 'Фотогалерея',
+    share: 'Поделиться',
+    copyLink: 'Скопировать ссылку',
+    copied: 'Ссылка скопирована',
+    related: 'Читайте также',
+    photo: (i, n) => `Фото ${i} из ${n}`,
+    open: (i) => `Увеличить фото ${i}`,
+    prev: 'Назад',
+    next: 'Вперёд',
+  },
   gallery: {
     title: 'Проекты студентов',
     description: 'Удивительные проекты, созданные студентами академии Okurmen Kids.',
@@ -369,6 +482,43 @@ const ru: Messages = {
 const kg: Messages = {
   brand: { home: 'OkurmenKids Digital — башкы бет' },
   nav: { language: 'Тил', about: 'Долбоор жөнүндө', help: 'Жардам', privacy: 'Купуялык', login: 'Кирүү', logout: 'Чыгуу', time: 'Бишкек убактысы', checking: 'Сессия текшерилүүдө', home: 'Башкы бет' },
+  news: {
+    title: 'Академиянын жаңылыктары',
+    description: 'Okurmen Kids академиясынын акыркы жаңылыктары, иш-чаралары жана жетишкендиктери.',
+    featured: 'Башкы жаңылык',
+    readMore: 'Толук окуу',
+    search: 'Жаңылыктарды издөө…',
+    searchLabel: 'Жаңылыктарды издөө',
+    clearSearch: 'Издөөнү тазалоо',
+    filtersLabel: 'Категория боюнча чыпкалоо',
+    categories: { all: 'Бардык жаңылыктар', events: 'Академиянын иш-чаралары', achievements: 'Студенттердин жетишкендиктери', competitions: 'Мелдештер', education: 'Билим берүү', announcements: 'Кулактандыруулар', activities: 'Активдүүлүктөр' },
+    latest: 'Акыркы жаңылыктар',
+    found: (n) => `${n} жаңылык`,
+    photos: (n) => `${n} сүрөт`,
+    loadMore: 'Дагы көрсөтүү',
+    loading: 'Жаңылыктар жүктөлүүдө…',
+    emptyTitle: 'Азырынча жаңылыктар жок',
+    emptyText: 'Академиянын жаңылыктары жарыялангандан кийин ушул жерде пайда болот.',
+    noResultsTitle: 'Эч нерсе табылган жок',
+    noResultsText: 'Башка суроо же категория менен аракет кылыңыз.',
+    reset: 'Чыпкаларды тазалоо',
+    errorTitle: 'Жаңылыктарды жүктөө мүмкүн болгон жок',
+    errorText: 'Интернет байланышын текшерип, кайра аракет кылыңыз.',
+    retry: 'Кайра аракет кылуу',
+    back: 'Бардык жаңылыктар',
+    notFoundTitle: 'Жаңылык табылган жок',
+    notFoundText: 'Балким, ал али жарыялана элек же шилтеме туура эмес.',
+    author: 'Автор',
+    gallery: 'Сүрөт галереясы',
+    share: 'Бөлүшүү',
+    copyLink: 'Шилтемени көчүрүү',
+    copied: 'Шилтеме көчүрүлдү',
+    related: 'Дагы окуңуз',
+    photo: (i, n) => `${n} сүрөттүн ${i}-си`,
+    open: (i) => `${i}-сүрөттү чоңойтуу`,
+    prev: 'Мурунку',
+    next: 'Кийинки',
+  },
   gallery: {
     title: 'Студенттердин долбоорлору',
     description: 'Okurmen Kids академиясынын студенттери түзгөн кызыктуу долбоорлор.',

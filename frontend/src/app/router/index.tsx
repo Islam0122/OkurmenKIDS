@@ -51,6 +51,16 @@ export const router = createBrowserRouter([
       { path: ':key', lazy: async () => ({ Component: (await import('@/features/projectsSite/ProjectDetailPage')).ProjectDetailPage }) },
     ],
   },
+  {
+    // Публичные новости академии (без входа) — OKURMENKIDS DIGITAL. Пишутся в Django admin
+    // («Новости академии»), backend: apps.academy_news. Внутренние уведомления тренерам — /app/news.
+    path: '/news',
+    errorElement: <RouteErrorPage />,
+    children: [
+      { index: true, lazy: async () => ({ Component: (await import('@/features/newsSite/NewsPage')).NewsPage }) },
+      { path: ':slug', lazy: async () => ({ Component: (await import('@/features/newsSite/ArticlePage')).ArticlePage }) },
+    ],
+  },
   { path: '/access-denied', element: <AccessDeniedPage />, errorElement: <RouteErrorPage /> },
   {
     path: '/app',

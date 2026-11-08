@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { motion } from 'framer-motion'
-import { AlertTriangle, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, ExternalLink, FolderKanban, GraduationCap, ImageOff, SearchX, UserRound, UsersRound } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarDays, ExternalLink, FolderKanban, GraduationCap, ImageOff, SearchX, UserRound, UsersRound } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
 import { publicProjectsApi, type PublicProject } from '@/api/publicProjects'
 import { useI18n } from '@/features/portal/i18n'
-import { PortalModal } from '@/features/portal/PortalModal'
+import { Lightbox } from '@/features/portal/Lightbox'
 import { PortalShell } from '@/features/portal/PortalShell'
 import { resolveMediaUrl } from '@/lib/mediaUrl'
 import { cn } from '@/utils/cn'
@@ -185,50 +185,8 @@ function ProjectView({ project }: { project: PublicProject }) {
         </section>
       ) : null}
 
-      <ScreenshotViewer images={images} index={viewer} onIndex={setViewer} />
+      <Lightbox images={images.map((src) => ({ src }))} index={viewer} onIndex={setViewer} label={g.screenshot} prev={g.prev} next={g.next} />
     </motion.article>
-  )
-}
-
-/** Full-size screenshots: ← / → and buttons move, Esc and a click outside close. */
-function ScreenshotViewer({ images, index, onIndex }: { images: string[]; index: number | null; onIndex: (index: number | null) => void }) {
-  const { t } = useI18n()
-  const g = t.gallery
-  const open = index !== null
-  const count = images.length
-
-  useEffect(() => {
-    if (!open || count < 2) return
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'ArrowRight') onIndex(((index ?? 0) + 1) % count)
-      if (event.key === 'ArrowLeft') onIndex(((index ?? 0) - 1 + count) % count)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, index, count, onIndex])
-
-  const current = index ?? 0
-  return (
-    <PortalModal open={open} onClose={() => onIndex(null)} size="lg" title={g.screenshot(current + 1, count)}>
-      <div className="relative overflow-hidden rounded-xl border border-pd-line bg-pd-subtle">
-        {open ? <img src={images[current]} alt={g.screenshot(current + 1, count)} className="mx-auto max-h-[70dvh] w-full object-contain" /> : null}
-      </div>
-      {count > 1 ? (
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <button type="button" className={buttonSecondary} onClick={() => onIndex((current - 1 + count) % count)}>
-            <ChevronLeft className="size-4" aria-hidden />
-            {g.prev}
-          </button>
-          <span className="text-sm tabular-nums text-pd-faint">
-            {current + 1} / {count}
-          </span>
-          <button type="button" className={buttonSecondary} onClick={() => onIndex((current + 1) % count)}>
-            {g.next}
-            <ChevronRight className="size-4" aria-hidden />
-          </button>
-        </div>
-      ) : null}
-    </PortalModal>
   )
 }
 
