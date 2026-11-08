@@ -185,13 +185,13 @@ function PortalFooter({ onOpen }: { onOpen: (id: InfoModalId) => void }) {
   const link = cn('rounded text-pd-muted transition hover:text-pd-green', focusRing)
   return (
     <footer className="mt-auto border-t border-pd-line/80 bg-pd-bg/70 backdrop-blur-sm">
-      <div className="mx-auto grid w-full max-w-[1100px] items-center gap-2 px-4 py-3 text-xs text-pd-faint sm:grid-cols-3 sm:px-6">
-        <p className="text-center sm:text-left">{t.footer.copyright}</p>
+      <div className="mx-auto grid w-full max-w-[1100px] items-center gap-2 px-4 py-3 text-xs text-pd-faint sm:px-6 lg:grid-cols-3">
+        <p className="text-center lg:text-left">{t.footer.copyright}</p>
         <div className="text-center leading-tight">
           <p className="font-semibold uppercase tracking-[0.16em] text-pd-muted">{t.footer.ecosystem}</p>
           <p className="mt-0.5 text-[11px]">{t.footer.credit}</p>
         </div>
-        <nav aria-label={t.footer.links} className="flex items-center justify-center gap-2 sm:justify-end">
+        <nav aria-label={t.footer.links} className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 whitespace-nowrap lg:justify-end">
           <button type="button" className={link} onClick={() => onOpen('about')} aria-haspopup="dialog">
             {t.nav.about}
           </button>

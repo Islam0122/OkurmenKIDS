@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import type { PortalAppId } from './config'
+import type { PortalAppId, PortalServiceId } from './config'
 
 /**
  * OKURMEN DIGITAL texts in Russian, Kyrgyz and English. Every visible string
@@ -41,6 +41,8 @@ export interface Messages {
   card: { signIn: string; signInRequired: string; newTab: string; soon: string; explore: string }
   apps: Record<PortalAppId, AppText & { description?: string }>
   programs: Record<ProgramId, ProgramText>
+  servicesTitle: string
+  services: Record<PortalServiceId, { name: string; description: string }>
   programsPage: { back: string; title: string; titleAccent: string; subtitle: string; cta: string; ctaButton: string }
   footer: { copyright: string; ecosystem: string; credit: string; links: string }
   modal: { close: string }
@@ -93,6 +95,13 @@ const en: Messages = {
     english: { name: 'English', summary: 'Spoken and written English for every level, built around practice.', topics: ['Speaking', 'Grammar', 'Vocabulary'] },
     'soft-skills': { name: 'Soft Skills', summary: 'Communication, teamwork and confidence that help in school and beyond.', topics: ['Communication', 'Teamwork', 'Public speaking'] },
     other: { name: 'Other Programs', summary: 'Additional academy courses, intensives and seasonal programs.', topics: ['Intensives', 'Seasonal courses', 'Events'] },
+  },
+  servicesTitle: 'More from Okurmen',
+  services: {
+    projects: { name: 'Student Projects', description: 'Portfolios and project gallery' },
+    feedback: { name: 'Our Feedback', description: 'Student and trainer feedback' },
+    website: { name: 'Our Website', description: 'Official academy website' },
+    careers: { name: 'Our Careers', description: 'Vacancies for trainers and staff' },
   },
   programsPage: {
     back: 'All applications',
@@ -180,6 +189,13 @@ const ru: Messages = {
     'soft-skills': { name: 'Soft Skills', summary: 'Общение, командная работа и уверенность — в учёбе и в жизни.', topics: ['Коммуникация', 'Командная работа', 'Публичные выступления'] },
     other: { name: 'Другие программы', summary: 'Дополнительные курсы академии, интенсивы и сезонные программы.', topics: ['Интенсивы', 'Сезонные курсы', 'Мероприятия'] },
   },
+  servicesTitle: 'Больше от Okurmen',
+  services: {
+    projects: { name: 'Проекты студентов', description: 'Портфолио и галерея проектов' },
+    feedback: { name: 'Обратная связь', description: 'Отзывы студентов и тренеров' },
+    website: { name: 'Наш сайт', description: 'Официальный сайт академии' },
+    careers: { name: 'Карьера', description: 'Вакансии тренеров и сотрудников' },
+  },
   programsPage: {
     back: 'Все приложения',
     title: 'Наши',
@@ -265,6 +281,13 @@ const kg: Messages = {
     english: { name: 'Англис тили', summary: 'Ар бир деңгээл үчүн оозеки жана жазуу англис тили, практикага басым жасалат.', topics: ['Оозеки кеп', 'Грамматика', 'Сөз байлыгы'] },
     'soft-skills': { name: 'Soft Skills', summary: 'Окууда жана турмушта жардам берген баарлашуу, командада иштөө жана өзүнө ишеним.', topics: ['Баарлашуу', 'Командада иштөө', 'Эл алдында сүйлөө'] },
     other: { name: 'Башка программалар', summary: 'Академиянын кошумча курстары, интенсивдери жана сезондук программалары.', topics: ['Интенсивдер', 'Сезондук курстар', 'Иш-чаралар'] },
+  },
+  servicesTitle: 'Okurmen’дон дагы',
+  services: {
+    projects: { name: 'Долбоорлор', description: 'Портфолио жана долбоорлор галереясы' },
+    feedback: { name: 'Пикирлер', description: 'Студенттердин жана тренерлердин пикири' },
+    website: { name: 'Биздин сайт', description: 'Академиянын расмий сайты' },
+    careers: { name: 'Карьера', description: 'Вакансиялар жана ишке алуу' },
   },
   programsPage: {
     back: 'Бардык тиркемелер',

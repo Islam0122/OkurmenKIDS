@@ -117,12 +117,22 @@ languages live in `src/features/portal/i18n.tsx`.
 | Monthly Performance | `https://okurmen-kids-drab.vercel.app/monthly-performance` |
 | Our Programs | `/portal/programs` |
 
-Every destination and program icon lives in `src/features/portal/config.ts`.
+Under the grid, **More from Okurmen** has four compact services:
+
+| Service | Destination |
+|---|---|
+| Student Projects | `/trainer/projects` (trainer, Team Lead, admin; sign-in) or `/operations/academy/projects` (operations director, director); hidden for other roles |
+| Our Feedback | no public address exists (surveys are answered by per-survey links) — assistant and admin open `/assistant/surveys`; others see «Soon» until `VITE_PORTAL_FEEDBACK_URL` is set |
+| Our Website | «Soon» until `VITE_PORTAL_WEBSITE_URL` is set — the official site URL is not configured anywhere in the project |
+| Our Careers | `/careers` (the careers site of this build), in a new tab |
+
+Every destination and icon lives in `src/features/portal/config.ts`.
 Each can be overridden at build time — an app route of this build or an
 absolute URL of another deployment: `VITE_PORTAL_LMS_URL`,
 `VITE_PORTAL_TRAINING_URL`, `VITE_PORTAL_SCHEDULE_URL`,
 `VITE_PORTAL_LEADERBOARD_URL`, `VITE_PORTAL_NEWS_URL`,
-`VITE_PORTAL_PERFORMANCE_URL`, `VITE_PORTAL_PROGRAMS_URL`. Absolute URLs open
+`VITE_PORTAL_PERFORMANCE_URL`, `VITE_PORTAL_PROGRAMS_URL`, `VITE_PORTAL_PROJECTS_URL`,
+`VITE_PORTAL_FEEDBACK_URL`, `VITE_PORTAL_WEBSITE_URL`, `VITE_PORTAL_CAREERS_URL`. Absolute URLs open
 in a new tab; keys `1`–`7` open the cards.
 
 **Own domain** (e.g. `digital.okurmenkids.com`): a Vercel project on this repo,

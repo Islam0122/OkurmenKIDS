@@ -5,9 +5,10 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 
 import { AppCard } from './AppCard'
-import { PORTAL_APPS, isVisible, resolveCard, type CardState } from './config'
+import { PORTAL_APPS, PORTAL_SERVICES, isVisible, resolveCard, resolveService, type CardState } from './config'
 import { useI18n } from './i18n'
 import { PortalShell } from './PortalShell'
+import { ServiceCard } from './ServiceCard'
 
 const gridVariants = {
   hidden: {},
@@ -32,6 +33,12 @@ function Launcher() {
   const cards = useMemo(
     () =>
       PORTAL_APPS.filter((app) => isVisible(app, signedIn)).map((app) => ({ app, state: resolveCard(app, signedIn) })),
+    [signedIn],
+  )
+
+  const services = useMemo(
+    () =>
+      PORTAL_SERVICES.filter((service) => isVisible(service, signedIn)).map((service) => ({ service, state: resolveService(service, signedIn) })),
     [signedIn],
   )
 
@@ -93,6 +100,26 @@ function Launcher() {
           ))}
         </motion.ul>
 
+        {services.length > 0 ? (
+          <section aria-labelledby="more-from-okurmen" className="mt-6 sm:mt-7 short:mt-4">
+            <div className="mb-3 flex items-center gap-3">
+              <h2 id="more-from-okurmen" className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-pd-faint">
+                {t.servicesTitle}
+              </h2>
+              <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-pd-line to-transparent" />
+            </div>
+            <motion.ul
+              variants={gridVariants}
+              initial="hidden"
+              animate="show"
+              className="grid gap-2.5 sm:grid-cols-2 sm:gap-3 lg:grid-cols-[repeat(auto-fit,minmax(0,1fr))]"
+            >
+              {services.map(({ service, state }) => (
+                <ServiceCard key={service.id} service={service} state={state} />
+              ))}
+            </motion.ul>
+          </section>
+        ) : null}
     </main>
   )
 }

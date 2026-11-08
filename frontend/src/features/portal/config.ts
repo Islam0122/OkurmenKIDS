@@ -1,6 +1,10 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   BarChart3,
+  Briefcase,
+  FolderKanban,
+  Globe,
+  MessageSquareHeart,
   BookOpenCheck,
   CalendarClock,
   Code2,
@@ -114,6 +118,67 @@ export const PORTAL_APPS: PortalApp[] = [
   },
 ]
 
+export type PortalServiceId = 'projects' | 'feedback' | 'website' | 'careers'
+
+/** «More from Okurmen» — the compact row under the main grid. Texts: `i18n.tsx` (`services[id]`). */
+export interface PortalService {
+  id: PortalServiceId
+  icon: LucideIcon
+  /** Internal path or absolute URL; `null` = not configured yet (the card shows «Soon»). */
+  href: string | null
+  /** A signed-in role that works elsewhere opens its own page instead of `href`. */
+  roleHrefs?: Partial<Record<UserRole, string>>
+  requiresAuth?: boolean
+  /** When signed in, only these roles see the card (UI only — the backend enforces access). */
+  roles?: UserRole[]
+  /** Open an internal route in a new tab too (a separate public site of this build). */
+  newTab?: boolean
+}
+
+export const PORTAL_SERVICES: PortalService[] = [
+  {
+    // Проекты студентов (features/projects): тренер, Team Lead и администратор — /trainer/projects,
+    // операционный директор и директор — опубликованные проекты в своём кабинете.
+    id: 'projects',
+    icon: FolderKanban,
+    href: env(ENV.VITE_PORTAL_PROJECTS_URL, '/trainer/projects'),
+    roleHrefs: { operations_director: '/operations/academy/projects', director: '/operations/academy/projects' },
+    requiresAuth: true,
+    roles: ['teacher', 'team_lead', 'admin', 'operations_director', 'director'],
+  },
+  {
+    // Опросы обратной связи (apps.feedback) отвечают по личной ссылке на каждый опрос — общего
+    // публичного адреса нет. Ассистент и администратор ведут опросы в /assistant/surveys;
+    // VITE_PORTAL_FEEDBACK_URL задаёт общую форму, когда она появится.
+    id: 'feedback',
+    icon: MessageSquareHeart,
+    href: env(ENV.VITE_PORTAL_FEEDBACK_URL, null),
+    roleHrefs: { assistant: '/assistant/surveys', admin: '/assistant/surveys' },
+  },
+  {
+    // Официальный сайт академии: адрес в проекте не настроен — задайте VITE_PORTAL_WEBSITE_URL.
+    id: 'website',
+    icon: Globe,
+    href: env(ENV.VITE_PORTAL_WEBSITE_URL, null),
+  },
+  {
+    // Карьерный сайт этой же сборки (features/careers) или его отдельный домен.
+    id: 'careers',
+    icon: Briefcase,
+    href: env(ENV.VITE_PORTAL_CAREERS_URL, '/careers'),
+    newTab: true,
+  },
+]
+
+/** Where a «More from Okurmen» card leads for this visitor. */
+export function resolveService(service: PortalService, user: User | null): CardState {
+  const href = (user && service.roleHrefs?.[user.role]) || service.href
+  if (!href) return { kind: 'unavailable' }
+  if (isExternal(href)) return { kind: 'open', href, external: true }
+  if (service.requiresAuth && !user) return { kind: 'login', href }
+  return { kind: 'open', href, external: Boolean(service.newTab) }
+}
+
 export type CardState =
   /** Opens the destination. */
   | { kind: 'open'; href: string; external: boolean }
@@ -123,7 +188,7 @@ export type CardState =
   | { kind: 'unavailable' }
 
 /** Whether a card is shown at all for this visitor. */
-export function isVisible(app: PortalApp, user: User | null): boolean {
+export function isVisible(app: { roles?: UserRole[] }, user: User | null): boolean {
   if (!user || !app.roles) return true
   return app.roles.includes(user.role)
 }
