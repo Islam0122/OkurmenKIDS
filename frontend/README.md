@@ -100,9 +100,12 @@ repo, root directory `frontend`, with `VITE_APP_MODE=leaderboard` and the same
 
 ## OKURMEN DIGITAL (application launcher)
 
-One dark screen that launches every academy application: `/portal`
-(and `/portal/programs` for «Our Programs»). No login is needed to see it;
-the header has a Login button, or the signed-in user with a log-out button.
+One white screen that launches every academy application: `/portal`
+(and `/portal/programs` for «Our Programs»). No login is needed to see it.
+The header has the language switch (RU / KG / EN, remembered in the browser),
+About and Help dialogs, and Login — or the signed-in user with a log-out
+button. The footer opens About, Help and Privacy. Texts in all three
+languages live in `src/features/portal/i18n.tsx`.
 
 | Card | Default destination |
 |---|---|
@@ -110,11 +113,11 @@ the header has a Login button, or the signed-in user with a log-out button.
 | Training & Exams | `https://training-portal-theta.vercel.app/` |
 | Schedule | `/schedule` |
 | Leaderboard | `/leaderboard` |
-| Our Programs | `/portal/programs` |
 | News | `/app/news` (sign-in; hidden for roles without the LMS) |
 | Monthly Performance | `https://okurmen-kids-drab.vercel.app/monthly-performance` |
+| Our Programs | `/portal/programs` |
 
-Every destination, label and program lives in `src/features/portal/config.ts`.
+Every destination and program icon lives in `src/features/portal/config.ts`.
 Each can be overridden at build time — an app route of this build or an
 absolute URL of another deployment: `VITE_PORTAL_LMS_URL`,
 `VITE_PORTAL_TRAINING_URL`, `VITE_PORTAL_SCHEDULE_URL`,

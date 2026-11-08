@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 
 import { AppCard } from './AppCard'
 import { PORTAL_APPS, isVisible, resolveCard, type CardState } from './config'
+import { useI18n } from './i18n'
 import { PortalShell } from './PortalShell'
 
 const gridVariants = {
@@ -15,6 +16,15 @@ const gridVariants = {
 
 /** OKURMEN DIGITAL — one screen, every academy application. */
 export function PortalPage() {
+  return (
+    <PortalShell>
+      <Launcher />
+    </PortalShell>
+  )
+}
+
+function Launcher() {
+  const { t } = useI18n()
   const { user, status } = useAuth()
   const navigate = useNavigate()
   const signedIn = status === 'authenticated' ? user : null
@@ -35,6 +45,8 @@ export function PortalPage() {
     }
     function onKey(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
+      // Not while About/Help/Privacy is open.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
       const target = event.target as HTMLElement | null
       if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
       const index = Number(event.key) - 1
@@ -47,24 +59,26 @@ export function PortalPage() {
   const firstName = signedIn?.first_name || signedIn?.username
 
   return (
-    <PortalShell>
-      <main className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col justify-center px-4 pb-6 pt-1 sm:px-6 lg:pb-8">
+    <main className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col justify-center px-4 py-6 sm:px-6 lg:py-5 short:py-3">
         <motion.section
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, ease: 'easeOut' }}
-          className="mb-6 text-center sm:mb-7"
+          className="mb-5 text-center sm:mb-7 short:mb-4"
         >
-          <p className="inline-flex items-center gap-2 rounded-full border border-pd-line bg-pd-panel/70 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-pd-muted backdrop-blur">
-            <span className="size-1.5 rounded-full bg-pd-green" aria-hidden />
-            {firstName ? `Hello, ${firstName}` : 'Everything you need to learn, teach and grow.'}
+          <p className="hidden max-w-full items-center gap-2 rounded-full sm:inline-flex short:hidden border border-pd-line bg-pd-panel px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-pd-muted pd-shadow">
+            <span className="relative flex size-1.5 shrink-0" aria-hidden>
+              <span className="absolute inset-0 animate-ping rounded-full bg-pd-green/60" />
+              <span className="relative size-1.5 rounded-full bg-pd-green" />
+            </span>
+            <span className="truncate">{firstName ? t.hero.hello(firstName) : t.hero.tagline}</span>
           </p>
-          <h1 className="mt-3.5 text-balance text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-[2.75rem]">
-            Welcome to Okurmen <span className="text-pd-green">Digital</span>
+          <h1 className="mt-3.5 text-balance short:mt-0 short:lg:text-[2.25rem] text-[1.75rem] font-extrabold leading-[1.1] tracking-[-0.03em] sm:text-4xl lg:text-[2.6rem]">
+            {t.hero.title.before}
+            <span className="text-pd-green">{t.hero.title.accent}</span>
+            {t.hero.title.after}
           </h1>
-          <p className="mx-auto mt-2.5 max-w-lg text-pretty text-sm text-pd-muted sm:text-base">
-            Your central platform for education, training, performance and academy resources.
-          </p>
+          <p className="mx-auto mt-2.5 max-w-lg text-pretty tiny:hidden text-sm text-pd-muted sm:text-[15px]">{t.hero.description}</p>
         </motion.section>
 
         <motion.ul
@@ -72,18 +86,13 @@ export function PortalPage() {
           initial="hidden"
           animate="show"
           className="grid grid-flow-row-dense grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4"
-          aria-label="Academy applications"
+          aria-label={t.hero.appsLabel}
         >
           {cards.map(({ app, state }, index) => (
             <AppCard key={app.id} app={app} state={state} shortcut={index + 1} />
           ))}
         </motion.ul>
 
-        <p className="mt-5 hidden text-center text-xs text-pd-faint lg:block">
-          Press <kbd className="rounded border border-pd-line px-1 font-mono">1</kbd>–
-          <kbd className="rounded border border-pd-line px-1 font-mono">{cards.length}</kbd> to open an application
-        </p>
-      </main>
-    </PortalShell>
+    </main>
   )
 }

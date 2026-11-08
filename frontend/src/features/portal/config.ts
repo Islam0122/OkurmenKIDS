@@ -16,6 +16,8 @@ import {
 import { homeFor } from '@/lib/roles'
 import type { User, UserRole } from '@/types/auth'
 
+import type { ProgramId } from './i18n'
+
 /**
  * OKURMEN DIGITAL — the single source of truth for every application the
  * portal launches. Change a destination here (or through the matching
@@ -42,11 +44,7 @@ export type PortalAppId =
 
 export interface PortalApp {
   id: PortalAppId
-  name: string
-  /** One line under the name. */
-  tagline: string
-  /** Short feature chips. */
-  features: string[]
+  /** Name, tagline and feature chips come from `i18n.tsx` (`apps[id]`). */
   icon: LucideIcon
   /** Internal path or absolute URL. `null` = destination not configured yet. */
   href: string | null
@@ -56,8 +54,6 @@ export interface PortalApp {
   roles?: UserRole[]
   /** Visually emphasised, wider card. */
   featured?: boolean
-  /** Longer copy for the featured card. */
-  description?: string
 }
 
 /** Absolute http(s) URL → opened in a new tab; anything else is an app route. */
@@ -79,52 +75,27 @@ const LMS_ROLES: UserRole[] = ['admin', 'teacher', 'team_lead']
 export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'lms',
-    name: 'LMS',
-    tagline: 'Learning Management System',
-    features: ['Groups', 'Lessons', 'Homework', 'Attendance', 'Students'],
     icon: GraduationCap,
     href: env(ENV.VITE_PORTAL_LMS_URL, '/app/dashboard'),
     requiresAuth: true,
   },
   {
     id: 'training',
-    name: 'Training & Exams',
-    tagline: 'Practice, tests and exams',
-    features: ['Practice', 'Tests', 'Exams', 'Exercises'],
     icon: BookOpenCheck,
     href: env(ENV.VITE_PORTAL_TRAINING_URL, 'https://training-portal-theta.vercel.app/'),
   },
   {
     id: 'schedule',
-    name: 'Schedule',
-    tagline: 'Lessons and group timetables',
-    features: ['Lessons', 'Groups', 'Trainers'],
     icon: CalendarClock,
     href: env(ENV.VITE_PORTAL_SCHEDULE_URL, '/schedule'),
   },
   {
     id: 'leaderboard',
-    name: 'Leaderboard',
-    tagline: 'Rankings, XP and achievements',
-    features: ['Rankings', 'XP', 'Competitions'],
     icon: Trophy,
     href: env(ENV.VITE_PORTAL_LEADERBOARD_URL, '/leaderboard'),
   },
   {
-    id: 'programs',
-    name: 'Our Programs',
-    tagline: 'IT · English · Soft Skills',
-    description: 'Explore our educational programs and discover your learning path.',
-    features: ['IT', 'English', 'Soft Skills', 'Learning paths'],
-    icon: Compass,
-    href: env(ENV.VITE_PORTAL_PROGRAMS_URL, PROGRAMS_PATH),
-    featured: true,
-  },
-  {
     id: 'news',
-    name: 'News',
-    tagline: 'Announcements and events',
-    features: ['Announcements', 'Events', 'Updates'],
     icon: Megaphone,
     href: env(ENV.VITE_PORTAL_NEWS_URL, '/app/news'),
     requiresAuth: true,
@@ -132,11 +103,14 @@ export const PORTAL_APPS: PortalApp[] = [
   },
   {
     id: 'performance',
-    name: 'Monthly Performance',
-    tagline: 'Attendance and progress by month',
-    features: ['Attendance', 'Homework', 'Progress'],
     icon: BarChart3,
     href: env(ENV.VITE_PORTAL_PERFORMANCE_URL, 'https://okurmen-kids-drab.vercel.app/monthly-performance'),
+  },
+  {
+    id: 'programs',
+    icon: Compass,
+    href: env(ENV.VITE_PORTAL_PROGRAMS_URL, PROGRAMS_PATH),
+    featured: true,
   },
 ]
 
@@ -165,41 +139,14 @@ export function resolveCard(app: PortalApp, user: User | null): CardState {
 }
 
 export interface Program {
-  id: string
-  name: string
-  summary: string
-  topics: string[]
+  id: ProgramId
   icon: LucideIcon
 }
 
-/** Program directions shown on /portal/programs. Edit here — no other file needs to change. */
+/** Program directions shown on the Our Programs card and page; their texts live in `i18n.tsx` (`programs[id]`). */
 export const PROGRAMS: Program[] = [
-  {
-    id: 'it',
-    name: 'IT',
-    summary: 'Programming and digital skills — from the first lines of code to real projects.',
-    topics: ['Programming', 'Computer literacy', 'Student projects'],
-    icon: Code2,
-  },
-  {
-    id: 'english',
-    name: 'English',
-    summary: 'Spoken and written English for every level, built around practice.',
-    topics: ['Speaking', 'Grammar', 'Vocabulary'],
-    icon: Languages,
-  },
-  {
-    id: 'soft-skills',
-    name: 'Soft Skills',
-    summary: 'Communication, teamwork and confidence that help in school and beyond.',
-    topics: ['Communication', 'Teamwork', 'Public speaking'],
-    icon: Users,
-  },
-  {
-    id: 'other',
-    name: 'Other programs',
-    summary: 'Additional academy courses, intensives and seasonal programs.',
-    topics: ['Intensives', 'Seasonal courses', 'Events'],
-    icon: Sparkles,
-  },
+  { id: 'it', icon: Code2 },
+  { id: 'english', icon: Languages },
+  { id: 'soft-skills', icon: Users },
+  { id: 'other', icon: Sparkles },
 ]

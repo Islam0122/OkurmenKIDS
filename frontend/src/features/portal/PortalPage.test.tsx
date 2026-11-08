@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -36,7 +36,10 @@ function renderPortal() {
 const card = (id: string) => document.querySelector(`[data-app="${id}"]`)
 
 describe('OKURMEN DIGITAL portal', () => {
-  beforeEach(() => mockUseAuth.mockReturnValue({ user: null, status: 'guest', logout: vi.fn() }))
+  beforeEach(() => {
+    window.localStorage.clear()
+    mockUseAuth.mockReturnValue({ user: null, status: 'guest', logout: vi.fn() })
+  })
 
   it('shows all seven applications to a guest, with a login button', () => {
     renderPortal()
@@ -76,7 +79,7 @@ describe('OKURMEN DIGITAL portal', () => {
   it('shows the profile and opens protected apps directly when signed in', () => {
     mockUseAuth.mockReturnValue({ user: user('teacher'), status: 'authenticated', logout: vi.fn() })
     renderPortal()
-    expect(screen.getByText('Aibek Asanov')).toBeInTheDocument()
+    expect(screen.getAllByText('Aibek Asanov').length).toBeGreaterThan(0)
     expect(screen.queryByRole('link', { name: 'Login' })).not.toBeInTheDocument()
     expect(card('lms')).toHaveAttribute('href', '/app/dashboard')
     expect(card('news')).toHaveAttribute('href', '/app/news')
@@ -88,6 +91,53 @@ describe('OKURMEN DIGITAL portal', () => {
     expect(card('news')).toBeNull()
     expect(screen.getAllByRole('listitem')).toHaveLength(6)
     expect(card('lms')).toHaveAttribute('href', '/accounting')
+  })
+
+  it('switches the language and remembers it', async () => {
+    renderPortal()
+    await userEvent.selectOptions(screen.getByLabelText('Language'), 'ru')
+    expect(screen.getByRole('heading', { name: /добро пожаловать в okurmen digital/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Войти' })).toBeInTheDocument()
+    expect(document.documentElement.lang).toBe('ru')
+    expect(window.localStorage.getItem('okurmen-digital:lang')).toBe('ru')
+
+    await userEvent.selectOptions(screen.getByLabelText('Язык'), 'kg')
+    expect(screen.getByRole('link', { name: 'Кирүү' })).toBeInTheDocument()
+    expect(document.documentElement.lang).toBe('ky')
+  })
+
+  it('opens About from the header and closes it with Escape, returning focus', async () => {
+    renderPortal()
+    const about = screen.getAllByRole('button', { name: 'About' })[0]
+    await userEvent.click(about)
+    const dialog = screen.getByRole('dialog', { name: 'About Okurmen Digital' })
+    expect(within(dialog).getByText('15.09.2026')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('Islam Duishobaev').length).toBeGreaterThan(0)
+    expect(within(dialog).getByText('PostgreSQL')).toBeInTheDocument()
+    expect(within(dialog).getByRole('heading', { name: 'Our Mission' })).toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(about).toHaveFocus()
+  })
+
+  it('opens Help and closes it by clicking outside; number keys do nothing while it is open', async () => {
+    renderPortal()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Help' })[0])
+    expect(screen.getByRole('dialog', { name: 'Help' })).toBeInTheDocument()
+    await userEvent.keyboard('3')
+    expect(screen.queryByText('Schedule site')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('modal-backdrop'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('opens Privacy from the footer and closes it with the close button', async () => {
+    renderPortal()
+    await userEvent.click(screen.getByRole('button', { name: 'Privacy' }))
+    const dialog = screen.getByRole('dialog', { name: 'Privacy' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('treats an unconfigured destination as unavailable instead of inventing a URL', () => {
