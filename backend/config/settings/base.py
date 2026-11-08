@@ -236,6 +236,7 @@ REST_FRAMEWORK = {
         # Public schedule site (apps/academy/public_schedule_views, per IP, no login).
         "public_schedule": env("PUBLIC_SCHEDULE_RATE", default="1200/hour"),
         "public_leaderboard": env("PUBLIC_LEADERBOARD_RATE", default="1200/hour"),
+        "public_projects": env("PUBLIC_PROJECTS_RATE", default="1200/hour"),
         # Отметка прихода/ухода сотрудника (apps.staff_attendance, на пользователя).
         "staff_attendance_mark": env("STAFF_ATTENDANCE_MARK_RATE", default="30/hour"),
         # Публичный карьерный сайт (apps.recruitment.public, по IP, без входа).
@@ -675,6 +676,14 @@ PUBLIC_SCHEDULE_CACHE_SECONDS = env.int("PUBLIC_SCHEDULE_CACHE_SECONDS", default
 # Public leaderboard site (leaderboard.okurmenkids.com) — see apps.leaderboard.
 # ---------------------------------------------------------------------------
 PUBLIC_LEADERBOARD_CACHE_SECONDS = env.int("PUBLIC_LEADERBOARD_CACHE_SECONDS", default=120)
+
+# ---------------------------------------------------------------------------
+# Public student projects gallery (/projects on OkurmenKids Digital) — see
+# apps.projects.public. Only published projects; the trainer's name only
+# when the academy allows it.
+# ---------------------------------------------------------------------------
+PUBLIC_PROJECTS_SHOW_TRAINER = env.bool("PUBLIC_PROJECTS_SHOW_TRAINER", default=False)
+PUBLIC_PROJECTS_CACHE_SECONDS = env.int("PUBLIC_PROJECTS_CACHE_SECONDS", default=120)
 
 # ---------------------------------------------------------------------------
 # Учёт прихода и ухода сотрудников по QR-коду (apps.staff_attendance).
