@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown, CircleHelp, Globe, Info, LogIn, LogOut } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
-import logo from '@/assets/logo.png'
+import logo from '@/assets/logo-careers.png'
 import { useAuth } from '@/hooks/useAuth'
 import { ROLE_LABEL } from '@/lib/roles'
 import type { User } from '@/types/auth'
@@ -59,16 +59,23 @@ function PortalHeader({ onOpen }: { onOpen: (id: InfoModalId) => void }) {
 
   return (
     <header className="relative z-30">
-      <div className="mx-auto flex h-14 w-full max-w-[1100px] items-center justify-between gap-2 px-4 sm:h-16 sm:px-6">
-        <Link to={PORTAL_PATH} aria-label={t.brand.home} className={cn('group flex min-w-0 items-center gap-2 rounded-lg sm:gap-2.5', focusRing)}>
-          <span className="grid size-8 shrink-0 place-items-center rounded-xl border border-pd-line bg-pd-panel pd-shadow sm:size-9 transition-colors group-hover:border-pd-green-line">
-            <img src={logo} alt="" className="size-6 object-contain" />
-          </span>
-          <span className="min-w-0 leading-tight">
-            <span className="block truncate text-xs font-extrabold tracking-[0.04em] min-[400px]:tracking-[0.12em] sm:text-sm">
+      <div className="mx-auto flex h-16 w-full max-w-[1100px] items-center justify-between gap-2 px-4 sm:h-[72px] sm:px-6">
+        <Link to={PORTAL_PATH} aria-label={t.brand.home} className={cn('group flex min-w-0 items-center gap-2.5 rounded-xl sm:gap-3', focusRing)}>
+          {/* The official Okurmen Kids logo (src/assets/logo-careers.png): opaque circle, transparent corners. */}
+          <img
+            src={logo}
+            alt="Okurmen Kids"
+            width={48}
+            height={48}
+            className="size-11 shrink-0 object-contain drop-shadow-[0_1px_2px_rgb(10_10_10/0.12)] transition-transform duration-300 group-hover:scale-[1.04] sm:size-12"
+          />
+          <span className="flex min-w-0 flex-col justify-center gap-0.5">
+            <span className="block truncate text-[13px] font-extrabold leading-none tracking-[0.06em] min-[400px]:tracking-[0.12em] sm:text-[15px]">
               OKURMEN <span className="text-pd-green">DIGITAL</span>
             </span>
-            <span className="hidden truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-pd-faint min-[400px]:block">{t.brand.subtitle}</span>
+            <span className="block text-[9px] font-semibold uppercase leading-[1.2] tracking-[0.12em] [overflow-wrap:normal] text-pd-faint sm:truncate sm:text-[10px] sm:tracking-[0.2em]">
+              {t.brand.subtitle}
+            </span>
           </span>
         </Link>
 
@@ -110,7 +117,7 @@ function HeaderButton({ icon: Icon, label, onClick }: { icon: typeof Info; label
       aria-label={label}
       title={label}
       className={cn(
-        'inline-flex h-9 items-center gap-1.5 rounded-lg px-1.5 text-sm sm:px-2 font-medium text-pd-muted transition hover:bg-zinc-100 hover:text-pd-ink md:px-2.5',
+        'inline-flex h-9 items-center gap-1.5 rounded-lg px-1.5 text-sm max-[359px]:hidden sm:px-2 font-medium text-pd-muted transition hover:bg-zinc-100 hover:text-pd-ink md:px-2.5',
         focusRing,
       )}
     >
