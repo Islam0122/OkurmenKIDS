@@ -147,7 +147,7 @@ function CardBody({ app, state, shortcut }: AppCardProps) {
       </span>
 
       {app.featured ? (
-        <span className="relative mt-auto hidden flex-wrap gap-1.5 pt-3 sm:flex">
+        <span className="relative mt-auto hidden flex-wrap gap-1.5 pt-3 sm:flex short:hidden">
           {PROGRAMS.map((program) => {
             const ProgramIcon = program.icon
             return (
@@ -162,7 +162,7 @@ function CardBody({ app, state, shortcut }: AppCardProps) {
           })}
         </span>
       ) : (
-        <span className="relative mt-auto hidden flex-wrap gap-1.5 pt-3 sm:flex">
+        <span className="relative mt-auto hidden flex-wrap gap-1.5 pt-3 sm:flex short:hidden">
           {text.features.map((feature) => (
             <span key={feature} className="rounded-md border border-pd-line bg-pd-subtle px-1.5 py-0.5 text-[11px] font-medium text-pd-muted">
               {feature}

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/testUtils'
 import type { User } from '@/types/auth'
 
-import { PORTAL_APPS, resolveCard } from './config'
+import { PORTAL_APPS, PORTAL_SERVICES, resolveCard, resolveService } from './config'
 import { PortalPage } from './PortalPage'
 
 const mockUseAuth = vi.fn()
@@ -34,6 +34,7 @@ function renderPortal() {
 }
 
 const card = (id: string) => document.querySelector(`[data-app="${id}"]`)
+const service = (id: string) => document.querySelector(`[data-service="${id}"]`)
 
 describe('OKURMEN DIGITAL portal', () => {
   beforeEach(() => {
@@ -44,7 +45,7 @@ describe('OKURMEN DIGITAL portal', () => {
   it('shows all seven applications to a guest, with a login button', () => {
     renderPortal()
     expect(screen.getByRole('heading', { name: /welcome to okurmen digital/i })).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem')).toHaveLength(7)
+    expect(within(screen.getByRole('list', { name: 'Academy applications' })).getAllByRole('listitem')).toHaveLength(7)
     expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login')
   })
 
@@ -89,7 +90,7 @@ describe('OKURMEN DIGITAL portal', () => {
     mockUseAuth.mockReturnValue({ user: user('accountant'), status: 'authenticated', logout: vi.fn() })
     renderPortal()
     expect(card('news')).toBeNull()
-    expect(screen.getAllByRole('listitem')).toHaveLength(6)
+    expect(document.querySelectorAll('[data-app]')).toHaveLength(6)
     expect(card('lms')).toHaveAttribute('href', '/accounting')
   })
 
@@ -138,6 +139,38 @@ describe('OKURMEN DIGITAL portal', () => {
     const dialog = screen.getByRole('dialog', { name: 'Privacy' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('shows the four «More from Okurmen» services without inventing URLs', () => {
+    renderPortal()
+    expect(screen.getByRole('heading', { name: 'More from Okurmen' })).toBeInTheDocument()
+    // Student Projects: a protected route of this build — guests go through the login.
+    expect(service('projects')).toHaveAttribute('href', '/login')
+    // Careers: the public careers site of this build, in a new tab.
+    expect(service('careers')).toHaveAttribute('href', '/careers')
+    expect(service('careers')).toHaveAttribute('target', '_blank')
+    // No official website or public feedback URL is configured in the project.
+    expect(service('website')).toHaveAttribute('aria-disabled')
+    expect(service('website')).not.toHaveAttribute('href')
+    expect(service('feedback')).toHaveAttribute('aria-disabled')
+  })
+
+  it('sends signed-in staff to their own projects and feedback pages', () => {
+    mockUseAuth.mockReturnValue({ user: user('admin'), status: 'authenticated', logout: vi.fn() })
+    renderPortal()
+    expect(service('projects')).toHaveAttribute('href', '/trainer/projects')
+    expect(service('feedback')).toHaveAttribute('href', '/assistant/surveys')
+
+    const ops = { ...user('operations_director') }
+    const projects = PORTAL_SERVICES.find((item) => item.id === 'projects')!
+    expect(resolveService(projects, ops)).toEqual({ kind: 'open', href: '/operations/academy/projects', external: false })
+  })
+
+  it('hides Student Projects from roles without access to it', () => {
+    mockUseAuth.mockReturnValue({ user: user('accountant'), status: 'authenticated', logout: vi.fn() })
+    renderPortal()
+    expect(service('projects')).toBeNull()
+    expect(service('careers')).not.toBeNull()
   })
 
   it('treats an unconfigured destination as unavailable instead of inventing a URL', () => {

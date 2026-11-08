@@ -13,6 +13,11 @@ interface ImportMetaEnv {
   readonly VITE_PORTAL_NEWS_URL?: string
   readonly VITE_PORTAL_PERFORMANCE_URL?: string
   readonly VITE_PORTAL_PROGRAMS_URL?: string
+  /** «More from Okurmen»: Student Projects, Feedback, the official website, Careers. */
+  readonly VITE_PORTAL_PROJECTS_URL?: string
+  readonly VITE_PORTAL_FEEDBACK_URL?: string
+  readonly VITE_PORTAL_WEBSITE_URL?: string
+  readonly VITE_PORTAL_CAREERS_URL?: string
 }
 
 interface ImportMeta {
