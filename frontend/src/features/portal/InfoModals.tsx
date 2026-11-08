@@ -1,6 +1,6 @@
 import { CircleHelp, Code2, Info, KeyRound, LayoutGrid, LifeBuoy, LogIn, MousePointerClick, ShieldCheck, Target } from 'lucide-react'
 
-import logo from '@/assets/logo.png'
+import logo from '@/assets/logo-careers.png'
 
 import { useI18n } from './i18n'
 import { PortalModal } from './PortalModal'
@@ -40,7 +40,7 @@ function AboutModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       size="lg"
       title={a.title}
       subtitle={a.subtitle}
-      icon={<img src={logo} alt="" className="size-6 object-contain" />}
+      icon={<img src={logo} alt="" className="size-8 object-contain" />}
       footer={
         <div className="space-y-0.5 text-center text-xs text-pd-faint">
           {a.footer.map((line) => (
