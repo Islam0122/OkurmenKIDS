@@ -17,6 +17,7 @@
     "axios": "^1.7.9",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "framer-motion": "^11.18.2",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.469.0",
     "react": "^19.0.0",

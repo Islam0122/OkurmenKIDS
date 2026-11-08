@@ -18,6 +18,10 @@ CORS_ALLOWED_ORIGINS = [
     # e.g. https://stats.okurmenkids.com — comma-separated. Reads only
     # /api/v1/monthly-performance/* with a staff JWT or a read-only X-Dashboard-Key.
     *[o.strip().rstrip("/") for o in os.getenv("STATISTICS_SITE_ORIGINS", "").split(",") if o.strip()],
+    # The «OKURMEN DIGITAL» launcher on its own domain (VITE_APP_MODE=portal),
+    # e.g. https://digital.okurmenkids.com — comma-separated. It signs staff in
+    # and serves the LMS, schedule and leaderboard from the same build.
+    *[o.strip().rstrip("/") for o in os.getenv("PORTAL_SITE_ORIGINS", "").split(",") if o.strip()],
 ]
 
 CORS_ALLOW_METHODS = [
