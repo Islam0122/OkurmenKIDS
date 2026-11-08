@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
+import { BRAND } from '@/lib/brand'
+
 import type { PortalAppId, PortalServiceId } from './config'
 
 /**
- * OKURMEN DIGITAL texts in Russian, Kyrgyz and English. Every visible string
+ * OKURMENKIDS DIGITAL texts in Russian, Kyrgyz and English. Every visible string
  * of the portal lives here; components read them through `useI18n()`.
  */
 
@@ -35,7 +37,7 @@ interface Section {
 }
 
 export interface Messages {
-  brand: { subtitle: string; home: string }
+  brand: { home: string }
   nav: { language: string; about: string; help: string; privacy: string; login: string; logout: string; time: string; checking: string }
   hero: { tagline: string; hello: (name: string) => string; title: { before: string; accent: string; after: string }; description: string; appsLabel: string }
   card: { signIn: string; signInRequired: string; newTab: string; soon: string; explore: string }
@@ -44,11 +46,10 @@ export interface Messages {
   servicesTitle: string
   services: Record<PortalServiceId, { name: string; description: string }>
   programsPage: { back: string; title: string; titleAccent: string; subtitle: string; cta: string; ctaButton: string }
-  footer: { copyright: string; ecosystem: string; credit: string; links: string }
+  footer: { links: string }
   modal: { close: string }
   about: {
     title: string
-    subtitle: string
     description: string[]
     infoTitle: string
     info: { label: string; value: string }[]
@@ -63,15 +64,15 @@ export interface Messages {
   privacy: { title: string; sections: Section[] }
 }
 
-const DEVELOPER = 'Islam Duishobaev'
+const DEVELOPER = BRAND.developer
 
 const en: Messages = {
-  brand: { subtitle: 'Education Ecosystem', home: 'Okurmen Digital — home' },
+  brand: { home: 'OkurmenKids Digital — home' },
   nav: { language: 'Language', about: 'About', help: 'Help', privacy: 'Privacy', login: 'Login', logout: 'Log out', time: 'Bishkek time', checking: 'Checking session' },
   hero: {
     tagline: 'Everything you need to learn, teach and grow.',
     hello: (name) => `Hello, ${name}`,
-    title: { before: 'Welcome to Okurmen ', accent: 'Digital', after: '' },
+    title: { before: 'Welcome to OkurmenKids ', accent: 'Digital', after: '' },
     description: 'Your central platform for education, training, performance and academy resources.',
     appsLabel: 'Academy applications',
   },
@@ -111,18 +112,17 @@ const en: Messages = {
     cta: 'Already studying? Practice and take tests in the training portal.',
     ctaButton: 'Training & Exams',
   },
-  footer: { copyright: '© 2026 Okurmen Digital', ecosystem: 'Education Ecosystem', credit: `Designed & Developed by ${DEVELOPER}.`, links: 'Footer' },
+  footer: { links: 'Footer' },
   modal: { close: 'Close' },
   about: {
-    title: 'About Okurmen Digital',
-    subtitle: 'Education Ecosystem',
+    title: 'About OkurmenKids Digital',
     description: [
-      'Okurmen Digital is a unified digital ecosystem developed to connect education, technology and student development.',
+      'OkurmenKids Digital is a unified digital ecosystem developed to connect education, technology and student development.',
       'Our mission is to make education more accessible, organized and engaging by bringing all academy services into one platform.',
     ],
     infoTitle: 'Project Information',
     info: [
-      { label: 'Project Name', value: 'Okurmen Digital' },
+      { label: 'Project Name', value: 'OkurmenKids Digital' },
       { label: 'Created Date', value: '15.09.2026' },
       { label: 'Founder & Developer', value: DEVELOPER },
       { label: 'Organization', value: 'Okurmen Kids Academy' },
@@ -135,11 +135,11 @@ const en: Messages = {
     technologies: 'Technologies',
     missionTitle: 'Our Mission',
     mission: 'Building a smarter educational environment where students can learn, practice, create projects and track their progress.',
-    footer: ['© 2026 Okurmen Digital. All rights reserved.', `Designed & Developed by ${DEVELOPER}.`, 'Built with passion for education and technology.'],
+    footer: [BRAND.copyright, BRAND.credit, 'Built with passion for education and technology.'],
   },
   help: {
     title: 'Help',
-    subtitle: 'Getting around Okurmen Digital',
+    subtitle: 'Getting around OkurmenKids Digital',
     sections: [
       { title: 'Opening applications', text: 'Click any card to open the application. Cards with ↗ open in a new tab, cards with → open here.' },
       { title: 'Logging in', text: 'Press Login and use the account the academy gave you. Cards with a lock (LMS, News) need a login — after signing in you return to the app you chose.' },
@@ -159,12 +159,12 @@ const en: Messages = {
 }
 
 const ru: Messages = {
-  brand: { subtitle: 'Образовательная экосистема', home: 'Okurmen Digital — на главную' },
+  brand: { home: 'OkurmenKids Digital — на главную' },
   nav: { language: 'Язык', about: 'О проекте', help: 'Помощь', privacy: 'Конфиденциальность', login: 'Войти', logout: 'Выйти', time: 'Время в Бишкеке', checking: 'Проверяем сессию' },
   hero: {
     tagline: 'Всё, чтобы учиться, учить и расти.',
     hello: (name) => `Здравствуйте, ${name}`,
-    title: { before: 'Добро пожаловать в Okurmen ', accent: 'Digital', after: '' },
+    title: { before: 'Добро пожаловать в OkurmenKids ', accent: 'Digital', after: '' },
     description: 'Единая платформа для обучения, тренировок, успеваемости и ресурсов академии.',
     appsLabel: 'Приложения академии',
   },
@@ -204,18 +204,17 @@ const ru: Messages = {
     cta: 'Уже учитесь? Тренируйтесь и проходите тесты на тренировочном портале.',
     ctaButton: 'Тренировки и экзамены',
   },
-  footer: { copyright: '© 2026 Okurmen Digital', ecosystem: 'Образовательная экосистема', credit: `Дизайн и разработка — ${DEVELOPER}.`, links: 'Подвал' },
+  footer: { links: 'Подвал' },
   modal: { close: 'Закрыть' },
   about: {
-    title: 'Об Okurmen Digital',
-    subtitle: 'Образовательная экосистема',
+    title: 'Об OkurmenKids Digital',
     description: [
-      'Okurmen Digital — единая цифровая экосистема, которая объединяет образование, технологии и развитие студентов.',
+      'OkurmenKids Digital — единая цифровая экосистема, которая объединяет образование, технологии и развитие студентов.',
       'Наша миссия — сделать обучение доступнее, организованнее и интереснее, собрав все сервисы академии на одной платформе.',
     ],
     infoTitle: 'О проекте',
     info: [
-      { label: 'Название проекта', value: 'Okurmen Digital' },
+      { label: 'Название проекта', value: 'OkurmenKids Digital' },
       { label: 'Дата создания', value: '15.09.2026' },
       { label: 'Основатель и разработчик', value: DEVELOPER },
       { label: 'Организация', value: 'Okurmen Kids Academy' },
@@ -228,11 +227,11 @@ const ru: Messages = {
     technologies: 'Технологии',
     missionTitle: 'Наша миссия',
     mission: 'Создавать умную образовательную среду, где студенты учатся, практикуются, создают проекты и следят за своим прогрессом.',
-    footer: ['© 2026 Okurmen Digital. Все права защищены.', `Дизайн и разработка — ${DEVELOPER}.`, 'Создано с любовью к образованию и технологиям.'],
+    footer: [BRAND.copyright, BRAND.credit, 'Создано с любовью к образованию и технологиям.'],
   },
   help: {
     title: 'Помощь',
-    subtitle: 'Как пользоваться Okurmen Digital',
+    subtitle: 'Как пользоваться OkurmenKids Digital',
     sections: [
       { title: 'Как открыть приложение', text: 'Нажмите на карточку. Карточки со стрелкой ↗ открываются в новой вкладке, со стрелкой → — здесь же.' },
       { title: 'Как войти', text: 'Нажмите «Войти» и используйте аккаунт, выданный академией. Карточкам с замком (LMS, Новости) нужен вход — после него вы вернётесь в выбранное приложение.' },
@@ -252,12 +251,12 @@ const ru: Messages = {
 }
 
 const kg: Messages = {
-  brand: { subtitle: 'Билим берүү экосистемасы', home: 'Okurmen Digital — башкы бет' },
+  brand: { home: 'OkurmenKids Digital — башкы бет' },
   nav: { language: 'Тил', about: 'Долбоор жөнүндө', help: 'Жардам', privacy: 'Купуялык', login: 'Кирүү', logout: 'Чыгуу', time: 'Бишкек убактысы', checking: 'Сессия текшерилүүдө' },
   hero: {
     tagline: 'Окуу, окутуу жана өсүү үчүн баары бир жерде.',
     hello: (name) => `Саламатсызбы, ${name}`,
-    title: { before: 'Okurmen ', accent: 'Digital', after: '’га кош келиңиз' },
+    title: { before: 'OkurmenKids ', accent: 'Digital', after: '’га кош келиңиз' },
     description: 'Билим берүү, машыгуу, жетишкендиктер жана академиянын ресурстары үчүн борбордук платформа.',
     appsLabel: 'Академиянын тиркемелери',
   },
@@ -297,18 +296,17 @@ const kg: Messages = {
     cta: 'Окуп жатасызбы? Машыгуу порталында көнүгүп, тесттерди тапшырыңыз.',
     ctaButton: 'Машыгуу жана экзамендер',
   },
-  footer: { copyright: '© 2026 Okurmen Digital', ecosystem: 'Билим берүү экосистемасы', credit: `Дизайн жана иштеп чыгуу — ${DEVELOPER}.`, links: 'Төмөнкү меню' },
+  footer: { links: 'Төмөнкү меню' },
   modal: { close: 'Жабуу' },
   about: {
-    title: 'Okurmen Digital жөнүндө',
-    subtitle: 'Билим берүү экосистемасы',
+    title: 'OkurmenKids Digital жөнүндө',
     description: [
-      'Okurmen Digital — билим берүүнү, технологияны жана студенттердин өнүгүүсүн бириктирген бирдиктүү санариптик экосистема.',
+      'OkurmenKids Digital — билим берүүнү, технологияны жана студенттердин өнүгүүсүн бириктирген бирдиктүү санариптик экосистема.',
       'Биздин миссия — академиянын бардык кызматтарын бир платформага чогултуп, билим алууну жеткиликтүү, иреттүү жана кызыктуу кылуу.',
     ],
     infoTitle: 'Долбоор тууралуу маалымат',
     info: [
-      { label: 'Долбоордун аталышы', value: 'Okurmen Digital' },
+      { label: 'Долбоордун аталышы', value: 'OkurmenKids Digital' },
       { label: 'Түзүлгөн күнү', value: '15.09.2026' },
       { label: 'Негиздөөчү жана иштеп чыгуучу', value: DEVELOPER },
       { label: 'Уюм', value: 'Okurmen Kids Academy' },
@@ -321,11 +319,11 @@ const kg: Messages = {
     technologies: 'Технологиялар',
     missionTitle: 'Биздин миссия',
     mission: 'Студенттер окуп, көнүгүп, долбоор түзүп жана өз прогрессин көзөмөлдөй алган акылдуу билим берүү чөйрөсүн куруу.',
-    footer: ['© 2026 Okurmen Digital. Бардык укуктар корголгон.', `Дизайн жана иштеп чыгуу — ${DEVELOPER}.`, 'Билим берүүгө жана технологияга болгон сүйүү менен жасалган.'],
+    footer: [BRAND.copyright, BRAND.credit, 'Билим берүүгө жана технологияга болгон сүйүү менен жасалган.'],
   },
   help: {
     title: 'Жардам',
-    subtitle: 'Okurmen Digital’ды кантип колдонуу керек',
+    subtitle: 'OkurmenKids Digital’ды кантип колдонуу керек',
     sections: [
       { title: 'Тиркемени ачуу', text: 'Карточканы басыңыз. ↗ белгиси бар карточкалар жаңы өтмөктө, → белгиси барлар ушул жерде ачылат.' },
       { title: 'Кантип кирүү керек', text: '«Кирүү» баскычын басып, академия берген аккаунтту колдонуңуз. Кулпу белгиси бар карточкалар (LMS, Жаңылыктар) кирүүнү талап кылат — киргенден кийин тандалган тиркемеге кайтасыз.' },

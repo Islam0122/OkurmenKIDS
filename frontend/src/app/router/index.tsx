@@ -32,7 +32,7 @@ export const router = createBrowserRouter([
     lazy: async () => ({ Component: (await import('@/features/performanceSite/MonthlyPerformanceSite')).MonthlyPerformanceSite }),
   },
   {
-    // OKURMEN DIGITAL — public launcher of every academy application (features/portal).
+    // OKURMENKIDS DIGITAL — public launcher of every academy application (features/portal).
     path: '/portal',
     errorElement: <RouteErrorPage />,
     children: [

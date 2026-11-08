@@ -1,11 +1,14 @@
 import '@fontsource-variable/manrope'
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { ChevronDown, CircleHelp, Globe, Info, LogIn, LogOut } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
 import logo from '@/assets/logo-careers.png'
+import { BrandWordmark } from '@/components/brand/BrandWordmark'
+import { useDocumentMeta } from '@/features/careers/useDocumentMeta'
 import { useAuth } from '@/hooks/useAuth'
+import { BRAND, brandTitle } from '@/lib/brand'
 import { ROLE_LABEL } from '@/lib/roles'
 import type { User } from '@/types/auth'
 import { cn } from '@/utils/cn'
@@ -17,25 +20,20 @@ import { InfoModals, type InfoModalId } from './InfoModals'
 const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pd-green'
 
 /** White full-screen frame shared by the launcher and the programs page: header, footer, dialogs. */
-export function PortalShell({ children }: { children: ReactNode }) {
+export function PortalShell({ children, page }: { children: ReactNode; page?: 'programs' }) {
   return (
     <LanguageProvider>
-      <Frame>{children}</Frame>
+      <Frame page={page}>{children}</Frame>
     </LanguageProvider>
   )
 }
 
-function Frame({ children }: { children: ReactNode }) {
+function Frame({ children, page }: { children: ReactNode; page?: 'programs' }) {
+  const { t } = useI18n()
   const [modal, setModal] = useState<InfoModalId | null>(null)
   const close = useCallback(() => setModal(null), [])
 
-  useEffect(() => {
-    const previous = document.title
-    document.title = 'Okurmen Digital'
-    return () => {
-      document.title = previous
-    }
-  }, [])
+  useDocumentMeta({ title: brandTitle(page === 'programs' ? t.apps.programs.name : 'Образовательная экосистема'), description: BRAND.description })
 
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-x-hidden bg-pd-bg font-display text-pd-ink antialiased selection:bg-pd-green/20">
@@ -69,17 +67,15 @@ function PortalHeader({ onOpen }: { onOpen: (id: InfoModalId) => void }) {
             height={48}
             className="size-11 shrink-0 object-contain drop-shadow-[0_1px_2px_rgb(10_10_10/0.12)] transition-transform duration-300 group-hover:scale-[1.04] sm:size-12"
           />
-          <span className="flex min-w-0 flex-col justify-center gap-0.5">
-            <span className="block truncate text-[13px] font-extrabold leading-none tracking-[0.06em] min-[400px]:tracking-[0.12em] sm:text-[15px]">
-              OKURMEN <span className="text-pd-green">DIGITAL</span>
-            </span>
-            <span className="block text-[9px] font-semibold uppercase leading-[1.2] tracking-[0.12em] [overflow-wrap:normal] text-pd-faint sm:truncate sm:text-[10px] sm:tracking-[0.2em]">
-              {t.brand.subtitle}
-            </span>
-          </span>
+          <BrandWordmark
+            subtitle
+            stackOnMobile
+            className="text-[13px] tracking-[0.1em] sm:text-[15px]"
+            subtitleClassName="text-[9px] tracking-[0.12em] sm:truncate sm:text-[10px] sm:tracking-[0.2em]"
+          />
         </Link>
 
-        <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1.5" aria-label="Okurmen Digital">
+        <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1.5" aria-label={BRAND.name}>
           <LanguageSelect />
           <HeaderButton icon={Info} label={t.nav.about} onClick={() => onOpen('about')} />
           <HeaderButton icon={CircleHelp} label={t.nav.help} onClick={() => onOpen('help')} />
@@ -186,10 +182,10 @@ function PortalFooter({ onOpen }: { onOpen: (id: InfoModalId) => void }) {
   return (
     <footer className="mt-auto border-t border-pd-line/80 bg-pd-bg/70 backdrop-blur-sm">
       <div className="mx-auto grid w-full max-w-[1100px] items-center gap-2 px-4 py-3 text-xs text-pd-faint sm:px-6 lg:grid-cols-3">
-        <p className="text-center lg:text-left">{t.footer.copyright}</p>
+        <p className="text-center lg:text-left">{BRAND.copyright}</p>
         <div className="text-center leading-tight">
-          <p className="font-semibold uppercase tracking-[0.16em] text-pd-muted">{t.footer.ecosystem}</p>
-          <p className="mt-0.5 text-[11px]">{t.footer.credit}</p>
+          <p className="font-semibold uppercase tracking-[0.16em] text-pd-muted">{BRAND.subtitle}</p>
+          <p className="mt-0.5 text-[11px]">{BRAND.credit}</p>
         </div>
         <nav aria-label={t.footer.links} className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 whitespace-nowrap lg:justify-end">
           <button type="button" className={link} onClick={() => onOpen('about')} aria-haspopup="dialog">

@@ -2,6 +2,7 @@ import { WifiOff } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { FullScreenStatus } from '@/components/ui/FullScreenStatus'
+import { BRAND } from '@/lib/brand'
 
 export interface OfflinePageProps {
   onRetry: () => void
@@ -14,7 +15,7 @@ export function OfflinePage({ onRetry }: OfflinePageProps) {
       icon={WifiOff}
       tone="warning"
       title="Сервер недоступен"
-      description="Не удалось связаться с сервером OkurmenKIDS. Проверьте подключение к интернету и попробуйте ещё раз."
+      description={`Не удалось связаться с сервером ${BRAND.name}. Проверьте подключение к интернету и попробуйте ещё раз.`}
       actions={
         <Button variant="secondary" onClick={onRetry}>
           Попробовать снова

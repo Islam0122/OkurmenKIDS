@@ -4,7 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string
   /** «schedule» / «leaderboard» / «careers» / «statistics» / «portal» — this build is that standalone public site: «/» opens it. */
   readonly VITE_APP_MODE?: string
-  /** OKURMEN DIGITAL launcher (features/portal/config.ts): optional destination overrides —
+  /** OKURMENKIDS DIGITAL launcher (features/portal/config.ts): optional destination overrides —
    * an app route of this build (`/schedule`) or an absolute URL of another deployment. */
   readonly VITE_PORTAL_LMS_URL?: string
   readonly VITE_PORTAL_TRAINING_URL?: string

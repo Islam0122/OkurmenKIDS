@@ -1,3 +1,5 @@
+import '@fontsource-variable/manrope'
+
 import { useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertCircle, Lock, User as UserIcon } from 'lucide-react'
@@ -5,10 +7,13 @@ import { useForm } from 'react-hook-form'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import logo from '@/assets/logo.png'
+import { BrandWordmark } from '@/components/brand/BrandWordmark'
 import { Button } from '@/components/ui/Button'
+import { useDocumentMeta } from '@/features/careers/useDocumentMeta'
 import { useAuth } from '@/hooks/useAuth'
 import { extractErrorMessage, isNetworkOrServerError } from '@/lib/apiError'
 import { HOME_PATH } from '@/lib/appMode'
+import { BRAND, brandTitle } from '@/lib/brand'
 import { resolveReturnTo } from '@/lib/returnTo'
 import { homeFor } from '@/lib/roles'
 
@@ -27,6 +32,8 @@ export function LoginPage() {
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) })
 
   // Back to the page that sent the user here (e.g. the Schedule site), else the default home.
+  useDocumentMeta({ title: brandTitle('Вход'), description: BRAND.description })
+
   const from = (location.state as { from?: Location } | null)?.from
   const target = resolveReturnTo(from ? `${from.pathname}${from.search ?? ''}` : null, HOME_PATH)
 
@@ -53,9 +60,11 @@ export function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-surface-muted px-4">
       <div className="card w-full max-w-sm p-6 shadow-sm sm:p-8">
         <div className="mb-6 flex flex-col items-center text-center">
-          <img src={logo} alt="OkurmenKIDS" className="size-20 shrink-0 object-contain" />
-          <h1 className="mt-4 text-lg font-semibold text-ink">OkurmenKIDS</h1>
-          <p className="mt-1 text-sm text-ink-secondary">Вход в LMS — тренеры и Team Lead</p>
+          <img src={logo} alt="Okurmen Kids" className="size-20 shrink-0 object-contain" />
+          <h1 className="mt-4 font-display" aria-label={BRAND.name}>
+            <BrandWordmark subtitle className="text-lg tracking-[0.08em]" subtitleClassName="mt-1 text-[10px] tracking-[0.18em]" />
+          </h1>
+          <p className="mt-3 text-sm text-ink-secondary">Вход в LMS — тренеры и Team Lead</p>
         </div>
 
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} className="space-y-4" noValidate>

@@ -4,7 +4,7 @@
  * Leaderboard» site (VITE_APP_MODE=leaderboard), the public careers site
  * (VITE_APP_MODE=careers — vacancies and applications) and the academy
  * statistics site «OkurmenKIDS — Общая статистика» (VITE_APP_MODE=statistics,
- * staff login or a read-only dashboard key). «OKURMEN DIGITAL» (VITE_APP_MODE=portal) launches all of them from one screen. All talk to the same backend
+ * staff login or a read-only dashboard key). «OKURMENKIDS DIGITAL» (VITE_APP_MODE=portal) launches all of them from one screen. All talk to the same backend
  * API; only the start page differs. */
 export const IS_SCHEDULE_SITE = import.meta.env.VITE_APP_MODE === 'schedule'
 export const IS_LEADERBOARD_SITE = import.meta.env.VITE_APP_MODE === 'leaderboard'
@@ -12,7 +12,7 @@ export const IS_CAREERS_SITE = import.meta.env.VITE_APP_MODE === 'careers'
 /** «OkurmenKIDS — Общая статистика» на своём домене (VITE_APP_MODE=statistics). */
 export const IS_STATISTICS_SITE = import.meta.env.VITE_APP_MODE === 'statistics'
 
-/** «OKURMEN DIGITAL» — the launcher of all academy apps (VITE_APP_MODE=portal). */
+/** «OKURMENKIDS DIGITAL» — the launcher of all academy apps (VITE_APP_MODE=portal). */
 export const IS_PORTAL_SITE = import.meta.env.VITE_APP_MODE === 'portal'
 
 export const HOME_PATH = IS_PORTAL_SITE
