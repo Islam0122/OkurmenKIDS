@@ -1,0 +1,17 @@
+<!-- Okurmen Kids logo (PWA icon art): the glasses, eyebrows and the
+     «ОКУРМЭН / KIDS» wordmark of public/logo.png, redrawn as vectors in its
+     original proportions so it stays sharp at every icon size. Without the
+     round badge, in one flat colour (currentColor — the generator sets the
+     brand dark green). pwa/generate-icons.mjs measures and centres it. -->
+<g xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+  <!-- glasses -->
+  <rect x="165" y="200" width="71" height="38" rx="7" fill="none" stroke="currentColor" stroke-width="6"/>
+  <rect x="255" y="198" width="88" height="43" rx="8" fill="none" stroke="currentColor" stroke-width="6"/>
+  <path d="M158 197 C172 184 192 178 210 179 C206 184 190 186 168 197 Z"/>
+  <path d="M281 160 C286 156 292 157 296 160 C318 168 334 180 345 196 C328 184 306 175 283 170 C277 168 276 163 281 160 Z"/>
+  <!-- wordmark -->
+  <text x="256" y="299" text-anchor="middle" font-family="Manrope Variable, sans-serif" font-weight="800"
+        font-size="54" textLength="290" lengthAdjust="spacingAndGlyphs">ОКУРМЭН</text>
+  <text x="256" y="333" text-anchor="middle" font-family="Manrope Variable, sans-serif" font-weight="800"
+        font-size="25" letter-spacing="7">KIDS</text>
+</g>
