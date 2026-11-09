@@ -3,16 +3,16 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/app/layouts/AppLayout'
 import { AccessDeniedPage } from '@/features/auth/AccessDeniedPage'
 import { LoginPage } from '@/features/auth/LoginPage'
-import { HOME_PATH } from '@/lib/appMode'
 import { STAFF_ONLY_ROLES } from '@/lib/roles'
 
 import { NotFoundPage } from './NotFoundPage'
 import { ProtectedRoute } from './ProtectedRoute'
 import { RequireRoles } from './RequireRoles'
+import { RootRedirect } from './RootRedirect'
 import { RouteErrorPage } from './RouteErrorPage'
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Navigate to={HOME_PATH} replace />, errorElement: <RouteErrorPage /> },
+  { path: '/', element: <RootRedirect />, errorElement: <RouteErrorPage /> },
   { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
   {
     // Короткий адрес «Моей зарплаты»: ведёт на страницу в кабинете своей роли.
