@@ -18,6 +18,9 @@ interface ImportMetaEnv {
   readonly VITE_PORTAL_FEEDBACK_URL?: string
   readonly VITE_PORTAL_WEBSITE_URL?: string
   readonly VITE_PORTAL_CAREERS_URL?: string
+  /** «true» — build without the PWA service worker: the build ships a worker
+   * that removes any previously installed one (emergency off switch). */
+  readonly VITE_PWA_DISABLED?: string
 }
 
 interface ImportMeta {

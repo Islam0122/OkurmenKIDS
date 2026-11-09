@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+import { pwaPlugin } from './pwa/vitePlugin.ts'
+
 // The static <title> before React starts: the OKURMENKIDS DIGITAL launcher
 // build (VITE_APP_MODE=portal) names itself, every other build keeps the LMS title.
 function brandTitle(mode: string) {
@@ -17,8 +19,16 @@ function brandTitle(mode: string) {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => ({
-  plugins: [react(), tailwindcss(), brandTitle(mode)],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+  return {
+  plugins: [
+    react(),
+    tailwindcss(),
+    brandTitle(mode),
+    // Service worker (build only): pwa/sw.js → dist/sw.js. See pwa/README.md.
+    pwaPlugin({ apiBase: env.VITE_API_BASE_URL || '/api/v1', disabled: env.VITE_PWA_DISABLED === 'true' }),
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -45,4 +55,5 @@ export default defineConfig(({ mode }) => ({
     setupFiles: ['./src/test/setup.ts'],
     css: true,
   },
-}))
+  }
+})

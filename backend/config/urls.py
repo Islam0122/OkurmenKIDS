@@ -63,6 +63,9 @@ urlpatterns = [
     # Публичный карьерный сайт: опубликованные вакансии и отклики (без входа).
     path("api/v1/public/careers/", include("apps.recruitment.public_urls")),
 
+    # Web Push для установленного PWA: подписки устройств и настройки (apps.push).
+    path("api/v1/push/", include("apps.push.urls")),
+
     # Public feedback survey links (no login) — /feedback/s/<token>/
     path("feedback/", include("apps.feedback.public_urls")),
 

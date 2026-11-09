@@ -5,6 +5,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/api/auth'
 import { registerSessionExpiredHandler } from '@/api/client'
 import { isNetworkOrServerError } from '@/lib/apiError'
+import { unsubscribeOnLogout } from '@/pwa/push'
+import { clearWorkerUserData } from '@/pwa/register'
 import { STAFF_ONLY_ROLES } from '@/lib/roles'
 import { tokenStorage } from '@/lib/tokenStorage'
 import type { User } from '@/types/auth'
@@ -35,6 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
 
   const logout = useCallback(() => {
+    // This device stops receiving the account's push notifications, and the
+    // service worker drops its API copies — a shared computer starts clean.
+    // Fire-and-forget: logging out never waits for the network.
+    void unsubscribeOnLogout(tokenStorage.getAccess())
+    clearWorkerUserData()
     tokenStorage.clear()
     queryClient.clear()
     setUser(null)

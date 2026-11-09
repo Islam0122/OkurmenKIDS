@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Bell, CheckCheck } from 'lucide-react'
+import { Bell, BellRing, CheckCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { Drawer } from '@/components/ui/Drawer'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useNotificationMutations, useNotifications, useUnreadNotifications } from '@/hooks/useOperations'
+import { openAppSettings } from '@/pwa/store'
 import { cn } from '@/utils/cn'
 
 /** Уведомления сотрудника (backend: /api/v1/notifications/ — только свои):
@@ -61,6 +62,17 @@ export function NotificationsBell() {
               </li>
             ))}
           </ul>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              openAppSettings()
+            }}
+            className="flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 text-left text-sm text-ink-secondary hover:border-brand-200 hover:bg-brand-50/40 hover:text-brand-700"
+          >
+            <BellRing className="size-4 shrink-0" aria-hidden />
+            Уведомления на устройстве и приложение
+          </button>
         </div>
       </Drawer>
     </>

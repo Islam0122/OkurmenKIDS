@@ -3,11 +3,18 @@ import { AxiosError } from 'axios'
 import type { ApiErrorBody } from '@/types/common'
 
 const DEFAULT_MESSAGE = 'Что-то пошло не так. Попробуйте ещё раз.'
+export const OFFLINE_MESSAGE = 'Нет подключения к интернету — данные не отправлены. Повторите, когда связь восстановится.'
 
 /** Turns a DRF error response (`{detail: [...]}`, `{field: [...]}`, or a plain string) into one readable line. */
 export function extractErrorMessage(error: unknown, fallback: string = DEFAULT_MESSAGE): string {
   if (!(error instanceof AxiosError)) {
     return fallback
+  }
+
+  // The request never reached the server (offline, DNS, CORS): say so plainly
+  // instead of axios' English «Network Error» — and that nothing was saved.
+  if (!error.response && (error.code === AxiosError.ERR_NETWORK || (typeof navigator !== 'undefined' && !navigator.onLine))) {
+    return OFFLINE_MESSAGE
   }
 
   const body = error.response?.data as ApiErrorBody | undefined
