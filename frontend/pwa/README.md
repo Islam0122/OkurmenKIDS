@@ -9,12 +9,12 @@ an offline experience and (optionally) push notifications.
 | Path | Role |
 | --- | --- |
 | `public/manifest.webmanifest` | Name «Okurmen Kids» / «Okurmen», icons, standalone, theme `#2f8f5b`, background `#ffffff`, shortcuts |
-| `public/icons/*` | 192/512 «any», 192/512 «maskable», 180 Apple touch icon — one design: pure white opaque square, only the Okurmen Kids logo in brand dark green `#1f5f3c`, centred, 55% wide (inside the maskable safe zone) |
+| `public/icons/*` | 192/512 «any», 192/512 «maskable», 180 Apple touch icon — one design: pure white opaque square with the Okurmen Kids logo centred (gold ring `#F5B52B`, violet glasses and «KIDS» `#291078`, gold «ОКУРМЭН»); ring Ø 78% of the icon, inside the maskable safe zone |
 | `public/splash/*` | iOS/iPadOS launch screens (linked from `index.html`) |
 | `public/offline.html` | Self-contained last-resort offline page |
 | `pwa/sw.js` | Service worker source |
 | `pwa/vitePlugin.ts` | Build step: emits `dist/sw.js` with version + precache list |
-| `pwa/logo-mark.svg`, `pwa/generate-icons.mjs` | Logo art and generator (`node pwa/generate-icons.mjs`, needs Playwright; centres on the actual ink) |
+| `pwa/logo.svg`, `pwa/generate-icons.mjs` | Logo art and generator (`node pwa/generate-icons.mjs`, needs Playwright; centres on the actual ink) |
 | `pwa/verify.mjs` | End-to-end checks in Chromium (see Testing) |
 | `src/pwa/*` | Runtime: platform detection, state store, registration/updates, install, push |
 | `src/components/pwa/*` | UI: install card, «Приложение» dialog/card, update banner, connection status |

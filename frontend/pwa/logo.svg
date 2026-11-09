@@ -1,0 +1,25 @@
+<!-- Okurmen Kids logo — PWA icon art. Vector redraw of the brand badge
+     (approved concept): gold ring #F5B52B; glasses, eyebrows and «KIDS» in
+     violet #291078; «ОКУРМЭН» in gold. Coordinates follow the concept
+     artwork; the ring is a true circle centred at (0, 0), outer radius 419.
+     pwa/generate-icons.mjs scales it onto a pure white square. -->
+<g xmlns="http://www.w3.org/2000/svg">
+  <!-- invisible: makes the measured bounds equal the ring's outer edge -->
+  <circle r="419" fill="none" stroke="none"/>
+  <circle r="405.5" fill="none" stroke="#F5B52B" stroke-width="27"/>
+  <g transform="translate(-622 -623.5)" fill="#291078">
+    <!-- lenses -->
+    <rect x="411" y="507" width="179" height="88" rx="14" fill="none" stroke="#291078" stroke-width="16"/>
+    <rect x="630" y="489" width="210" height="112" rx="15" fill="none" stroke="#291078" stroke-width="16"/>
+    <!-- eyebrows: thin tails, round heads -->
+    <path d="M399 498 C430 481 470 461 510 445 C527 438 545 446 543 460 C541 472 522 476 500 479 C462 484 430 490 399 498 Z"/>
+    <path d="M700 399 C716 396 731 403 746 412 C781 432 815 452 845 474 C811 462 771 452 735 444 C714 439 692 435 687 420 C684 408 690 401 700 399 Z"/>
+    <!-- wordmark -->
+    <text x="622" y="738" text-anchor="middle" font-family="Manrope Variable, sans-serif" font-weight="800"
+          font-size="143" fill="#F5B52B" stroke="#F5B52B" stroke-width="9" stroke-linejoin="round"
+          textLength="686" lengthAdjust="spacingAndGlyphs">ОКУРМЭН</text>
+    <text x="622" y="821" text-anchor="middle" font-family="Manrope Variable, sans-serif" font-weight="800"
+          font-size="78" stroke="#291078" stroke-width="4" stroke-linejoin="round"
+          textLength="287" lengthAdjust="spacing">KIDS</text>
+  </g>
+</g>
