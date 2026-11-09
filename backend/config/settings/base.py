@@ -75,6 +75,8 @@ LOCAL_APPS = [
     "apps.projects.apps.ProjectsConfig",
     # Публичные новости академии для OkurmenKids Digital (/news) — не путать с apps.news.
     "apps.academy_news.apps.AcademyNewsConfig",
+    # Web Push для установленного PWA: подписки устройств и настройки (docs/push.md).
+    "apps.push.apps.PushConfig",
 ]
 
 INSTALLED_APPS = (
@@ -247,6 +249,8 @@ REST_FRAMEWORK = {
         "careers_apply": env("CAREERS_APPLY_RATE", default="10/hour"),
         # Отчёты для родителей: генерация PNG в headless Chromium (apps.reports).
         "parent_report_generate": env("PARENT_REPORT_GENERATE_RATE", default="60/hour"),
+        # Тестовое push-уведомление на свои устройства (apps.push).
+        "push_test": env("PUSH_TEST_RATE", default="10/hour"),
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -362,6 +366,21 @@ CELERY_BEAT_SCHEDULE = {
 # окончательно зафиксироваться.
 PERFORMANCE_FINALIZE_DELAY_DAYS = env.int("PERFORMANCE_FINALIZE_DELAY_DAYS", default=7)
 
+# Web Push для PWA (apps.push, docs/push.md). Пока ключи VAPID не заданы,
+# push полностью выключен: API отвечает enabled=false, сигналы ничего не шлют.
+# Сгенерировать пару: `python manage.py generate_vapid_keys`. Приватный ключ —
+# только в переменных окружения сервера, никогда в репозитории или во фронтенде.
+PUSH_VAPID_PUBLIC_KEY = env("PUSH_VAPID_PUBLIC_KEY", default="")
+PUSH_VAPID_PRIVATE_KEY = env("PUSH_VAPID_PRIVATE_KEY", default="")
+# Контакт для push-сервисов: "mailto:admin@example.com" или https-адрес.
+PUSH_VAPID_SUBJECT = env("PUSH_VAPID_SUBJECT", default="")
+# False — на экран блокировки уходит только «У вас новое уведомление».
+PUSH_SHOW_CONTENT = env.bool("PUSH_SHOW_CONTENT", default=True)
+PUSH_TTL_SECONDS = env.int("PUSH_TTL_SECONDS", default=60 * 60 * 24)
+# Хосты push-сервисов, на которые сервер вправе отправлять запросы (защита от
+# SSRF). Пусто — встроенный список (FCM, Mozilla, Apple, Windows).
+PUSH_ALLOWED_ENDPOINT_HOSTS = env.list("PUSH_ALLOWED_ENDPOINT_HOSTS", default=[])
+
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL",
     default="http://localhost:8000",
@@ -397,6 +416,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "News", "description": "Teacher-facing news and announcements"},
         {"name": "Feedback", "description": "Feedback surveys for parents and students"},
         {"name": "Scholarships", "description": "Monthly scholarship evaluation, ranking and trainer feedback"},
+        {"name": "Push", "description": "PWA web push: device subscriptions and preferences"},
     ],
 }
 

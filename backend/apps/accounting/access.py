@@ -60,6 +60,8 @@ PERSONAL_WORK_PREFIXES = (
     "/api/v1/tasks/",
     "/api/v1/work-reports/",
     "/api/v1/notifications/",
+    # Push-подписки своих устройств и их настройки (apps.push).
+    "/api/v1/push/",
 )
 
 # «Общая статистика» (apps.performance) открыта каждому сотруднику; правка — по правам в представлениях.

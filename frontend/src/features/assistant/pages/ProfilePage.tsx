@@ -1,6 +1,7 @@
 import { LogOut } from 'lucide-react'
 
 import { PageHeader } from '@/components/layout/PageHeader'
+import { AppSettingsCard } from '@/components/pwa/AppSettingsCard'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { useAuth } from '@/hooks/useAuth'
@@ -27,6 +28,7 @@ export function AssistantProfilePage() {
           <Button variant="secondary" leftIcon={<LogOut className="size-4" aria-hidden />} onClick={logout}>Выйти</Button>
         </div>
       </Card>
+      <AppSettingsCard />
     </div>
   )
 }

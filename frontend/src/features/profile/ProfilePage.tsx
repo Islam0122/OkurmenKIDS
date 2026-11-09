@@ -1,6 +1,7 @@
 import { Briefcase, Calendar, Mail, Phone, User as UserIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/layout/PageHeader'
+import { AppSettingsCard } from '@/components/pwa/AppSettingsCard'
 import { Badge } from '@/components/ui/Badge'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -48,6 +49,7 @@ function AccountProfile({ user }: { user: User }) {
           </div>
         </dl>
       </div>
+      <AppSettingsCard />
     </div>
   )
 }
@@ -110,6 +112,7 @@ function TeacherProfile() {
           </div>
         ) : null}
       </div>
+      <AppSettingsCard />
     </div>
   )
 }

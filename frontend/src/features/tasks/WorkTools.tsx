@@ -1,6 +1,8 @@
 import { ClipboardList } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import { InstallAppButton } from '@/components/pwa/InstallAppButton'
+
 import { NotificationsBell } from './NotificationsBell'
 
 /** Шапка любого кабинета: «Мои задачи» и уведомления (задачи, отчёты,
@@ -8,6 +10,7 @@ import { NotificationsBell } from './NotificationsBell'
 export function WorkTools() {
   return (
     <div className="flex items-center">
+      <InstallAppButton />
       <Link to="/tasks" aria-label="Мои задачи" title="Мои задачи"
         className="flex size-10 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-hover hover:text-ink">
         <ClipboardList className="size-5" aria-hidden />
