@@ -1,14 +1,15 @@
 /**
  * Renders the PWA icon set and iOS splash screens into public/ from
- * pwa/logo-mark.svg. Re-run only when the brand art changes:
+ * pwa/logo.svg. Re-run only when the brand art changes:
  *
  *   node pwa/generate-icons.mjs
  *
  * Design: a pure white, fully opaque square (corners included) with only the
- * Okurmen Kids logo in the brand dark green, measured and centred exactly.
- * The same image is used for «any», «maskable» and the Apple touch icon: the
- * logo stays well inside the 80% maskable safe zone, so Android launcher
- * masks, the macOS/iOS rounded squares and Chrome's install UI never clip it.
+ * Okurmen Kids logo (gold ring, violet glasses and «KIDS», gold «ОКУРМЭН»),
+ * measured and centred exactly. The same image is used for «any»,
+ * «maskable» and the Apple touch icon: the ring's outer diameter is 78% of
+ * the icon, inside the 80% maskable safe circle, so Android launcher masks,
+ * the macOS/iOS rounded squares and Chrome's install UI never clip it.
  *
  * Needs Playwright with Chromium (`npx playwright install chromium` if it is
  * not on the machine). Not part of `npm run build`: the PNGs are committed.
@@ -22,7 +23,7 @@ const require = createRequire(import.meta.url)
 const { chromium } = require('playwright')
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const mark = readFileSync(join(root, 'pwa/logo-mark.svg'), 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+const mark = readFileSync(join(root, 'pwa/logo.svg'), 'utf8').replace(/<!--[\s\S]*?-->/g, '')
 const font = (subset) =>
   readFileSync(join(root, `node_modules/@fontsource-variable/manrope/files/manrope-${subset}-wght-normal.woff2`)).toString('base64')
 
@@ -31,10 +32,8 @@ const FONT_CSS = ['latin', 'cyrillic']
   .join('')
 
 const WHITE = '#ffffff'
-/** Brand dark green (--color-brand-700). */
-const GREEN = '#1f5f3c'
-/** Logo width as a share of the icon: generous whitespace, inside the safe zone. */
-const LOGO_WIDTH = 0.56
+/** Ring's outer diameter as a share of the icon: inside the maskable safe zone. */
+const LOGO_WIDTH = 0.78
 
 const ICONS = [
   { file: 'icons/icon-192.png', size: 192 },
@@ -56,7 +55,7 @@ function page(w, h, logoWidth) {
   return `<style>${FONT_CSS}html,body{margin:0;background:${WHITE}}svg{display:block}</style>
 <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
   <rect width="${w}" height="${h}" fill="${WHITE}"/>
-  <g id="place" data-w="${w}" data-h="${h}" data-logo="${logoWidth}" color="${GREEN}"><g id="mark">${mark}</g></g>
+  <g id="place" data-w="${w}" data-h="${h}" data-logo="${logoWidth}"><g id="mark">${mark}</g></g>
 </svg>`
 }
 
@@ -119,7 +118,7 @@ for (const { file, size } of ICONS) {
 for (const [w, h, dpr] of SPLASH) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr })
   const p = await ctx.newPage()
-  await p.setContent(page(w, h, Math.round(Math.min(w, h) * 0.46)))
+  await p.setContent(page(w, h, Math.round(Math.min(w, h) * 0.5)))
   await centre(p)
   await centreOnInk(p)
   const file = `splash/apple-splash-${w * dpr}x${h * dpr}.png`
