@@ -15,8 +15,12 @@ export const IS_STATISTICS_SITE = import.meta.env.VITE_APP_MODE === 'statistics'
 /** «OKURMENKIDS DIGITAL» — the launcher of all academy apps (VITE_APP_MODE=portal). */
 export const IS_PORTAL_SITE = import.meta.env.VITE_APP_MODE === 'portal'
 
+/** The public OKURMENKIDS DIGITAL portal — the installed app's start page
+ * (manifest start_url) and where «Выйти» leads, in every build. */
+export const PORTAL_PATH = '/portal'
+
 export const HOME_PATH = IS_PORTAL_SITE
-  ? '/portal'
+  ? PORTAL_PATH
   : IS_SCHEDULE_SITE
   ? '/schedule'
   : IS_LEADERBOARD_SITE

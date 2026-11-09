@@ -35,8 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
+  const [signedOut, setSignedOut] = useState(false)
 
-  const logout = useCallback(() => {
+  /** End the session on this device (both explicit logout and expiry). */
+  const endSession = useCallback(() => {
     // This device stops receiving the account's push notifications, and the
     // service worker drops its API copies — a shared computer starts clean.
     // Fire-and-forget: logging out never waits for the network.
@@ -48,14 +50,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('guest')
   }, [queryClient])
 
+  const logout = useCallback(() => {
+    setSignedOut(true)
+    endSession()
+  }, [endSession])
+
   const retry = useCallback(() => {
     setStatus('loading')
     setBootstrapAttempt((attempt) => attempt + 1)
   }, [])
 
   useEffect(() => {
-    registerSessionExpiredHandler(logout)
-  }, [logout])
+    // Expired session: back to /login (with the page to return to), not the portal.
+    registerSessionExpiredHandler(endSession)
+  }, [endSession])
 
   useEffect(() => {
     let cancelled = false
@@ -104,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(describeIneligibility(me))
     }
     setUser(me)
+    setSignedOut(false)
     setStatus('authenticated')
     return me
   }, [])
@@ -114,7 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login: typeof login
     logout: typeof logout
     retry: typeof retry
-  }>(() => ({ user, status, login, logout, retry }), [user, status, login, logout, retry])
+    signedOut: boolean
+  }>(() => ({ user, status, login, logout, retry, signedOut }), [user, status, login, logout, retry, signedOut])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

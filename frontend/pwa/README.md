@@ -8,7 +8,7 @@ an offline experience and (optionally) push notifications.
 
 | Path | Role |
 | --- | --- |
-| `public/manifest.webmanifest` | Name «Okurmen Kids» / «Okurmen», icons, standalone, theme `#2f8f5b`, background `#ffffff`, shortcuts |
+| `public/manifest.webmanifest` | Name «Okurmen Kids» / «Okurmen», `start_url /portal`, `scope /`, `id /`, standalone, theme and background `#ffffff`, shortcuts |
 | `public/icons/*` | 192/512 «any», 192/512 «maskable», 180 Apple touch icon — one design: pure white opaque square with the Okurmen Kids logo centred (gold ring `#F5B52B`, violet glasses and «KIDS» `#291078`, gold «ОКУРМЭН»); ring Ø 78% of the icon, inside the maskable safe zone |
 | `public/splash/*` | iOS/iPadOS launch screens (linked from `index.html`) |
 | `public/offline.html` | Self-contained last-resort offline page |
@@ -18,6 +18,27 @@ an offline experience and (optionally) push notifications.
 | `pwa/verify.mjs` | End-to-end checks in Chromium (see Testing) |
 | `src/pwa/*` | Runtime: platform detection, state store, registration/updates, install, push |
 | `src/components/pwa/*` | UI: install card, «Приложение» dialog/card, update banner, connection status |
+
+## Launch flow
+
+```
+installed app → /portal (public portal) → LMS card
+   signed in  → /app/dashboard → the role's own cabinet (AppLayout / homeFor)
+   guest      → /login (remembers /app/dashboard) → login → role dashboard
+«Выйти»       → /portal
+```
+
+* `start_url` is `/portal` in every build. `id` stays `/`, so apps installed
+  before this change update in place (new start page, no second icon).
+* The portal never redirects a signed-in user; the LMS card decides.
+* An explicit logout sets `signedOut`, and `ProtectedRoute` then sends the user
+  to `/portal`. An **expired** session still goes to `/login` with the page to
+  return to, so a deep link or a push notification link (`/tasks/12`) lands
+  where it pointed after signing in again.
+* Deep links and refreshes work on every route: the SPA rewrite on Vercel, and
+  network-first navigations with the precached shell in the service worker.
+* Theme colour is white in the manifest **and** in `<meta name="theme-color">`.
+  Chrome lets the page meta override the manifest for the app's title bar.
 
 ## Service worker strategies
 

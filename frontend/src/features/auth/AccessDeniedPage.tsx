@@ -1,4 +1,5 @@
 import { ShieldAlert } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/Button'
 import { FullScreenStatus } from '@/components/ui/FullScreenStatus'
@@ -6,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 
 export function AccessDeniedPage() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
 
   const reason =
     user?.role !== 'teacher'
@@ -23,7 +25,13 @@ export function AccessDeniedPage() {
       title="Доступ ограничен"
       description={reason}
       actions={
-        <Button variant="secondary" onClick={logout}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            logout()
+            navigate('/login', { replace: true })
+          }}
+        >
           Выйти и вернуться ко входу
         </Button>
       }

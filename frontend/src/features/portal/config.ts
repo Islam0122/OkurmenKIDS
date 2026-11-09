@@ -34,7 +34,7 @@ import type { ProgramId } from './i18n'
  * academy already runs.
  */
 
-export const PORTAL_PATH = '/portal'
+export { PORTAL_PATH } from '@/lib/appMode'
 export const PROGRAMS_PATH = '/portal/programs'
 
 export type PortalAppId =
