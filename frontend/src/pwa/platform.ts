@@ -29,6 +29,18 @@ export function isIOS(): boolean {
   return /iPhone|iPad|iPod/.test(agent) || iPadOS
 }
 
+export function isAndroid(): boolean {
+  return /Android/.test(ua())
+}
+
+/** Desktop OS, for «where to find the installed app» hints. */
+export function desktopOS(): 'windows' | 'macos' | 'other' {
+  const agent = ua()
+  if (/Windows/.test(agent)) return 'windows'
+  if (/Macintosh/.test(agent) && !isIOS()) return 'macos'
+  return 'other'
+}
+
 export function isInAppBrowser(): boolean {
   return /FBAN|FBAV|Instagram|Line\/|Telegram|WhatsApp|; wv\)|GSA\//.test(ua())
 }

@@ -17,6 +17,29 @@ export const LANGS: { id: Lang; short: string; name: string; htmlLang: string }[
   { id: 'en', short: 'EN', name: 'English', htmlLang: 'en' },
 ]
 
+/** «Install app» in the portal header (features/portal/InstallButton). */
+export interface InstallText {
+  install: string
+  open: string
+  iosTitle: string
+  iosSteps: [string, string, string]
+  macSafariTitle: string
+  macSafariSteps: [string, string]
+  chromeMenuTitle: string
+  chromeMenuSteps: [string, string]
+  inAppTitle: string
+  inAppSteps: [string, string]
+  unsupportedTitle: string
+  unsupportedText: string
+  openTitle: string
+  openWindows: string
+  openMac: string
+  openAndroid: string
+  openIOS: string
+  openOther: string
+  openOmnibox: string
+}
+
 export type ProgramId = 'it' | 'english' | 'soft-skills' | 'other'
 
 interface AppText {
@@ -127,6 +150,7 @@ export interface Messages {
   programsPage: { back: string; title: string; titleAccent: string; subtitle: string; cta: string; ctaButton: string }
   footer: { links: string }
   modal: { close: string }
+  install: InstallText
   about: {
     title: string
     description: string[]
@@ -268,6 +292,27 @@ const en: Messages = {
   },
   footer: { links: 'Footer' },
   modal: { close: 'Close' },
+  install: {
+    install: 'Install app',
+    open: 'Open app',
+    iosTitle: 'Install on iPhone or iPad',
+    iosSteps: ['Tap «Share» in Safari (bottom bar on iPhone, top on iPad).', 'Choose «Add to Home Screen» — scroll the list if you don’t see it.', 'Tap «Add». Okurmen Kids opens from the Home Screen like an app.'],
+    macSafariTitle: 'Install in Safari on Mac',
+    macSafariSteps: ['In the menu bar choose «File», or click «Share».', 'Choose «Add to Dock» and confirm.'],
+    chromeMenuTitle: 'Install from the browser menu',
+    chromeMenuSteps: ['Open the browser menu (⋮ in Chrome, ⋯ in Edge).', 'Choose «Install Okurmen Kids» (in Chrome: «Cast, save and share» → «Install page as app»).'],
+    inAppTitle: 'Open in your browser first',
+    inAppSteps: ['Open this window’s menu (⋯ or ⋮).', 'Choose «Open in browser» (Safari or Chrome) and install from there.'],
+    unsupportedTitle: 'This browser can’t install apps',
+    unsupportedText: 'Open Okurmen Kids in Chrome or Edge (Windows, macOS, Android) or in Safari (iPhone, iPad, Mac) to install it.',
+    openTitle: 'Okurmen Kids is installed',
+    openWindows: 'Open it from the Start menu or the desktop shortcut.',
+    openMac: 'Open it from the Dock, Launchpad or the Applications folder.',
+    openAndroid: 'Open it from your Home Screen or the app drawer.',
+    openIOS: 'Open it from your Home Screen.',
+    openOther: 'Open it from your list of apps.',
+    openOmnibox: 'In Chrome or Edge you can also click «Open in app» on the right of the address bar.',
+  },
   about: {
     title: 'About OkurmenKids Digital',
     description: [
@@ -435,6 +480,27 @@ const ru: Messages = {
   },
   footer: { links: 'Подвал' },
   modal: { close: 'Закрыть' },
+  install: {
+    install: 'Установить приложение',
+    open: 'Открыть приложение',
+    iosTitle: 'Установка на iPhone и iPad',
+    iosSteps: ['Нажмите «Поделиться» в Safari (внизу на iPhone, вверху на iPad).', 'Выберите «На экран „Домой“» — пролистайте список, если пункта не видно.', 'Нажмите «Добавить». Okurmen Kids откроется с экрана «Домой» как приложение.'],
+    macSafariTitle: 'Установка в Safari на Mac',
+    macSafariSteps: ['В строке меню выберите «Файл» или нажмите «Поделиться».', 'Выберите «Добавить в Dock» и подтвердите.'],
+    chromeMenuTitle: 'Установка через меню браузера',
+    chromeMenuSteps: ['Откройте меню браузера (⋮ в Chrome, ⋯ в Edge).', 'Выберите «Установить Okurmen Kids» (в Chrome: «Трансляция, сохранение и отправка» → «Установить страницу как приложение»).'],
+    inAppTitle: 'Сначала откройте в браузере',
+    inAppSteps: ['Откройте меню этого окна (⋯ или ⋮).', 'Выберите «Открыть в браузере» (Safari или Chrome) и установите оттуда.'],
+    unsupportedTitle: 'Этот браузер не устанавливает приложения',
+    unsupportedText: 'Откройте Okurmen Kids в Chrome или Edge (Windows, macOS, Android) или в Safari (iPhone, iPad, Mac), чтобы установить его.',
+    openTitle: 'Okurmen Kids уже установлен',
+    openWindows: 'Откройте его из меню «Пуск» или ярлыком на рабочем столе.',
+    openMac: 'Откройте его из Dock, Launchpad или папки «Программы».',
+    openAndroid: 'Откройте его с главного экрана или из списка приложений.',
+    openIOS: 'Откройте его с экрана «Домой».',
+    openOther: 'Откройте его из списка приложений.',
+    openOmnibox: 'В Chrome и Edge можно также нажать «Открыть в приложении» справа в адресной строке.',
+  },
   about: {
     title: 'Об OkurmenKids Digital',
     description: [
@@ -602,6 +668,27 @@ const kg: Messages = {
   },
   footer: { links: 'Төмөнкү меню' },
   modal: { close: 'Жабуу' },
+  install: {
+    install: 'Колдонмону орнотуу',
+    open: 'Колдонмону ачуу',
+    iosTitle: 'iPhone жана iPad’ка орнотуу',
+    iosSteps: ['Safari’де «Бөлүшүү» баскычын басыңыз (iPhone’до ылдыйда, iPad’да өйдөдө).', '«Башкы экранга» тандаңыз — көрүнбөсө, тизмени жылдырыңыз.', '«Кошуу» баскычын басыңыз. Okurmen Kids башкы экрандан колдонмо катары ачылат.'],
+    macSafariTitle: 'Mac’тагы Safari’ге орнотуу',
+    macSafariSteps: ['Меню сабынан «Файл» тандаңыз же «Бөлүшүү» баскычын басыңыз.', '«Dock’ко кошуу» тандап, ырастаңыз.'],
+    chromeMenuTitle: 'Браузердин менюсу аркылуу орнотуу',
+    chromeMenuSteps: ['Браузердин менюсун ачыңыз (Chrome’до ⋮, Edge’де ⋯).', '«Okurmen Kids орнотуу» тандаңыз (Chrome’до: «Трансляция, сактоо жана жөнөтүү» → «Баракты колдонмо катары орнотуу»).'],
+    inAppTitle: 'Адегенде браузерде ачыңыз',
+    inAppSteps: ['Бул терезенин менюсун ачыңыз (⋯ же ⋮).', '«Браузерде ачуу» (Safari же Chrome) тандап, ошол жерден орнотуңуз.'],
+    unsupportedTitle: 'Бул браузер колдонмо орното албайт',
+    unsupportedText: 'Орнотуу үчүн Okurmen Kids’ти Chrome же Edge’де (Windows, macOS, Android) же Safari’де (iPhone, iPad, Mac) ачыңыз.',
+    openTitle: 'Okurmen Kids орнотулган',
+    openWindows: '«Пуск» менюсунан же иш столундагы белгиден ачыңыз.',
+    openMac: 'Dock, Launchpad же «Программалар» папкасынан ачыңыз.',
+    openAndroid: 'Башкы экрандан же колдонмолор тизмесинен ачыңыз.',
+    openIOS: 'Башкы экрандан ачыңыз.',
+    openOther: 'Колдонмолор тизмесинен ачыңыз.',
+    openOmnibox: 'Chrome жана Edge’де дарек сабынын оң жагындагы «Колдонмодо ачуу» баскычын да басса болот.',
+  },
   about: {
     title: 'OkurmenKids Digital жөнүндө',
     description: [

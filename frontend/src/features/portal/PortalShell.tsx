@@ -16,6 +16,7 @@ import { cn } from '@/utils/cn'
 import { PORTAL_PATH } from './config'
 import { LANGS, LanguageProvider, useI18n, type Lang, type Messages } from './i18n'
 import { InfoModals, type InfoModalId } from './InfoModals'
+import { PortalInstallButton } from './InstallButton'
 
 const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pd-green'
 
@@ -101,6 +102,7 @@ function PortalHeader({ onOpen, backHome }: { onOpen: (id: InfoModalId) => void;
               <span className="hidden md:inline">{t.nav.home}</span>
             </Link>
           ) : null}
+          <PortalInstallButton />
           <LanguageSelect />
           <HeaderButton icon={Info} label={t.nav.about} onClick={() => onOpen('about')} compact={backHome} />
           <HeaderButton icon={CircleHelp} label={t.nav.help} onClick={() => onOpen('help')} compact={backHome} />

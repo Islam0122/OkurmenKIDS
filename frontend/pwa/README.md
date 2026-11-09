@@ -65,18 +65,44 @@ tabs. The site keeps working as a plain website.
 
 ## Install UX
 
-* Chromium (Chrome/Edge on Windows, macOS, Android): `beforeinstallprompt` is
-  captured before React starts. The app shows its own card at most once per
-  visit: only after 30 s **and** a real interaction, never on `/login` or TV
-  dashboards (`?tv=`, `/monthly-performance`). «Не сейчас» snoozes it for 21
-  days; after 3 dismissals it never appears on its own again.
-* iOS/iPadOS Safari: the same card leads to step-by-step «Поделиться → На экран
-  „Домой“» instructions. macOS Safari 17+ gets «Добавить в Dock». In-app
-  browsers are told to open the real browser.
-* Always available: the download icon in every cabinet header (only while
-  installation is possible), the link at the bottom of the notifications panel,
-  and «Приложение и уведомления» on the profile pages.
-* Once installed (standalone), every prompt disappears.
+**Native installation (Chromium: Chrome / Edge on Windows, macOS, Android).**
+`beforeinstallprompt` is captured before React starts (`src/pwa/register.ts`):
+`preventDefault()`, event saved. Every install button calls the saved event's
+`prompt()` directly from the click (`promptInstall()` in `src/pwa/install.ts`),
+so Chrome shows its **real** «Install app» dialog. There is no imitation and no
+modal in between. `userChoice` is handled (accepted → installed; dismissed → the
+button stays). `appinstalled` marks the app installed.
+
+**Portal header (`/portal`, news, projects, programs —
+`src/features/portal/InstallButton.tsx`):** a compact white button with a
+download icon (label from `lg`, icon only below), in RU / KG / EN.
+
+| State | Button | Click |
+| --- | --- | --- |
+| Chromium offers install | «Установить приложение» | native Chrome/Edge dialog |
+| iOS / iPadOS Safari (no install API) | «Установить приложение» | panel: Поделиться → На экран «Домой» → Добавить |
+| macOS Safari 17+ | «Установить приложение» | panel: Файл / Поделиться → Добавить в Dock |
+| Chromium, no prompt (yet) | «Установить приложение» | panel: browser menu → Install |
+| In-app browser (Instagram, Telegram…) | «Установить приложение» | panel: open in Safari/Chrome first |
+| Unsupported (e.g. Firefox desktop) | «Установить приложение» | panel: which browsers can install |
+| Installed (browser tab) | «Открыть приложение» | panel: where to open it (Start menu / Dock / Home Screen; Chrome's «Open in app» icon) |
+| Running as the app (standalone) | hidden | — |
+
+«Installed» in a tab comes from `appinstalled` / an accepted prompt (stored),
+and from `navigator.getInstalledRelatedApps()` (Chromium; the manifest lists
+itself in `related_applications`). A new `beforeinstallprompt` means the app
+was uninstalled, and the note is cleared. Browsers have no API that lets a page
+launch an installed PWA, so «Открыть приложение» says where to open it rather
+than opening a tab that looks like the app.
+
+**Cabinet headers:** the download icon calls the native prompt the same way
+(Apple browsers: the «Приложение» dialog with the manual steps).
+
+**Floating offer:** a calm card, at most once per visit, after 30 s **and** a
+real interaction. It never appears on `/login`, TV dashboards, or a page that
+already shows a header install button. «Не сейчас» snoozes it for 21 days;
+after 3 dismissals it never appears on its own again. Once installed, every
+prompt disappears.
 
 ## Push notifications
 
@@ -110,6 +136,9 @@ worker.
 npm test                                   # unit tests (incl. src/pwa, components/pwa)
 npm run build && npx vite preview --port 4173 &
 node pwa/verify.mjs                        # 30 end-to-end checks in Chromium
+# Real Chrome install flow (headed Chromium, normal profile — Chrome never
+# fires beforeinstallprompt headless or in Incognito):
+xvfb-run -a -s "-screen 0 1280x800x24" node pwa/verify-native-install.mjs
 ```
 
 To run a Lighthouse PWA audit, use Lighthouse ≤ 11 (v12 removed the PWA category).
