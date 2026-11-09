@@ -85,7 +85,7 @@ export function InstallPrompt() {
         >
           <div className="h-1 bg-gradient-to-r from-brand-500 via-brand-200 to-brand-500" aria-hidden />
           <div className="flex gap-3 p-4">
-            <img src="/icons/icon-192.png" alt="" className="size-12 shrink-0 rounded-xl shadow-sm" width={48} height={48} />
+            <img src="/icons/icon-192.png" alt="" className="size-12 shrink-0 rounded-xl border border-border shadow-sm" width={48} height={48} />
             <div className="min-w-0 flex-1">
               <h2 id="pwa-install-title" className="text-sm font-semibold text-ink">
                 Установите Okurmen Kids

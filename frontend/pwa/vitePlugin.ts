@@ -69,11 +69,15 @@ export function pwaPlugin({ apiBase, disabled }: PwaPluginOptions): Plugin {
         .forEach((chunk) => visit(chunk.fileName))
 
       const precache = [...STATIC_SHELL, ...[...shell].sort()]
-      const version = createHash('sha256')
+      const hash = createHash('sha256')
         .update(Object.keys(bundle).sort().join('\n'))
         .update(readFileSync(fileURLToPath(new URL('./sw.js', import.meta.url))))
-        .digest('hex')
-        .slice(0, 12)
+      // public/ files are not in the bundle: hash the precached ones too, so a
+      // new icon or offline page alone still ships a new worker (fresh copies).
+      STATIC_SHELL.filter((path) => path !== '/index.html').forEach((path) =>
+        hash.update(readFileSync(fileURLToPath(new URL(`../public${path}`, import.meta.url)))),
+      )
+      const version = hash.digest('hex').slice(0, 12)
 
       const header = `self.__PWA_BUILD__ = ${JSON.stringify({ version, precache, apiBase })};\n`
       const source = readFileSync(fileURLToPath(new URL('./sw.js', import.meta.url)), 'utf8')
