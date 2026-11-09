@@ -12,6 +12,7 @@ function renderProtected() {
   return renderWithProviders(
     <Routes>
       <Route path="/login" element={<div>Login page</div>} />
+      <Route path="/portal" element={<div>Public portal</div>} />
       <Route path="/access-denied" element={<div>Access denied page</div>} />
       <Route element={<ProtectedRoute />}>
         <Route path="/app/dashboard" element={<div>Dashboard content</div>} />
@@ -26,6 +27,13 @@ describe('ProtectedRoute', () => {
     mockUseAuth.mockReturnValue({ status: 'guest' })
     renderProtected()
     expect(screen.getByText('Login page')).toBeInTheDocument()
+  })
+
+  it('sends a user who just pressed «Выйти» to the public portal, not the login form', () => {
+    mockUseAuth.mockReturnValue({ status: 'guest', signedOut: true })
+    renderProtected()
+    expect(screen.getByText('Public portal')).toBeInTheDocument()
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument()
   })
 
   it('redirects an ineligible account (wrong role, unverified, or deactivated) to /access-denied instead of any app page', () => {

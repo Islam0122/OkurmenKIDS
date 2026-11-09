@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { OfflinePage } from '@/features/auth/OfflinePage'
 import { useAuth } from '@/hooks/useAuth'
+import { PORTAL_PATH } from '@/lib/appMode'
 
 /**
  * Gates every `/app/*` route. The backend remains the source of truth for
@@ -11,7 +12,7 @@ import { useAuth } from '@/hooks/useAuth'
  * enforces role/ownership itself regardless of what this component renders.
  */
 export function ProtectedRoute() {
-  const { status, retry } = useAuth()
+  const { status, retry, signedOut } = useAuth()
   const location = useLocation()
 
   if (status === 'loading') {
@@ -23,6 +24,9 @@ export function ProtectedRoute() {
   }
 
   if (status === 'guest') {
+    // «Выйти» → the public portal, the front door of the platform. A visitor
+    // or an expired session → /login, then back to this very page.
+    if (signedOut) return <Navigate to={PORTAL_PATH} replace />
     return <Navigate to="/login" replace state={{ from: location }} />
   }
 

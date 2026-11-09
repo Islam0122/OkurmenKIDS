@@ -86,7 +86,7 @@ try {
     const res = await page.goto(`${BASE}/manifest.webmanifest`)
     const manifest = await res.json()
     check('manifest: name/short_name', manifest.name === 'Okurmen Kids' && manifest.short_name === 'Okurmen')
-    check('manifest: standalone, scope, start_url', manifest.display === 'standalone' && manifest.scope === '/' && manifest.start_url === '/')
+    check('manifest: standalone, scope, start_url', manifest.display === 'standalone' && manifest.scope === '/' && manifest.start_url === '/portal')
     for (const icon of manifest.icons) {
       const dims = await page.evaluate(async (src) => {
         const img = new Image()
@@ -198,6 +198,39 @@ try {
   await page.waitForTimeout(500)
   caches = await cacheReport(page)
   check('logout message clears API cache', !Object.keys(caches).some((n) => n.startsWith('okurmen-public-api')))
+
+  // 6b. Launch flow: PWA → portal → LMS → dashboard; «Выйти» → portal ------
+  {
+    await page.evaluate((t) => {
+      localStorage.setItem('okurmenkids.access_token', t.a)
+      localStorage.setItem('okurmenkids.refresh_token', t.r)
+    }, { a: ACCESS, r: REFRESH })
+    await page.goto(`${BASE}/portal`) // what the installed app opens (start_url)
+    await page.locator('a[data-app="lms"]').waitFor({ timeout: 15000 })
+    await page.waitForTimeout(500)
+    check('launch: signed-in user stays on /portal (no auto-redirect)', new URL(page.url()).pathname === '/portal')
+    await page.locator('a[data-app="lms"]').click()
+    await page.waitForURL(/\/app\/dashboard/, { timeout: 15000 })
+    check('launch: LMS card → role dashboard (signed in)', true, new URL(page.url()).pathname)
+    await page.reload()
+    await page.waitForTimeout(800)
+    check('refresh on a deep LMS route keeps the session and route', new URL(page.url()).pathname === '/app/dashboard')
+    const logoutButton = page.getByRole('button', { name: 'Выйти' }).first()
+    await logoutButton.click()
+    await page.waitForURL(/\/portal$/, { timeout: 15000 })
+    check('«Выйти» returns to the public portal', new URL(page.url()).pathname === '/portal')
+    await page.locator('a[data-app="lms"]').click()
+    await page.waitForURL(/\/login/, { timeout: 15000 })
+    check('launch: LMS card → /login when signed out', true)
+    await page.fill('#username', 'trainer')
+    await page.fill('input[type="password"]', 'password123')
+    await page.click('button[type="submit"]')
+    await page.waitForURL(/\/app\//, { timeout: 15000 })
+    check('after login → role-based dashboard', true, new URL(page.url()).pathname)
+    await page.goto(`${BASE}/app/profile`) // direct deep link
+    await page.getByText('Приложение и уведомления').waitFor({ timeout: 15000 })
+    check('direct link to an internal LMS page works', new URL(page.url()).pathname === '/app/profile')
+  }
 
   // 7. Update flow ------------------------------------------------------------
   const original = readFileSync(DIST_SW, 'utf8')
