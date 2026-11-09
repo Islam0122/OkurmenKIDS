@@ -31,6 +31,13 @@ installed app → /portal (public portal) → LMS card
 * `start_url` is `/portal` in every build. `id` stays `/`, so apps installed
   before this change update in place (new start page, no second icon).
 * The portal never redirects a signed-in user; the LMS card decides.
+* **Installed app on «/» → `/portal`** (`app/router/RootRedirect.tsx`). Chrome
+  keeps the start_url an app was installed with until its manifest-update check
+  runs (desktop: about once a day; Android WebAPK: can take days). Apps
+  installed while start_url was «/» therefore launch at «/», which in a browser
+  tab means the LMS. In standalone mode «/» now always leads to the portal.
+  Browser tabs, refreshes and deep links are unchanged. Nothing restores a
+  «last route» on startup.
 * An explicit logout sets `signedOut`, and `ProtectedRoute` then sends the user
   to `/portal`. An **expired** session still goes to `/login` with the page to
   return to, so a deep link or a push notification link (`/tasks/12`) lands
@@ -160,6 +167,8 @@ node pwa/verify.mjs                        # 30 end-to-end checks in Chromium
 # Real Chrome install flow (headed Chromium, normal profile — Chrome never
 # fires beforeinstallprompt headless or in Incognito):
 xvfb-run -a -s "-screen 0 1280x800x24" node pwa/verify-native-install.mjs
+# Installed app (re)opens at /portal — fresh, stale and never-updated installs:
+xvfb-run -a node pwa/verify-reopen.mjs
 ```
 
 To run a Lighthouse PWA audit, use Lighthouse ≤ 11 (v12 removed the PWA category).
