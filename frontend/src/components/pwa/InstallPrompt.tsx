@@ -25,7 +25,9 @@ function isQuietScreen(): boolean {
 export function InstallPrompt() {
   const pwa = usePwaState()
   const availability = installAvailability(pwa)
-  const eligible = availability === 'available' || (availability === 'manual' && pwa.method === 'ios')
+  // A header install button on screen already offers it: never two offers.
+  const eligible =
+    pwa.inlineInstallButtons === 0 && (availability === 'available' || (availability === 'manual' && pwa.method === 'ios'))
   const [visible, setVisible] = useState(false)
   const [shownThisVisit, setShownThisVisit] = useState(false)
   const reduceMotion = useReducedMotion()

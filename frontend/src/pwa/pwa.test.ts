@@ -17,7 +17,7 @@ function withUserAgent(agent: string, maxTouchPoints = 0) {
 
 const base: PwaState = {
   standalone: false, installedHere: false, method: 'prompt', promptEvent: null,
-  online: true, updateReady: false, settingsOpen: false,
+  online: true, updateReady: false, settingsOpen: false, inlineInstallButtons: 0,
 }
 
 beforeEach(() => localStorage.clear())

@@ -1,4 +1,4 @@
-import { markInstalled, setPwaState, type BeforeInstallPromptEvent } from './store'
+import { markInstalled, markNotInstalled, setPwaState, type BeforeInstallPromptEvent } from './store'
 import { isStandalone, supportsServiceWorker } from './platform'
 
 const UPDATE_CHECK_MS = 60 * 60 * 1000
@@ -19,9 +19,13 @@ export function initPwa(): void {
     // Keep the browser's mini-infobar from popping up: we offer our own,
     // calmer prompt (components/pwa/InstallPrompt) and a settings entry.
     event.preventDefault()
+    // Chromium only offers installation when the app is NOT installed — so an
+    // earlier «installed» note is stale (the user uninstalled it).
+    markNotInstalled()
     setPwaState({ promptEvent: event as BeforeInstallPromptEvent })
   })
   window.addEventListener('appinstalled', () => markInstalled())
+  void detectInstalledApp()
 
   window.addEventListener('online', () => setPwaState({ online: true }))
   window.addEventListener('offline', () => setPwaState({ online: false }))
@@ -40,6 +44,24 @@ export function initPwa(): void {
       // sw.js; make sure a worker from an earlier deploy is replaced by it.
       void navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((reg) => void reg.update()))
     }
+  }
+}
+
+interface NavigatorWithRelatedApps extends Navigator {
+  getInstalledRelatedApps?: () => Promise<{ platform: string; url?: string }[]>
+}
+
+/** Chromium can tell a browser tab that this very PWA is installed
+ * (manifest `related_applications` → platform «webapp»). Elsewhere the
+ * `appinstalled` note in localStorage is the only hint. */
+async function detectInstalledApp(): Promise<void> {
+  const nav = navigator as NavigatorWithRelatedApps
+  if (isStandalone() || typeof nav.getInstalledRelatedApps !== 'function') return
+  try {
+    const apps = await nav.getInstalledRelatedApps()
+    if (apps.some((app) => app.platform === 'webapp')) markInstalled()
+  } catch {
+    /* not allowed in this context (iframe, insecure origin) */
   }
 }
 

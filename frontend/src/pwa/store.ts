@@ -21,6 +21,8 @@ export interface PwaState {
   updateReady: boolean
   /** The «Приложение» dialog (install + push settings) is open. */
   settingsOpen: boolean
+  /** Install buttons on screen (header) — the floating offer stays away then. */
+  inlineInstallButtons: number
 }
 
 const INSTALLED_KEY = 'okurmen.pwa.installed'
@@ -41,6 +43,7 @@ let state: PwaState = {
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   updateReady: false,
   settingsOpen: false,
+  inlineInstallButtons: 0,
 }
 
 const listeners = new Set<() => void>()
@@ -70,6 +73,22 @@ export function markInstalled(): void {
     /* private mode: the flag is only a hint */
   }
   setPwaState({ installedHere: true, promptEvent: null })
+}
+
+/** The browser offers installation again → the app was uninstalled. */
+export function markNotInstalled(): void {
+  try {
+    localStorage.removeItem(INSTALLED_KEY)
+  } catch {
+    /* storage unavailable */
+  }
+  if (state.installedHere) setPwaState({ installedHere: false })
+}
+
+/** A visible install button registers itself; returns the cleanup. */
+export function registerInlineInstallButton(): () => void {
+  setPwaState({ inlineInstallButtons: state.inlineInstallButtons + 1 })
+  return () => setPwaState({ inlineInstallButtons: Math.max(0, state.inlineInstallButtons - 1) })
 }
 
 export function openAppSettings(): void {
