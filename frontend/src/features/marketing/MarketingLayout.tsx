@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { BarChart3, CalendarRange, ClipboardCheck, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
+import { BarChart3, CalendarRange, ClipboardCheck, Globe, Home, Image, Inbox, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -38,6 +38,16 @@ export const MARKETING_SIDEBAR_EXTRA: NavItem[] = [
   { to: '/marketing/campaigns', label: 'Кампании', icon: Target },
 ]
 
+/** Раздел «Сайт» — CMS публичного сайта (apps.website). Маркетингу, директору
+ * и администратору — весь раздел; отделу продаж — только заявки. */
+export const SITE_NAV: NavItem[] = [
+  { to: '/marketing/site', label: 'Сайт', icon: Globe, end: true },
+  { to: '/marketing/site/home', label: 'Главная сайта', icon: Home },
+  { to: '/marketing/site/media', label: 'Медиатека', icon: Image },
+  { to: '/marketing/site/leads', label: 'Заявки с сайта', shortLabel: 'Заявки', icon: Inbox },
+]
+const SALES_ROLES = ['sales_manager', 'rop', 'dop']
+
 const ROW = 'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'
 
 /** Кабинет маркетинга — та же оболочка, что у HR и LMS: боковое меню на
@@ -45,16 +55,20 @@ const ROW = 'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium tr
 export function MarketingLayout() {
   const { user, logout } = useAuth()
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
+  const isMarketing = user?.role === 'marketing'
+  const siteNav = user && SALES_ROLES.includes(user.role) ? SITE_NAV.filter((i) => i.to.endsWith('/leads')) : SITE_NAV
+  const sidebar = isMarketing ? [...MARKETING_NAV, ...MARKETING_SIDEBAR_EXTRA] : siteNav
+  const mobileNav = isMarketing ? MARKETING_NAV : siteNav
 
   return (
     <div className="flex min-h-dvh bg-surface-muted">
       <aside className="sticky top-0 hidden h-dvh w-sidebar shrink-0 flex-col border-r border-border bg-surface lg:flex">
         <div className="flex h-header shrink-0 items-center gap-2.5 border-b border-border px-6">
           <img src={logo} alt="OkurmenKIDS" className="size-8 shrink-0 object-contain" />
-          <span className="font-semibold text-ink">Маркетинг</span>
+          <span className="font-semibold text-ink">{isMarketing ? 'Маркетинг' : 'Сайт'}</span>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3" aria-label="Разделы кабинета маркетинга">
-          {[...MARKETING_NAV, ...MARKETING_SIDEBAR_EXTRA].map((item) => (
+          {sidebar.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -65,6 +79,18 @@ export function MarketingLayout() {
               <span className="truncate">{item.label}</span>
             </NavLink>
           ))}
+          {isMarketing ? (
+            <>
+              <p className="px-3 pt-4 pb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">Публичный сайт</p>
+              {SITE_NAV.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.end}
+                  className={({ isActive }) => cn(ROW, isActive ? 'bg-brand-50 text-brand-700' : 'text-ink-secondary hover:bg-surface-hover hover:text-ink')}>
+                  <item.icon className="size-[18px] shrink-0" aria-hidden />
+                  <span className="truncate">{item.label}</span>
+                </NavLink>
+              ))}
+            </>
+          ) : null}
         </nav>
         <div className="space-y-0.5 border-t border-border px-3 py-3">
           <NavLink to="/attendance/staff" className={cn(ROW, 'text-ink-secondary hover:bg-surface-hover hover:text-ink')}>
@@ -82,11 +108,15 @@ export function MarketingLayout() {
         <header className="sticky top-0 z-30 flex h-header shrink-0 items-center justify-between gap-2 border-b border-border bg-surface/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-2">
             <img src={logo} alt="" className="size-7 shrink-0 object-contain lg:hidden" />
-            <span className="truncate font-semibold text-ink lg:hidden">Маркетинг</span>
+            <span className="truncate font-semibold text-ink lg:hidden">{isMarketing ? 'Маркетинг' : 'Сайт'}</span>
+            {isMarketing ? (
+              <NavLink to="/marketing/site" aria-label="Публичный сайт" className="ml-1 flex size-9 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-hover lg:hidden">
+                <Globe className="size-5" aria-hidden />
+              </NavLink>
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <WorkTools />
-            <WorkdayButton />
+            {isMarketing ? <><WorkTools /><WorkdayButton /></> : null}
             <div className="hidden items-center gap-2 sm:flex">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700" aria-hidden>
                 {initials}
@@ -120,8 +150,8 @@ export function MarketingLayout() {
         aria-label="Разделы кабинета маркетинга"
         className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
-        <div className="grid h-mobile-nav grid-cols-5">
-          {MARKETING_NAV.map((item) => (
+        <div className={cn('grid h-mobile-nav', mobileNav.length === 5 ? 'grid-cols-5' : mobileNav.length === 4 ? 'grid-cols-4' : 'grid-cols-1')}>
+          {mobileNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

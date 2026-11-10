@@ -632,19 +632,37 @@ export const router = createBrowserRouter([
     errorElement: <RouteErrorPage />,
     children: [
       {
-        element: <RequireRoles roles={['marketing']} redirectTo="/attendance" />,
+        // Кабинет открыт маркетингу; раздел «Сайт» (CMS публичного сайта,
+        // backend apps.website.cms) — ещё директору и администратору, а
+        // «Заявки» с сайта — и отделу продаж. Права проверяет сервер.
+        element: <RequireRoles roles={['marketing', 'admin', 'director', 'sales_manager', 'rop', 'dop']} />,
         children: [
           {
             lazy: async () => ({ Component: (await import('@/features/marketing/MarketingLayout')).MarketingLayout }),
             children: [
-              { index: true, lazy: async () => ({ Component: (await import('@/features/marketing/OverviewPage')).MarketingOverviewPage }) },
-              { path: 'content', lazy: async () => ({ Component: (await import('@/features/marketing/ContentPlanPage')).MarketingContentPlanPage }) },
-              { path: 'tasks', lazy: async () => ({ Component: (await import('@/features/marketing/TasksPage')).MarketingTasksPage }) },
-              { path: 'reports', lazy: async () => ({ Component: (await import('@/features/marketing/ReportsPage')).MarketingReportsPage }) },
-              { path: 'campaigns', lazy: async () => ({ Component: (await import('@/features/marketing/CampaignsPage')).MarketingCampaignsPage }) },
-              // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
-              { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
-              { path: '*', element: <Navigate to="/marketing" replace /> },
+              {
+                element: <RequireRoles roles={['marketing', 'admin', 'director']} redirectTo="/marketing/site/leads" />,
+                children: [
+                  { path: 'site', lazy: async () => ({ Component: (await import('@/features/siteCms/SiteOverviewPage')).SiteOverviewPage }) },
+                  { path: 'site/home', lazy: async () => ({ Component: (await import('@/features/siteCms/HomepagePage')).HomepagePage }) },
+                  { path: 'site/media', lazy: async () => ({ Component: (await import('@/features/siteCms/MediaLibraryPage')).MediaLibraryPage }) },
+                  { path: 'site/:resource', lazy: async () => ({ Component: (await import('@/features/siteCms/SiteResourceRoute')).SiteResourceRoute }) },
+                ],
+              },
+              { path: 'site/leads', lazy: async () => ({ Component: (await import('@/features/siteCms/LeadsPage')).LeadsPage }) },
+              {
+                element: <RequireRoles roles={['marketing']} redirectTo="/marketing/site" />,
+                children: [
+                  { index: true, lazy: async () => ({ Component: (await import('@/features/marketing/OverviewPage')).MarketingOverviewPage }) },
+                  { path: 'content', lazy: async () => ({ Component: (await import('@/features/marketing/ContentPlanPage')).MarketingContentPlanPage }) },
+                  { path: 'tasks', lazy: async () => ({ Component: (await import('@/features/marketing/TasksPage')).MarketingTasksPage }) },
+                  { path: 'reports', lazy: async () => ({ Component: (await import('@/features/marketing/ReportsPage')).MarketingReportsPage }) },
+                  { path: 'campaigns', lazy: async () => ({ Component: (await import('@/features/marketing/CampaignsPage')).MarketingCampaignsPage }) },
+                  // Своя зарплата — та же страница и тот же API, что у тренеров и HR (/accounting/my/salary/).
+                  { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
+                  { path: '*', element: <Navigate to="/marketing" replace /> },
+                ],
+              },
             ],
           },
         ],
