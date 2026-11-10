@@ -1,0 +1,121 @@
+@import 'tailwindcss';
+
+/*
+ * Okurmen Kids Digital — design tokens.
+ * Brand: golden yellow #F5B51B (actions), deep purple #29136D (type, structure),
+ * white backgrounds, light purple #F4EEFF and soft gray #F8F8FC surfaces.
+ */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Nunito Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #f4eeff;
+  --color-brand-100: #e9ddff;
+  --color-brand-200: #d2bdfc;
+  --color-brand-300: #b293f2;
+  --color-brand-400: #8a63dc;
+  --color-brand-500: #6236bd;
+  --color-brand-600: #4a2397;
+  --color-brand-700: #381a80;
+  --color-brand-800: #29136d;
+  --color-brand-900: #1c0c4d;
+  --color-brand-950: #110630;
+
+  --color-gold-50: #fff8e6;
+  --color-gold-100: #fdecbf;
+  --color-gold-200: #fbdc8a;
+  --color-gold-300: #f8ca52;
+  --color-gold-400: #f5b51b;
+  --color-gold-500: #e39f05;
+  --color-gold-600: #bf7f02;
+  --color-gold-700: #965f06;
+
+  --color-ink: #29136d;
+  --color-ink-soft: #4b3f73;
+  --color-muted: #6e6790;
+  --color-line: #ebe7f5;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f8f8fc;
+  --color-surface-purple: #f4eeff;
+  --color-success: #15803d;
+  --color-danger: #c2410c;
+
+  --radius-card: 1.5rem;
+  --radius-xl2: 1.25rem;
+
+  --shadow-soft: 0 1px 2px rgb(41 19 109 / 0.04), 0 8px 24px -12px rgb(41 19 109 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(41 19 109 / 0.05), 0 24px 48px -20px rgb(41 19 109 / 0.25);
+  --shadow-gold: 0 10px 24px -10px rgb(245 181 27 / 0.7);
+
+  --container-page: 76rem;
+
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-marquee: marquee 40s linear infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+    scroll-padding-top: 6rem;
+  }
+  body {
+    @apply bg-surface font-sans text-ink antialiased;
+    overflow-x: clip;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight text-ink;
+    text-wrap: balance;
+  }
+  p { text-wrap: pretty; }
+  ::selection { background: var(--color-gold-200); color: var(--color-brand-900); }
+  :focus-visible {
+    outline: 3px solid var(--color-gold-400);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-(--container-page) px-4 sm:px-6 lg:px-8;
+  }
+  .section {
+    @apply py-16 sm:py-20 lg:py-24;
+  }
+  .eyebrow {
+    @apply inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-xs font-bold tracking-wide text-brand-600 uppercase;
+  }
+  .card {
+    @apply rounded-(--radius-card) border border-line bg-white shadow-soft;
+  }
+  .card-hover {
+    @apply transition duration-300 hover:-translate-y-1 hover:shadow-lift;
+  }
+  .input {
+    @apply block w-full rounded-xl border border-line bg-white px-4 py-3 text-base text-ink placeholder:text-muted/70 transition outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100 disabled:opacity-60 sm:text-sm;
+  }
+  .prose-site {
+    @apply text-base leading-relaxed text-ink-soft sm:text-lg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

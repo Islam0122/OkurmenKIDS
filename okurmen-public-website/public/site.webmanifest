@@ -1,0 +1,9 @@
+{
+  "name": "Okurmen Kids Digital",
+  "short_name": "Okurmen Kids",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#FFFFFF",
+  "theme_color": "#29136D",
+  "icons": [{ "src": "/logo.png", "sizes": "236x213", "type": "image/png" }]
+}

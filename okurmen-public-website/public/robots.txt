@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /preview/
+Disallow: /ky/preview/
+Disallow: /en/preview/
+
+Sitemap: /sitemap.xml
