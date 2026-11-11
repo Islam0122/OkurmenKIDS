@@ -202,7 +202,9 @@ export const courses = () => delay({ results: COURSES as CourseCard[] })
 export const course = (slug: string) => (COURSES.find((c) => c.slug === slug) ? delay(COURSES.find((c) => c.slug === slug)!) : notFound())
 export const projects = (params: ListParams): Promise<ProjectsPage> => {
   const items = params.category ? PROJECTS.filter((p) => p.categories.includes(params.category as ProjectCard['categories'][number])) : PROJECTS
-  return delay({ ...page(items, params, 12), counts: { all: PROJECTS.length } })
+  const filtered = params.technology ? items.filter((p) => p.technologies.some((t) => t.toLowerCase() === params.technology!.toLowerCase())) : items
+  const technologies = [...new Set(PROJECTS.flatMap((p) => p.technologies))].map((name) => ({ name, count: PROJECTS.filter((p) => p.technologies.includes(name)).length }))
+  return delay({ ...page(filtered, params, 12), counts: { all: PROJECTS.length }, technologies })
 }
 export const project = (key: string) => (PROJECTS.find((p) => p.key === key) ? delay(PROJECTS.find((p) => p.key === key)!) : notFound())
 export const news = (params: ListParams): Promise<NewsPage> => {

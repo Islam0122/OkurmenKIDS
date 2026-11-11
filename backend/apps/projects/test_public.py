@@ -98,6 +98,17 @@ class PublicListTests(PublicBase):
         self.assertEqual([p["title"] for p in self.get(category="other").data["results"]], ["Scratch game"])
         self.assertEqual(self.get(category="nope").status_code, 400)
 
+    def test_technology_filter_and_facets(self):
+        self.project("Weather", techs=("React", "TypeScript"))
+        self.project("Bot", techs=("Python", "aiogram"))
+        self.project("Game", techs=("python", "Pygame"))
+        data = self.get().data
+        self.assertEqual(data["technologies"][0], {"name": "Python", "count": 2})
+        python = self.get(technology="PYTHON").data
+        self.assertEqual(sorted(p["title"] for p in python["results"]), ["Bot", "Game"])
+        self.assertEqual(python["counts"]["python"], 2)
+        self.assertEqual(self.get(technology="Rust").data["count"], 0)
+
     def test_pagination(self):
         for index in range(5):
             self.project(f"P{index}")

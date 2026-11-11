@@ -11,14 +11,14 @@ export interface Crumb {
 }
 
 /** The top of every inner page: breadcrumbs, title, lead text — on a soft brand background. */
-export function PageHero({ title, text, crumbs = [], children, compact }: { title: ReactNode; text?: ReactNode; crumbs?: Crumb[]; children?: ReactNode; compact?: boolean }) {
+export function PageHero({ title, text, crumbs = [], children, compact, wide }: { title: ReactNode; text?: ReactNode; crumbs?: Crumb[]; children?: ReactNode; compact?: boolean; /** gallery pages: the wider content width */ wide?: boolean }) {
   const { t, path } = useI18n()
   const all: Crumb[] = [{ label: t('nav.home'), to: '/' }, ...crumbs]
   return (
     <section className="relative overflow-hidden bg-surface-purple">
       <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 size-80 rounded-full bg-gold-200/50 blur-3xl" />
       <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-20 size-80 rounded-full bg-brand-200/40 blur-3xl" />
-      <div className={cn('container-page relative', compact ? 'pt-6 pb-8 sm:pt-8 sm:pb-10' : 'pt-8 pb-12 sm:pt-10 sm:pb-16')}>
+      <div className={cn(wide ? 'mx-auto w-full max-w-[88rem] px-4 sm:px-6 lg:px-8' : 'container-page', 'relative', compact ? 'pt-6 pb-8 sm:pt-8 sm:pb-10' : 'pt-8 pb-12 sm:pt-10 sm:pb-16')}>
         <nav aria-label="breadcrumb">
           <ol className="flex flex-wrap items-center gap-1 text-sm text-muted">
             {all.map((crumb, i) => (
