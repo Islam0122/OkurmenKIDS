@@ -22,6 +22,10 @@ CORS_ALLOWED_ORIGINS = [
     # e.g. https://digital.okurmenkids.com — comma-separated. It signs staff in
     # and serves the LMS, schedule and leaderboard from the same build.
     *[o.strip().rstrip("/") for o in os.getenv("PORTAL_SITE_ORIGINS", "").split(",") if o.strip()],
+    # The public website (okurmen-public-website/, React), e.g.
+    # https://okurmenkids.kg,https://www.okurmenkids.kg — comma-separated.
+    # Reads /api/v1/public/site|news|projects/ and posts enrollment leads.
+    *[o.strip().rstrip("/") for o in os.getenv("PUBLIC_WEBSITE_ORIGINS", "").split(",") if o.strip()],
 ]
 
 CORS_ALLOW_METHODS = [

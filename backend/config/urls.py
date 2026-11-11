@@ -38,6 +38,8 @@ urlpatterns = [
     path("api/v1/public/projects/", include("apps.projects.public_urls")),
     # Публичные новости академии (без входа, только GET) — apps.academy_news.
     path("api/v1/public/news/", include("apps.academy_news.public_urls")),
+    # Публичный сайт: курсы, мероприятия, достижения, команда, отзывы, главная, заявки — apps.website.
+    path("api/v1/public/site/", include("apps.website.public_urls")),
     # «Общая статистика» академии: ежедневные показатели и TV-режим (см. apps.performance).
     path("api/v1/monthly-performance/", include("apps.performance.urls")),
     # Public leaderboard (no login, GET only) — see apps.leaderboard.
@@ -56,6 +58,8 @@ urlpatterns = [
     # Сотрудники HR — /api/v1/hr/employees/ (apps.users.hr).
     path("api/v1/hr/", include("apps.recruitment.urls")),
     # Кабинет маркетинга: контент-план, задачи, главная, отчёты (см. apps.marketing).
+    # CMS публичного сайта (okurmen-public-website) в кабинете маркетинга — apps.website.
+    path("api/v1/marketing/site/", include("apps.website.cms_urls")),
     path("api/v1/marketing/", include("apps.marketing.urls")),
     # Операционное управление: кабинет операционного директора (operations/),
     # задачи и отчёты каждого сотрудника (tasks/, work-reports/), уведомления.

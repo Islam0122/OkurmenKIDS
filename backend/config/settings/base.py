@@ -75,6 +75,9 @@ LOCAL_APPS = [
     "apps.projects.apps.ProjectsConfig",
     # Публичные новости академии для OkurmenKids Digital (/news) — не путать с apps.news.
     "apps.academy_news.apps.AcademyNewsConfig",
+    # Публичный сайт okurmen-public-website: курсы, мероприятия, достижения,
+    # команда, отзывы, главная, медиатека, заявки (CMS — в кабинете маркетинга).
+    "apps.website.apps.WebsiteConfig",
     # Web Push для установленного PWA: подписки устройств и настройки (docs/push.md).
     "apps.push.apps.PushConfig",
 ]
@@ -242,6 +245,9 @@ REST_FRAMEWORK = {
         "public_leaderboard": env("PUBLIC_LEADERBOARD_RATE", default="1200/hour"),
         "public_projects": env("PUBLIC_PROJECTS_RATE", default="1200/hour"),
         "public_news": env("PUBLIC_NEWS_RATE", default="1200/hour"),
+        # Публичный сайт (apps.website): чтение и формы заявок, по IP.
+        "public_site": env("PUBLIC_SITE_RATE", default="1200/hour"),
+        "public_site_submit": env("PUBLIC_SITE_SUBMIT_RATE", default="10/hour"),
         # Отметка прихода/ухода сотрудника (apps.staff_attendance, на пользователя).
         "staff_attendance_mark": env("STAFF_ATTENDANCE_MARK_RATE", default="30/hour"),
         # Публичный карьерный сайт (apps.recruitment.public, по IP, без входа).
@@ -710,6 +716,14 @@ PUBLIC_PROJECTS_CACHE_SECONDS = env.int("PUBLIC_PROJECTS_CACHE_SECONDS", default
 
 # Public academy news (/news on OkurmenKids Digital) — see apps.academy_news.
 PUBLIC_NEWS_CACHE_SECONDS = env.int("PUBLIC_NEWS_CACHE_SECONDS", default=120)
+
+# Public website (okurmen-public-website/, apps.website): its address (for
+# preview links from the CMS), the server cache, and whether marketing needs
+# a director's / admin's approval to publish. Origins for CORS:
+# PUBLIC_WEBSITE_ORIGINS in cors.py.
+PUBLIC_WEBSITE_URL = env("PUBLIC_WEBSITE_URL", default="")
+PUBLIC_SITE_CACHE_SECONDS = env.int("PUBLIC_SITE_CACHE_SECONDS", default=120)
+WEBSITE_REQUIRE_APPROVAL = env.bool("WEBSITE_REQUIRE_APPROVAL", default=False)
 
 # ---------------------------------------------------------------------------
 # Учёт прихода и ухода сотрудников по QR-коду (apps.staff_attendance).
