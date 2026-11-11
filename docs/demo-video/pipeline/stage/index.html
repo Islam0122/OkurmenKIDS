@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Okurmen Kids LMS — demo</title>
+<style>
+@font-face { font-family: 'Manrope'; src: url('manrope-cyrillic-wght-normal.woff2') format('woff2'); font-weight: 200 800; unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Manrope'; src: url('manrope-latin-wght-normal.woff2') format('woff2'); font-weight: 200 800; }
+:root { --g: #2f8f5b; --g6: #287a4d; --g7: #1f5f3c; --g50: #e7f3ec; --g100: #cfe7da; --ink: #10231a; --ink2: #4a5d53; --line: #e3ebe6; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #fff; }
+body { font-family: 'Manrope', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; inset: 0; overflow: hidden; background:
+  radial-gradient(1200px 700px at 85% -10%, rgba(47,143,91,.07), transparent 60%),
+  radial-gradient(900px 600px at -5% 110%, rgba(47,143,91,.06), transparent 60%), #f7f9f8; }
+.abs { position: absolute; }
+.will { will-change: transform, opacity; }
+/* section label */
+#label { left: 180px; top: 46px; display: flex; align-items: center; gap: 22px; }
+#label .num { font-size: 18px; font-weight: 700; color: #fff; background: var(--g); border-radius: 999px; padding: 7px 14px; letter-spacing: .04em; }
+#label .t { font-size: 38px; font-weight: 750; letter-spacing: -.02em; line-height: 1; }
+#label .s { font-size: 20px; color: var(--ink2); font-weight: 500; margin-top: 8px; }
+#brand { right: 180px; top: 58px; display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; color: var(--ink); }
+#brand img { width: 34px; height: 34px; object-fit: contain; }
+#brand span { color: var(--g); }
+#note { right: 180px; bottom: 22px; font-size: 14px; color: #7d8d84; font-weight: 500; }
+/* window frame */
+#frame { left: 180px; top: 150px; width: 1560px; height: 878px; border-radius: 22px; background: #fff; overflow: hidden;
+  box-shadow: 0 40px 80px -30px rgba(16,35,26,.28), 0 0 0 1px rgba(16,35,26,.07); }
+#chrome { height: 44px; background: #fbfcfb; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 18px; gap: 8px; position: relative; z-index: 3; }
+#chrome i { width: 12px; height: 12px; border-radius: 50%; background: #e2e8e4; display: block; }
+#url { position: absolute; left: 50%; transform: translateX(-50%); background: #f0f4f1; border-radius: 9px; padding: 6px 22px; font-size: 15px; color: #56675d; font-weight: 600; min-width: 420px; text-align: center; }
+#url b { color: var(--g); font-weight: 700; }
+#view { position: absolute; left: 0; top: 44px; width: 1560px; height: 834px; overflow: hidden; background: #fff; }
+.shot { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+.shot img { width: 1920px; height: 1080px; display: block; }
+.hl { position: absolute; border: 3px solid var(--g); border-radius: 16px; box-shadow: 0 0 0 9999px rgba(16,35,26,.18), 0 0 0 8px rgba(47,143,91,.16); pointer-events: none; }
+/* captions */
+#cap { left: 50%; bottom: 82px; transform: translateX(-50%); background: rgba(16,35,26,.92); color: #fff; padding: 16px 28px 16px 22px; border-radius: 16px;
+  font-size: 24px; font-weight: 600; display: flex; align-items: center; gap: 14px; white-space: nowrap; box-shadow: 0 20px 40px -18px rgba(0,0,0,.45); }
+#cap::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #5fd394; box-shadow: 0 0 0 5px rgba(95,211,148,.2); }
+/* intro */
+#intro { inset: 0; }
+#ring { left: 960px; top: 330px; width: 220px; height: 220px; margin: -110px 0 0 -110px; }
+#logo { left: 960px; top: 330px; width: 132px; height: 132px; margin: -66px 0 0 -66px; object-fit: contain; }
+#ititle { left: 0; right: 0; top: 470px; text-align: center; font-size: 104px; font-weight: 800; letter-spacing: -.035em; }
+#ititle span { color: var(--g); }
+#ipill { left: 50%; top: 612px; transform: translateX(-50%); }
+.pill { display: inline-flex; align-items: center; gap: 10px; border: 1.5px solid var(--g100); background: #fff; color: var(--g7); border-radius: 999px; padding: 12px 26px; font-size: 26px; font-weight: 700; letter-spacing: .01em; }
+#isub { left: 0; right: 0; top: 700px; text-align: center; font-size: 26px; color: var(--ink2); font-weight: 500; }
+.card3d { position: absolute; width: 760px; height: 428px; border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 40px 70px -30px rgba(16,35,26,.35), 0 0 0 1px rgba(16,35,26,.08); }
+.card3d img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+#chips { left: 0; right: 0; top: 960px; display: flex; justify-content: center; gap: 18px; }
+.chip { background: #fff; border: 1.5px solid var(--line); border-radius: 14px; padding: 12px 22px; font-size: 22px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+.chip::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--g); }
+/* phone */
+#phone { left: 330px; top: 160px; width: 470px; height: 860px; border-radius: 64px; background: #10231a; padding: 16px; box-shadow: 0 50px 90px -30px rgba(16,35,26,.55); }
+#pscreen { position: relative; width: 438px; height: 828px; border-radius: 50px; overflow: hidden; background: #fff; }
+#pscreen .ps { position: absolute; left: 0; top: 0; width: 438px; height: 746px; }
+#pscreen .ps img { width: 438px; height: 746px; display: block; }
+#pbar { position: absolute; left: 0; right: 0; bottom: 0; height: 82px; background: #fff; display: flex; align-items: center; justify-content: center; }
+#pbar i { width: 150px; height: 6px; border-radius: 3px; background: #1a2a22; display: block; margin-top: 30px; }
+#pnotch { position: absolute; left: 50%; top: 22px; width: 120px; height: 34px; margin-left: -60px; border-radius: 20px; background: #10231a; z-index: 2; }
+#qrcard { left: 940px; top: 190px; width: 668px; height: 310px; border-radius: 20px; overflow: hidden; background: #fff; box-shadow: 0 30px 60px -28px rgba(16,35,26,.3), 0 0 0 1px rgba(16,35,26,.07); }
+#qrcard .inner { position: absolute; width: 1920px; height: 1080px; transform-origin: 0 0; }
+#qrcard .inner img { width: 1920px; height: 1080px; }
+#beam { position: absolute; left: 30px; width: 250px; height: 4px; background: linear-gradient(90deg, transparent, #5fd394, transparent); box-shadow: 0 0 18px 4px rgba(95,211,148,.6); }
+#steps { left: 940px; top: 550px; width: 700px; }
+.step { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 30px; }
+.step .ic { width: 52px; height: 52px; flex: none; border-radius: 16px; background: var(--g50); color: var(--g); display: grid; place-items: center; font-weight: 800; font-size: 22px; }
+.step .tt { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
+.step .dd { font-size: 20px; color: var(--ink2); margin-top: 4px; font-weight: 500; }
+/* architecture */
+#arch { inset: 0; }
+.box { position: absolute; background: #fff; border-radius: 22px; padding: 26px 28px; box-shadow: 0 30px 60px -32px rgba(16,35,26,.3), 0 0 0 1px rgba(16,35,26,.07); }
+.box h3 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--g); font-weight: 800; }
+.box h2 { font-size: 32px; font-weight: 800; letter-spacing: -.02em; margin-top: 8px; }
+.box p { font-size: 18px; color: var(--ink2); margin-top: 6px; font-weight: 500; line-height: 1.45; }
+.tags { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
+.tag { font-size: 17px; font-weight: 700; padding: 7px 13px; border-radius: 10px; background: var(--g50); color: var(--g7); }
+.tag.dark { background: #10231a; color: #fff; }
+.deploy { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); font-size: 17px; font-weight: 700; color: var(--ink2); display: flex; gap: 10px; align-items: center; }
+.deploy b { color: #fff; background: var(--g); padding: 5px 12px; border-radius: 8px; font-size: 16px; }
+.wire { position: absolute; height: 3px; background: repeating-linear-gradient(90deg, var(--g100) 0 10px, transparent 10px 18px); transform-origin: 0 50%; }
+.wlabel { position: absolute; font-size: 15px; font-weight: 700; color: var(--g7); background: #f7f9f8; padding: 2px 8px; }
+.dot { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--g); box-shadow: 0 0 0 5px rgba(47,143,91,.18); }
+#stats { left: 180px; right: 180px; top: 800px; display: flex; gap: 22px; }
+.stat { flex: 1; background: #fff; border-radius: 18px; padding: 18px 24px; box-shadow: 0 0 0 1px rgba(16,35,26,.07); }
+.stat b { display: block; font-size: 40px; font-weight: 800; letter-spacing: -.02em; color: var(--g7); }
+.stat span { font-size: 18px; color: var(--ink2); font-weight: 600; }
+/* montage + outro */
+.tile { position: absolute; width: 500px; height: 281px; border-radius: 16px; overflow: hidden; background: #fff; box-shadow: 0 30px 60px -30px rgba(16,35,26,.32), 0 0 0 1px rgba(16,35,26,.08); }
+.tile img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+.tlabel { position: absolute; font-size: 22px; font-weight: 750; display: flex; align-items: center; gap: 10px; }
+.tlabel::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--g); }
+#outro { inset: 0; }
+#olog { left: 960px; top: 290px; width: 150px; height: 150px; margin: -75px 0 0 -75px; object-fit: contain; }
+#otitle { left: 0; right: 0; top: 390px; text-align: center; font-size: 84px; font-weight: 800; letter-spacing: -.035em; }
+#otitle span { color: var(--g); }
+#oline { left: 50%; top: 512px; height: 4px; width: 120px; margin-left: -60px; background: var(--g); border-radius: 2px; }
+#otag { left: 0; right: 0; top: 548px; text-align: center; font-size: 46px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
+#ostack { left: 0; right: 0; top: 660px; text-align: center; font-size: 22px; color: var(--ink2); font-weight: 600; letter-spacing: .02em; }
+#odev { left: 0; right: 0; top: 760px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="label" class="abs will"><div class="num">01</div><div><div class="t">Title</div><div class="s">Subtitle</div></div></div>
+  <div id="brand" class="abs will"><img src="img/logo.png" alt="">Okurmen Kids <span>LMS</span></div>
+  <div id="frame" class="abs will">
+    <div id="chrome"><i></i><i></i><i></i><div id="url">okurmen-kids · <b>/app</b></div></div>
+    <div id="view"></div>
+  </div>
+  <div id="phoneScene" class="abs" style="inset:0">
+    <div id="qrcard" class="abs will"><div class="inner"><img src="img/locations.png" alt=""></div><div id="beam"></div></div>
+    <div id="steps" class="abs">
+      <div class="step will"><div class="ic">1</div><div><div class="tt">QR-код офиса</div><div class="dd">Постоянный код у входа — внутри только ссылка и код офиса</div></div></div>
+      <div class="step will"><div class="ic">2</div><div><div class="tt">Свежая геолокация</div><div class="dd">11 м до центра офиса · геозона 120 м</div></div></div>
+      <div class="step will"><div class="ic">3</div><div><div class="tt">Отметка на сервере</div><div class="dd">Приход 08:57 · время и опоздание считает backend</div></div></div>
+    </div>
+    <div id="phone" class="abs will"><div id="pscreen"><div id="pnotch"></div>
+      <div class="ps" id="ps0" style="top:0"><img src="img/m_before.png" alt=""></div>
+      <div class="ps" id="ps1"><img src="img/m_success.png" alt=""></div>
+      <div class="ps" id="ps2"><img src="img/m_after.png" alt=""></div>
+      <div id="pbar"><i></i></div></div></div>
+  </div>
+  <div id="arch" class="abs"></div>
+  <div id="montage" class="abs" style="inset:0"></div>
+  <div id="intro" class="abs">
+    <div id="cards3d" class="abs" style="inset:0"></div>
+    <svg id="ring" class="abs" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100" fill="none" stroke="#cfe7da" stroke-width="3"/><circle id="ringArc" cx="110" cy="110" r="100" fill="none" stroke="#2f8f5b" stroke-width="5" stroke-linecap="round" stroke-dasharray="628.3" stroke-dashoffset="628.3" transform="rotate(-90 110 110)"/></svg>
+    <img id="logo" class="abs will" src="img/logo.png" alt="">
+    <div id="ititle" class="abs will">Okurmen Kids <span>LMS</span></div>
+    <div id="ipill" class="abs will"><div class="pill">Full-Stack EdTech Platform</div></div>
+    <div id="isub" class="abs will">Спроектирована и разработана с нуля · Django REST + React</div>
+    <div id="chips" class="abs"><div class="chip will">Обучение</div><div class="chip will">HR и посещаемость</div><div class="chip will">Финансы и зарплаты</div><div class="chip will">Аналитика и KPI</div></div>
+  </div>
+  <div id="outro" class="abs">
+    <img id="olog" class="abs will" src="img/logo.png" alt="">
+    <div id="otitle" class="abs will">Okurmen Kids <span>LMS</span></div>
+    <div id="oline" class="abs will"></div>
+    <div id="otag" class="abs will">Built to automate real-world education operations.</div>
+    <div id="ostack" class="abs will">Python · Django · DRF · PostgreSQL · Redis · Celery · React · TypeScript · Docker · PWA</div>
+    <div id="odev" class="abs will"><div class="pill">Full-Stack разработка: Islam Duishobaev</div></div>
+  </div>
+  <div id="cap" class="abs will">caption</div>
+  <div id="note" class="abs">Демонстрационные данные · все имена вымышленные</div>
+</div>
+<script src="timeline.js"></script>
+</body>
+</html>
