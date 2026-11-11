@@ -198,11 +198,38 @@ def _matches(record: dict, query: str) -> bool:
     return any(query in text.casefold() for text in haystack)
 
 
-def gallery(*, q: str = "", category: str = "", page=None, page_size=None) -> dict:
+TECHNOLOGY_FACETS = 24
+
+
+def _technology_facets(records: list[dict]) -> list[dict]:
+    """The technologies of the current result set, most used first (for filter chips)."""
+    totals: dict[str, int] = {}
+    spellings: dict[str, dict[str, int]] = {}
+    for record in records:
+        seen = {t.strip().casefold(): t.strip() for t in record["technologies"] if t.strip()}
+        for key, name in seen.items():
+            totals[key] = totals.get(key, 0) + 1
+            spellings.setdefault(key, {})[name] = spellings.setdefault(key, {}).get(name, 0) + 1
+
+    def label(key: str) -> str:
+        # The most used spelling; on a tie the capitalised one («Python», not «python»).
+        return max(spellings[key].items(), key=lambda item: (item[1], item[0] != item[0].lower(), item[0]))[0]
+
+    ranked = sorted(totals, key=lambda key: (-totals[key], key))
+    return [{"name": label(key), "count": totals[key]} for key in ranked[:TECHNOLOGY_FACETS]]
+
+
+def gallery(*, q: str = "", category: str = "", technology: str = "", page=None, page_size=None) -> dict:
     records = published()
     query = (q or "").strip().casefold()[:100]
     if query:
         records = [r for r in records if _matches(r, query)]
+    # Facets of the search result; the technology filter itself (exact name,
+    # case-insensitive) narrows the list and the category counts.
+    technologies = _technology_facets(records)
+    technology = (technology or "").strip().casefold()[:60]
+    if technology:
+        records = [r for r in records if technology in {t.casefold() for t in r["technologies"]}]
 
     counts = {"all": len(records), **{cat: 0 for cat in CATEGORY_IDS}}
     for record in records:
@@ -225,6 +252,7 @@ def gallery(*, q: str = "", category: str = "", page=None, page_size=None) -> di
         "page_size": size,
         "num_pages": num_pages,
         "counts": counts,
+        "technologies": technologies,
         "results": [{field: r[field] for field in LIST_FIELDS} for r in records[offset:offset + size]],
     }
 

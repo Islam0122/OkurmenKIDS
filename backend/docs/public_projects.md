@@ -9,7 +9,7 @@ Admin) edits it and moves it between «Черновик» and «Опублико
 
 | | |
 |---|---|
-| `GET /api/v1/public/projects/?q=&category=&page=&page_size=` | published projects, newest first; `category` = `all`, `html-css`, `javascript`, `react`, `python`, `other`; `counts` per category for the current search |
+| `GET /api/v1/public/projects/?q=&category=&technology=&page=&page_size=` | published projects, newest first; `category` = `all`, `html-css`, `javascript`, `react`, `python`, `other`; `technology` = exact technology name (case-insensitive); `counts` per category and `technologies` (up to 24 `{name, count}`, most used first) for the current search |
 | `GET /api/v1/public/projects/<key>/` | one published project; 404 for drafts and unknown keys |
 
 `<key>` is an opaque HMAC of the id (never the database id).

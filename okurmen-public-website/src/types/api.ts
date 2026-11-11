@@ -158,6 +158,8 @@ export interface ProjectDetail extends ProjectCard {
 
 export interface ProjectsPage extends Paginated<ProjectCard> {
   counts: Counts
+  /** Technologies of the current search, most used first (absent on older backends). */
+  technologies?: { name: string; count: number }[]
 }
 
 // --- News (apps.academy_news.public) -------------------------------------------

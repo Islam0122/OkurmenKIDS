@@ -47,6 +47,7 @@ class PublicView(APIView):
     parameters=[
         OpenApiParameter("q", str, description="Поиск: название, описание, технология, группа, студент"),
         OpenApiParameter("category", str, enum=["all", *public.CATEGORY_IDS]),
+        OpenApiParameter("technology", str, description="Точное название технологии (без учёта регистра)"),
         OpenApiParameter("page", int),
         OpenApiParameter("page_size", int),
     ],
@@ -55,7 +56,7 @@ class PublicProjectListView(PublicView):
     def get(self, request):
         params = request.query_params
         return self.respond(public.gallery(
-            q=params.get("q", ""), category=params.get("category", ""),
+            q=params.get("q", ""), category=params.get("category", ""), technology=params.get("technology", ""),
             page=params.get("page"), page_size=params.get("page_size"),
         ))
 

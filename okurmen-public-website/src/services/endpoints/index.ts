@@ -35,6 +35,7 @@ export interface ListParams {
   category?: string
   phase?: string
   kind?: string
+  technology?: string
 }
 
 type Mocks = typeof import('@/mocks/fixtures')
