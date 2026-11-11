@@ -43,8 +43,8 @@ export function ProjectCard({ project }: { project: Project }) {
       </div>
 
       <div className="flex flex-1 flex-col p-5">
-        <h3 className="line-clamp-2 text-lg leading-snug font-extrabold transition group-hover:text-brand-600">{project.title}</h3>
-        {project.short_description ? <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted">{project.short_description}</p> : null}
+        <h3 className="line-clamp-2 text-lg leading-snug font-extrabold tracking-tight transition group-hover:text-brand-600">{project.title}</h3>
+        {project.short_description ? <p className="mt-1.5 line-clamp-2 min-h-12 text-sm leading-6 text-muted">{project.short_description}</p> : null}
         {badges.length ? (
           <ul className="mt-3.5 flex flex-wrap gap-1.5" aria-label={t('projects.technologies')}>
             {badges.map((tech) => (
