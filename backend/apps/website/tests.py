@@ -204,6 +204,13 @@ class PrivacyTests(Base):
         Teacher.objects.filter(pk=teacher.pk).update(is_active=False)
         self.assertEqual(self.anon.get(f"{PUBLIC}team/").data["results"], [])
 
+    def test_team_group_is_public(self):
+        TeamMember.objects.create(name="Айбек", position="Тренер", group=TeamMember.Group.IT_TRAINERS,
+                                  status=Workflow.PUBLISHED)
+        TeamMember.objects.create(name="Бермет", position="Менеджер", status=Workflow.PUBLISHED)
+        groups = [m["group"] for m in self.anon.get(f"{PUBLIC}team/").data["results"]]
+        self.assertEqual(groups, ["it_trainers", None])
+
     def test_testimonial_needs_consent(self):
         Testimonial.objects.create(author_name="Без согласия", text="…", status=Workflow.PUBLISHED, consent=False)
         Testimonial.objects.create(author_name="Айгуль", text="Спасибо!", rating=5, status=Workflow.PUBLISHED,

@@ -11,6 +11,8 @@ export const env = {
   mediaUrl: trim(import.meta.env.VITE_MEDIA_URL) || trim(import.meta.env.VITE_API_URL),
   /** This website's public origin — canonical URLs and Open Graph. */
   siteUrl: trim(import.meta.env.VITE_SITE_URL) || (typeof window !== 'undefined' ? window.location.origin : ''),
+  /** The academy's careers site (apps.recruitment, served by the LMS frontend at /careers). Empty = no «join the team» CTA. */
+  careersUrl: trim(import.meta.env.VITE_CAREERS_URL ?? 'https://okurmen-kids-drab.vercel.app/careers'),
   /** Demo content for UI development only. Every page shows a banner while on. */
   useMocks: import.meta.env.VITE_USE_MOCKS === 'true',
 } as const

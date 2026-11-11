@@ -261,10 +261,14 @@ export interface AchievementsPage extends Paginated<AchievementCard> {
 
 // --- Team, testimonials ----------------------------------------------------------------
 
+export type TeamGroup = 'it_trainers' | 'english_trainers' | 'soft_skills_trainers' | 'management' | 'administration'
+
 export interface TeamMember {
   id: number
   name: string
   position: string
+  /** Department on the Team page (set in the CMS); null = not assigned. */
+  group: TeamGroup | null
   specialization: string | null
   bio: string
   experience_years: number | null
@@ -331,3 +335,10 @@ export type PreviewData =
   | { kind: 'event'; item: EventDetail }
   | { kind: 'achievement'; item: AchievementDetail }
   | { kind: 'news'; item: NewsArticle }
+
+// --- Careers (apps.recruitment.public, existing) ------------------------------------------
+
+export interface VacanciesPage {
+  count: number
+  results: { slug: string; title: string; department: string }[]
+}

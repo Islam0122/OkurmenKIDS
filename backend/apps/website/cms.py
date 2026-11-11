@@ -564,6 +564,7 @@ class TeamMemberViewSet(WorkflowViewSet):
     queryset = m.TeamMember.objects.select_related("teacher__user", "created_by", "reviewed_by")
     serializer_class = TeamMemberSerializer
     search_fields = ("name", "position", "specialization", "teacher__user__first_name", "teacher__user__last_name")
+    filterset_fields = ("group",)
 
 
 @extend_schema(tags=TAGS)
@@ -774,6 +775,7 @@ class MetaView(APIView):
                 "course_icon": _choices(m.CoursePage.Icon),
                 "project_category": [{"value": v, "label": label} for v, label in m.PROJECT_CATEGORIES if v],
                 "testimonial_role": _choices(m.Testimonial.Role),
+                "team_group": _choices(m.TeamMember.Group),
                 "language": _choices(m.Testimonial.Language),
                 "news_category": _choices(Article.Category),
                 "lead_status": _choices(m.Lead.Status),
