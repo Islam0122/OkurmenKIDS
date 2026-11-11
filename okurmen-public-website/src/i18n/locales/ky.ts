@@ -153,7 +153,7 @@ export const ky: Messages = {
   'courses.popular': 'Популярдуу',
 
   'projects.title': 'Студенттердин долбоорлору',
-  'projects.subtitle': 'Студенттерибиз түзгөн сайттар, оюндар жана программалар. Аларды академиянын тренерлери жарыялайт.',
+  'projects.subtitle': 'Алгачкы идеялардан чыныгы санариптик продуктуларга чейин. Окуучуларыбыз эмнелерди түзүп жатканын көрүңүз.',
   'projects.student': 'Автору',
   'projects.anonymous': 'Академиянын студенти',
   'projects.group': 'Топ',
@@ -170,6 +170,8 @@ export const ky: Messages = {
   'projects.filter.technology': 'Технологиялар',
   'projects.found': 'Долбоорлор: {count}',
   'projects.reset': 'Чыпкаларды тазалоо',
+  'projects.moreTech': 'Дагы {count}',
+  'projects.lessTech': 'Жыйноо',
   'projects.demo': 'Демону ачуу',
   'projects.about': 'Долбоор жөнүндө',
   'projects.related': 'Студенттердин башка долбоорлору',

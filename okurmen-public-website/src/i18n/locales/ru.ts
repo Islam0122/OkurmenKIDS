@@ -151,7 +151,7 @@ export const ru = {
   'courses.popular': 'Популярный',
 
   'projects.title': 'Проекты студентов',
-  'projects.subtitle': 'Сайты, игры и программы, которые создали наши студенты. Публикуют их тренеры академии.',
+  'projects.subtitle': 'От первых идей до настоящих цифровых продуктов. Смотрите, что создают наши ученики.',
   'projects.student': 'Автор',
   'projects.anonymous': 'Студент академии',
   'projects.group': 'Группа',
@@ -168,6 +168,8 @@ export const ru = {
   'projects.filter.technology': 'Технологии',
   'projects.found': 'Проектов: {count}',
   'projects.reset': 'Сбросить фильтры',
+  'projects.moreTech': 'Ещё {count}',
+  'projects.lessTech': 'Свернуть',
   'projects.demo': 'Открыть демо',
   'projects.about': 'О проекте',
   'projects.related': 'Другие проекты студентов',

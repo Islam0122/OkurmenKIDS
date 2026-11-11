@@ -152,7 +152,7 @@ export const en: Messages = {
   'courses.popular': 'Popular',
 
   'projects.title': 'Student projects',
-  'projects.subtitle': 'Websites, games and programs created by our students. Published by the academy’s trainers.',
+  'projects.subtitle': 'From first ideas to real digital products. See what our students create.',
   'projects.student': 'Author',
   'projects.anonymous': 'Academy student',
   'projects.group': 'Group',
@@ -169,6 +169,8 @@ export const en: Messages = {
   'projects.filter.technology': 'Technologies',
   'projects.found': 'Projects: {count}',
   'projects.reset': 'Reset filters',
+  'projects.moreTech': '{count} more',
+  'projects.lessTech': 'Show less',
   'projects.demo': 'Live demo',
   'projects.about': 'About the project',
   'projects.related': 'More student projects',

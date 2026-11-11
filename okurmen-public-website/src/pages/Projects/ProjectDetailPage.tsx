@@ -19,7 +19,7 @@ import type { ProjectDetail } from '@/types/api'
 import { excerpt } from '@/utils/format'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
 
-const WIDE = 'mx-auto w-full max-w-[88rem] px-4 sm:px-6 lg:px-8'
+const WIDE = 'mx-auto w-[calc(100%-48px)] max-w-[1280px]'
 
 function hostOf(url: string | null): string | null {
   if (!url) return null
@@ -175,8 +175,8 @@ function RelatedProjects({ project }: { project: ProjectDetail }) {
     <section className="border-t border-line bg-surface-soft py-12 sm:py-14">
       <div className={WIDE}>
         <SectionHeader title={t('projects.related')} link={{ to: category === 'all' ? '/projects' : `/projects?category=${category}`, label: t('cta.allProjects') }} />
-        <ul className="flex flex-wrap justify-center gap-6">
-          {related.map((p) => <li key={p.key} className="w-full sm:w-[calc(50%-0.75rem)] lg:w-[calc(25%-1.125rem)]"><ProjectCard project={p} /></li>)}
+        <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {related.map((p) => <li key={p.key} className="min-w-0"><ProjectCard project={p} /></li>)}
         </ul>
       </div>
     </section>
