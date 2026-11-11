@@ -46,7 +46,7 @@ function FilterRow({ label, chips, value, onChange, footer }: { label: string; c
               aria-checked={active}
               onClick={() => onChange(active && chip.value !== 'all' ? 'all' : chip.value)}
               className={cn(
-                'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition duration-200 focus-visible:ring-4 focus-visible:ring-brand-100',
+                'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition duration-200 focus-visible:ring-4 focus-visible:ring-brand-100',
                 active
                   ? 'border-brand-800 bg-brand-800 text-white shadow-[0_6px_16px_-8px_rgb(41_19_109/0.6)]'
                   : 'border-line bg-white text-ink-soft hover:border-brand-300 hover:bg-brand-50/60 hover:text-brand-800',
@@ -128,7 +128,7 @@ export function ProjectsPage() {
                 onChange={(v) => update({ technology: v === 'all' ? '' : v })}
                 footer={hidden > 0 ? (
                   <button type="button" onClick={() => setAllTech((v) => !v)} aria-expanded={allTech}
-                    className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-3 text-sm font-bold text-brand-700 hover:bg-brand-50">
+                    className="inline-flex h-10 shrink-0 items-center gap-1 rounded-full px-3 text-sm font-bold text-brand-700 hover:bg-brand-50">
                     {allTech ? t('projects.lessTech') : t('projects.moreTech', { count: hidden })}
                     <ChevronDown className={cn('size-4 transition', allTech && 'rotate-180')} aria-hidden />
                   </button>

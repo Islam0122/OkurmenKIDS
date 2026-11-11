@@ -56,7 +56,7 @@ function Profile({ member }: { member: TeamMemberDetail }) {
         <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 size-80 rounded-full bg-gold-200/40 blur-3xl" />
         <div className="container-page relative grid gap-8 py-8 sm:py-10 md:grid-cols-[minmax(0,20rem)_1fr] md:items-center md:gap-12 lg:grid-cols-[minmax(0,24rem)_1fr] lg:py-14">
           <div>
-            <Link to={path('/team')} className="mb-5 inline-flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:text-brand-900 md:hidden">
+            <Link to={path('/team')} className="mb-4 -ml-2 inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-sm font-bold text-brand-700 hover:bg-white/70 hover:text-brand-900 md:hidden">
               <ArrowLeft className="size-4" aria-hidden /> {t('team.profile.back')}
             </Link>
             <div className="mx-auto aspect-[4/5] w-full max-w-xs overflow-hidden rounded-[2rem] bg-gradient-to-b from-white to-brand-50 shadow-lift ring-8 ring-white md:max-w-none">
@@ -64,11 +64,11 @@ function Profile({ member }: { member: TeamMemberDetail }) {
             </div>
           </div>
           <div>
-            <Link to={path('/team')} className="mb-6 hidden items-center gap-1.5 text-sm font-bold text-brand-700 hover:text-brand-900 md:inline-flex">
+            <Link to={path('/team')} className="mb-5 -ml-2 hidden min-h-10 items-center gap-1.5 rounded-full px-2 text-sm font-bold text-brand-700 hover:bg-white/70 hover:text-brand-900 md:inline-flex">
               <ArrowLeft className="size-4" aria-hidden /> {t('team.profile.back')}
             </Link>
             {department ? <p className="mb-3 text-sm font-bold tracking-wide text-gold-600 uppercase">{department}</p> : null}
-            <h1 className="text-4xl leading-[1.05] font-black sm:text-5xl">{member.name}</h1>
+            <h1 className="text-page-title font-black">{member.name}</h1>
             <p className="mt-3 text-lg font-bold text-brand-600 sm:text-xl">{member.position}</p>
 
             {positions.length > 1 ? (

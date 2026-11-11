@@ -137,7 +137,7 @@ function ProjectView({ project }: { project: ProjectDetail }) {
                 <ul className="flex flex-wrap gap-1.5">
                   {project.technologies.map((tech) => (
                     <li key={tech}>
-                      <Link to={path(`/projects?technology=${encodeURIComponent(tech)}`)} className="inline-flex rounded-lg bg-surface-purple px-2.5 py-1 text-sm font-bold text-brand-700 transition hover:bg-brand-100">{tech}</Link>
+                      <Link to={path(`/projects?technology=${encodeURIComponent(tech)}`)} className="inline-flex min-h-10 items-center rounded-lg bg-surface-purple px-3 text-sm font-bold text-brand-700 transition hover:bg-brand-100">{tech}</Link>
                     </li>
                   ))}
                 </ul>

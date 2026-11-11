@@ -43,7 +43,7 @@ export function Hero({ hero }: { hero?: SiteSettings['hero'] }) {
           <motion.span {...appear(0)} className="eyebrow">
             <Sparkles className="size-3.5" aria-hidden /> {t('home.hero.eyebrow')}
           </motion.span>
-          <motion.h1 {...appear(0.08)} className="mt-6 text-[2.6rem] leading-[1.02] font-black sm:text-6xl lg:text-[4.4rem]">
+          <motion.h1 {...appear(0.08)} className="text-display mt-6 font-black">
             {(() => {
               const words = title.trim().split(/\s+/)
               const head = words.slice(0, -1).join(' ')

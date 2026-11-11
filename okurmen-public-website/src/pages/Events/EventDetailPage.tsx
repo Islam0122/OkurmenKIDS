@@ -23,8 +23,8 @@ export function EventDetailPage() {
 }
 
 export function EventView({ event, preview }: { event: EventDetail; preview?: boolean }) {
-  const { t, path, formatDate, locale } = useI18n()
-  const time = (iso: string) => new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+  const { t, path, formatDate } = useI18n()
+  const time = (iso: string) => formatDate(iso, { hour: '2-digit', minute: '2-digit' })
   const sameDay = event.ends_at && new Date(event.ends_at).toDateString() === new Date(event.starts_at).toDateString()
   const when = event.ends_at
     ? sameDay
@@ -92,7 +92,7 @@ export function EventView({ event, preview }: { event: EventDetail; preview?: bo
                     <dd className="font-bold">{place}</dd>
                     {event.branch_address && event.branch_address !== place ? <dd className="text-sm text-ink-soft">{event.branch_address}</dd> : null}
                     {mapsQuery ? (
-                      <dd><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-sm font-bold text-brand-600 hover:text-brand-800"><Navigation className="size-3.5" aria-hidden />{t('cta.route')}</a></dd>
+                      <dd><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`} target="_blank" rel="noopener noreferrer" className="mt-1 -ml-2 inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-sm font-bold text-brand-600 hover:bg-brand-50 hover:text-brand-800"><Navigation className="size-3.5" aria-hidden />{t('cta.route')}</a></dd>
                     ) : null}
                   </div>
                 </div>

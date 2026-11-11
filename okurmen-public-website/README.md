@@ -13,6 +13,7 @@ npm run dev                      # http://localhost:5173
 npm run build                    # dist/ + dist/sitemap.xml
 npm test                         # vitest
 npm run lint && npm run typecheck
+node scripts/responsive-audit.cjs   # responsive audit, see the header of the script
 ```
 
 | Variable | |

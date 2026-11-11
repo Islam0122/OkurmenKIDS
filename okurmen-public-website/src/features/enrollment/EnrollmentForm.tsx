@@ -106,7 +106,7 @@ export function EnrollmentForm({ defaultCourse, compact, onDone }: { defaultCour
           <input id="lead-phone" type="tel" inputMode="tel" autoComplete="tel" className="input" placeholder={t('form.phonePlaceholder')} aria-invalid={!!errors.phone} aria-describedby={errors.phone ? 'lead-phone-error' : undefined} {...register('phone')} />
         </Field>
         {/* Age is short, course is long: one row on every screen width. */}
-        <div className={cn('grid grid-cols-[8.5rem_1fr] items-start gap-3 [&_label]:whitespace-nowrap', !compact && 'sm:col-span-2')}>
+        <div className={cn('grid grid-cols-[minmax(0,6.5rem)_minmax(0,1fr)] items-end gap-3', !compact && 'sm:col-span-2')}>
           <Field id="lead-age" label={t('form.childAge')} error={errors.child_age?.message}>
             <input id="lead-age" type="number" inputMode="numeric" min={3} max={25} className="input" placeholder={t('form.childAgePlaceholder')} aria-invalid={!!errors.child_age} {...register('child_age')} />
           </Field>
@@ -144,12 +144,12 @@ export function EnrollmentForm({ defaultCourse, compact, onDone }: { defaultCour
               aria-checked={method === value}
               onClick={() => setValue('contact_method', value)}
               className={cn(
-                'flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition',
+                'flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-xs font-bold transition sm:flex-row sm:gap-2 sm:text-sm',
                 method === value ? 'border-brand-700 bg-brand-50 text-brand-800 ring-2 ring-brand-200' : 'border-line bg-white text-ink-soft hover:border-brand-300',
               )}
             >
               <Icon className="size-4" aria-hidden />
-              <span className="truncate">{t(`form.contact.${value}`)}</span>
+              <span className="max-w-full truncate">{t(`form.contact.${value}`)}</span>
             </button>
           ))}
         </div>

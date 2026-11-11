@@ -23,3 +23,16 @@ describe('i18n', () => {
     expect(translate('en')('courses.ageRange', { from: 8, to: 12 })).toBe('8–12 years')
   })
 })
+
+describe('Kyrgyz dates without browser support', () => {
+  it('matches the ICU ky format', async () => {
+    const { formatKyrgyz } = await import('@/i18n/dates')
+    const d = new Date(2026, 10, 14, 6, 29)
+    expect(formatKyrgyz(d, { day: 'numeric', month: 'long', year: 'numeric' })).toBe('2026-ж., 14-ноябрь')
+    expect(formatKyrgyz(d, { day: 'numeric', month: 'short', year: 'numeric' })).toBe('2026-ж. 14-ноя.')
+    expect(formatKyrgyz(d, { weekday: 'long', day: 'numeric', month: 'long' })).toBe('14-ноябрь, ишемби')
+    expect(formatKyrgyz(d, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })).toBe('14-ноябрь 06:29')
+    expect(formatKyrgyz(d, { month: 'short' })).toBe('Ноя')
+    expect(formatKyrgyz(d, { hour: '2-digit', minute: '2-digit' })).toBe('06:29')
+  })
+})

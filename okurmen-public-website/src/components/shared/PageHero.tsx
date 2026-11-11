@@ -33,7 +33,7 @@ export function PageHero({ title, text, crumbs = [], children, compact, wide }: 
             ))}
           </ol>
         </nav>
-        <h1 className={cn('mt-5 max-w-4xl leading-[1.05] font-black', compact ? 'text-3xl sm:text-4xl lg:text-5xl' : 'text-4xl sm:text-5xl lg:text-6xl')}>{title}</h1>
+        <h1 className={cn('mt-4 max-w-4xl font-black sm:mt-5', compact ? 'text-page-title' : 'text-display')}>{title}</h1>
         {text ? <p className={cn('max-w-2xl text-ink-soft', compact ? 'mt-3 text-base sm:text-lg' : 'mt-5 text-lg')}>{text}</p> : null}
         {children}
       </div>

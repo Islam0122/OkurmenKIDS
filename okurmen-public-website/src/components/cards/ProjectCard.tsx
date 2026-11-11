@@ -33,7 +33,7 @@ export function ProjectCard({ project }: { project: Project }) {
         {project.categories.length ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
             {project.categories.map((cat) => (
-              <span key={cat} className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold text-brand-800 shadow-soft backdrop-blur">{t(`projects.cat.${cat}`)}</span>
+              <span key={cat} className="rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-brand-800 shadow-soft backdrop-blur">{t(`projects.cat.${cat}`)}</span>
             ))}
           </div>
         ) : null}
