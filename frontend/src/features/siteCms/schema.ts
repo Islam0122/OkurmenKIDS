@@ -111,6 +111,7 @@ export const RESOURCES: Record<ResourceDef['key'], ResourceDef> = {
       { name: 'title', label: 'Название', type: 'text', required: true, translatable: true },
       { name: 'category', label: 'Категория', type: 'select', choices: 'achievement_category', required: true },
       { name: 'date', label: 'Дата', type: 'date', required: true },
+      { name: 'recipient', label: 'Студент или организация', type: 'text', hint: 'Кто получил награду / партнёр. Имя ребёнка — только с согласия семьи («Алия С.»).' },
       { name: 'excerpt', label: 'Короткое описание', type: 'textarea', translatable: true, wide: true },
       { name: 'body', label: 'Описание', type: 'richtext', translatable: true, wide: true },
       { name: 'cover', label: 'Обложка', type: 'image', wide: true },

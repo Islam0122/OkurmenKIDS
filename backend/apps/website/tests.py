@@ -241,6 +241,19 @@ class PrivacyTests(Base):
         self.assertEqual(r["average_rating"], 5.0)
 
 
+class AchievementTests(Base):
+    def test_group_filter_and_recipient(self):
+        Achievement.objects.create(title="Олимпиада", category="competition", recipient="Алия С.", status=Workflow.PUBLISHED)
+        Achievement.objects.create(title="Диплом", category="award", status=Workflow.PUBLISHED)
+        Achievement.objects.create(title="Сертификат", category="certificate", status=Workflow.PUBLISHED)
+        r = self.anon.get(f"{PUBLIC}achievements/", {"category": "award,certificate,recognition"}).data
+        self.assertEqual(sorted(a["title"] for a in r["results"]), ["Диплом", "Сертификат"])
+        self.assertEqual(r["counts"]["all"], 3)
+        one = self.anon.get(f"{PUBLIC}achievements/", {"category": "competition"}).data["results"][0]
+        self.assertEqual(one["recipient"], "Алия С.")
+        self.assertEqual(self.anon.get(f"{PUBLIC}achievements/", {"category": "award,nope"}).status_code, 400)
+
+
 class PreviewTests(Base):
     def test_signed_preview_shows_a_draft(self):
         item = Achievement.objects.create(title="Победа", status=Workflow.DRAFT)
