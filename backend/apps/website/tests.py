@@ -307,3 +307,13 @@ class CMSPermissionTests(Base):
         self.assertEqual((lead.status, lead.parent_name), ("contacted", "Нурлан"))
         self.assertEqual(self.as_(self.sales).delete(f"{CMS}leads/{lead.pk}/").status_code, 403)
         self.assertEqual(r.status_code, 200)
+
+
+class CorsTests(Base):
+    def test_public_website_origin_is_allowed_by_default(self):
+        site = "https://okurmen-public-website.vercel.app"
+        r = self.anon.get(f"{PUBLIC}home/", {"lang": "ky"}, HTTP_ORIGIN=site)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Access-Control-Allow-Origin"], site)
+        other = self.anon.get(f"{PUBLIC}home/", HTTP_ORIGIN="https://evil.example.com")
+        self.assertNotIn("Access-Control-Allow-Origin", other)

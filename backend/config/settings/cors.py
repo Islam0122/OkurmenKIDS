@@ -25,7 +25,7 @@ CORS_ALLOWED_ORIGINS = [
     # The public website (okurmen-public-website/, React), e.g.
     # https://okurmenkids.kg,https://www.okurmenkids.kg — comma-separated.
     # Reads /api/v1/public/site|news|projects/ and posts enrollment leads.
-    *[o.strip().rstrip("/") for o in os.getenv("PUBLIC_WEBSITE_ORIGINS", "").split(",") if o.strip()],
+    *[o.strip().rstrip("/") for o in os.getenv("PUBLIC_WEBSITE_ORIGINS", "https://okurmen-public-website.vercel.app").split(",") if o.strip()],
 ]
 
 CORS_ALLOW_METHODS = [
