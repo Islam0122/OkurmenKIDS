@@ -46,9 +46,9 @@ function ChannelCard({ channel }: { channel: Channel }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-xs font-bold tracking-wide text-muted uppercase">{channel.label}</span>
-          <span className="block font-bold break-words text-ink [overflow-wrap:anywhere]">{channel.value}</span>
+          <span className="block font-bold text-ink [overflow-wrap:anywhere]">{channel.value}</span>
         </span>
-        <ArrowUpRight className="size-4 shrink-0 text-muted transition group-hover:text-brand-600" aria-hidden />
+        <ArrowUpRight className="hidden size-4 shrink-0 text-muted transition group-hover:text-brand-600 sm:block" aria-hidden />
       </a>
     </li>
   )
@@ -92,11 +92,11 @@ export function ContactsPage() {
             <div className="card p-5 sm:p-6">
               <h2 className="text-xl font-extrabold sm:text-2xl">{t('contacts.channels')}</h2>
               {isPending ? (
-                <ul className="mt-4 grid gap-3 sm:grid-cols-2" aria-busy="true" aria-label={t('state.loading')}>
+                <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2" aria-busy="true" aria-label={t('state.loading')}>
                   {Array.from({ length: 4 }, (_, i) => <li key={i} className="h-[4.5rem] animate-pulse rounded-2xl bg-surface-soft" />)}
                 </ul>
               ) : channels.length ? (
-                <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+                <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                   {channels.map((c) => <ChannelCard key={c.label} channel={c} />)}
                 </ul>
               ) : null}
@@ -111,7 +111,7 @@ export function ContactsPage() {
                     <div role="tablist" aria-label={t('contacts.branches')} className="flex flex-wrap gap-2">
                       {branches.map((b, i) => (
                         <button key={b.id} type="button" role="tab" aria-selected={i === active} onClick={() => setActive(i)}
-                          className={cn('h-9 rounded-full border px-3.5 text-sm font-bold transition', i === active ? 'border-brand-800 bg-brand-800 text-white' : 'border-line bg-white text-ink-soft hover:border-brand-300')}>
+                          className={cn('h-10 rounded-full border px-3.5 text-sm font-bold transition', i === active ? 'border-brand-800 bg-brand-800 text-white' : 'border-line bg-white text-ink-soft hover:border-brand-300')}>
                           {b.name}
                         </button>
                       ))}

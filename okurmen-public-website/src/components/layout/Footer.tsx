@@ -20,8 +20,8 @@ export function Footer() {
   return (
     <footer className="relative overflow-hidden bg-brand-900 text-white">
       <div aria-hidden className="pointer-events-none absolute -top-40 right-0 size-[28rem] rounded-full bg-brand-600/30 blur-3xl" />
-      <div className="container-page relative grid gap-12 py-16 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1.2fr] lg:py-20">
-        <div>
+      <div className="container-page relative grid gap-10 py-14 sm:grid-cols-2 sm:gap-12 lg:grid-cols-[1.4fr_1fr_1.2fr] lg:py-20">
+        <div className="sm:col-span-2 lg:col-span-1">
           <Logo inverted />
           <p className="mt-5 max-w-sm text-sm leading-relaxed text-white/70">{t('footer.about')}</p>
           <p className="mt-5 font-display text-lg font-extrabold text-gold-300">{BRAND.tagline}</p>
@@ -72,7 +72,7 @@ export function Footer() {
         </div>
       </div>
       <div className="border-t border-white/10">
-        <div className="container-page flex flex-col gap-2 py-6 text-xs text-white/50 sm:flex-row sm:items-center sm:justify-between">
+        <div className="container-page flex flex-col gap-2 pt-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between sm:pb-6">
           <p>{t('footer.rights', { year: new Date().getFullYear() })}</p>
           <p>{t('brand.descriptor')} · Кыргызстан</p>
         </div>

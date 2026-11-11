@@ -19,18 +19,18 @@ export function PhaseBadge({ phase }: { phase: Event['phase'] }) {
 }
 
 export function EventCard({ event, horizontal }: { event: Event; horizontal?: boolean }) {
-  const { t, path, formatDate, locale } = useI18n()
+  const { t, path, formatDate } = useI18n()
   const start = new Date(event.starts_at)
   const day = start.getDate()
-  const month = new Intl.DateTimeFormat(locale, { month: 'short' }).format(start).replace('.', '')
-  const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(start)
+  const month = formatDate(event.starts_at, { month: 'short' }).replace('.', '')
+  const time = formatDate(event.starts_at, { hour: '2-digit', minute: '2-digit' })
   return (
     <Link to={path(`/events/${event.slug}`)} className={cn('card card-hover group flex h-full overflow-hidden', horizontal ? 'flex-col sm:flex-row' : 'flex-col', event.phase === 'completed' && 'opacity-90')}>
       <div className={cn('relative overflow-hidden bg-brand-50', horizontal ? 'aspect-[16/10] sm:aspect-auto sm:w-2/5' : 'aspect-[16/10]')}>
         <SmartImage image={event.cover} alt={event.title} className="size-full transition duration-700 group-hover:scale-105" />
         <div className="absolute top-4 left-4 flex flex-col items-center rounded-2xl bg-white px-3 py-2 text-center shadow-soft">
           <span className="font-display text-2xl leading-none font-black text-brand-800">{day}</span>
-          <span className="mt-0.5 text-[11px] font-bold tracking-wide text-gold-600 uppercase">{month}</span>
+          <span className="mt-0.5 text-xs font-bold tracking-wide text-gold-600 uppercase">{month}</span>
         </div>
       </div>
       <div className="flex flex-1 flex-col p-6">

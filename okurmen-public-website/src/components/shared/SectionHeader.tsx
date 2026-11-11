@@ -23,11 +23,11 @@ export function SectionHeader({ eyebrow, title, text, link, align = 'left', clas
     <Reveal className={cn('mb-10 flex flex-col gap-5 sm:mb-12', align === 'center' ? 'items-center text-center' : 'md:flex-row md:items-end md:justify-between', className)}>
       <div className={cn('max-w-2xl', align === 'center' && 'mx-auto')}>
         {eyebrow ? <span className="eyebrow mb-4">{eyebrow}</span> : null}
-        <Heading className="text-3xl leading-[1.1] font-extrabold sm:text-4xl lg:text-[2.75rem]">{title}</Heading>
+        <Heading className="text-section-title font-extrabold">{title}</Heading>
         {text ? <p className="mt-4 text-base text-muted sm:text-lg">{text}</p> : null}
       </div>
       {link ? (
-        <Link to={path(link.to)} className="group inline-flex shrink-0 items-center gap-2 font-bold text-brand-700 hover:text-brand-900">
+        <Link to={path(link.to)} className="group -my-2 inline-flex min-h-11 shrink-0 items-center gap-2 py-2 font-bold text-brand-700 hover:text-brand-900">
           {link.label}
           <ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden />
         </Link>

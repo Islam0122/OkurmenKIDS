@@ -8,6 +8,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 
 import { setApiLanguage } from '@/services/api/client'
+import { formatDateIn } from './dates'
 import type { Lang } from '@/types/api'
 
 import { en } from './locales/en'
@@ -68,15 +69,7 @@ export function I18nProvider({ lang, children }: { lang: Lang; children: ReactNo
       t: translate(lang),
       path: (to) => localizedPath(lang, to),
       locale,
-      formatDate: (iso, options = { day: 'numeric', month: 'long', year: 'numeric' }) => {
-        const date = new Date(iso)
-        if (Number.isNaN(date.getTime())) return ''
-        try {
-          return new Intl.DateTimeFormat(locale, options).format(date)
-        } catch {
-          return new Intl.DateTimeFormat('ru-RU', options).format(date)
-        }
-      },
+      formatDate: (iso, options = { day: 'numeric', month: 'long', year: 'numeric' }) => formatDateIn(lang, locale, iso, options),
     }
   }, [lang])
 

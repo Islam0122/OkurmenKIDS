@@ -15,7 +15,7 @@ export function Logo({ className, inverted }: { className?: string; inverted?: b
       </span>
       <span className="leading-none">
         <span className={cn('block font-display text-[17px] font-black tracking-tight', inverted ? 'text-white' : 'text-brand-800')}>Okurmen Kids</span>
-        <span className={cn('mt-1 block text-[11px] font-bold tracking-[0.22em] uppercase', inverted ? 'text-gold-300' : 'text-gold-600')}>Digital</span>
+        <span className={cn('mt-1 block text-xs font-bold tracking-[0.2em] uppercase', inverted ? 'text-gold-300' : 'text-gold-600')}>Digital</span>
       </span>
     </Link>
   )

@@ -79,6 +79,16 @@
     text-wrap: balance;
   }
   p { text-wrap: pretty; }
+  /* A grid without its own column template is a single column that may
+     shrink below its content's min-content width (long <select> options,
+     e-mails, URLs) instead of widening the page. grid-cols-* utilities win. */
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  select {
+    max-width: 100%;
+    text-overflow: ellipsis;
+  }
   ::selection { background: var(--color-gold-200); color: var(--color-brand-900); }
   :focus-visible {
     outline: 3px solid var(--color-gold-400);
@@ -105,6 +115,19 @@
   }
   .input {
     @apply block w-full rounded-xl border border-line bg-white px-4 py-3 text-base text-ink placeholder:text-muted/70 transition outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100 disabled:opacity-60 sm:text-sm;
+  }
+  /* Fluid type scale: grows smoothly from 360px phones to 1440px+ desktops. */
+  .text-display {
+    font-size: clamp(2.375rem, 1.6rem + 3.4vw, 4.4rem);
+    line-height: 1.04;
+  }
+  .text-page-title {
+    font-size: clamp(1.875rem, 1.45rem + 1.9vw, 3.25rem);
+    line-height: 1.08;
+  }
+  .text-section-title {
+    font-size: clamp(1.75rem, 1.45rem + 1.35vw, 2.75rem);
+    line-height: 1.1;
   }
   .prose-site {
     @apply text-base leading-relaxed text-ink-soft sm:text-lg;

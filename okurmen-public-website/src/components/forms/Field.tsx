@@ -6,9 +6,9 @@ export function Field({ id, label, error, optional, children, className }: { id:
   const { t } = useI18n()
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 flex items-baseline justify-between gap-2 text-sm font-bold text-ink">
+      <label htmlFor={id} className="mb-1.5 block text-sm leading-snug font-bold text-ink">
         {label}
-        {optional ? <span className="text-xs font-medium text-muted">{t('form.optional')}</span> : null}
+        {optional ? <span className="ml-1 text-xs font-medium text-muted">({t('form.optional')})</span> : null}
       </label>
       {children}
       {error ? (

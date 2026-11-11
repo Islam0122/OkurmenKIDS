@@ -51,7 +51,7 @@ export function RegistrationForm({ slug }: { slug: string }) {
       <Field id="reg-phone" label={t('form.phone')} error={errors.phone?.message}>
         <input id="reg-phone" type="tel" inputMode="tel" autoComplete="tel" className="input" placeholder={t('form.phonePlaceholder')} aria-invalid={!!errors.phone} {...register('phone')} />
       </Field>
-      <div className="grid grid-cols-[1fr_96px] gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,6.5rem)] items-end gap-3">
         <Field id="reg-child" label={t('form.childName')} optional>
           <input id="reg-child" className="input" {...register('child_name')} />
         </Field>

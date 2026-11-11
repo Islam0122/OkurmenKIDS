@@ -92,7 +92,7 @@ function TeamSection({ section, index }: { section: Section; index: number }) {
               <span className="h-px w-8 bg-gold-400" aria-hidden />
               <span className="flex items-center gap-1.5 text-muted"><Users className="size-4" aria-hidden />{section.members.length}</span>
             </p>
-            <h2 id={`team-${section.key}`} className="text-3xl leading-tight font-black sm:text-4xl">{t(`team.section.${section.key}` as MessageKey)}</h2>
+            <h2 id={`team-${section.key}`} className="text-section-title font-black">{t(`team.section.${section.key}` as MessageKey)}</h2>
             {text ? <p className="mt-2 text-base text-muted sm:text-lg">{text}</p> : null}
           </div>
         </Reveal>
