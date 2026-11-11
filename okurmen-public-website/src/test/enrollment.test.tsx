@@ -58,6 +58,24 @@ describe('EnrollmentForm', () => {
     expect(vi.mocked(siteApi.lead).mock.calls[0][0]).toMatchObject({ parent_name: 'Айгуль', child_age: 10, course: 'python', contact_method: 'whatsapp', language: 'ru', source: '/courses/python' })
   })
 
+  it('asks for a branch only when there are several', async () => {
+    const branch = (id: number) => ({ id, name: `B${id}`, address: 'a', phone: '', working_hours: '', map_url: null, latitude: null, longitude: null })
+    vi.mocked(siteApi.settings).mockResolvedValue({ branches: [branch(1)], contacts: {} } as never)
+    setup()
+    // Wait until the courses/settings have been applied (the course list is rendered).
+    expect(await screen.findByRole('option', { name: 'Python' })).toBeInTheDocument()
+    await waitFor(() => expect(siteApi.settings).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(screen.queryByLabelText(/Филиал/)).not.toBeInTheDocument()
+  })
+
+  it('shows the branch choice with two active branches', async () => {
+    const branch = (id: number) => ({ id, name: `B${id}`, address: 'a', phone: '', working_hours: '', map_url: null, latitude: null, longitude: null })
+    vi.mocked(siteApi.settings).mockResolvedValue({ branches: [branch(1), branch(2)], contacts: {} } as never)
+    setup()
+    expect(await screen.findByLabelText(/Филиал/)).toBeInTheDocument()
+  })
+
   it('shows server field errors', async () => {
     vi.mocked(siteApi.lead).mockImplementation(async () => { throw new ApiError('validation', 400, 'bad', { phone: ['Проверьте номер телефона.'] }) })
     const user = setup()

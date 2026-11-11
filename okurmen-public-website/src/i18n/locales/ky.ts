@@ -242,6 +242,11 @@ export const ky: Messages = {
   'contacts.address': 'Дареги',
   'contacts.formTitle': 'Сыноо сабагына жазылуу',
   'contacts.map': 'Карта',
+  'contacts.heroTitle': 'Балаңыздын IT келечеги ушул жерден башталат!',
+  'contacts.heroText': 'Курстарыбыз менен таанышып, балаңызга ылайыктуу багытты тандаңыз. Биз сизге жардам берүүгө даярбыз.',
+  'contacts.formText': 'Маалыматыңызды калтырыңыз. Биз сиз менен байланышып, балаңызга ылайыктуу курсту тандоого жардам беребиз.',
+  'contacts.channels': 'Биз менен байланышыңыз',
+  'contacts.branch': 'Биз кайдабыз',
 
   'form.parentName': 'Ата-эненин аты',
   'form.parentNamePlaceholder': 'Мисалы, Айгүл',

@@ -12,7 +12,7 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/utils/cn'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
-  cn('relative rounded-full px-3 py-2 text-[15px] font-semibold transition', isActive ? 'text-brand-800' : 'text-ink-soft hover:text-brand-800 hover:bg-brand-50/70')
+  cn('relative rounded-full px-2 py-2 text-sm font-semibold whitespace-nowrap transition 2xl:px-3 2xl:text-[15px]', isActive ? 'text-brand-800' : 'text-ink-soft hover:text-brand-800 hover:bg-brand-50/70')
 
 export function Header() {
   const { t, path } = useI18n()
@@ -58,13 +58,13 @@ export function Header() {
                 {({ isActive }) => (
                   <>
                     {t(item.label)}
-                    {isActive ? <motion.span layoutId="nav-underline" className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-gold-400" /> : null}
+                    {isActive ? <motion.span layoutId="nav-underline" className="absolute inset-x-2 -bottom-0.5 h-0.5 rounded-full bg-gold-400" /> : null}
                   </>
                 )}
               </NavLink>
             ))}
             <div ref={moreRef} className="relative">
-              <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-expanded={moreOpen} aria-haspopup="menu" className="flex items-center gap-1 rounded-full px-3 py-2 text-[15px] font-semibold text-ink-soft hover:bg-brand-50/70 hover:text-brand-800">
+              <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-expanded={moreOpen} aria-haspopup="menu" className="flex items-center gap-1 rounded-full px-2 py-2 text-sm font-semibold whitespace-nowrap 2xl:px-3 2xl:text-[15px] text-ink-soft hover:bg-brand-50/70 hover:text-brand-800">
                 {t('nav.more')}
                 <ChevronDown className={cn('size-4 transition', moreOpen && 'rotate-180')} aria-hidden />
               </button>

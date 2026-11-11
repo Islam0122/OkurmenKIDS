@@ -105,18 +105,23 @@ export function EnrollmentForm({ defaultCourse, compact, onDone }: { defaultCour
         <Field id="lead-phone" label={t('form.phone')} error={errors.phone?.message}>
           <input id="lead-phone" type="tel" inputMode="tel" autoComplete="tel" className="input" placeholder={t('form.phonePlaceholder')} aria-invalid={!!errors.phone} aria-describedby={errors.phone ? 'lead-phone-error' : undefined} {...register('phone')} />
         </Field>
-        <Field id="lead-age" label={t('form.childAge')} error={errors.child_age?.message}>
-          <input id="lead-age" type="number" inputMode="numeric" min={3} max={25} className="input" placeholder={t('form.childAgePlaceholder')} aria-invalid={!!errors.child_age} {...register('child_age')} />
-        </Field>
-        <Field id="lead-course" label={t('form.course')} optional>
-          <select id="lead-course" className="input" {...register('course')}>
-            <option value="">{t('form.courseAny')}</option>
-            {courseList.map((course) => (
-              <option key={course.slug} value={course.slug}>{course.title}</option>
-            ))}
-          </select>
-        </Field>
-        {branches.length > 0 ? (
+        {/* Age is short, course is long: one row on every screen width. */}
+        <div className={cn('grid grid-cols-[8.5rem_1fr] items-start gap-3 [&_label]:whitespace-nowrap', !compact && 'sm:col-span-2')}>
+          <Field id="lead-age" label={t('form.childAge')} error={errors.child_age?.message}>
+            <input id="lead-age" type="number" inputMode="numeric" min={3} max={25} className="input" placeholder={t('form.childAgePlaceholder')} aria-invalid={!!errors.child_age} {...register('child_age')} />
+          </Field>
+          <Field id="lead-course" label={t('form.course')} optional>
+            <select id="lead-course" className="input" {...register('course')}>
+              <option value="">{t('form.courseAny')}</option>
+              {courseList.map((course) => (
+                <option key={course.slug} value={course.slug}>{course.title}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        {/* Branch choice only when there is a real choice: with one active branch the
+            backend attaches the lead to it (apps.website.public_views.LeadView). */}
+        {branches.length > 1 ? (
           <Field id="lead-branch" label={t('form.branch')} optional className={cn(!compact && 'sm:col-span-2')}>
             <select id="lead-branch" className="input" {...register('branch')}>
               <option value="">{t('form.branchAny')}</option>

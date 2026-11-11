@@ -214,6 +214,14 @@ class LeadSerializer(serializers.Serializer):
         return branch
 
 
+def only_active_branch() -> Branch | None:
+    """With a single active branch the site does not ask «which branch?» —
+    the lead belongs to that branch. With several (or none) it stays empty
+    unless the visitor chose one."""
+    active = list(Branch.objects.filter(is_active=True)[:2])
+    return active[0] if len(active) == 1 else None
+
+
 class SubmitView(APIView):
     authentication_classes: list = []
     permission_classes = [AllowAny]
@@ -234,6 +242,8 @@ class LeadView(SubmitView):
             return Response({"ok": True, "duplicate": False}, status=status.HTTP_201_CREATED)
         digits = phone_digits(data["phone"])
         data["language"] = public.lang_of(data.get("language"))
+        if data.get("branch") is None:
+            data["branch"] = only_active_branch()
         with transaction.atomic():
             existing = (Lead.objects.select_for_update()
                         .filter(phone_digits=digits, created_at__gte=timezone.now() - DUPLICATE_WINDOW).first())
