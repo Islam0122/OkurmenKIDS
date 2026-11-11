@@ -721,7 +721,7 @@ PUBLIC_NEWS_CACHE_SECONDS = env.int("PUBLIC_NEWS_CACHE_SECONDS", default=120)
 # preview links from the CMS), the server cache, and whether marketing needs
 # a director's / admin's approval to publish. Origins for CORS:
 # PUBLIC_WEBSITE_ORIGINS in cors.py.
-PUBLIC_WEBSITE_URL = env("PUBLIC_WEBSITE_URL", default="")
+PUBLIC_WEBSITE_URL = env("PUBLIC_WEBSITE_URL", default="https://okurmen-public-website.vercel.app")
 PUBLIC_SITE_CACHE_SECONDS = env.int("PUBLIC_SITE_CACHE_SECONDS", default=120)
 WEBSITE_REQUIRE_APPROVAL = env.bool("WEBSITE_REQUIRE_APPROVAL", default=False)
 
