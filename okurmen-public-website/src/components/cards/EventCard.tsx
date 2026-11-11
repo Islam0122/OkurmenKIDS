@@ -1,4 +1,4 @@
-import { MapPin, Ticket } from 'lucide-react'
+import { ArrowRight, Clock, MapPin, Ticket } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Badge } from '@/components/shared/Badge'
@@ -18,7 +18,8 @@ export function PhaseBadge({ phase }: { phase: Event['phase'] }) {
   )
 }
 
-export function EventCard({ event, horizontal }: { event: Event; horizontal?: boolean }) {
+/** `withDetails` (Events page): clock icon for the time and a «Подробнее» footer. Off elsewhere. */
+export function EventCard({ event, horizontal, withDetails }: { event: Event; horizontal?: boolean; withDetails?: boolean }) {
   const { t, path, formatDate } = useI18n()
   const start = new Date(event.starts_at)
   const day = start.getDate()
@@ -41,7 +42,10 @@ export function EventCard({ event, horizontal }: { event: Event; horizontal?: bo
         <h3 className="mt-3 text-lg leading-snug font-extrabold">{event.title}</h3>
         {event.excerpt ? <p className="mt-2 line-clamp-2 text-[15px] text-muted">{event.excerpt}</p> : null}
         <div className="mt-auto space-y-1.5 pt-4 text-sm text-ink-soft">
-          <p><time dateTime={event.starts_at}>{formatDate(event.starts_at, { weekday: 'long', day: 'numeric', month: 'long' })}, {time}</time></p>
+          <p className={cn(withDetails && 'flex items-start gap-1.5')}>
+            {withDetails ? <Clock className="mt-0.5 size-4 shrink-0 text-brand-400" aria-hidden /> : null}
+            <time dateTime={event.starts_at}>{formatDate(event.starts_at, { weekday: 'long', day: 'numeric', month: 'long' })}, {time}</time>
+          </p>
           {event.location || event.branch ? (
             <p className="flex items-center gap-1.5"><MapPin className="size-4 shrink-0 text-brand-400" aria-hidden /><span className="truncate">{event.location ?? event.branch}</span></p>
           ) : null}
@@ -49,6 +53,11 @@ export function EventCard({ event, horizontal }: { event: Event; horizontal?: bo
             <p className="flex items-center gap-1.5 font-bold text-success"><Ticket className="size-4" aria-hidden />{t('events.registrationOpen')}</p>
           ) : null}
         </div>
+        {withDetails ? (
+          <span className="mt-5 inline-flex items-center gap-1.5 border-t border-line pt-4 text-sm font-bold text-brand-700 transition group-hover:text-brand-900">
+            {t('events.details')} <ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden />
+          </span>
+        ) : null}
       </div>
     </Link>
   )
