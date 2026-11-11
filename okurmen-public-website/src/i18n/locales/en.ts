@@ -272,14 +272,15 @@ export const en: Messages = {
   'team.join.open': 'Open positions: {count}',
 
   'testimonials.title': 'Testimonials',
-  'testimonials.subtitle': 'Parents and students talk about learning at Okurmen Kids. Published with the authors’ consent.',
+  'testimonials.heroTitle': 'Our Students’ Success Is Our Pride!',
+  'testimonials.subtitle': 'Every opinion matters to us. Discover genuine feedback from students and parents who chose Okurmen Kids Academy.',
   'testimonials.kind.text': 'Text',
   'testimonials.kind.photo': 'With photo',
   'testimonials.kind.video': 'Video',
   'testimonials.role.parent': 'Parent',
   'testimonials.role.student': 'Student',
   'testimonials.role.graduate': 'Graduate',
-  'testimonials.average': 'Average rating',
+  'testimonials.average': 'Average Rating',
   'testimonials.rating': 'Rated {rating} out of 5',
 
   'contacts.title': 'Contacts',

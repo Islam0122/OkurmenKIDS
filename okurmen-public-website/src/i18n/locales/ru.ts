@@ -271,7 +271,8 @@ export const ru = {
   'team.join.open': 'Открытых вакансий: {count}',
 
   'testimonials.title': 'Отзывы',
-  'testimonials.subtitle': 'Родители и студенты рассказывают об обучении в Okurmen Kids. Публикуем с согласия авторов.',
+  'testimonials.heroTitle': 'Успехи наших учеников\u00a0— наша гордость!',
+  'testimonials.subtitle': 'Каждый отзыв важен для нас. Познакомьтесь с настоящими отзывами учеников и родителей, которые выбрали академию Okurmen Kids.',
   'testimonials.kind.text': 'Текстовые',
   'testimonials.kind.photo': 'С фото',
   'testimonials.kind.video': 'Видео',

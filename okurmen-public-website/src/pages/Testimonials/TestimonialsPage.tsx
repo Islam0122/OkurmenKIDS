@@ -27,9 +27,9 @@ export function TestimonialsPage() {
   return (
     <>
       <Seo title={t('testimonials.title')} description={t('testimonials.subtitle')} jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('testimonials.title'), path: '/testimonials' }])} />
-      <PageHero title={t('testimonials.title')} text={t('testimonials.subtitle')} crumbs={[{ label: t('nav.testimonials') }]}>
+      <PageHero compact title={t('testimonials.heroTitle')} text={t('testimonials.subtitle')} crumbs={[{ label: t('nav.testimonials') }]}>
         {data?.average_rating ? (
-          <p className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 font-bold shadow-soft">
+          <p className="mt-5 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 font-bold shadow-soft sm:mt-6">
             <Star className="size-5 fill-gold-400 text-gold-400" aria-hidden />
             {t('testimonials.average')}: {data.average_rating.toFixed(1)} / 5
           </p>

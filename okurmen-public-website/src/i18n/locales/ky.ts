@@ -273,7 +273,8 @@ export const ky: Messages = {
   'team.join.open': 'Ачык вакансиялар: {count}',
 
   'testimonials.title': 'Пикирлер',
-  'testimonials.subtitle': 'Ата-энелер жана студенттер Okurmen Kids’теги окуу тууралуу айтып беришет. Авторлордун макулдугу менен жарыяланат.',
+  'testimonials.heroTitle': 'Окуучуларыбыздын ийгилиги\u00a0— биздин сыймыгыбыз!',
+  'testimonials.subtitle': 'Ар бир пикир биз үчүн маанилүү. Okurmen Kids академиясында билим алган окуучулардын жана ата-энелердин чыныгы пикирлери менен таанышыңыз.',
   'testimonials.kind.text': 'Текст',
   'testimonials.kind.photo': 'Сүрөт менен',
   'testimonials.kind.video': 'Видео',
