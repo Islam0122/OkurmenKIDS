@@ -1,11 +1,12 @@
 import { Suspense } from 'react'
-import { BarChart3, CalendarRange, ClipboardCheck, Globe, Home, Image, Inbox, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
+import { BarChart3, CalendarRange, ClipboardCheck, FileSpreadsheet, Globe, Home, Image, Inbox, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import logo from '@/assets/logo.png'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { useAuth } from '@/hooks/useAuth'
+import { useSiteMeta } from '@/features/siteCms/api'
 import { ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/utils/cn'
 
@@ -19,6 +20,8 @@ interface NavItem {
   shortLabel?: string
   icon: LucideIcon
   end?: boolean
+  /** Shown only when the server allows bulk import (meta.permissions.can_import). */
+  importOnly?: boolean
 }
 
 /** Разделы кабинета маркетинга. Приход и уход — кнопка в шапке
@@ -44,6 +47,7 @@ export const SITE_NAV: NavItem[] = [
   { to: '/marketing/site', label: 'Сайт', icon: Globe, end: true },
   { to: '/marketing/site/home', label: 'Главная сайта', icon: Home },
   { to: '/marketing/site/media', label: 'Медиатека', icon: Image },
+  { to: '/marketing/site/import', label: 'Массовое заполнение', shortLabel: 'Импорт', icon: FileSpreadsheet, importOnly: true },
   { to: '/marketing/site/leads', label: 'Заявки с сайта', shortLabel: 'Заявки', icon: Inbox },
 ]
 const SALES_ROLES = ['sales_manager', 'rop', 'dop']
@@ -56,7 +60,11 @@ export function MarketingLayout() {
   const { user, logout } = useAuth()
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
   const isMarketing = user?.role === 'marketing'
-  const siteNav = user && SALES_ROLES.includes(user.role) ? SITE_NAV.filter((i) => i.to.endsWith('/leads')) : SITE_NAV
+  const isSales = Boolean(user && SALES_ROLES.includes(user.role))
+  const meta = useSiteMeta(!isSales)
+  const canImport = meta.data?.permissions.can_import === true
+  const siteItems = SITE_NAV.filter((i) => !i.importOnly || canImport)
+  const siteNav = isSales ? SITE_NAV.filter((i) => i.to.endsWith('/leads')) : siteItems
   const sidebar = isMarketing ? [...MARKETING_NAV, ...MARKETING_SIDEBAR_EXTRA] : siteNav
   const mobileNav = isMarketing ? MARKETING_NAV : siteNav
 
@@ -82,7 +90,7 @@ export function MarketingLayout() {
           {isMarketing ? (
             <>
               <p className="px-3 pt-4 pb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">Публичный сайт</p>
-              {SITE_NAV.map((item) => (
+              {siteItems.map((item) => (
                 <NavLink key={item.to} to={item.to} end={item.end}
                   className={({ isActive }) => cn(ROW, isActive ? 'bg-brand-50 text-brand-700' : 'text-ink-secondary hover:bg-surface-hover hover:text-ink')}>
                   <item.icon className="size-[18px] shrink-0" aria-hidden />

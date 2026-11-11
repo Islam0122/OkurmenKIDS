@@ -233,3 +233,18 @@ class EventRegistrationAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(m.ImportBatch)
+class ImportBatchAdmin(admin.ModelAdmin):
+    """Read-only history of bulk imports (the import itself is in the LMS cabinet)."""
+    list_display = ("file_name", "content_type", "status", "created_by", "total_rows", "created_count",
+                    "updated_count", "skipped_count", "failed_count", "created_at")
+    list_filter = ("status", "content_type")
+    readonly_fields = [f.name for f in m.ImportBatch._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

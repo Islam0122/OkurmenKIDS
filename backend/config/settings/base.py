@@ -724,6 +724,8 @@ PUBLIC_NEWS_CACHE_SECONDS = env.int("PUBLIC_NEWS_CACHE_SECONDS", default=120)
 PUBLIC_WEBSITE_URL = env("PUBLIC_WEBSITE_URL", default="https://okurmen-public-website.vercel.app")
 PUBLIC_SITE_CACHE_SECONDS = env.int("PUBLIC_SITE_CACHE_SECONDS", default=120)
 WEBSITE_REQUIRE_APPROVAL = env.bool("WEBSITE_REQUIRE_APPROVAL", default=False)
+# Bulk content import (CMS «Массовое заполнение»): admin and director; marketing only when enabled.
+WEBSITE_IMPORT_ALLOW_MARKETING = env.bool("WEBSITE_IMPORT_ALLOW_MARKETING", default=False)
 
 # ---------------------------------------------------------------------------
 # Учёт прихода и ухода сотрудников по QR-коду (apps.staff_attendance).

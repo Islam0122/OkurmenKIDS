@@ -869,3 +869,57 @@ class Lead(models.Model):
 
     def __str__(self):
         return f"{self.parent_name} ({self.phone})"
+
+
+# ---------------------------------------------------------------------------
+# Bulk content import (content_import/) — history of uploads
+# ---------------------------------------------------------------------------
+
+class ImportBatch(models.Model):
+    """One uploaded file: the rows read and validated on the server
+    (``rows``), and after the import the result of every row (``report``).
+    The file itself is not stored."""
+
+    class ContentType(models.TextChoices):
+        EVENTS = "events", "Мероприятия"
+        ACHIEVEMENTS = "achievements", "Достижения"
+        NEWS = "news", "Новости"
+        MIXED = "mixed", "Несколько типов"
+
+    class Status(models.TextChoices):
+        PREVIEW = "preview", "Проверка"
+        IMPORTING = "importing", "Импортируется"
+        COMPLETED = "completed", "Завершён"
+        PARTIAL = "partial", "Завершён с ошибками"
+        FAILED = "failed", "Ошибка"
+        CANCELLED = "cancelled", "Отменён"
+
+    file_name = models.CharField(max_length=255, verbose_name="Файл")
+    file_size = models.PositiveIntegerField(default=0, verbose_name="Размер, байт")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   related_name="+", verbose_name="Администратор")
+    content_type = models.CharField(max_length=15, choices=ContentType.choices, verbose_name="Тип контента")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PREVIEW, db_index=True,
+                              verbose_name="Статус")
+    total_rows = models.PositiveIntegerField(default=0, verbose_name="Строк в файле")
+    selected_rows = models.PositiveIntegerField(default=0, verbose_name="Выбрано")
+    created_count = models.PositiveIntegerField(default=0, verbose_name="Создано")
+    updated_count = models.PositiveIntegerField(default=0, verbose_name="Обновлено")
+    skipped_count = models.PositiveIntegerField(default=0, verbose_name="Пропущено")
+    failed_count = models.PositiveIntegerField(default=0, verbose_name="С ошибками")
+    rows = models.JSONField(default=list, editable=False, verbose_name="Строки (проверенные)")
+    report = models.JSONField(default=dict, editable=False, verbose_name="Результат по строкам")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Загружен")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Импорт завершён")
+
+    class Meta:
+        verbose_name = "Импорт контента"
+        verbose_name_plural = "Импорт контента"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.file_name} ({self.created_at:%d.%m.%Y %H:%M})" if self.created_at else self.file_name
+
+    @property
+    def imported_count(self) -> int:
+        return self.created_count + self.updated_count

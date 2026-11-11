@@ -62,6 +62,14 @@ def can_manage_leads(user) -> bool:
     return can_edit_site(user) or _role(user) in (User.Role.SALES_MANAGER, User.Role.ROP, User.Role.DOP)
 
 
+def can_import_content(user) -> bool:
+    """Bulk import (content_import/) writes many records at once: admin and
+    director; marketing only with WEBSITE_IMPORT_ALLOW_MARKETING=true."""
+    if is_admin_user(user) or _role(user) == User.Role.DIRECTOR:
+        return True
+    return _role(user) == User.Role.MARKETING and getattr(settings, "WEBSITE_IMPORT_ALLOW_MARKETING", False)
+
+
 def require_approval() -> bool:
     return getattr(settings, "WEBSITE_REQUIRE_APPROVAL", False)
 
@@ -764,6 +772,7 @@ class MetaView(APIView):
             "permissions": {
                 "can_edit": editor,
                 "can_approve": can_approve(request.user),
+                "can_import": can_import_content(request.user),
                 "require_approval": require_approval(),
                 "can_delete_leads": is_admin_user(request.user),
             },

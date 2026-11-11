@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Archive, ExternalLink, Eye, FileText, Plus, Send, Trash2, Undo2, Upload } from 'lucide-react'
 
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -51,6 +52,19 @@ export function ResourcePage({ resource }: { resource: ResourceDef['key'] }) {
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [page, setPage] = useState(1)
   const [editing, setEditing] = useState<Row | null | undefined>(undefined)
+  // ?edit=<id> opens that record (links from the import results).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const editId = Number(searchParams.get('edit')) || null
+  useEffect(() => {
+    if (!editId) return
+    let active = true
+    siteCmsApi.get(resource, editId).then((row) => active && setEditing(row)).catch(() => undefined)
+    return () => { active = false }
+  }, [resource, editId])
+  const closeEditor = () => {
+    setEditing(undefined)
+    if (editId) setSearchParams((p) => { p.delete('edit'); return p }, { replace: true })
+  }
   const params = { search: search || undefined, status: status || undefined, page, page_size: PAGE_SIZE, ...filters }
   const query = useSiteList(resource, params)
   const { rows, count } = toList(query.data)
@@ -110,7 +124,7 @@ export function ResourcePage({ resource }: { resource: ResourceDef['key'] }) {
       )}
 
       {editing !== undefined && meta.data ? (
-        <Editor def={def} row={editing} meta={meta.data} choices={choices} onClose={() => setEditing(undefined)} onSaved={(r) => setEditing(r)} />
+        <Editor def={def} row={editing} meta={meta.data} choices={choices} onClose={closeEditor} onSaved={(r) => setEditing(r)} />
       ) : null}
     </div>
   )

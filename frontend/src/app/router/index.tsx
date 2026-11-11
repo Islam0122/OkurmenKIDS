@@ -646,6 +646,7 @@ export const router = createBrowserRouter([
                   { path: 'site', lazy: async () => ({ Component: (await import('@/features/siteCms/SiteOverviewPage')).SiteOverviewPage }) },
                   { path: 'site/home', lazy: async () => ({ Component: (await import('@/features/siteCms/HomepagePage')).HomepagePage }) },
                   { path: 'site/media', lazy: async () => ({ Component: (await import('@/features/siteCms/MediaLibraryPage')).MediaLibraryPage }) },
+                  { path: 'site/import', lazy: async () => ({ Component: (await import('@/features/siteCms/ContentImportPage')).ContentImportPage }) },
                   { path: 'site/:resource', lazy: async () => ({ Component: (await import('@/features/siteCms/SiteResourceRoute')).SiteResourceRoute }) },
                 ],
               },

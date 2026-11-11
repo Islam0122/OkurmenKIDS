@@ -86,7 +86,7 @@ the same workflow actions and a preview link.
 
 `/marketing/site` (Обзор), `/marketing/site/{courses,news,events,achievements,team,testimonials}`,
 `/marketing/site/home` (главный экран, блоки, контакты, показатели, филиалы,
-баннеры, избранные проекты и новости), `/marketing/site/media`,
+баннеры, избранные проекты и новости), `/marketing/site/media`, `/marketing/site/import` (массовое заполнение, см. docs/content_import.md),
 `/marketing/site/leads`. The «Сайт» section is open to marketing, director and
 admin; «Заявки» also to sales. Code: `frontend/src/features/siteCms/`.
 
@@ -99,6 +99,7 @@ admin; «Заявки» also to sales. Code: `frontend/src/features/siteCms/`.
 | `PUBLIC_SITE_CACHE_SECONDS` | `120` | server cache; any content change clears it at once |
 | `PUBLIC_SITE_RATE` / `PUBLIC_SITE_SUBMIT_RATE` | `1200/hour` / `10/hour` | per-IP limits |
 | `WEBSITE_REQUIRE_APPROVAL` | `false` | marketing → director / admin approval before publishing |
+| `WEBSITE_IMPORT_ALLOW_MARKETING` | `false` | marketing may use the bulk import (admin and director always can) |
 
 ## Not done / possible next steps
 

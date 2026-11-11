@@ -20,7 +20,7 @@ export interface Choice {
 }
 
 export interface SiteMeta {
-  permissions: { can_edit: boolean; can_approve: boolean; require_approval: boolean; can_delete_leads: boolean }
+  permissions: { can_edit: boolean; can_approve: boolean; require_approval: boolean; can_delete_leads: boolean; can_import?: boolean }
   public_site_url: string | null
   choices: Record<string, Choice[]>
   lms?: {
@@ -54,6 +54,7 @@ export const siteCmsApi = {
     apiClient.get<Paginated<Row> | Row[]>(`${BASE}/${resource}/`, { params }).then((r) => r.data),
   save: (resource: string, id: number | null, body: Body) =>
     (id === null ? apiClient.post<Row>(`${BASE}/${resource}/`, payload(body)) : apiClient.patch<Row>(`${BASE}/${resource}/${id}/`, payload(body))).then((r) => r.data),
+  get: (resource: string, id: number) => apiClient.get<Row>(`${BASE}/${resource}/${id}/`).then((r) => r.data),
   remove: (resource: string, id: number) => apiClient.delete(`${BASE}/${resource}/${id}/`).then(() => undefined),
   action: (resource: string, id: number, name: string, body: Body = {}) =>
     apiClient.post<Row>(`${BASE}/${resource}/${id}/${name}/`, body).then((r) => r.data),
@@ -76,8 +77,8 @@ export const siteCmsApi = {
 export const toList = (data: Paginated<Row> | Row[] | undefined): { rows: Row[]; count: number } =>
   !data ? { rows: [], count: 0 } : Array.isArray(data) ? { rows: data, count: data.length } : { rows: data.results, count: data.count }
 
-export function useSiteMeta() {
-  return useQuery({ queryKey: ['site-cms', 'meta'], queryFn: siteCmsApi.meta, staleTime: 5 * 60_000 })
+export function useSiteMeta(enabled = true) {
+  return useQuery({ queryKey: ['site-cms', 'meta'], queryFn: siteCmsApi.meta, staleTime: 5 * 60_000, enabled })
 }
 
 export function useSiteList(resource: string, params: Record<string, unknown>) {
