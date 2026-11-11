@@ -1,65 +1,70 @@
-import { ArrowRight, Briefcase } from 'lucide-react'
+import { ArrowRight, UserRound } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { SmartImage } from '@/components/shared/SmartImage'
 import { useI18n } from '@/i18n'
 import type { TeamMember } from '@/types/api'
 import { cn } from '@/utils/cn'
 
-export function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase()
+/** «Backend, Full-Stack, Python» → ['Backend', 'Full-Stack', 'Python'] */
+export function specializationTags(value: string | null, limit = Infinity): string[] {
+  if (!value) return []
+  return value.split(/\s*[,;·|]\s*/).map((t) => t.trim()).filter(Boolean).slice(0, limit)
 }
 
-/** Placeholder when the photo is not approved for the site: initials on a brand tint (never a fake face). */
-export function TeamPhoto({ member, sizes, className }: { member: TeamMember; sizes?: string; className?: string }) {
+/** Approved photo, or a neutral silhouette placeholder (never a stand-in face). */
+export function TeamPhoto({ member, sizes, className, priority }: { member: TeamMember; sizes?: string; className?: string; priority?: boolean }) {
   return (
     <SmartImage
       image={member.photo}
       alt={member.name}
+      priority={priority}
       sizes={sizes ?? '(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw'}
       className={className}
-      fallback={<span className="font-display text-6xl font-black text-brand-300">{initials(member.name)}</span>}
+      fallback={
+        <span className="flex flex-col items-center gap-2 text-brand-200">
+          <UserRound className="size-20" strokeWidth={1.25} aria-hidden />
+        </span>
+      }
     />
   )
 }
 
 /**
- * A team member from GET /api/v1/public/site/team/ (approved public profiles only).
- * `onOpen` adds the «profile» button (Team page); without it the card is compact (homepage).
+ * A team member from GET /api/v1/public/site/team/ — links to the profile
+ * page /team/:slug. `lead` = the wider leadership card (photo beside text on desktop).
  */
-export function TeamCard({ member, onOpen, layout = 'vertical' }: { member: TeamMember; onOpen?: () => void; layout?: 'vertical' | 'horizontal' }) {
-  const wide = layout === 'horizontal'
-  const { t } = useI18n()
-  const experience = member.experience_years ? t('team.years', { count: member.experience_years }) : null
-  const tag = member.group ? t(`team.group.${member.group}`) : null
-  const body = (
-    <>
-      <div className={cn('relative aspect-[4/5] overflow-hidden bg-gradient-to-br from-brand-100 via-brand-50 to-gold-50', wide && 'md:w-[42%] md:shrink-0')}>
-        <TeamPhoto member={member} sizes={wide ? '(min-width: 768px) 320px, 100vw' : undefined} className="size-full object-top transition duration-700 ease-out group-hover:scale-[1.04]" />
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-brand-950/45 to-transparent opacity-0 transition duration-500 group-hover:opacity-100" />
-        {experience ? (
-          <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-brand-800 shadow-soft backdrop-blur">
-            <Briefcase className="size-3.5 text-gold-500" aria-hidden /> {experience}
-          </span>
-        ) : null}
+export function TeamCard({ member, variant = 'default' }: { member: TeamMember; variant?: 'default' | 'lead' }) {
+  const { t, path } = useI18n()
+  const lead = variant === 'lead'
+  const tags = specializationTags(member.specialization, lead ? 5 : 3)
+  return (
+    <Link
+      to={path(`/team/${member.slug}`)}
+      className={cn(
+        'card group flex h-full w-full flex-col overflow-hidden bg-white transition duration-300 hover:-translate-y-1 hover:border-brand-200 hover:shadow-lift focus-visible:-translate-y-1',
+        lead && 'sm:flex-row',
+      )}
+    >
+      <div className={cn('relative aspect-[4/5] shrink-0 overflow-hidden bg-gradient-to-b from-surface-purple to-brand-50', lead && 'sm:w-[42%]')}>
+        <TeamPhoto member={member} sizes={lead ? '(min-width: 640px) 260px, 100vw' : undefined}
+          className="size-full object-top transition duration-700 ease-out group-hover:scale-[1.04]" />
       </div>
-      <div className={cn('flex flex-1 flex-col p-5 sm:p-6', wide && 'md:justify-center md:p-8 lg:p-10')}>
-        {tag ? <span className="mb-2 self-start rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-bold tracking-wide text-brand-600 uppercase">{tag}</span> : null}
-        <h3 className={cn('leading-tight font-extrabold', wide ? 'text-xl sm:text-2xl' : 'text-lg sm:text-xl')}>{member.name}</h3>
-        <p className="mt-1 text-sm font-bold text-gold-600">{member.position}</p>
-        {member.specialization ? <p className="mt-2 text-sm text-ink-soft">{member.specialization}</p> : null}
-        {onOpen && member.bio ? <p className={cn('mt-3 text-sm leading-relaxed text-muted', wide ? 'line-clamp-6 sm:text-[15px]' : 'line-clamp-3')}>{member.bio}</p> : null}
-        {onOpen ? (
-          <span className={cn('inline-flex items-center gap-1.5 pt-5 text-sm font-bold text-brand-700 transition group-hover:text-brand-900', wide ? 'mt-auto md:mt-1' : 'mt-auto')}>
-            {t('team.details')} <ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden />
-          </span>
+      <div className={cn('flex flex-1 flex-col p-5 sm:p-6', lead && 'sm:justify-center lg:p-8')}>
+        <h3 className={cn('leading-tight font-black tracking-tight text-ink', lead ? 'text-2xl' : 'text-xl')}>{member.name}</h3>
+        <p className={cn('mt-1.5 font-bold text-gold-600', lead ? 'text-base' : 'text-[15px] leading-snug')}>{member.position}</p>
+        {member.bio ? (
+          <p className={cn('mt-3 text-sm leading-6 text-muted', lead ? 'line-clamp-4' : 'line-clamp-3')}>{member.bio}</p>
         ) : null}
+        {tags.length ? (
+          <ul className="mt-4 flex flex-wrap gap-1.5" aria-label={t('team.profile.skills')}>
+            {tags.map((tag) => <li key={tag} className="rounded-md bg-surface-purple px-2 py-0.5 text-xs font-semibold text-brand-700">{tag}</li>)}
+          </ul>
+        ) : null}
+        <span className={cn('inline-flex items-center gap-1.5 pt-5 text-sm font-bold text-brand-700 transition group-hover:text-brand-900', lead ? 'sm:mt-2' : 'mt-auto')}>
+          {t('cta.more')} <ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden />
+        </span>
       </div>
-    </>
-  )
-  const frame = cn('card group flex h-full w-full flex-col overflow-hidden text-left transition duration-300 hover:-translate-y-1 hover:border-brand-200 hover:shadow-lift', wide && 'md:flex-row')
-  return onOpen ? (
-    <button type="button" onClick={onOpen} className={frame} aria-haspopup="dialog">{body}</button>
-  ) : (
-    <article className={frame}>{body}</article>
+    </Link>
   )
 }

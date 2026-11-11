@@ -25,6 +25,7 @@ const pages: RouteObject[] = [
   { path: 'events', lazy: page(() => import('@/pages/Events/EventsPage'), 'EventsPage') },
   { path: 'events/:slug', lazy: page(() => import('@/pages/Events/EventDetailPage'), 'EventDetailPage') },
   { path: 'team', lazy: page(() => import('@/pages/Team/TeamPage'), 'TeamPage') },
+  { path: 'team/:slug', lazy: page(() => import('@/pages/Team/TeamMemberPage'), 'TeamMemberPage') },
   { path: 'testimonials', lazy: page(() => import('@/pages/Testimonials/TestimonialsPage'), 'TestimonialsPage') },
   { path: 'contacts', lazy: page(() => import('@/pages/Contacts/ContactsPage'), 'ContactsPage') },
   { path: 'enroll', element: <Navigate to="../contacts#enroll" replace /> },

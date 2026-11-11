@@ -14,6 +14,7 @@ urlpatterns = [
     path("achievements/", views.AchievementsView.as_view(), name="public-site-achievements"),
     path("achievements/<slug:slug>/", views.AchievementView.as_view(), name="public-site-achievement"),
     path("team/", views.TeamView.as_view(), name="public-site-team"),
+    path("team/<slug:slug>/", views.TeamMemberView.as_view(), name="public-site-team-member"),
     path("testimonials/", views.TestimonialsView.as_view(), name="public-site-testimonials"),
     path("leads/", views.LeadView.as_view(), name="public-site-leads"),
     path("sitemap/", views.SitemapView.as_view(), name="public-site-sitemap"),

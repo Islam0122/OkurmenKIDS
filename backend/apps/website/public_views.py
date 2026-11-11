@@ -141,6 +141,15 @@ class TeamView(PublicView):
         return self.respond(public.team(self.lang))
 
 
+@extend_schema(tags=TAGS, auth=[], parameters=[LANG], responses={200: dict})
+class TeamMemberView(PublicView):
+    def get(self, request, slug: str):
+        record = public.team_member(slug.lower(), self.lang)
+        if record is None:
+            raise NotFound("Профиль не найден.")
+        return self.respond(record)
+
+
 @extend_schema(tags=TAGS, auth=[], responses={200: dict}, parameters=[
     OpenApiParameter("kind", str, enum=["all", "text", "photo", "video"]), OpenApiParameter("page", int),
 ])

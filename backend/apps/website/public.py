@@ -501,33 +501,55 @@ def _member_record(m: TeamMember, lang: str) -> dict:
     photo = None
     if m.photo_approved:
         photo = _image(m.photo) or (_image(teacher.image) if teacher and teacher.image else None)
+    # Only what was entered on the site profile — never a default from the LMS.
     experience = m.experience_years
-    if experience is None and teacher and teacher.experience_years:
-        experience = teacher.experience_years
     specialization = m.specialization
     if not specialization and teacher:
         specialization = ", ".join(s.name for s in teacher.subjects.all())
     return {
         "id": m.pk,
+        "slug": m.slug,
         "name": m.display_name,
         "position": tr(m, "position", lang),
+        # The job title as written in each language (null = not translated).
+        "positions": {"ru": m.position, "ky": m.position_ky or None, "en": m.position_en or None},
         "group": m.group or None,
         "specialization": specialization or None,
         "bio": tr(m, "bio", lang),
         "experience_years": experience or None,
         "photo": photo,
+        "career": lines(tr(m, "career", lang)),
+        "achievements": lines(tr(m, "achievements", lang)),
         "_ts": m.published_at.timestamp(),
     }
 
 
-def team(lang: str) -> dict:
+PROFILE_ONLY = ("career", "achievements")
+
+
+def _team_records(lang: str) -> list[dict]:
     def build():
         qs = (TeamMember.objects.filter(status=Workflow.PUBLISHED)
               .select_related("teacher__user").prefetch_related("teacher__subjects"))
         # A trainer who left the academy (inactive in the LMS) leaves the site too.
         qs = qs.filter(Q(teacher__isnull=True) | Q(teacher__is_active=True, teacher__user__is_active=True))
         return [_member_record(m, lang) for m in qs]
-    return {"results": [_strip(r) for r in _visible(_cached(f"team:{lang}", build))]}
+    return _visible(_cached(f"team:{lang}", build))
+
+
+def team(lang: str) -> dict:
+    return {"results": [{k: v for k, v in _strip(r).items() if k not in PROFILE_ONLY} for r in _team_records(lang)]}
+
+
+def team_member(slug: str, lang: str) -> dict | None:
+    """One public profile (/team/<slug>) with colleagues from the same department."""
+    records = _team_records(lang)
+    record = next((r for r in records if r["slug"] == slug), None)
+    if record is None:
+        return None
+    colleagues = [r for r in records if r["slug"] != slug and record["group"] and r["group"] == record["group"]]
+    card = lambda r: {k: v for k, v in _strip(r).items() if k not in PROFILE_ONLY}  # noqa: E731
+    return {**_strip(record), "colleagues": [card(r) for r in colleagues[:3]]}
 
 
 def _testimonial_record(t: Testimonial) -> dict:
@@ -607,6 +629,7 @@ def sitemap() -> dict:
         "courses": [{"slug": r["slug"], "updated_at": r["updated_at"]} for r in _visible(_courses("ru"))],
         "events": [{"slug": r["slug"], "updated_at": r["updated_at"]} for r in _visible(_events("ru"))],
         "achievements": [{"slug": r["slug"], "updated_at": r["updated_at"]} for r in _visible(_achievements("ru"))],
+        "team": [{"slug": r["slug"], "updated_at": None} for r in _team_records("ru")],
         "news": [{"slug": r["slug"], "updated_at": r["published_at"]} for r in news_public.visible()],
         "projects": [{"slug": r["key"], "updated_at": r["date"]} for r in projects_public.published()],
     }

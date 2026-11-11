@@ -28,6 +28,7 @@ import type {
   SiteSettings,
   SubmitResult,
   TeamMember,
+  TeamMemberDetail,
   Testimonial,
   TestimonialsPage,
 } from '@/types/api'
@@ -150,6 +151,7 @@ const ACHIEVEMENTS: AchievementDetail[] = (['competition', 'award', 'partnership
 
 const TEAM: TeamMember[] = Array.from({ length: 4 }, (_, i) => ({
   id: i + 1,
+  slug: `demo-member-${i + 1}`,
   name: `${DEMO}-тренер ${i + 1}`,
   position: 'Тренер (демо)',
   specialization: ['Python', 'Веб-разработка', 'Game dev', 'Робототехника'][i],
@@ -225,3 +227,7 @@ export const testimonials = (params: ListParams): Promise<TestimonialsPage> =>
   delay({ ...page(TESTIMONIALS, params, 12), counts: { all: TESTIMONIALS.length, text: 3, photo: 0, video: 0 }, average_rating: null })
 export const submit = (): Promise<SubmitResult> => delay({ ok: true, duplicate: false })
 export const vacancies = () => delay({ count: 0, results: [] })
+export const teamMember = (slug: string): Promise<TeamMemberDetail> => {
+  const member = TEAM.find((m) => m.slug === slug)
+  return member ? delay({ ...member, career: [], achievements: [], colleagues: TEAM.filter((m) => m.slug !== slug && m.group === member.group) }) : notFound()
+}

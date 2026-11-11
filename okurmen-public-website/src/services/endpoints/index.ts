@@ -24,6 +24,7 @@ import type {
   SiteSettings,
   SubmitResult,
   TeamMember,
+  TeamMemberDetail,
   TestimonialsPage,
   VacanciesPage,
 } from '@/types/api'
@@ -56,6 +57,8 @@ export const siteApi = {
   achievement: (slug: string) =>
     env.useMocks ? mocked((m) => m.achievement(slug)) : get<AchievementDetail>(`/site/achievements/${slug}/`),
   team: () => (env.useMocks ? mocked((m) => m.team()) : get<{ results: TeamMember[] }>('/site/team/')),
+  teamMember: (slug: string) =>
+    env.useMocks ? mocked((m) => m.teamMember(slug)) : get<TeamMemberDetail>(`/site/team/${slug}/`),
   testimonials: (params: ListParams) =>
     env.useMocks ? mocked((m) => m.testimonials(params)) : get<TestimonialsPage>('/site/testimonials/', { ...params }),
   lead: (body: LeadInput) => (env.useMocks ? mocked((m) => m.submit()) : post<SubmitResult>('/site/leads/', body)),

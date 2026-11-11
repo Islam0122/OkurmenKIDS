@@ -196,7 +196,8 @@ class PrivacyTests(Base):
         item = self.anon.get(f"{PUBLIC}team/").data["results"][0]
         self.assertEqual(item["name"], "aibek Тренеров")
         self.assertIsNone(item["photo"])
-        self.assertEqual(item["experience_years"], 4)
+        # Experience from the LMS record is not published: only what the site profile states.
+        self.assertIsNone(item["experience_years"])
         self.assertNotIn("+996555000000", str(item))
         member.photo_approved = True
         member.save()
@@ -210,6 +211,24 @@ class PrivacyTests(Base):
         TeamMember.objects.create(name="Бермет", position="Менеджер", status=Workflow.PUBLISHED)
         groups = [m["group"] for m in self.anon.get(f"{PUBLIC}team/").data["results"]]
         self.assertEqual(groups, ["it_trainers", None])
+
+    def test_profile_page_by_slug(self):
+        lead = TeamMember.objects.create(name="Хадижа Асангазиева", position="IT-специалист", position_en="IT Specialist",
+                                         group=TeamMember.Group.IT_TRAINERS, career="2023–н.в.: Тренер\n2021–2023: Разработчик",
+                                         achievements="- Программа A", status=Workflow.PUBLISHED)
+        TeamMember.objects.create(name="Нурсултан Караталов", position="Тренер", group=TeamMember.Group.IT_TRAINERS,
+                                  status=Workflow.PUBLISHED)
+        TeamMember.objects.create(name="Черновик", position="—", group=TeamMember.Group.IT_TRAINERS)
+        self.assertEqual(lead.slug, "hadizha-asangazieva")
+        listing = self.anon.get(f"{PUBLIC}team/").data["results"][0]
+        self.assertNotIn("career", listing)
+        r = self.anon.get(f"{PUBLIC}team/{lead.slug}/", {"lang": "en"}).data
+        self.assertEqual(r["position"], "IT Specialist")
+        self.assertEqual(r["positions"], {"ru": "IT-специалист", "ky": None, "en": "IT Specialist"})
+        self.assertEqual(r["career"], ["2023–н.в.: Тренер", "2021–2023: Разработчик"])
+        self.assertEqual(r["achievements"], ["Программа A"])
+        self.assertEqual([c["name"] for c in r["colleagues"]], ["Нурсултан Караталов"])
+        self.assertEqual(self.anon.get(f"{PUBLIC}team/chernovik/").status_code, 404)
 
     def test_testimonial_needs_consent(self):
         Testimonial.objects.create(author_name="Без согласия", text="…", status=Workflow.PUBLISHED, consent=False)

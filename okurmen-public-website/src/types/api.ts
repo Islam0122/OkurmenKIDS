@@ -267,7 +267,11 @@ export type TeamGroup = 'it_trainers' | 'english_trainers' | 'soft_skills_traine
 
 export interface TeamMember {
   id: number
+  /** Profile URL: /team/<slug> */
+  slug: string
   name: string
+  /** The job title as written in each language (null = not translated). */
+  positions?: { ru: string; ky: string | null; en: string | null }
   position: string
   /** Department on the Team page (set in the CMS); null = not assigned. */
   group: TeamGroup | null
@@ -275,6 +279,12 @@ export interface TeamMember {
   bio: string
   experience_years: number | null
   photo: ImageAsset | null
+}
+
+export interface TeamMemberDetail extends TeamMember {
+  career: string[]
+  achievements: string[]
+  colleagues: TeamMember[]
 }
 
 export interface Testimonial {
