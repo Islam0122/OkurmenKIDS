@@ -240,6 +240,11 @@ export const ru = {
   'contacts.address': 'Адрес',
   'contacts.formTitle': 'Записаться на пробный урок',
   'contacts.map': 'Карта',
+  'contacts.heroTitle': 'IT-будущее вашего ребёнка начинается здесь!',
+  'contacts.heroText': 'Познакомьтесь с нашими курсами и выберите подходящее направление для ребёнка. Мы всегда готовы помочь.',
+  'contacts.formText': 'Оставьте свои данные — мы свяжемся с вами и поможем подобрать курс, подходящий вашему ребёнку.',
+  'contacts.channels': 'Свяжитесь с нами',
+  'contacts.branch': 'Где мы находимся',
 
   'form.parentName': 'Имя родителя',
   'form.parentNamePlaceholder': 'Например, Айгуль',

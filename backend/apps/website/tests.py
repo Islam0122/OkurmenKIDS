@@ -163,6 +163,18 @@ class LeadTests(Base):
         self.assertEqual(lead.repeat_count, 1)
         self.assertIn("Ещё вопрос", lead.message)
 
+    def test_single_active_branch_is_attached_automatically(self):
+        only = Branch.objects.create(name="Okurmen Kids", address="Орозбекова, 136")
+        Branch.objects.create(name="Закрыт", address="—", is_active=False)
+        self.assertEqual(self.anon.post(f"{PUBLIC}leads/", self.body(), format="json").status_code, 201)
+        self.assertEqual(Lead.objects.get().branch, only)
+
+    def test_several_branches_leave_the_choice_to_the_visitor(self):
+        Branch.objects.create(name="A", address="a")
+        Branch.objects.create(name="B", address="b")
+        self.anon.post(f"{PUBLIC}leads/", self.body(), format="json")
+        self.assertIsNone(Lead.objects.get().branch)
+
     def test_validation(self):
         r = self.anon.post(f"{PUBLIC}leads/", {"parent_name": "", "phone": "12", "child_age": 1}, format="json")
         self.assertEqual(r.status_code, 400)

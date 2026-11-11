@@ -241,6 +241,11 @@ export const en: Messages = {
   'contacts.address': 'Address',
   'contacts.formTitle': 'Book a trial lesson',
   'contacts.map': 'Map',
+  'contacts.heroTitle': 'Your child’s IT future starts here!',
+  'contacts.heroText': 'Explore our courses and choose the right direction for your child. We are always happy to help.',
+  'contacts.formText': 'Leave your details — we will contact you and help you choose the right course for your child.',
+  'contacts.channels': 'Get in touch',
+  'contacts.branch': 'Where to find us',
 
   'form.parentName': 'Parent’s name',
   'form.parentNamePlaceholder': 'e.g. Aigul',
