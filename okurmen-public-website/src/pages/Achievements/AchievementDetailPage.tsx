@@ -1,16 +1,21 @@
-import { Award, CalendarDays } from 'lucide-react'
-import { useParams } from 'react-router-dom'
+import { ArrowLeft, CalendarDays, Tag, UserRound } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
 
-import { AchievementCard } from '@/components/cards/AchievementCard'
-import { ArticleLayout } from '@/components/layout/ArticleLayout'
-import { CardGrid } from '@/components/sections/CardGrid'
+import { AchievementImage, AchievementShowcaseCard } from '@/components/cards/AchievementShowcaseCard'
+import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
 import { breadcrumbLd, Seo } from '@/components/shared/Seo'
 import { ErrorState, NotFoundState, PageSkeleton } from '@/components/shared/States'
+import { Gallery } from '@/features/content/Gallery'
+import { RichText } from '@/features/content/RichText'
+import { ShareButton } from '@/features/content/ShareButton'
 import { isNotFound, useAchievement } from '@/hooks/queries'
 import { useI18n } from '@/i18n'
 import type { AchievementDetail } from '@/types/api'
+import { cn } from '@/utils/cn'
 import { excerpt } from '@/utils/format'
+
+const CATALOG = 'mx-auto w-[calc(100%-48px)] max-w-[1280px]'
 
 export function AchievementDetailPage() {
   const { slug = '' } = useParams()
@@ -20,8 +25,15 @@ export function AchievementDetailPage() {
   return <AchievementView item={data} />
 }
 
+/** Also used by /preview/<token> (draft from the LMS editor). */
 export function AchievementView({ item, preview }: { item: AchievementDetail; preview?: boolean }) {
-  const { t, formatDate } = useI18n()
+  const { t, path, formatDate } = useI18n()
+  const facts = [
+    { icon: CalendarDays, label: t('achievements.date'), value: formatDate(item.date) },
+    { icon: Tag, label: t('achievements.category'), value: t(`achievements.cat.${item.category}`) },
+    item.recipient ? { icon: UserRound, label: t('achievements.recipient'), value: item.recipient } : null,
+  ].filter(Boolean) as { icon: typeof Tag; label: string; value: string }[]
+
   return (
     <>
       <Seo
@@ -32,30 +44,67 @@ export function AchievementView({ item, preview }: { item: AchievementDetail; pr
         noindex={preview}
         jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('achievements.title'), path: '/achievements' }, { name: item.title, path: `/achievements/${item.slug}` }])}
       />
-      <ArticleLayout
-        preview={preview}
-        title={item.title}
-        lead={item.excerpt}
-        crumbs={[{ label: t('nav.achievements'), to: '/achievements' }, { label: item.title }]}
-        meta={
-          <>
-            <span className="flex items-center gap-1.5"><Award className="size-4 text-gold-500" aria-hidden />{t(`achievements.cat.${item.category}`)}</span>
-            <time dateTime={item.date} className="flex items-center gap-1.5"><CalendarDays className="size-4 text-brand-400" aria-hidden />{formatDate(item.date)}</time>
-          </>
-        }
-        cover={item.cover}
-        body={item.body}
-        photos={item.photos}
-        photosTitle={t('achievements.photos')}
-        related={item.related.length ? (
-          <section className="section bg-surface-soft">
-            <div className="container-page">
-              <SectionHeader title={t('achievements.related')} link={{ to: '/achievements', label: t('cta.allAchievements') }} />
-              <CardGrid items={item.related} keyOf={(a) => a.slug} render={(a) => <AchievementCard item={a} />} />
-            </div>
-          </section>
-        ) : null}
-      />
+
+      {/* Editorial header: the achievement image is the main visual */}
+      <section className="relative overflow-hidden bg-surface-purple">
+        <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 size-80 rounded-full bg-gold-200/40 blur-3xl" />
+        <div className={`${CATALOG} relative grid gap-8 py-8 sm:py-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:gap-12 lg:py-14`}>
+          <div className="lg:order-2">
+            <nav aria-label="breadcrumb" className="mb-4">
+              <Link to={path('/achievements')} className="-ml-2 inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-sm font-bold text-brand-700 hover:bg-white/70 hover:text-brand-900">
+                <ArrowLeft className="size-4" aria-hidden /> {t('achievements.group.all')}
+              </Link>
+            </nav>
+            <h1 className="text-page-title font-black">{item.title}</h1>
+            {item.excerpt ? <p className="mt-4 text-base leading-relaxed text-ink-soft sm:text-lg">{item.excerpt}</p> : null}
+            <dl className="mt-6 grid gap-3 sm:grid-cols-2">
+              {facts.map((f) => (
+                <div key={f.label} className="flex items-center gap-3 rounded-2xl bg-white/85 px-4 py-3 shadow-soft">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600"><f.icon className="size-4" aria-hidden /></span>
+                  <div className="min-w-0">
+                    <dt className="text-xs font-bold tracking-wide text-muted uppercase">{f.label}</dt>
+                    <dd className="font-bold break-words text-ink">{f.value}</dd>
+                  </div>
+                </div>
+              ))}
+            </dl>
+            {!preview ? <div className="mt-6"><ShareButton title={item.title} /></div> : null}
+          </div>
+          <Reveal className="lg:order-1">
+            <figure>
+              <AchievementImage item={item} priority sizes="(min-width: 1024px) 55vw, 100vw"
+                className="aspect-[4/3] rounded-[2rem] shadow-lift ring-8 ring-white" />
+              {item.cover?.caption ? <figcaption className="mt-3 text-center text-sm text-muted">{item.cover.caption}</figcaption> : null}
+            </figure>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* Full story and additional photos */}
+      {item.body || item.photos.length ? (
+        <div className={`${CATALOG} py-10 sm:py-14`}>
+          <article className="mx-auto max-w-3xl">
+            <RichText source={item.body} />
+            {item.photos.length ? (
+              <section className={item.body ? 'mt-12' : ''}>
+                <h2 className="mb-5 text-2xl font-black">{t('achievements.photos')}</h2>
+                <Gallery photos={item.photos} title={item.title} />
+              </section>
+            ) : null}
+          </article>
+        </div>
+      ) : null}
+
+      {item.related.length ? (
+        <section className="border-t border-line bg-surface-soft py-12 sm:py-14">
+          <div className={CATALOG}>
+            <SectionHeader title={t('achievements.related')} link={{ to: '/achievements', label: t('cta.allAchievements') }} />
+            <ul className={cn('grid grid-cols-1 gap-6', item.related.length === 3 ? 'md:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+              {item.related.map((a) => <li key={a.slug} className="min-w-0"><AchievementShowcaseCard item={a} /></li>)}
+            </ul>
+          </div>
+        </section>
+      ) : null}
     </>
   )
 }

@@ -248,6 +248,8 @@ export interface AchievementCard {
   cover: ImageAsset | null
   photo_count: number
   is_featured: boolean
+  /** Student or organisation, when the academy published one. */
+  recipient?: string | null
 }
 
 export interface AchievementDetail extends AchievementCard {

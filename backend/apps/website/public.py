@@ -432,7 +432,7 @@ def upcoming_events(lang: str, limit: int = 3) -> list[dict]:
 # Achievements
 # ---------------------------------------------------------------------------
 
-ACHIEVEMENT_CARD = ("slug", "title", "excerpt", "category", "date", "cover", "photo_count", "is_featured")
+ACHIEVEMENT_CARD = ("slug", "title", "excerpt", "category", "date", "cover", "photo_count", "is_featured", "recipient")
 
 
 def _achievement_record(item: Achievement, lang: str) -> dict:
@@ -444,6 +444,7 @@ def _achievement_record(item: Achievement, lang: str) -> dict:
         "excerpt": tr(item, "excerpt", lang),
         "body": tr(item, "body", lang),
         "category": item.category,
+        "recipient": item.recipient or None,
         "date": item.date.isoformat(),
         "cover": cover,
         "photos": photos,
@@ -467,11 +468,13 @@ def achievements(lang: str, *, category="", page=None, page_size=None) -> dict:
     counts = {"all": len(records), **{c: 0 for c in Achievement.Category.values}}
     for r in records:
         counts[r["category"]] += 1
-    category = (category or "").strip().lower()
-    if category and category != "all":
-        if category not in Achievement.Category.values:
-            raise ValidationError({"category": f"Одно из: all, {', '.join(Achievement.Category.values)}."})
-        records = [r for r in records if r["category"] == category]
+    # One category or several, comma-separated (the site groups e.g. award,certificate,recognition).
+    wanted = {c.strip() for c in (category or "").lower().split(",") if c.strip() and c.strip() != "all"}
+    if wanted:
+        unknown = wanted - set(Achievement.Category.values)
+        if unknown:
+            raise ValidationError({"category": f"Одно или несколько через запятую из: all, {', '.join(Achievement.Category.values)}."})
+        records = [r for r in records if r["category"] in wanted]
     return {**_page(records, page, page_size, ACHIEVEMENT_CARD), "counts": counts}
 
 
