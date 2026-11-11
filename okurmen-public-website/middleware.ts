@@ -19,6 +19,7 @@ const DETAIL: Record<string, { api: (slug: string) => string; title: (d: any) =>
   achievements: { api: (s) => `/api/v1/public/site/achievements/${s}/`, title: (d) => d.title, text: (d) => d.excerpt || d.body, image: (d) => d.cover?.url },
   news: { api: (s) => `/api/v1/public/news/${s}/`, title: (d) => d.title, text: (d) => d.excerpt || d.body, image: (d) => d.cover?.url },
   projects: { api: (s) => `/api/v1/public/projects/${s}/`, title: (d) => d.title, text: (d) => d.short_description || d.description, image: (d) => d.cover_url },
+  team: { api: (s) => `/api/v1/public/site/team/${s}/`, title: (d) => `${d.name} — ${d.position}`, text: (d) => d.bio || d.position, image: (d) => d.photo?.url },
 }
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -28,7 +29,7 @@ const next = () => new Response(null, { headers: { 'x-middleware-next': '1' } })
 export default async function middleware(request: Request): Promise<Response> {
   if (!BOTS.test(request.headers.get('user-agent') || '')) return next()
   const url = new URL(request.url)
-  const match = url.pathname.match(/^(?:\/(ky|en))?\/(courses|events|achievements|news|projects)\/([a-z0-9-]+)\/?$/i)
+  const match = url.pathname.match(/^(?:\/(ky|en))?\/(courses|events|achievements|news|projects|team)\/([a-z0-9-]+)\/?$/i)
   const api = (process.env.VITE_API_URL || '').replace(/\/+$/, '')
   if (!match || !api) return next()
   const [, lang = 'ru', section, slug] = match

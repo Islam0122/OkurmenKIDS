@@ -1,42 +1,38 @@
-import { ArrowUpRight, Briefcase, MessageCircle, Users } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ArrowRight, ArrowUpRight, BookOpen, Briefcase, MessageCircle, Users } from 'lucide-react'
+import { useMemo } from 'react'
 
+import { env } from '@/app/config/env'
 import { TeamCard } from '@/components/cards/TeamCard'
-import { TeamMemberDialog } from '@/components/cards/TeamMemberDialog'
 import { ButtonLink } from '@/components/shared/Button'
-import { FilterChips } from '@/components/shared/FilterChips'
 import { PageHero } from '@/components/shared/PageHero'
 import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
 import { breadcrumbLd, Seo } from '@/components/shared/Seo'
 import { CardSkeletons, ErrorState } from '@/components/shared/States'
-import { env } from '@/app/config/env'
 import { Gallery } from '@/features/content/Gallery'
-import { EnrollButton } from '@/features/enrollment/EnrollButton'
 import { useAchievements, useEvents, useOpenVacancies, useTeam } from '@/hooks/queries'
-import { useListParams } from '@/hooks/useListParams'
-import { useI18n } from '@/i18n'
+import { useI18n, type MessageKey } from '@/i18n'
 import type { ImageAsset, TeamGroup, TeamMember } from '@/types/api'
 import { cn } from '@/utils/cn'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
 
-/** Display order of departments; only those with published members are shown. */
-const GROUPS: TeamGroup[] = ['management', 'it_trainers', 'english_trainers', 'soft_skills_trainers', 'administration']
+/** Organisational order on the page. Sections come from each profile's department in the CMS. */
+const ORDER: TeamGroup[] = ['management', 'it_trainers', 'soft_skills_trainers', 'english_trainers', 'administration']
+
+interface Section {
+  key: TeamGroup | 'other'
+  members: TeamMember[]
+}
 
 export function TeamPage() {
   const { t } = useI18n()
   const team = useTeam()
   const members = useMemo(() => team.data?.results ?? [], [team.data])
-  const { params, update } = useListParams(['group'])
-  const [open, setOpen] = useState<TeamMember | null>(null)
-
-  const present = GROUPS.filter((g) => members.some((m) => m.group === g))
-  const group = present.includes(params.group as TeamGroup) ? (params.group as TeamGroup) : 'all'
-  const shown = group === 'all' ? members : members.filter((m) => m.group === group)
-  const chips = [
-    { value: 'all', label: t('filter.all'), count: members.length },
-    ...present.map((g) => ({ value: g, label: t(`team.group.${g}`), count: members.filter((m) => m.group === g).length })),
-  ]
+  const sections = useMemo<Section[]>(() => {
+    const list: Section[] = ORDER.map((key) => ({ key, members: members.filter((m) => m.group === key) }))
+    list.push({ key: 'other', members: members.filter((m) => !m.group) })
+    return list.filter((s) => s.members.length)
+  }, [members])
 
   return (
     <>
@@ -44,7 +40,7 @@ export function TeamPage() {
         title={t('team.heroTitle')}
         description={t('team.heroText')}
         jsonLd={[
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('team.heroTitle'), path: '/team' }]),
+          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('nav.team'), path: '/team' }]),
           ...(members.length
             ? [{
                 '@context': 'https://schema.org',
@@ -55,64 +51,60 @@ export function TeamPage() {
                   '@type': 'Person',
                   name: m.name,
                   jobTitle: m.position,
+                  url: absoluteUrl(`/team/${m.slug}`),
                   ...(m.photo ? { image: absoluteUrl(mediaUrl(m.photo.url) ?? '') } : {}),
                 })),
               }]
             : []),
         ]}
       />
-      <PageHero compact title={t('team.heroTitle')} crumbs={[{ label: t('nav.team') }]}>
-        <p className="mt-3 max-w-2xl font-display text-lg font-extrabold text-brand-700 sm:text-xl">{t('team.heroSubtitle')}</p>
-        <p className="mt-2 max-w-2xl text-base text-ink-soft sm:text-lg">{t('team.heroText')}</p>
-      </PageHero>
+      <PageHero compact title={t('team.heroTitle')} text={t('team.heroText')} crumbs={[{ label: t('nav.team') }]} />
 
-      <section className="container-page pt-8 pb-2 sm:pt-12">
-        {team.isPending ? (
-          <CardSkeletons count={3} aspect="aspect-[4/5]" />
-        ) : team.isError ? (
-          <ErrorState error={team.error} onRetry={() => team.refetch()} />
-        ) : members.length ? (
-          <>
-            {present.length > 1 ? (
-              <div className="mb-8"><FilterChips chips={chips} value={group} onChange={(v) => update({ group: v })} label={t('team.heroTitle')} /></div>
-            ) : null}
-            <TeamGrid members={shown} onOpen={setOpen} />
-          </>
-        ) : (
-          <TeamEmpty />
-        )}
-      </section>
+      {team.isPending ? (
+        <div className="container-page py-10"><CardSkeletons count={3} aspect="aspect-[4/5]" /></div>
+      ) : team.isError ? (
+        <div className="container-page py-10"><ErrorState error={team.error} onRetry={() => team.refetch()} /></div>
+      ) : sections.length ? (
+        sections.map((section, index) => <TeamSection key={section.key} section={section} index={index} />)
+      ) : (
+        <div className="container-page py-10"><TeamEmpty /></div>
+      )}
 
       <TeamGallery />
-      <JoinCta />
-      <TeamMemberDialog member={open} onClose={() => setOpen(null)} />
+      <TeamCta />
     </>
   )
 }
 
-/**
- * Layout follows the number of people, so a small team never looks unfinished:
- * 1 → a centred horizontal profile card; 2 → two balanced columns;
- * 3+ → three per row on desktop, and an incomplete last row is centred.
- */
-function TeamGrid({ members, onOpen }: { members: TeamMember[]; onOpen: (member: TeamMember) => void }) {
-  if (members.length === 1) {
-    const [member] = members
-    return (
-      <Reveal className="mx-auto max-w-3xl">
-        <TeamCard member={member} layout="horizontal" onOpen={() => onOpen(member)} />
-      </Reveal>
-    )
-  }
-  const item = members.length === 2 ? 'w-full sm:w-[calc(50%-0.75rem)]' : 'w-full sm:w-[calc(50%-0.75rem)] lg:w-[calc(33.333%-1rem)]'
+/** Leadership on a soft purple band with wide cards; departments on white with a 3-column grid. */
+function TeamSection({ section, index }: { section: Section; index: number }) {
+  const { t } = useI18n()
+  const lead = section.key === 'management'
+  const text = section.key === 'other' ? undefined : t(`team.sectionText.${section.key}` as MessageKey)
+  const number = String(index + 1).padStart(2, '0')
   return (
-    <ul className={cn('mx-auto flex flex-wrap justify-center gap-6', members.length === 2 && 'max-w-4xl')}>
-      {members.map((member, i) => (
-        <Reveal as="li" key={member.id} delay={Math.min(i, 6) * 0.06} className={item}>
-          <TeamCard member={member} onOpen={() => onOpen(member)} />
+    <section aria-labelledby={`team-${section.key}`} className={cn(lead ? 'bg-surface-purple/70' : index > 0 && 'border-t border-line', 'py-12 sm:py-14')}>
+      <div className="container-page">
+        <Reveal className="mb-8 flex flex-col gap-3 sm:mb-10 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-2xl">
+            <p className="mb-3 flex items-center gap-2 text-sm font-bold text-gold-600">
+              <span className="font-display tabular-nums">{number}</span>
+              <span className="h-px w-8 bg-gold-400" aria-hidden />
+              <span className="flex items-center gap-1.5 text-muted"><Users className="size-4" aria-hidden />{section.members.length}</span>
+            </p>
+            <h2 id={`team-${section.key}`} className="text-3xl leading-tight font-black sm:text-4xl">{t(`team.section.${section.key}` as MessageKey)}</h2>
+            {text ? <p className="mt-2 text-base text-muted sm:text-lg">{text}</p> : null}
+          </div>
         </Reveal>
-      ))}
-    </ul>
+        <ul className={cn('grid gap-6', lead ? 'lg:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+          {section.members.map((member, i) => (
+            <Reveal as="li" key={member.id} delay={Math.min(i, 6) * 0.06} className="min-w-0">
+              <TeamCard member={member} variant={lead ? 'lead' : 'default'} />
+            </Reveal>
+          ))}
+        </ul>
+      </div>
+    </section>
   )
 }
 
@@ -138,42 +130,45 @@ function TeamGallery() {
   const photos = [...(events.data?.results ?? []).map((e) => e.cover), ...(achievements.data?.results ?? []).map((a) => a.cover)]
     .filter((p): p is ImageAsset => Boolean(p))
   if (photos.length < 3) return null
-  // 3 photos = one row; 6 = a large photo + 5 (three full rows). No half-empty rows.
   const shown = photos.slice(0, photos.length >= 6 ? 6 : 3)
   return (
-    <section className="bg-surface-soft py-12 sm:py-16">
+    <section className="border-t border-line bg-surface-soft py-12 sm:py-14">
       <div className="container-page">
-        <SectionHeader title={t('team.gallery.title')} text={t('team.gallery.text')}/>
+        <SectionHeader title={t('team.gallery.title')} text={t('team.gallery.text')} />
         <Gallery photos={shown} title={t('team.gallery.title')} />
       </div>
     </section>
   )
 }
 
-/** Compact CTA: the existing careers site (apps.recruitment) when configured, otherwise enrollment. */
-function JoinCta() {
+/** Recruitment only while there are open vacancies (apps.recruitment); otherwise invite parents to the academy. */
+function TeamCta() {
   const { t } = useI18n()
   const careers = env.careersUrl
   const vacancies = useOpenVacancies(Boolean(careers))
   const open = vacancies.data?.count ?? 0
-  // The join CTA only while the recruitment API answers; otherwise the enrollment CTA.
-  const recruiting = Boolean(careers) && !vacancies.isError
+  const recruiting = Boolean(careers) && open > 0
   return (
     <section className="container-page py-10 sm:py-12">
       <Reveal>
-        <div className="flex flex-col gap-5 rounded-3xl bg-brand-800 px-6 py-7 text-white sm:px-8 md:flex-row md:items-center md:justify-between lg:px-10">
+        <div className="flex flex-col gap-5 rounded-3xl bg-brand-800 px-6 py-7 text-white sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-10">
           <div className="flex gap-4">
-            <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-gold-400 text-brand-900 sm:grid"><Briefcase className="size-6" aria-hidden /></span>
+            <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-gold-400 text-brand-900 sm:grid">
+              {recruiting ? <Briefcase className="size-6" aria-hidden /> : <BookOpen className="size-6" aria-hidden />}
+            </span>
             <div>
-              <h2 className="text-2xl font-black text-white sm:text-[1.75rem]">{recruiting ? t('team.join.title') : t('home.cta.title')}</h2>
-              <p className="mt-1.5 max-w-xl text-white/80">{recruiting ? t('team.join.text') : t('home.cta.text')}</p>
-              {recruiting && open > 0 ? <p className="mt-2 text-sm font-bold text-gold-300">{t('team.join.open', { count: open })}</p> : null}
+              <h2 className="text-2xl font-black text-white sm:text-[1.75rem]">{recruiting ? t('team.join.title') : t('team.discover.title')}</h2>
+              <p className="mt-1.5 max-w-xl text-white/80">{recruiting ? t('team.join.text') : t('team.discover.text')}</p>
+              {recruiting ? <p className="mt-2 text-sm font-bold text-gold-300">{t('team.join.open', { count: open })}</p> : null}
             </div>
           </div>
           {recruiting ? (
-            <ButtonLink to={careers} size="lg" className="w-full md:w-auto">{t('team.join.cta')} <ArrowUpRight className="size-5" aria-hidden /></ButtonLink>
+            <ButtonLink to={careers} size="lg" className="w-full sm:w-auto">{t('team.join.cta')} <ArrowUpRight className="size-5" aria-hidden /></ButtonLink>
           ) : (
-            <EnrollButton size="lg" className="w-full md:w-auto" />
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <ButtonLink to="/courses" size="lg">{t('cta.courses')} <ArrowRight className="size-5" aria-hidden /></ButtonLink>
+              <ButtonLink to="/about" size="lg" variant="light">{t('nav.about')}</ButtonLink>
+            </div>
           )}
         </div>
       </Reveal>

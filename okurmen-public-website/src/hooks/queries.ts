@@ -56,6 +56,11 @@ export function useTeam() {
   return useQuery({ queryKey: ['team', lang], queryFn: siteApi.team, retry: notFoundNoRetry })
 }
 
+export function useTeamMember(slug: string) {
+  const { lang } = useI18n()
+  return useQuery({ queryKey: ['team-member', slug, lang], queryFn: () => siteApi.teamMember(slug), retry: notFoundNoRetry })
+}
+
 export function useTestimonials(params: ListParams) {
   return useQuery({ queryKey: ['testimonials', params], queryFn: () => siteApi.testimonials(params), placeholderData: keepPreviousData, retry: notFoundNoRetry })
 }

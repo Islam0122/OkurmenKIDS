@@ -462,6 +462,8 @@ class TeamMember(Publishable):
 
     teacher = models.OneToOneField("users.Teacher", on_delete=models.SET_NULL, null=True, blank=True,
                                    related_name="site_profile", verbose_name="Тренер в LMS")
+    slug = models.SlugField(max_length=220, unique=True, blank=True, verbose_name="Адрес профиля (slug)",
+                            help_text="/team/<slug>. Пусто — из имени.")
     group = models.CharField(max_length=24, choices=Group.choices, blank=True, db_index=True,
                              verbose_name="Отдел на сайте",
                              help_text="Раздел страницы «Команда». Пусто — без раздела.")
@@ -475,6 +477,14 @@ class TeamMember(Publishable):
     bio = models.TextField(blank=True, verbose_name="О себе")
     bio_ky = models.TextField(blank=True, verbose_name="О себе (кыргызча)")
     bio_en = models.TextField(blank=True, verbose_name="О себе (English)")
+    career = models.TextField(blank=True, verbose_name="Карьера",
+                              help_text="Одна строка — одно место работы: «2022–н.в.: Тренер, Okurmen Kids».")
+    career_ky = models.TextField(blank=True, verbose_name="Карьера (кыргызча)")
+    career_en = models.TextField(blank=True, verbose_name="Карьера (English)")
+    achievements = models.TextField(blank=True, verbose_name="Международные программы и достижения",
+                                    help_text="Одна строка — одна программа, сертификат или награда. Только подтверждённые.")
+    achievements_ky = models.TextField(blank=True, verbose_name="Программы и достижения (кыргызча)")
+    achievements_en = models.TextField(blank=True, verbose_name="Программы и достижения (English)")
     experience_years = models.PositiveSmallIntegerField(null=True, blank=True, validators=[MaxValueValidator(60)],
                                                         verbose_name="Опыт (лет)",
                                                         help_text="Пусто — опыт из LMS (если указан) или не показывается.")
@@ -498,6 +508,11 @@ class TeamMember(Publishable):
         if self.teacher_id:
             return self.teacher.user.get_full_name()
         return ""
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = unique_slug(TeamMember, self.display_name or "team", exclude_pk=self.pk)
+        super().save(*args, **kwargs)
 
     def clean(self):
         if not self.name and not self.teacher_id:

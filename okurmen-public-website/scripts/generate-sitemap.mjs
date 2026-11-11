@@ -48,6 +48,7 @@ if (api) {
     add(data.news, '/news', '0.7')
     add(data.projects, '/projects', '0.6')
     add(data.achievements, '/achievements', '0.6')
+    add(data.team, '/team', '0.5')
     console.log(`[sitemap] ${entries.length - STATIC.length} content pages from the API`)
   } catch (error) {
     console.warn(`[sitemap] API unreachable (${error.message}) — static pages only.`)
