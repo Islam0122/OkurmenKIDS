@@ -6,7 +6,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import { useI18n } from '@/i18n'
 import { ApiError } from '@/services/api/client'
-import { newsApi, projectsApi, siteApi, type ListParams } from '@/services/endpoints'
+import { careersApi, newsApi, projectsApi, siteApi, type ListParams } from '@/services/endpoints'
 
 const notFoundNoRetry = (count: number, error: unknown) =>
   !(error instanceof ApiError && (error.kind === 'not_found' || error.kind === 'config' || error.kind === 'validation')) && count < 2
@@ -82,3 +82,8 @@ export function usePreview(token: string) {
 }
 
 export const isNotFound = (error: unknown) => error instanceof ApiError && error.kind === 'not_found'
+
+/** Open vacancies of the existing careers site — only to show the «join the team» CTA honestly. */
+export function useOpenVacancies(enabled: boolean) {
+  return useQuery({ queryKey: ['vacancies-count'], queryFn: careersApi.vacancies, enabled, staleTime: 10 * 60_000, retry: false })
+}

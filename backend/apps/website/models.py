@@ -453,8 +453,18 @@ class TeamMember(Publishable):
     site only through one of these; the photo is shown only with
     `photo_approved`."""
 
+    class Group(models.TextChoices):
+        IT_TRAINERS = "it_trainers", "IT-тренеры"
+        ENGLISH_TRAINERS = "english_trainers", "Тренеры английского"
+        SOFT_SKILLS_TRAINERS = "soft_skills_trainers", "Тренеры Soft Skills"
+        MANAGEMENT = "management", "Руководство"
+        ADMINISTRATION = "administration", "Администрация"
+
     teacher = models.OneToOneField("users.Teacher", on_delete=models.SET_NULL, null=True, blank=True,
                                    related_name="site_profile", verbose_name="Тренер в LMS")
+    group = models.CharField(max_length=24, choices=Group.choices, blank=True, db_index=True,
+                             verbose_name="Отдел на сайте",
+                             help_text="Раздел страницы «Команда». Пусто — без раздела.")
     name = models.CharField(max_length=120, blank=True, verbose_name="Имя на сайте",
                             help_text="Пусто — имя и фамилия тренера из LMS.")
     position = models.CharField(max_length=120, verbose_name="Должность")

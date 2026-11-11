@@ -25,6 +25,7 @@ import type {
   SubmitResult,
   TeamMember,
   TestimonialsPage,
+  VacanciesPage,
 } from '@/types/api'
 
 export interface ListParams {
@@ -69,4 +70,10 @@ export const projectsApi = {
   list: (params: ListParams) =>
     env.useMocks ? mocked((m) => m.projects(params)) : get<ProjectsPage>('/projects/', { ...params }),
   detail: (key: string) => (env.useMocks ? mocked((m) => m.project(key)) : get<ProjectDetail>(`/projects/${key}/`)),
+}
+
+/** The existing public careers API (apps.recruitment) — only the number of open vacancies is used. */
+export const careersApi = {
+  vacancies: () =>
+    env.useMocks ? mocked((m) => m.vacancies()) : get<VacanciesPage>('/careers/vacancies/', { page_size: 1 }),
 }

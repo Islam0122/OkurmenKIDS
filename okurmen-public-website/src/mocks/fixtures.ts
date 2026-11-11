@@ -153,6 +153,7 @@ const TEAM: TeamMember[] = Array.from({ length: 4 }, (_, i) => ({
   name: `${DEMO}-тренер ${i + 1}`,
   position: 'Тренер (демо)',
   specialization: ['Python', 'Веб-разработка', 'Game dev', 'Робототехника'][i],
+  group: (['it_trainers', 'it_trainers', 'english_trainers', 'management'] as const)[i],
   bio: 'Демонстрационная биография.',
   experience_years: null,
   photo: null,
@@ -221,3 +222,4 @@ export const team = () => delay({ results: TEAM })
 export const testimonials = (params: ListParams): Promise<TestimonialsPage> =>
   delay({ ...page(TESTIMONIALS, params, 12), counts: { all: TESTIMONIALS.length, text: 3, photo: 0, video: 0 }, average_rating: null })
 export const submit = (): Promise<SubmitResult> => delay({ ok: true, duplicate: false })
+export const vacancies = () => delay({ count: 0, results: [] })

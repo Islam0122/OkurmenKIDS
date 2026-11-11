@@ -511,6 +511,7 @@ def _member_record(m: TeamMember, lang: str) -> dict:
         "id": m.pk,
         "name": m.display_name,
         "position": tr(m, "position", lang),
+        "group": m.group or None,
         "specialization": specialization or None,
         "bio": tr(m, "bio", lang),
         "experience_years": experience or None,
