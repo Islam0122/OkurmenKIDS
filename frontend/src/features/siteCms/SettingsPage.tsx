@@ -2,10 +2,9 @@ import { CheckCircle2, ChevronRight, ExternalLink, ShieldCheck } from 'lucide-re
 import { Link, Navigate, NavLink, useParams } from 'react-router-dom'
 
 import { ErrorState } from '@/components/ui/ErrorState'
-import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { useSiteMeta, useSiteOverview, useSiteSettings, type ContentSummary, type Overview } from './api'
+import { useSiteMeta, useSiteOverview, useSiteSettings, type ContentSummary, type Overview, cmsErrorMessage } from './api'
 import { SettingsForm, type SettingField } from './SettingsForm'
 import { ISSUE_LABEL, RESOURCES, type ResourceDef } from './schema'
 import { CMS_BASE, CmsPage, editorPath, linkButton, ListSkeleton, Panel, StatusBadge } from './ui'
@@ -82,7 +81,6 @@ function SeoTab() {
 function MetadataTab() {
   const overview = useSiteOverview()
   const settings = useSiteSettings()
-  const items = (overview.data?.attention ?? []).filter((r) => r.issues.includes('seo'))
   return (
     <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-2">
@@ -98,12 +96,7 @@ function MetadataTab() {
         </Panel>
       </div>
       <Panel title="SEO материалов" description="Сколько материалов заполнили SEO title и description" bodyClassName="p-0">
-        {overview.isPending ? <div className="p-4"><ListSkeleton rows={4} thumb={false} /></div> : overview.isError ? <ErrorState message={extractErrorMessage(overview.error)} /> : (
-          <>
-            <Coverage overview={overview.data!} metric="seo" />
-            <IssueList rows={items} empty="У всех материалов заполнено SEO." />
-          </>
-        )}
+        <QualityReport query={overview} metric="seo" issues={['seo']} empty="У всех материалов заполнено SEO." />
       </Panel>
     </div>
   )
@@ -111,7 +104,6 @@ function MetadataTab() {
 
 function LanguagesTab() {
   const overview = useSiteOverview()
-  const items = (overview.data?.attention ?? []).filter((r) => r.issues.includes('ky') || r.issues.includes('en'))
   return (
     <div className="space-y-5">
       <Panel title="Языки сайта">
@@ -127,18 +119,29 @@ function LanguagesTab() {
         <p className="mt-3 text-xs text-ink-muted">Переводы заполняются в редакторе каждого материала — переключатель RU / KG / EN над текстом.</p>
       </Panel>
       <Panel title="Полнота переводов" bodyClassName="p-0">
-        {overview.isPending ? <div className="p-4"><ListSkeleton rows={4} thumb={false} /></div> : overview.isError ? <ErrorState message={extractErrorMessage(overview.error)} /> : (
-          <>
-            <Coverage overview={overview.data!} metric="lang" />
-            <IssueList rows={items} empty="Все материалы переведены на KG и EN." filter={['ky', 'en']} />
-          </>
-        )}
+        <QualityReport query={overview} metric="lang" issues={['ky', 'en']} empty="Все материалы переведены на KG и EN." />
       </Panel>
     </div>
   )
 }
 
-function Coverage({ overview, metric }: { overview: Overview; metric: 'seo' | 'lang' }) {
+/** Coverage table + the materials to fix, in every state of the overview request. */
+function QualityReport({ query, metric, issues, empty }: { query: ReturnType<typeof useSiteOverview>; metric: 'seo' | 'lang'; issues: string[]; empty: string }) {
+  if (query.isPending) return <div className="p-4"><ListSkeleton rows={4} thumb={false} /></div>
+  if (query.isError) return <ErrorState message={cmsErrorMessage(query.error)} onRetry={() => query.refetch()} />
+  const { coverage, attention } = query.data
+  if (!coverage || !attention) {
+    return <p className="px-5 py-8 text-center text-sm text-ink-muted">Сервер пока не передаёт отчёт о заполнении — он появится после обновления сервера.</p>
+  }
+  return (
+    <>
+      <Coverage coverage={coverage} metric={metric} />
+      <IssueList rows={attention.filter((r) => r.issues.some((i) => issues.includes(i)))} empty={empty} filter={issues} />
+    </>
+  )
+}
+
+function Coverage({ coverage, metric }: { coverage: NonNullable<Overview['coverage']>; metric: 'seo' | 'lang' }) {
   const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 100)
   const bar = (n: number, total: number) => (
     <span className="flex items-center gap-2">
@@ -146,14 +149,15 @@ function Coverage({ overview, metric }: { overview: Overview; metric: 'seo' | 'l
       <span className="text-xs text-ink-secondary tabular-nums">{n}/{total}</span>
     </span>
   )
-  const types = metric === 'lang' ? TYPES.filter((t) => t !== 'testimonials') : TYPES.filter((t) => t !== 'testimonials')
+  const types = TYPES.filter((t) => t !== 'testimonials')
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead><tr className="border-b border-border text-left text-xs text-ink-muted"><th className="px-5 py-2 font-medium">Раздел</th>{metric === 'lang' ? <><th className="px-3 py-2 font-medium">KG</th><th className="px-3 py-2 font-medium">EN</th></> : <th className="px-3 py-2 font-medium">SEO заполнено</th>}</tr></thead>
         <tbody className="divide-y divide-border">
           {types.map((t) => {
-            const c = overview.coverage[t] ?? { total: 0, ky: 0, en: 0, seo: 0 }
+            const c = coverage[t]
+            if (!c) return null
             return (
               <tr key={t}>
                 <td className="px-5 py-2.5"><Link to={`${CMS_BASE}/${t}`} className="font-medium text-ink hover:text-brand-600">{RESOURCES[t].title}</Link></td>

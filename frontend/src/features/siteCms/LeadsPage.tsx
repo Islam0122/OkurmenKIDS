@@ -17,7 +17,7 @@ import { apiClient } from '@/api/client'
 import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { siteCmsApi, toList, useSiteInvalidate, useSiteList, useSiteMeta, type Choice, type Row, type SiteMeta } from './api'
+import { siteCmsApi, toList, useSiteInvalidate, useSiteList, useSiteMeta, type Choice, type Row, type SiteMeta, cmsErrorMessage } from './api'
 import { CMS_BASE, CmsPage, formatDate, ListSkeleton, relativeTime, Skeleton } from './ui'
 
 const PAGE_SIZE = 30
@@ -128,7 +128,7 @@ function LeadInbox() {
         </div>
       </div>
 
-      {query.isPending ? <ListSkeleton rows={6} thumb={false} /> : query.isError ? <ErrorState message={extractErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
+      {query.isPending ? <ListSkeleton rows={6} thumb={false} /> : query.isError ? <ErrorState message={cmsErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
         <>
           <div className="hidden overflow-x-auto rounded-2xl border border-border bg-surface lg:block">
             <table className="w-full text-sm">
@@ -331,7 +331,7 @@ function RegistrationInbox() {
         <div className="sm:w-72"><SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Имя или телефон" /></div>
         <div className="sm:w-52"><Select aria-label="Статус" value={status} placeholder="Все статусы" options={statuses} onChange={(e) => { setStatus(e.target.value); setPage(1) }} /></div>
       </div>
-      {query.isPending ? <ListSkeleton rows={5} thumb={false} /> : query.isError ? <ErrorState message={extractErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
+      {query.isPending ? <ListSkeleton rows={5} thumb={false} /> : query.isError ? <ErrorState message={cmsErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
         <>
           <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
             {rows.map((row) => (
@@ -382,7 +382,7 @@ export function LeadsBoardPage() {
       <div className="sm:w-72"><SearchInput value={search} onChange={setSearch} placeholder="Имя или телефон" /></div>
       {query.isPending ? (
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-72 rounded-2xl" />)}</div>
-      ) : query.isError ? <ErrorState message={extractErrorMessage(query.error)} onRetry={() => query.refetch()} /> : (
+      ) : query.isError ? <ErrorState message={cmsErrorMessage(query.error)} onRetry={() => query.refetch()} /> : (
         <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0 xl:grid xl:grid-cols-6 xl:overflow-visible">
           {statuses.map((s) => {
             const items = rows.filter((r) => r.status === s.value)

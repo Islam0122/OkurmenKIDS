@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { siteCmsApi, useSiteInvalidate, type CmsProject } from './api'
+import { siteCmsApi, useSiteInvalidate, type CmsProject, cmsErrorMessage } from './api'
 import { CmsPage, formatDate, Skeleton } from './ui'
 
 /**
@@ -53,7 +53,7 @@ export function ProjectsPage() {
 
       {query.isPending ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}</div>
-      ) : query.isError ? <ErrorState message={extractErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
+      ) : query.isError ? <ErrorState message={cmsErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {rows.map((p) => (
             <li key={p.id} className={cn('flex flex-col overflow-hidden rounded-2xl border bg-surface', p.is_featured ? 'border-cms-gold ring-1 ring-cms-gold/40' : 'border-border')}>

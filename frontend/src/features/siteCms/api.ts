@@ -3,6 +3,11 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiClient } from '@/api/client'
 import type { Paginated } from '@/types/common'
 
+import { CmsFormatError } from './errors'
+import { parseOverview } from './overview'
+
+export { CmsFormatError, cmsErrorMessage } from './errors'
+
 /**
  * CMS публичного сайта (okurmen-public-website) — backend apps.website.cms,
  * /api/v1/marketing/site/. Права проверяет сервер: контент — маркетинг,
@@ -52,25 +57,30 @@ export interface ContentSummary {
 
 export type StateCounts = Record<WorkflowState, number>
 
+/**
+ * GET /marketing/site/overview/ after `parseOverview` (overview.ts). `null`
+ * means «the server did not send this» (e.g. a server without the latest
+ * update) — pages show it as unavailable instead of crashing or inventing data.
+ */
 export interface Overview {
-  courses: StateCounts
-  events: StateCounts
-  achievements: StateCounts
-  news: StateCounts
-  team: StateCounts
-  testimonials: StateCounts
-  leads_new: number
-  leads_by_status: Record<string, number>
-  registrations_new: number
-  upcoming_events: number
-  media: number
-  projects: number
-  featured_projects: number
-  recent: ContentSummary[]
-  recently_published: ContentSummary[]
-  drafts: ContentSummary[]
-  attention: ContentSummary[]
-  coverage: Record<string, { total: number; ky: number; en: number; seo: number }>
+  courses: StateCounts | null
+  events: StateCounts | null
+  achievements: StateCounts | null
+  news: StateCounts | null
+  team: StateCounts | null
+  testimonials: StateCounts | null
+  leads_new: number | null
+  leads_by_status: Record<string, number> | null
+  registrations_new: number | null
+  upcoming_events: number | null
+  media: number | null
+  projects: number | null
+  featured_projects: number | null
+  recent: ContentSummary[] | null
+  recently_published: ContentSummary[] | null
+  drafts: ContentSummary[] | null
+  attention: ContentSummary[] | null
+  coverage: Record<string, { total: number; ky: number; en: number; seo: number }> | null
 }
 
 export interface CmsProject {
@@ -102,11 +112,11 @@ function payload(body: Body): Body | FormData {
 
 export const siteCmsApi = {
   meta: () => apiClient.get<SiteMeta>(`${BASE}/meta/`).then((r) => r.data),
-  overview: () => apiClient.get<Overview>(`${BASE}/overview/`).then((r) => r.data),
+  overview: () => apiClient.get<unknown>(`${BASE}/overview/`).then((r) => parseOverview(r.data)),
   projects: (search?: string) => apiClient.get<{ count: number; results: CmsProject[] }>(`${BASE}/projects/`, { params: { search: search || undefined } }).then((r) => r.data),
   featureProject: (id: number, featured: boolean) => apiClient.post(`${BASE}/projects/`, { id, featured }).then((r) => r.data),
   list: (resource: string, params: Record<string, unknown>) =>
-    apiClient.get<Paginated<Row> | Row[]>(`${BASE}/${resource}/`, { params }).then((r) => r.data),
+    apiClient.get<unknown>(`${BASE}/${resource}/`, { params }).then((r) => parseList(r.data)),
   save: (resource: string, id: number | null, body: Body) =>
     (id === null ? apiClient.post<Row>(`${BASE}/${resource}/`, payload(body)) : apiClient.patch<Row>(`${BASE}/${resource}/${id}/`, payload(body))).then((r) => r.data),
   remove: (resource: string, id: number) => apiClient.delete(`${BASE}/${resource}/${id}/`).then(() => undefined),
@@ -129,6 +139,16 @@ export const siteCmsApi = {
   sections: () => apiClient.get<Row[]>(`${BASE}/sections/`).then((r) => r.data),
   saveSection: (id: number, body: Body) => apiClient.patch<Row>(`${BASE}/sections/${id}/`, body).then((r) => r.data),
   reorderSections: (keys: string[]) => apiClient.post<Row[]>(`${BASE}/sections/reorder/`, { keys }).then((r) => r.data),
+}
+
+/** A CMS list is either a plain array (small lookups) or a DRF page `{count, results}`; anything else is an error, not an empty list. */
+function parseList(data: unknown): Paginated<Row> | Row[] {
+  if (Array.isArray(data)) return data as Row[]
+  if (typeof data === 'object' && data !== null && Array.isArray((data as Paginated<Row>).results)) {
+    const page = data as Paginated<Row>
+    return { ...page, count: typeof page.count === 'number' ? page.count : page.results.length }
+  }
+  throw new CmsFormatError('список')
 }
 
 export const toList = (data: Paginated<Row> | Row[] | undefined): { rows: Row[]; count: number } =>
