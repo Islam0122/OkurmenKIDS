@@ -51,16 +51,20 @@ describe('OKURMEN DIGITAL portal', () => {
 
   it('opens the known external applications in a new tab', () => {
     renderPortal()
-    expect(card('training')).toHaveAttribute('href', 'https://training-portal-theta.vercel.app/')
-    expect(card('performance')).toHaveAttribute('href', 'https://okurmen-kids-drab.vercel.app/monthly-performance')
-    expect(card('performance')).toHaveAttribute('target', '_blank')
-    expect(card('performance')).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(card('training')).toHaveAttribute('href', 'https://training.okurmenkids.com/')
+    expect(card('training')).toHaveAttribute('target', '_blank')
+    expect(card('training')).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
   it('routes internal applications through React Router', async () => {
     renderPortal()
     expect(card('schedule')).toHaveAttribute('href', '/schedule')
     expect(card('programs')).toHaveAttribute('href', '/portal/programs')
+    // «Итоги месяца» is a route of this same build, not an old deployment.
+    expect(card('performance')).toHaveAttribute('href', '/monthly-performance')
+    expect(card('performance')).not.toHaveAttribute('target')
+    expect(card('leaderboard')).toHaveAttribute('href', '/leaderboard')
+    expect(card('news')).toHaveAttribute('href', '/news')
     await userEvent.click(card('schedule') as HTMLElement)
     expect(screen.getByText('Schedule site')).toBeInTheDocument()
   })
@@ -156,10 +160,13 @@ describe('OKURMEN DIGITAL portal', () => {
     // Careers: the public careers site of this build, in a new tab.
     expect(service('careers')).toHaveAttribute('href', '/careers')
     expect(service('careers')).toHaveAttribute('target', '_blank')
-    // No official website or public feedback URL is configured in the project.
-    expect(service('website')).toHaveAttribute('aria-disabled')
-    expect(service('website')).not.toHaveAttribute('href')
+    // Our website: the public website on its production domain, in a new tab.
+    expect(service('website')).toHaveAttribute('href', 'https://okurmenkids.com/')
+    expect(service('website')).toHaveAttribute('target', '_blank')
+    expect(service('website')).toHaveAttribute('rel', 'noopener noreferrer')
+    // There is no public feedback page (surveys use personal links) — shown as «Soon», not a link.
     expect(service('feedback')).toHaveAttribute('aria-disabled')
+    expect(service('feedback')).not.toHaveAttribute('href')
   })
 
   it('opens the public gallery for everyone and the survey manager for assistants and admins', () => {
