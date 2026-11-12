@@ -156,6 +156,8 @@ export interface ProjectCard {
   student: string | null
   group: string | null
   cover_url: string | null
+  /** The cover as WebP copies with its size (newer backends); `cover_url` is the original file. */
+  cover?: ImageAsset | null
 }
 
 export interface ProjectDetail extends ProjectCard {

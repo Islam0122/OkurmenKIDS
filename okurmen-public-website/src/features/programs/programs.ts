@@ -57,8 +57,13 @@ export type ProgramTarget =
   | { kind: 'projects'; to: string }
   | { kind: 'enroll' }
 
+/** The published CMS course of this program, if any (its age range, page, …). */
+export function programCourse(program: Program, courses: CourseCard[]): CourseCard | undefined {
+  return courses.find(program.matches)
+}
+
 export function programTarget(program: Program, courses: CourseCard[], projectCounts: Record<string, number>): ProgramTarget {
-  const course = courses.find(program.matches)
+  const course = programCourse(program, courses)
   if (course) return { kind: 'course', to: `/courses/${course.slug}` }
   if (program.projectCategory && (projectCounts[program.projectCategory] ?? 0) > 0) {
     return { kind: 'projects', to: `/projects?category=${program.projectCategory}` }

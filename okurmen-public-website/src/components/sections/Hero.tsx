@@ -1,14 +1,15 @@
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, CheckCircle2, Sparkles } from 'lucide-react'
+import { ArrowRight, Code2, ShieldCheck, Zap } from 'lucide-react'
 
-import logo from '@/assets/logo.png'
 import { BRAND } from '@/app/config/site'
-import { ButtonLink } from '@/components/shared/Button'
+import { LaptopIllustration } from '@/components/home/LaptopIllustration'
+import { buttonClass, ButtonLink } from '@/components/shared/Button'
 import { SmartImage } from '@/components/shared/SmartImage'
 import { EnrollButton } from '@/features/enrollment/EnrollButton'
 import { useI18n } from '@/i18n'
 import { ru } from '@/i18n/locales/ru'
 import type { SiteSettings } from '@/types/api'
+import { cn } from '@/utils/cn'
 
 /** Pick the CMS text, unless it is just the untranslated Russian default on a ky/en page. */
 function cmsOr(value: string | undefined, fallback: string, lang: string, ruDefault: string) {
@@ -17,112 +18,86 @@ function cmsOr(value: string | undefined, fallback: string, lang: string, ruDefa
   return value
 }
 
-export function Hero({ hero }: { hero?: SiteSettings['hero'] }) {
+const BENEFITS = [
+  { key: 'home.hero.benefit1', icon: Code2 },
+  { key: 'home.hero.benefit2', icon: Zap },
+  { key: 'home.hero.benefit3', icon: ShieldCheck },
+] as const
+
+/**
+ * Homepage hero. Texts and buttons can be overridden in the CMS («Главная» →
+ * hero); without CMS values the approved defaults below are used. The right
+ * side is the coding illustration, or the CMS hero photo if marketing uploads one.
+ */
+export function Hero({ hero, programsHref = '/courses' }: { hero?: SiteSettings['hero']; programsHref?: string }) {
   const { t, lang } = useI18n()
   const reduce = useReducedMotion()
   const title = cmsOr(hero?.title, t('home.hero.title'), lang, ru['home.hero.title'])
-  const subtitle = cmsOr(hero?.subtitle, t('home.hero.subtitle'), lang, '')
+  const lead = cmsOr(hero?.subtitle, t('home.hero.lead'), lang, '')
   const primary = hero?.primary_cta
   const secondary = hero?.secondary_cta
-  const appear = (delay: number) => (reduce ? {} : { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] as const } })
+  const appear = (delay: number) => (reduce ? {} : { initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] as const } })
+  const words = title.trim().split(/\s+/)
+  const head = words.slice(0, -1).join(' ')
+  const last = words[words.length - 1]
+  const secondaryHref = secondary?.url || programsHref
+  const secondaryLabel = secondary?.label || t('home.hero.secondary')
 
   return (
     <section className="relative overflow-hidden bg-white">
       <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 -right-32 size-[34rem] rounded-full bg-brand-100/70 blur-3xl" />
-        <div className="absolute top-1/2 -left-40 size-[26rem] rounded-full bg-gold-100/80 blur-3xl" />
-        <svg className="absolute inset-0 size-full opacity-[0.35]" aria-hidden>
-          <defs>
-            <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#d2bdfc" /></pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#dots)" style={{ maskImage: 'radial-gradient(ellipse at 70% 30%, black, transparent 70%)' }} />
-        </svg>
+        <div className="absolute -top-48 right-[-10%] size-[42rem] rounded-full bg-[radial-gradient(closest-side,#efe8ff,transparent)]" />
+        <div className="absolute bottom-[-12rem] left-[-8rem] size-[30rem] rounded-full bg-[radial-gradient(closest-side,#fff4d6,transparent)]" />
       </div>
-      <div className="container-page relative grid items-center gap-12 pt-10 pb-16 sm:pt-14 lg:grid-cols-[1.05fr_1fr] lg:gap-8 lg:pt-16 lg:pb-24">
-        <div>
-          <motion.span {...appear(0)} className="eyebrow">
-            <Sparkles className="size-3.5" aria-hidden /> {t('home.hero.eyebrow')}
+      <div className="relative mx-auto grid w-full max-w-[1280px] items-center gap-10 px-4 pt-8 pb-12 sm:px-6 sm:pt-12 md:pb-16 lg:grid-cols-[1.1fr_1fr] lg:gap-4 lg:px-8 lg:pt-12 lg:pb-14">
+        <div className="max-w-xl">
+          <motion.span {...appear(0)} className="inline-flex items-center rounded-full bg-[#efe9fb] px-3.5 py-1.5 text-sm font-bold text-kids-primary">
+            {t('home.hero.badge')}
           </motion.span>
-          <motion.h1 {...appear(0.08)} className="text-display mt-6 font-black">
-            {(() => {
-              const words = title.trim().split(/\s+/)
-              const head = words.slice(0, -1).join(' ')
-              const last = words[words.length - 1]
-              return (
-                <>
-                  {head ? `${head} ` : null}
-                  <span className="relative inline-block whitespace-nowrap">
-                    {last}
-                    <svg aria-hidden viewBox="0 0 220 18" className="absolute -bottom-2 left-0 h-3 w-full text-gold-400" preserveAspectRatio="none">
-                      <path d="M3 13 C 60 3, 150 3, 217 11" fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                </>
-              )
-            })()}
-          </motion.h1>
-          <motion.p {...appear(0.16)} className="mt-7 max-w-xl text-lg leading-relaxed text-ink-soft sm:text-xl">{subtitle}</motion.p>
-          <motion.div {...appear(0.24)} className="mt-9 flex flex-col gap-3 sm:flex-row">
+          {/* No entrance animation on the headline: it is the LCP element, so it must paint at once. */}
+          <h1 className="mt-5 font-display text-[2.6rem] leading-[1.05] font-black tracking-[-0.02em] text-kids-primary sm:text-6xl lg:text-[4.1rem]">
+            {head ? `${head} ` : null}
+            <span className="relative inline-block whitespace-nowrap">
+              <span aria-hidden className="absolute inset-x-[-0.08em] bottom-[0.06em] -z-0 h-[0.42em] -skew-x-6 rounded-md bg-kids-yellow" />
+              <span className="relative">{last}</span>
+              <svg aria-hidden viewBox="0 0 40 40" className="absolute -top-[0.35em] -right-[0.75em] w-[0.6em] text-kids-yellow">
+                <path d="M8 30 L16 18 M20 32 L30 8 M32 34 L38 24" stroke="currentColor" strokeWidth="5" strokeLinecap="round" />
+              </svg>
+            </span>
+          </h1>
+          <p className="mt-5 max-w-lg text-base leading-relaxed text-kids-muted sm:text-lg">{lead}</p>
+          <motion.div {...appear(0.18)} className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             {primary?.url ? (
-              <ButtonLink to={primary.url} size="lg">{primary.label || t('cta.enroll')} <ArrowRight className="size-5" aria-hidden /></ButtonLink>
+              <ButtonLink to={primary.url} size="md" className="sm:h-13 sm:px-7">{primary.label || t('home.hero.primary')} <ArrowRight className="size-5" aria-hidden /></ButtonLink>
             ) : (
-              <EnrollButton size="lg" label={primary?.label || undefined} />
+              <EnrollButton size="md" className="sm:h-13 sm:px-7" label={primary?.label || t('home.hero.primary')} />
             )}
-            <ButtonLink to={secondary?.url || '/courses'} size="lg" variant="outline">{secondary?.label || t('cta.courses')}</ButtonLink>
+            {secondaryHref.startsWith('#') ? (
+              <a href={secondaryHref} className={buttonClass('outline', 'md', 'sm:h-13 sm:px-7')}>{secondaryLabel}</a>
+            ) : (
+              <ButtonLink to={secondaryHref} size="md" variant="outline" className="sm:h-13 sm:px-7">{secondaryLabel}</ButtonLink>
+            )}
           </motion.div>
-          <motion.ul {...appear(0.32)} className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-ink-soft">
-            {(['home.hero.trust1', 'home.hero.trust2', 'home.hero.trust3'] as const).map((key) => (
-              <li key={key} className="flex items-center gap-2"><CheckCircle2 className="size-5 text-gold-500" aria-hidden />{t(key)}</li>
+          <motion.ul {...appear(0.24)} className="mt-8 grid grid-cols-1 gap-3 min-[420px]:grid-cols-3 sm:gap-5">
+            {BENEFITS.map(({ key, icon: Icon }) => (
+              <li key={key} className="flex items-center gap-2.5 text-sm leading-snug font-bold text-kids-text">
+                <Icon className="size-6 shrink-0 text-kids-yellow" strokeWidth={2.25} aria-hidden />
+                {t(key)}
+              </li>
             ))}
           </motion.ul>
         </div>
 
-        <motion.div {...(reduce ? {} : { initial: { opacity: 0, scale: 0.96 }, animate: { opacity: 1, scale: 1 }, transition: { duration: 0.8, delay: 0.15 } })} className="relative mx-auto w-full max-w-xl">
+        <motion.div {...(reduce ? {} : { initial: { opacity: 0, scale: 0.97 }, animate: { opacity: 1, scale: 1 }, transition: { duration: 0.7, delay: 0.1 } })} className={cn('relative w-full', hero?.image ? 'mx-auto max-w-xl' : '')}>
           {hero?.image ? (
             <div className="relative overflow-hidden rounded-[2rem] shadow-lift ring-8 ring-white">
               <SmartImage image={hero.image} alt={BRAND.name} priority sizes="(min-width: 1024px) 45vw, 100vw" className="aspect-[5/4] w-full" />
             </div>
           ) : (
-            <CodeIllustration caption={t('home.hero.codeCaption')} />
+            <LaptopIllustration />
           )}
-          <div className="absolute -bottom-6 -left-2 flex items-center gap-3 rounded-2xl bg-white p-3 pr-5 shadow-lift sm:-left-8 motion-safe:animate-float">
-            <img src={logo} alt="" className="size-12 rounded-full" width={48} height={43} />
-            <span className="font-display text-sm leading-tight font-extrabold text-brand-800">{BRAND.tagline}</span>
-          </div>
         </motion.div>
       </div>
     </section>
-  )
-}
-
-/** Brand illustration (not a photo) when no hero photo is uploaded in the CMS. */
-function CodeIllustration({ caption }: { caption: string }) {
-  const lines: [string, string][] = [
-    ['text-brand-300', '# main.py'],
-    ['text-gold-300', 'name = input("Как тебя зовут? ")'],
-    ['text-white', 'print(f"Привет, {name}!")'],
-    ['', ''],
-    ['text-sky-300', 'for level in range(1, 4):'],
-    ['text-white', '    print("⭐" * level)'],
-  ]
-  return (
-    <figure className="relative">
-      <div className="absolute -inset-4 -rotate-3 rounded-[2.25rem] bg-gold-400" aria-hidden />
-      <div className="relative overflow-hidden rounded-[2rem] bg-brand-900 shadow-lift">
-        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4">
-          <span className="size-3 rounded-full bg-rose-400" /><span className="size-3 rounded-full bg-gold-400" /><span className="size-3 rounded-full bg-emerald-400" />
-          <span className="ml-3 text-xs font-semibold text-white/50">okurmen-kids — python</span>
-        </div>
-        <pre className="overflow-hidden px-6 py-6 font-mono text-[13px] leading-7 sm:text-[15px]" aria-hidden>
-          {lines.map(([cls, text], i) => (
-            <div key={i} className="flex gap-4"><span className="w-4 text-right text-white/25 select-none">{i + 1}</span><span className={cls}>{text}</span></div>
-          ))}
-          <div className="mt-3 rounded-xl bg-white/5 p-4 text-emerald-300">
-            <div>Привет, Айгерим!</div><div>⭐</div><div>⭐⭐</div><div>⭐⭐⭐</div>
-          </div>
-        </pre>
-      </div>
-      <figcaption className="sr-only">{caption}</figcaption>
-    </figure>
   )
 }

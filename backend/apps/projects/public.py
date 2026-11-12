@@ -38,6 +38,7 @@ from rest_framework.exceptions import ValidationError
 
 from apps.leaderboard.services import public_name
 
+from .images import image_asset
 from .models import ProjectImage, StudentProject
 
 _VERSION_KEY = "public_projects:version"
@@ -153,6 +154,8 @@ def _record(project: StudentProject, show_trainer: bool) -> dict:
         "trainer": trainer,
         "demo_url": _safe_url(project.demo_url),
         "cover_url": _image_url(cover.image) if cover else None,
+        # The same cover as WebP copies with its size ({url, thumb, width, height}) — cards use `thumb`.
+        "cover": image_asset(cover.image) if cover else None,
         "images": [{"url": url, "is_cover": img.is_cover} for img in images if (url := _image_url(img.image))],
     }
 
@@ -177,7 +180,7 @@ def published() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 LIST_FIELDS = ("key", "title", "short_description", "technologies", "categories", "date", "student", "group",
-               "cover_url")
+               "cover_url", "cover")
 
 
 def _int(value, name: str, low: int, high: int) -> int:

@@ -57,8 +57,9 @@ class PublicListTests(PublicBase):
     def test_closed_whitelist_of_fields(self):
         project = self.project()
         item = self.get().data["results"][0]
+        # `cover` = the same cover image as WebP copies + its pixel size (no personal data).
         self.assertEqual(set(item), {"key", "title", "short_description", "technologies", "categories", "date",
-                                     "student", "group", "cover_url"})
+                                     "student", "group", "cover_url", "cover"})
         self.assertEqual(item["key"], public_key(project.pk))
         self.assertNotEqual(item["key"], str(project.pk))
         self.assertEqual(item["student"], "Алия С.")  # first name + initial only

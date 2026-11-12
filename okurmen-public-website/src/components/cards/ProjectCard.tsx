@@ -24,6 +24,7 @@ export function ProjectCard({ project }: { project: Project }) {
     >
       <div className="relative aspect-video overflow-hidden border-b border-line bg-gradient-to-br from-brand-50 to-surface-soft">
         <SmartImage
+          image={project.cover ?? undefined}
           src={project.cover_url}
           alt=""
           sizes="(min-width: 1536px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"

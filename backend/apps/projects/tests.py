@@ -203,6 +203,56 @@ class ImageTests(Base):
         self.assertEqual(len(detail["images"]), 2)
         self.assertTrue(detail["cover_url"].endswith(".webp"))
 
+    def test_upload_gets_webp_copies_and_public_cover_uses_them(self):
+        from .images import variant_name
+
+        uploaded = self.upload(size=(2400, 1500)).data
+        image = ProjectImage.objects.get(pk=uploaded["id"])
+        storage = image.image.storage
+        for kind, limit in (("thumb", 640), ("large", 1600)):
+            name = variant_name(image.image.name, kind)
+            self.assertTrue(storage.exists(name), kind)
+            with storage.open(name) as handle, Image.open(handle) as copy:
+                self.assertEqual(copy.format, "WEBP")
+                self.assertLessEqual(max(copy.size), limit)
+        item = APIClient().get("/api/v1/public/projects/").data["results"][0]
+        # Additive: cover_url is unchanged (the original), `cover` carries the WebP copies and the size.
+        self.assertTrue(item["cover_url"].endswith(".png"))
+        self.assertTrue(item["cover"]["thumb"].endswith(".thumb.webp"))
+        self.assertTrue(item["cover"]["url"].endswith(".large.webp"))
+        self.assertEqual((item["cover"]["width"], item["cover"]["height"]), (2400, 1500))
+
+    def test_deleting_an_image_removes_its_copies(self):
+        from .images import variant_name
+
+        uploaded = self.upload().data
+        image = ProjectImage.objects.get(pk=uploaded["id"])
+        names = [variant_name(image.image.name, kind) for kind in ("thumb", "large")]
+        self.assertEqual(self.as_(self.trainer_user).delete(f"{self.url}{uploaded['id']}/").status_code, 204)
+        for name in names:
+            self.assertFalse(image.image.storage.exists(name))
+
+    def test_older_upload_without_copies_gets_them_on_first_public_view_or_by_command(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from .images import drop_variants, has_variants
+
+        uploaded = self.upload().data
+        image = ProjectImage.objects.get(pk=uploaded["id"])
+        drop_variants(image.image)  # as if uploaded before WebP copies existed
+        self.assertFalse(has_variants(image.image))
+        item = APIClient().get("/api/v1/public/projects/").data["results"][0]
+        self.assertTrue(item["cover"]["thumb"].endswith(".thumb.webp"))
+        self.assertTrue(has_variants(image.image))
+
+        drop_variants(image.image)
+        out = StringIO()
+        call_command("build_project_image_variants", stdout=out)
+        self.assertIn("built=1", out.getvalue())
+        self.assertTrue(has_variants(image.image))
+
     def test_deleting_cover_promotes_next(self):
         a = self.upload().data
         b = self.upload().data

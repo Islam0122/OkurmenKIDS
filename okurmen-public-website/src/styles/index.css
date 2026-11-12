@@ -37,6 +37,14 @@
   --color-surface: #ffffff;
   --color-surface-soft: #f8f8fc;
   --color-surface-purple: #f4eeff;
+
+  /* Homepage palette (2026 redesign reference). Kept separate so other pages keep their exact colours. */
+  --color-kids-primary: #321779;
+  --color-kids-deep: #25105f;
+  --color-kids-yellow: #ffb914;
+  --color-kids-bg: #f8f6fd;
+  --color-kids-text: #251b3d;
+  --color-kids-muted: #77718d;
   --color-success: #15803d;
   --color-danger: #c2410c;
 

@@ -7,7 +7,7 @@ import { createQueryClient } from '@/app/providers/AppProviders'
 import { EnrollmentProvider } from '@/features/enrollment/EnrollmentProvider'
 import { I18nProvider } from '@/i18n'
 import { AboutPage } from '@/pages/About/AboutPage'
-import { PROGRAMS, programTarget } from '@/pages/About/programs'
+import { PROGRAMS, programTarget } from '@/features/programs/programs'
 import type { CourseCard, Lang } from '@/types/api'
 
 const { photo, page } = vi.hoisted(() => ({
