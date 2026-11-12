@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Award, CalendarDays, CheckCircle2, ChevronRight, ExternalLink, Eye, FileClock, FolderKanban, ImagePlus, Inbox, MessageSquareQuote, Newspaper,
   Plus, type LucideIcon,
@@ -7,10 +7,9 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Modal } from '@/components/ui/Modal'
-import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { useSiteMeta, useSiteOverview, type ContentSummary, type Overview } from './api'
+import { useSiteMeta, useSiteOverview, type ContentSummary, type Overview, cmsErrorMessage } from './api'
 import { ISSUE_LABEL, RESOURCES } from './schema'
 import { CardsSkeleton, CMS_BASE, CmsPage, Dropdown, editorPath, linkButton, ListSkeleton, Panel, relativeTime, StatusBadge } from './ui'
 
@@ -64,15 +63,15 @@ export function DashboardPage() {
       }
     >
       {overview.isPending ? <CardsSkeleton count={6} className="lg:grid-cols-6" /> : overview.isError ? (
-        <ErrorState message={extractErrorMessage(overview.error)} onRetry={() => overview.refetch()} />
+        <ErrorState message={cmsErrorMessage(overview.error)} onRetry={() => overview.refetch()} />
       ) : (
         <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Kpi to={`${CMS_BASE}/pages`} icon={CheckCircle2} value={sum(data, ['published'])} label="Опубликовано" note={`запланировано: ${sum(data, ['scheduled'])}`} />
           <Kpi to={`${CMS_BASE}/news?status=draft`} icon={FileClock} value={sum(data, ['draft', 'review'])} label="Черновики" note={sum(data, ['review']) ? `на согласовании: ${sum(data, ['review'])}` : 'в работе'} />
-          <Kpi to={`${CMS_BASE}/projects`} icon={FolderKanban} value={data?.projects ?? 0} label="Проекты" note={`на главной: ${data?.featured_projects ?? 0}`} />
-          <Kpi to={`${CMS_BASE}/events`} icon={CalendarDays} value={live(data, 'events')} label="События" note={`предстоящих: ${data?.upcoming_events ?? 0}`} />
-          <Kpi to={`${CMS_BASE}/news`} icon={Newspaper} value={live(data, 'news')} label="Новости" note={`на сайте: ${data?.news.published ?? 0}`} />
-          <Kpi to={`${CMS_BASE}/leads`} icon={Inbox} value={data?.leads_new ?? 0} label="Новые заявки" note={`регистраций: ${data?.registrations_new ?? 0}`} accent />
+          <Kpi to={`${CMS_BASE}/projects`} icon={FolderKanban} value={data?.projects ?? null} label="Проекты" note={`на главной: ${shown(data?.featured_projects)}`} />
+          <Kpi to={`${CMS_BASE}/events`} icon={CalendarDays} value={live(data, 'events')} label="События" note={`предстоящих: ${shown(data?.upcoming_events)}`} />
+          <Kpi to={`${CMS_BASE}/news`} icon={Newspaper} value={live(data, 'news')} label="Новости" note={`на сайте: ${shown(data?.news?.published)}`} />
+          <Kpi to={`${CMS_BASE}/leads`} icon={Inbox} value={data?.leads_new ?? null} label="Новые заявки" note={`регистраций: ${shown(data?.registrations_new)}`} accent />
         </ul>
       )}
 
@@ -92,27 +91,32 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Panel title="Последние изменения" className="lg:col-span-2" bodyClassName="p-0">
-          {overview.isPending ? <div className="p-4"><ListSkeleton rows={5} /></div> : <ChangesTable rows={data?.recent ?? []} />}
+          <OverviewList query={overview} rows={data?.recent} skeleton={<ListSkeleton rows={5} />}>{(rows) => <ChangesTable rows={rows} />}</OverviewList>
         </Panel>
         <Panel title="Черновики" description="Не опубликованы на сайте" bodyClassName="p-0"
           actions={<Link to={`${CMS_BASE}/news?status=draft`} className="text-xs font-medium text-brand-600 hover:underline">Все</Link>}>
-          {overview.isPending ? <div className="p-4"><ListSkeleton rows={4} thumb={false} /></div> : <SummaryList rows={data?.drafts ?? []} empty="Черновиков нет — всё опубликовано." />}
+          <OverviewList query={overview} rows={data?.drafts} skeleton={<ListSkeleton rows={4} thumb={false} />}>{(rows) => <SummaryList rows={rows} empty="Черновиков нет — всё опубликовано." />}</OverviewList>
         </Panel>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Panel title="Последние опубликованные" bodyClassName="p-0">
-          {overview.isPending ? <div className="p-4"><ListSkeleton rows={4} /></div> : <SummaryList rows={data?.recently_published ?? []} thumbs empty="Пока ничего не опубликовано." />}
+          <OverviewList query={overview} rows={data?.recently_published} skeleton={<ListSkeleton rows={4} />}>{(rows) => <SummaryList rows={rows} thumbs empty="Пока ничего не опубликовано." />}</OverviewList>
         </Panel>
         <Panel title="Требует заполнения" description="Обложка, описание, переводы KG / EN и SEO" bodyClassName="p-0"
           actions={<Link to={`${CMS_BASE}/settings/languages`} className="text-xs font-medium text-brand-600 hover:underline">Переводы</Link>}>
-          {overview.isPending ? <div className="p-4"><ListSkeleton rows={4} thumb={false} /></div> : <SummaryList rows={(data?.attention ?? []).slice(0, 8)} issues empty="Всё заполнено. Отличная работа!" />}
+          <OverviewList query={overview} rows={data?.attention} skeleton={<ListSkeleton rows={4} thumb={false} />}>{(rows) => <SummaryList rows={rows.slice(0, 8)} issues empty="Всё заполнено. Отличная работа!" />}</OverviewList>
         </Panel>
       </div>
 
       <Modal isOpen={previewList} onClose={() => setPreviewList(false)} title="Предпросмотр" size="lg" icon={<Eye className="size-5 text-brand-600" aria-hidden />}>
         <p className="mb-3 text-sm text-ink-secondary">Выберите материал — откроется редактор с предпросмотром на всех языках. Опубликованный сайт: «Открыть сайт».</p>
-        {data?.drafts.length ? <SummaryList rows={data.drafts} preview /> : <p className="py-6 text-center text-sm text-ink-muted">Черновиков нет.</p>}
+        {/* Rendered only while open: the list is read when it is shown, not on every dashboard render. */}
+        {previewList ? (
+          <OverviewList query={overview} rows={data?.drafts} skeleton={<ListSkeleton rows={3} thumb={false} />}>
+            {(rows) => <SummaryList rows={rows} preview empty="Черновиков нет." />}
+          </OverviewList>
+        ) : null}
         {site ? <a href={site} target="_blank" rel="noreferrer" className={cn(linkButton('secondary'), 'mt-4 w-full')}><ExternalLink className="size-4" aria-hidden />Открыть опубликованный сайт</a> : null}
       </Modal>
     </CmsPage>
@@ -126,7 +130,33 @@ function CreateMenu({ items }: { items: { key: string; label: string; onClick: (
   )
 }
 
-function Kpi({ to, icon: Icon, value, label, note, accent }: { to: string; icon: LucideIcon; value: number; label: string; note: string; accent?: boolean }) {
+/**
+ * One dashboard list in all its states: loading (skeleton), request failed
+ * (message + retry), the server did not send this list (an older server —
+ * said plainly, nothing invented), empty, and the rows.
+ */
+function OverviewList({ query, rows, skeleton, children }: {
+  query: { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown }
+  rows: ContentSummary[] | null | undefined
+  skeleton: ReactNode
+  children: (rows: ContentSummary[]) => ReactNode
+}) {
+  if (query.isPending) return <div className="p-4">{skeleton}</div>
+  if (query.isError) {
+    return (
+      <div className="px-5 py-8 text-center text-sm" role="alert">
+        <p className="text-danger">{cmsErrorMessage(query.error)}</p>
+        <button type="button" onClick={() => query.refetch()} className="mt-2 font-medium text-brand-600 hover:underline">Повторить</button>
+      </div>
+    )
+  }
+  if (!rows) return <p className="px-5 py-8 text-center text-sm text-ink-muted">Сервер пока не передаёт этот список — он появится после обновления сервера.</p>
+  return <>{children(rows)}</>
+}
+
+const shown = (n: number | null | undefined) => (typeof n === 'number' ? String(n) : '—')
+
+function Kpi({ to, icon: Icon, value, label, note, accent }: { to: string; icon: LucideIcon; value: number | null; label: string; note: string; accent?: boolean }) {
   return (
     <li>
       <Link to={to} className={cn('flex h-full flex-col rounded-2xl border bg-surface p-4 shadow-[0_1px_2px_rgba(28,21,51,0.04)] transition hover:-translate-y-0.5 hover:shadow-md',
@@ -134,7 +164,7 @@ function Kpi({ to, icon: Icon, value, label, note, accent }: { to: string; icon:
         <span className={cn('grid size-9 place-items-center rounded-xl', accent && value ? 'bg-cms-gold text-brand-700' : 'bg-brand-50 text-brand-600')}>
           <Icon className="size-[18px]" aria-hidden />
         </span>
-        <span className="mt-3 font-display text-2xl font-bold text-ink tabular-nums">{value}</span>
+        <span className="mt-3 font-display text-2xl font-bold text-ink tabular-nums" title={value === null ? 'Сервер не передал это число' : undefined}>{shown(value)}</span>
         <span className="text-sm font-medium text-ink">{label}</span>
         <span className="mt-0.5 text-xs text-ink-muted">{note}</span>
       </Link>

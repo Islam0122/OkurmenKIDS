@@ -13,7 +13,8 @@ interface SitePage {
   stat?: (o: Overview) => string
 }
 
-const live = (c: Overview['news']) => `${c.published} на сайте · ${c.draft + c.review} в черновиках`
+const n = (v: number | null | undefined) => (typeof v === 'number' ? String(v) : '—')
+const live = (c: Overview['news']) => (c ? `${c.published} на сайте · ${c.draft + c.review} в черновиках` : '')
 
 /** Страницы публичного сайта: каждая ведёт туда, где редактируется её контент. */
 const PAGES: SitePage[] = [
@@ -21,9 +22,9 @@ const PAGES: SitePage[] = [
   { title: 'Об академии', path: '/about', to: 'pages/about', icon: Info, description: 'История, миссия и видение академии.' },
   { title: 'Курсы', path: '/courses', to: 'courses', icon: BookOpen, description: 'Страницы курсов: программа, возраст, формат.', stat: (o) => live(o.courses) },
   { title: 'Новости', path: '/news', to: 'news', icon: Newspaper, description: 'Новости академии с фото.', stat: (o) => live(o.news) },
-  { title: 'События', path: '/events', to: 'events', icon: CalendarDays, description: 'Мероприятия с регистрацией и галереей.', stat: (o) => `${o.upcoming_events} предстоящих · ${o.events.draft} в черновиках` },
+  { title: 'События', path: '/events', to: 'events', icon: CalendarDays, description: 'Мероприятия с регистрацией и галереей.', stat: (o) => `${n(o.upcoming_events)} предстоящих · ${n(o.events?.draft)} в черновиках` },
   { title: 'Достижения', path: '/achievements', to: 'achievements', icon: Award, description: 'Победы, награды, сертификаты, партнёрства.', stat: (o) => live(o.achievements) },
-  { title: 'Проекты учеников', path: '/projects', to: 'projects', icon: FolderKanban, description: 'Работы студентов (добавляют тренеры) и выбор для главной.', stat: (o) => `${o.projects} опубликовано · ${o.featured_projects} на главной` },
+  { title: 'Проекты учеников', path: '/projects', to: 'projects', icon: FolderKanban, description: 'Работы студентов (добавляют тренеры) и выбор для главной.', stat: (o) => `${n(o.projects)} опубликовано · ${n(o.featured_projects)} на главной` },
   { title: 'Отзывы', path: '/testimonials', to: 'testimonials', icon: MessageSquareQuote, description: 'Отзывы родителей и студентов — только с согласия.', stat: (o) => live(o.testimonials) },
   { title: 'Команда', path: '/team', to: 'team', icon: Users, description: 'Публичные профили тренеров и сотрудников.', stat: (o) => live(o.team) },
   { title: 'Контакты', path: '/contacts', to: 'contacts', icon: Phone, description: 'Телефон, мессенджеры, часы работы и филиалы.' },
@@ -47,7 +48,7 @@ export function PagesPage() {
             </div>
             <p className="mt-3 flex-1 text-sm text-ink-secondary">{page.description}</p>
             {page.stat ? (
-              <p className="mt-2 text-xs font-medium text-ink-secondary">{overview.data ? page.stat(overview.data) : <Skeleton className="h-3 w-40" />}</p>
+              <p className="mt-2 text-xs font-medium text-ink-secondary">{overview.isPending ? <Skeleton className="h-3 w-40" /> : overview.data ? page.stat(overview.data) : null}</p>
             ) : null}
             <div className="mt-4 flex gap-2">
               <Link to={`${CMS_BASE}/${page.to}`} className={linkButton('primary', 'sm')}><Pencil className="size-3.5" aria-hidden />Редактировать</Link>

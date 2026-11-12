@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { siteCmsApi, useSiteInvalidate, useSiteItem, useSiteMeta, type Body, type Choice, type Row, type SiteMeta } from './api'
+import { siteCmsApi, useSiteInvalidate, useSiteItem, useSiteMeta, type Body, type Choice, type Row, type SiteMeta, cmsErrorMessage } from './api'
 import { useChoices } from './useChoices'
 import {
   backupKey, buildBody, initialValues, isEmpty, langFill, mergeSaved, missingFields, readBackup, snapshot, writeBackup, type Values,
@@ -47,7 +47,7 @@ export function ContentEditorRoute() {
   const def = RESOURCES[resource as ResourceDef['key']]
   if (meta.isPending || (numeric !== null && !isAdopted && item.isPending)) return <EditorSkeleton />
   if (meta.isError || item.isError) {
-    return <ErrorState message={extractErrorMessage(meta.error ?? item.error)} onRetry={() => { meta.refetch(); item.refetch() }} />
+    return <ErrorState message={cmsErrorMessage(meta.error ?? item.error)} onRetry={() => { meta.refetch(); item.refetch() }} />
   }
   return (
     <ContentEditor key={`${resource}:${key}`} def={def} meta={meta.data!} initialRow={isAdopted ? null : item.data ?? null}

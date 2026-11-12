@@ -12,7 +12,7 @@ import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { siteCmsApi, toList, useSiteInvalidate, useSiteList, useSiteMeta, type Row } from './api'
+import { siteCmsApi, toList, useSiteInvalidate, useSiteList, useSiteMeta, type Row, cmsErrorMessage } from './api'
 import { useChoices } from './useChoices'
 import { CONTENT_KEYS, RESOURCES, type ResourceDef } from './schema'
 import { CmsPage, Dropdown, editorPath, formatDate, linkButton, ListSkeleton, relativeTime, StatusBadge } from './ui'
@@ -121,7 +121,7 @@ export function ContentListPage({ resource, embedded }: { resource: ResourceDef[
       </div>
 
       {query.isPending ? <ListSkeleton rows={6} thumb={Boolean(def.image)} /> : query.isError ? (
-        <ErrorState message={extractErrorMessage(query.error)} onRetry={() => query.refetch()} />
+        <ErrorState message={cmsErrorMessage(query.error)} onRetry={() => query.refetch()} />
       ) : rows.length ? (
         <>
           {/* Desktop / laptop: table */}

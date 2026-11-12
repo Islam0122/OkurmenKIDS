@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { siteCmsApi, useSiteInvalidate, useSiteSettings } from './api'
+import { siteCmsApi, useSiteInvalidate, useSiteSettings, cmsErrorMessage } from './api'
 import { snapshot } from './editorState'
 import { ImageInput, imageRef, type ImageValue } from './fields'
 import { LANGS, type Lang } from './schema'
@@ -68,7 +68,7 @@ export function SettingsForm({ title, description, fields, extra, children }: {
     return () => window.removeEventListener('beforeunload', onUnload)
   }, [dirty])
 
-  if (settings.isError) return <ErrorState message={extractErrorMessage(settings.error)} onRetry={() => settings.refetch()} />
+  if (settings.isError) return <ErrorState message={cmsErrorMessage(settings.error)} onRetry={() => settings.refetch()} />
   if (settings.isPending) {
     return <div className="space-y-4 rounded-2xl border border-border bg-surface p-5" role="status" aria-label="Загрузка"><Skeleton className="h-5 w-40" /><Skeleton className="h-10 w-full" /><Skeleton className="h-24 w-full" /></div>
   }

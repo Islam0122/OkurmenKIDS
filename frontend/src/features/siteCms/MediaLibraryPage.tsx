@@ -15,7 +15,7 @@ import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { siteCmsApi, toList, useSiteInvalidate, useSiteList, type Row } from './api'
+import { siteCmsApi, toList, useSiteInvalidate, useSiteList, type Row, cmsErrorMessage } from './api'
 import { UploadZone } from './MediaPicker'
 import { CmsPage, fileExt, formatDate, formatSize, Skeleton } from './ui'
 
@@ -76,7 +76,7 @@ export function MediaLibraryPage({ kind: preset = '' }: { kind?: '' | 'image' | 
 
       {query.isPending ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">{Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="aspect-[4/5] rounded-xl" />)}</div>
-      ) : query.isError ? <ErrorState message={extractErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
+      ) : query.isError ? <ErrorState message={cmsErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length ? (
         <>
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
             {rows.map((row) => (

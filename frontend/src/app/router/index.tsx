@@ -1,4 +1,6 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom'
+
+import { LoadingState } from '@/components/ui/LoadingState'
 
 import { AppLayout } from '@/app/layouts/AppLayout'
 import { AccessDeniedPage } from '@/features/auth/AccessDeniedPage'
@@ -11,7 +13,23 @@ import { RequireRoles } from './RequireRoles'
 import { RootRedirect } from './RootRedirect'
 import { RouteErrorPage } from './RouteErrorPage'
 
-export const router = createBrowserRouter([
+/**
+ * Routes are code-split (`lazy`). On the first load — opening a page by its
+ * address or refreshing it — React Router 7 must load the lazy modules of the
+ * matched routes before rendering; until then it renders the nearest
+ * `HydrateFallback` (partial hydration is always on in v7). Without one it
+ * renders nothing and warns «No `HydrateFallback` element provided». The app
+ * has no SSR, so this is simply the initial loading screen: every top-level
+ * route gets the same full-screen loader.
+ */
+function RouteHydrateFallback() {
+  return <LoadingState fullScreen label="Загрузка…" />
+}
+
+export const withHydrateFallback = (routes: RouteObject[]): RouteObject[] =>
+  routes.map((route) => (route.HydrateFallback || route.hydrateFallbackElement ? route : { ...route, HydrateFallback: RouteHydrateFallback }))
+
+export const router = createBrowserRouter(withHydrateFallback([
   { path: '/', element: <RootRedirect />, errorElement: <RouteErrorPage /> },
   { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
   {
@@ -763,4 +781,4 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '*', element: <NotFoundPage /> },
-])
+]))
