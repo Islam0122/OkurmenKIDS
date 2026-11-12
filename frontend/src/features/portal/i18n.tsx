@@ -278,7 +278,7 @@ const en: Messages = {
   servicesTitle: 'More from Okurmen',
   services: {
     projects: { name: 'Student Projects', description: 'Portfolios and project gallery' },
-    feedback: { name: 'Our Feedback', description: 'Student and trainer feedback' },
+    feedback: { name: 'Our Feedback', description: 'Reviews from students, parents and graduates' },
     website: { name: 'Our Website', description: 'Official academy website' },
     careers: { name: 'Our Careers', description: 'Vacancies for trainers and staff' },
   },
@@ -466,7 +466,7 @@ const ru: Messages = {
   servicesTitle: 'Больше от Okurmen',
   services: {
     projects: { name: 'Проекты студентов', description: 'Портфолио и галерея проектов' },
-    feedback: { name: 'Обратная связь', description: 'Отзывы студентов и тренеров' },
+    feedback: { name: 'Обратная связь', description: 'Отзывы студентов, родителей и выпускников' },
     website: { name: 'Наш сайт', description: 'Официальный сайт академии' },
     careers: { name: 'Карьера', description: 'Вакансии тренеров и сотрудников' },
   },
@@ -654,7 +654,7 @@ const kg: Messages = {
   servicesTitle: 'Okurmen’дон дагы',
   services: {
     projects: { name: 'Долбоорлор', description: 'Портфолио жана долбоорлор галереясы' },
-    feedback: { name: 'Пикирлер', description: 'Студенттердин жана тренерлердин пикири' },
+    feedback: { name: 'Пикирлер', description: 'Студенттердин, ата-энелердин жана бүтүрүүчүлөрдүн пикирлери' },
     website: { name: 'Биздин сайт', description: 'Академиянын расмий сайты' },
     careers: { name: 'Карьера', description: 'Вакансиялар жана ишке алуу' },
   },

@@ -33,6 +33,12 @@ function renderPortal() {
   )
 }
 
+// Every role of `UserRole` (types/auth.ts) — the feedback card must not depend on it.
+const ROLES: User['role'][] = [
+  'admin', 'teacher', 'team_lead', 'assistant', 'accountant', 'director',
+  'dop', 'rop', 'operations_director', 'hr_manager', 'sales_manager', 'marketing',
+]
+
 const card = (id: string) => document.querySelector(`[data-app="${id}"]`)
 const service = (id: string) => document.querySelector(`[data-service="${id}"]`)
 
@@ -164,16 +170,40 @@ describe('OKURMEN DIGITAL portal', () => {
     expect(service('website')).toHaveAttribute('href', 'https://okurmenkids.com/')
     expect(service('website')).toHaveAttribute('target', '_blank')
     expect(service('website')).toHaveAttribute('rel', 'noopener noreferrer')
-    // There is no public feedback page (surveys use personal links) — shown as «Soon», not a link.
-    expect(service('feedback')).toHaveAttribute('aria-disabled')
-    expect(service('feedback')).not.toHaveAttribute('href')
+    // Feedback: the public website's testimonials page (published reviews only), in a new tab.
+    expect(service('feedback')).toHaveAttribute('href', 'https://okurmenkids.com/testimonials')
+    expect(service('feedback')).toHaveAttribute('target', '_blank')
+    expect(service('feedback')).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(service('feedback')).not.toHaveAttribute('aria-disabled')
   })
 
-  it('opens the public gallery for everyone and the survey manager for assistants and admins', () => {
+  it('opens the public gallery and the public testimonials for a signed-in admin', () => {
     mockUseAuth.mockReturnValue({ user: user('admin'), status: 'authenticated', logout: vi.fn() })
     renderPortal()
     expect(service('projects')).toHaveAttribute('href', '/projects')
-    expect(service('feedback')).toHaveAttribute('href', '/assistant/surveys')
+    expect(service('feedback')).toHaveAttribute('href', 'https://okurmenkids.com/testimonials')
+    expect(service('feedback')).toHaveAttribute('target', '_blank')
+  })
+
+  it('sends every role — and guests — to the same public testimonials page', () => {
+    const feedback = PORTAL_SERVICES.find((item) => item.id === 'feedback')!
+    const expected = { kind: 'open', href: 'https://okurmenkids.com/testimonials', external: true }
+    for (const role of ROLES) {
+      expect(resolveService(feedback, user(role))).toEqual(expected)
+    }
+    expect(resolveService(feedback, null)).toEqual(expected)
+  })
+
+  it('lets VITE_PORTAL_FEEDBACK_URL override the testimonials destination', async () => {
+    vi.stubEnv('VITE_PORTAL_FEEDBACK_URL', 'https://example.org/reviews')
+    vi.resetModules()
+    try {
+      const { PORTAL_SERVICES: services } = await import('./config')
+      expect(services.find((item) => item.id === 'feedback')!.href).toBe('https://example.org/reviews')
+    } finally {
+      vi.unstubAllEnvs()
+      vi.resetModules()
+    }
   })
 
   it('shows Student Projects to every role, signed in or not', () => {

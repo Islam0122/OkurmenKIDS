@@ -145,13 +145,13 @@ export const PORTAL_SERVICES: PortalService[] = [
     href: env(ENV.VITE_PORTAL_PROJECTS_URL, '/projects'),
   },
   {
-    // Опросы обратной связи (apps.feedback) отвечают по личной ссылке на каждый опрос — общего
-    // публичного адреса нет. Ассистент и администратор ведут опросы в /assistant/surveys;
-    // VITE_PORTAL_FEEDBACK_URL задаёт общую форму, когда она появится.
+    // Отзывы на публичном сайте (okurmen-public-website, /testimonials): только опубликованные
+    // отзывы с согласием автора (apps.website.public.testimonials). Одна ссылка для всех ролей,
+    // в новой вкладке. Закрытые опросы родителей (apps.feedback) остаются в кабинете
+    // ассистента — /assistant/surveys — и сюда не выводятся.
     id: 'feedback',
     icon: MessageSquareHeart,
-    href: env(ENV.VITE_PORTAL_FEEDBACK_URL, null),
-    roleHrefs: { assistant: '/assistant/surveys', admin: '/assistant/surveys' },
+    href: env(ENV.VITE_PORTAL_FEEDBACK_URL, 'https://okurmenkids.com/testimonials'),
   },
   {
     // Официальный сайт академии (okurmen-public-website/) на production-домене.

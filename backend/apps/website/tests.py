@@ -6,6 +6,7 @@ from __future__ import annotations
 import datetime as dt
 import shutil
 import tempfile
+from unittest import mock
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -239,6 +240,63 @@ class PrivacyTests(Base):
         self.assertEqual(r["results"][0]["kind"], "video")
         self.assertEqual(r["results"][0]["video_embed"], "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ")
         self.assertEqual(r["average_rating"], 5.0)
+
+    def test_testimonials_show_only_published_with_consent(self):
+        """The public page (and the portal's «Обратная связь» card that links to it)
+        lists only published reviews with consent whose publication time has come."""
+        now = timezone.now()
+        hidden = {
+            "Черновик": dict(status=Workflow.DRAFT, consent=True),
+            "На согласовании": dict(status=Workflow.REVIEW, consent=True),
+            "В архиве": dict(status=Workflow.ARCHIVED, consent=True),
+            "Запланирован": dict(status=Workflow.PUBLISHED, consent=True, published_at=now + dt.timedelta(days=1)),
+            "Без согласия": dict(status=Workflow.PUBLISHED, consent=False),
+        }
+        for name, fields in hidden.items():
+            Testimonial.objects.create(author_name=name, text="Скрытый отзыв", **fields)
+        visible = {
+            "Студент Азамат": Testimonial.Role.STUDENT,
+            "Айгуль, мама Эмира": Testimonial.Role.PARENT,
+            "Выпускница Алина": Testimonial.Role.GRADUATE,
+        }
+        for name, role in visible.items():
+            Testimonial.objects.create(author_name=name, author_role=role, text="Спасибо!", status=Workflow.PUBLISHED,
+                                       consent=True, published_at=now - dt.timedelta(hours=1))
+        with_photo = Testimonial.objects.get(author_name="Айгуль, мама Эмира")
+        with_photo.photo = image_file("aigul.png")
+        with_photo.save()
+
+        r = self.anon.get(f"{PUBLIC}testimonials/")
+        self.assertEqual(r.status_code, 200)
+        data = r.data
+        # Students, parents and graduates — exactly the published ones, nothing hidden.
+        self.assertCountEqual([t["author_name"] for t in data["results"]], list(visible))
+        self.assertEqual(data["counts"], {"all": 3, "text": 2, "photo": 1, "video": 0})
+        self.assertCountEqual([t["author_role"] for t in data["results"]], ["student", "parent", "graduate"])
+        # Name, text and the photo when there is one.
+        by_name = {t["author_name"]: t for t in data["results"]}
+        self.assertEqual(by_name["Айгуль, мама Эмира"]["text"], "Спасибо!")
+        self.assertTrue(by_name["Айгуль, мама Эмира"]["photo"])
+        self.assertIsNone(by_name["Студент Азамат"]["photo"])
+        # Workflow internals never leave the server.
+        for item in data["results"]:
+            self.assertFalse({"status", "consent", "_ts", "created_by"} & set(item))
+        # The filter of the public page applies the same rules.
+        photo_only = self.anon.get(f"{PUBLIC}testimonials/", {"kind": "photo"}).data
+        self.assertEqual([t["author_name"] for t in photo_only["results"]], ["Айгуль, мама Эмира"])
+        # The homepage block uses the same visibility rules.
+        settings_keys = {s["key"] for s in self.anon.get(f"{PUBLIC}settings/").data["sections"]}
+        if "testimonials" in settings_keys:
+            home = self.anon.get(f"{PUBLIC}home/").data
+            self.assertTrue({t["author_name"] for t in home["testimonials"]} <= set(visible))
+
+    def test_testimonial_becomes_visible_once_its_publication_time_comes(self):
+        later = timezone.now() + dt.timedelta(hours=2)
+        Testimonial.objects.create(author_name="Позже", text="Скоро", status=Workflow.PUBLISHED, consent=True,
+                                   published_at=later)
+        self.assertEqual(self.anon.get(f"{PUBLIC}testimonials/").data["results"], [])
+        with mock.patch("django.utils.timezone.now", return_value=later + dt.timedelta(minutes=1)):
+            self.assertEqual([t["author_name"] for t in public.testimonials()["results"]], ["Позже"])
 
 
 class AchievementTests(Base):
