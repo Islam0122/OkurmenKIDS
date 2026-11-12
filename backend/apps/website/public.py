@@ -263,7 +263,7 @@ def _course_record(page: CoursePage, lang: str) -> dict:
         "age_min": page.age_min,
         "age_max": page.age_max,
         "duration": tr(page, "duration", lang) or None,
-        "schedule": page.schedule or None,
+        "schedule": tr(page, "schedule", lang) or None,
         "lessons": course.count_lesson if course else None,
         "price": page.price or None,
         "is_featured": page.is_featured,
