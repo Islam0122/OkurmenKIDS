@@ -23,7 +23,7 @@ import { siteApi } from '@/services/endpoints'
 import type { ImageAsset, NewsCategory, TeamGroup } from '@/types/api'
 import { cn } from '@/utils/cn'
 
-import { PROGRAMS, programTarget } from './programs'
+import { PROGRAMS, programTarget } from '@/features/programs/programs'
 
 const PHILOSOPHY = [
   { icon: Rocket, key: 1 },
