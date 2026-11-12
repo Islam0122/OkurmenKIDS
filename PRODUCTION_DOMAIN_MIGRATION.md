@@ -16,7 +16,7 @@ Vercel, Railway and DNS steps for moving Okurmen Kids to its custom domain.
 | Service | Production URL | Hosting | Code in this repo |
 |---|---|---|---|
 | Public website | https://okurmenkids.com | Vercel (own project) | `okurmen-public-website/` |
-| WWW redirect | https://www.okurmenkids.com → 308 → apex | Vercel (same project as the website) | `okurmen-public-website/vercel.json` |
+| WWW redirect | https://www.okurmenkids.com → 308 → apex | Vercel (same project as the website) | **Vercel Domains setting only** (not `vercel.json`, see §6.1) |
 | LMS | https://lms.okurmenkids.com | Vercel | `frontend/` |
 | Admin dashboard | https://admin.okurmenkids.com | Vercel | `frontend/` (see note below) |
 | Backend API | https://api.okurmenkids.com | Railway | `backend/` |
@@ -65,7 +65,7 @@ Severity: 🔴 breaks production or a security hole · 🟠 breaks the new domai
 | 10 | 🟠 | Railway env (`LMS_FRONTEND_URL`, `PUBLIC_WEBSITE_URL`, `SITE_URL`, `ATTENDANCE_QR_BASE_URL`, `FEEDBACK_PUBLIC_BASE_URL`) | The code defaults point at `okurmen-kids-drab.vercel.app` and `okurmen-public-website.vercel.app`. | ⚠️ **Defaults kept on purpose** so nothing points at a domain that isn't live yet. Set the env vars in §5 when cutting over. |
 | 11 | 🟡 | `*.env.example`, READMEs | Examples used `okurmenkids.up.railway.app`, `okurmenkids.kg` and `<your-backend>`. | ✅ `.env.example` files updated. |
 | 12 | 🟡 | `frontend/src/features/siteCms/SettingsPage.tsx` | SEO preview fallback was `https://okurmenkids.kg`. | ✅ Now `https://okurmenkids.com`. It is only shown when the API returns no `public_site_url`. |
-| 13 | 🟠 | `okurmen-public-website/vercel.json` | No www→apex rule. | ✅ Host-conditional `permanent` redirect (Vercel sends **308**). Also set it in the Vercel Domains UI (§6). |
+| 13 | 🟠 | `okurmen-public-website/vercel.json` | No www→apex rule. | ✅ Done in the **Vercel Domains UI only** (§6.1). A `vercel.json` host redirect added here first was **removed**: together with the dashboard's default apex→www 307 it caused a redirect loop (see `PUBLIC_WEBSITE_REDIRECT_FIX.md`). |
 | 14 | 🟡 | `frontend/src/features/portal/config.ts`, `okurmen-public-website/src/app/config/env.ts` | Launcher defaults hard-code `training-portal-theta.vercel.app`, `okurmen-kids-drab.vercel.app/monthly-performance` and `okurmen-kids-drab.vercel.app/careers`. | ⚠️ Left as defaults because the tests assert them and the targets still exist. Override with `VITE_PORTAL_*_URL` / `VITE_CAREERS_URL` (§6). |
 | 15 | 🔴? | `backend/Dockerfile` | `CMD ["python", "manage.py", "runserver", …]`. If the Railway web service has **no custom Start Command**, production runs Django's dev server, with no `collectstatic` and no migrations. | ⚠️ Can't see the Railway dashboard. Check that the Start Command is `sh deployment/server-entrypoint.sh` (§10). |
 | 16 | 🟡 | Auth | Logout is client-side only (tokens removed from `localStorage`). `rest_framework_simplejwt.token_blacklist` isn't installed and `BLACKLIST_AFTER_ROTATION=False`, so a refresh token stays valid for up to 7 days after logout. | ⚠️ Not changed: it would need a migration (the brief says no schema changes). Documented as a risk. |
@@ -114,7 +114,7 @@ What the audit found to be **correct already, and left unchanged**:
 | `backend/config/settings/base.py` | `SITE_URL` fallback to the LMS login page |
 | `backend/config/urls.py` | `/api/docs/`, `/api/redoc/`, `/api/schema/` aliases |
 | `backend/deployment/server-entrypoint.sh` | No built-in `admin/admin` superuser; env-driven bootstrap |
-| `okurmen-public-website/vercel.json` | `www.okurmenkids.com` → `https://okurmenkids.com` 308 redirect |
+| `okurmen-public-website/vercel.json` | (www redirect added, later removed; redirect lives in Vercel Domains) |
 | `frontend/src/features/siteCms/SettingsPage.tsx` | `.kg` → `.com` display fallback |
 | `.env.example`, `frontend/.env.example`, `okurmen-public-website/.env.example`, `training-portal/.env.example` | New domains in examples |
 | `PRODUCTION_DOMAIN_MIGRATION.md` | This document |
@@ -275,9 +275,10 @@ Railway's `RAILWAY_PUBLIC_DOMAIN` is injected automatically and added to
 ### 6.1 Public website: project `okurmen-public-website`, Root Directory `okurmen-public-website`
 
 * **Domains:** add `okurmenkids.com` (primary), then `www.okurmenkids.com` with
-  **"Redirect to okurmenkids.com"** and status **308 Permanent Redirect**. The
-  `vercel.json` rule does the same thing, so the two agree. Keep
-  `okurmen-public-website.vercel.app`.
+  **"Redirect to okurmenkids.com"** and status **308 Permanent Redirect**.
+  `okurmenkids.com` itself must be **connected to Production with no redirect**.
+  Don't add a www rule to `vercel.json`: two redirect sources can point at each
+  other and loop. Keep `okurmen-public-website.vercel.app`.
 * **Environment variables (Production):**
 
   | Name | Value |
