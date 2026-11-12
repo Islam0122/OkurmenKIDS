@@ -69,6 +69,12 @@ export interface Banner {
   cta_url: string
 }
 
+/** SEO overrides from the CMS (Russian version only; null — use the title / excerpt). */
+export interface SeoFields {
+  seo_title?: string | null
+  seo_description?: string | null
+}
+
 export interface SiteSettings {
   hero: {
     title: string
@@ -84,6 +90,9 @@ export interface SiteSettings {
     whatsapp: string | null
     telegram: string | null
     instagram: string | null
+    facebook?: string | null
+    youtube?: string | null
+    tiktok?: string | null
     email: string | null
     working_hours: string | null
   }
@@ -122,7 +131,7 @@ export interface CourseCard {
   is_featured: boolean
 }
 
-export interface CourseDetail extends CourseCard {
+export interface CourseDetail extends CourseCard, SeoFields {
   body: string
   outcomes: string[]
   curriculum: { title: string; text: string }[]
@@ -176,7 +185,7 @@ export interface NewsCard {
   photo_count: number
 }
 
-export interface NewsArticle extends Omit<NewsCard, 'photo_count'> {
+export interface NewsArticle extends Omit<NewsCard, 'photo_count'>, SeoFields {
   body: string
   author: string | null
   photos: ImageAsset[]
@@ -215,7 +224,7 @@ export interface EventCard {
   is_featured: boolean
 }
 
-export interface EventDetail extends EventCard {
+export interface EventDetail extends EventCard, SeoFields {
   body: string
   branch_address: string | null
   photos: ImageAsset[]
@@ -252,7 +261,7 @@ export interface AchievementCard {
   recipient?: string | null
 }
 
-export interface AchievementDetail extends AchievementCard {
+export interface AchievementDetail extends AchievementCard, SeoFields {
   body: string
   photos: ImageAsset[]
   updated_at: string
@@ -283,7 +292,7 @@ export interface TeamMember {
   photo: ImageAsset | null
 }
 
-export interface TeamMemberDetail extends TeamMember {
+export interface TeamMemberDetail extends TeamMember, SeoFields {
   career: string[]
   achievements: string[]
   colleagues: TeamMember[]

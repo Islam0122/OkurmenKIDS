@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { BarChart3, CalendarRange, ClipboardCheck, Globe, Home, Image, Inbox, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
+import { BarChart3, CalendarRange, ClipboardCheck, Globe, LayoutDashboard, LogOut, ScanLine, Target, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -38,15 +38,11 @@ export const MARKETING_SIDEBAR_EXTRA: NavItem[] = [
   { to: '/marketing/campaigns', label: 'Кампании', icon: Target },
 ]
 
-/** Раздел «Сайт» — CMS публичного сайта (apps.website). Маркетингу, директору
- * и администратору — весь раздел; отделу продаж — только заявки. */
+/** «Управление сайтом» — отдельное рабочее пространство CMS публичного
+ * сайта (features/siteCms, /marketing/site). */
 export const SITE_NAV: NavItem[] = [
-  { to: '/marketing/site', label: 'Сайт', icon: Globe, end: true },
-  { to: '/marketing/site/home', label: 'Главная сайта', icon: Home },
-  { to: '/marketing/site/media', label: 'Медиатека', icon: Image },
-  { to: '/marketing/site/leads', label: 'Заявки с сайта', shortLabel: 'Заявки', icon: Inbox },
+  { to: '/marketing/site', label: 'Управление сайтом', shortLabel: 'Сайт', icon: Globe },
 ]
-const SALES_ROLES = ['sales_manager', 'rop', 'dop']
 
 const ROW = 'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors'
 
@@ -56,9 +52,8 @@ export function MarketingLayout() {
   const { user, logout } = useAuth()
   const initials = user ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`.toUpperCase() : ''
   const isMarketing = user?.role === 'marketing'
-  const siteNav = user && SALES_ROLES.includes(user.role) ? SITE_NAV.filter((i) => i.to.endsWith('/leads')) : SITE_NAV
-  const sidebar = isMarketing ? [...MARKETING_NAV, ...MARKETING_SIDEBAR_EXTRA] : siteNav
-  const mobileNav = isMarketing ? MARKETING_NAV : siteNav
+  const sidebar = isMarketing ? [...MARKETING_NAV, ...MARKETING_SIDEBAR_EXTRA] : SITE_NAV
+  const mobileNav = isMarketing ? MARKETING_NAV : SITE_NAV
 
   return (
     <div className="flex min-h-dvh bg-surface-muted">
@@ -110,7 +105,7 @@ export function MarketingLayout() {
             <img src={logo} alt="" className="size-7 shrink-0 object-contain lg:hidden" />
             <span className="truncate font-semibold text-ink lg:hidden">{isMarketing ? 'Маркетинг' : 'Сайт'}</span>
             {isMarketing ? (
-              <NavLink to="/marketing/site" aria-label="Публичный сайт" className="ml-1 flex size-9 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-hover lg:hidden">
+              <NavLink to="/marketing/site" aria-label="Управление сайтом" className="ml-1 flex size-9 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-hover lg:hidden">
                 <Globe className="size-5" aria-hidden />
               </NavLink>
             ) : null}

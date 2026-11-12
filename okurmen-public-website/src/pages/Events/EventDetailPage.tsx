@@ -38,8 +38,8 @@ export function EventView({ event, preview }: { event: EventDetail; preview?: bo
   return (
     <>
       <Seo
-        title={event.title}
-        description={event.excerpt || excerpt(event.body)}
+        title={event.seo_title || event.title}
+        description={event.seo_description || event.excerpt || excerpt(event.body)}
         image={event.cover?.url}
         type="event"
         noindex={preview}

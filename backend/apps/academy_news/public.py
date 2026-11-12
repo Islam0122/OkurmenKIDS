@@ -27,6 +27,21 @@ DEFAULT_PAGE_SIZE = 9
 MAX_PAGE_SIZE = 36
 RELATED = 3
 CATEGORY_IDS = tuple(Article.Category.values)
+LANGS = ("ru", "ky", "en")
+
+
+def lang_of(value) -> str:
+    value = (value or "").strip().lower()[:2]
+    return value if value in LANGS else "ru"
+
+
+def _tr(article: Article, field: str, lang: str) -> str:
+    """The translation of a field (public site /ky, /en), falling back to Russian."""
+    if lang != "ru":
+        translated = (getattr(article, f"{field}_{lang}", "") or "").strip()
+        if translated:
+            return getattr(article, f"{field}_{lang}")
+    return getattr(article, field, "") or ""
 
 
 def cache_seconds() -> int:
@@ -58,7 +73,7 @@ def _image(original, large, thumb, width, height, caption) -> dict | None:
     return {"url": full, "thumb": _url(thumb) or full, "width": width, "height": height, "caption": caption or ""}
 
 
-def _record(article: Article) -> dict:
+def _record(article: Article, lang: str = "ru") -> dict:
     cover = _image(article.cover, article.cover_large, article.cover_thumb, article.cover_width, article.cover_height,
                    article.cover_caption)
     photos = [
@@ -70,9 +85,12 @@ def _record(article: Article) -> dict:
         author = article.author.get_full_name() or None
     return {
         "slug": article.slug,
-        "title": article.title,
-        "excerpt": article.excerpt,
-        "body": article.body,
+        "title": _tr(article, "title", lang),
+        "excerpt": _tr(article, "excerpt", lang),
+        "body": _tr(article, "body", lang),
+        # SEO overrides are written in Russian; /ky and /en use the translated texts.
+        "seo_title": (article.seo_title or None) if lang == "ru" else None,
+        "seo_description": (article.seo_description or None) if lang == "ru" else None,
         "category": article.category,
         "published_at": article.published_at.isoformat(),
         "is_featured": article.is_featured,
@@ -83,7 +101,7 @@ def _record(article: Article) -> dict:
     }
 
 
-def _all_published() -> list[dict]:
+def _all_published(lang: str = "ru") -> list[dict]:
     def build():
         qs = (
             Article.objects.filter(status=Article.Status.PUBLISHED)
@@ -91,12 +109,12 @@ def _all_published() -> list[dict]:
             .prefetch_related(Prefetch("photos", queryset=ArticlePhoto.objects.order_by("order", "id")))
             .order_by("-published_at", "-id")
         )
-        return [_record(article) for article in qs]
+        return [_record(article, lang) for article in qs]
 
     seconds = cache_seconds()
     if not seconds:
         return build()
-    key = f"public_news:{cache_version()}:all"
+    key = f"public_news:{cache_version()}:all:{lang}"
     value = cache.get(key)
     if value is None:
         value = build()
@@ -104,10 +122,10 @@ def _all_published() -> list[dict]:
     return value
 
 
-def visible(now: dt.datetime | None = None) -> list[dict]:
+def visible(now: dt.datetime | None = None, lang: str = "ru") -> list[dict]:
     """Published articles whose time has come, newest first."""
     ts = (now or timezone.now()).timestamp()
-    return [record for record in _all_published() if record["_ts"] <= ts]
+    return [record for record in _all_published(lang_of(lang)) if record["_ts"] <= ts]
 
 
 CARD_FIELDS = ("slug", "title", "excerpt", "category", "published_at", "cover")
@@ -127,8 +145,8 @@ def _int(value, name: str, low: int, high: int) -> int:
     return number
 
 
-def listing(*, q: str = "", category: str = "", page=None, page_size=None) -> dict:
-    records = visible()
+def listing(*, q: str = "", category: str = "", page=None, page_size=None, lang: str = "ru") -> dict:
+    records = visible(lang=lang)
     query = (q or "").strip().casefold()[:100]
     category = (category or "").strip().lower()
     if category and category != "all" and category not in CATEGORY_IDS:
@@ -164,11 +182,11 @@ def listing(*, q: str = "", category: str = "", page=None, page_size=None) -> di
     }
 
 
-def article(slug: str) -> dict | None:
+def article(slug: str, lang: str = "ru") -> dict | None:
     slug = (slug or "").strip().lower()
     if not slug or len(slug) > 220:
         return None
-    records = visible()
+    records = visible(lang=lang)
     record = next((r for r in records if r["slug"] == slug), None)
     if record is None:
         return None

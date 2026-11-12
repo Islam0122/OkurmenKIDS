@@ -84,7 +84,7 @@ class VisibilityTests(Base):
         article = self.article()
         detail = self.get(f"{API}{article.slug}/").data
         self.assertEqual(set(detail), {"slug", "title", "excerpt", "body", "category", "published_at", "author",
-                                       "cover", "photos", "related"})
+                                       "cover", "photos", "related", "seo_title", "seo_description"})
         self.assertIsNone(detail["author"])
         self.assertNotIn("editor", str(detail))
         article.show_author = True

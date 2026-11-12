@@ -37,15 +37,15 @@ export default async function middleware(request: Request): Promise<Response> {
   try {
     const [page, data] = await Promise.all([
       fetch(new URL('/index.html', url)).then((r) => r.text()),
-      fetch(`${api}${spec.api(slug)}?lang=${lang}`, { headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : null)),
+      fetch(`${api}${spec.api(slug)}?lang=${lang}`, { headers: { Accept: 'application/json' } }).then((r) => (r.ok ? (r.json() as Promise<Record<string, any>>) : null)),
     ])
     if (!data) return next()
     const site = (process.env.VITE_SITE_URL || url.origin).replace(/\/+$/, '')
     const media = (process.env.VITE_MEDIA_URL || api).replace(/\/+$/, '')
     const rawImage = spec.image(data)
     const image = rawImage ? (rawImage.startsWith('http') ? rawImage : `${media}${rawImage}`) : `${site}/og-image.png`
-    const title = `${spec.title(data)} — Okurmen Kids`
-    const text = plain(spec.text(data))
+    const title = `${data.seo_title || spec.title(data)} — Okurmen Kids`
+    const text = plain(data.seo_description || spec.text(data))
     const canonical = `${site}${url.pathname.replace(/\/$/, '')}`
     const tags = [
       `<title>${escape(title)}</title>`,

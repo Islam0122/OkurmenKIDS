@@ -1,20 +1,30 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { renderWithProviders } from '@/test/testUtils'
+import { ToastProvider } from '@/components/ui/Toast'
+import { createTestQueryClient } from '@/test/testUtils'
 
+import { buildBody, initialValues, langFill, mergeSaved } from './editorState'
 import { parseMarkup } from './markup'
+import { RESOURCES } from './schema'
 
 vi.mock('@/api/client', () => ({ apiClient: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 
 import { apiClient } from '@/api/client'
 import type { SiteMeta } from './api'
-import { ResourcePage } from './ResourcePage'
+import { ContentEditorRoute } from './ContentEditorPage'
+import { ContentListRoute } from './ContentListPage'
+import { navFor } from './nav'
 
 const meta = (overrides: Partial<SiteMeta['permissions']> = {}): SiteMeta => ({
   permissions: { can_edit: true, can_approve: false, require_approval: false, can_delete_leads: false, ...overrides },
   public_site_url: 'https://kids.example.kg',
+  user_id: 1,
+  staff: [{ id: 1, name: 'Айжан', role: 'marketing' }],
   choices: {
     workflow: [{ value: 'draft', label: 'Черновик' }, { value: 'published', label: 'Опубликовано' }],
     achievement_category: [{ value: 'award', label: 'Награда' }, { value: 'competition', label: 'Победа в соревновании' }],
@@ -22,41 +32,119 @@ const meta = (overrides: Partial<SiteMeta['permissions']> = {}): SiteMeta => ({
   lms: { courses: [], teachers: [], projects: [], news: [] },
 })
 
-const row = { id: 7, title: 'Олимпиада', category: 'award', date: '2026-10-01', workflow_state: 'draft', cover: null, photos: [], preview: { url: 'https://kids.example.kg/preview/abc' } }
+const row = {
+  id: 7, title: 'Олимпиада', title_ky: '', title_en: '', category: 'award', date: '2026-10-01', workflow_state: 'draft', status: 'draft',
+  cover: null, photos: [], preview: { url: 'https://kids.example.kg/preview/abc' }, updated_at: '2026-11-01T10:00:00Z', seo_title: '', seo_description: '',
+}
 
-describe('CMS публичного сайта', () => {
+function renderAt(path: string, routes: { path: string; element: ReactElement }[]) {
+  const router = createMemoryRouter([...routes, { path: '*', element: <p>другая страница</p> }], { initialEntries: [path] })
+  render(
+    <QueryClientProvider client={createTestQueryClient()}>
+      <ToastProvider><RouterProvider router={router} /></ToastProvider>
+    </QueryClientProvider>,
+  )
+  return router
+}
+
+const editorRoutes = [
+  { path: '/marketing/site/:resource/:id', element: <ContentEditorRoute /> },
+  { path: '/marketing/site/:resource', element: <ContentListRoute /> },
+]
+
+describe('Управление сайтом — редактор', () => {
   let metaData = meta()
   beforeEach(() => {
     metaData = meta()
+    window.localStorage.clear()
     vi.mocked(apiClient.get).mockReset().mockImplementation(async (url: string) => ({
-      data: url.endsWith('/meta/') ? metaData : url.endsWith('/achievements/') ? { count: 1, next: null, previous: null, results: [row] } : [],
+      data: url.endsWith('/meta/') ? metaData
+        : url.endsWith('/achievements/7/') ? row
+          : url.endsWith('/achievements/') ? { count: 1, next: null, previous: null, results: [row] } : [],
     }))
-    vi.mocked(apiClient.patch).mockReset().mockResolvedValue({ data: row })
-    vi.mocked(apiClient.post).mockReset().mockResolvedValue({ data: { ...row, workflow_state: 'published' } })
+    vi.mocked(apiClient.patch).mockReset().mockImplementation(async (_url: string, body: unknown) => ({ data: { ...row, ...(body as object) } }))
+    vi.mocked(apiClient.post).mockReset().mockResolvedValue({ data: { ...row, workflow_state: 'published', status: 'published' } })
   })
 
-  it('список, редактор, предпросмотр и публикация', async () => {
+  it('языки не теряются при переключении, публикация сохраняет все три версии', async () => {
     const user = userEvent.setup()
-    renderWithProviders(<ResourcePage resource="achievements" />)
-    await user.click(await screen.findByText('Олимпиада'))
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByRole('link', { name: /Предпросмотр/ })).toHaveAttribute('href', 'https://kids.example.kg/preview/abc')
-    await user.clear(within(dialog).getByLabelText('Название *'))
-    await user.type(within(dialog).getByLabelText('Название *'), 'Олимпиада 2026')
-    await user.click(within(dialog).getByRole('button', { name: 'Опубликовать' }))
+    renderAt('/marketing/site/achievements/7', editorRoutes)
+    const title = await screen.findByLabelText(/^Название/)
+    await user.clear(title)
+    await user.type(title, 'Олимпиада 2026')
+    await user.click(screen.getByRole('tab', { name: /KG/ }))
+    await user.type(screen.getByLabelText(/Название \(KG\)/), 'Олимпиада KG')
+    await user.click(screen.getByRole('tab', { name: /EN/ }))
+    await user.type(screen.getByLabelText(/Название \(EN\)/), 'Olympiad')
+    await user.click(screen.getByRole('tab', { name: /RU/ }))
+    expect(screen.getByLabelText(/^Название/)).toHaveValue('Олимпиада 2026')
+    await user.click(screen.getAllByRole('button', { name: 'Опубликовать' })[0])
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/marketing/site/achievements/7/publish/', expect.objectContaining({ keep_schedule: false })))
-    expect(apiClient.patch).toHaveBeenCalledWith('/marketing/site/achievements/7/', expect.objectContaining({ title: 'Олимпиада 2026', category: 'award' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/marketing/site/achievements/7/', expect.objectContaining({
+      title: 'Олимпиада 2026', title_ky: 'Олимпиада KG', title_en: 'Olympiad', category: 'award',
+    }))
   })
 
-  it('без права публикации — только «На согласование»', async () => {
+  it('без права публикации — «На согласование»', async () => {
     metaData = meta({ require_approval: true })
     const user = userEvent.setup()
-    renderWithProviders(<ResourcePage resource="achievements" />)
-    await user.click(await screen.findByText('Олимпиада'))
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).queryByRole('button', { name: 'Опубликовать' })).not.toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'На согласование' }))
+    renderAt('/marketing/site/achievements/7', editorRoutes)
+    await screen.findByLabelText(/^Название/)
+    expect(screen.queryByRole('button', { name: 'Опубликовать' })).not.toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: 'На согласование' })[0])
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/marketing/site/achievements/7/submit_review/', {}))
+  })
+
+  it('удаление — только после подтверждения', async () => {
+    const user = userEvent.setup()
+    vi.mocked(apiClient.delete).mockReset().mockResolvedValue({})
+    renderAt('/marketing/site/achievements/7', editorRoutes)
+    await screen.findByLabelText(/^Название/)
+    await user.click(screen.getAllByRole('button', { name: 'Ещё действия' })[0])
+    await user.click(screen.getByRole('menuitem', { name: /Удалить/ }))
+    expect(apiClient.delete).not.toHaveBeenCalled()
+    await user.click(within(screen.getByRole('dialog', { name: 'Удалить материал?' })).getByRole('button', { name: 'Удалить' }))
+    await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith('/marketing/site/achievements/7/'))
+  })
+
+  it('уход с несохранёнными изменениями спрашивает подтверждение', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/marketing/site/achievements/7', editorRoutes)
+    await user.type(await screen.findByLabelText(/^Название/), ' X')
+    await router.navigate('/elsewhere')
+    expect(await screen.findByRole('dialog', { name: 'Уйти без сохранения?' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/marketing/site/achievements/7')
+  })
+
+  it('список: статус и языки', async () => {
+    renderAt('/marketing/site/achievements', editorRoutes)
+    expect((await screen.findAllByText('Олимпиада')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Черновик').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('KG').length).toBeGreaterThan(0)
+  })
+})
+
+describe('логика редактора', () => {
+  const def = RESOURCES.achievements
+
+  it('изображение из медиатеки уходит ссылкой media:<id>, неизменённое — не отправляется', () => {
+    const values = initialValues(def, row as never)
+    expect(buildBody(def, values)).not.toHaveProperty('cover')
+    expect(buildBody(def, { ...values, cover: { ref: 'media:5', preview: '/m/5.jpg' } }).cover).toBe('media:5')
+  })
+
+  it('полнота переводов и слияние после автосохранения', () => {
+    const values = { ...initialValues(def, row as never), title_ky: 'KG' }
+    expect(langFill(def, values).ky).toBe('full')
+    expect(langFill(def, values).en).toBe('empty')
+    // a field edited during the save keeps the newer text
+    expect(mergeSaved({ title: 'новее', slug: '' }, { title: 'старое', slug: '' }, { title: 'старое', slug: 'olimpiada' })).toEqual({ title: 'новее', slug: 'olimpiada' })
+  })
+
+  it('отдел продаж видит только заявки', () => {
+    const items = navFor(false).flatMap((g) => g.items.map((i) => i.to))
+    expect(items).toEqual(['/marketing/site/leads', '/marketing/site/leads/board'])
+    expect(navFor(true).map((g) => g.label)).toEqual(['', 'Контент', 'Медиа', 'Обратная связь', 'Настройки'])
   })
 
   it('разметка редактора совпадает с сайтом', () => {

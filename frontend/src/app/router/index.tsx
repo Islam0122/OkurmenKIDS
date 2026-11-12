@@ -632,24 +632,13 @@ export const router = createBrowserRouter([
     errorElement: <RouteErrorPage />,
     children: [
       {
-        // Кабинет открыт маркетингу; раздел «Сайт» (CMS публичного сайта,
-        // backend apps.website.cms) — ещё директору и администратору, а
-        // «Заявки» с сайта — и отделу продаж. Права проверяет сервер.
+        // Кабинет маркетинга — только маркетингу (директор и администратор
+        // попадают в «Управление сайтом»). Права проверяет сервер.
         element: <RequireRoles roles={['marketing', 'admin', 'director', 'sales_manager', 'rop', 'dop']} />,
         children: [
           {
             lazy: async () => ({ Component: (await import('@/features/marketing/MarketingLayout')).MarketingLayout }),
             children: [
-              {
-                element: <RequireRoles roles={['marketing', 'admin', 'director']} redirectTo="/marketing/site/leads" />,
-                children: [
-                  { path: 'site', lazy: async () => ({ Component: (await import('@/features/siteCms/SiteOverviewPage')).SiteOverviewPage }) },
-                  { path: 'site/home', lazy: async () => ({ Component: (await import('@/features/siteCms/HomepagePage')).HomepagePage }) },
-                  { path: 'site/media', lazy: async () => ({ Component: (await import('@/features/siteCms/MediaLibraryPage')).MediaLibraryPage }) },
-                  { path: 'site/:resource', lazy: async () => ({ Component: (await import('@/features/siteCms/SiteResourceRoute')).SiteResourceRoute }) },
-                ],
-              },
-              { path: 'site/leads', lazy: async () => ({ Component: (await import('@/features/siteCms/LeadsPage')).LeadsPage }) },
               {
                 element: <RequireRoles roles={['marketing']} redirectTo="/marketing/site" />,
                 children: [
@@ -663,6 +652,50 @@ export const router = createBrowserRouter([
                   { path: '*', element: <Navigate to="/marketing" replace /> },
                 ],
               },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // «Управление сайтом» — CMS публичного сайта (backend apps.website.cms):
+    // контент, медиа, заявки и настройки — маркетингу, директору и
+    // администратору; заявки — ещё и отделу продаж. Права проверяет сервер.
+    path: '/marketing/site',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['marketing', 'admin', 'director', 'sales_manager', 'rop', 'dop']} />,
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/siteCms/CmsLayout')).CmsLayout }),
+            children: [
+              {
+                element: <RequireRoles roles={['marketing', 'admin', 'director']} redirectTo="/marketing/site/leads" />,
+                children: [
+                  { index: true, lazy: async () => ({ Component: (await import('@/features/siteCms/DashboardPage')).DashboardPage }) },
+                  { path: 'pages', lazy: async () => ({ Component: (await import('@/features/siteCms/PagesPage')).PagesPage }) },
+                  { path: 'pages/home', lazy: async () => ({ Component: (await import('@/features/siteCms/HomepagePage')).HomepagePage }) },
+                  { path: 'pages/about', lazy: async () => ({ Component: (await import('@/features/siteCms/HomepagePage')).AboutPage }) },
+                  // Старый адрес главной — внутри «Страниц сайта».
+                  { path: 'home', element: <Navigate to="/marketing/site/pages/home" replace /> },
+                  { path: 'projects', lazy: async () => ({ Component: (await import('@/features/siteCms/ProjectsPage')).ProjectsPage }) },
+                  { path: 'media', lazy: async () => ({ Component: (await import('@/features/siteCms/MediaLibraryPage')).MediaLibraryPage }) },
+                  { path: 'media/images', lazy: async () => { const { MediaLibraryPage } = await import('@/features/siteCms/MediaLibraryPage'); return { Component: () => <MediaLibraryPage key="image" kind="image" /> } } },
+                  { path: 'media/videos', lazy: async () => { const { MediaLibraryPage } = await import('@/features/siteCms/MediaLibraryPage'); return { Component: () => <MediaLibraryPage key="video" kind="video" /> } } },
+                  { path: 'contacts', lazy: async () => ({ Component: (await import('@/features/siteCms/ContactsPage')).ContactsPage }) },
+                  { path: 'settings', element: <Navigate to="/marketing/site/settings/seo" replace /> },
+                  { path: 'settings/:tab', lazy: async () => ({ Component: (await import('@/features/siteCms/SettingsPage')).SettingsPage }) },
+                  // Новости, события, достижения, отзывы, команда, курсы, баннеры…
+                  { path: ':resource', lazy: async () => ({ Component: (await import('@/features/siteCms/ContentListPage')).ContentListRoute }) },
+                  { path: ':resource/:id', lazy: async () => ({ Component: (await import('@/features/siteCms/ContentEditorPage')).ContentEditorRoute }) },
+                ],
+              },
+              { path: 'leads', lazy: async () => ({ Component: (await import('@/features/siteCms/LeadsPage')).LeadsPage }) },
+              { path: 'leads/board', lazy: async () => ({ Component: (await import('@/features/siteCms/LeadsPage')).LeadsBoardPage }) },
+              { path: '*', element: <Navigate to="/marketing/site" replace /> },
             ],
           },
         ],

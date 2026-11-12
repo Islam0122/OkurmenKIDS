@@ -32,8 +32,8 @@ function Profile({ member }: { member: TeamMemberDetail }) {
   return (
     <>
       <Seo
-        title={`${member.name} — ${member.position}`}
-        description={member.bio ? excerpt(member.bio) : member.position}
+        title={member.seo_title || `${member.name} — ${member.position}`}
+        description={member.seo_description || (member.bio ? excerpt(member.bio) : member.position)}
         image={member.photo?.url}
         type="article"
         jsonLd={[

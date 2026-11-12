@@ -186,6 +186,11 @@ def _site_data(lang: str) -> dict:
                 "secondary_cta": {"label": s.secondary_cta_label, "url": s.secondary_cta_url},
             },
             "intro_video": video_embed(s.intro_video_url),
+            "seo": {
+                "title": tr(s, "seo_title", lang) or None,
+                "description": tr(s, "seo_description", lang) or None,
+                "image": _image(s.og_image),
+            },
             "about": {
                 "story": tr(s, "about_story", lang),
                 "mission": tr(s, "mission", lang),
@@ -196,6 +201,9 @@ def _site_data(lang: str) -> dict:
                 "whatsapp": _whatsapp(s.whatsapp),
                 "telegram": _social(s.telegram, "https://t.me/"),
                 "instagram": _social(s.instagram, "https://instagram.com/"),
+                "facebook": _social(s.facebook, "https://facebook.com/"),
+                "youtube": _social(s.youtube, "https://youtube.com/@"),
+                "tiktok": _social(s.tiktok, "https://tiktok.com/@"),
                 "email": s.email or None,
                 "working_hours": s.working_hours or None,
             },
@@ -264,6 +272,9 @@ def _course_record(page: CoursePage, lang: str) -> dict:
         "curriculum": curriculum,
         "subjects": [s.name for s in course.subjects.all()] if course else [],
         "project_category": page.project_category or None,
+        # SEO overrides are written in Russian; /ky and /en use the translated texts.
+        "seo_title": (page.seo_title or None) if lang == "ru" else None,
+        "seo_description": (page.seo_description or None) if lang == "ru" else None,
         "updated_at": page.updated_at.isoformat(),
         "_ts": page.published_at.timestamp(),
     }
@@ -309,8 +320,8 @@ def featured_projects(ids: list[int], limit: int = 6) -> list[dict]:
     return [project_card(r) for r in records[:limit]]
 
 
-def featured_news(slugs: list[str], limit: int = 3) -> list[dict]:
-    records = news_public.visible()
+def featured_news(slugs: list[str], limit: int = 3, lang: str = "ru") -> list[dict]:
+    records = news_public.visible(lang=lang)
     if slugs:
         chosen = [r for r in records if r["slug"] in set(slugs)]
         if chosen:
@@ -342,6 +353,9 @@ def _event_record(event: Event, lang: str) -> dict:
         "cover": _cover(event),
         "photos": _photos(event),
         "is_featured": event.is_featured,
+        # SEO overrides are written in Russian; /ky and /en use the translated texts.
+        "seo_title": (event.seo_title or None) if lang == "ru" else None,
+        "seo_description": (event.seo_description or None) if lang == "ru" else None,
         "updated_at": event.updated_at.isoformat(),
         "_ts": event.published_at.timestamp(),
         "_start": event.starts_at.timestamp(),
@@ -450,6 +464,9 @@ def _achievement_record(item: Achievement, lang: str) -> dict:
         "photos": photos,
         "photo_count": len(photos) + bool(cover),
         "is_featured": item.is_featured,
+        # SEO overrides are written in Russian; /ky and /en use the translated texts.
+        "seo_title": (item.seo_title or None) if lang == "ru" else None,
+        "seo_description": (item.seo_description or None) if lang == "ru" else None,
         "updated_at": item.updated_at.isoformat(),
         "_ts": item.published_at.timestamp(),
     }
@@ -523,11 +540,14 @@ def _member_record(m: TeamMember, lang: str) -> dict:
         "photo": photo,
         "career": lines(tr(m, "career", lang)),
         "achievements": lines(tr(m, "achievements", lang)),
+        # SEO overrides are written in Russian; /ky and /en use the translated texts.
+        "seo_title": (m.seo_title or None) if lang == "ru" else None,
+        "seo_description": (m.seo_description or None) if lang == "ru" else None,
         "_ts": m.published_at.timestamp(),
     }
 
 
-PROFILE_ONLY = ("career", "achievements")
+PROFILE_ONLY = ("career", "achievements", "seo_title", "seo_description")
 
 
 def _team_records(lang: str) -> list[dict]:
@@ -615,7 +635,7 @@ def home(lang: str) -> dict:
         **data,
         "courses": featured_courses[:6] if "courses" in keys else [],
         "projects": featured_projects(raw["_featured_projects"]) if "projects" in keys else [],
-        "news": featured_news(raw["_featured_news"]) if "news" in keys else [],
+        "news": featured_news(raw["_featured_news"], lang=lang) if "news" in keys else [],
         "events": upcoming_events(lang) if "events" in keys else [],
         "achievements": featured_achievements(lang) if "achievements" in keys else [],
         "team": members[:4] if "team" in keys else [],
@@ -658,7 +678,7 @@ def preview(token: str, lang: str) -> dict | None:
         article = Article.objects.filter(pk=pk).prefetch_related("photos").first()
         if article is None:
             return None
-        record = news_public._record(article)
+        record = news_public._record(article, lang_of(lang))
         return {"kind": "news", "item": {**_strip(record), "related": []}}
     model = PREVIEW_KINDS.get(kind)
     obj = model.objects.filter(pk=pk).first() if model else None

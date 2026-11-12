@@ -26,8 +26,8 @@ export function ArticleView({ article, preview }: { article: NewsArticle; previe
   return (
     <>
       <Seo
-        title={article.title}
-        description={article.excerpt || excerpt(article.body)}
+        title={article.seo_title || article.title}
+        description={article.seo_description || article.excerpt || excerpt(article.body)}
         image={article.cover?.url}
         type="article"
         publishedAt={article.published_at}
