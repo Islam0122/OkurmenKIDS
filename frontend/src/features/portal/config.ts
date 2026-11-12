@@ -84,7 +84,8 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'training',
     icon: BookOpenCheck,
-    href: env(ENV.VITE_PORTAL_TRAINING_URL, 'https://training-portal-theta.vercel.app/'),
+    // The Training Portal (training-portal/) on its production domain.
+    href: env(ENV.VITE_PORTAL_TRAINING_URL, 'https://training.okurmenkids.com/'),
   },
   {
     id: 'schedule',
@@ -106,7 +107,9 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'performance',
     icon: BarChart3,
-    href: env(ENV.VITE_PORTAL_PERFORMANCE_URL, 'https://okurmen-kids-drab.vercel.app/monthly-performance'),
+    // «Общая статистика» is a route of this same build (features/performanceSite) —
+    // no need to leave the current domain (and its sign-in) for an old deployment.
+    href: env(ENV.VITE_PORTAL_PERFORMANCE_URL, '/monthly-performance'),
   },
   {
     id: 'programs',
@@ -151,10 +154,10 @@ export const PORTAL_SERVICES: PortalService[] = [
     roleHrefs: { assistant: '/assistant/surveys', admin: '/assistant/surveys' },
   },
   {
-    // Официальный сайт академии: адрес в проекте не настроен — задайте VITE_PORTAL_WEBSITE_URL.
+    // Официальный сайт академии (okurmen-public-website/) на production-домене.
     id: 'website',
     icon: Globe,
-    href: env(ENV.VITE_PORTAL_WEBSITE_URL, null),
+    href: env(ENV.VITE_PORTAL_WEBSITE_URL, 'https://okurmenkids.com/'),
   },
   {
     // Карьерный сайт этой же сборки (features/careers) или его отдельный домен.

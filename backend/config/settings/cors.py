@@ -11,10 +11,13 @@ def _origins(name: str, default: str = "") -> list[str]:
 # the apex), the LMS and the admin dashboard. Override with FRONTEND_ORIGINS
 # (comma-separated) — e.g. to drop www once the redirect is confirmed.
 # Also trusted for CSRF in production (settings/production.py).
+
 FRONTEND_ORIGINS = _origins(
     "FRONTEND_ORIGINS",
-    "https://okurmenkids.com,https://www.okurmenkids.com,"
-    "https://lms.okurmenkids.com,https://admin.okurmenkids.com",
+    "https://okurmenkids.com,"
+    "https://www.okurmenkids.com,"
+    "https://lms.okurmenkids.com,"
+    "https://training.okurmenkids.com",
 )
 
 _CORS_ALLOWED_ORIGINS = [

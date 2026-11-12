@@ -47,11 +47,12 @@ function Programs() {
           const Icon = program.icon
           const text = t.programs[program.id]
           return (
+            // Informational card: there is no per-program page yet (NOT IMPLEMENTED),
+            // so it must not look clickable — no hover lift, no link.
             <motion.li
               key={program.id}
               variants={cardVariants}
-              whileHover={{ y: -3 }}
-              className="group relative overflow-hidden rounded-2xl border border-pd-line bg-pd-panel p-5 pd-shadow transition-[border-color,box-shadow] duration-300 hover:border-pd-green-line hover:pd-shadow-lg"
+              className="relative overflow-hidden rounded-2xl border border-pd-line bg-pd-panel p-5 pd-shadow"
             >
               <div className="flex items-start gap-4">
                 <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-pd-green-line bg-pd-green-soft text-pd-green">
