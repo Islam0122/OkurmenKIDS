@@ -2,7 +2,24 @@ from .base import *
 
 DEBUG = False
 
-ALLOWED_HOSTS = [env.str("ALLOWED_HOST")]
+# Hostnames this API answers to. ALLOWED_HOSTS (comma-separated) is the
+# preferred variable, e.g. "api.okurmenkids.com,okurmenkids.up.railway.app"
+# (default when unset: api.okurmenkids.com).
+# The legacy single ALLOWED_HOST still works so an existing Railway service
+# keeps booting unchanged. Railway's own public domain (RAILWAY_PUBLIC_DOMAIN,
+# injected by Railway) is always added, so the *.up.railway.app address keeps
+# answering during and after the move to the custom domain. Railway's
+# deployment health check sends "Host: healthcheck.railway.app".
+ALLOWED_HOSTS = list(dict.fromkeys(
+    h.strip().lower()
+    for h in [
+        *env.list("ALLOWED_HOSTS", default=["api.okurmenkids.com"]),
+        env.str("ALLOWED_HOST", default=""),
+        env.str("RAILWAY_PUBLIC_DOMAIN", default=""),
+        "healthcheck.railway.app",
+    ]
+    if h and h.strip()
+))
 
 DATABASES = {
     "default": {
@@ -51,8 +68,14 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
+# Railway terminates TLS at its edge and forwards plain HTTP with
+# X-Forwarded-Proto; the edge overwrites that header, so it can be trusted.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SECURE_SSL_REDIRECT = True
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
+# Railway's health check calls the container directly over plain HTTP (no
+# X-Forwarded-Proto) — a 301 to HTTPS would fail it. Exempt only the
+# health endpoint (GET /api/v1/ → {"status": "ok"}, apps.users.views.health).
+SECURE_REDIRECT_EXEMPT = [r"^api/v1/$"]
 
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
@@ -68,7 +91,20 @@ CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
 
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://*.railway.app",
-    "https://*.up.railway.app",
-]
+# Origins allowed to send unsafe (POST/PUT/PATCH/DELETE) requests that carry
+# the Django session/CSRF cookies. Same-origin forms on the API host itself
+# (Django admin, /exam/, /feedback/s/) pass Django's Origin == Host check
+# without being listed. The SPAs authenticate with a JWT in the
+# Authorization header (no cookies), so CSRF never applies to them — they
+# are listed only so a session-authenticated request from them is not
+# rejected. The former "https://*.railway.app" wildcard trusted every app
+# hosted on Railway (anyone's), so it is replaced by this exact list.
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(
+    o.strip().rstrip("/")
+    for o in [
+        *env.list("CSRF_TRUSTED_ORIGINS", default=[]),
+        *(f"https://{h}" for h in ALLOWED_HOSTS if h != "healthcheck.railway.app"),
+        *FRONTEND_ORIGINS,
+    ]
+    if o and o.strip()
+))
