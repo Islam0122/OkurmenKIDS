@@ -432,8 +432,11 @@ class CoursePage(Publishable, CoverImage):
     duration = models.CharField(max_length=80, blank=True, verbose_name="Длительность", help_text="Например: 9 месяцев")
     duration_ky = models.CharField(max_length=80, blank=True, verbose_name="Длительность (кыргызча)")
     duration_en = models.CharField(max_length=80, blank=True, verbose_name="Длительность (English)")
-    schedule = models.CharField(max_length=120, blank=True, verbose_name="Формат занятий",
-                                help_text="Например: 2 раза в неделю по 90 минут")
+    # Multi-line, no length limit; ky/en like every other translated course field (public.tr).
+    schedule = models.TextField(blank=True, verbose_name="Формат занятий",
+                                help_text="Например: 2 раза в неделю по 90 минут. Можно в несколько строк.")
+    schedule_ky = models.TextField(blank=True, verbose_name="Формат занятий (кыргызча)")
+    schedule_en = models.TextField(blank=True, verbose_name="Формат занятий (English)")
     price = models.CharField(max_length=80, blank=True, verbose_name="Стоимость",
                              help_text="Пусто — не показывается на сайте.")
     icon = models.CharField(max_length=10, choices=Icon.choices, default=Icon.CODE, verbose_name="Иконка")

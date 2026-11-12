@@ -323,6 +323,54 @@ class PreviewTests(Base):
         self.assertEqual(self.anon.get(f"{PUBLIC}achievements/{item.slug}/").status_code, 404)
 
 
+class CourseScheduleTests(Base):
+    """«Формат занятий»: RU / KY / EN in separate fields, multi-line, no 120-character limit."""
+
+    RU = "Пн, Ср, Пт — 18:00–19:30\nГруппы до 10 детей\n" + "Подробности: " + "я" * 300
+    KY = "Дш, Шр, Жм — 18:00–19:30\nТопто 10 баладан ашпайт"
+    EN = "Mon, Wed, Fri — 6:00–7:30 pm\nGroups of up to 10 children"
+
+    def setUp(self):
+        super().setUp()
+        self.marketing = make_user("mkt", User.Role.MARKETING)
+
+    def test_cms_saves_three_languages_multiline_and_longer_than_120(self):
+        c = self.as_(self.marketing)
+        created = c.post(f"{CMS}courses/", {"title": "Python", "icon": "code", "schedule": self.RU,
+                                           "schedule_ky": self.KY, "schedule_en": self.EN}, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertGreater(len(self.RU), 120)
+        page = CoursePage.objects.get(pk=created.data["id"])
+        self.assertEqual((page.schedule, page.schedule_ky, page.schedule_en), (self.RU, self.KY, self.EN))
+        # The CMS reads the three fields back separately, line breaks included.
+        row = c.get(f"{CMS}courses/{page.pk}/").data
+        self.assertEqual((row["schedule"], row["schedule_ky"], row["schedule_en"]), (self.RU, self.KY, self.EN))
+        # Editing one language leaves the others untouched.
+        c.patch(f"{CMS}courses/{page.pk}/", {"schedule_en": "Twice a week\n90 minutes"}, format="json")
+        page.refresh_from_db()
+        self.assertEqual((page.schedule, page.schedule_ky, page.schedule_en), (self.RU, self.KY, "Twice a week\n90 minutes"))
+
+    def test_public_site_shows_the_visitors_language_with_line_breaks(self):
+        page = self.course(schedule=self.RU, schedule_ky=self.KY, schedule_en=self.EN)
+        for lang, expected in (("ru", self.RU), ("ky", self.KY), ("en", self.EN)):
+            detail = self.anon.get(f"{PUBLIC}courses/{page.slug}/", {"lang": lang}).data
+            self.assertEqual(detail["schedule"], expected, lang)
+            card = self.anon.get(f"{PUBLIC}courses/", {"lang": lang}).data["results"][0]
+            self.assertEqual(card["schedule"], expected, lang)
+
+    def test_untranslated_language_falls_back_to_russian_like_other_course_fields(self):
+        page = self.course(schedule="2 раза в неделю", schedule_en="Twice a week")
+        self.assertEqual(self.anon.get(f"{PUBLIC}courses/{page.slug}/", {"lang": "ky"}).data["schedule"], "2 раза в неделю")
+        self.assertEqual(self.anon.get(f"{PUBLIC}courses/{page.slug}/", {"lang": "en"}).data["schedule"], "Twice a week")
+
+    def test_backward_compatible_field_and_empty_value(self):
+        # Existing courses (Russian only, ≤ 120 characters) keep working unchanged; empty is still null.
+        legacy = self.course("Legacy", schedule="2 раза в неделю по 90 минут")
+        empty = self.course("Empty")
+        self.assertEqual(self.anon.get(f"{PUBLIC}courses/{legacy.slug}/", {"lang": "en"}).data["schedule"], "2 раза в неделю по 90 минут")
+        self.assertIsNone(self.anon.get(f"{PUBLIC}courses/{empty.slug}/").data["schedule"])
+
+
 class CMSPermissionTests(Base):
     def setUp(self):
         super().setUp()

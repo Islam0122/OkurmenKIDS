@@ -36,9 +36,12 @@ export function CourseView({ course, preview }: { course: CourseDetail; preview?
     age && { icon: Users, label: t('courses.age'), value: age },
     course.duration && { icon: CalendarRange, label: t('courses.duration'), value: course.duration },
     course.lessons && { icon: Layers, label: t('courses.lessons'), value: String(course.lessons) },
-    course.schedule && { icon: Clock, label: t('courses.schedule'), value: course.schedule },
+    // «Формат занятий» is free text in the visitor's language: line breaks are kept, and a long or
+    // multi-line text takes the whole row instead of squeezing into a small tile.
+    course.schedule && { icon: Clock, label: t('courses.schedule'), value: course.schedule, text: true },
     course.price && { icon: Tag, label: t('courses.price'), value: course.price },
-  ].filter(Boolean) as { icon: typeof Users; label: string; value: string }[]
+  ].filter(Boolean) as { icon: typeof Users; label: string; value: string; text?: boolean }[]
+  const isLong = (value: string) => value.includes('\n') || value.length > 40
 
   return (
     <>
@@ -85,9 +88,9 @@ export function CourseView({ course, preview }: { course: CourseDetail; preview?
           {facts.length ? (
             <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {facts.map((f) => (
-                <div key={f.label} className="rounded-2xl border border-line bg-white p-4">
+                <div key={f.label} className={cn('rounded-2xl border border-line bg-white p-4', f.text && isLong(f.value) && 'col-span-full')}>
                   <dt className="flex items-center gap-2 text-xs font-bold tracking-wide text-muted uppercase"><f.icon className="size-4 text-brand-400" aria-hidden />{f.label}</dt>
-                  <dd className="mt-1.5 font-display text-lg font-extrabold">{f.value}</dd>
+                  <dd className={cn('mt-1.5', f.text ? 'whitespace-pre-line break-words' : '', f.text && isLong(f.value) ? 'text-base leading-relaxed font-semibold text-ink-soft' : 'font-display text-lg font-extrabold')}>{f.value}</dd>
                 </div>
               ))}
             </dl>

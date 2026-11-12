@@ -71,7 +71,9 @@ export const RESOURCES: Record<ResourceDef['key'], ResourceDef> = {
       { name: 'age_min', label: 'Возраст от', type: 'number' },
       { name: 'age_max', label: 'Возраст до', type: 'number' },
       { name: 'duration', label: 'Длительность', type: 'text', hint: 'Например: 9 месяцев', translatable: true },
-      { name: 'schedule', label: 'Формат занятий', type: 'text', side: true, hint: '2 раза в неделю по 90 минут' },
+      // Multi-line and translatable: the «Содержание» panel shows one textarea per language tab
+      // (schedule / schedule_ky / schedule_en). No length limit — the backend field is a TextField.
+      { name: 'schedule', label: 'Формат занятий', type: 'textarea', translatable: true, wide: true, hint: 'Например: 2 раза в неделю по 90 минут. Можно в несколько строк — переносы сохранятся на сайте.' },
       { name: 'price', label: 'Стоимость', type: 'text', side: true, hint: 'Пусто — не показывается.' },
       { name: 'icon', label: 'Иконка', type: 'select', choices: 'course_icon', required: true },
       { name: 'project_category', label: 'Примеры проектов', type: 'select', choices: 'project_category', hint: 'Опубликованные проекты студентов этой категории.' },

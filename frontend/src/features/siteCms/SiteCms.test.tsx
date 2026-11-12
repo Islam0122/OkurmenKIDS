@@ -85,6 +85,46 @@ describe('Управление сайтом — редактор', () => {
     }))
   })
 
+  it('«Формат занятий» курса: отдельное многострочное поле на каждом языке, без лимита 120, переносы сохраняются', async () => {
+    const course = {
+      id: 9, title: 'Python', title_ky: '', title_en: '', tagline: '', tagline_ky: '', tagline_en: '', icon: 'code', status: 'draft', workflow_state: 'draft',
+      schedule: '2 раза в неделю', schedule_ky: '', schedule_en: '', cover: null, preview: null, updated_at: '2026-11-01T10:00:00Z', seo_title: '', seo_description: '',
+    }
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/meta/') ? metaData : url.endsWith('/courses/9/') ? course : [] }))
+    vi.mocked(apiClient.patch).mockImplementation(async (_url: string, body: unknown) => ({ data: { ...course, ...(body as object) } }))
+    const ru = 'Пн, Ср, Пт — 18:00–19:30\nГруппы до 10 детей\n' + 'Подробнее о формате: '.repeat(6)
+    const ky = 'Дш, Шр, Жм — 18:00–19:30\nТопто 10 баладан ашпайт'
+    const en = 'Mon, Wed, Fri — 6:00–7:30 pm\nGroups of up to 10 children'
+    const user = userEvent.setup()
+    renderAt('/marketing/site/courses/9', editorRoutes)
+
+    const field = await screen.findByLabelText(/^Формат занятий$/)
+    expect(field.tagName).toBe('TEXTAREA')
+    expect(field).not.toHaveAttribute('maxLength')
+    expect(field).toHaveValue('2 раза в неделю')
+    await user.clear(field)
+    await user.click(field)
+    await user.paste(ru)
+    expect(ru.length).toBeGreaterThan(120)
+
+    await user.click(screen.getByRole('tab', { name: /KG/ }))
+    const kyField = screen.getByLabelText(/Формат занятий \(KG\)/)
+    expect(kyField.tagName).toBe('TEXTAREA')
+    expect(kyField).toHaveValue('')
+    await user.click(kyField)
+    await user.paste(ky)
+    await user.click(screen.getByRole('tab', { name: /EN/ }))
+    await user.click(screen.getByLabelText(/Формат занятий \(EN\)/))
+    await user.paste(en)
+    await user.click(screen.getByRole('tab', { name: /RU/ }))
+    expect(screen.getByLabelText(/^Формат занятий$/)).toHaveValue(ru)
+
+    await user.click(screen.getAllByRole('button', { name: /Сохранить/ })[0])
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/marketing/site/courses/9/', expect.objectContaining({
+      schedule: ru, schedule_ky: ky, schedule_en: en,
+    })))
+  })
+
   it('без права публикации — «На согласование»', async () => {
     metaData = meta({ require_approval: true })
     const user = userEvent.setup()
