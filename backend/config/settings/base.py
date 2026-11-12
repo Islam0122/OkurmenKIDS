@@ -285,6 +285,9 @@ FEEDBACK_PUBLIC_BASE_URL = env("FEEDBACK_PUBLIC_BASE_URL", default="")
 # (<LMS_FRONTEND_URL>/login). Shown on the Django admin login page and in the
 # user admin, so nobody tries to enter the LMS through /admin/.
 LMS_FRONTEND_URL = env("LMS_FRONTEND_URL", default="https://okurmen-kids-drab.vercel.app").rstrip("/")
+# The login link in the «доступ к системе» e-mail (apps.users.services).
+# Unset, it used to render as "None" — fall back to the LMS login page.
+SITE_URL = (SITE_URL or f"{LMS_FRONTEND_URL}/login").rstrip("/")
 
 # Assistant «Контроль активности»: thresholds of the student statuses
 # (Норма / Требует внимания / Низкая активность / В зоне риска) and of the

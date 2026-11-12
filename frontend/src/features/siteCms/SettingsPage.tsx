@@ -60,7 +60,7 @@ export function SettingsPage() {
 }
 
 function SeoTab() {
-  const site = useSiteMeta().data?.public_site_url ?? 'https://okurmenkids.kg'
+  const site = useSiteMeta().data?.public_site_url ?? 'https://okurmenkids.com'
   return (
     <SettingsForm title="SEO сайта" description="Как сайт выглядит в Google и Яндексе" fields={SEO}>
       {(values, _set, lang) => {

@@ -4,4 +4,4 @@ Disallow: /preview/
 Disallow: /ky/preview/
 Disallow: /en/preview/
 
-Sitemap: /sitemap.xml
+Sitemap: https://okurmenkids.com/sitemap.xml

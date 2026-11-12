@@ -29,7 +29,14 @@ python manage.py collectstatic --noinput
 # миграции не идут одновременно с нескольких воркеров и всегда до gunicorn.
 python manage.py migrate_with_lock --noinput
 
-python manage.py shell -c "from django.contrib.auth import get_user_model; User=get_user_model(); User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@example.com', 'admin')"
+# First superuser for a fresh database — only from Railway Variables, never a
+# built-in password (this used to create admin/admin, which anyone could
+# guess on the public /admin/). Set DJANGO_SUPERUSER_USERNAME,
+# DJANGO_SUPERUSER_EMAIL and DJANGO_SUPERUSER_PASSWORD once, deploy, then
+# delete DJANGO_SUPERUSER_PASSWORD. An existing user is never changed.
+if [ -n "${DJANGO_SUPERUSER_PASSWORD:-}" ]; then
+    python manage.py shell -c "import os; from django.contrib.auth import get_user_model; User=get_user_model(); name=os.environ.get('DJANGO_SUPERUSER_USERNAME') or 'admin'; User.objects.filter(username=name).exists() or User.objects.create_superuser(name, os.environ.get('DJANGO_SUPERUSER_EMAIL') or '', os.environ['DJANGO_SUPERUSER_PASSWORD'])"
+fi
 
 # Gunicorn >= 25.1 opens a control socket (for `gunicornc`) under
 # $XDG_RUNTIME_DIR or $HOME/.gunicorn/. The "django" system user's HOME is
