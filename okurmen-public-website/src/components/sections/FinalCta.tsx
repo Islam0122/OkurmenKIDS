@@ -8,7 +8,7 @@ import { useSettings } from '@/hooks/queries'
 import { useI18n } from '@/i18n'
 import { telHref } from '@/utils/format'
 
-export function FinalCta({ title }: { title?: string }) {
+export function FinalCta({ title, text, ctaLabel }: { title?: string; text?: string; ctaLabel?: string }) {
   const { t } = useI18n()
   const { data } = useSettings()
   const phone = data?.contacts.phone
@@ -21,9 +21,9 @@ export function FinalCta({ title }: { title?: string }) {
           <img src={logo} alt="" aria-hidden className="absolute right-10 bottom-10 hidden size-40 rounded-full bg-white p-2 shadow-lift lg:block" />
           <div className="relative max-w-2xl">
             <h2 className="text-section-title font-black text-brand-900">{title || t('home.cta.title')}</h2>
-            <p className="mt-4 text-lg text-brand-900/80">{t('home.cta.text')}</p>
+            <p className="mt-4 text-lg text-brand-900/80">{text || t('home.cta.text')}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <EnrollButton size="lg" variant="secondary" />
+              <EnrollButton size="lg" variant="secondary" label={ctaLabel} />
               {phone ? (
                 <ButtonLink to={telHref(phone)} size="lg" variant="outline" className="border-brand-900/20 bg-white/60">
                   <Phone className="size-5" aria-hidden /> {phone}
