@@ -45,6 +45,10 @@
   --color-kids-bg: #f8f6fd;
   --color-kids-text: #251b3d;
   --color-kids-muted: #77718d;
+  /* Green accents of the homepage course cards. */
+  --color-kids-green: #16a34a;
+  --color-kids-green-deep: #15803d;
+  --color-kids-green-soft: #e9f7ee;
   --color-success: #15803d;
   --color-danger: #c2410c;
 

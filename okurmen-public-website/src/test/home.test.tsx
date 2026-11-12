@@ -2,15 +2,26 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { vi } from 'vitest'
+import { beforeEach, vi } from 'vitest'
 
 import { createQueryClient } from '@/app/providers/AppProviders'
 import { EnrollmentProvider } from '@/features/enrollment/EnrollmentProvider'
 import { I18nProvider } from '@/i18n'
 import { HomePage } from '@/pages/Home/HomePage'
+import { siteApi } from '@/services/endpoints'
 import type { Lang } from '@/types/api'
 
-const { home } = vi.hoisted(() => {
+const { home, cmsCourses } = vi.hoisted(() => {
+  // Shaped like GET /public/site/courses/?lang=…: the CMS decides title, text, cover, age and length.
+  const cmsCourses = (lang: string) => ({
+    results: [
+      { slug: 'premium', title: lang === 'ky' ? 'Премиум' : lang === 'en' ? 'Premium' : 'Премиум', tagline: lang === 'en' ? 'Four areas in one program' : 'Четыре направления в одной программе',
+        icon: 'digital', cover: { url: '/media/site/course/p.webp', thumb: '/media/site/course/p-t.webp', width: 1600, height: 1000, caption: '' },
+        age_min: 9, age_max: 15, duration: lang === 'ky' ? '4 ай' : lang === 'en' ? '4 months' : '4 месяца', schedule: null, lessons: 144, price: null, is_featured: true },
+      { slug: 'vibe-coding', title: 'VIBE CODING', tagline: '', icon: 'code', cover: null,
+        age_min: null, age_max: null, duration: null, schedule: null, lessons: 50, price: null, is_featured: true },
+    ],
+  })
   const img = (n: number) => ({ url: `/media/x${n}.webp`, thumb: `/media/x${n}-t.webp`, width: 1200, height: 900, caption: '' })
   const project = (n: number) => ({
     key: `p${n}`, title: `Проект ${n}`, short_description: `Описание ${n}`, technologies: ['HTML', 'CSS'], categories: ['html-css'],
@@ -20,6 +31,7 @@ const { home } = vi.hoisted(() => {
   const achievement = (n: number) => ({ slug: `a${n}`, title: `Достижение ${n}`, category: 'certificates', cover: img(n), date: '2026-09-26', excerpt: `Итог ${n}`, is_featured: false, photo_count: 1, recipient: null })
   const news = (n: number) => ({ slug: `n${n}`, title: `Новость ${n}`, category: 'events', cover: img(10 + n), excerpt: `Текст ${n}`, published_at: '2026-11-11', photo_count: 1 })
   return {
+    cmsCourses,
     home: {
       hero: { title: 'Будущее начинается с первой строки кода', subtitle: '', image: null, primary_cta: { label: '', url: '' }, secondary_cta: { label: '', url: '' } },
       intro_video: null,
@@ -42,7 +54,7 @@ const { home } = vi.hoisted(() => {
 vi.mock('@/services/endpoints', () => ({
   siteApi: {
     home: vi.fn().mockResolvedValue(home),
-    courses: vi.fn().mockResolvedValue({ results: [] }),
+    courses: vi.fn(),
     settings: vi.fn().mockResolvedValue({ branches: [], contacts: {} }),
     lead: vi.fn(),
   },
@@ -64,6 +76,10 @@ function renderHome(lang: Lang = 'ru') {
 const section = async (heading: string) => (await screen.findByRole('heading', { name: heading })).closest('section')!
 
 describe('Homepage', () => {
+  beforeEach(() => {
+    vi.mocked(siteApi.courses).mockReset().mockImplementation(() => Promise.resolve(cmsCourses('ru') as never))
+  })
+
   it('renders the hero from the approved copy with the enrollment and programs actions', async () => {
     renderHome()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Будущее начинается с первой строки кода')
@@ -81,14 +97,36 @@ describe('Homepage', () => {
     expect(screen.queryByText('100+')).toBeNull()
   })
 
-  it('shows the six programs; without published course pages they link to real projects or the enrollment form', async () => {
+  it('shows the published CMS courses — title, text, cover, age, length — each linking to its course page', async () => {
     renderHome()
-    const programs = await section('Популярные курсы')
-    expect(within(programs).getAllByRole('listitem')).toHaveLength(6)
-    expect(await within(programs).findByRole('link', { name: 'Web Development — Подробнее' })).toHaveAttribute('href', '/projects?category=html-css')
-    expect(within(programs).getAllByRole('button', { name: /— Подробнее/ })).toHaveLength(5)
-    // No age label without a CMS course that states the ages.
-    expect(within(programs).queryByText(/\d+–\d+ лет$/)).toBeNull()
+    const courses = await section('Популярные курсы')
+    const premium = await within(courses).findByRole('link', { name: 'Премиум — Подробнее' })
+    expect(premium).toHaveAttribute('href', '/courses/premium')
+    expect(within(premium).getByText('Четыре направления в одной программе')).toBeInTheDocument()
+    expect(within(premium).getByText('9–15 лет')).toBeInTheDocument()
+    expect(within(premium).getByText('4 месяца')).toBeInTheDocument() // duration wins over the lesson count
+    expect(within(premium).getByRole('img', { name: 'Премиум' }).getAttribute('src')).toContain('p-t.webp')
+    // No cover, no text, no age in the CMS: an icon tile, the lesson count, and nothing invented.
+    const vibe = within(courses).getByRole('link', { name: 'VIBE CODING — Подробнее' })
+    expect(vibe).toHaveAttribute('href', '/courses/vibe-coding')
+    expect(within(vibe).getByRole('img', { name: 'VIBE CODING' }).tagName).toBe('DIV')
+    expect(within(vibe).getByText('50 занятий')).toBeInTheDocument()
+    expect(within(vibe).queryByText(/лет$/)).toBeNull()
+    expect(within(courses).getAllByRole('listitem')).toHaveLength(2) // exactly what the API returned
+    expect(within(courses).getByRole('link', { name: /Все курсы/ })).toHaveAttribute('href', '/courses')
+    expect(siteApi.courses).toHaveBeenCalled()
+  })
+
+  it('shows a skeleton while loading and an error state with retry', async () => {
+    let fail = true
+    vi.mocked(siteApi.courses).mockImplementation(() => (fail ? Promise.reject(new Error('down')) : Promise.resolve(cmsCourses('ru') as never)))
+    renderHome()
+    const courses = await section('Популярные курсы')
+    expect(within(courses).getByLabelText('Загрузка…')).toBeInTheDocument()
+    expect(await within(courses).findByRole('alert', {}, { timeout: 4000 })).toBeInTheDocument()
+    fail = false
+    await userEvent.click(within(courses).getByRole('button'))
+    expect(await within(courses).findByRole('link', { name: 'Премиум — Подробнее' })).toBeInTheDocument()
   })
 
   it('limits projects, achievements and news to three real items and uses the WebP thumbnail for project covers', async () => {
@@ -115,9 +153,19 @@ describe('Homepage', () => {
   })
 
   it('works in Kyrgyz', async () => {
+    vi.mocked(siteApi.courses).mockImplementation(() => Promise.resolve(cmsCourses('ky') as never))
     renderHome('ky')
     expect(screen.getByText('9–⁠15 жаштагы балдар үчүн IT-академия')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Популярдуу курстар' })).toBeInTheDocument()
-    expect(await screen.findByRole('link', { name: 'Web Development — Кененирээк' })).toHaveAttribute('href', '/ky/projects?category=html-css')
+    expect(await screen.findByRole('link', { name: 'Премиум — Кененирээк' })).toHaveAttribute('href', '/ky/courses/premium')
+    expect(screen.getByText('4 ай')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Бардык курстар/ })).toHaveAttribute('href', '/ky/courses')
+  })
+
+  it('works in English', async () => {
+    vi.mocked(siteApi.courses).mockImplementation(() => Promise.resolve(cmsCourses('en') as never))
+    renderHome('en')
+    expect(await screen.findByRole('link', { name: 'Premium — Learn more' })).toHaveAttribute('href', '/en/courses/premium')
+    expect(screen.getByText('4 months')).toBeInTheDocument()
   })
 })

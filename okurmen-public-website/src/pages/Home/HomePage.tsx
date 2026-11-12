@@ -9,7 +9,7 @@ import { TestimonialCard } from '@/components/cards/TestimonialCard'
 import { Banners } from '@/components/sections/Banners'
 import { CardGrid } from '@/components/sections/CardGrid'
 import { Hero } from '@/components/sections/Hero'
-import { ProgramsSection } from '@/components/home/ProgramsSection'
+import { CoursesSection } from '@/components/home/CoursesSection'
 import { RocketCta } from '@/components/home/RocketCta'
 import { IntroVideo } from '@/components/sections/IntroVideo'
 import { Stats } from '@/components/sections/Stats'
@@ -43,8 +43,8 @@ function renderSection(key: SectionKey, data: HomeData, title: string, t: Return
     case 'stats':
       return <Stats key={key} stats={data.stats} title={title} />
     case 'courses':
-      // The six directions are always shown; a published CMS course adds its page, age and tagline.
-      return <ProgramsSection key={key} courses={data.courses} title={title} />
+      // Published CMS courses (all of them, CMS order) — see CoursesSection.
+      return <CoursesSection key={key} title={title} />
     case 'projects':
       return data.projects.length ? (
         <Showcase key={key} panel>
@@ -107,7 +107,7 @@ export function HomePage() {
           addresses: data?.branches.map((b) => b.address),
         })}
       />
-      <Hero hero={data?.hero} programsHref={!data || data.sections.some((s) => s.key === 'courses') ? '#programs' : '/courses'} />
+      <Hero hero={data?.hero} programsHref={!data || (data.sections.some((s) => s.key === 'courses') && data.courses.length) ? '#programs' : '/courses'} />
       {isPending ? (
         <div className="container-page section"><CardSkeletons /></div>
       ) : isError ? (
