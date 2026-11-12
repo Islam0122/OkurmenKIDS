@@ -360,6 +360,99 @@ class CMSPermissionTests(Base):
         self.assertEqual(r.status_code, 200)
 
 
+class CMSRedesignTests(Base):
+    """The marketing CMS workspace: media library images as covers and gallery
+    photos, the lead CRM (assignee, status history), dashboard data, SEO and
+    translated news on the public site, homepage projects."""
+
+    def setUp(self):
+        super().setUp()
+        self.marketing = make_user("mkt", User.Role.MARKETING)
+        self.sales = make_user("sales", User.Role.SALES_MANAGER)
+        self.teacher = make_user("trainer", User.Role.TEACHER)
+
+    def asset(self):
+        r = self.as_(self.marketing).post(f"{CMS}media/", {"file": image_file("lib.png")}, format="multipart")
+        self.assertEqual(r.status_code, 201, r.data)
+        return r.data
+
+    def test_cover_and_gallery_from_media_library(self):
+        c = self.as_(self.marketing)
+        asset = self.asset()
+        r = c.post(f"{CMS}events/", {"title": "Хакатон", "category": "hackathon", "starts_at": self.now.isoformat(),
+                                     "cover": f"media:{asset['id']}"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertTrue(r.data["cover"])
+        # The library file's own address works as a «direct link» too — no download.
+        by_url = c.patch(f"{CMS}events/{r.data['id']}/", {"cover": asset["url"]}, format="json")
+        self.assertEqual(by_url.status_code, 200, by_url.data)
+        photos = c.post(f"{CMS}events/{r.data['id']}/photos/", {"media": [asset["id"], 999]}, format="json")
+        self.assertEqual(photos.status_code, 201, photos.data)
+        self.assertEqual(len(photos.data["photos"]), 1)
+        bad = c.patch(f"{CMS}events/{r.data['id']}/", {"cover": "media:999"}, format="json")
+        self.assertEqual(bad.status_code, 400)
+
+    def test_direct_link_to_private_address_is_refused(self):
+        r = self.as_(self.marketing).post(f"{CMS}achievements/", {
+            "title": "X", "cover": "http://127.0.0.1/secret.png"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("cover", r.data)
+
+    def test_lead_crm_assignee_and_history(self):
+        lead = Lead.objects.create(parent_name="Айгуль", phone="0555", phone_digits="555", child_age=9)
+        c = self.as_(self.sales)
+        r = c.patch(f"{CMS}leads/{lead.pk}/", {"status": "processing", "assigned_to": self.marketing.pk,
+                                                 "child_name": "Эмир"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["assigned_to_name"], "mkt")
+        c.patch(f"{CMS}leads/{lead.pk}/", {"status": "enrolled"}, format="json")
+        lead.refresh_from_db()
+        self.assertEqual([(h["from"], h["to"]) for h in lead.status_history], [("new", "processing"), ("processing", "enrolled")])
+        self.assertEqual(lead.child_name, "Эмир")
+        # Only staff of marketing / sales / management can be responsible.
+        self.assertEqual(c.patch(f"{CMS}leads/{lead.pk}/", {"assigned_to": self.teacher.pk}, format="json").status_code, 400)
+        meta = c.get(f"{CMS}meta/").data
+        self.assertIn(self.marketing.pk, [u["id"] for u in meta["staff"]])
+        self.assertIn("processing", [s["value"] for s in meta["choices"]["lead_status"]])
+
+    def test_overview_dashboard(self):
+        self.course("Python", status=Workflow.DRAFT)
+        self.event("Хакатон")
+        r = self.as_(self.marketing).get(f"{CMS}overview/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["courses"]["draft"], 1)
+        self.assertEqual(r.data["events"]["published"], 1)
+        self.assertEqual(r.data["drafts"][0]["title"], "Python")
+        self.assertEqual({row["resource"] for row in r.data["recent"]}, {"courses", "events"})
+        issues = {row["title"]: row["issues"] for row in r.data["attention"]}
+        self.assertIn("cover", issues["Хакатон"])
+        self.assertIn("seo", issues["Хакатон"])
+        self.assertEqual(r.data["coverage"]["events"]["total"], 1)
+        self.assertEqual(self.as_(self.sales).get(f"{CMS}overview/").status_code, 403)
+
+    def test_seo_and_translated_news_on_the_public_site(self):
+        c = self.as_(self.marketing)
+        r = c.post(f"{CMS}news/", {"title": "Новый курс", "title_en": "New course", "body": "Текст",
+                                   "category": "announcements", "seo_title": "Курс Python"}, format="json")
+        c.post(f"{CMS}news/{r.data['id']}/publish/")
+        en = self.anon.get(f"/api/v1/public/news/{r.data['slug']}/", {"lang": "en"}).data
+        ru = self.anon.get(f"/api/v1/public/news/{r.data['slug']}/").data
+        self.assertEqual((en["title"], ru["title"], ru["seo_title"]), ("New course", "Новый курс", "Курс Python"))
+        event = self.event("Хакатон", seo_title="Хакатон 2026", seo_description="Описание")
+        detail = self.anon.get(f"{PUBLIC}events/{event.slug}/").data
+        self.assertEqual((detail["seo_title"], detail["seo_description"]), ("Хакатон 2026", "Описание"))
+        c.patch(f"{CMS}settings/", {"youtube": "okurmenkids", "seo_title": "Okurmen Kids"}, format="json")
+        site = self.anon.get(f"{PUBLIC}settings/").data
+        self.assertEqual(site["contacts"]["youtube"], "https://youtube.com/@okurmenkids")
+        self.assertEqual(site["seo"]["title"], "Okurmen Kids")
+
+    def test_homepage_projects(self):
+        c = self.as_(self.marketing)
+        self.assertEqual(c.get(f"{CMS}projects/").data["count"], 0)
+        self.assertEqual(c.post(f"{CMS}projects/", {"id": 999, "featured": True}, format="json").status_code, 400)
+        self.assertEqual(self.as_(self.sales).get(f"{CMS}projects/").status_code, 403)
+
+
 class CorsTests(Base):
     def test_public_website_origin_is_allowed_by_default(self):
         site = "https://okurmen-public-website.vercel.app"

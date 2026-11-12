@@ -117,6 +117,10 @@ class Publishable(models.Model):
                                     related_name="+", editable=False, verbose_name="Утвердил")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Изменено")
+    seo_title = models.CharField(max_length=70, blank=True, verbose_name="SEO title",
+                                 help_text="Заголовок для поисковиков и соцсетей. Пусто — название.")
+    seo_description = models.CharField(max_length=200, blank=True, verbose_name="SEO description",
+                                       help_text="Описание для поисковиков. Пусто — краткое описание.")
 
     objects = PublicQuerySet.as_manager()
 
@@ -241,6 +245,18 @@ class SiteSettings(models.Model):
     instagram = models.CharField(max_length=100, blank=True, verbose_name="Instagram (@имя или ссылка)")
     email = models.EmailField(blank=True, verbose_name="E-mail")
     working_hours = models.CharField(max_length=120, blank=True, verbose_name="Часы работы")
+    facebook = models.CharField(max_length=200, blank=True, verbose_name="Facebook (ссылка)")
+    youtube = models.CharField(max_length=200, blank=True, verbose_name="YouTube (ссылка на канал)")
+    tiktok = models.CharField(max_length=100, blank=True, verbose_name="TikTok (@имя или ссылка)")
+    # SEO / metadata of the whole site (pages without their own SEO fields).
+    seo_title = models.CharField(max_length=70, blank=True, verbose_name="SEO title сайта")
+    seo_title_ky = models.CharField(max_length=70, blank=True, verbose_name="SEO title (кыргызча)")
+    seo_title_en = models.CharField(max_length=70, blank=True, verbose_name="SEO title (English)")
+    seo_description = models.CharField(max_length=200, blank=True, verbose_name="SEO description сайта")
+    seo_description_ky = models.CharField(max_length=200, blank=True, verbose_name="SEO description (кыргызча)")
+    seo_description_en = models.CharField(max_length=200, blank=True, verbose_name="SEO description (English)")
+    og_image = models.ImageField(upload_to=upload_path, max_length=255, blank=True, validators=[validate_image],
+                                 verbose_name="Картинка для соцсетей (Open Graph)")
 
     featured_projects = models.ManyToManyField("projects.StudentProject", blank=True, related_name="+",
                                                verbose_name="Проекты на главной",
@@ -828,6 +844,7 @@ class Lead(models.Model):
 
     class Status(models.TextChoices):
         NEW = "new", "Новая"
+        PROCESSING = "processing", "В обработке"
         CONTACTED = "contacted", "Связались"
         TRIAL = "trial", "Пробный урок"
         ENROLLED = "enrolled", "Записан"
@@ -843,6 +860,7 @@ class Lead(models.Model):
     phone_digits = models.CharField(max_length=20, db_index=True, editable=False)
     child_age = models.PositiveSmallIntegerField(validators=[MinValueValidator(3), MaxValueValidator(25)],
                                                  verbose_name="Возраст ребёнка")
+    child_name = models.CharField(max_length=120, blank=True, verbose_name="Имя ребёнка")
     course = models.ForeignKey(CoursePage, on_delete=models.SET_NULL, null=True, blank=True, related_name="leads",
                                verbose_name="Курс")
     branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, related_name="leads",
@@ -858,6 +876,10 @@ class Lead(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.NEW, db_index=True,
                               verbose_name="Статус")
     note = models.TextField(blank=True, verbose_name="Заметка менеджера")
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="+", verbose_name="Ответственный")
+    # [{"at": iso, "from": status, "to": status, "by": name}] — appended by the CMS API.
+    status_history = models.JSONField(default=list, blank=True, editable=False, verbose_name="История статусов")
     repeat_count = models.PositiveIntegerField(default=0, editable=False, verbose_name="Повторных отправок")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Получена")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Изменена")

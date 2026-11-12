@@ -24,5 +24,6 @@ urlpatterns = [
     path("meta/", cms.MetaView.as_view(), name="site-cms-meta"),
     path("overview/", cms.OverviewView.as_view(), name="site-cms-overview"),
     path("settings/", cms.SettingsView.as_view(), name="site-cms-settings"),
+    path("projects/", cms.ProjectsView.as_view(), name="site-cms-projects"),
     path("", include(router.urls)),
 ]

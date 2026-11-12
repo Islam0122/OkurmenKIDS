@@ -22,6 +22,9 @@ export interface Choice {
 export interface SiteMeta {
   permissions: { can_edit: boolean; can_approve: boolean; require_approval: boolean; can_delete_leads: boolean }
   public_site_url: string | null
+  user_id?: number
+  /** Who can be responsible for a lead. */
+  staff?: { id: number; name: string; role: string }[]
   choices: Record<string, Choice[]>
   lms?: {
     courses: { id: number; name: string; lessons: number }[]
@@ -32,6 +35,56 @@ export interface SiteMeta {
 }
 
 export type Body = Record<string, unknown>
+
+/** One CMS record as the dashboard sees it (backend cms.CONTENT_TYPES). */
+export interface ContentSummary {
+  resource: string
+  type_label: string
+  id: number
+  title: string
+  state: WorkflowState
+  cover: string | null
+  updated_at: string
+  published_at: string
+  /** cover · excerpt · ky · en · seo — what is still missing. */
+  issues: ('cover' | 'excerpt' | 'ky' | 'en' | 'seo')[]
+}
+
+export type StateCounts = Record<WorkflowState, number>
+
+export interface Overview {
+  courses: StateCounts
+  events: StateCounts
+  achievements: StateCounts
+  news: StateCounts
+  team: StateCounts
+  testimonials: StateCounts
+  leads_new: number
+  leads_by_status: Record<string, number>
+  registrations_new: number
+  upcoming_events: number
+  media: number
+  projects: number
+  featured_projects: number
+  recent: ContentSummary[]
+  recently_published: ContentSummary[]
+  drafts: ContentSummary[]
+  attention: ContentSummary[]
+  coverage: Record<string, { total: number; ky: number; en: number; seo: number }>
+}
+
+export interface CmsProject {
+  id: number
+  title: string
+  short_description: string
+  student: string | null
+  group: string | null
+  date: string
+  technologies: string[]
+  cover: string | null
+  public_url: string | null
+  is_featured: boolean
+}
 
 /** JSON, or multipart when a File is present (cover, photo…). `null` clears an image. */
 function payload(body: Body): Body | FormData {
@@ -49,7 +102,9 @@ function payload(body: Body): Body | FormData {
 
 export const siteCmsApi = {
   meta: () => apiClient.get<SiteMeta>(`${BASE}/meta/`).then((r) => r.data),
-  overview: () => apiClient.get<Record<string, Record<string, number> | number>>(`${BASE}/overview/`).then((r) => r.data),
+  overview: () => apiClient.get<Overview>(`${BASE}/overview/`).then((r) => r.data),
+  projects: (search?: string) => apiClient.get<{ count: number; results: CmsProject[] }>(`${BASE}/projects/`, { params: { search: search || undefined } }).then((r) => r.data),
+  featureProject: (id: number, featured: boolean) => apiClient.post(`${BASE}/projects/`, { id, featured }).then((r) => r.data),
   list: (resource: string, params: Record<string, unknown>) =>
     apiClient.get<Paginated<Row> | Row[]>(`${BASE}/${resource}/`, { params }).then((r) => r.data),
   save: (resource: string, id: number | null, body: Body) =>
@@ -62,6 +117,9 @@ export const siteCmsApi = {
     files.forEach((f) => form.append('files', f))
     return apiClient.post<Row>(`${BASE}/${resource}/${id}/photos/`, form).then((r) => r.data)
   },
+  /** Gallery photos picked from the media library (copied on the server). */
+  addLibraryPhotos: (resource: string, id: number, media: number[]) =>
+    apiClient.post<Row>(`${BASE}/${resource}/${id}/photos/`, { media }).then((r) => r.data),
   updatePhoto: (resource: string, id: number, photoId: number, body: { caption?: string; order?: number }) =>
     apiClient.patch<Row>(`${BASE}/${resource}/${id}/photos/${photoId}/`, body).then((r) => r.data),
   deletePhoto: (resource: string, id: number, photoId: number) =>
@@ -76,12 +134,30 @@ export const siteCmsApi = {
 export const toList = (data: Paginated<Row> | Row[] | undefined): { rows: Row[]; count: number } =>
   !data ? { rows: [], count: 0 } : Array.isArray(data) ? { rows: data, count: data.length } : { rows: data.results, count: data.count }
 
+export function useSiteOverview(enabled = true) {
+  return useQuery({ queryKey: ['site-cms', 'overview'], queryFn: siteCmsApi.overview, enabled })
+}
+
+export function useSiteSettings() {
+  return useQuery({ queryKey: ['site-cms', 'settings'], queryFn: siteCmsApi.settings })
+}
+
 export function useSiteMeta() {
   return useQuery({ queryKey: ['site-cms', 'meta'], queryFn: siteCmsApi.meta, staleTime: 5 * 60_000 })
 }
 
-export function useSiteList(resource: string, params: Record<string, unknown>) {
-  return useQuery({ queryKey: ['site-cms', resource, params], queryFn: () => siteCmsApi.list(resource, params), placeholderData: keepPreviousData })
+export function useSiteList(resource: string, params: Record<string, unknown>, enabled = true) {
+  return useQuery({ queryKey: ['site-cms', resource, params], queryFn: () => siteCmsApi.list(resource, params), placeholderData: keepPreviousData, enabled })
+}
+
+/** One record (for the editor page). */
+export function useSiteItem(resource: string, id: number | null) {
+  return useQuery({
+    queryKey: ['site-cms', resource, 'item', id],
+    queryFn: () => apiClient.get<Row>(`${BASE}/${resource}/${id}/`).then((r) => r.data),
+    enabled: id !== null,
+    staleTime: 0,
+  })
 }
 
 /** Invalidate everything of the CMS after a change (lists, overview, meta options). */

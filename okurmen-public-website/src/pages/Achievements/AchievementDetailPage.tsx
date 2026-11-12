@@ -37,8 +37,8 @@ export function AchievementView({ item, preview }: { item: AchievementDetail; pr
   return (
     <>
       <Seo
-        title={item.title}
-        description={item.excerpt || excerpt(item.body)}
+        title={item.seo_title || item.title}
+        description={item.seo_description || item.excerpt || excerpt(item.body)}
         image={item.cover?.url}
         type="article"
         noindex={preview}

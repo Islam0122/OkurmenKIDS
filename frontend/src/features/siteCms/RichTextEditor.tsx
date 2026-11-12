@@ -13,6 +13,7 @@ interface Props {
   value: string
   onChange: (value: string) => void
   rows?: number
+  placeholder?: string
 }
 
 type Tool = { icon: typeof Bold; label: string; run: () => void }
@@ -22,7 +23,7 @@ type Tool = { icon: typeof Bold; label: string; run: () => void }
  * вставляют заголовки, списки, ссылки, картинки из медиатеки, видео YouTube,
  * цитаты и блоки-заметки; «Просмотр» показывает, как это будет на сайте.
  */
-export function RichTextEditor({ id, value, onChange, rows = 14 }: Props) {
+export function RichTextEditor({ id, value, onChange, rows = 14, placeholder }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [picker, setPicker] = useState(false)
@@ -120,10 +121,10 @@ export function RichTextEditor({ id, value, onChange, rows = 14 }: Props) {
       {mode === 'edit' ? (
         <textarea id={id} ref={ref} rows={rows} value={value} onChange={(e) => onChange(e.target.value)}
           className="block w-full resize-y border-0 bg-transparent px-3 py-2.5 font-mono text-sm leading-relaxed text-ink outline-none"
-          placeholder="Пишите текст. Пустая строка — новый абзац. Кнопки сверху добавляют оформление." />
+          placeholder={placeholder ?? 'Пишите текст. Пустая строка — новый абзац. Кнопки сверху добавляют оформление.'} />
       ) : (
         <div className="max-h-[32rem] min-h-40 overflow-y-auto px-4 py-3 text-sm leading-relaxed text-ink">
-          {value.trim() ? <Preview blocks={parseMarkup(value)} /> : <p className="text-ink-muted">Пока пусто.</p>}
+          {value.trim() ? <MarkupPreview blocks={parseMarkup(value)} /> : <p className="text-ink-muted">Пока пусто.</p>}
         </div>
       )}
       <MediaPicker
@@ -148,7 +149,8 @@ function inline(nodes: Inline[]): ReactNode {
   })
 }
 
-function Preview({ blocks }: { blocks: Block[] }) {
+/** Renders the site markup as the public site does (editor and page previews). */
+export function MarkupPreview({ blocks }: { blocks: Block[] }) {
   return (
     <>
       {blocks.map((b, i) => {
@@ -170,7 +172,7 @@ function Preview({ blocks }: { blocks: Block[] }) {
           case 'divider':
             return <hr key={i} className="my-4 border-border" />
           case 'note':
-            return <aside key={i} className="my-3 rounded-lg border border-brand-100 bg-brand-50 px-3 py-2"><Preview blocks={b.blocks} /></aside>
+            return <aside key={i} className="my-3 rounded-lg border border-brand-100 bg-brand-50 px-3 py-2"><MarkupPreview blocks={b.blocks} /></aside>
         }
       })}
     </>

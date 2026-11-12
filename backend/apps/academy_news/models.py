@@ -48,6 +48,17 @@ class Article(models.Model):
         help_text="Абзацы разделяйте пустой строкой. «## » в начале строки — подзаголовок, «- » — пункт списка.",
     )
 
+    # Translations for the public site (/ky, /en). Empty — the Russian text is shown.
+    title_ky = models.CharField(max_length=200, blank=True, verbose_name="Заголовок (кыргызча)")
+    title_en = models.CharField(max_length=200, blank=True, verbose_name="Заголовок (English)")
+    excerpt_ky = models.CharField(max_length=300, blank=True, verbose_name="Краткое описание (кыргызча)")
+    excerpt_en = models.CharField(max_length=300, blank=True, verbose_name="Краткое описание (English)")
+    body_ky = models.TextField(blank=True, verbose_name="Текст (кыргызча)")
+    body_en = models.TextField(blank=True, verbose_name="Текст (English)")
+    seo_title = models.CharField(max_length=70, blank=True, verbose_name="SEO title",
+                                 help_text="Заголовок для поисковиков и соцсетей. Пусто — заголовок новости.")
+    seo_description = models.CharField(max_length=200, blank=True, verbose_name="SEO description",
+                                       help_text="Описание для поисковиков. Пусто — краткое описание.")
     cover = models.ImageField(upload_to=upload_path, max_length=255, blank=True, validators=[validate_image],
                               verbose_name="Обложка", help_text="JPEG, PNG или WebP до 15 МБ. Лучше горизонтальная, от 1600 px.")
     cover_caption = models.CharField(max_length=200, blank=True, verbose_name="Подпись к обложке")

@@ -1,169 +1,109 @@
 import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Eye, EyeOff } from 'lucide-react'
+import { ArrowDown, ArrowUp, ExternalLink, Eye, EyeOff, GripVertical } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
 
-import { PageHeader } from '@/components/layout/PageHeader'
-import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { LoadingState } from '@/components/ui/LoadingState'
-import { Tabs } from '@/components/ui/Tabs'
-import { Textarea } from '@/components/ui/Textarea'
 import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 import { cn } from '@/utils/cn'
 
-import { siteCmsApi, useSiteInvalidate, useSiteMeta, type Row } from './api'
-import { ImageInput } from './fields'
-import { ResourcePage } from './ResourcePage'
+import { siteCmsApi, useSiteInvalidate, useSiteMeta, useSiteSettings, type Row } from './api'
+import { ContentListPage } from './ContentListPage'
+import { SettingsForm, type SettingField } from './SettingsForm'
+import { CMS_BASE, CmsPage, linkButton, ListSkeleton, Panel } from './ui'
 
-type Tab = 'main' | 'sections' | 'contacts' | 'stats' | 'branches' | 'banners'
-const TABS = [
-  { key: 'main', label: 'Главный экран и тексты' },
-  { key: 'sections', label: 'Блоки' },
-  { key: 'contacts', label: 'Контакты' },
-  { key: 'stats', label: 'Показатели' },
-  { key: 'branches', label: 'Филиалы' },
-  { key: 'banners', label: 'Баннеры' },
-] as const
-
-const TEXT = (name: string, label: string, opts: { area?: boolean; hint?: string; i18n?: boolean } = {}) => ({ name, label, ...opts })
-const MAIN = [
-  TEXT('hero_title', 'Заголовок главного экрана', { i18n: true }),
-  TEXT('hero_subtitle', 'Текст под заголовком', { area: true, i18n: true }),
-  TEXT('intro_video_url', 'Видео об академии (YouTube / Vimeo)'),
-  TEXT('primary_cta_label', 'Кнопка 1 — текст', { hint: 'Пусто — «Записать ребёнка»' }),
-  TEXT('primary_cta_url', 'Кнопка 1 — ссылка', { hint: 'Пусто — форма записи' }),
-  TEXT('secondary_cta_label', 'Кнопка 2 — текст', { hint: 'Пусто — «Посмотреть курсы»' }),
-  TEXT('secondary_cta_url', 'Кнопка 2 — ссылка', { hint: 'Пусто — /courses' }),
-  TEXT('about_story', 'История академии («Об академии»)', { area: true, i18n: true }),
-  TEXT('mission', 'Миссия', { area: true, i18n: true }),
-  TEXT('vision', 'Видение', { area: true, i18n: true }),
-]
-const CONTACTS = [
-  TEXT('phone', 'Телефон'), TEXT('whatsapp', 'WhatsApp (номер)'), TEXT('telegram', 'Telegram (@имя или ссылка)'),
-  TEXT('instagram', 'Instagram (@имя или ссылка)'), TEXT('email', 'E-mail'), TEXT('working_hours', 'Часы работы'),
+const HERO: SettingField[] = [
+  { name: 'hero_title', label: 'Заголовок главного экрана', i18n: true, max: 160, wide: true },
+  { name: 'hero_subtitle', label: 'Текст под заголовком', area: true, i18n: true },
+  { name: 'hero_image', label: 'Фото главного экрана', image: true, hint: 'Реальное фото академии или студентов (с согласия). Пусто — фирменная иллюстрация.' },
+  { name: 'primary_cta_label', label: 'Кнопка 1 — текст', placeholder: 'Записать ребёнка' },
+  { name: 'primary_cta_url', label: 'Кнопка 1 — ссылка', placeholder: 'Пусто — форма записи' },
+  { name: 'secondary_cta_label', label: 'Кнопка 2 — текст', placeholder: 'Посмотреть курсы' },
+  { name: 'secondary_cta_url', label: 'Кнопка 2 — ссылка', placeholder: '/courses' },
+  { name: 'intro_video_url', label: 'Видео об академии (YouTube / Vimeo)', type: 'url', wide: true, placeholder: 'https://youtu.be/…' },
 ]
 
-/** /marketing/site/home — главная страница сайта и общие настройки. */
+const ABOUT: SettingField[] = [
+  { name: 'about_story', label: 'История академии', area: true, i18n: true },
+  { name: 'mission', label: 'Миссия', area: true, i18n: true },
+  { name: 'vision', label: 'Видение', area: true, i18n: true },
+]
+
+type Tab = 'hero' | 'sections' | 'featured' | 'stats'
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'hero', label: 'Главный экран' },
+  { key: 'sections', label: 'Блоки страницы' },
+  { key: 'featured', label: 'Избранное' },
+  { key: 'stats', label: 'Цифры академии' },
+]
+
+/** /marketing/site/pages/home — главная страница сайта (часть раздела «Страницы сайта»). */
 export function HomepagePage() {
-  const [tab, setTab] = useState<Tab>('main')
+  const [params, setParams] = useSearchParams()
+  const tab = (TABS.find((t) => t.key === params.get('tab'))?.key ?? 'hero') as Tab
+  const site = useSiteMeta().data?.public_site_url
   return (
-    <div className="space-y-4">
-      <PageHeader title="Главная страница" description="Что видит посетитель первым: заголовок, фото, видео, порядок блоков, избранные проекты и новости, контакты." />
-      <Tabs aria-label="Разделы главной страницы" items={TABS} value={tab} onChange={setTab} />
-      {tab === 'main' ? <SettingsForm fields={MAIN} withMedia /> : null}
-      {tab === 'contacts' ? <SettingsForm fields={CONTACTS} /> : null}
-      {tab === 'sections' ? <Sections /> : null}
-      {tab === 'stats' ? <ResourcePage resource="stats" /> : null}
-      {tab === 'branches' ? <ResourcePage resource="branches" /> : null}
-      {tab === 'banners' ? <ResourcePage resource="banners" /> : null}
-    </div>
-  )
-}
-
-function SettingsForm({ fields, withMedia }: { fields: ReturnType<typeof TEXT>[]; withMedia?: boolean }) {
-  const { showToast } = useToast()
-  const invalidate = useSiteInvalidate()
-  const meta = useSiteMeta()
-  const settings = useQuery({ queryKey: ['site-cms', 'settings'], queryFn: siteCmsApi.settings })
-  const [values, setValues] = useState<Record<string, unknown>>({})
-  const [image, setImage] = useState<File | null | undefined>(undefined)
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { if (settings.data) setValues(settings.data) }, [settings.data])
-  if (settings.isPending || !settings.data) return <LoadingState />
-
-  const set = (name: string, v: unknown) => setValues((p) => ({ ...p, [name]: v }))
-  const save = async () => {
-    setSaving(true)
-    try {
-      const body: Record<string, unknown> = {}
-      for (const f of fields) {
-        body[f.name] = values[f.name] ?? ''
-        if (f.i18n) for (const l of ['ky', 'en']) body[`${f.name}_${l}`] = values[`${f.name}_${l}`] ?? ''
-      }
-      if (withMedia) {
-        if (image !== undefined) body.hero_image = image
-        body.featured_projects = values.featured_projects ?? []
-        body.featured_news = values.featured_news ?? []
-      }
-      if (body.hero_image instanceof File || body.hero_image === null) {
-        // multipart: send lists via JSON afterwards (FormData can't send an empty list)
-        const { featured_projects, featured_news, ...rest } = body
-        await siteCmsApi.saveSettings(rest)
-        await siteCmsApi.saveSettings({ featured_projects, featured_news })
-      } else {
-        await siteCmsApi.saveSettings(body)
-      }
-      setImage(undefined)
-      await invalidate()
-      showToast('Сохранено', 'success')
-    } catch (error) {
-      showToast(extractErrorMessage(error), 'error')
-    } finally {
-      setSaving(false)
-    }
-  }
-  const lms = meta.data?.lms
-  const toggle = (name: string, id: number) => {
-    const list = (values[name] as number[] | undefined) ?? []
-    set(name, list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
-  }
-
-  return (
-    <div className="space-y-5 rounded-xl border border-border bg-surface p-4 sm:p-5">
-      <div className="grid gap-4 sm:grid-cols-2">
-        {fields.map((f) => (
-          <div key={f.name} className={cn(f.area && 'sm:col-span-2')}>
-            <label htmlFor={`s-${f.name}`} className="field-label">{f.label}</label>
-            {f.area ? <Textarea id={`s-${f.name}`} rows={4} value={String(values[f.name] ?? '')} onChange={(e) => set(f.name, e.target.value)} />
-              : <Input id={`s-${f.name}`} value={String(values[f.name] ?? '')} onChange={(e) => set(f.name, e.target.value)} />}
-            {f.hint ? <p className="mt-1 text-xs text-ink-muted">{f.hint}</p> : null}
-            {f.i18n ? (
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {(['ky', 'en'] as const).map((l) => (
-                  <Input key={l} aria-label={`${f.label} (${l})`} placeholder={l === 'ky' ? 'Кыргызча' : 'English'} value={String(values[`${f.name}_${l}`] ?? '')} onChange={(e) => set(`${f.name}_${l}`, e.target.value)} />
-                ))}
-              </div>
-            ) : null}
-          </div>
+    <CmsPage title="Главная страница" back={{ to: `${CMS_BASE}/pages`, label: 'Страницы сайта' }}
+      description="Что видит посетитель первым: заголовок, фото, кнопки, порядок блоков и избранные материалы."
+      actions={site ? <a href={site} target="_blank" rel="noreferrer" className={linkButton('secondary')}><ExternalLink className="size-4" aria-hidden />Открыть главную</a> : undefined}>
+      <div role="tablist" aria-label="Разделы главной страницы" className="scroll-x -mx-4 flex gap-1 border-b border-border px-4 sm:mx-0 sm:px-0">
+        {TABS.map((t) => (
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setParams(t.key === 'hero' ? {} : { tab: t.key }, { replace: true })}
+            className={cn('-mb-px h-11 shrink-0 border-b-2 px-3 text-sm font-medium', tab === t.key ? 'border-brand-500 text-brand-600' : 'border-transparent text-ink-secondary hover:text-ink')}>
+            {t.label}
+          </button>
         ))}
-        {withMedia ? (
-          <div className="sm:col-span-2">
-            <span className="field-label">Фото главного экрана</span>
-            <ImageInput id="s-hero-image" current={(settings.data.hero_image as string | null) ?? null} value={image} onChange={setImage} />
-            <p className="mt-1 text-xs text-ink-muted">Реальное фото академии или студентов (с согласия). Пусто — фирменная иллюстрация.</p>
-          </div>
-        ) : null}
       </div>
-      {withMedia && lms ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Picker title="Проекты на главной" hint="Только опубликованные тренерами. Ничего не выбрано — последние." items={lms.projects.map((p) => ({ id: p.id, label: p.title }))}
-            selected={(values.featured_projects as number[]) ?? []} onToggle={(id) => toggle('featured_projects', id)} />
-          <Picker title="Новости на главной" hint="Ничего не выбрано — последние." items={lms.news.map((n) => ({ id: n.id, label: n.title }))}
-            selected={(values.featured_news as number[]) ?? []} onToggle={(id) => toggle('featured_news', id)} />
-        </div>
-      ) : null}
-      <div className="flex justify-end border-t border-border pt-4"><Button isLoading={saving} onClick={save}>Сохранить</Button></div>
-    </div>
+      {tab === 'hero' ? <SettingsForm title="Главный экран" description="Заголовок, текст, фото и кнопки первого экрана" fields={HERO} /> : null}
+      {tab === 'sections' ? <Sections /> : null}
+      {tab === 'featured' ? <Featured /> : null}
+      {tab === 'stats' ? <ContentListPage resource="stats" embedded /> : null}
+    </CmsPage>
   )
 }
 
-function Picker({ title, hint, items, selected, onToggle }: { title: string; hint: string; items: { id: number; label: string }[]; selected: number[]; onToggle: (id: number) => void }) {
+/** /marketing/site/pages/about — «Об академии». */
+export function AboutPage() {
   return (
-    <fieldset className="rounded-lg border border-border p-3">
-      <legend className="px-1 text-sm font-medium text-ink">{title} <span className="text-ink-muted">({selected.length})</span></legend>
-      <p className="mb-2 text-xs text-ink-muted">{hint}</p>
-      <ul className="max-h-60 space-y-1 overflow-y-auto">
-        {items.length ? items.map((item) => (
-          <li key={item.id}>
-            <label className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-surface-hover">
-              <input type="checkbox" className="size-4 accent-brand-600" checked={selected.includes(item.id)} onChange={() => onToggle(item.id)} />
-              <span className="truncate">{item.label}</span>
-            </label>
-          </li>
-        )) : <li className="text-sm text-ink-muted">Нет опубликованных материалов.</li>}
-      </ul>
-    </fieldset>
+    <CmsPage title="Об академии" back={{ to: `${CMS_BASE}/pages`, label: 'Страницы сайта' }} description="Тексты страницы /about на трёх языках. Цифры академии — на вкладке «Цифры академии» главной.">
+      <SettingsForm title="Тексты страницы" fields={ABOUT} />
+    </CmsPage>
+  )
+}
+
+function Featured() {
+  const meta = useSiteMeta()
+  const settings = useSiteSettings()
+  const [news, setNews] = useState<number[]>([])
+  const initial = (settings.data?.featured_news as number[] | undefined) ?? []
+  useEffect(() => { setNews(initial) }, [settings.data]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = JSON.stringify(news) !== JSON.stringify(initial)
+  const items = meta.data?.lms?.news ?? []
+  const toggle = (id: number) => setNews((list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]))
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <SettingsForm title="Новости на главной" description="Ничего не выбрано — три последние" fields={[]}
+        extra={{ values: { featured_news: news }, dirty, reset: () => setNews(initial) }}>
+        {() => (
+          <ul className="max-h-80 space-y-1 overflow-y-auto">
+            {items.length ? items.map((item) => (
+              <li key={item.id}>
+                <label className="flex min-h-10 items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-hover">
+                  <input type="checkbox" className="size-4 accent-brand-600" checked={news.includes(item.id)} onChange={() => toggle(item.id)} />
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  <span className="text-xs text-ink-muted">{new Date(item.published_at).toLocaleDateString('ru-RU')}</span>
+                </label>
+              </li>
+            )) : <li className="text-sm text-ink-muted">Нет опубликованных новостей.</li>}
+          </ul>
+        )}
+      </SettingsForm>
+      <Panel title="Проекты учеников на главной" description="Отметки ставятся в разделе «Проекты учеников»">
+        <p className="text-sm text-ink-secondary">Проекты добавляют тренеры в LMS. Маркетинг выбирает, какие из опубликованных показать на главной; ничего не выбрано — последние.</p>
+        <Link to={`${CMS_BASE}/projects`} className={cn(linkButton('primary'), 'mt-4')}>Выбрать проекты</Link>
+      </Panel>
+    </div>
   )
 }
 
@@ -172,43 +112,55 @@ function Sections() {
   const invalidate = useSiteInvalidate()
   const query = useQuery({ queryKey: ['site-cms', 'sections'], queryFn: siteCmsApi.sections })
   const [rows, setRows] = useState<Row[]>([])
+  const [drag, setDrag] = useState<number | null>(null)
   useEffect(() => { if (query.data) setRows(query.data) }, [query.data])
-  if (query.isPending) return <LoadingState />
-  const act = async (task: () => Promise<unknown>) => {
+  if (query.isPending) return <ListSkeleton rows={8} thumb={false} />
+  const act = async (task: () => Promise<unknown>, ok?: string) => {
     try {
       await task()
       await invalidate()
+      if (ok) showToast(ok, 'success')
     } catch (error) {
       showToast(extractErrorMessage(error), 'error')
     }
+  }
+  const reorder = (next: Row[]) => {
+    setRows(next)
+    act(() => siteCmsApi.reorderSections(next.map((r) => String(r.key))), 'Порядок блоков сохранён')
   }
   const move = (index: number, delta: number) => {
     const next = [...rows]
     const [item] = next.splice(index, 1)
     next.splice(index + delta, 0, item)
-    setRows(next)
-    act(() => siteCmsApi.reorderSections(next.map((r) => String(r.key))))
+    reorder(next)
   }
   return (
-    <div className="rounded-xl border border-border bg-surface">
-      <p className="border-b border-border px-4 py-3 text-sm text-ink-secondary">Порядок блоков главной страницы после главного экрана. Пустые блоки (например, нет отзывов) сайт не показывает сам.</p>
+    <Panel title="Блоки главной страницы" description="Порядок после главного экрана. Перетащите или используйте стрелки; пустые блоки сайт скрывает сам." bodyClassName="p-0">
       <ol className="divide-y divide-border">
         {rows.map((row, i) => (
-          <li key={row.id} className={cn('flex items-center gap-2 px-3 py-2.5 sm:px-4', !row.is_visible && 'opacity-60')}>
-            <span className="w-6 text-sm text-ink-muted">{i + 1}</span>
+          <li key={row.id} draggable onDragStart={() => setDrag(i)} onDragOver={(e) => e.preventDefault()}
+            onDrop={() => { if (drag === null || drag === i) return; const next = [...rows]; const [it] = next.splice(drag, 1); next.splice(i, 0, it); setDrag(null); reorder(next) }}
+            className={cn('flex flex-wrap items-center gap-2 px-3 py-3 sm:flex-nowrap sm:px-5', !row.is_visible && 'bg-surface-muted/60', drag === i && 'opacity-50')}>
+            <GripVertical className="hidden size-4 shrink-0 cursor-grab text-ink-muted sm:block" aria-hidden />
+            <span className="w-6 text-sm text-ink-muted tabular-nums">{i + 1}</span>
             <span className="min-w-0 flex-1">
-              <span className="block font-medium text-ink">{String(row.label)}</span>
-              <Input aria-label="Свой заголовок" defaultValue={String(row.title ?? '')} placeholder="Свой заголовок (необязательно)" className="mt-1 h-8 max-w-sm text-xs"
-                onBlur={(e) => e.target.value !== row.title && act(() => siteCmsApi.saveSection(row.id, { title: e.target.value }))} />
+              <span className={cn('block font-medium', row.is_visible ? 'text-ink' : 'text-ink-muted line-through')}>{String(row.label)}</span>
+              <Input aria-label={`Свой заголовок блока «${String(row.label)}»`} defaultValue={String(row.title ?? '')} placeholder="Свой заголовок (необязательно)" className="mt-1 h-9 max-w-sm text-sm"
+                onBlur={(e) => e.target.value !== (row.title ?? '') && act(() => siteCmsApi.saveSection(row.id, { title: e.target.value }), 'Заголовок сохранён')} />
             </span>
-            <Button variant="ghost" size="sm" aria-label="Выше" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="size-4" aria-hidden /></Button>
-            <Button variant="ghost" size="sm" aria-label="Ниже" disabled={i === rows.length - 1} onClick={() => move(i, 1)}><ArrowDown className="size-4" aria-hidden /></Button>
-            <Button variant="ghost" size="sm" aria-label={row.is_visible ? 'Скрыть' : 'Показать'} onClick={() => act(() => siteCmsApi.saveSection(row.id, { is_visible: !row.is_visible }))}>
-              {row.is_visible ? <Eye className="size-4" aria-hidden /> : <EyeOff className="size-4" aria-hidden />}
-            </Button>
+            <div className="flex items-center gap-1">
+              <button type="button" className="grid size-10 place-items-center rounded-lg text-ink-secondary hover:bg-surface-hover disabled:opacity-30" aria-label="Выше" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="size-4" aria-hidden /></button>
+              <button type="button" className="grid size-10 place-items-center rounded-lg text-ink-secondary hover:bg-surface-hover disabled:opacity-30" aria-label="Ниже" disabled={i === rows.length - 1} onClick={() => move(i, 1)}><ArrowDown className="size-4" aria-hidden /></button>
+              <button type="button" aria-pressed={Boolean(row.is_visible)} aria-label={row.is_visible ? 'Скрыть блок' : 'Показать блок'}
+                onClick={() => act(() => siteCmsApi.saveSection(row.id, { is_visible: !row.is_visible }), row.is_visible ? 'Блок скрыт' : 'Блок показан')}
+                className={cn('inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium', row.is_visible ? 'text-emerald-700 hover:bg-emerald-50' : 'text-ink-muted hover:bg-surface-hover')}>
+                {row.is_visible ? <Eye className="size-4" aria-hidden /> : <EyeOff className="size-4" aria-hidden />}
+                <span className="hidden sm:inline">{row.is_visible ? 'Показан' : 'Скрыт'}</span>
+              </button>
+            </div>
           </li>
         ))}
       </ol>
-    </div>
+    </Panel>
   )
 }

@@ -43,19 +43,21 @@ class PublicView(APIView):
         OpenApiParameter("category", str, enum=["all", *public.CATEGORY_IDS]),
         OpenApiParameter("page", int),
         OpenApiParameter("page_size", int),
+        OpenApiParameter("lang", str, enum=list(public.LANGS)),
     ],
 )
 class PublicNewsListView(PublicView):
     def get(self, request):
         params = request.query_params
         return self.respond(public.listing(q=params.get("q", ""), category=params.get("category", ""),
-                                           page=params.get("page"), page_size=params.get("page_size")))
+                                           page=params.get("page"), page_size=params.get("page_size"),
+                                           lang=params.get("lang", "")))
 
 
 @extend_schema(tags=TAGS, auth=[], responses={200: dict})
 class PublicArticleView(PublicView):
     def get(self, request, slug: str):
-        record = public.article(slug)
+        record = public.article(slug, request.query_params.get("lang", ""))
         if record is None:
             raise NotFound("Новость не найдена или ещё не опубликована.")
         return self.respond(record)

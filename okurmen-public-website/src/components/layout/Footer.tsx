@@ -1,4 +1,4 @@
-import { Clock, Instagram, Mail, MapPin, MessageCircle, Phone, Send } from 'lucide-react'
+import { Clock, Facebook, Instagram, Mail, MapPin, MessageCircle, Music2, Phone, Send, Youtube } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { BRAND, NAV } from '@/app/config/site'
@@ -15,6 +15,9 @@ export function Footer() {
     { href: contacts?.instagram, label: t('contacts.instagram'), icon: Instagram },
     { href: contacts?.telegram, label: t('contacts.telegram'), icon: Send },
     { href: contacts?.whatsapp, label: t('contacts.whatsapp'), icon: MessageCircle },
+    { href: contacts?.facebook, label: 'Facebook', icon: Facebook },
+    { href: contacts?.youtube, label: 'YouTube', icon: Youtube },
+    { href: contacts?.tiktok, label: 'TikTok', icon: Music2 },
   ].filter((s) => s.href)
 
   return (

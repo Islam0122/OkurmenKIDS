@@ -17,7 +17,14 @@ them into /api/v1/marketing/ — rights are checked here:
 """
 from __future__ import annotations
 
+import ipaddress
+import posixpath
+import socket
+import urllib.request
+from urllib.parse import urlparse
+
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.db.models import Count, Q
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -108,8 +115,75 @@ def _file_url(field_file) -> str | None:
 # Serializers
 # ---------------------------------------------------------------------------
 
+IMAGE_DOWNLOAD_MAX = 15 * 1024 * 1024
+IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # a redirect could lead into the internal network
+        raise ValidationError("Ссылка перенаправляет на другой адрес — укажите прямую ссылку на изображение.")
+
+
+def _asset_copy(asset) -> ContentFile:
+    with asset.file.open("rb") as handle:
+        return ContentFile(handle.read(), name=posixpath.basename(asset.file.name))
+
+
+def _download_image(url: str) -> ContentFile:
+    """A picture from a direct public link (https://…/photo.jpg). Only public
+    addresses, no redirects, image types only, at most 15 MB."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValidationError("Нужна ссылка вида https://…")
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except OSError:
+        raise ValidationError("Адрес не найден.")
+    if not infos or any(not ipaddress.ip_address(info[4][0]).is_global for info in infos):
+        raise ValidationError("Ссылка недоступна.")
+    opener = urllib.request.build_opener(_NoRedirect)
+    request = urllib.request.Request(url, headers={"User-Agent": "OkurmenKids-CMS/1.0", "Accept": "image/*"})
+    try:
+        with opener.open(request, timeout=10) as response:
+            content_type = response.headers.get_content_type()
+            if content_type not in IMAGE_TYPES:
+                raise ValidationError("По ссылке не изображение JPEG, PNG или WebP.")
+            data = response.read(IMAGE_DOWNLOAD_MAX + 1)
+    except ValidationError:
+        raise
+    except Exception:  # noqa: BLE001 — network errors, HTTP errors, timeouts
+        raise ValidationError("Не удалось загрузить изображение по ссылке.")
+    if len(data) > IMAGE_DOWNLOAD_MAX:
+        raise ValidationError("Изображение больше 15 МБ.")
+    name = posixpath.basename(parsed.path) or "image"
+    if not name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+        name += IMAGE_TYPES[content_type]
+    return ContentFile(data, name=name[:100])
+
+
+def image_from_reference(value: str) -> ContentFile:
+    """`media:<id>` — a picture from the media library; an http(s) link — the
+    library file with that address, or a download from a direct public link."""
+    value = value.strip()
+    if value.startswith("media:"):
+        pk = value[len("media:"):]
+        asset = m.MediaAsset.objects.filter(pk=int(pk) if pk.isdigit() else 0, kind=m.MediaAsset.Kind.IMAGE).first()
+        if asset is None:
+            raise ValidationError("Изображение медиатеки не найдено.")
+        return _asset_copy(asset)
+    if value.startswith(("http://", "https://")):
+        path = urlparse(value).path
+        for asset in m.MediaAsset.objects.filter(kind=m.MediaAsset.Kind.IMAGE, file__endswith=posixpath.basename(path)):
+            if path.endswith("/" + asset.file.name) or path == asset.file.name:
+                return _asset_copy(asset)
+        return _download_image(value)
+    raise ValidationError("Выберите файл, изображение из медиатеки или прямую ссылку.")
+
+
 class ImageField(serializers.ImageField):
-    """Upload: a file (multipart). Clear: an empty string. Read: the URL."""
+    """Upload: a file (multipart), `media:<id>` (from the media library) or a
+    direct link. Clear: an empty string. Read: the URL."""
 
     def to_representation(self, value):
         return _file_url(value)
@@ -117,6 +191,8 @@ class ImageField(serializers.ImageField):
     def to_internal_value(self, data):
         if data in ("", None):
             return None
+        if isinstance(data, str):
+            data = image_from_reference(data)
         value = super().to_internal_value(data)
         validate_image(value)
         return value
@@ -319,6 +395,7 @@ class NewsSerializer(serializers.ModelSerializer):
 
 class SettingsSerializer(serializers.ModelSerializer):
     hero_image = ImageField(required=False, allow_null=True)
+    og_image = ImageField(required=False, allow_null=True)
     featured_projects = serializers.PrimaryKeyRelatedField(
         many=True, required=False,
         queryset=StudentProject.objects.all())
@@ -399,14 +476,42 @@ class MediaAssetSerializer(serializers.ModelSerializer):
         return attrs
 
 
+def lead_staff():
+    """Who can be responsible for a lead: active marketing, sales, director, admin accounts."""
+    roles = (User.Role.MARKETING, User.Role.SALES_MANAGER, User.Role.ROP, User.Role.DOP, User.Role.DIRECTOR,
+             User.Role.ADMIN)
+    return User.objects.filter(is_active=True, role__in=roles).order_by("first_name", "last_name")
+
+
 class LeadSerializer(serializers.ModelSerializer):
     course_title = serializers.CharField(source="course.title", read_only=True, default=None)
     branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
+    assigned_to_name = serializers.SerializerMethodField()
+    assigned_to = serializers.PrimaryKeyRelatedField(queryset=User.objects.none(), allow_null=True, required=False)
+    status_history = serializers.JSONField(read_only=True)
 
     class Meta:
         model = m.Lead
         fields = "__all__"
-        read_only_fields = [f.name for f in m.Lead._meta.fields if f.name not in ("status", "note")]
+        read_only_fields = [f.name for f in m.Lead._meta.fields
+                            if f.name not in ("status", "note", "assigned_to", "child_name")]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["assigned_to"].queryset = lead_staff()
+
+    def get_assigned_to_name(self, obj):
+        return obj.assigned_to.get_full_name() if obj.assigned_to_id else None
+
+    def update(self, instance, validated_data):
+        request = self.context.get("request")
+        new_status = validated_data.get("status")
+        if new_status and new_status != instance.status:
+            by = request.user.get_full_name() if request and request.user.is_authenticated else ""
+            history = list(instance.status_history or [])
+            history.append({"at": timezone.now().isoformat(), "from": instance.status, "to": new_status, "by": by})
+            instance.status_history = history[-100:]
+        return super().update(instance, validated_data)
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
@@ -491,10 +596,19 @@ class PhotosMixin:
     photo_model = None
     photo_fk = ""
 
-    @action(detail=True, methods=["post"], url_path="photos", parser_classes=[parsers.MultiPartParser])
+    @action(detail=True, methods=["post"], url_path="photos", parser_classes=[parsers.MultiPartParser, parsers.JSONParser])
     def add_photos(self, request, pk=None):
+        """Files (multipart `files`) and / or pictures from the media library
+        (`media`: a list of asset ids)."""
         obj = self.get_object()
-        files = request.FILES.getlist("files")
+        files = list(request.FILES.getlist("files"))
+        media_ids = request.data.getlist("media") if hasattr(request.data, "getlist") else request.data.get("media", [])
+        if media_ids:
+            if not isinstance(media_ids, list):
+                raise ValidationError({"media": "Нужен список изображений."})
+            ids = [int(x) for x in media_ids if str(x).isdigit()]
+            assets = {a.pk: a for a in m.MediaAsset.objects.filter(pk__in=ids, kind=m.MediaAsset.Kind.IMAGE)}
+            files += [_asset_copy(assets[i]) for i in ids if i in assets]
         if not files:
             raise ValidationError({"files": "Выберите фотографии."})
         if len(files) > MAX_BULK_PHOTOS:
@@ -699,11 +813,11 @@ class MediaAssetViewSet(SiteViewSet):
 class LeadViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin,
                   mixins.DestroyModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated, IsLeadManager]
-    queryset = m.Lead.objects.select_related("course", "branch")
+    queryset = m.Lead.objects.select_related("course", "branch", "assigned_to")
     serializer_class = LeadSerializer
     pagination_class = CMSPagination
-    search_fields = ("parent_name", "phone", "message", "note")
-    filterset_fields = ("status", "course", "branch", "contact_method")
+    search_fields = ("parent_name", "child_name", "phone", "message", "note")
+    filterset_fields = ("status", "course", "branch", "contact_method", "assigned_to", "utm_source")
     ordering_fields = ("created_at", "status")
 
     def perform_destroy(self, instance):
@@ -767,6 +881,8 @@ class MetaView(APIView):
                 "require_approval": require_approval(),
                 "can_delete_leads": is_admin_user(request.user),
             },
+            "user_id": request.user.pk,
+            "staff": [{"id": u.pk, "name": u.get_full_name() or u.username, "role": u.role} for u in lead_staff()],
             "public_site_url": getattr(settings, "PUBLIC_WEBSITE_URL", "") or None,
             "choices": {
                 "workflow": _choices(m.Workflow) + [{"value": "scheduled", "label": "Запланировано"}],
@@ -803,38 +919,152 @@ class MetaView(APIView):
         return Response(payload)
 
 
+# What the dashboard knows about each content type: model, the title, the
+# Russian fields whose ky/en translations are checked, the cover field.
+CONTENT_TYPES = {
+    "courses": {"model": m.CoursePage, "title": "title", "i18n": ("title", "tagline"), "cover": "cover",
+                "excerpt": "tagline", "label": "Курс"},
+    "events": {"model": m.Event, "title": "title", "i18n": ("title", "excerpt"), "cover": "cover",
+               "excerpt": "excerpt", "label": "Событие"},
+    "achievements": {"model": m.Achievement, "title": "title", "i18n": ("title", "excerpt"), "cover": "cover",
+                     "excerpt": "excerpt", "label": "Достижение"},
+    "news": {"model": Article, "title": "title", "i18n": ("title", "excerpt"), "cover": "cover",
+             "excerpt": "excerpt", "label": "Новость"},
+    "team": {"model": m.TeamMember, "title": "display_name", "i18n": ("position", "bio"), "cover": "photo",
+             "excerpt": "bio", "label": "Команда"},
+    "testimonials": {"model": m.Testimonial, "title": "author_name", "i18n": (), "cover": None, "excerpt": None,
+                     "label": "Отзыв"},
+}
+
+
+def _state(obj, now) -> str:
+    if obj.status == "published":
+        return "scheduled" if obj.published_at > now else "published"
+    return obj.status
+
+
+def _content_rows(now):
+    """Every non-archived CMS record as a light dict (the site holds hundreds, not millions)."""
+    rows = []
+    for key, spec in CONTENT_TYPES.items():
+        qs = spec["model"].objects.all()
+        if key == "team":
+            qs = qs.select_related("teacher__user")
+        for obj in qs:
+            state = _state(obj, now)
+            cover = getattr(obj, spec["cover"]) if spec["cover"] else None
+            issues = []
+            if spec["cover"] and not cover and not (key == "team" and obj.teacher_id and obj.teacher.image):
+                issues.append("cover")
+            if spec["excerpt"] and not (getattr(obj, spec["excerpt"]) or "").strip():
+                issues.append("excerpt")
+            for lang in ("ky", "en"):
+                if any((getattr(obj, f) or "").strip() and not (getattr(obj, f"{f}_{lang}") or "").strip()
+                       for f in spec["i18n"]):
+                    issues.append(lang)
+            if key not in ("testimonials",) and not (obj.seo_title and obj.seo_description):
+                issues.append("seo")
+            rows.append({
+                "resource": key,
+                "type_label": spec["label"],
+                "id": obj.pk,
+                "title": str(getattr(obj, spec["title"]) or "—"),
+                "state": state,
+                "cover": _file_url(cover) if cover else None,
+                "updated_at": obj.updated_at.isoformat(),
+                "published_at": obj.published_at.isoformat(),
+                "issues": issues,
+            })
+    return rows
+
+
 @extend_schema(tags=TAGS, responses={200: dict})
 class OverviewView(APIView):
-    """Counters for the «Сайт» dashboard: what waits for review, new leads."""
+    """Counters for the «Сайт» dashboard: what waits for review, new leads,
+    recent changes, drafts, what needs to be filled, translation and SEO coverage."""
 
     permission_classes = [IsAuthenticated, IsSiteEditor]
 
     def get(self, request):
         now = timezone.now()
-
-        def states(model):
-            qs = model.objects.all()
-            return {
-                "draft": qs.filter(status=m.Workflow.DRAFT).count(),
-                "review": qs.filter(status=m.Workflow.REVIEW).count(),
-                "scheduled": qs.filter(status=m.Workflow.PUBLISHED, published_at__gt=now).count(),
-                "published": qs.filter(status=m.Workflow.PUBLISHED, published_at__lte=now).count(),
+        rows = _content_rows(now)
+        counts = {key: {"draft": 0, "review": 0, "scheduled": 0, "published": 0, "archived": 0} for key in CONTENT_TYPES}
+        for row in rows:
+            counts[row["resource"]][row["state"]] += 1
+        live = [r for r in rows if r["state"] != "archived"]
+        by_update = sorted(rows, key=lambda r: r["updated_at"], reverse=True)
+        coverage = {
+            key: {
+                "total": sum(1 for r in live if r["resource"] == key),
+                "ky": sum(1 for r in live if r["resource"] == key and "ky" not in r["issues"]),
+                "en": sum(1 for r in live if r["resource"] == key and "en" not in r["issues"]),
+                "seo": sum(1 for r in live if r["resource"] == key and "seo" not in r["issues"]),
             }
-
-        news = Article.objects.all()
+            for key in CONTENT_TYPES
+        }
+        leads = dict(m.Lead.objects.values_list("status").annotate(n=Count("id")))
+        settings_obj = m.SiteSettings.load()
         return Response({
-            "courses": states(m.CoursePage),
-            "events": states(m.Event),
-            "achievements": states(m.Achievement),
-            "team": states(m.TeamMember),
-            "testimonials": states(m.Testimonial),
-            "news": {
-                "draft": news.filter(status=Article.Status.DRAFT).count(),
-                "scheduled": news.filter(status=Article.Status.PUBLISHED, published_at__gt=now).count(),
-                "published": news.filter(status=Article.Status.PUBLISHED, published_at__lte=now).count(),
-            },
-            "leads_new": m.Lead.objects.filter(status=m.Lead.Status.NEW).count(),
+            **counts,
+            "leads_new": leads.get(m.Lead.Status.NEW, 0),
+            "leads_by_status": {s: leads.get(s, 0) for s in m.Lead.Status.values},
             "registrations_new": m.EventRegistration.objects.filter(status=m.EventRegistration.Status.NEW).count(),
             "upcoming_events": m.Event.objects.public().filter(starts_at__gte=now).count(),
             "media": m.MediaAsset.objects.count(),
+            "projects": StudentProject.objects.filter(status=StudentProject.Status.PUBLISHED).count(),
+            "featured_projects": settings_obj.featured_projects.count(),
+            "recent": by_update[:10],
+            "recently_published": sorted((r for r in rows if r["state"] == "published"),
+                                         key=lambda r: r["published_at"], reverse=True)[:6],
+            "drafts": [r for r in by_update if r["state"] in ("draft", "review")][:10],
+            "attention": [r for r in by_update if r["state"] != "archived" and r["issues"]][:300],
+            "coverage": coverage,
         })
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class ProjectsView(APIView):
+    """Published student projects (registered by trainers in the LMS — only
+    trainers create them) as the public site shows them, and which of them
+    are on the homepage. `POST {"id": 1, "featured": true}` toggles one."""
+
+    permission_classes = [IsAuthenticated, IsSiteEditor]
+
+    def get(self, request):
+        from apps.projects import public as projects_public
+
+        featured = set(m.SiteSettings.load().featured_projects.values_list("pk", flat=True))
+        q = (request.query_params.get("search") or "").strip().casefold()
+        show_trainer = projects_public.config()["show_trainer"]
+        results = []
+        for project in projects_public.published_queryset():
+            record = projects_public._record(project, show_trainer)
+            if q and q not in record["title"].casefold() and q not in (record["student"] or "").casefold():
+                continue
+            results.append({
+                "id": project.pk,
+                "title": record["title"],
+                "short_description": record["short_description"],
+                "student": record["student"],
+                "group": record["group"],
+                "date": record["date"],
+                "technologies": record["technologies"],
+                "cover": record["cover_url"],
+                "public_url": public_url(f"/projects/{record['key']}"),
+                "is_featured": project.pk in featured,
+            })
+        return Response({"count": len(results), "results": results})
+
+    def post(self, request):
+        pk = request.data.get("id")
+        project = StudentProject.objects.filter(pk=pk if str(pk).isdigit() else 0,
+                                                status=StudentProject.Status.PUBLISHED).first()
+        if project is None:
+            raise ValidationError({"id": "Опубликованный проект не найден."})
+        site = m.SiteSettings.load()
+        if request.data.get("featured"):
+            site.featured_projects.add(project)
+        else:
+            site.featured_projects.remove(project)
+        site.save(update_fields=["updated_at"])
+        return Response({"id": project.pk, "is_featured": bool(request.data.get("featured"))})

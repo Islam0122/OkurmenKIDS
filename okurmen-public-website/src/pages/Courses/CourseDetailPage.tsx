@@ -43,8 +43,8 @@ export function CourseView({ course, preview }: { course: CourseDetail; preview?
   return (
     <>
       <Seo
-        title={course.title}
-        description={course.tagline || excerpt(course.body)}
+        title={course.seo_title || course.title}
+        description={course.seo_description || course.tagline || excerpt(course.body)}
         image={course.cover?.url}
         noindex={preview}
         jsonLd={[
