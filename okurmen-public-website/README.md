@@ -94,8 +94,9 @@ src/
   `dist/sitemap.xml`. Only canonical, indexable URLs are listed.
 * **Status codes:** unknown URLs get a real 404 (middleware). `/courses/` → 308 → `/courses`
   (`trailingSlash: false`). `*.vercel.app` copies send `X-Robots-Tag: noindex`.
-* **Favicons and logo:** the official badge on a **transparent** background (alpha channel; no white
-  backing). They are generated from `brand/okurmen-kids-logo-512.png` by
+* **Favicons and logo:** the original round logo (including its own white circle); the square outside the
+  ring is **transparent** (alpha channel). The Apple touch icon is opaque, because iOS paints transparency black.
+  They are generated from `brand/okurmen-kids-logo-512.png` by
   `python3 scripts/generate-favicons.py`; the output files are committed. They are
   `favicon.ico` (16/32/48), `favicon-48x48.png`, `favicon-96x96.png`, `apple-touch-icon.png`
   (180), `icon-192.png` and `icon-512.png`. The Organization JSON-LD logo is `/icon-512.png`

@@ -241,44 +241,42 @@ describe('favicons and logo for Google', () => {
     expect(sizes.sort((a, b) => a - b)).toEqual([16, 32, 48])
   })
 
-  it('has a transparent background — no white backing, brand colours fully opaque', async () => {
+  it('is the original round logo on a transparent square: only the corners outside the ring are cut', async () => {
     const { PNG } = await import('./png')
-    for (const file of ['favicon-48x48.png', 'favicon-96x96.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png']) {
+    for (const file of ['favicon-48x48.png', 'favicon-96x96.png', 'icon-192.png', 'icon-512.png']) {
       const img = PNG(readFileSync(`public/${file}`))
-      expect(img.channels, file).toBe(4)
-      const alphaAt = (x: number, y: number) => img.pixel(x, y)[3]
+      const n = img.width - 1
       const mid = Math.floor(img.width / 2)
-      expect(alphaAt(0, 0), `${file} corner`).toBe(0)
-      expect(alphaAt(img.width - 1, img.height - 1), `${file} corner`).toBe(0)
-      expect(alphaAt(mid, Math.floor(img.height * 0.8)), `${file} inside the ring, below KIDS`).toBe(0)
-      let white = 0
-      let opaque = 0
-      for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
-        const [r, g, b, a] = img.pixel(x, y)
-        if (a > 0 && r > 240 && g > 240 && b > 240) white++
-        if (a === 255) opaque++
-      }
-      expect(white, `${file} white pixels`).toBe(0)
-      expect(opaque, `${file} opaque brand pixels`).toBeGreaterThan(0)
+      expect(img.channels, `${file} alpha channel`).toBe(4)
+      for (const [x, y] of [[0, 0], [n, 0], [0, n], [n, n]]) expect(img.pixel(x, y)[3], `${file} corner ${x},${y}`).toBe(0)
+      // The logo's own white circle stays: opaque white between «KIDS» and the bottom of the ring.
+      expect(img.pixel(mid, Math.floor(img.height * 0.8)), `${file} white circle`).toEqual([255, 255, 255, 255])
+      // Nothing is cut: the outermost pixel rows and columns are (practically) empty.
+      let edge = 0
+      for (let i = 0; i <= n; i++) edge = Math.max(edge, img.pixel(i, 0)[3], img.pixel(i, n)[3], img.pixel(0, i)[3], img.pixel(n, i)[3])
+      expect(edge, `${file} edge alpha`).toBeLessThanOrEqual(4)
     }
     const ico = readFileSync('public/favicon.ico')
     for (let i = 0; i < ico.readUInt16LE(4); i++) {
       const offset = ico.readUInt32LE(6 + i * 16 + 12)
       const frame = PNG(ico.subarray(offset, offset + ico.readUInt32LE(6 + i * 16 + 8)))
-      expect(frame.channels).toBe(4)
-      expect(frame.pixel(0, 0)[3]).toBe(0)
+      expect(frame.channels, `ico frame ${frame.width}`).toBe(4)
+      expect(frame.pixel(0, 0)[3], `ico frame ${frame.width} corner`).toBe(0)
+      expect(frame.pixel(frame.width >> 1, Math.floor(frame.height * 0.8))[3], `ico frame ${frame.width} white circle`).toBe(255)
     }
+    // iOS paints transparency black, so the home-screen icon stays opaque.
+    expect(PNG(readFileSync('public/apple-touch-icon.png')).channels).toBe(3)
   })
 
   it('declares one consistent icon set in the HTML head and the manifest', () => {
     const html = readFileSync('index.html', 'utf8')
     const links = [...html.matchAll(/<link rel="(icon|apple-touch-icon|shortcut icon)"[^>]*>/g)].map((m) => m[0])
     expect(links).toEqual([
-      '<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />',
-      '<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />',
-      '<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />',
-      '<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />',
-      '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />',
+      '<link rel="icon" href="/favicon.ico?v=4" sizes="16x16 32x32 48x48" />',
+      '<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png?v=4" />',
+      '<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png?v=4" />',
+      '<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=4" />',
+      '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=4" />',
     ])
     const manifest = JSON.parse(readFileSync('public/site.webmanifest', 'utf8'))
     expect(manifest.name).toBe('OKURMEN Kids')
