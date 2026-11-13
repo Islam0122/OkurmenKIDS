@@ -188,6 +188,8 @@ export interface NewsCard {
 }
 
 export interface NewsArticle extends Omit<NewsCard, 'photo_count'>, SeoFields {
+  /** Last edit, when the API provides it (NewsArticle dateModified). */
+  updated_at?: string | null
   body: string
   author: string | null
   photos: ImageAsset[]

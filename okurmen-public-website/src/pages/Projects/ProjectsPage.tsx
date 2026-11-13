@@ -6,7 +6,7 @@ import { PageHero } from '@/components/shared/PageHero'
 import { Pagination } from '@/components/shared/Pagination'
 import { Reveal } from '@/components/shared/Reveal'
 import { SearchBox } from '@/components/shared/SearchBox'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, Seo } from '@/components/shared/Seo'
 import { CardSkeletons, EmptyState, ErrorState } from '@/components/shared/States'
 import { useProjects } from '@/hooks/queries'
 import { useListParams } from '@/hooks/useListParams'
@@ -67,7 +67,7 @@ function FilterRow({ label, chips, value, onChange, footer }: { label: string; c
 }
 
 export function ProjectsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { params, page, update } = useListParams(['category', 'q', 'technology'])
   const [allTech, setAllTech] = useState(false)
   const category = params.category || 'all'
@@ -96,7 +96,7 @@ export function ProjectsPage() {
 
   return (
     <>
-      <Seo title={t('projects.title')} description={t('projects.subtitle')} jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('projects.title'), path: '/projects' }])} />
+      <Seo page="/projects" jsonLd={crumbsLd(lang, 'projects')} />
       <PageHero compact wide title={t('projects.title')} text={t('projects.subtitle')} crumbs={[{ label: t('nav.projects') }]} />
 
       <section className={cn(CATALOG, 'pt-8 pb-14 sm:pt-10 sm:pb-16')}>
@@ -148,7 +148,7 @@ export function ProjectsPage() {
             <ul className={cn('grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3', results.length >= 4 && '2xl:grid-cols-4')}>
               {results.map((project, i) => (
                 <Reveal as="li" key={project.key} delay={Math.min(i, 8) * 0.04} className="min-w-0">
-                  <ProjectCard project={project} />
+                  <ProjectCard project={project} priority={i === 0} />
                 </Reveal>
               ))}
             </ul>

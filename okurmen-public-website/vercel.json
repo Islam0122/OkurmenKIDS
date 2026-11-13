@@ -4,7 +4,20 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "trailingSlash": false,
   "rewrites": [
+    {
+      "source": "/:page(about|courses|projects|achievements|news|events|team|testimonials|contacts)",
+      "destination": "/:page/index.html"
+    },
+    {
+      "source": "/:lang(ky|en)/:page(about|courses|projects|achievements|news|events|team|testimonials|contacts)",
+      "destination": "/:lang/:page/index.html"
+    },
+    {
+      "source": "/:lang(ky|en)",
+      "destination": "/:lang/index.html"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
@@ -12,10 +25,29 @@
   ],
   "headers": [
     {
+      "source": "/sitemap.xml",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/xml; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=600"
+        }
+      ]
+    },
+    {
       "source": "/site.webmanifest",
       "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     },
     {
@@ -54,6 +86,21 @@
         {
           "key": "X-Robots-Tag",
           "value": "noindex, nofollow"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "(?<project>.*)\\.vercel\\.app"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, follow"
         }
       ]
     }

@@ -14,7 +14,7 @@ import { RocketCta } from '@/components/home/RocketCta'
 import { IntroVideo } from '@/components/sections/IntroVideo'
 import { Stats } from '@/components/sections/Stats'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { organizationLd, Seo } from '@/components/shared/Seo'
+import { orgLd, Seo, siteLd } from '@/components/shared/Seo'
 import { CardSkeletons, ErrorState } from '@/components/shared/States'
 import { useHome } from '@/hooks/queries'
 import { useI18n } from '@/i18n'
@@ -93,20 +93,12 @@ function renderSection(key: SectionKey, data: HomeData, title: string, t: Return
 }
 
 export function HomePage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { data, isPending, isError, error, refetch } = useHome()
 
   return (
     <>
-      <Seo
-        description={t('home.seo.description')}
-        jsonLd={organizationLd({
-          phone: data?.contacts.phone,
-          email: data?.contacts.email,
-          sameAs: [data?.contacts.instagram ?? null, data?.contacts.telegram ?? null],
-          addresses: data?.branches.map((b) => b.address),
-        })}
-      />
+      <Seo page="/" jsonLd={[orgLd(lang, data), siteLd(lang)]} />
       <Hero hero={data?.hero} programsHref={!data || (data.sections.some((s) => s.key === 'courses') && data.courses.length) ? '#programs' : '/courses'} />
       {isPending ? (
         <div className="container-page section"><CardSkeletons /></div>

@@ -7,7 +7,7 @@ import { ButtonLink } from '@/components/shared/Button'
 import { PageHero } from '@/components/shared/PageHero'
 import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, Seo } from '@/components/shared/Seo'
 import { CardSkeletons, ErrorState } from '@/components/shared/States'
 import { Gallery } from '@/features/content/Gallery'
 import { useAchievements, useEvents, useOpenVacancies, useTeam } from '@/hooks/queries'
@@ -15,6 +15,7 @@ import { useI18n, type MessageKey } from '@/i18n'
 import type { ImageAsset, TeamGroup, TeamMember } from '@/types/api'
 import { cn } from '@/utils/cn'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { BRAND } from '@/app/config/site'
 
 /** Organisational order on the page. Sections come from each profile's department in the CMS. */
 const ORDER: TeamGroup[] = ['management', 'it_trainers', 'soft_skills_trainers', 'english_trainers', 'administration']
@@ -25,7 +26,7 @@ interface Section {
 }
 
 export function TeamPage() {
-  const { t } = useI18n()
+  const { t, path, lang } = useI18n()
   const team = useTeam()
   const members = useMemo(() => team.data?.results ?? [], [team.data])
   const sections = useMemo<Section[]>(() => {
@@ -37,21 +38,21 @@ export function TeamPage() {
   return (
     <>
       <Seo
-        title={t('team.heroTitle')}
-        description={t('team.heroText')}
+        page="/team"
         jsonLd={[
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('nav.team'), path: '/team' }]),
+          crumbsLd(lang, 'team'),
           ...(members.length
             ? [{
                 '@context': 'https://schema.org',
                 '@type': 'EducationalOrganization',
-                name: 'Okurmen Kids Digital',
+                '@id': absoluteUrl('/#organization'),
+                name: BRAND.name,
                 url: absoluteUrl('/'),
                 employee: members.map((m) => ({
                   '@type': 'Person',
                   name: m.name,
                   jobTitle: m.position,
-                  url: absoluteUrl(`/team/${m.slug}`),
+                  url: absoluteUrl(path(`/team/${m.slug}`)),
                   ...(m.photo ? { image: absoluteUrl(mediaUrl(m.photo.url) ?? '') } : {}),
                 })),
               }]

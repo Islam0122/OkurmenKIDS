@@ -1,7 +1,14 @@
+# OKURMEN KIDS — https://www.okurmenkids.com
+# All public content is open to crawlers. CSS, JS and images are never blocked.
 User-agent: *
 Allow: /
+# Signed draft previews opened from the CMS (also sent with X-Robots-Tag: noindex)
 Disallow: /preview/
 Disallow: /ky/preview/
 Disallow: /en/preview/
+# Redirect-only helper route
+Disallow: /enroll
+Disallow: /ky/enroll
+Disallow: /en/enroll
 
-Sitemap: https://okurmenkids.com/sitemap.xml
+Sitemap: https://www.okurmenkids.com/sitemap.xml

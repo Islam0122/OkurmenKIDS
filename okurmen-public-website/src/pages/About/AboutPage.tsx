@@ -12,7 +12,7 @@ import { buttonClass, ButtonLink } from '@/components/shared/Button'
 import { Breadcrumbs } from '@/components/shared/PageHero'
 import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { breadcrumbLd, organizationLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, orgLd, Seo } from '@/components/shared/Seo'
 import { Gallery } from '@/features/content/Gallery'
 import { RichText } from '@/features/content/RichText'
 import { EnrollButton } from '@/features/enrollment/EnrollButton'
@@ -118,10 +118,9 @@ export function AboutPage() {
   return (
     <>
       <Seo
-        title={t('about.title')}
-        description={t('about.subtitle')}
+        page="/about"
         image={heroStudents}
-        jsonLd={[organizationLd(), breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('about.title'), path: '/about' }]), faqLd]}
+        jsonLd={[orgLd(lang, settings.data), crumbsLd(lang, 'about'), faqLd]}
       />
 
       {/* 1. Hero */}

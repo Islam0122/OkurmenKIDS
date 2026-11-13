@@ -2,7 +2,7 @@ import { ArrowUpRight, Clock, Instagram, Mail, MapPin, MessageCircle, Navigation
 import { useState } from 'react'
 
 import { PageHero } from '@/components/shared/PageHero'
-import { breadcrumbLd, organizationLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, orgLd, Seo } from '@/components/shared/Seo'
 import { ErrorState } from '@/components/shared/States'
 import { EnrollmentForm } from '@/features/enrollment/EnrollmentForm'
 import { useSettings } from '@/hooks/queries'
@@ -55,7 +55,7 @@ function ChannelCard({ channel }: { channel: Channel }) {
 }
 
 export function ContactsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { data, isPending, isError, error, refetch } = useSettings()
   const [active, setActive] = useState(0)
   const contacts = data?.contacts
@@ -75,12 +75,8 @@ export function ContactsPage() {
   return (
     <>
       <Seo
-        title={t('contacts.title')}
-        description={t('contacts.heroText')}
-        jsonLd={[
-          organizationLd({ phone: contacts?.phone, email: contacts?.email, sameAs: [contacts?.instagram ?? null, contacts?.telegram ?? null], addresses: branches.map((b) => b.address) }),
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('contacts.title'), path: '/contacts' }]),
-        ]}
+        page="/contacts"
+        jsonLd={[orgLd(lang, data), crumbsLd(lang, 'contacts')]}
       />
       <PageHero compact title={t('contacts.heroTitle')} text={t('contacts.heroText')} crumbs={[{ label: t('nav.contacts') }]} />
 

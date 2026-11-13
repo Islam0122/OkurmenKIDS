@@ -5,7 +5,7 @@ import { PageHero } from '@/components/shared/PageHero'
 import { Pagination } from '@/components/shared/Pagination'
 import { Reveal } from '@/components/shared/Reveal'
 import { SearchBox } from '@/components/shared/SearchBox'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, Seo } from '@/components/shared/Seo'
 import { CardSkeletons, EmptyState, ErrorState } from '@/components/shared/States'
 import { useNews } from '@/hooks/queries'
 import { useListParams } from '@/hooks/useListParams'
@@ -15,7 +15,7 @@ import type { NewsCategory } from '@/types/api'
 const CATEGORIES: NewsCategory[] = ['events', 'achievements', 'competitions', 'education', 'announcements', 'activities']
 
 export function NewsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { params, page, update } = useListParams(['category', 'q'])
   const category = params.category || 'all'
   const { data, isPending, isError, error, refetch, isPlaceholderData } = useNews({ category, q: params.q, page, page_size: 9 })
@@ -26,7 +26,7 @@ export function NewsPage() {
   ]
   return (
     <>
-      <Seo title={t('news.title')} description={t('news.subtitle')} jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('news.title'), path: '/news' }])} />
+      <Seo page="/news" jsonLd={crumbsLd(lang, 'news')} />
       <PageHero title={t('news.title')} text={t('news.subtitle')} crumbs={[{ label: t('nav.news') }]} />
       <section className="container-page section">
         <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

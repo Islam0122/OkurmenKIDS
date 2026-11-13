@@ -7,7 +7,7 @@ import { CardGrid } from '@/components/sections/CardGrid'
 import { PageHero } from '@/components/shared/PageHero'
 import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, detailDescription, detailTitle, Seo } from '@/components/shared/Seo'
 import { SmartImage } from '@/components/shared/SmartImage'
 import { ErrorState, NotFoundState, PageSkeleton } from '@/components/shared/States'
 import { RichText } from '@/features/content/RichText'
@@ -18,7 +18,9 @@ import { useI18n } from '@/i18n'
 import type { CourseDetail } from '@/types/api'
 import { cn } from '@/utils/cn'
 import { ageRange, excerpt } from '@/utils/format'
-import { absoluteUrl } from '@/utils/media'
+import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { BRAND } from '@/app/config/site'
+import { useItemLangs } from '@/hooks/queries'
 
 export function CourseDetailPage() {
   const { slug = '' } = useParams()
@@ -29,7 +31,10 @@ export function CourseDetailPage() {
 }
 
 export function CourseView({ course, preview }: { course: CourseDetail; preview?: boolean }) {
-  const { t, path } = useI18n()
+  const { t, path, lang } = useI18n()
+  const langs = useItemLangs('courses', course.slug, preview ? undefined : course)
+  const ageMin = Number(course.age_min) || undefined
+  const ageMax = Number(course.age_max) || undefined
   const Icon = COURSE_ICONS[course.icon] ?? COURSE_ICONS.code
   const age = ageRange(t, course.age_min, course.age_max)
   const facts = [
@@ -46,20 +51,24 @@ export function CourseView({ course, preview }: { course: CourseDetail; preview?
   return (
     <>
       <Seo
-        title={course.seo_title || course.title}
-        description={course.seo_description || course.tagline || excerpt(course.body)}
+        title={detailTitle(lang, 'courses', course.title, course.seo_title)}
+        description={detailDescription(lang, 'courses', course.tagline || course.body, course.seo_description)}
         image={course.cover?.url}
         noindex={preview}
+        langs={langs}
         jsonLd={[
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('courses.title'), path: '/courses' }, { name: course.title, path: `/courses/${course.slug}` }]),
+          crumbsLd(lang, 'courses', { name: course.title, slug: course.slug }),
           {
             '@context': 'https://schema.org',
             '@type': 'Course',
             name: course.title,
             description: course.tagline || excerpt(course.body, 300),
             url: absoluteUrl(path(`/courses/${course.slug}`)),
-            provider: { '@type': 'EducationalOrganization', name: 'Okurmen Kids Digital', sameAs: absoluteUrl('/') },
-            ...(course.age_min || course.age_max ? { audience: { '@type': 'EducationalAudience', educationalRole: 'student', suggestedMinAge: course.age_min ?? undefined, suggestedMaxAge: course.age_max ?? undefined } } : {}),
+            inLanguage: lang,
+            provider: { '@type': 'EducationalOrganization', '@id': absoluteUrl('/#organization'), name: BRAND.name, url: absoluteUrl('/') },
+            ...(course.cover?.url ? { image: absoluteUrl(mediaUrl(course.cover.url) ?? course.cover.url) } : {}),
+            ...(ageMin || ageMax ? { audience: { '@type': 'PeopleAudience', audienceType: 'children', ...(ageMin ? { suggestedMinAge: ageMin } : {}), ...(ageMax ? { suggestedMaxAge: ageMax } : {}) } } : {}),
+            ...(course.subjects.length ? { about: course.subjects } : {}),
             ...(course.outcomes.length ? { teaches: course.outcomes } : {}),
           },
         ]}

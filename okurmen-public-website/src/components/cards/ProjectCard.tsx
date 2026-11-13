@@ -12,7 +12,8 @@ const MAX_BADGES = 4
  * is one link to /projects/:key; the student's name is shown only as the API
  * returns it (null when the family did not approve it).
  */
-export function ProjectCard({ project }: { project: Project }) {
+/** `priority`: the first card of a list (the page's LCP image) loads eagerly. */
+export function ProjectCard({ project, priority }: { project: Project; priority?: boolean }) {
   const { t, path, formatDate } = useI18n()
   const badges = project.technologies.slice(0, MAX_BADGES)
   const more = project.technologies.length - badges.length
@@ -27,6 +28,7 @@ export function ProjectCard({ project }: { project: Project }) {
           image={project.cover ?? undefined}
           src={project.cover_url}
           alt=""
+          priority={priority}
           sizes="(min-width: 1536px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
           className="size-full object-top transition duration-700 ease-out group-hover:scale-[1.04]"
           fallback={<Code2 className="size-12 text-brand-300" aria-hidden />}

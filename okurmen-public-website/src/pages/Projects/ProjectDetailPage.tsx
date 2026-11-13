@@ -6,7 +6,7 @@ import { ButtonLink } from '@/components/shared/Button'
 import { PageHero } from '@/components/shared/PageHero'
 import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, detailDescription, detailTitle, Seo } from '@/components/shared/Seo'
 import { SmartImage } from '@/components/shared/SmartImage'
 import { ErrorState, NotFoundState, PageSkeleton } from '@/components/shared/States'
 import { Gallery } from '@/features/content/Gallery'
@@ -16,8 +16,12 @@ import { EnrollButton } from '@/features/enrollment/EnrollButton'
 import { isNotFound, useProject, useProjects } from '@/hooks/queries'
 import { useI18n } from '@/i18n'
 import type { ProjectDetail } from '@/types/api'
-import { excerpt } from '@/utils/format'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { BRAND } from '@/app/config/site'
+import { projectText, type Lang } from '@/seo/core'
+
+/** Student projects are published in Russian only (apps.projects has no translations). */
+const PROJECT_LANGS: Lang[] = ['ru']
 
 const WIDE = 'mx-auto w-[calc(100%-48px)] max-w-[1280px]'
 
@@ -39,7 +43,7 @@ export function ProjectDetailPage() {
 }
 
 function ProjectView({ project }: { project: ProjectDetail }) {
-  const { t, path, formatDate } = useI18n()
+  const { t, path, formatDate, lang } = useI18n()
   const author = project.student ?? t('projects.anonymous')
   const host = hostOf(project.demo_url)
   // Screenshots = every image except the cover shown at the top.
@@ -58,23 +62,25 @@ function ProjectView({ project }: { project: ProjectDetail }) {
   return (
     <>
       <Seo
-        title={project.title}
-        description={project.short_description || excerpt(project.description)}
+        title={detailTitle(lang, 'projects', project.title, null, project.short_description)}
+        description={detailDescription(lang, 'projects', projectText(project, lang))}
         image={project.cover_url}
         type="article"
+        langs={PROJECT_LANGS}
         jsonLd={[
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('projects.title'), path: '/projects' }, { name: project.title, path: `/projects/${project.key}` }]),
+          crumbsLd(lang, 'projects', { name: project.title, slug: project.key }),
           {
             '@context': 'https://schema.org',
             '@type': 'CreativeWork',
             name: project.title,
             description: project.short_description,
             dateCreated: project.date,
-            url: absoluteUrl(path(`/projects/${project.key}`)),
+            // Student projects are published in Russian only: the canonical is the Russian URL.
+            url: absoluteUrl(`/projects/${project.key}`),
             keywords: project.technologies.join(', '),
             ...(project.cover_url ? { image: absoluteUrl(mediaUrl(project.cover_url) ?? '') } : {}),
             ...(project.student ? { creator: { '@type': 'Person', name: project.student } } : {}),
-            publisher: { '@type': 'EducationalOrganization', name: 'Okurmen Kids Digital' },
+            publisher: { '@type': 'EducationalOrganization', '@id': absoluteUrl('/#organization'), name: BRAND.name, url: absoluteUrl('/') },
           },
         ]}
       />

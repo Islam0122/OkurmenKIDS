@@ -2,9 +2,6 @@ import type { Messages } from './ru'
 
 /** Кыргызча. Тексттерди академиянын маркетинг командасы тактап турушу керек. */
 export const ky: Messages = {
-  'meta.title': 'Okurmen Kids Digital — Кыргызстандагы балдар үчүн IT-академия',
-  'meta.description':
-    'Балдар жана өспүрүмдөр үчүн IT-академия: Python программалоо, веб-иштеп чыгуу, оюн түзүү, робототехника жана санариптик көндүмдөр. Баланы сыноо сабагына жазыңыз.',
   'brand.tagline': 'Learn. Create. Achieve.',
   'brand.descriptor': 'Балдар үчүн IT-академия',
 
@@ -117,9 +114,8 @@ export const ky: Messages = {
   'home.showcase.news.title': 'Акыркы жаңылыктар',
   'home.showcase.news.read': 'Жаңылыкты окуу',
   'home.rocket.title': 'Балага IT дүйнөсүнө биринчи кадам таштоого жардам беребиз',
-  'home.rocket.text': 'Сыноо сабагына жазылып, Okurmen Kids Digital академиясы менен таанышыңыз.',
+  'home.rocket.text': 'Сыноо сабагына жазылып, OKURMEN KIDS академиясы менен таанышыңыз.',
   'home.rocket.button': 'Баланы жазуу',
-  'home.seo.description': 'Бишкектеги Okurmen Kids IT-академиясы 9–15 жаштагы балдар үчүн: веб-иштеп чыгуу, Python, React жана биринчи курстан реалдуу долбоорлор. Баланы сыноо сабагына жазыңыз.',
 
   'about.title': 'Академия жөнүндө',
   'about.subtitle': 'Okurmen Kids — балдар технологияны колдонууну гана эмес, аны түзүүнү үйрөнгөн жер.',
@@ -447,7 +443,7 @@ export const ky: Messages = {
   'footer.sections': 'Бөлүмдөр',
   'footer.contacts': 'Байланыш',
   'footer.follow': 'Социалдык тармактарда',
-  'footer.rights': '© {year} Okurmen Kids Digital. Бардык укуктар корголгон.',
+  'footer.rights': '© {year} OKURMEN KIDS. Бардык укуктар корголгон.',
 
   'icon.code': 'Программалоо',
   'icon.python': 'Python',

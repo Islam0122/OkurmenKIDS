@@ -6,7 +6,7 @@ import { FilterChips } from '@/components/shared/FilterChips'
 import { PageHero } from '@/components/shared/PageHero'
 import { Pagination } from '@/components/shared/Pagination'
 import { Reveal } from '@/components/shared/Reveal'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, Seo } from '@/components/shared/Seo'
 import { CardSkeletons, EmptyState, ErrorState } from '@/components/shared/States'
 import { useTestimonials } from '@/hooks/queries'
 import { useListParams } from '@/hooks/useListParams'
@@ -15,7 +15,7 @@ import { useI18n } from '@/i18n'
 const KINDS = ['text', 'photo', 'video'] as const
 
 export function TestimonialsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { params, page, update } = useListParams(['kind'])
   const kind = params.kind || 'all'
   const { data, isPending, isError, error, refetch } = useTestimonials({ kind, page, page_size: 12 })
@@ -26,7 +26,7 @@ export function TestimonialsPage() {
   ]
   return (
     <>
-      <Seo title={t('testimonials.title')} description={t('testimonials.subtitle')} jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('testimonials.title'), path: '/testimonials' }])} />
+      <Seo page="/testimonials" jsonLd={crumbsLd(lang, 'testimonials')} />
       <PageHero compact title={t('testimonials.heroTitle')} text={t('testimonials.subtitle')} crumbs={[{ label: t('nav.testimonials') }]}>
         {data?.average_rating ? (
           <p className="mt-5 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 font-bold shadow-soft sm:mt-6">

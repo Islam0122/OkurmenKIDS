@@ -1,8 +1,5 @@
 /** Russian — the main language. Every key here must exist in ky.ts and en.ts (TypeScript checks it). */
 export const ru = {
-  'meta.title': 'Okurmen Kids Digital — IT-академия для детей в Кыргызстане',
-  'meta.description':
-    'IT-академия для детей и подростков: программирование на Python, веб-разработка, создание игр, робототехника и цифровые навыки. Запишите ребёнка на пробный урок.',
   'brand.tagline': 'Learn. Create. Achieve.',
   'brand.descriptor': 'IT-академия для детей',
 
@@ -115,9 +112,8 @@ export const ru = {
   'home.showcase.news.title': 'Последние новости',
   'home.showcase.news.read': 'Читать новость',
   'home.rocket.title': 'Поможем ребёнку сделать первый шаг в IT',
-  'home.rocket.text': 'Запишитесь на пробное занятие и познакомьтесь с академией Okurmen Kids Digital.',
+  'home.rocket.text': 'Запишитесь на пробное занятие и познакомьтесь с академией OKURMEN KIDS.',
   'home.rocket.button': 'Записать ребёнка',
-  'home.seo.description': 'IT-академия Okurmen Kids в Бишкеке для детей 9–15 лет: веб-разработка, Python, React и реальные проекты с первого курса. Запишите ребёнка на пробное занятие.',
 
   'about.title': 'Об академии',
   'about.subtitle': 'Okurmen Kids — место, где дети учатся создавать технологии, а не только пользоваться ими.',
@@ -445,7 +441,7 @@ export const ru = {
   'footer.sections': 'Разделы',
   'footer.contacts': 'Контакты',
   'footer.follow': 'Мы в соцсетях',
-  'footer.rights': '© {year} Okurmen Kids Digital. Все права защищены.',
+  'footer.rights': '© {year} OKURMEN KIDS. Все права защищены.',
 
   'icon.code': 'Программирование',
   'icon.python': 'Python',

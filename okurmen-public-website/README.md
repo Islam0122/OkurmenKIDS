@@ -1,4 +1,4 @@
-# Okurmen Kids Digital — public website
+# OKURMEN KIDS — public website
 
 An independent React application, the academy's public website. It is a
 separate app from the LMS frontend (`../frontend`), with its own build and its
@@ -19,7 +19,7 @@ node scripts/responsive-audit.cjs   # responsive audit, see the header of the sc
 | Variable | |
 |---|---|
 | `VITE_API_URL` | **required** — the Django backend, e.g. `https://okurmenkids.up.railway.app` |
-| `VITE_SITE_URL` | this site's public address — canonical URLs, hreflang, Open Graph, sitemap |
+| `VITE_SITE_URL` | optional — the canonical origin (default `https://www.okurmenkids.com`): canonical URLs, hreflang, Open Graph, sitemap |
 | `VITE_MEDIA_URL` | where `/media/...` is served from (default: `VITE_API_URL`) |
 | `VITE_USE_MOCKS` | `true` = clearly-labelled demo data for UI work only. Never in production |
 
@@ -76,24 +76,26 @@ src/
 
 ## SEO and performance
 
-* Language-prefixed URLs, with `hreflang` alternates and a canonical URL on
-  every page. `<Seo>` sets the title, description, Open Graph / Twitter tags
-  and JSON-LD (EducationalOrganization, Course, Event, NewsArticle,
-  CreativeWork, BreadcrumbList, ItemList).
-* `scripts/generate-sitemap.mjs` runs after `vite build`. It writes
-  `dist/sitemap.xml` with every page in all three languages, taking content
-  URLs from `GET /api/v1/public/site/sitemap/`. If the API is unreachable at
-  build time, it still writes the static pages.
-* `public/robots.txt` keeps `/preview/` out of the index.
-* **Rendering strategy:** the app is a client-rendered SPA. Google renders
-  JavaScript, so it indexes the dynamic content. Crawlers that don't run JS
-  (link previews in Telegram, WhatsApp, Facebook, X and others) get the real
-  title, description and image for courses, events, news, achievements and
-  projects from `middleware.ts`, a Vercel Routing Middleware that reads the
-  same API. If full prerendering is needed later, the page components already
-  get all their data from typed loaders, so a move to SSR or SSG (e.g. a
-  React Router framework-mode build) only changes the build, not the
-  components.
+* **One source:** `src/seo/core.js` holds the public brand (**OKURMEN KIDS** only), the
+  canonical origin `https://www.okurmenkids.com`, the unique title and description of every
+  static page in ru/ky/en, detail-page title and description rules, hreflang rules, JSON-LD
+  builders and the sitemap. The React app (`<Seo>`), `middleware.ts` and the build scripts all
+  use it.
+* **Static pages:** `scripts/prerender-seo.mjs` writes `dist/<page>/index.html` per page and
+  language, with that page's own head tags, `<html lang>` and a `<noscript>` H1. `vercel.json`
+  rewrites each static route to its file, so crawlers that don't run JS see the right
+  metadata too.
+* **Languages:** news and student projects are Russian-only, so their `/ky` and `/en` copies
+  canonicalize to the Russian URL and have no hreflang. CMS items (courses, events,
+  achievements, team) list a language as an hreflang alternate only if it is really
+  translated (the API falls back to Russian; see `useItemLangs`).
+* **Sitemap:** `/sitemap.xml` is built live by `middleware.ts` from the published content,
+  so it follows publishing and deletion. `scripts/generate-sitemap.mjs` writes the fallback
+  `dist/sitemap.xml`. Only canonical, indexable URLs are listed.
+* **Status codes:** unknown URLs get a real 404 (middleware). `/courses/` → 308 → `/courses`
+  (`trailingSlash: false`). `*.vercel.app` copies send `X-Robots-Tag: noindex`.
+* **Crawlers** (search and social bots) get detail pages with real title, description,
+  canonical, hreflang, Open Graph and H1 from `middleware.ts`. Deleted items return 404.
 * Performance: pages are code-split per route, and the enrollment form loads
   on first open. Vendor chunks are cached for a year (`vercel.json`). Images
   come from the backend's WebP thumb / large copies via `srcset`, lazy-loaded,
