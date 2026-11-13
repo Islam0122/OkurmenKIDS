@@ -374,7 +374,7 @@ const ORG_DESCRIPTION = {
   en: 'IT academy for children and teenagers in Kyrgyzstan.',
 }
 
-/** Organization logo for Google: the official badge, square, 512×512 (≥ 112×112), opaque white. */
+/** Organization logo for Google: the official badge, square, 512×512 (≥ 112×112), transparent background. */
 export const LOGO = { path: '/icon-512.png', width: 512, height: 512 }
 
 /**

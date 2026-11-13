@@ -241,6 +241,35 @@ describe('favicons and logo for Google', () => {
     expect(sizes.sort((a, b) => a - b)).toEqual([16, 32, 48])
   })
 
+  it('has a transparent background — no white backing, brand colours fully opaque', async () => {
+    const { PNG } = await import('./png')
+    for (const file of ['favicon-48x48.png', 'favicon-96x96.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png']) {
+      const img = PNG(readFileSync(`public/${file}`))
+      expect(img.channels, file).toBe(4)
+      const alphaAt = (x: number, y: number) => img.pixel(x, y)[3]
+      const mid = Math.floor(img.width / 2)
+      expect(alphaAt(0, 0), `${file} corner`).toBe(0)
+      expect(alphaAt(img.width - 1, img.height - 1), `${file} corner`).toBe(0)
+      expect(alphaAt(mid, Math.floor(img.height * 0.8)), `${file} inside the ring, below KIDS`).toBe(0)
+      let white = 0
+      let opaque = 0
+      for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+        const [r, g, b, a] = img.pixel(x, y)
+        if (a > 0 && r > 240 && g > 240 && b > 240) white++
+        if (a === 255) opaque++
+      }
+      expect(white, `${file} white pixels`).toBe(0)
+      expect(opaque, `${file} opaque brand pixels`).toBeGreaterThan(0)
+    }
+    const ico = readFileSync('public/favicon.ico')
+    for (let i = 0; i < ico.readUInt16LE(4); i++) {
+      const offset = ico.readUInt32LE(6 + i * 16 + 12)
+      const frame = PNG(ico.subarray(offset, offset + ico.readUInt32LE(6 + i * 16 + 8)))
+      expect(frame.channels).toBe(4)
+      expect(frame.pixel(0, 0)[3]).toBe(0)
+    }
+  })
+
   it('declares one consistent icon set in the HTML head and the manifest', () => {
     const html = readFileSync('index.html', 'utf8')
     const links = [...html.matchAll(/<link rel="(icon|apple-touch-icon|shortcut icon)"[^>]*>/g)].map((m) => m[0])
