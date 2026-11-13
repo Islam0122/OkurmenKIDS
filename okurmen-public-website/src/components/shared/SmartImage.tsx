@@ -49,7 +49,8 @@ export function SmartImage({ image, src, alt, className, sizes = '(min-width: 10
       fetchPriority={priority ? 'high' : undefined}
       onLoad={() => setLoaded(true)}
       onError={() => setFailed(true)}
-      className={cn('bg-brand-50 object-cover transition-opacity duration-500', loaded ? 'opacity-100' : 'opacity-0', className)}
+      // A priority (LCP) image is painted at once — no fade-in, which would delay Largest Contentful Paint.
+      className={cn('bg-brand-50 object-cover', priority ? 'opacity-100' : ['transition-opacity duration-500', loaded ? 'opacity-100' : 'opacity-0'], className)}
     />
   )
 }

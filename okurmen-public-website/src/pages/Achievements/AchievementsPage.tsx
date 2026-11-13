@@ -6,7 +6,7 @@ import { FilterChips } from '@/components/shared/FilterChips'
 import { PageHero } from '@/components/shared/PageHero'
 import { Pagination } from '@/components/shared/Pagination'
 import { Reveal } from '@/components/shared/Reveal'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, Seo } from '@/components/shared/Seo'
 import { CardSkeletons, EmptyState, ErrorState } from '@/components/shared/States'
 import { useAchievements } from '@/hooks/queries'
 import { useListParams } from '@/hooks/useListParams'
@@ -29,7 +29,7 @@ const fourColumns = (n: number) => n >= 4 && (n % 4 === 0 || (n % 3 !== 0 && n %
 const CATALOG = 'mx-auto w-[calc(100%-48px)] max-w-[1280px]'
 
 export function AchievementsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { params, page, update } = useListParams(['group'])
   const group = (params.group in GROUPS ? params.group : 'all') as Group | 'all'
   const { data, isPending, isError, error, refetch, isPlaceholderData } = useAchievements({
@@ -51,7 +51,7 @@ export function AchievementsPage() {
 
   return (
     <>
-      <Seo title={t('achievements.title')} description={t('achievements.subtitle')} jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('achievements.title'), path: '/achievements' }])} />
+      <Seo page="/achievements" jsonLd={crumbsLd(lang, 'achievements')} />
       <PageHero compact wide title={t('achievements.heroTitle')} text={t('achievements.subtitle')} crumbs={[{ label: t('nav.achievements') }]} />
 
       <section className={cn(CATALOG, 'py-10 sm:py-12 lg:py-14')}>

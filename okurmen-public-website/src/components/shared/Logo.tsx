@@ -5,7 +5,7 @@ import { BRAND } from '@/app/config/site'
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils/cn'
 
-/** The original Okurmen Kids logo (unchanged) with the «Digital» wordmark. */
+/** The original logo (unchanged) with the «OKURMEN KIDS» wordmark — the only public brand name. */
 export function Logo({ className, inverted }: { className?: string; inverted?: boolean }) {
   const { path, t } = useI18n()
   return (
@@ -14,8 +14,8 @@ export function Logo({ className, inverted }: { className?: string; inverted?: b
         <img src={logo} alt="" width={48} height={43} className="size-[115%] max-w-none object-contain" />
       </span>
       <span className="leading-none">
-        <span className={cn('block font-display text-[17px] font-black tracking-tight', inverted ? 'text-white' : 'text-brand-800')}>Okurmen Kids</span>
-        <span className={cn('mt-1 block text-xs font-bold tracking-[0.2em] uppercase', inverted ? 'text-gold-300' : 'text-gold-600')}>Digital</span>
+        <span className={cn('block font-display text-[17px] font-black tracking-tight', inverted ? 'text-white' : 'text-brand-800')}>Okurmen</span>
+        <span className={cn('mt-1 block text-xs font-bold tracking-[0.2em] uppercase', inverted ? 'text-gold-300' : 'text-gold-600')}>Kids</span>
       </span>
     </Link>
   )

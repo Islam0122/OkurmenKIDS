@@ -3,15 +3,16 @@ import { Link, useParams } from 'react-router-dom'
 
 import { specializationTags, TeamCard, TeamPhoto } from '@/components/cards/TeamCard'
 import { Reveal } from '@/components/shared/Reveal'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, detailDescription, detailTitle, Seo } from '@/components/shared/Seo'
 import { ErrorState, NotFoundState, PageSkeleton } from '@/components/shared/States'
 import { RichText } from '@/features/content/RichText'
 import { EnrollButton } from '@/features/enrollment/EnrollButton'
 import { isNotFound, useTeamMember } from '@/hooks/queries'
 import { LANG_SHORT, LANGS, useI18n, type MessageKey } from '@/i18n'
 import type { TeamMemberDetail } from '@/types/api'
-import { excerpt } from '@/utils/format'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { BRAND } from '@/app/config/site'
+import { useItemLangs } from '@/hooks/queries'
 
 /** /team/:slug — the public profile of one team member (GET /api/v1/public/site/team/<slug>/). */
 export function TeamMemberPage() {
@@ -24,6 +25,7 @@ export function TeamMemberPage() {
 
 function Profile({ member }: { member: TeamMemberDetail }) {
   const { t, path, lang } = useI18n()
+  const langs = useItemLangs('team', member.slug, member)
   const tags = specializationTags(member.specialization)
   const positions = LANGS.map((code) => ({ code, value: member.positions?.[code] ?? (code === lang ? member.position : null) }))
     .filter((p): p is { code: typeof p.code; value: string } => Boolean(p.value))
@@ -32,19 +34,20 @@ function Profile({ member }: { member: TeamMemberDetail }) {
   return (
     <>
       <Seo
-        title={member.seo_title || `${member.name} — ${member.position}`}
-        description={member.seo_description || (member.bio ? excerpt(member.bio) : member.position)}
+        title={detailTitle(lang, 'team', `${member.name} — ${member.position}`, member.seo_title)}
+        description={detailDescription(lang, 'team', member.bio || member.position, member.seo_description)}
         image={member.photo?.url}
         type="article"
+        langs={langs}
         jsonLd={[
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('nav.team'), path: '/team' }, { name: member.name, path: `/team/${member.slug}` }]),
+          crumbsLd(lang, 'team', { name: member.name, slug: member.slug }),
           {
             '@context': 'https://schema.org',
             '@type': 'Person',
             name: member.name,
             jobTitle: member.position,
             url: absoluteUrl(path(`/team/${member.slug}`)),
-            worksFor: { '@type': 'EducationalOrganization', name: 'Okurmen Kids Digital', url: absoluteUrl('/') },
+            worksFor: { '@type': 'EducationalOrganization', '@id': absoluteUrl('/#organization'), name: BRAND.name, url: absoluteUrl('/') },
             ...(member.photo ? { image: absoluteUrl(mediaUrl(member.photo.url) ?? '') } : {}),
             ...(tags.length ? { knowsAbout: tags } : {}),
           },

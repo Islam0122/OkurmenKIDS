@@ -6,6 +6,7 @@
  */
 import { env } from '@/app/config/env'
 import { get, post } from '@/services/api/client'
+import type { Lang } from '@/seo/core'
 import type {
   AchievementDetail,
   AchievementsPage,
@@ -63,6 +64,8 @@ export const siteApi = {
     env.useMocks ? mocked((m) => m.testimonials(params)) : get<TestimonialsPage>('/site/testimonials/', { ...params }),
   lead: (body: LeadInput) => (env.useMocks ? mocked((m) => m.submit()) : post<SubmitResult>('/site/leads/', body)),
   preview: (token: string) => get<PreviewData>(`/site/preview/${encodeURIComponent(token)}/`),
+  /** One CMS item in an explicit language (only to compare translations for hreflang — see useItemLangs). */
+  itemInLang: (apiPath: string, lang: Lang) => get<Record<string, unknown>>(apiPath.replace(/^\/api\/v1\/public/, ''), { lang }),
 }
 
 export const newsApi = {

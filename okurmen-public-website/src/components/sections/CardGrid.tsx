@@ -4,7 +4,7 @@ import { Reveal } from '@/components/shared/Reveal'
 import { cn } from '@/utils/cn'
 
 /** Responsive grid with a staggered reveal. On phones `scroll` turns it into a swipeable row; row counts are balanced. */
-export function CardGrid<T>({ items, render, keyOf, columns = 3, scroll }: { items: T[]; render: (item: T) => ReactNode; keyOf: (item: T) => string | number; columns?: 2 | 3 | 4; scroll?: boolean }) {
+export function CardGrid<T>({ items, render, keyOf, columns = 3, scroll }: { items: T[]; render: (item: T, index: number) => ReactNode; keyOf: (item: T) => string | number; columns?: 2 | 3 | 4; scroll?: boolean }) {
   // Balanced rows: never «3 + 1» or «2 + 1».
   //   2 items → 2 columns; 3 items → 3 columns from 768px (a swipe row below);
   //   4 items in a 3-column section → 2×2, then one row of 4 on wide screens.
@@ -28,7 +28,7 @@ export function CardGrid<T>({ items, render, keyOf, columns = 3, scroll }: { ite
     <ul className={cn(scroll ? swipe : 'grid gap-6', cols)}>
       {items.map((item, i) => (
         <Reveal as="li" key={keyOf(item)} delay={Math.min(i, 6) * 0.06} className={cn(scroll && swipeItem)}>
-          {render(item)}
+          {render(item, i)}
         </Reveal>
       ))}
     </ul>

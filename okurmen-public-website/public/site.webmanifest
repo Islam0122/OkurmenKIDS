@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Okurmen Kids Digital",
-  "short_name": "Okurmen Kids",
+  "name": "OKURMEN KIDS",
+  "short_name": "OKURMEN KIDS",
   "start_url": "/",
   "scope": "/",
   "display": "browser",
@@ -13,5 +13,6 @@
       "sizes": "236x213",
       "type": "image/png"
     }
-  ]
+  ],
+  "lang": "ru"
 }

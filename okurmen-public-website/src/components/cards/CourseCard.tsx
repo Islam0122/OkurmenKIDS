@@ -10,7 +10,8 @@ import { ageRange } from '@/utils/format'
 
 import { COURSE_ICONS, COURSE_TINT } from './CourseIcon'
 
-export function CourseCard({ course }: { course: Course }) {
+/** `priority`: the first card of a list (the page's LCP image) loads eagerly. */
+export function CourseCard({ course, priority }: { course: Course; priority?: boolean }) {
   const { t, path } = useI18n()
   const Icon = COURSE_ICONS[course.icon] ?? COURSE_ICONS.code
   const age = ageRange(t, course.age_min, course.age_max)
@@ -18,7 +19,7 @@ export function CourseCard({ course }: { course: Course }) {
     <Link to={path(`/courses/${course.slug}`)} className="card card-hover group flex h-full flex-col overflow-hidden">
       <div className={cn('relative aspect-[16/10] overflow-hidden bg-gradient-to-br', COURSE_TINT[course.icon])}>
         {course.cover ? (
-          <SmartImage image={course.cover} alt={course.title} className="size-full transition duration-700 group-hover:scale-105" />
+          <SmartImage image={course.cover} alt={course.title} priority={priority} className="size-full transition duration-700 group-hover:scale-105" />
         ) : (
           <div className="flex size-full items-center justify-center">
             <Icon className="size-20 opacity-80 transition duration-500 group-hover:scale-110 group-hover:rotate-3" strokeWidth={1.4} aria-hidden />

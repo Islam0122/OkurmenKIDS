@@ -5,7 +5,7 @@ import { EventCard, PhaseBadge } from '@/components/cards/EventCard'
 import { ArticleLayout } from '@/components/layout/ArticleLayout'
 import { CardGrid } from '@/components/sections/CardGrid'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, detailDescription, detailTitle, Seo } from '@/components/shared/Seo'
 import { ErrorState, NotFoundState, PageSkeleton } from '@/components/shared/States'
 import { RegistrationForm } from '@/features/events/RegistrationForm'
 import { isNotFound, useEvent } from '@/hooks/queries'
@@ -13,6 +13,8 @@ import { useI18n } from '@/i18n'
 import type { EventDetail } from '@/types/api'
 import { excerpt } from '@/utils/format'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { BRAND } from '@/app/config/site'
+import { useItemLangs } from '@/hooks/queries'
 
 export function EventDetailPage() {
   const { slug = '' } = useParams()
@@ -23,7 +25,8 @@ export function EventDetailPage() {
 }
 
 export function EventView({ event, preview }: { event: EventDetail; preview?: boolean }) {
-  const { t, path, formatDate } = useI18n()
+  const { t, path, formatDate, lang } = useI18n()
+  const langs = useItemLangs('events', event.slug, preview ? undefined : event)
   const time = (iso: string) => formatDate(iso, { hour: '2-digit', minute: '2-digit' })
   const sameDay = event.ends_at && new Date(event.ends_at).toDateString() === new Date(event.starts_at).toDateString()
   const when = event.ends_at
@@ -38,13 +41,14 @@ export function EventView({ event, preview }: { event: EventDetail; preview?: bo
   return (
     <>
       <Seo
-        title={event.seo_title || event.title}
-        description={event.seo_description || event.excerpt || excerpt(event.body)}
+        title={detailTitle(lang, 'events', event.title, event.seo_title)}
+        description={detailDescription(lang, 'events', event.excerpt || event.body, event.seo_description)}
         image={event.cover?.url}
         type="event"
         noindex={preview}
+        langs={langs}
         jsonLd={[
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('events.title'), path: '/events' }, { name: event.title, path: `/events/${event.slug}` }]),
+          crumbsLd(lang, 'events', { name: event.title, slug: event.slug }),
           {
             '@context': 'https://schema.org',
             '@type': 'Event',
@@ -56,9 +60,9 @@ export function EventView({ event, preview }: { event: EventDetail; preview?: bo
             eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
             url: absoluteUrl(path(`/events/${event.slug}`)),
             ...(event.cover ? { image: [absoluteUrl(mediaUrl(event.cover.url) ?? '')] } : {}),
-            location: { '@type': 'Place', name: place || 'Okurmen Kids', address: { '@type': 'PostalAddress', streetAddress: event.branch_address || event.location || '', addressCountry: 'KG' } },
-            organizer: { '@type': 'EducationalOrganization', name: 'Okurmen Kids Digital', url: absoluteUrl('/') },
-            ...(reg.enabled ? { offers: { '@type': 'Offer', price: 0, priceCurrency: 'KGS', availability: reg.open ? 'https://schema.org/InStock' : 'https://schema.org/SoldOut', url: absoluteUrl(path(`/events/${event.slug}`)) } } : {}),
+            location: { '@type': 'Place', name: place || BRAND.name, address: { '@type': 'PostalAddress', ...(event.branch_address || event.location ? { streetAddress: event.branch_address || event.location } : {}), addressCountry: 'KG' } },
+            organizer: { '@type': 'EducationalOrganization', '@id': absoluteUrl('/#organization'), name: BRAND.name, url: absoluteUrl('/') },
+            // No `offers`: the CMS has no ticket price, and a made-up «price: 0» is not allowed.
           },
         ]}
       />

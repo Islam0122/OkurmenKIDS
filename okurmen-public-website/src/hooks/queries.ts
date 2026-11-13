@@ -2,9 +2,11 @@
  * TanStack Query hooks — one per public resource. Keys include the language,
  * so switching language refetches translated content.
  */
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query'
 
+import { env } from '@/app/config/env'
 import { useI18n } from '@/i18n'
+import { DETAIL, LANGS, translatedLangs, type Lang, type Section } from '@/seo/core'
 import { ApiError } from '@/services/api/client'
 import { careersApi, newsApi, projectsApi, siteApi, type ListParams } from '@/services/endpoints'
 
@@ -91,4 +93,33 @@ export const isNotFound = (error: unknown) => error instanceof ApiError && error
 /** Open vacancies of the existing careers site — only to show the «join the team» CTA honestly. */
 export function useOpenVacancies(enabled: boolean) {
   return useQuery({ queryKey: ['vacancies-count'], queryFn: careersApi.vacancies, enabled, staleTime: 10 * 60_000, retry: false })
+}
+
+/**
+ * The languages a CMS item really exists in (for canonical + hreflang).
+ * News and student projects are Russian-only by design. For courses, events,
+ * achievements and team the backend falls back to Russian for untranslated
+ * fields, so the other versions are fetched and compared with Russian.
+ * `null` while still loading.
+ */
+export function useItemLangs(section: Section, slug: string, current: object | undefined): Lang[] | null {
+  const { lang } = useI18n()
+  const spec = DETAIL[section]
+  const compare = Boolean(spec.fields) && !env.useMocks && Boolean(current)
+  const others = compare ? LANGS.filter((code) => code !== lang) : []
+  const results = useQueries({
+    queries: others.map((code) => ({
+      queryKey: ['item-lang', section, slug, code],
+      queryFn: () => siteApi.itemInLang(spec.api(slug), code),
+      staleTime: 5 * 60_000,
+      retry: false,
+    })),
+  })
+  if (!current) return null
+  if (env.useMocks) return LANGS
+  if (!spec.fields) return ['ru']
+  if (results.some((result) => result.isPending)) return null
+  const versions: Partial<Record<Lang, Record<string, unknown> | null>> = { [lang]: current as Record<string, unknown> }
+  others.forEach((code, index) => { versions[code] = results[index].data ?? null })
+  return translatedLangs(section, versions)
 }

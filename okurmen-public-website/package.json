@@ -3,10 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Okurmen Kids Digital — public website (independent React app, reads the LMS public API)",
+  "description": "OKURMEN KIDS — public website (independent React app, reads the LMS public API)",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/generate-sitemap.mjs",
+    "build": "tsc -b && vite build && node scripts/prerender-seo.mjs && node scripts/generate-sitemap.mjs",
     "preview": "vite preview",
     "lint": "oxlint src",
     "typecheck": "tsc -b",

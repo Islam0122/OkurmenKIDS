@@ -8,7 +8,7 @@ import { FilterChips } from '@/components/shared/FilterChips'
 import { PageHero } from '@/components/shared/PageHero'
 import { Pagination } from '@/components/shared/Pagination'
 import { Reveal } from '@/components/shared/Reveal'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, Seo } from '@/components/shared/Seo'
 import { CardSkeletons, EmptyState, ErrorState } from '@/components/shared/States'
 import { useEvents } from '@/hooks/queries'
 import { useListParams } from '@/hooks/useListParams'
@@ -43,7 +43,7 @@ function SectionTitle({ title, count, link }: { title: string; count: number; li
 }
 
 export function EventsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { params, page, update } = useListParams(['phase'])
   const phase = params.phase || 'all'
   const overview = phase === 'all'
@@ -60,7 +60,7 @@ export function EventsPage() {
 
   return (
     <>
-      <Seo title={t('events.title')} description={t('events.subtitle')} jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('events.title'), path: '/events' }])} />
+      <Seo page="/events" jsonLd={crumbsLd(lang, 'events')} />
       <PageHero compact title={t('events.heroTitle')} text={t('events.subtitle')} crumbs={[{ label: t('nav.events') }]} />
 
       <section className="container-page py-10 sm:py-12 lg:py-14">

@@ -5,13 +5,17 @@ import { NewsCard } from '@/components/cards/NewsCard'
 import { ArticleLayout } from '@/components/layout/ArticleLayout'
 import { CardGrid } from '@/components/sections/CardGrid'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, detailDescription, detailTitle, Seo } from '@/components/shared/Seo'
 import { ErrorState, NotFoundState, PageSkeleton } from '@/components/shared/States'
 import { isNotFound, useArticle } from '@/hooks/queries'
 import { useI18n } from '@/i18n'
 import type { NewsArticle } from '@/types/api'
-import { excerpt } from '@/utils/format'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { BRAND } from '@/app/config/site'
+import { plainText, type Lang } from '@/seo/core'
+
+/** News is written in Russian only (apps.academy_news has no translations). */
+const NEWS_LANGS: Lang[] = ['ru']
 
 export function ArticlePage() {
   const { slug = '' } = useParams()
@@ -22,28 +26,33 @@ export function ArticlePage() {
 }
 
 export function ArticleView({ article, preview }: { article: NewsArticle; preview?: boolean }) {
-  const { t, path, formatDate } = useI18n()
+  const { t, formatDate, lang } = useI18n()
+  const description = detailDescription(lang, 'news', article.excerpt || article.body, article.seo_description)
   return (
     <>
       <Seo
-        title={article.seo_title || article.title}
-        description={article.seo_description || article.excerpt || excerpt(article.body)}
+        title={detailTitle(lang, 'news', article.title, article.seo_title)}
+        description={description}
         image={article.cover?.url}
         type="article"
         publishedAt={article.published_at}
         noindex={preview}
+        langs={NEWS_LANGS}
         jsonLd={[
-          breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('news.title'), path: '/news' }, { name: article.title, path: `/news/${article.slug}` }]),
+          crumbsLd(lang, 'news', { name: article.title, slug: article.slug }),
           {
             '@context': 'https://schema.org',
             '@type': 'NewsArticle',
-            headline: article.title,
-            description: article.excerpt,
+            headline: plainText(article.title).slice(0, 110),
+            description,
             datePublished: article.published_at,
-            mainEntityOfPage: absoluteUrl(path(`/news/${article.slug}`)),
+            ...(article.updated_at ? { dateModified: article.updated_at } : {}),
+            inLanguage: 'ru',
+            // News is written in Russian only: the canonical is always the Russian URL.
+            mainEntityOfPage: { '@type': 'WebPage', '@id': absoluteUrl(`/news/${article.slug}`) },
             ...(article.cover ? { image: [absoluteUrl(mediaUrl(article.cover.url) ?? '')] } : {}),
-            author: article.author ? { '@type': 'Person', name: article.author } : { '@type': 'Organization', name: 'Okurmen Kids Digital' },
-            publisher: { '@type': 'Organization', name: 'Okurmen Kids Digital', logo: { '@type': 'ImageObject', url: absoluteUrl('/logo.png') } },
+            author: article.author ? { '@type': 'Person', name: article.author } : { '@type': 'Organization', '@id': absoluteUrl('/#organization'), name: BRAND.name, url: absoluteUrl('/') },
+            publisher: { '@type': 'Organization', '@id': absoluteUrl('/#organization'), name: BRAND.name, logo: { '@type': 'ImageObject', url: absoluteUrl('/logo.png') } },
           },
         ]}
       />

@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { AchievementImage, AchievementShowcaseCard } from '@/components/cards/AchievementShowcaseCard'
 import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
-import { breadcrumbLd, Seo } from '@/components/shared/Seo'
+import { crumbsLd, detailDescription, detailTitle, Seo } from '@/components/shared/Seo'
 import { ErrorState, NotFoundState, PageSkeleton } from '@/components/shared/States'
 import { Gallery } from '@/features/content/Gallery'
 import { RichText } from '@/features/content/RichText'
@@ -13,7 +13,7 @@ import { isNotFound, useAchievement } from '@/hooks/queries'
 import { useI18n } from '@/i18n'
 import type { AchievementDetail } from '@/types/api'
 import { cn } from '@/utils/cn'
-import { excerpt } from '@/utils/format'
+import { useItemLangs } from '@/hooks/queries'
 
 const CATALOG = 'mx-auto w-[calc(100%-48px)] max-w-[1280px]'
 
@@ -27,7 +27,8 @@ export function AchievementDetailPage() {
 
 /** Also used by /preview/<token> (draft from the LMS editor). */
 export function AchievementView({ item, preview }: { item: AchievementDetail; preview?: boolean }) {
-  const { t, path, formatDate } = useI18n()
+  const { t, path, formatDate, lang } = useI18n()
+  const langs = useItemLangs('achievements', item.slug, preview ? undefined : item)
   const facts = [
     { icon: CalendarDays, label: t('achievements.date'), value: formatDate(item.date) },
     { icon: Tag, label: t('achievements.category'), value: t(`achievements.cat.${item.category}`) },
@@ -37,12 +38,13 @@ export function AchievementView({ item, preview }: { item: AchievementDetail; pr
   return (
     <>
       <Seo
-        title={item.seo_title || item.title}
-        description={item.seo_description || item.excerpt || excerpt(item.body)}
+        title={detailTitle(lang, 'achievements', item.title, item.seo_title)}
+        description={detailDescription(lang, 'achievements', item.excerpt || item.body, item.seo_description)}
         image={item.cover?.url}
         type="article"
         noindex={preview}
-        jsonLd={breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('achievements.title'), path: '/achievements' }, { name: item.title, path: `/achievements/${item.slug}` }])}
+        langs={langs}
+        jsonLd={crumbsLd(lang, 'achievements', { name: item.title, slug: item.slug })}
       />
 
       {/* Editorial header: the achievement image is the main visual */}

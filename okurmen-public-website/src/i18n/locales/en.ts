@@ -1,9 +1,6 @@
 import type { Messages } from './ru'
 
 export const en: Messages = {
-  'meta.title': 'Okurmen Kids Digital — IT academy for children in Kyrgyzstan',
-  'meta.description':
-    'An IT academy for children and teens: Python programming, web development, game development, robotics and digital skills. Book a trial lesson.',
   'brand.tagline': 'Learn. Create. Achieve.',
   'brand.descriptor': 'IT academy for kids',
 
@@ -91,7 +88,7 @@ export const en: Messages = {
   'home.cta.title': 'Give your child a confident start in IT',
   'home.cta.text': 'Leave a request — we will call you back, pick a course for your child’s age and invite you to a trial lesson.',
   'home.hero.badge': 'IT academy for children aged 9–⁠15',
-  'home.hero.lead': 'Hands-on learning in programming, building projects and modern digital technologies.',
+  'home.hero.lead': 'Hands-on learning in programming, building projects and modern technologies.',
   'home.hero.primary': 'Book a trial lesson',
   'home.hero.secondary': 'Explore the programs',
   'home.hero.benefit1': 'Real projects from the first course',
@@ -116,9 +113,8 @@ export const en: Messages = {
   'home.showcase.news.title': 'Latest news',
   'home.showcase.news.read': 'Read the article',
   'home.rocket.title': 'We’ll help your child take the first step into IT',
-  'home.rocket.text': 'Book a trial lesson and get to know the Okurmen Kids Digital academy.',
+  'home.rocket.text': 'Book a trial lesson and get to know the OKURMEN KIDS academy.',
   'home.rocket.button': 'Enroll your child',
-  'home.seo.description': 'Okurmen Kids IT academy in Bishkek for children aged 9–15: web development, Python, React and real projects from the first course. Book a trial lesson.',
 
   'about.title': 'About the academy',
   'about.subtitle': 'Okurmen Kids is where children learn to create technology, not just use it.',
@@ -237,7 +233,7 @@ export const en: Messages = {
   'courses.popular': 'Popular',
 
   'projects.title': 'Student projects',
-  'projects.subtitle': 'From first ideas to real digital products. See what our students create.',
+  'projects.subtitle': 'From first ideas to real websites and apps. See what our students create.',
   'projects.student': 'Author',
   'projects.anonymous': 'Academy student',
   'projects.group': 'Group',
@@ -442,17 +438,17 @@ export const en: Messages = {
   'form.registerTitle': 'Event registration',
   'form.registered': 'You are registered! We will remind you closer to the date.',
 
-  'footer.about': 'An IT academy for children and teens in Kyrgyzstan. Programming, web development, games, robotics and digital skills.',
+  'footer.about': 'An IT academy for children and teens in Kyrgyzstan. Programming, web development, games, robotics and computer skills.',
   'footer.sections': 'Sections',
   'footer.contacts': 'Contacts',
   'footer.follow': 'Follow us',
-  'footer.rights': '© {year} Okurmen Kids Digital. All rights reserved.',
+  'footer.rights': '© {year} OKURMEN KIDS. All rights reserved.',
 
   'icon.code': 'Programming',
   'icon.python': 'Python',
   'icon.web': 'Web',
   'icon.game': 'Games',
   'icon.robot': 'Robotics',
-  'icon.digital': 'Digital skills',
+  'icon.digital': 'Computer skills',
   'icon.design': 'Design',
 }
