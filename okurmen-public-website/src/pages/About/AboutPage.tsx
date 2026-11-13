@@ -13,7 +13,6 @@ import { Breadcrumbs } from '@/components/shared/PageHero'
 import { Reveal } from '@/components/shared/Reveal'
 import { SectionHeader } from '@/components/shared/SectionHeader'
 import { breadcrumbLd, organizationLd, Seo } from '@/components/shared/Seo'
-import { SmartImage } from '@/components/shared/SmartImage'
 import { Gallery } from '@/features/content/Gallery'
 import { RichText } from '@/features/content/RichText'
 import { EnrollButton } from '@/features/enrollment/EnrollButton'
@@ -24,6 +23,8 @@ import type { ImageAsset, NewsCategory, TeamGroup } from '@/types/api'
 import { cn } from '@/utils/cn'
 
 import { PROGRAMS, programTarget } from '@/features/programs/programs'
+import heroStudents from '@/assets/about/hero-students.webp'
+import heroStudents768 from '@/assets/about/hero-students-768.webp'
 
 const PHILOSOPHY = [
   { icon: Rocket, key: 1 },
@@ -92,8 +93,7 @@ export function AboutPage() {
     .filter((p): p is { image: ImageAsset; title: string } => Boolean(p.image))
     .map(({ image, title }) => ({ ...image, caption: image.caption || title }))
     .filter((p, i, all) => all.findIndex((q) => q.url === p.url) === i)
-  const heroPhoto = settings.data?.hero.image ?? photos[0] ?? null
-  const gallery = photos.filter((p) => p.url !== heroPhoto?.url).slice(0, 7)
+  const gallery = photos.slice(0, 7)
   const trainers = (team.data?.results ?? []).filter((m) => m.group && TRAINER_GROUPS.includes(m.group))
   const reviews = testimonials.data?.results ?? []
   const programNames = PROGRAMS.map((p) => t(`about.programs.${p.id}.title` as MessageKey)).join(', ')
@@ -120,7 +120,7 @@ export function AboutPage() {
       <Seo
         title={t('about.title')}
         description={t('about.subtitle')}
-        image={heroPhoto?.url}
+        image={heroStudents}
         jsonLd={[organizationLd(), breadcrumbLd([{ name: t('nav.home'), path: '/' }, { name: t('about.title'), path: '/about' }]), faqLd]}
       />
 
@@ -142,28 +142,32 @@ export function AboutPage() {
             </div>
           </div>
 
-          {heroPhoto ? (
-            <div className="relative mx-auto w-full max-w-xl lg:max-w-none">
-              <div aria-hidden className="absolute -top-4 -right-4 size-24 rounded-3xl bg-gold-400 sm:-top-6 sm:-right-6 sm:size-32" />
-              <div aria-hidden className="absolute -bottom-4 -left-4 size-20 rounded-full border-8 border-brand-200/70 sm:size-28" />
-              <SmartImage
-                image={heroPhoto}
-                alt={heroPhoto.caption || t('about.hero.photoAlt')}
-                priority
-                sizes="(min-width: 1024px) 560px, 100vw"
-                className="relative aspect-[4/3] w-full rounded-[2rem] shadow-lift ring-8 ring-white"
-              />
-              {settings.data?.stats[0] ? (
-                <div className="absolute -bottom-6 left-4 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-lift sm:left-8 sm:px-5 sm:py-4">
-                  <span className="grid size-11 place-items-center rounded-xl bg-brand-800 text-gold-400"><GraduationCap className="size-6" aria-hidden /></span>
-                  <span>
-                    <span className="block font-display text-2xl leading-none font-black text-brand-800">{settings.data.stats[0].value}</span>
-                    <span className="mt-1 block text-sm font-semibold text-muted">{settings.data.stats[0].label}</span>
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          <div className="relative mx-auto w-full max-w-xl lg:max-w-none">
+            <div aria-hidden className="absolute -top-4 -right-4 size-24 rounded-3xl bg-gold-400 sm:-top-6 sm:-right-6 sm:size-32" />
+            <div aria-hidden className="absolute -bottom-4 -left-4 size-20 rounded-full border-8 border-brand-200/70 sm:size-28" />
+            {/* 3:2 source — shown whole on phones, cropped to 4:3 from tablet up with the group kept in frame. */}
+            <img
+              src={heroStudents}
+              srcSet={`${heroStudents768} 768w, ${heroStudents} 1536w`}
+              sizes="(min-width: 1024px) 560px, (min-width: 640px) 576px, 100vw"
+              width={1536}
+              height={1024}
+              alt={t('about.hero.photoAlt')}
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
+              className="relative aspect-[3/2] w-full rounded-[2rem] bg-brand-50 object-cover object-[58%_40%] shadow-lift ring-8 ring-white sm:aspect-[4/3]"
+            />
+            {settings.data?.stats[0] ? (
+              <div className="absolute -bottom-6 left-4 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-lift sm:left-8 sm:px-5 sm:py-4">
+                <span className="grid size-11 place-items-center rounded-xl bg-brand-800 text-gold-400"><GraduationCap className="size-6" aria-hidden /></span>
+                <span>
+                  <span className="block font-display text-2xl leading-none font-black text-brand-800">{settings.data.stats[0].value}</span>
+                  <span className="mt-1 block text-sm font-semibold text-muted">{settings.data.stats[0].label}</span>
+                </span>
+              </div>
+            ) : null}
+          </div>
         </div>
       </section>
 
