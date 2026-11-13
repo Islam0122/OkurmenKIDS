@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "OKURMEN KIDS",
-  "short_name": "OKURMEN KIDS",
+  "name": "OKURMEN Kids",
+  "short_name": "OKURMEN Kids",
   "start_url": "/",
   "scope": "/",
   "display": "browser",
@@ -9,9 +9,16 @@
   "theme_color": "#29136D",
   "icons": [
     {
-      "src": "/logo.png",
-      "sizes": "236x213",
-      "type": "image/png"
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "lang": "ru"

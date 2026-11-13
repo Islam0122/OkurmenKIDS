@@ -1,4 +1,4 @@
-# OKURMEN KIDS — public website
+# OKURMEN Kids — public website
 
 An independent React application, the academy's public website. It is a
 separate app from the LMS frontend (`../frontend`), with its own build and its
@@ -76,7 +76,7 @@ src/
 
 ## SEO and performance
 
-* **One source:** `src/seo/core.js` holds the public brand (**OKURMEN KIDS** only), the
+* **One source:** `src/seo/core.js` holds the public brand (**OKURMEN Kids** only), the
   canonical origin `https://www.okurmenkids.com`, the unique title and description of every
   static page in ru/ky/en, detail-page title and description rules, hreflang rules, JSON-LD
   builders and the sitemap. The React app (`<Seo>`), `middleware.ts` and the build scripts all
@@ -94,6 +94,11 @@ src/
   `dist/sitemap.xml`. Only canonical, indexable URLs are listed.
 * **Status codes:** unknown URLs get a real 404 (middleware). `/courses/` → 308 → `/courses`
   (`trailingSlash: false`). `*.vercel.app` copies send `X-Robots-Tag: noindex`.
+* **Favicons and logo:** generated from the official badge `brand/okurmen-kids-logo-512.png` by
+  `python3 scripts/generate-favicons.py`; the output files are committed. They are
+  `favicon.ico` (16/32/48), `favicon-48x48.png`, `favicon-96x96.png`, `apple-touch-icon.png`
+  (180), `icon-192.png` and `icon-512.png`. The Organization JSON-LD logo is `/icon-512.png`
+  (512×512, square). `index.html` has the only icon links.
 * **Crawlers** (search and social bots) get detail pages with real title, description,
   canonical, hreflang, Open Graph and H1 from `middleware.ts`. Deleted items return 404.
 * Performance: pages are code-split per route, and the enrollment form loads

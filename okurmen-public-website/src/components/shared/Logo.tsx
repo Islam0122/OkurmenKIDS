@@ -5,7 +5,7 @@ import { BRAND } from '@/app/config/site'
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils/cn'
 
-/** The original logo (unchanged) with the «OKURMEN KIDS» wordmark — the only public brand name. */
+/** The original logo (unchanged) with the «OKURMEN Kids» wordmark — the only public brand name. */
 export function Logo({ className, inverted }: { className?: string; inverted?: boolean }) {
   const { path, t } = useI18n()
   return (
