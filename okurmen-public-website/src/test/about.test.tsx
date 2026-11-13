@@ -112,7 +112,7 @@ describe('About page', () => {
     expect(await screen.findByText('Спасибо академии!')).toBeInTheDocument()
     expect(screen.getByText(/Средняя оценка 5 из 5 · отзывов: 1/)).toBeInTheDocument()
 
-    // Hero = the first real photo; the gallery holds the other covers and album photos (caption or title as alt).
+    // Hero is the static academy photo; the gallery holds the covers and album photos (caption or title as alt).
     expect(await screen.findByRole('img', { name: 'Выпуск групп' })).toBeInTheDocument()
     expect(await screen.findByRole('img', { name: 'Вручение сертификатов' })).toBeInTheDocument()
     expect(screen.getAllByRole('img', { name: 'Футбольный турнир' })).toHaveLength(2)
