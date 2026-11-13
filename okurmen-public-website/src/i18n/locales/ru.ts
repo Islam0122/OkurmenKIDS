@@ -112,7 +112,7 @@ export const ru = {
   'home.showcase.news.title': 'Последние новости',
   'home.showcase.news.read': 'Читать новость',
   'home.rocket.title': 'Поможем ребёнку сделать первый шаг в IT',
-  'home.rocket.text': 'Запишитесь на пробное занятие и познакомьтесь с академией OKURMEN KIDS.',
+  'home.rocket.text': 'Запишитесь на пробное занятие и познакомьтесь с академией OKURMEN Kids.',
   'home.rocket.button': 'Записать ребёнка',
 
   'about.title': 'Об академии',
@@ -441,7 +441,7 @@ export const ru = {
   'footer.sections': 'Разделы',
   'footer.contacts': 'Контакты',
   'footer.follow': 'Мы в соцсетях',
-  'footer.rights': '© {year} OKURMEN KIDS. Все права защищены.',
+  'footer.rights': '© {year} OKURMEN Kids. Все права защищены.',
 
   'icon.code': 'Программирование',
   'icon.python': 'Python',

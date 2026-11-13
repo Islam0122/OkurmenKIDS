@@ -12,7 +12,7 @@ import { useI18n } from '@/i18n'
 import type { NewsArticle } from '@/types/api'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
 import { BRAND } from '@/app/config/site'
-import { plainText, type Lang } from '@/seo/core'
+import { LOGO, plainText, type Lang } from '@/seo/core'
 
 /** News is written in Russian only (apps.academy_news has no translations). */
 const NEWS_LANGS: Lang[] = ['ru']
@@ -52,7 +52,7 @@ export function ArticleView({ article, preview }: { article: NewsArticle; previe
             mainEntityOfPage: { '@type': 'WebPage', '@id': absoluteUrl(`/news/${article.slug}`) },
             ...(article.cover ? { image: [absoluteUrl(mediaUrl(article.cover.url) ?? '')] } : {}),
             author: article.author ? { '@type': 'Person', name: article.author } : { '@type': 'Organization', '@id': absoluteUrl('/#organization'), name: BRAND.name, url: absoluteUrl('/') },
-            publisher: { '@type': 'Organization', '@id': absoluteUrl('/#organization'), name: BRAND.name, logo: { '@type': 'ImageObject', url: absoluteUrl('/logo.png') } },
+            publisher: { '@type': 'Organization', '@id': absoluteUrl('/#organization'), name: BRAND.name, logo: { '@type': 'ImageObject', url: absoluteUrl(LOGO.path), width: LOGO.width, height: LOGO.height } },
           },
         ]}
       />

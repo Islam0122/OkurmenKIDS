@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -8,6 +10,7 @@ import { ky } from '@/i18n/locales/ky'
 import { ru } from '@/i18n/locales/ru'
 import {
   BRAND,
+  LOGO,
   canonicalPath,
   detailDescription,
   detailTitle,
@@ -30,9 +33,9 @@ const SITE = 'https://www.okurmenkids.com'
 const DICTS = { ru, ky, en } as const
 
 describe('public brand', () => {
-  it('is «OKURMEN KIDS» everywhere public — no «Digital» in any page copy or UI string', () => {
-    expect(BRAND).toBe('OKURMEN KIDS')
-    expect(APP_BRAND.name).toBe('OKURMEN KIDS')
+  it('is «OKURMEN Kids» everywhere public — no «Digital» in any page copy or UI string', () => {
+    expect(BRAND).toBe('OKURMEN Kids')
+    expect(APP_BRAND.name).toBe('OKURMEN Kids')
     expect(JSON.stringify(PAGES)).not.toMatch(/digital/i)
     for (const dict of Object.values(DICTS)) {
       for (const [key, value] of Object.entries(dict)) {
@@ -73,12 +76,12 @@ describe('static page metadata', () => {
 
 describe('detail page metadata', () => {
   it('builds a branded, length-bounded title from the item', () => {
-    expect(detailTitle('ru', 'courses', 'Премиум')).toBe('Премиум — курс для детей в Бишкеке | OKURMEN KIDS')
-    expect(detailTitle('ru', 'news', '🚀 Ученики OKURMEN Kids посетили Ololo!')).toBe('Ученики OKURMEN Kids посетили Ololo! — новости | OKURMEN KIDS')
+    expect(detailTitle('ru', 'courses', 'Премиум')).toBe('Премиум — курс для детей в Бишкеке | OKURMEN Kids')
+    expect(detailTitle('ru', 'news', '🚀 Ученики OKURMEN Kids посетили Ololo!')).toBe('Ученики OKURMEN Kids посетили Ololo! — новости | OKURMEN Kids')
     const long = detailTitle('ru', 'news', 'Благодарственные письма родителям лучших учеников академии за отличную учёбу в октябре')
     expect(long.length).toBeLessThanOrEqual(70)
-    expect(long.endsWith('— новости | OKURMEN KIDS')).toBe(true)
-    expect(detailTitle('ky', 'courses', 'X', 'SEO заголовок')).toBe('SEO заголовок — OKURMEN KIDS')
+    expect(long.endsWith('— новости | OKURMEN Kids')).toBe(true)
+    expect(detailTitle('ky', 'courses', 'X', 'SEO заголовок')).toBe('SEO заголовок — OKURMEN Kids')
   })
 
   it('gives an item with the same name a different title in every language', () => {
@@ -94,13 +97,13 @@ describe('detail page metadata', () => {
   it('tells student projects with the same name apart by their own description and lists real technologies', () => {
     const a = { title: 'ShopVerce', short_description: 'Магазин электроники и техники', technologies: ['React HTML CSS JavaScript'] }
     const b = { title: 'ShopVerce', short_description: 'Магазин электроники и гаджетов', technologies: ['HTML CSS JS', 'React'] }
-    expect(detailTitle('ru', 'projects', a.title, null, a.short_description)).toBe('ShopVerce — Магазин электроники и техники | OKURMEN KIDS')
+    expect(detailTitle('ru', 'projects', a.title, null, a.short_description)).toBe('ShopVerce — Магазин электроники и техники | OKURMEN Kids')
     expect(detailTitle('ru', 'projects', b.title, null, b.short_description)).not.toBe(detailTitle('ru', 'projects', a.title, null, a.short_description))
     expect(projectText(b, 'ru')).toBe('Магазин электроники и гаджетов. Технологии: HTML, CSS, JS, React')
   })
 
   it('uses the item text for the description, padding a short one with a fact about the section', () => {
-    expect(detailDescription('ru', 'projects', 'Интернет-магазин на React.')).toBe('Интернет-магазин на React. Проект ученика IT-академии OKURMEN KIDS в Бишкеке.')
+    expect(detailDescription('ru', 'projects', 'Интернет-магазин на React.')).toBe('Интернет-магазин на React. Проект ученика IT-академии OKURMEN Kids в Бишкеке.')
     const long = detailDescription('ru', 'news', '**Жирный** текст '.repeat(30))
     expect(long.length).toBeLessThanOrEqual(160)
     expect(long).not.toMatch(/\*/)
@@ -134,22 +137,22 @@ describe('canonical and hreflang', () => {
     const all = headTags({ ...base, path: '/courses', lang: 'en' })
     expect(all).toContain('<link rel="canonical" href="https://www.okurmenkids.com/en/courses" />')
     for (const code of ['ru', 'ky', 'en', 'x-default']) expect(all).toContain(`hreflang="${code}"`)
-    expect(all).toContain('<meta property="og:site_name" content="OKURMEN KIDS" />')
+    expect(all).toContain('<meta property="og:site_name" content="OKURMEN Kids" />')
     expect(all).toContain('index, follow')
   })
 
   it('sets the same tags in the browser (Seo component)', () => {
     const renderAt = (url: string, lang: Lang, langs?: Lang[] | null) => render(
       <MemoryRouter initialEntries={[url]}>
-        <I18nProvider lang={lang}><Seo title="Новость | OKURMEN KIDS" description="Описание" langs={langs} /></I18nProvider>
+        <I18nProvider lang={lang}><Seo title="Новость | OKURMEN Kids" description="Описание" langs={langs} /></I18nProvider>
       </MemoryRouter>,
     )
     renderAt('/ky/news/x/', 'ky', ['ru'])
-    expect(document.title).toBe('Новость | OKURMEN KIDS')
+    expect(document.title).toBe('Новость | OKURMEN Kids')
     expect(document.documentElement.lang).toBe('ky')
     expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://kids.test/news/x')
     expect(document.head.querySelectorAll('link[hreflang]')).toHaveLength(0)
-    expect(document.head.querySelector('meta[property="og:site_name"]')?.getAttribute('content')).toBe('OKURMEN KIDS')
+    expect(document.head.querySelector('meta[property="og:site_name"]')?.getAttribute('content')).toBe('OKURMEN Kids')
 
     renderAt('/en/courses', 'en')
     expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://kids.test/en/courses')
@@ -190,11 +193,13 @@ describe('Organization JSON-LD', () => {
     const ld = organizationLd(SITE, 'ru', {
       contacts: { phone: '+996504677725', email: 'a@b.kg', instagram: 'https://instagram.com/okurmen_kids', telegram: null },
       branches: [{ address: '​Улица Орозбекова, 136', working_hours: 'Пн–Вс, 10:00–20:00', latitude: 42.88, longitude: 74.6, map_url: 'https://go.2gis.com/x' }],
-      about: { story: 'OKURMEN KIDS  — академия.\n\nВторой абзац.' },
+      about: { story: 'OKURMEN Kids  — академия.\n\nВторой абзац.' },
     })
     expect(ld['@type']).toEqual(['Organization', 'EducationalOrganization'])
-    expect(ld.name).toBe('OKURMEN KIDS')
-    expect(ld.description).toBe('OKURMEN KIDS — академия.')
+    expect(ld.name).toBe('OKURMEN Kids')
+    expect(ld.description).toBe('IT-академия для детей и подростков в Кыргызстане.')
+    expect(ld.url).toBe('https://www.okurmenkids.com')
+    expect(ld.logo).toMatchObject({ url: 'https://www.okurmenkids.com/icon-512.png', width: 512, height: 512 })
     expect(ld.address).toEqual({ '@type': 'PostalAddress', streetAddress: 'Улица Орозбекова, 136', addressLocality: 'Бишкек', addressCountry: 'KG' })
     expect(ld.sameAs).toEqual(['https://instagram.com/okurmen_kids'])
     expect(ld.openingHours).toBe('Mo-Su 10:00-20:00')
@@ -216,5 +221,55 @@ describe('vercel.json', () => {
     expect(config.rewrites[1].source).toContain(config.rewrites[0].source.slice(1))
     expect(config.rewrites.at(-1)).toEqual({ source: '/(.*)', destination: '/index.html' })
     expect(config.trailingSlash).toBe(false)
+  })
+})
+
+describe('favicons and logo for Google', () => {
+  const png = (file: string) => {
+    const buf = readFileSync(`public/${file}`)
+    expect(buf.subarray(1, 4).toString(), file).toBe('PNG')
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
+  }
+
+  it('ships every size as a real file in public/', () => {
+    for (const [file, size] of [['favicon-48x48.png', 48], ['favicon-96x96.png', 96], ['apple-touch-icon.png', 180], ['icon-192.png', 192], ['icon-512.png', 512]] as const) {
+      expect(png(file), file).toEqual({ width: size, height: size })
+    }
+    const ico = readFileSync('public/favicon.ico')
+    expect(ico.readUInt16LE(2)).toBe(1) // ICO
+    const sizes = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => ico[6 + i * 16] || 256)
+    expect(sizes.sort((a, b) => a - b)).toEqual([16, 32, 48])
+  })
+
+  it('declares one consistent icon set in the HTML head and the manifest', () => {
+    const html = readFileSync('index.html', 'utf8')
+    const links = [...html.matchAll(/<link rel="(icon|apple-touch-icon|shortcut icon)"[^>]*>/g)].map((m) => m[0])
+    expect(links).toEqual([
+      '<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />',
+      '<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />',
+      '<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />',
+      '<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />',
+      '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />',
+    ])
+    const manifest = JSON.parse(readFileSync('public/site.webmanifest', 'utf8'))
+    expect(manifest.name).toBe('OKURMEN Kids')
+    expect(manifest.icons.map((i: { src: string }) => i.src)).toEqual(['/icon-192.png', '/icon-512.png'])
+  })
+
+  it('points the Organization logo at a square image of at least 112×112', () => {
+    expect(LOGO.path).toBe('/icon-512.png')
+    const { width, height } = png(LOGO.path.slice(1))
+    expect(width).toBe(LOGO.width)
+    expect(height).toBe(LOGO.height)
+    expect(Math.min(width, height)).toBeGreaterThanOrEqual(112)
+  })
+
+  it('spells the public brand «OKURMEN Kids» in the HTML template and public files, never «Digital»', () => {
+    for (const file of ['index.html', 'public/site.webmanifest', 'public/robots.txt']) {
+      const text = readFileSync(file, 'utf8')
+      expect(text, file).not.toMatch(/digital/i)
+      expect(text, file).not.toContain('OKURMEN KIDS')
+    }
+    expect(BRAND).toBe('OKURMEN Kids')
   })
 })

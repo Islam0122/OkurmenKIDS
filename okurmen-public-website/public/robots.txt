@@ -1,4 +1,4 @@
-# OKURMEN KIDS — https://www.okurmenkids.com
+# OKURMEN Kids — https://www.okurmenkids.com
 # All public content is open to crawlers. CSS, JS and images are never blocked.
 User-agent: *
 Allow: /

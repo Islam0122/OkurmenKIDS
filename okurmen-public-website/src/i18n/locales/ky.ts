@@ -114,7 +114,7 @@ export const ky: Messages = {
   'home.showcase.news.title': 'Акыркы жаңылыктар',
   'home.showcase.news.read': 'Жаңылыкты окуу',
   'home.rocket.title': 'Балага IT дүйнөсүнө биринчи кадам таштоого жардам беребиз',
-  'home.rocket.text': 'Сыноо сабагына жазылып, OKURMEN KIDS академиясы менен таанышыңыз.',
+  'home.rocket.text': 'Сыноо сабагына жазылып, OKURMEN Kids академиясы менен таанышыңыз.',
   'home.rocket.button': 'Баланы жазуу',
 
   'about.title': 'Академия жөнүндө',
@@ -443,7 +443,7 @@ export const ky: Messages = {
   'footer.sections': 'Бөлүмдөр',
   'footer.contacts': 'Байланыш',
   'footer.follow': 'Социалдык тармактарда',
-  'footer.rights': '© {year} OKURMEN KIDS. Бардык укуктар корголгон.',
+  'footer.rights': '© {year} OKURMEN Kids. Бардык укуктар корголгон.',
 
   'icon.code': 'Программалоо',
   'icon.python': 'Python',

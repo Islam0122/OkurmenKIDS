@@ -113,7 +113,7 @@ export const en: Messages = {
   'home.showcase.news.title': 'Latest news',
   'home.showcase.news.read': 'Read the article',
   'home.rocket.title': 'We’ll help your child take the first step into IT',
-  'home.rocket.text': 'Book a trial lesson and get to know the OKURMEN KIDS academy.',
+  'home.rocket.text': 'Book a trial lesson and get to know the OKURMEN Kids academy.',
   'home.rocket.button': 'Enroll your child',
 
   'about.title': 'About the academy',
@@ -442,7 +442,7 @@ export const en: Messages = {
   'footer.sections': 'Sections',
   'footer.contacts': 'Contacts',
   'footer.follow': 'Follow us',
-  'footer.rights': '© {year} OKURMEN KIDS. All rights reserved.',
+  'footer.rights': '© {year} OKURMEN Kids. All rights reserved.',
 
   'icon.code': 'Programming',
   'icon.python': 'Python',

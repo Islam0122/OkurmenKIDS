@@ -6,6 +6,7 @@ export type JsonLd = Record<string, unknown>
 export const SITE_ORIGIN: string
 export const BRAND: string
 export const BRAND_ALT: string[]
+export const LOGO: { path: string; width: number; height: number }
 export const LANGS: Lang[]
 export const DEFAULT_LANG: Lang
 export const HTML_LANG: Record<Lang, string>
