@@ -42,7 +42,7 @@ for (const lang of LANGS) {
           ...(path === '/about' || path === '/contacts' ? [organizationLd(site, lang, settings[lang])] : []),
           breadcrumbLd(site, sectionCrumbs(lang, section)),
         ]
-    const html = renderPage(template, { site, lang, path, title: seo.title, description: seo.description, jsonLd }, noscriptBody(lang, seo.title.replace(/\s+[—|]\s+OKURMEN Kids$/, ''), seo.description))
+    const html = renderPage(template, { site, lang, path, title: seo.title, description: seo.description, jsonLd }, noscriptBody(lang, seo.title.replace(/\s+[—|]\s+Okurmen Kids$/, ''), seo.description))
     const url = localized(lang, path)
     const file = url === '/' ? resolve(dist, 'index.html') : resolve(dist, `.${url}`, 'index.html')
     mkdirSync(dirname(file), { recursive: true })

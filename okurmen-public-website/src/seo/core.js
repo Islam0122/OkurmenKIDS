@@ -8,15 +8,22 @@
  *   • the live sitemap function (api/sitemap.ts),
  *   • the build scripts (scripts/*.mjs — static HTML heads, fallback sitemap).
  *
- * Public brand: «OKURMEN Kids» only. Internal systems (LMS, CMS, backend apps)
+ * Public brand: «Okurmen Kids» only. Internal systems (LMS, CMS, backend apps)
  * keep their own names — nothing here touches them.
  */
 
 /** The one canonical origin: HTTPS + www. Every canonical, hreflang, og:url and sitemap URL uses it. */
 export const SITE_ORIGIN = 'https://www.okurmenkids.com'
-export const BRAND = 'OKURMEN Kids'
-/** Other spellings people search for (schema.org alternateName). */
-export const BRAND_ALT = ['Okurmen Kids', 'Окурмен Кидс', 'OkurmenKids']
+export const BRAND = 'Okurmen Kids'
+/**
+ * Spellings people search for (WebSite.alternateName) — above all the Cyrillic
+ * «Окурмен Кидс», which Google does not reliably map to the Latin brand on its own.
+ * The public brand itself stays «Okurmen Kids»; there are no separate pages for
+ * these spellings.
+ */
+export const BRAND_ALT = ['Окурмен Кидс', 'ОкурменKids', 'Окурмен Кидс Бишкек', 'okurmenkids']
+/** Organization.alternateName: the brand in Cyrillic. */
+export const BRAND_CYRILLIC = 'Окурмен Кидс'
 
 export const LANGS = ['ru', 'ky', 'en']
 export const DEFAULT_LANG = 'ru'
@@ -61,157 +68,157 @@ export const PAGES = {
   ru: {
     '/': {
       name: 'Главная',
-      title: 'OKURMEN Kids — IT-академия и программирование для детей',
-      description: 'IT-академия OKURMEN Kids в Бишкеке для детей 9–15 лет: Python, веб-разработка, React, создание игр и реальные проекты. Запишите ребёнка на пробный урок.',
+      title: 'Okurmen Kids — Академия программирования для детей в Бишкеке',
+      description: 'Окурмен Кидс (Okurmen Kids) — образовательная академия для детей в Бишкеке. Программирование, IT-курсы, Python, веб-разработка и современные технологии.',
     },
     '/about': {
       name: 'Об академии',
-      title: 'Об академии OKURMEN Kids — IT-образование детей в Бишкеке',
-      description: 'OKURMEN Kids — академия в Бишкеке, где дети изучают программирование и английский, создают проекты и развиваются всесторонне. Наша миссия, ценности и подход.',
+      title: 'Об академии Okurmen Kids — IT-образование детей в Бишкеке',
+      description: 'Okurmen Kids — академия в Бишкеке, где дети изучают программирование и английский, создают проекты и развиваются всесторонне. Наша миссия, ценности и подход.',
     },
     '/courses': {
       name: 'Курсы',
-      title: 'IT-курсы для детей в Бишкеке: Python, веб — OKURMEN Kids',
+      title: 'IT-курсы для детей в Бишкеке: Python, веб — Okurmen Kids',
       description: 'Курсы программирования для детей и подростков в Бишкеке: веб-разработка, React, Python, ИИ и английский. Сравните программы и выберите курс по возрасту.',
     },
     '/projects': {
       name: 'Проекты',
-      title: 'Проекты учеников: сайты и веб-приложения — OKURMEN Kids',
-      description: 'Сайты и веб-приложения на HTML, CSS, JavaScript и React, которые создали ученики IT-академии OKURMEN Kids в Бишкеке. Реальные проекты детей и подростков.',
+      title: 'Проекты учеников: сайты и веб-приложения — Okurmen Kids',
+      description: 'Сайты и веб-приложения на HTML, CSS, JavaScript и React, которые создали ученики IT-академии Okurmen Kids в Бишкеке. Реальные проекты детей и подростков.',
     },
     '/achievements': {
       name: 'Достижения',
-      title: 'Достижения учеников IT-академии в Бишкеке — OKURMEN Kids',
-      description: 'Победы, выпуски групп, стипендии и награды учеников OKURMEN Kids. Как дети и подростки в Бишкеке растут в программировании, учёбе и спорте вместе с академией.',
+      title: 'Достижения учеников IT-академии в Бишкеке — Okurmen Kids',
+      description: 'Победы, выпуски групп, стипендии и награды учеников Okurmen Kids. Как дети и подростки в Бишкеке растут в программировании, учёбе и спорте вместе с академией.',
     },
     '/news': {
       name: 'Новости',
-      title: 'Новости IT-академии для детей в Бишкеке — OKURMEN Kids',
-      description: 'Новости OKURMEN Kids: наборы на курсы программирования для детей, успехи и стипендии учеников, экскурсии в IT-компании и жизнь IT-академии в Бишкеке.',
+      title: 'Новости IT-академии для детей в Бишкеке — Okurmen Kids',
+      description: 'Новости Okurmen Kids: наборы на курсы программирования для детей, успехи и стипендии учеников, экскурсии в IT-компании и жизнь IT-академии в Бишкеке.',
     },
     '/events': {
       name: 'События',
-      title: 'Мероприятия для детей: уроки и хакатоны — OKURMEN Kids',
-      description: 'Открытые уроки, мастер-классы и хакатоны IT-академии OKURMEN Kids в Бишкеке. Мероприятия по программированию для детей и подростков и запись онлайн.',
+      title: 'Мероприятия для детей: уроки и хакатоны — Okurmen Kids',
+      description: 'Открытые уроки, мастер-классы и хакатоны IT-академии Okurmen Kids в Бишкеке. Мероприятия по программированию для детей и подростков и запись онлайн.',
     },
     '/team': {
       name: 'Команда',
-      title: 'Тренеры и команда IT-академии для детей — OKURMEN Kids',
-      description: 'Команда OKURMEN Kids: руководители, IT-специалисты и тренеры, которые учат детей программированию в Бишкеке и помогают им создавать собственные проекты.',
+      title: 'Тренеры и команда IT-академии для детей — Okurmen Kids',
+      description: 'Команда Okurmen Kids: руководители, IT-специалисты и тренеры, которые учат детей программированию в Бишкеке и помогают им создавать собственные проекты.',
     },
     '/testimonials': {
       name: 'Отзывы',
-      title: 'Отзывы родителей и учеников об IT-курсах — OKURMEN Kids',
-      description: 'Настоящие отзывы учеников и родителей об IT-академии OKURMEN Kids в Бишкеке: как проходят занятия по программированию и каких результатов достигают дети.',
+      title: 'Отзывы родителей и учеников об IT-курсах — Okurmen Kids',
+      description: 'Настоящие отзывы учеников и родителей об IT-академии Okurmen Kids в Бишкеке: как проходят занятия по программированию и каких результатов достигают дети.',
     },
     '/contacts': {
       name: 'Контакты',
-      title: 'Контакты и запись на пробный урок в Бишкеке — OKURMEN Kids',
-      description: 'Адрес, телефон и WhatsApp IT-академии OKURMEN Kids в Бишкеке. Запишите ребёнка на пробное занятие по программированию — мы подберём курс по возрасту.',
+      title: 'Контакты и запись на пробный урок в Бишкеке — Okurmen Kids',
+      description: 'Адрес, телефон и WhatsApp IT-академии Okurmen Kids в Бишкеке. Запишите ребёнка на пробное занятие по программированию — мы подберём курс по возрасту.',
     },
   },
   ky: {
     '/': {
       name: 'Башкы бет',
-      title: 'OKURMEN Kids — балдар үчүн IT-академия жана курстар',
-      description: 'Бишкектеги OKURMEN Kids IT-академиясы 9–15 жаштагы балдар үчүн: Python, веб-иштеп чыгуу, React, оюн түзүү жана реалдуу долбоорлор. Сыноо сабагына жазылыңыз.',
+      title: 'Okurmen Kids — балдар үчүн программалоо академиясы, Бишкек',
+      description: 'Окурмен Кидс (Okurmen Kids) — Бишкектеги балдар үчүн билим берүү академиясы. Программалоо, IT-курстар, Python, веб-иштеп чыгуу жана заманбап технологиялар.',
     },
     '/about': {
       name: 'Академия жөнүндө',
-      title: 'OKURMEN Kids академиясы жөнүндө — балдар үчүн IT билим',
-      description: 'OKURMEN Kids — Бишкектеги академия: балдар программалоону жана англис тилин үйрөнүп, өз долбоорлорун түзүшөт. Биздин миссия, баалуулуктар жана ыкма.',
+      title: 'Okurmen Kids академиясы жөнүндө — балдар үчүн IT билим',
+      description: 'Okurmen Kids — Бишкектеги академия: балдар программалоону жана англис тилин үйрөнүп, өз долбоорлорун түзүшөт. Биздин миссия, баалуулуктар жана ыкма.',
     },
     '/courses': {
       name: 'Курстар',
-      title: 'Бишкекте балдар үчүн IT курстары: Python, веб — OKURMEN Kids',
+      title: 'Бишкекте балдар үчүн IT курстары: Python, веб — Okurmen Kids',
       description: 'Балдар жана өспүрүмдөр үчүн программалоо курстары: веб-иштеп чыгуу, React, Python, жасалма интеллект жана англис тили. Куракка жараша курс тандаңыз.',
     },
     '/projects': {
       name: 'Долбоорлор',
-      title: 'Окуучулардын долбоорлору: сайттар, тиркемелер — OKURMEN Kids',
-      description: 'OKURMEN Kids IT-академиясынын окуучулары HTML, CSS, JavaScript жана React менен түзгөн сайттар жана веб-тиркемелер. Балдардын реалдуу долбоорлору.',
+      title: 'Окуучулардын долбоорлору: сайттар, тиркемелер — Okurmen Kids',
+      description: 'Okurmen Kids IT-академиясынын окуучулары HTML, CSS, JavaScript жана React менен түзгөн сайттар жана веб-тиркемелер. Балдардын реалдуу долбоорлору.',
     },
     '/achievements': {
       name: 'Жетишкендиктер',
-      title: 'Окуучулардын жетишкендиктери — OKURMEN Kids IT-академиясы',
-      description: 'OKURMEN Kids окуучуларынын жеңиштери, топтордун бүтүрүүсү, стипендиялар жана сыйлыктар. Бишкектеги балдар программалоодо жана окууда кантип өсүшөт.',
+      title: 'Окуучулардын жетишкендиктери — Okurmen Kids IT-академиясы',
+      description: 'Okurmen Kids окуучуларынын жеңиштери, топтордун бүтүрүүсү, стипендиялар жана сыйлыктар. Бишкектеги балдар программалоодо жана окууда кантип өсүшөт.',
     },
     '/news': {
       name: 'Жаңылыктар',
-      title: 'Балдар үчүн IT-академиянын жаңылыктары — OKURMEN Kids',
-      description: 'OKURMEN Kids жаңылыктары: балдар үчүн программалоо курстарына кабыл алуу, окуучулардын ийгиликтери, стипендиялар жана Бишкектеги академиянын турмушу.',
+      title: 'Балдар үчүн IT-академиянын жаңылыктары — Okurmen Kids',
+      description: 'Okurmen Kids жаңылыктары: балдар үчүн программалоо курстарына кабыл алуу, окуучулардын ийгиликтери, стипендиялар жана Бишкектеги академиянын турмушу.',
     },
     '/events': {
       name: 'Иш-чаралар',
-      title: 'Балдар үчүн иш-чаралар: ачык сабактар — OKURMEN Kids',
-      description: 'OKURMEN Kids IT-академиясынын ачык сабактары, мастер-класстары жана хакатондору. Бишкектеги балдар жана өспүрүмдөр үчүн программалоо боюнча иш-чаралар.',
+      title: 'Балдар үчүн иш-чаралар: ачык сабактар — Okurmen Kids',
+      description: 'Okurmen Kids IT-академиясынын ачык сабактары, мастер-класстары жана хакатондору. Бишкектеги балдар жана өспүрүмдөр үчүн программалоо боюнча иш-чаралар.',
     },
     '/team': {
       name: 'Команда',
-      title: 'IT-академиянын тренерлери жана командасы — OKURMEN Kids',
-      description: 'OKURMEN Kids командасы: Бишкекте балдарга программалоону үйрөткөн жана өз долбоорлорун түзүүгө жардам берген жетекчилер, IT-адистер жана тренерлер.',
+      title: 'IT-академиянын тренерлери жана командасы — Okurmen Kids',
+      description: 'Okurmen Kids командасы: Бишкекте балдарга программалоону үйрөткөн жана өз долбоорлорун түзүүгө жардам берген жетекчилер, IT-адистер жана тренерлер.',
     },
     '/testimonials': {
       name: 'Пикирлер',
-      title: 'IT-курстар тууралуу ата-энелердин пикирлери — OKURMEN Kids',
-      description: 'OKURMEN Kids IT-академиясы тууралуу окуучулардын жана ата-энелердин чыныгы пикирлери: программалоо сабактары кандай өтөт жана балдар кандай натыйжага жетет.',
+      title: 'IT-курстар тууралуу ата-энелердин пикирлери — Okurmen Kids',
+      description: 'Okurmen Kids IT-академиясы тууралуу окуучулардын жана ата-энелердин чыныгы пикирлери: программалоо сабактары кандай өтөт жана балдар кандай натыйжага жетет.',
     },
     '/contacts': {
       name: 'Байланыш',
-      title: 'Байланыш жана сыноо сабагына жазылуу — OKURMEN Kids',
-      description: 'Бишкектеги OKURMEN Kids IT-академиясынын дареги, телефону жана WhatsApp. Баланы программалоо боюнча сыноо сабагына жазыңыз — куракка жараша курс тандайбыз.',
+      title: 'Байланыш жана сыноо сабагына жазылуу — Okurmen Kids',
+      description: 'Бишкектеги Okurmen Kids IT-академиясынын дареги, телефону жана WhatsApp. Баланы программалоо боюнча сыноо сабагына жазыңыз — куракка жараша курс тандайбыз.',
     },
   },
   en: {
     '/': {
       name: 'Home',
-      title: 'OKURMEN Kids — Coding & IT Academy for Kids in Bishkek',
-      description: 'OKURMEN Kids is an IT academy in Bishkek for kids aged 9–15: Python, web development, React, game creation and real projects. Book a trial lesson now.',
+      title: 'Okurmen Kids — Coding & IT Academy for Kids in Bishkek',
+      description: 'Okurmen Kids is an educational academy for kids in Bishkek: programming, IT courses, Python, web development and modern technologies. Book a trial lesson.',
     },
     '/about': {
       name: 'About',
-      title: 'About OKURMEN Kids — IT Education for Children in Bishkek',
-      description: 'OKURMEN Kids is an academy in Bishkek where children learn programming and English, build their own projects and grow as people. Our mission and values.',
+      title: 'About Okurmen Kids — IT Education for Children in Bishkek',
+      description: 'Okurmen Kids is an academy in Bishkek where children learn programming and English, build their own projects and grow as people. Our mission and values.',
     },
     '/courses': {
       name: 'Courses',
-      title: 'Coding Courses for Kids in Bishkek: Python — OKURMEN Kids',
+      title: 'Coding Courses for Kids in Bishkek: Python — Okurmen Kids',
       description: 'Programming courses for kids and teens in Bishkek: web development, React, Python, AI and English. Compare the programs and choose a course by age and level.',
     },
     '/projects': {
       name: 'Projects',
-      title: 'Student Projects: Websites and Web Apps — OKURMEN Kids',
-      description: 'Websites and web apps built with HTML, CSS, JavaScript and React by students of the OKURMEN Kids IT academy in Bishkek. Real projects made by kids and teens.',
+      title: 'Student Projects: Websites and Web Apps — Okurmen Kids',
+      description: 'Websites and web apps built with HTML, CSS, JavaScript and React by students of the Okurmen Kids IT academy in Bishkek. Real projects made by kids and teens.',
     },
     '/achievements': {
       name: 'Achievements',
-      title: 'Student Achievements at the IT Academy — OKURMEN Kids',
-      description: 'Wins, graduations, scholarships and awards of OKURMEN Kids students. See how kids and teens in Bishkek grow in programming, studies and sport with the academy.',
+      title: 'Student Achievements at the IT Academy — Okurmen Kids',
+      description: 'Wins, graduations, scholarships and awards of Okurmen Kids students. See how kids and teens in Bishkek grow in programming, studies and sport with the academy.',
     },
     '/news': {
       name: 'News',
-      title: 'News from the IT Academy for Kids in Bishkek — OKURMEN Kids',
-      description: 'OKURMEN Kids news: enrollment in coding courses for kids, student successes and scholarships, visits to IT companies and life at the academy in Bishkek.',
+      title: 'News from the IT Academy for Kids in Bishkek — Okurmen Kids',
+      description: 'Okurmen Kids news: enrollment in coding courses for kids, student successes and scholarships, visits to IT companies and life at the academy in Bishkek.',
     },
     '/events': {
       name: 'Events',
-      title: 'Events for Kids: Open Lessons and Hackathons — OKURMEN Kids',
-      description: 'Open lessons, workshops and hackathons at the OKURMEN Kids IT academy in Bishkek. Programming events for kids and teens, with online registration.',
+      title: 'Events for Kids: Open Lessons and Hackathons — Okurmen Kids',
+      description: 'Open lessons, workshops and hackathons at the Okurmen Kids IT academy in Bishkek. Programming events for kids and teens, with online registration.',
     },
     '/team': {
       name: 'Team',
-      title: 'Trainers and Team of the IT Academy for Kids — OKURMEN Kids',
-      description: 'Meet the OKURMEN Kids team: leaders, IT specialists and trainers who teach children programming in Bishkek and help them build their own projects.',
+      title: 'Trainers and Team of the IT Academy for Kids — Okurmen Kids',
+      description: 'Meet the Okurmen Kids team: leaders, IT specialists and trainers who teach children programming in Bishkek and help them build their own projects.',
     },
     '/testimonials': {
       name: 'Testimonials',
-      title: 'Parent and Student Reviews of Our IT Courses — OKURMEN Kids',
-      description: 'Real reviews from students and parents about the OKURMEN Kids IT academy in Bishkek: what coding lessons are like and the results children achieve.',
+      title: 'Parent and Student Reviews of Our IT Courses — Okurmen Kids',
+      description: 'Real reviews from students and parents about the Okurmen Kids IT academy in Bishkek: what coding lessons are like and the results children achieve.',
     },
     '/contacts': {
       name: 'Contacts',
-      title: 'Contacts and Trial Lesson Booking in Bishkek — OKURMEN Kids',
-      description: 'Address, phone and WhatsApp of the OKURMEN Kids IT academy in Bishkek. Book a trial programming lesson for your child — we will help choose a course by age.',
+      title: 'Contacts and Trial Lesson Booking in Bishkek — Okurmen Kids',
+      description: 'Address, phone and WhatsApp of the Okurmen Kids IT academy in Bishkek. Book a trial programming lesson for your child — we will help choose a course by age.',
     },
   },
 }
@@ -261,28 +268,28 @@ const DETAIL_TITLE_MAX = 70
 
 const SUFFIX = {
   ru: {
-    courses: 'Курс IT-академии OKURMEN Kids в Бишкеке. Запишите ребёнка на пробный урок.',
-    events: 'Мероприятие IT-академии OKURMEN Kids для детей и подростков в Бишкеке.',
-    achievements: 'Достижения учеников IT-академии OKURMEN Kids в Бишкеке.',
-    team: 'Команда IT-академии для детей OKURMEN Kids в Бишкеке.',
-    news: 'Новости IT-академии для детей OKURMEN Kids в Бишкеке.',
-    projects: 'Проект ученика IT-академии OKURMEN Kids в Бишкеке.',
+    courses: 'Курс IT-академии Okurmen Kids в Бишкеке. Запишите ребёнка на пробный урок.',
+    events: 'Мероприятие IT-академии Okurmen Kids для детей и подростков в Бишкеке.',
+    achievements: 'Достижения учеников IT-академии Okurmen Kids в Бишкеке.',
+    team: 'Команда IT-академии для детей Okurmen Kids в Бишкеке.',
+    news: 'Новости IT-академии для детей Okurmen Kids в Бишкеке.',
+    projects: 'Проект ученика IT-академии Okurmen Kids в Бишкеке.',
   },
   ky: {
-    courses: 'Бишкектеги OKURMEN Kids IT-академиясынын курсу. Баланы сыноо сабагына жазыңыз.',
-    events: 'OKURMEN Kids IT-академиясынын балдар жана өспүрүмдөр үчүн иш-чарасы.',
-    achievements: 'Бишкектеги OKURMEN Kids IT-академиясынын окуучуларынын жетишкендиктери.',
-    team: 'Бишкектеги балдар үчүн OKURMEN Kids IT-академиясынын командасы.',
-    news: 'Бишкектеги балдар үчүн OKURMEN Kids IT-академиясынын жаңылыктары.',
-    projects: 'Бишкектеги OKURMEN Kids IT-академиясынын окуучусунун долбоору.',
+    courses: 'Бишкектеги Okurmen Kids IT-академиясынын курсу. Баланы сыноо сабагына жазыңыз.',
+    events: 'Okurmen Kids IT-академиясынын балдар жана өспүрүмдөр үчүн иш-чарасы.',
+    achievements: 'Бишкектеги Okurmen Kids IT-академиясынын окуучуларынын жетишкендиктери.',
+    team: 'Бишкектеги балдар үчүн Okurmen Kids IT-академиясынын командасы.',
+    news: 'Бишкектеги балдар үчүн Okurmen Kids IT-академиясынын жаңылыктары.',
+    projects: 'Бишкектеги Okurmen Kids IT-академиясынын окуучусунун долбоору.',
   },
   en: {
-    courses: 'A course at the OKURMEN Kids IT academy in Bishkek. Book a trial lesson.',
-    events: 'An OKURMEN Kids IT academy event for kids and teens in Bishkek.',
-    achievements: 'Achievements of OKURMEN Kids IT academy students in Bishkek.',
-    team: 'The team of the OKURMEN Kids IT academy for kids in Bishkek.',
-    news: 'News from the OKURMEN Kids IT academy for kids in Bishkek.',
-    projects: 'A student project from the OKURMEN Kids IT academy in Bishkek.',
+    courses: 'A course at the Okurmen Kids IT academy in Bishkek. Book a trial lesson.',
+    events: 'An Okurmen Kids IT academy event for kids and teens in Bishkek.',
+    achievements: 'Achievements of Okurmen Kids IT academy students in Bishkek.',
+    team: 'The team of the Okurmen Kids IT academy for kids in Bishkek.',
+    news: 'News from the Okurmen Kids IT academy for kids in Bishkek.',
+    projects: 'A student project from the Okurmen Kids IT academy in Bishkek.',
   },
 }
 
@@ -303,7 +310,7 @@ function clip(text, max) {
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,.;:—–-]+$/, '')}…`
 }
 
-/** Appends « — OKURMEN Kids» unless the brand is already in the title. */
+/** Appends « — Okurmen Kids» unless the brand is already in the title. */
 export function withBrand(title) {
   const clean = plainText(title)
   if (!clean) return BRAND
@@ -311,9 +318,9 @@ export function withBrand(title) {
 }
 
 /**
- * «<name> — <section qualifier> | OKURMEN Kids» (team: «<name — position> · <qualifier> | …»).
+ * «<name> — <section qualifier> | Okurmen Kids» (team: «<name — position> · <qualifier> | …»).
  * A long name is shortened, never the qualifier: an item with the same name
- * in two languages (people, «OKURMEN Kids Club — NEXT») still gets a
+ * in two languages (people, «Okurmen Kids Club — NEXT») still gets a
  * different title in each language.
  */
 export function detailTitle(lang, section, name, seoTitle, subtitle) {
@@ -369,9 +376,9 @@ const CITY = { ru: 'Бишкек', ky: 'Бишкек', en: 'Bishkek' }
 
 /** The academy in one sentence (Organization description). */
 const ORG_DESCRIPTION = {
-  ru: 'IT-академия для детей и подростков в Кыргызстане.',
-  ky: 'Кыргызстандагы балдар жана өспүрүмдөр үчүн IT-академия.',
-  en: 'IT academy for children and teenagers in Kyrgyzstan.',
+  ru: 'Окурмен Кидс (Okurmen Kids) — академия программирования для детей и подростков в Бишкеке.',
+  ky: 'Окурмен Кидс (Okurmen Kids) — Бишкектеги балдар жана өспүрүмдөр үчүн программалоо академиясы.',
+  en: 'Okurmen Kids — a coding academy for children and teenagers in Bishkek, Kyrgyzstan.',
 }
 
 /** Organization logo for Google: the official badge, square, 512×512 (≥ 112×112), transparent outside the round logo. */
@@ -379,7 +386,7 @@ export const LOGO = { path: '/icon-512.png', width: 512, height: 512 }
 
 /**
  * The academy for Google: Organization (+ EducationalOrganization, its schema.org subtype),
- * name «OKURMEN Kids», url, square logo, description; contacts and branches from the CMS.
+ * name «Okurmen Kids», url, square logo, description; contacts and branches from the CMS.
  */
 export function organizationLd(site, lang, settings) {
   const contacts = settings?.contacts ?? {}
@@ -395,8 +402,8 @@ export function organizationLd(site, lang, settings) {
     '@type': ['Organization', 'EducationalOrganization'],
     '@id': `${site}/#organization`,
     name: BRAND,
-    alternateName: BRAND_ALT,
-    url: site,
+    alternateName: BRAND_CYRILLIC,
+    url: `${site}/`,
     logo: { '@type': 'ImageObject', url: `${site}${LOGO.path}`, contentUrl: `${site}${LOGO.path}`, width: LOGO.width, height: LOGO.height },
     image: `${site}/og-image.png`,
     description: ORG_DESCRIPTION[lang] ?? ORG_DESCRIPTION.ru,

@@ -59,12 +59,12 @@ describe('middleware', () => {
   it('gives crawlers the item metadata; an untranslated copy points to the original', async () => {
     const html = await (await call('/ky/news/hello', BOT)).text()
     expect(html).toContain('<html lang="ky"')
-    expect(html).toContain('<title>Привет — жаңылыктар | OKURMEN Kids</title>')
+    expect(html).toContain('<title>Привет — жаңылыктар | Okurmen Kids</title>')
     expect(html).toContain('<link rel="canonical" href="https://www.okurmenkids.com/news/hello" />')
     expect(html).not.toContain('hreflang')
     expect(html).toContain('<div id="root"><h1>🚀 Привет</h1>')
     expect(html).not.toContain('<h1>Home</h1>')
-    expect(html).toContain('og:site_name" content="OKURMEN Kids"')
+    expect(html).toContain('og:site_name" content="Okurmen Kids"')
     expect(html).not.toMatch(/digital/i)
   })
 

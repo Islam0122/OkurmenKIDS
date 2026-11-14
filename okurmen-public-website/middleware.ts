@@ -73,7 +73,7 @@ async function notFound(url: URL, lang: Lang): Promise<Response> {
   const template = await fetch(new URL('/index.html', url)).then((r) => r.text())
   const html = template
     .replace(/<html lang="[^"]*"/, `<html lang="${lang}"`)
-    .replace(/<!--seo-->[\s\S]*?<!--\/seo-->/, '<title>404 — OKURMEN Kids</title>\n    <meta name="robots" content="noindex, follow" />')
+    .replace(/<!--seo-->[\s\S]*?<!--\/seo-->/, '<title>404 — Okurmen Kids</title>\n    <meta name="robots" content="noindex, follow" />')
     .replace(/<noscript>[\s\S]*?<\/noscript>/, '')
   return new Response(html, { status: 404, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=60' } })
 }
