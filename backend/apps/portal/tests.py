@@ -291,36 +291,88 @@ class DataTests(PortalTestBase):
         self.assertEqual(self.client_.get(url, {"start": "2026-01-01", "end": "2026-06-01"}).status_code, 400)
         self.assertEqual(self.client_.get(url, {"start": "nope"}).status_code, 400)
 
-    def test_homework_states_and_submission(self):
+    def test_homework_is_read_only_and_awaits_the_trainer(self):
         lesson = self.lesson(self.g1, self.gt1, TODAY)
         lesson.youtube_url = "https://youtu.be/x"
         lesson.save()
-        open_hw = Homework.objects.create(lesson=lesson, title="Open", deadline=TODAY + dt.timedelta(days=2))
-        late_hw = Homework.objects.create(lesson=lesson, title="Late", deadline=TODAY - dt.timedelta(days=1))
+        upcoming = Homework.objects.create(lesson=lesson, title="Upcoming", description="Решите 5 задач",
+                                           deadline=TODAY + dt.timedelta(days=2))
+        past = Homework.objects.create(lesson=lesson, title="Past", deadline=TODAY - dt.timedelta(days=1))
         url = reverse("portal:homework", args=[self.student.pk])
-        rows = {r["title"]: r["state"] for r in self.client_.get(url).data["results"]}
-        self.assertEqual(rows, {"Open": "pending", "Late": "overdue"})
+        rows = {r["title"]: r for r in self.client_.get(url).data["results"]}
+        # Nothing recorded by the trainer yet → «awaiting», never «overdue», never a grade.
+        self.assertEqual({t: r["state"] for t, r in rows.items()}, {"Upcoming": "awaiting", "Past": "awaiting"})
+        self.assertTrue(all(r["score"] is None for r in rows.values()))
 
-        detail = self.client_.get(reverse("portal:homework-detail", args=[self.student.pk, open_hw.pk])).data
+        detail = self.client_.get(reverse("portal:homework-detail", args=[self.student.pk, upcoming.pk])).data
+        self.assertEqual(detail["description"], "Решите 5 задач")
+        self.assertEqual(detail["assigned_date"], TODAY)
         self.assertEqual(detail["attachments"], [{"kind": "video", "url": "https://youtu.be/x"}])
+        self.assertEqual((detail["score"], detail["feedback"]), (None, ""))
+        for gone in ("submission", "can_submit"):
+            self.assertNotIn(gone, detail)
 
-        submit = reverse("portal:homework-submit", args=[self.student.pk, open_hw.pk])
-        self.assertEqual(self.client_.post(submit, {}, format="json").status_code, 400)
-        done = self.client_.post(submit, {"text": "Готово", "link": "https://github.com/x"}, format="json")
-        self.assertEqual(done.data["state"], "submitted")
-        result = HomeworkResult.objects.get(homework=open_hw, student=self.student)
-        self.assertEqual((result.status, result.submission_link), ("submitted", "https://github.com/x"))
+        # No way to hand work in or change a result from the portal.
+        detail_url = reverse("portal:homework-detail", args=[self.student.pk, upcoming.pk])
+        self.assertEqual(self.client_.post(detail_url, {"text": "x"}, format="json").status_code, 405)
+        self.assertEqual(self.client_.post(f"{detail_url}submit/", {"text": "x"}, format="json").status_code, 404)
+        teacher_url = f"/api/v1/homework/{upcoming.pk}/results/"
+        payload = [{"student": self.student.pk, "status": "checked", "score": 10, "comment": "self-graded"}]
+        response = self.client_.post(teacher_url, payload, format="json")
+        self.assertEqual((response.status_code, response.json()["code"]), (403, "portal_only"))
+        self.assertFalse(HomeworkResult.objects.filter(homework=upcoming).exists())
+        self.assertNotIn(past.pk, [n["params"].get("homework_id") for n in
+                                   self.client_.get(reverse("portal:notifications", args=[self.student.pk])).data["results"]
+                                   if n["kind"] != "homework_new"])
 
-        late = self.client_.post(reverse("portal:homework-submit", args=[self.student.pk, late_hw.pk]),
-                                 {"text": "Сорри"}, format="json")
-        self.assertEqual(late.data["state"], "late")
+    def test_trainer_grading_form_is_reflected_immediately(self):
+        lesson = self.lesson(self.g1, self.gt1, TODAY)
+        hw = Homework.objects.create(lesson=lesson, title="Циклы", deadline=TODAY - dt.timedelta(days=1))
+        other = Homework.objects.create(lesson=lesson, title="Списки", deadline=TODAY + dt.timedelta(days=3))
+        teacher = APIClient()
+        teacher.force_authenticate(self.teacher.user)
+        results_url = f"/api/v1/homework/{hw.pk}/results/"
+        detail_url = reverse("portal:homework-detail", args=[self.student.pk, hw.pk])
 
-        result.status, result.score, result.comment = HomeworkResult.Status.CHECKED, 9, "Молодец"
-        result.checked_at = timezone.now()
-        result.save()
-        self.assertEqual(self.client_.post(submit, {"text": "again"}, format="json").status_code, 400)
-        feedback = self.client_.get(reverse("portal:feedback", args=[self.student.pk])).data["results"]
-        self.assertEqual(feedback[0]["text"], "Молодец")
+        # The trainer's existing form: each status, with an optional grade and comment.
+        steps = [
+            ({"status": "not_submitted", "score": None, "comment": ""}, ("not_submitted", None, "")),
+            ({"status": "late", "score": None, "comment": "Принёс на следующий урок"},
+             ("late", None, "Принёс на следующий урок")),
+            ({"status": "submitted", "score": 7, "comment": ""}, ("submitted", 7, "")),
+            ({"status": "checked", "score": 10, "comment": "Отлично!"}, ("checked", 10, "Отлично!")),
+        ]
+        for entry, expected in steps:
+            saved = teacher.post(results_url, [{"student": self.student.pk, **entry}], format="json")
+            self.assertEqual(saved.status_code, 200, saved.data)
+            seen = self.client_.get(detail_url).data
+            self.assertEqual((seen["state"], seen["score"], seen["feedback"]), expected)
+
+        # The trainer reads the same form back unchanged; one row per student, history kept.
+        rows = teacher.get(results_url).data
+        mine = next(r for r in rows if r["student"] == self.student.pk)
+        self.assertEqual((mine["status"], mine["score"], mine["comment"]), ("checked", 10, "Отлично!"))
+        self.assertNotIn("submission_text", mine)
+        self.assertEqual(HomeworkResult.objects.filter(homework=hw, student=self.student).count(), 1)
+
+        dashboard = self.client_.get(reverse("portal:dashboard", args=[self.student.pk])).data
+        self.assertEqual(dashboard["performance"]["homework_rate"], 100.0)  # only evaluated work counts
+        self.assertEqual([h["title"] for h in dashboard["homework"]["open"]], ["Списки"])
+        kinds = {n["kind"] for n in dashboard["notifications"]}
+        self.assertIn("homework_checked", kinds)
+
+        teacher.post(f"/api/v1/homework/{other.pk}/results/",
+                     [{"student": self.student.pk, "status": "not_submitted", "score": None, "comment": ""}], format="json")
+        dashboard = self.client_.get(reverse("portal:dashboard", args=[self.student.pk])).data
+        self.assertEqual(dashboard["homework"]["not_submitted_count"], 1)
+        self.assertIn("homework_not_submitted", {n["kind"] for n in dashboard["notifications"]})
+
+    def test_assistant_still_reads_homework_results(self):
+        lesson = self.lesson(self.g1, self.gt1, TODAY)
+        hw = Homework.objects.create(lesson=lesson, title="HW")
+        HomeworkResult.objects.create(homework=hw, student=self.student, status="checked", score=9, comment="ok")
+        detail = self.staff.get(reverse("assistant:student-detail", args=[self.student.pk])).data
+        self.assertEqual([(h["status"], h["score"]) for h in detail["homework"]], [("checked", 9)])
 
     def test_monthly_report_uses_real_records(self):
         days = [self.month_start + dt.timedelta(days=i) for i in range(3)]
@@ -364,6 +416,7 @@ class DataTests(PortalTestBase):
         lesson = self.lesson(self.g1, self.gt1, TODAY, status_=Lesson.Status.SCHEDULED)
         self.lesson(self.g1, self.gt1, TODAY + dt.timedelta(days=2), number=2, status_=Lesson.Status.CANCELLED)
         Homework.objects.create(lesson=lesson, title="Due", deadline=TODAY + dt.timedelta(days=1))
+        Homework.objects.create(lesson=lesson, title="Old", deadline=TODAY - dt.timedelta(days=5))
         data = self.client_.get(reverse("portal:dashboard", args=[self.student.pk])).data
         self.assertEqual([l["id"] for l in data["today_lessons"]], [lesson.pk])
         self.assertEqual(data["homework"]["open_count"], 1)

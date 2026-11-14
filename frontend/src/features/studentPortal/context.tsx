@@ -10,6 +10,18 @@ import type { PortalMe, PortalStudent } from '@/types/studentPortal'
  * only pick among them, and every request is re-checked server-side. */
 
 export const PORTAL_KEY = ['student-portal'] as const
+
+/** Homework results are saved by the trainer in the existing grading form
+ * (offline checking in class). The family's pages therefore never trust a
+ * cached copy: they refetch on every visit, when the tab regains focus, and
+ * every minute while open — a saved status, grade or comment shows up
+ * without a reload. */
+export const LIVE_QUERY = {
+  staleTime: 0,
+  refetchOnMount: 'always',
+  refetchOnWindowFocus: 'always',
+  refetchInterval: 60_000,
+} as const
 const SELECTED_KEY = 'okk-student-portal-child'
 
 interface PortalValue {

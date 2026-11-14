@@ -12,8 +12,3 @@ class PasswordChangeSerializer(serializers.Serializer):
         if attrs["new_password"] != attrs["new_password_confirm"]:
             raise serializers.ValidationError({"new_password_confirm": "Пароли не совпадают."})
         return attrs
-
-
-class HomeworkSubmitSerializer(serializers.Serializer):
-    text = serializers.CharField(required=False, allow_blank=True, default="", max_length=4000)
-    link = serializers.URLField(required=False, allow_blank=True, default="", max_length=500)

@@ -1632,12 +1632,6 @@ class HomeworkResult(models.Model):
         verbose_name="Комментарий",
     )
 
-    # What the student handed in through the Student & Parent Portal
-    # (apps.portal.services.homework.submit). The trainer still grades the
-    # same row — status / score / comment — through the existing screens.
-    submission_text = models.TextField(blank=True, max_length=4000, verbose_name="Ответ ученика")
-    submission_link = models.URLField(blank=True, max_length=500, verbose_name="Ссылка на работу")
-
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата сдачи")
     checked_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата проверки")
 

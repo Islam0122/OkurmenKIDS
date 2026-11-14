@@ -72,8 +72,8 @@ export function PageTitle({ title, subtitle, actions }: { title: string; subtitl
 const PILL = 'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap'
 
 const HW_TONE: Record<HomeworkState, string> = {
-  pending: 'bg-info-soft text-info',
-  overdue: 'bg-danger-soft text-danger',
+  awaiting: 'bg-surface-muted text-ink-secondary ring-1 ring-border',
+  not_submitted: 'bg-danger-soft text-danger',
   submitted: 'bg-brand-50 text-brand-700',
   late: 'bg-warning-soft text-warning',
   checked: 'bg-brand-500 text-white',

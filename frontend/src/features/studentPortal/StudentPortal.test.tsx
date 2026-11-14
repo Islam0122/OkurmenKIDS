@@ -5,13 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { homeFor } from '@/lib/roles'
 import { renderWithProviders } from '@/test/testUtils'
-import type { PortalDashboard, PortalMe, PortalStudent } from '@/types/studentPortal'
+import type { PortalDashboard, PortalHomeworkDetail, PortalMe, PortalStudent } from '@/types/studentPortal'
 
 vi.mock('@/api/studentPortal', () => ({
   studentPortalApi: {
     me: vi.fn(),
     changePassword: vi.fn(),
     dashboard: vi.fn(),
+    homeworkDetail: vi.fn(),
   },
 }))
 vi.mock('@/hooks/useAuth', () => ({
@@ -23,6 +24,7 @@ import { studentPortalApi } from '@/api/studentPortal'
 import { CredentialsCard } from '@/features/assistant/actions/StudentAccount'
 import { StudentPortalLayout } from './StudentPortalLayout'
 import { StudentDashboardPage } from './pages/DashboardPage'
+import { StudentHomeworkDetailPage } from './pages/HomeworkPages'
 import { translate, DICTIONARIES } from './i18n'
 
 function child(id: number, first: string): PortalStudent {
@@ -38,7 +40,7 @@ function dashboard(student: PortalStudent): PortalDashboard {
   const empty = { marked: 0, present: 0, late: 0, absent: 0, excused: 0, attended: 0, percent: null }
   return {
     student, today: '2026-11-14', today_lessons: [], upcoming_lessons: [],
-    homework: { open: [], open_count: 0, overdue_count: 0, next_deadline: null },
+    homework: { open: [], open_count: 0, not_submitted_count: 0, next_deadline: null },
     attendance: { month: empty, overall: empty },
     performance: { average_score: null, month_average_score: null, homework_rate: null, scored_count: 0 },
     xp: { month: { attendance: 0, homework: 0, tests: 0, total: 0 }, total: 120, level: { level: 2, floor: 100, next: 300, progress: 10 } },
@@ -129,5 +131,68 @@ describe('One-time credentials card', () => {
     expect(copied).toContain('Логин: aibek.asanov')
     expect(copied).toContain('Временный пароль: Hk7m-pQ3x-9tRw')
     expect(screen.getAllByRole('button', { name: 'Копировать' })).toHaveLength(2)
+  })
+})
+
+function homework(overrides: Partial<PortalHomeworkDetail> = {}): PortalHomeworkDetail {
+  return {
+    id: 5, title: 'Цикл for', assigned_date: '2026-11-12', deadline: '2026-11-16', days_left: 2, state: 'awaiting', is_open: true,
+    lesson: { id: 3, date: '2026-11-12', topic: 'Циклы', lesson_number: 7, description: '' },
+    subject: { id: 1, name: 'Python' }, teacher: { id: 1, name: 'Ислам' }, score: null, has_feedback: false,
+    evaluated_at: null, checked_at: null, created_at: '2026-11-12T10:00:00Z',
+    description: 'Решите 5 задач на цикл for.', attachments: [], feedback: '', ...overrides,
+  }
+}
+
+describe('Homework page (offline checking, read-only)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    vi.mocked(studentPortalApi.me).mockResolvedValue(ME)
+  })
+
+  function renderDetail() {
+    return renderWithProviders(
+      <Routes>
+        <Route path="/student" element={<StudentPortalLayout />}>
+          <Route path="homework/:id" element={<StudentHomeworkDetailPage />} />
+        </Route>
+      </Routes>,
+      { route: '/student/homework/5' },
+    )
+  }
+
+  it('has no way to submit work and shows no grade before the trainer evaluates', async () => {
+    vi.mocked(studentPortalApi.homeworkDetail).mockResolvedValue(homework())
+    renderDetail()
+    expect(await screen.findByRole('heading', { name: 'Цикл for' })).toBeInTheDocument()
+    expect(screen.getByText('Решите 5 задач на цикл for.')).toBeInTheDocument()
+    expect(screen.getByText('Ожидает проверки')).toBeInTheDocument()
+    expect(screen.getByTestId('hw-grade')).toHaveTextContent('Ещё не оценено')
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Сдать|Отправить/ })).not.toBeInTheDocument()
+    expect(document.querySelector('form')).toBeNull()
+    expect(studentPortalApi).not.toHaveProperty('submitHomework')
+  })
+
+  it('shows the status, grade and comment the trainer saved', async () => {
+    vi.mocked(studentPortalApi.homeworkDetail).mockResolvedValue(
+      homework({ state: 'checked', is_open: false, score: 10, feedback: 'Отлично!', evaluated_at: '2026-11-14T09:00:00Z' }),
+    )
+    renderDetail()
+    expect(await screen.findByText('Проверено')).toBeInTheDocument()
+    expect(screen.getByTestId('hw-grade')).toHaveTextContent('10 / 10')
+    expect(screen.getByTestId('hw-feedback')).toHaveTextContent('«Отлично!»')
+    expect(screen.getByText('Проверено тренером: 14.11.2026')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['not_submitted', 'Не сдано'],
+    ['submitted', 'Сдано'],
+    ['late', 'Сдано с опозданием'],
+  ] as const)('shows the trainer status %s', async (state, label) => {
+    vi.mocked(studentPortalApi.homeworkDetail).mockResolvedValue(homework({ state, is_open: state === 'not_submitted' }))
+    renderDetail()
+    expect(await screen.findByText(label)).toBeInTheDocument()
   })
 })

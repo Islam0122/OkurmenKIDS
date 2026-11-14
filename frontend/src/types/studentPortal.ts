@@ -47,11 +47,14 @@ export interface PortalLesson {
   attendance: AttendanceMark | null
 }
 
-export type HomeworkState = 'pending' | 'overdue' | 'submitted' | 'late' | 'checked'
+/** The trainer's own status from the offline grading form, or `awaiting` until one is saved. */
+export type HomeworkState = 'awaiting' | 'not_submitted' | 'submitted' | 'late' | 'checked'
 
 export interface PortalHomework {
   id: number
   title: string
+  /** The date of the lesson the homework was given on. */
+  assigned_date: string
   deadline: string | null
   days_left: number | null
   state: HomeworkState
@@ -59,19 +62,20 @@ export interface PortalHomework {
   lesson: { id: number; date: string; topic: string; lesson_number: number | null }
   subject: Ref | null
   teacher: Ref | null
+  /** Only a grade the trainer entered; null before evaluation. */
   score: number | null
   has_feedback: boolean
-  submitted_at: string | null
+  evaluated_at: string | null
   checked_at: string | null
   created_at: string
 }
 
-export interface PortalHomeworkDetail extends PortalHomework {
+/** Read-only: homework is done outside the LMS and checked offline by the trainer. */
+export interface PortalHomeworkDetail extends Omit<PortalHomework, 'lesson'> {
   description: string
+  lesson: PortalHomework['lesson'] & { description: string }
   attachments: { kind: 'video' | 'presentation'; url: string }[]
   feedback: string
-  submission: { text: string; link: string } | null
-  can_submit: boolean
 }
 
 export interface AttendanceSummary {
@@ -109,7 +113,7 @@ export interface FeedbackItem {
 }
 
 export type NotificationKind =
-  | 'homework_overdue' | 'homework_due' | 'homework_new' | 'homework_checked' | 'lesson_cancelled' | 'payment_due'
+  | 'homework_not_submitted' | 'homework_due' | 'homework_new' | 'homework_checked' | 'lesson_cancelled' | 'payment_due'
 
 export interface PortalNotification {
   id: string
@@ -138,7 +142,7 @@ export interface PortalDashboard {
   today: string
   today_lessons: PortalLesson[]
   upcoming_lessons: PortalLesson[]
-  homework: { open: PortalHomework[]; open_count: number; overdue_count: number; next_deadline: string | null }
+  homework: { open: PortalHomework[]; open_count: number; not_submitted_count: number; next_deadline: string | null }
   attendance: { month: AttendanceSummary; overall: AttendanceSummary }
   performance: { average_score: number | null; month_average_score: number | null; homework_rate: number | null; scored_count: number }
   xp: { month: XpParts; total: number; level: { level: number; floor: number; next: number; progress: number } }
