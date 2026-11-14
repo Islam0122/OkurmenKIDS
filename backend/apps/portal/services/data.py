@@ -288,6 +288,7 @@ def homework_row(homework: Homework, result: HomeworkResult | None, today: dt.da
         "is_open": state in HW_OPEN_STATES,
         "lesson": {"id": lesson.pk, "date": lesson.date, "topic": lesson.topic, "lesson_number": lesson.lesson_number},
         "subject": _ref(lesson.subject),
+        "group": _ref(lesson.group),
         "teacher": _ref(lesson.effective_teacher),
         # Only what the trainer entered: no result or an empty grade → null.
         "score": result.score if result else None,
@@ -432,6 +433,10 @@ def level_for(total_xp: int) -> dict:
     return {"level": level, "floor": floor, "next": floor + step, "progress": round((total_xp - floor) / step * 100)}
 
 
+HOMEWORK_TOP_THRESHOLDS = (1, 10, 25)
+HOMEWORK_DONE_THRESHOLDS = (5, 20, 50, 100)
+
+
 def achievements(student: Student, *, today: dt.date) -> list[dict]:
     """Earned badges, each backed by a real record."""
     from apps.scholarships.models import ScholarshipAward
@@ -454,12 +459,12 @@ def achievements(student: Student, *, today: dt.date) -> list[dict]:
 
     checked = HomeworkResult.objects.filter(student=student, score__isnull=False)
     top = checked.filter(score=10).count()
-    for threshold in (25, 10, 1):
+    for threshold in reversed(HOMEWORK_TOP_THRESHOLDS):
         if top >= threshold:
             badges.append({"code": "top_homework", "date": None, "params": {"count": threshold}})
             break
     done = HomeworkResult.objects.filter(student=student, status__in=DONE).count()
-    for threshold in (100, 50, 20, 5):
+    for threshold in reversed(HOMEWORK_DONE_THRESHOLDS):
         if done >= threshold:
             badges.append({"code": "homework_streak", "date": None, "params": {"count": threshold}})
             break
@@ -469,6 +474,50 @@ def achievements(student: Student, *, today: dt.date) -> list[dict]:
     if level >= 2:
         badges.append({"code": "level", "date": None, "params": {"level": level}})
     return badges
+
+
+def _next_threshold(value: int, thresholds) -> int | None:
+    return next((t for t in thresholds if value < t), None)
+
+
+def achievements_overview(student: Student, *, today: dt.date) -> dict:
+    """The «Жетишкендиктер» page: XP and level, earned badges, and how far
+    the student is from the next badge of each kind — all counted from the
+    same records and thresholds as `achievements` (nothing invented)."""
+    total = xp_for(student, dt.date(2000, 1, 1), today)
+    month_start, _ = month_bounds(today.year, today.month)
+    level = level_for(total["total"])
+    top = HomeworkResult.objects.filter(student=student, score=10).count()
+    done = HomeworkResult.objects.filter(student=student, status__in=DONE).count()
+    milestones = [
+        {"code": "homework_streak", "current": done, "target": _next_threshold(done, HOMEWORK_DONE_THRESHOLDS)},
+        {"code": "top_homework", "current": top, "target": _next_threshold(top, HOMEWORK_TOP_THRESHOLDS)},
+        {"code": "level", "current": total["total"], "target": level["next"], "params": {"level": level["level"] + 1}},
+    ]
+    return {
+        "xp": {"total": total, "month": xp_for(student, month_start, today), "level": level},
+        "earned": achievements(student, today=today),
+        "milestones": milestones,
+    }
+
+
+def course_progress(student: Student, *, today: dt.date) -> dict | None:
+    """How far the student's current group is through its course: held
+    (completed) lessons over every scheduled, non-cancelled lesson of the
+    group — the lessons the LMS actually generated, per its programs."""
+    group = student.group
+    if group is None:
+        return None
+    lessons = Lesson.objects.filter(group=group).exclude(status=Lesson.Status.CANCELLED)
+    total = lessons.count()
+    done = lessons.filter(status=Lesson.Status.COMPLETED, date__lte=today).count()
+    return {
+        "course": _ref(group.course),
+        "group": _ref(group),
+        "lessons_done": done,
+        "lessons_total": total,
+        "percent": round(done / total * 100) if total else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +676,7 @@ def dashboard(student: Student, *, today: dt.date, can_view_payments: bool) -> d
     data = {
         "student": student_card(student),
         "today": today,
+        "course_progress": course_progress(student, today=today),
         "today_lessons": [lesson_row(l, marks.get(l.pk), student.branch) for l in todays],
         "upcoming_lessons": [lesson_row(l, marks.get(l.pk), student.branch) for l in upcoming],
         "homework": {

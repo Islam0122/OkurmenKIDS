@@ -1,15 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, Award, Bell, CalendarClock, CalendarX, CheckCircle2, ClipboardList, CreditCard, Flame, MessageSquareQuote, Sparkles, Star, Trophy } from 'lucide-react'
+import {
+  AlertCircle, ArrowRight, Award, Bell, BookOpenCheck, CalendarClock, CalendarDays, CalendarX, CheckCircle2, ClipboardList,
+  CreditCard, Flame, GraduationCap, MapPin, MessageSquareQuote, Sparkles, Star, Trophy, UserCheck, Zap,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { studentPortalApi } from '@/api/studentPortal'
 import { cn } from '@/utils/cn'
-import type { Achievement, FeedbackItem, PortalHomework, PortalNotification } from '@/types/studentPortal'
+import type { Achievement, FeedbackItem, PortalHomework, PortalLesson, PortalNotification } from '@/types/studentPortal'
 
 import { LIVE_QUERY, PORTAL_KEY, usePortal } from '../context'
 import { usePortalI18n } from '../i18n'
 import type { TFunction } from '../i18n'
-import { Bar, Empty, HomeworkBadge, LessonRow, LoadError, Loading, PCard, ProgressRing } from '../ui'
+import { Avatar, Bar, CARD_LINK, Empty, HomeworkBadge, HW_STYLE, LessonRow, LoadError, Loading, PCard, ProgressRing } from '../ui'
 
 export function notificationText(t: TFunction, n: PortalNotification): string {
   const p = n.params
@@ -31,16 +34,16 @@ export function NotificationList({ items }: { items: PortalNotification[] }) {
   const { t, date } = usePortalI18n()
   if (!items.length) return <Empty>{t('dash.noNotifications')}</Empty>
   return (
-    <ul className="space-y-2">
+    <ul className="space-y-1">
       {items.map((n) => {
         const { icon: Icon, tone } = NOTIF_ICON[n.kind]
         const href = n.params.homework_id ? `/student/homework/${n.params.homework_id}` : n.kind === 'payment_due' ? '/student/payments' : '/student/schedule'
         return (
           <li key={n.id}>
-            <Link to={href} className="flex items-start gap-3 rounded-xl p-2 hover:bg-surface-hover">
-              <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', tone)}><Icon className="size-4" aria-hidden /></span>
+            <Link to={href} className="sp-press flex items-start gap-3 rounded-xl p-2.5 hover:bg-surface-hover">
+              <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-xl', tone)}><Icon className="size-[18px]" aria-hidden /></span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm text-ink">{notificationText(t, n)}</span>
+                <span className="block text-sm font-medium leading-snug text-ink">{notificationText(t, n)}</span>
                 <span className="text-xs text-ink-muted">{date(n.date)}</span>
               </span>
             </Link>
@@ -56,15 +59,18 @@ export function achievementText(t: TFunction, month: (i: number) => string, a: A
   return t(`ach.${a.code}`, a.params)
 }
 
-const ACH_ICON = { scholarship: Trophy, perfect_attendance: Flame, top_homework: Star, homework_streak: Award, level: Sparkles }
+export const ACH_ICON = { scholarship: Trophy, perfect_attendance: Flame, top_homework: Star, homework_streak: Award, level: Sparkles }
 
+/** Compact homework row (dashboard preview, history list). The colour bar on the left repeats the status. */
 export function HomeworkMini({ hw }: { hw: PortalHomework }) {
   const { t, date } = usePortalI18n()
   return (
-    <Link to={`/student/homework/${hw.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-border/70 p-3 hover:border-brand-200 hover:bg-brand-50/40">
+    <Link to={`/student/homework/${hw.id}`}
+      className="sp-card sp-card-hover group relative flex items-center justify-between gap-3 overflow-hidden p-3.5 pl-5">
+      <span className={cn('absolute inset-y-3 left-0 w-1 rounded-r-full', HW_STYLE[hw.state].dot)} aria-hidden />
       <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-ink">{hw.title}</span>
-        <span className="block truncate text-xs text-ink-secondary">
+        <span className="block truncate text-sm font-bold text-ink group-hover:text-brand-700">{hw.title}</span>
+        <span className="mt-0.5 block truncate text-xs text-ink-secondary">
           {hw.lesson.lesson_number ? `${t('hw.nextLesson', { n: hw.lesson.lesson_number })} · ` : ''}
           {hw.subject?.name ? `${hw.subject.name} · ` : ''}
           {hw.deadline ? t('hw.deadline', { date: date(hw.deadline) }) : t('hw.noDeadline')}
@@ -73,7 +79,7 @@ export function HomeworkMini({ hw }: { hw: PortalHomework }) {
         </span>
       </span>
       <span className="flex shrink-0 items-center gap-2">
-        {hw.score !== null ? <span className="text-sm font-bold tabular-nums text-brand-700">{hw.score}/10</span> : null}
+        {hw.score !== null ? <span className="rounded-lg bg-brand-50 px-2 py-0.5 text-sm font-extrabold tabular-nums text-brand-700">{hw.score}/10</span> : null}
         <HomeworkBadge state={hw.state} />
       </span>
     </Link>
@@ -86,15 +92,55 @@ export function FeedbackList({ items }: { items: FeedbackItem[] }) {
   return (
     <ul className="space-y-3">
       {items.map((item, i) => (
-        <li key={i} className="rounded-xl bg-surface-muted p-3">
-          <p className="text-sm text-ink">«{item.text}»</p>
-          <p className="mt-1.5 text-xs text-ink-muted">
-            {[item.teacher?.name, item.subject?.name, t(`feedback.${item.kind}`), date(item.date)].filter(Boolean).join(' · ')}
-            {item.score !== null ? ` · ${item.score}/10` : ''}
+        <li key={i} className="relative rounded-2xl bg-surface-muted p-4 pl-5">
+          <span className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-brand-500" aria-hidden />
+          <p className="text-sm leading-relaxed text-ink">«{item.text}»</p>
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-ink-muted">
+            <span className="font-semibold text-ink-secondary">{item.teacher?.name}</span>
+            {[item.subject?.name, t(`feedback.${item.kind}`), date(item.date)].filter(Boolean).map((part) => <span key={part}>· {part}</span>)}
+            {item.score !== null ? <span className="rounded-md bg-brand-50 px-1.5 font-bold text-brand-700">{item.score}/10</span> : null}
           </p>
         </li>
       ))}
     </ul>
+  )
+}
+
+function NextLessonCard({ lesson }: { lesson: PortalLesson | undefined }) {
+  const { t, date, weekday } = usePortalI18n()
+  if (!lesson) {
+    return (
+      <PCard title={t('dash.nextLesson')} icon={<CalendarDays className="size-4" aria-hidden />}>
+        <Empty>{t('dash.noNextLesson')}</Empty>
+      </PCard>
+    )
+  }
+  const day = (new Date(`${lesson.date}T00:00:00`).getDay() + 6) % 7
+  return (
+    <PCard title={t('dash.nextLesson')} icon={<CalendarDays className="size-4" aria-hidden />}>
+      <div className="flex items-center gap-4">
+        <div className="flex w-[4.5rem] shrink-0 flex-col items-center rounded-2xl bg-brand-600 py-2.5 text-white shadow-sm">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-white/80">{weekday(day)}</span>
+          <span className="text-2xl font-extrabold leading-tight tabular-nums">{date(lesson.date).slice(0, 2)}</span>
+          <span className="text-[11px] font-semibold tabular-nums text-white/90">{lesson.start}</span>
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-lg font-extrabold tracking-tight text-ink">{lesson.subject?.name ?? lesson.course?.name}</p>
+          <p className="truncate text-sm text-ink-secondary">
+            {lesson.lesson_number ? `${t('hw.lessonNo', { n: lesson.lesson_number })} · ` : ''}{lesson.topic}
+          </p>
+          <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-ink-muted">
+            <span className="whitespace-nowrap">{weekday(day, true)}, {date(lesson.date, true)}</span>
+            <span className="whitespace-nowrap">{lesson.start}–{lesson.end}</span>
+            {lesson.room || lesson.branch ? (
+              <span className="inline-flex items-center gap-1"><MapPin className="size-3" aria-hidden />
+                {[lesson.branch?.name, lesson.room ? t('lesson.room', { room: lesson.room.name }) : null].filter(Boolean).join(' · ')}
+              </span>
+            ) : null}
+          </p>
+        </div>
+      </div>
+    </PCard>
   )
 }
 
@@ -109,123 +155,157 @@ export function StudentDashboardPage() {
   if (isPending) return <Loading />
   if (isError || !data) return <LoadError onRetry={() => void refetch()} />
 
-  const { xp } = data
+  const { xp, course_progress: progress } = data
+  const nextLesson = data.today_lessons.find((l) => l.status === 'scheduled' || l.status === 'in_progress') ?? data.upcoming_lessons[0]
+  const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v)}%`)
+
   return (
     <div className="space-y-5">
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 p-5 text-white shadow-sm sm:p-6">
-        <p className="text-sm text-white/80">{t('dash.hello')}</p>
-        <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{student.full_name}</h1>
-        <p className="mt-1 text-sm text-white/80">{t('dash.subtitle', { group: student.group?.name ?? '—', course: student.course?.name ?? '' })}</p>
-        <div className="mt-4 grid max-w-xl grid-cols-3 gap-2">
-          {[
-            [t('dash.attendance'), data.attendance.month.percent === null ? '—' : `${Math.round(data.attendance.month.percent)}%`],
-            [t('dash.avgScore'), data.performance.average_score ?? '—'],
-            ['XP', xp.total],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="rounded-xl bg-white/12 px-3 py-2 backdrop-blur">
-              <p className="truncate text-[11px] text-white/75">{label}</p>
-              <p className="text-lg font-bold tabular-nums">{value}</p>
+      {/* Welcome */}
+      <section className="sp-card sp-rise relative overflow-hidden p-5 sm:p-7">
+        <svg className="pointer-events-none absolute -left-16 -top-20 hidden h-52 w-52 text-brand-50 sm:block" viewBox="0 0 200 200" aria-hidden>
+          <circle cx="100" cy="100" r="100" fill="currentColor" opacity="0.7" />
+        </svg>
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <span className="hidden sm:block"><Avatar student={student} size="lg" /></span>
+            <span className="sm:hidden"><Avatar student={student} /></span>
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-extrabold tracking-tight text-ink sm:text-[28px]">{t('dash.greeting', { name: student.first_name })}</h1>
+              <p className="mt-0.5 text-sm text-ink-secondary">{t('dash.greetingSub')}</p>
+              <p className="mt-2 flex flex-wrap gap-1.5 text-xs font-semibold">
+                {student.group ? <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700">{student.group.name}</span> : null}
+                {student.course ? <span className="rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary">{student.course.name}</span> : null}
+                {student.branch ? <span className="rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary">{student.branch.name}</span> : null}
+              </p>
             </div>
-          ))}
+          </div>
+          <dl className="grid grid-cols-3 gap-2 sm:gap-3 lg:w-[26rem]">
+            {[
+              { icon: UserCheck, label: t('dash.attendance'), value: pct(data.attendance.month.percent) },
+              { icon: Star, label: t('dash.avgScore'), value: data.performance.average_score ?? '—' },
+              { icon: Zap, label: 'XP', value: xp.total },
+            ].map(({ icon: Icon, label, value }) => (
+              <div key={label} className="rounded-2xl bg-surface-muted/80 px-3 py-3 ring-1 ring-border/60">
+                <dt className="flex items-start gap-1.5 text-[11px] font-semibold leading-tight text-ink-secondary"><Icon className="mt-px hidden size-3.5 shrink-0 text-brand-600 sm:block" aria-hidden /><span className="line-clamp-2 break-words">{label}</span></dt>
+                <dd className="mt-1 text-xl font-extrabold tabular-nums tracking-tight text-ink">{value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
-      </div>
+      </section>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <PCard title={t('dash.today')} className="lg:col-span-2"
-          action={<Link to="/student/schedule" className="text-sm font-medium text-brand-700">{t('nav.schedule')}</Link>}>
-          {data.today_lessons.length ? (
-            <div className="space-y-2">{data.today_lessons.map((l) => <LessonRow key={l.id} lesson={l} />)}</div>
-          ) : <Empty>{t('dash.noLessonsToday')}</Empty>}
-          <h3 className="mb-2 mt-5 text-sm font-semibold text-ink-secondary">{t('dash.upcoming')}</h3>
-          {data.upcoming_lessons.length ? (
-            <div className="space-y-2">{data.upcoming_lessons.map((l) => <LessonRow key={l.id} lesson={l} showDate />)}</div>
-          ) : <Empty>{t('dash.noUpcoming')}</Empty>}
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <NextLessonCard lesson={nextLesson} />
+
+        {/* Current course */}
+        <PCard title={t('dash.course')} icon={<GraduationCap className="size-4" aria-hidden />}>
+          {progress ? (
+            <>
+              <p className="truncate text-lg font-extrabold tracking-tight text-ink">{progress.course?.name ?? '—'}</p>
+              <p className="text-sm text-ink-secondary">{progress.group?.name}</p>
+              <div className="mt-4 flex items-end justify-between">
+                <span className="text-3xl font-extrabold tabular-nums tracking-tight text-brand-700">{progress.percent === null ? '—' : `${progress.percent}%`}</span>
+                <span className="text-xs font-medium text-ink-muted">{t('dash.lessonsOf', { done: progress.lessons_done, total: progress.lessons_total })}</span>
+              </div>
+              <Bar value={progress.percent} className="mt-2" />
+            </>
+          ) : <Empty>{t('hw.noGroup')}</Empty>}
         </PCard>
 
-        <PCard title={<span className="inline-flex items-center gap-2"><Bell className="size-4 text-brand-600" aria-hidden />{t('dash.notifications')}</span>}>
-          <NotificationList items={data.notifications} />
-        </PCard>
-
-        <PCard title={t('dash.homework')} className="lg:col-span-2"
-          action={<Link to="/student/homework" className="text-sm font-medium text-brand-700">{t('dash.details')}</Link>}>
-          <p className="mb-3 text-sm text-ink-secondary">
-            {t('dash.openCount', { n: data.homework.open_count })}
-            {data.homework.not_submitted_count ? <span className="text-danger"> · {t('dash.notSubmittedCount', { n: data.homework.not_submitted_count })}</span> : null}
-          </p>
-          {data.homework.open.length ? (
-            <div className="grid gap-2 sm:grid-cols-2">{data.homework.open.map((hw) => <HomeworkMini key={hw.id} hw={hw} />)}</div>
-          ) : <Empty>{t('dash.noOpenHomework')}</Empty>}
-        </PCard>
-
-        <PCard title={t('dash.attendance')} action={<Link to="/student/attendance" className="text-sm font-medium text-brand-700">{t('dash.details')}</Link>}>
-          <div className="flex items-center gap-4">
-            <ProgressRing value={data.attendance.month.percent} label={t('dash.attendance')} />
-            <div className="space-y-1 text-sm">
-              <p className="text-ink-secondary">{t('dash.thisMonth')}: <b className="text-ink">{data.attendance.month.attended}/{data.attendance.month.marked}</b></p>
-              <p className="text-ink-secondary">{t('dash.overall')}: <b className="text-ink">{data.attendance.overall.percent === null ? '—' : `${Math.round(data.attendance.overall.percent)}%`}</b></p>
-            </div>
-          </div>
-        </PCard>
-
-        <PCard title={t('dash.performance')}>
-          <div className="space-y-4">
+        {/* XP */}
+        <PCard title={t('dash.xp')} icon={<Zap className="size-4" aria-hidden />}
+          action={<Link to="/student/achievements" className={CARD_LINK}>{t('dash.details')}</Link>}
+          className="md:col-span-2 xl:col-span-1">
+          <div className="flex items-end justify-between gap-3">
             <div>
-              <div className="mb-1 flex justify-between text-sm"><span className="text-ink-secondary">{t('dash.avgScore')}</span><b className="tabular-nums text-ink">{data.performance.average_score ?? '—'} / 10</b></div>
-              <Bar value={data.performance.average_score === null ? null : data.performance.average_score * 10} />
+              <p className="text-3xl font-extrabold tabular-nums tracking-tight text-ink">{xp.total}<span className="ml-1 text-base font-bold text-ink-muted">XP</span></p>
+              <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700">
+                <Sparkles className="size-3.5" aria-hidden />{t('dash.level', { n: xp.level.level })}
+              </p>
             </div>
-            <div>
-              <div className="mb-1 flex justify-between text-sm"><span className="text-ink-secondary">{t('dash.hwRate')}</span><b className="tabular-nums text-ink">{data.performance.homework_rate === null ? '—' : `${Math.round(data.performance.homework_rate)}%`}</b></div>
-              <Bar value={data.performance.homework_rate} />
-            </div>
+            <p className="text-right text-xs font-semibold text-brand-600">{t('dash.xpMonth', { n: xp.month.total })}</p>
           </div>
-        </PCard>
-
-        <PCard title={t('dash.xp')}>
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="text-3xl font-bold tabular-nums text-ink">{xp.total}<span className="ml-1 text-base font-semibold text-ink-secondary">XP</span></p>
-              <p className="text-sm font-medium text-brand-700">{t('dash.level', { n: xp.level.level })}</p>
-            </div>
-            <p className="text-xs text-ink-muted">{t('dash.xpMonth', { n: xp.month.total })}</p>
-          </div>
-          <Bar value={xp.level.progress} className="mt-3" />
+          <Bar value={xp.level.progress} className="mt-4" />
           <p className="mt-1.5 text-xs text-ink-muted">{t('dash.xpToNext', { n: xp.level.next - xp.total })}</p>
         </PCard>
+      </div>
 
-        <PCard title={t('dash.achievements')}>
-          {data.achievements.length ? (
-            <ul className="flex flex-wrap gap-2">
-              {data.achievements.map((a, i) => {
-                const Icon = ACH_ICON[a.code]
-                return (
-                  <li key={i} className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700">
-                    <Icon className="size-3.5" aria-hidden />{achievementText(t, month, a)}
-                  </li>
-                )
-              })}
-            </ul>
-          ) : <Empty>{t('dash.noAchievements')}</Empty>}
+      <div className="grid gap-5 xl:grid-cols-3">
+        {/* Homework preview */}
+        <PCard title={t('dash.homeworkNext')} icon={<BookOpenCheck className="size-4" aria-hidden />} className="xl:col-span-2"
+          action={<Link to="/student/homework" className={cn(CARD_LINK, 'inline-flex items-center gap-1')}>{t('nav.homework')}<ArrowRight className="size-3.5" aria-hidden /></Link>}>
+          {data.homework.not_submitted_count ? (
+            <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-danger-soft px-3 py-1 text-xs font-semibold text-danger">
+              <AlertCircle className="size-3.5" aria-hidden />{t('dash.notSubmittedCount', { n: data.homework.not_submitted_count })}
+            </p>
+          ) : null}
+          {data.homework.open.length ? (
+            <div className={cn('grid gap-2.5', data.homework.open.length > 1 && 'md:grid-cols-2')}>{data.homework.open.map((hw) => <HomeworkMini key={hw.id} hw={hw} />)}</div>
+          ) : <Empty>{t('hw.emptyNext')}</Empty>}
         </PCard>
 
-        <PCard title={<span className="inline-flex items-center gap-2"><MessageSquareQuote className="size-4 text-brand-600" aria-hidden />{t('dash.feedback')}</span>} className="lg:col-span-2">
+        {/* Attendance */}
+        <PCard title={t('dash.attendance')} icon={<UserCheck className="size-4" aria-hidden />}
+          action={<Link to="/student/attendance" className={CARD_LINK}>{t('dash.details')}</Link>}>
+          <div className="flex items-center gap-5">
+            <ProgressRing value={data.attendance.month.percent} size={104} label={t('dash.attendance')} />
+            <dl className="space-y-2 text-sm">
+              <div><dt className="text-xs text-ink-muted">{t('dash.thisMonth')}</dt><dd className="font-bold text-ink">{data.attendance.month.attended} / {data.attendance.month.marked}</dd></div>
+              <div><dt className="text-xs text-ink-muted">{t('dash.overall')}</dt><dd className="font-bold text-ink">{pct(data.attendance.overall.percent)}</dd></div>
+            </dl>
+          </div>
+        </PCard>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-3">
+        <PCard title={t('dash.upcoming')} icon={<CalendarDays className="size-4" aria-hidden />} className="xl:col-span-2">
+          {data.upcoming_lessons.length ? (
+            <div className="space-y-2.5">{data.upcoming_lessons.map((l) => <LessonRow key={l.id} lesson={l} showDate />)}</div>
+          ) : <Empty>{t('dash.noUpcoming')}</Empty>}
+        </PCard>
+        <PCard title={t('dash.notifications')} icon={<Bell className="size-4" aria-hidden />}>
+          <NotificationList items={data.notifications} />
+        </PCard>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-3">
+        <PCard title={t('dash.feedback')} icon={<MessageSquareQuote className="size-4" aria-hidden />} className="xl:col-span-2">
           <FeedbackList items={data.feedback} />
         </PCard>
-
-        {me.can_view_payments ? (
-          <PCard title={t('dash.payments')} action={<Link to="/student/payments" className="text-sm font-medium text-brand-700">{t('dash.details')}</Link>}>
-            {data.payments ? (
-              data.payments.has_debt ? (
-                <div>
-                  <p className="text-sm text-ink-secondary">{t('dash.debt')}</p>
-                  <p className="text-2xl font-bold tabular-nums text-warning">{data.payments.due_now !== '0.00' ? data.payments.due_now : data.payments.debt} {t('common.som')}</p>
-                  <p className="mt-1 text-xs text-ink-muted">{t('dash.paid')}: {data.payments.paid} {t('common.som')}</p>
-                </div>
-              ) : (
-                <p className="flex items-center gap-2 text-sm font-medium text-brand-700"><CheckCircle2 className="size-5" aria-hidden />{t('dash.allPaid')}</p>
-              )
-            ) : <Empty>{t('pay.noContracts')}</Empty>}
+        <div className="space-y-5">
+          <PCard title={t('dash.achievements')} icon={<Trophy className="size-4" aria-hidden />}
+            action={<Link to="/student/achievements" className={CARD_LINK}>{t('dash.details')}</Link>}>
+            {data.achievements.length ? (
+              <ul className="flex flex-wrap gap-2">
+                {data.achievements.slice(0, 6).map((a, i) => {
+                  const Icon = ACH_ICON[a.code]
+                  return (
+                    <li key={i} className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
+                      <Icon className="size-3.5" aria-hidden />{achievementText(t, month, a)}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : <Empty>{t('dash.noAchievements')}</Empty>}
           </PCard>
-        ) : null}
+          {me.can_view_payments ? (
+            <PCard title={t('dash.payments')} icon={<CreditCard className="size-4" aria-hidden />}
+              action={<Link to="/student/payments" className={CARD_LINK}>{t('dash.details')}</Link>}>
+              {data.payments ? (
+                data.payments.has_debt ? (
+                  <div>
+                    <p className="text-xs font-medium text-ink-secondary">{t('dash.debt')}</p>
+                    <p className="text-2xl font-extrabold tabular-nums text-warning">{data.payments.due_now !== '0.00' ? data.payments.due_now : data.payments.debt} {t('common.som')}</p>
+                    <p className="mt-1 text-xs text-ink-muted">{t('dash.paid')}: {data.payments.paid} {t('common.som')}</p>
+                  </div>
+                ) : (
+                  <p className="flex items-center gap-2 text-sm font-semibold text-brand-700"><CheckCircle2 className="size-5" aria-hidden />{t('dash.allPaid')}</p>
+                )
+              ) : <Empty>{t('pay.noContracts')}</Empty>}
+            </PCard>
+          ) : null}
+        </div>
       </div>
     </div>
   )

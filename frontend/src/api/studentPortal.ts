@@ -1,6 +1,7 @@
 import { apiClient } from '@/api/client'
 import type { Paginated } from '@/types/common'
 import type {
+  AchievementsOverview,
   FeedbackItem,
   HomeworkState,
   MonthlyReport,
@@ -36,6 +37,7 @@ export const studentPortalApi = {
   attendance: (id: number, year: number, month: number) => get<PortalAttendanceMonth>(`${s(id)}/attendance/`, { year, month }),
   notifications: (id: number) => get<{ results: PortalNotification[] }>(`${s(id)}/notifications/`),
   feedback: (id: number) => get<{ results: FeedbackItem[] }>(`${s(id)}/feedback/`),
+  achievements: (id: number) => get<AchievementsOverview>(`${s(id)}/achievements/`),
   payments: (id: number) => get<PortalPayments>(`${s(id)}/payments/`),
   monthlyReport: (id: number, year: number, month: number) => get<MonthlyReport>(`${s(id)}/reports/monthly/`, { year, month }),
   monthlyReportPdf: (id: number, year: number, month: number, lang: string) =>

@@ -575,3 +575,45 @@ class NextLessonHomeworkTests(PortalTestBase):
                                 [{"student": self.student.pk, "status": "checked", "score": 8, "comment": ""}], format="json")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(teacher.get(f"/api/v1/homework/{self.hw[19].pk}/").status_code, 200)
+
+
+class RedesignDataTests(PortalTestBase):
+    """Read-only data behind the redesigned portal: course progress, the
+    achievements page and the group on homework cards — all real records."""
+
+    def setUp(self):
+        super().setUp()
+        self.client_, self.student, _ = self.portal_client()
+        Student.objects.filter(pk=self.student.pk).update(enrollment_date=TODAY - dt.timedelta(days=60))
+
+    def test_course_progress_counts_held_lessons_of_the_group(self):
+        for number, delta in enumerate((-6, -3, 3, 6), start=1):
+            status_ = Lesson.Status.COMPLETED if delta < 0 else Lesson.Status.SCHEDULED
+            self.lesson(self.g1, self.gt1, TODAY + dt.timedelta(days=delta), number=number, status_=status_)
+        self.lesson(self.g1, self.gt1, TODAY + dt.timedelta(days=9), number=9, status_=Lesson.Status.CANCELLED)
+        progress = self.client_.get(reverse("portal:dashboard", args=[self.student.pk])).data["course_progress"]
+        self.assertEqual((progress["lessons_done"], progress["lessons_total"], progress["percent"]), (2, 4, 50))
+        self.assertEqual(progress["group"]["name"], "PRO-01")
+
+    def test_achievements_page_shows_progress_to_the_next_badge(self):
+        lesson = self.lesson(self.g1, self.gt1, TODAY - dt.timedelta(days=1))
+        for i in range(6):
+            hw = Homework.objects.create(lesson=lesson, title=f"HW{i}")
+            HomeworkResult.objects.create(homework=hw, student=self.student, status="checked", score=10 if i < 2 else 8)
+        data = self.client_.get(reverse("portal:achievements", args=[self.student.pk])).data
+        milestones = {m["code"]: (m["current"], m["target"]) for m in data["milestones"]}
+        self.assertEqual(milestones["homework_streak"], (6, 20))
+        self.assertEqual(milestones["top_homework"], (2, 10))
+        codes = {a["code"] for a in data["earned"]}
+        self.assertTrue({"homework_streak", "top_homework"} <= codes)
+        self.assertEqual(data["xp"]["total"]["total"], 6 * 10 + 2 * 10 + 4 * 8)
+
+    def test_achievements_are_only_for_own_children(self):
+        other = Student.objects.create(first_name="Other", last_name="Kid", group=self.g1)
+        self.assertEqual(self.client_.get(reverse("portal:achievements", args=[other.pk])).status_code, 404)
+
+    def test_next_homework_card_names_the_group(self):
+        upcoming = self.lesson(self.g1, self.gt1, TODAY + dt.timedelta(days=2), number=2, status_=Lesson.Status.SCHEDULED)
+        Homework.objects.create(lesson=upcoming, title="Next")
+        data = self.client_.get(reverse("portal:homework-next", args=[self.student.pk])).data
+        self.assertEqual(data["lessons"][0]["homework"][0]["group"]["name"], "PRO-01")
