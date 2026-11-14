@@ -126,9 +126,17 @@ class HomeworkListView(PortalView):
 
 
 @extend_schema(tags=TAGS, responses={200: dict})
+class NextHomeworkView(PortalView):
+    """The homework of the student's next scheduled lesson (one per program)."""
+
+    def get(self, request, student_id):
+        return Response(data.next_homework(self.student(student_id), today=self.today()))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
 class HomeworkDetailView(PortalView):
     def get(self, request, student_id, homework_id):
-        homework, result = data.homework_for(self.student(student_id), homework_id)
+        homework, result = data.homework_for(self.student(student_id), homework_id, self.today())
         return Response(data.homework_row(homework, result, self.today(), full=True))
 
 

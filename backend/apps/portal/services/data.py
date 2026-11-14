@@ -38,7 +38,6 @@ DONE = (HomeworkResult.Status.SUBMITTED, HomeworkResult.Status.CHECKED, Homework
 LESSON_RELATED = ("group__course", "subject", "room", "teacher__user", "group_teacher__teacher__user")
 MAX_RANGE_DAYS = 62
 
-# Homework states as the portal shows them (derived, never stored).
 # Homework states as the portal shows them: the trainer's own HomeworkResult
 # status, or «awaiting» while the trainer has not recorded one yet.
 HW_AWAITING = "awaiting"
@@ -179,29 +178,86 @@ def schedule(student: Student, start: dt.date, end: dt.date) -> dict:
 # Homework
 # ---------------------------------------------------------------------------
 
-def _homework_qs(student: Student):
-    return (
+def next_lessons(student: Student, today: dt.date) -> list[Lesson]:
+    """The student's NEXT scheduled lesson — one per program (GroupTeacher)
+    of their current group, since every program runs its own lesson_number
+    sequence (one live lesson per program and number).
+
+    «Next» is read off the real schedule, never computed as lesson_number+1:
+    the first lesson of the program dated after today that is not cancelled.
+    Today's lesson is the current one (lesson 17 today → lesson 18 is next).
+    Moved lessons count on their new date, a cancelled lesson is skipped and
+    its make-up lesson — which carries the topic's homework, see
+    services.lesson_reschedule — takes its place. Only an active student of
+    an open group has a next lesson.
+    """
+    from apps.academy.models import Group
+
+    group = student.group
+    if group is None or student.status != Student.Status.ACTIVE or group.status not in (
+            Group.Status.ACTIVE, Group.Status.PAUSED):
+        return []
+    upcoming = (
+        Lesson.objects.filter(group=group, date__gt=today)
+        .exclude(status=Lesson.Status.CANCELLED)
+        .select_related(*LESSON_RELATED)
+        .order_by("date", "start_time", "pk")
+    )
+    picked: dict = {}
+    for lesson in upcoming:
+        key = lesson.group_teacher_id or ("subject", lesson.subject_id)
+        if key not in picked:
+            picked[key] = lesson
+    return sorted(picked.values(), key=lambda l: (l.date, l.start_time, l.pk))
+
+
+def _results(student: Student, homeworks) -> dict[int, HomeworkResult]:
+    return {r.homework_id: r for r in HomeworkResult.objects.filter(student=student, homework__in=homeworks)}
+
+
+def next_lesson_homework(student: Student, today: dt.date) -> list[tuple[Lesson, list[tuple[Homework, HomeworkResult | None]]]]:
+    """Each next lesson with the homework linked to it (may be none)."""
+    lessons = next_lessons(student, today)
+    homeworks = list(
+        Homework.objects.filter(lesson__in=lessons).select_related(*(f"lesson__{rel}" for rel in LESSON_RELATED))
+        .order_by("pk")
+    )
+    results = _results(student, homeworks)
+    return [
+        (lesson, [(hw, results.get(hw.pk)) for hw in homeworks if hw.lesson_id == lesson.pk])
+        for lesson in lessons
+    ]
+
+
+def history_homework(student: Student, today: dt.date) -> list[tuple[Homework, HomeworkResult | None]]:
+    """Homework already given: on the student's lessons up to today (while
+    they belonged to that group — the KPI's membership timeline), plus any
+    homework the trainer has recorded a result for. Newest first. Homework
+    of future lessons is not here — only the next lesson's, separately."""
+    homeworks = list(
         Homework.objects.filter(
-            Q(lesson__group_id__in=_group_ids(student)) | Q(results__student=student)
+            Q(lesson__group_id__in=_group_ids(student), lesson__date__lte=today) | Q(results__student=student)
         )
         .exclude(lesson__status=Lesson.Status.CANCELLED)
         .select_related(*(f"lesson__{rel}" for rel in LESSON_RELATED))
         .distinct()
     )
-
-
-def visible_homework(student: Student) -> list[tuple[Homework, HomeworkResult | None]]:
-    """Every homework given on one of the student's lessons, newest first,
-    with the student's result (if any)."""
-    homeworks = list(_homework_qs(student))
-    results = {r.homework_id: r for r in HomeworkResult.objects.filter(student=student, homework__in=homeworks)}
+    results = _results(student, homeworks)
     timeline = _timeline(student)
     own = [
         hw for hw in homeworks
         if hw.pk in results or timeline.group_on(hw.lesson.date) == hw.lesson.group_id
     ]
-    own.sort(key=lambda hw: (hw.deadline or hw.lesson.date, hw.lesson.date, hw.pk), reverse=True)
+    own.sort(key=lambda hw: (hw.lesson.date, hw.lesson.start_time, hw.pk), reverse=True)
     return [(hw, results.get(hw.pk)) for hw in own]
+
+
+def visible_homework(student: Student, today: dt.date) -> list[tuple[Homework, HomeworkResult | None]]:
+    """Everything the portal may show: the next lesson's homework and the
+    history. Homework of later lessons is never exposed — not even by id."""
+    upcoming = [pair for _, pairs in next_lesson_homework(student, today) for pair in pairs]
+    seen = {hw.pk for hw, _ in upcoming}
+    return upcoming + [pair for pair in history_homework(student, today) if pair[0].pk not in seen]
 
 
 def homework_state(result: HomeworkResult | None) -> str:
@@ -250,8 +306,24 @@ def homework_row(homework: Homework, result: HomeworkResult | None, today: dt.da
     return row
 
 
+def next_homework(student: Student, *, today: dt.date) -> dict:
+    """/student/homework: the homework for the next scheduled lesson(s)."""
+    groups = next_lesson_homework(student, today)
+    return {
+        "has_group": student.group_id is not None,
+        "lessons": [
+            {
+                "lesson": lesson_row(lesson, None, student.branch),
+                "homework": [homework_row(hw, result, today, full=True) for hw, result in pairs],
+            }
+            for lesson, pairs in groups
+        ],
+    }
+
+
 def homework_list(student: Student, *, state: str | None = None, today: dt.date) -> list[dict]:
-    rows = [homework_row(hw, result, today) for hw, result in visible_homework(student)]
+    """History of given homework, with the trainer's status / grade / comment."""
+    rows = [homework_row(hw, result, today) for hw, result in history_homework(student, today)]
     if state == "open":
         rows = [r for r in rows if r["is_open"]]
     elif state == "done":
@@ -264,8 +336,8 @@ def homework_list(student: Student, *, state: str | None = None, today: dt.date)
     return rows
 
 
-def homework_for(student: Student, homework_id) -> tuple[Homework, HomeworkResult | None]:
-    for homework, result in visible_homework(student):
+def homework_for(student: Student, homework_id, today: dt.date | None = None) -> tuple[Homework, HomeworkResult | None]:
+    for homework, result in visible_homework(student, today or timezone.localdate()):
         if str(homework.pk) == str(homework_id):
             return homework, result
     from django.http import Http404
@@ -441,7 +513,7 @@ def notifications(student: Student, *, today: dt.date, can_view_payments: bool) 
     """What needs the family's attention, derived from the records (never
     stored): codes + parameters, rendered by the frontend in ru / ky."""
     items = []
-    for homework, result in visible_homework(student):
+    for homework, result in visible_homework(student, today):
         state = homework_state(result)
         base = {"homework_id": homework.pk, "title": homework.title}
         if state == HW_AWAITING and homework.deadline and 0 <= (homework.deadline - today).days <= 2:
@@ -528,15 +600,14 @@ def dashboard(student: Student, *, today: dt.date, can_view_payments: bool) -> d
     upcoming = [l for l in week_lessons if l.status != Lesson.Status.CANCELLED and l.date > today][:5]
     todays = [l for l in week_lessons if l.date == today]
 
-    homework = [homework_row(hw, r, today) for hw, r in visible_homework(student)]
-    # To do next: homework the trainer marked «Не сдано» (most recent first),
-    # then upcoming work by nearest deadline. Work whose deadline has passed
-    # but is not checked yet is not flagged — it is checked offline in class.
+    homework = [homework_row(hw, r, today) for hw, r in history_homework(student, today)]
+    next_hw = [homework_row(hw, r, today) for _, pairs in next_lesson_homework(student, today) for hw, r in pairs]
+    # To do next: the homework of the next scheduled lesson, then what the
+    # trainer marked «Не сдано» (most recent first). Unchecked past work is
+    # not flagged — it is checked offline in class.
     not_submitted = sorted((h for h in homework if h["state"] == HW_NOT_SUBMITTED),
                            key=lambda h: h["assigned_date"], reverse=True)
-    upcoming_hw = sorted((h for h in homework if h["state"] == HW_AWAITING and (h["deadline"] is None or h["deadline"] >= today)),
-                         key=lambda h: (h["deadline"] is None, h["deadline"] or dt.date.max))
-    open_hw = not_submitted + upcoming_hw
+    open_hw = [h for h in next_hw if h["is_open"]] + not_submitted
 
     month_start, month_end = month_bounds(today.year, today.month)
     month_records = list(Attendance.objects.filter(student=student, lesson__date__range=(month_start, month_end))
@@ -546,6 +617,7 @@ def dashboard(student: Student, *, today: dt.date, can_view_payments: bool) -> d
     scores = [h["score"] for h in homework if h["score"] is not None]
     recent_scores = [h["score"] for h in homework if h["score"] is not None and h["lesson"]["date"] >= month_start]
     # Completion over what the trainer has evaluated — unchecked work counts neither way.
+    homework = homework + [h for h in next_hw if h["id"] not in {x["id"] for x in homework}]
     evaluated = [h for h in homework if h["state"] != HW_AWAITING]
     done = [h for h in evaluated if h["state"] in HW_DONE_STATES]
 

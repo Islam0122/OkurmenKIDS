@@ -4,6 +4,7 @@ import type {
   FeedbackItem,
   HomeworkState,
   MonthlyReport,
+  NextHomework,
   PortalAttendanceMonth,
   PortalDashboard,
   PortalHomework,
@@ -30,6 +31,7 @@ export const studentPortalApi = {
     get<{ start: string; end: string; lessons: PortalLesson[] }>(`${s(id)}/schedule/`, { start, end }),
   homework: (id: number, state: HomeworkFilter, page = 1) =>
     get<Paginated<PortalHomework>>(`${s(id)}/homework/`, { state: state === 'all' ? undefined : state, page }),
+  nextHomework: (id: number) => get<NextHomework>(`${s(id)}/homework/next/`),
   homeworkDetail: (id: number, homeworkId: number) => get<PortalHomeworkDetail>(`${s(id)}/homework/${homeworkId}/`),
   attendance: (id: number, year: number, month: number) => get<PortalAttendanceMonth>(`${s(id)}/attendance/`, { year, month }),
   notifications: (id: number) => get<{ results: PortalNotification[] }>(`${s(id)}/notifications/`),

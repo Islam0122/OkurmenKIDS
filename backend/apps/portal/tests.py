@@ -357,7 +357,7 @@ class DataTests(PortalTestBase):
 
         dashboard = self.client_.get(reverse("portal:dashboard", args=[self.student.pk])).data
         self.assertEqual(dashboard["performance"]["homework_rate"], 100.0)  # only evaluated work counts
-        self.assertEqual([h["title"] for h in dashboard["homework"]["open"]], ["Списки"])
+        self.assertEqual(dashboard["homework"]["open"], [])  # no next lesson scheduled
         kinds = {n["kind"] for n in dashboard["notifications"]}
         self.assertIn("homework_checked", kinds)
 
@@ -419,7 +419,7 @@ class DataTests(PortalTestBase):
         Homework.objects.create(lesson=lesson, title="Old", deadline=TODAY - dt.timedelta(days=5))
         data = self.client_.get(reverse("portal:dashboard", args=[self.student.pk])).data
         self.assertEqual([l["id"] for l in data["today_lessons"]], [lesson.pk])
-        self.assertEqual(data["homework"]["open_count"], 1)
+        self.assertEqual(data["homework"]["open_count"], 0)  # the only later lesson is cancelled
         kinds = {n["kind"] for n in data["notifications"]}
         self.assertIn("homework_due", kinds)
         self.assertIn("lesson_cancelled", kinds)
@@ -431,3 +431,147 @@ class DataTests(PortalTestBase):
         self.assertEqual(self.client_.get(reverse("portal:payments", args=[self.student.pk])).status_code, 403)
         self.assertIsNone(self.client_.get(reverse("portal:dashboard", args=[self.student.pk])).data["payments"])
         self.assertEqual(StudentLink.objects.count(), 1)
+
+
+class NextLessonHomeworkTests(PortalTestBase):
+    """/student/homework shows only the homework of the NEXT scheduled lesson;
+    everything already given stays in the history."""
+
+    def setUp(self):
+        super().setUp()
+        self.client_, self.student, _ = self.portal_client()
+        Student.objects.filter(pk=self.student.pk).update(enrollment_date=TODAY - dt.timedelta(days=120))
+        self.student.refresh_from_db()
+        # Lessons 1–20, twice a week; lesson 17 is today.
+        self.lessons, self.hw = {}, {}
+        for number in range(1, 21):
+            day = TODAY + dt.timedelta(days=(number - 17) * 3)
+            status_ = Lesson.Status.COMPLETED if day < TODAY else Lesson.Status.SCHEDULED
+            lesson = self.lesson(self.g1, self.gt1, day, number=number, status_=status_)
+            self.lessons[number] = lesson
+            self.hw[number] = Homework.objects.create(lesson=lesson, title=f"ДЗ к уроку {number}")
+
+    def next_(self):
+        response = self.client_.get(reverse("portal:homework-next", args=[self.student.pk]))
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def titles(self, data):
+        return [[hw["title"] for hw in block["homework"]] for block in data["lessons"]]
+
+    def history(self, **params):
+        rows = self.client_.get(reverse("portal:homework", args=[self.student.pk]), {"page_size": 100, **params}).data
+        return [r["title"] for r in rows["results"]]
+
+    def test_lesson_17_today_shows_homework_of_lesson_18_only(self):
+        data = self.next_()
+        self.assertEqual([b["lesson"]["lesson_number"] for b in data["lessons"]], [18])
+        self.assertEqual(self.titles(data), [["ДЗ к уроку 18"]])
+        block = data["lessons"][0]["homework"][0]
+        self.assertEqual((block["lesson"]["lesson_number"], block["state"], block["score"]), (18, "awaiting", None))
+        # History: lessons up to today (17 … 1), never 18+.
+        history = self.history()
+        self.assertEqual(history[0], "ДЗ к уроку 17")
+        self.assertEqual(len(history), 17)
+        self.assertNotIn("ДЗ к уроку 18", history)
+        # Distant future homework is not reachable even by id.
+        for number in (19, 20):
+            url = reverse("portal:homework-detail", args=[self.student.pk, self.hw[number].pk])
+            self.assertEqual(self.client_.get(url).status_code, 404)
+        self.assertEqual(self.client_.get(reverse("portal:homework-detail", args=[self.student.pk, self.hw[18].pk])).status_code, 200)
+
+    def test_next_lesson_moves_with_the_calendar(self):
+        # A day later lesson 18 is still next (no lesson today) …
+        self.assertEqual(self._next_numbers(TODAY + dt.timedelta(days=1)), [18])
+        # … on the day of lesson 18 the next one is 19, then 20.
+        self.assertEqual(self._next_numbers(self.lessons[18].date), [19])
+        self.assertEqual(self._next_numbers(self.lessons[19].date), [20])
+        self.assertEqual(self._next_numbers(self.lessons[20].date), [])
+
+    def _next_numbers(self, today):
+        from .services import data
+
+        return [l.lesson_number for l in data.next_lessons(self.student, today)]
+
+    def test_cancelled_lesson_is_skipped_and_its_makeup_carries_the_homework(self):
+        lesson18 = self.lessons[18]
+        Lesson.objects.filter(pk=lesson18.pk).update(status=Lesson.Status.CANCELLED)
+        makeup = Lesson.objects.create(
+            group=self.g1, group_teacher=self.gt1, subject=self.python, teacher=self.teacher, lesson_number=18,
+            date=lesson18.date + dt.timedelta(days=1), start_time=dt.time(16), end_time=dt.time(17, 30),
+            rescheduled_from=lesson18,
+        )
+        Homework.objects.filter(pk=self.hw[18].pk).update(lesson=makeup)  # as services.lesson_reschedule does
+        data = self.next_()
+        self.assertEqual([b["lesson"]["id"] for b in data["lessons"]], [makeup.pk])
+        self.assertEqual(self.titles(data), [["ДЗ к уроку 18"]])
+
+    def test_a_moved_lesson_counts_on_its_new_date(self):
+        Lesson.objects.filter(pk=self.lessons[18].pk).update(date=self.lessons[19].date + dt.timedelta(days=1))
+        self.assertEqual([b["lesson"]["lesson_number"] for b in self.next_()["lessons"]], [19])
+
+    def test_next_lesson_without_homework(self):
+        self.hw[18].delete()
+        data = self.next_()
+        self.assertEqual([b["lesson"]["lesson_number"] for b in data["lessons"]], [18])
+        self.assertEqual(self.titles(data), [[]])  # «Домашнее задание пока не назначено»
+
+    def test_several_homeworks_for_the_next_lesson(self):
+        Homework.objects.create(lesson=self.lessons[18], title="Ещё одно ДЗ к уроку 18")
+        self.assertEqual(self.titles(self.next_()), [["ДЗ к уроку 18", "Ещё одно ДЗ к уроку 18"]])
+
+    def test_no_next_lesson(self):
+        Lesson.objects.filter(group=self.g1, date__gt=TODAY).update(status=Lesson.Status.CANCELLED)
+        self.assertEqual(self.next_()["lessons"], [])
+        Lesson.objects.filter(group=self.g1, date__gt=TODAY).update(status=Lesson.Status.SCHEDULED)
+        Student.objects.filter(pk=self.student.pk).update(status=Student.Status.PAUSED, is_active=False)
+        self.assertEqual(self.next_()["lessons"], [])
+
+    def test_other_groups_homework_is_never_shown(self):
+        other = self.lesson(self.g2, self.gt2, TODAY + dt.timedelta(days=1), number=18)
+        foreign = Homework.objects.create(lesson=other, title="Чужое ДЗ")
+        self.assertEqual(self.titles(self.next_()), [["ДЗ к уроку 18"]])
+        self.assertNotIn("Чужое ДЗ", self.history())
+        url = reverse("portal:homework-detail", args=[self.student.pk, foreign.pk])
+        self.assertEqual(self.client_.get(url).status_code, 404)
+
+    def test_each_program_of_the_group_has_its_own_next_lesson(self):
+        english, _ = Subject.objects.get_or_create(name="English")
+        gt_en = GroupTeacher.objects.create(group=self.g1, teacher=self.teacher, subject=english)
+        en5 = Lesson.objects.create(group=self.g1, group_teacher=gt_en, subject=english, teacher=self.teacher,
+                                    lesson_number=5, date=TODAY + dt.timedelta(days=2),
+                                    start_time=dt.time(10), end_time=dt.time(11))
+        Lesson.objects.create(group=self.g1, group_teacher=gt_en, subject=english, teacher=self.teacher,
+                              lesson_number=6, date=TODAY + dt.timedelta(days=4),
+                              start_time=dt.time(10), end_time=dt.time(11))
+        Homework.objects.create(lesson=en5, title="English 5")
+        self.assertEqual(self.titles(self.next_()), [["English 5"], ["ДЗ к уроку 18"]])
+
+    def test_transferred_student_follows_the_new_group(self):
+        from apps.academy.services.student_enrollment import transfer_student
+
+        g2_next = self.lesson(self.g2, self.gt2, TODAY + dt.timedelta(days=2), number=9, status_=Lesson.Status.SCHEDULED)
+        Homework.objects.create(lesson=g2_next, title="ДЗ группы 2")
+        transfer_student(self.student, group=self.g2, event_date=TODAY)
+        self.student.refresh_from_db()
+        self.assertEqual(self.titles(self.next_()), [["ДЗ группы 2"]])
+        # Homework of the old group's past lessons stays in the history.
+        self.assertIn("ДЗ к уроку 16", self.history())
+
+    def test_history_keeps_trainer_results(self):
+        HomeworkResult.objects.create(homework=self.hw[16], student=self.student, status="checked", score=9,
+                                      comment="Хорошо", checked_at=timezone.now())
+        rows = self.client_.get(reverse("portal:homework", args=[self.student.pk]), {"state": "checked"}).data["results"]
+        self.assertEqual([(r["title"], r["score"], r["state"]) for r in rows], [("ДЗ к уроку 16", 9, "checked")])
+        self.assertIsNotNone(rows[0]["evaluated_at"])
+        detail = self.client_.get(reverse("portal:homework-detail", args=[self.student.pk, self.hw[16].pk])).data
+        self.assertEqual(detail["feedback"], "Хорошо")
+
+    def test_teacher_api_is_unchanged(self):
+        teacher = APIClient()
+        teacher.force_authenticate(self.teacher.user)
+        # The trainer still sees and grades homework of any lesson, future ones included.
+        response = teacher.post(f"/api/v1/homework/{self.hw[20].pk}/results/",
+                                [{"student": self.student.pk, "status": "checked", "score": 8, "comment": ""}], format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(teacher.get(f"/api/v1/homework/{self.hw[19].pk}/").status_code, 200)
