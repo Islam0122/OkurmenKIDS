@@ -26,8 +26,8 @@ Technical SEO was already sound and is unchanged:
 | Home title / description (KG) | Latin brand only | `Okurmen Kids — балдар үчүн программалоо академиясы, Бишкек` / `Окурмен Кидс (Okurmen Kids) — Бишкектеги балдар үчүн билим берүү академиясы. …` |
 | Visible homepage text (RU/KG) | no Cyrillic brand | hero lead: «Okurmen Kids (Окурмен Кидс) — академия программирования для детей в Бишкеке…» |
 | Footer on every page (RU/KG) | no Cyrillic brand | «Okurmen Kids (Окурмен Кидс) — IT-академия для детей и подростков в Бишкеке…» |
-| `WebSite` JSON-LD | name `OKURMEN Kids` | name `Okurmen Kids`, alternateName `Окурмен Кидс`, `ОкурменKids`, `Окурмен Кидс Бишкек`, `okurmenkids` |
-| `Organization` JSON-LD | name `OKURMEN Kids`, url without `/` | name `Okurmen Kids`, alternateName `Окурмен Кидс`, url `…/`, logo `/icon-512.png` (512×512). Address «Улица Орозбекова, 136, Бишкек» and phone `+996504677725` come from the CMS. Description mentions «Окурмен Кидс» |
+| `WebSite` JSON-LD | name `OKURMEN Kids` | name `Okurmen Kids`, alternateName `Окурмен Кидс`, `ОкурменKids`, `Окурмен Кидс Бишкек`, `Окурмэн Кидс`, `Окурмэн`, `okurmenkids` |
+| `Organization` JSON-LD | name `OKURMEN Kids`, url without `/` | name `Okurmen Kids`, the **same six** alternateName values as `WebSite` (one list, `BRAND_ALT` in `src/seo/core.js`); linked to the WebSite by `@id` (`publisher` → `#organization`), url `…/`, logo `/icon-512.png` (512×512). Address «Улица Орозбекова, 136, Бишкек» and phone `+996504677725` come from the CMS. Description mentions «Окурмен Кидс» |
 | Brand in all titles / `og:site_name` / schema | `OKURMEN Kids` | `Okurmen Kids` (one constant: `src/seo/core.js`) |
 
 The English pages don't get the Cyrillic spelling in their text: it wouldn't read
@@ -38,10 +38,11 @@ What was **not** changed:
 - no duplicate pages or URLs were created for Cyrillic keywords;
 - the word «Digital» was not added anywhere.
 
+The spellings «Окурмэн Кидс» and «Окурмэн» match the official round logo, which reads «ОКУРМЭН». All six spellings are emitted on the RU, KG and EN versions of home, `/about` and `/contacts`. They are kept out of titles, descriptions and visible text on purpose, to avoid keyword stuffing.
+
 ## 3. Verification (production build with live API data)
 
-- **Schema Markup Validator** (validator.schema.org): home RU/KG/EN, `/about`, `/contacts`,
-  `/courses` and `/ky/team` all return **0 errors and 0 warnings**. On the homepage it
+- **Schema Markup Validator** (validator.schema.org): home, `/about` and `/contacts` in RU/KG/EN (9 pages), plus `/courses` and `/ky/team`, all return **0 errors and 0 warnings**. All six `alternateName` values are recognized. On the homepage it
   recognizes the `WebSite` with all four `alternateName` values, and the
   `Organization`/`EducationalOrganization` (via `publisher`) with telephone and address.
 - **30 static pages × raw HTML:**
@@ -53,7 +54,7 @@ What was **not** changed:
   - all JSON-LD parses.
 - **sitemap.xml:** 80 URLs, all on `https://www.`, no duplicates.
 - **robots.txt:** `Allow: /`. Only `/preview/` and `/enroll` are blocked. It points to the sitemap.
-- **Tests:** 67/67 pass. Typecheck and lint are clean.
+- **Tests:** 69/69 pass. The tests check the exact alternate-name list, that it has no duplicates, and that WebSite and Organization carry the same list in every language and are linked by `@id`. Typecheck and lint are clean.
 
 ## 4. Required manual step: make `okurmenkids.com` → `www` permanent
 
