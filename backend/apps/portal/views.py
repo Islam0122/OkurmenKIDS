@@ -28,7 +28,7 @@ from rest_framework.views import APIView
 from .access import is_portal_user
 from .models import PortalAccount
 from .serializers import PasswordChangeSerializer
-from .services import accounts, data, finance, gamification, report_pdf, reports, scope
+from .services import accounts, attendance, data, finance, gamification, report_pdf, reports, scope
 
 TAGS = ["Student & Parent Portal"]
 
@@ -148,7 +148,25 @@ class AttendanceView(PortalView):
             year, month = data.parse_month(request.query_params, today=self.today())
         except DjangoValidationError as exc:
             raise _drf_error(exc)
-        return Response(data.attendance_month(student, year, month))
+        return Response(attendance.calendar(student, year, month, today=self.today()))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class AttendanceOverviewView(PortalView):
+    def get(self, request, student_id):
+        return Response(attendance.overview(self.student(student_id), today=self.today()))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class AttendanceHistoryView(PortalView):
+    def get(self, request, student_id):
+        student = self.student(student_id)
+        status_ = request.query_params.get("status") or "all"
+        if status_ != "all" and status_ not in attendance.STATUSES:
+            raise DRFValidationError({"status": "Допустимо: all, " + ", ".join(attendance.STATUSES) + "."})
+        paginator = _Pagination()
+        page = paginator.paginate_queryset(attendance.history(student, status=status_, today=self.today()), request, view=self)
+        return paginator.get_paginated_response([attendance.history_row(r, student.branch) for r in page])
 
 
 @extend_schema(tags=TAGS, responses={200: dict})
