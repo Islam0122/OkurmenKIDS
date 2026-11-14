@@ -152,10 +152,60 @@ export interface CourseProgress {
   percent: number | null
 }
 
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary'
+export type AchievementCategory = 'homework' | 'quality' | 'attendance' | 'level' | 'scholarship'
+export type AchievementCode = 'homework_done' | 'top_homework' | 'attendance' | 'level' | 'perfect_month' | 'scholarship'
+
+/** One collectible (backend: portal.services.gamification). Unlocked only by real records. */
+export interface CollectionItem {
+  id: string
+  code: AchievementCode
+  category: AchievementCategory
+  rarity: Rarity
+  threshold: number
+  current: number
+  unlocked: boolean
+  unlocked_on: string | null
+  /** Achievements carry no XP of their own in the LMS — always null today. */
+  xp_reward: number | null
+  params?: Record<string, number>
+}
+
+export interface Goal {
+  code: 'homework_done' | 'top_homework' | 'attendance' | 'level'
+  category: AchievementCategory
+  rarity: Rarity | null
+  current: number
+  target: number
+  remaining: number
+  xp_reward: number | null
+  params?: Record<string, number>
+}
+
+export interface WeeklyDay {
+  date: string
+  xp: number
+  xp_attendance: number
+  xp_homework: number
+  xp_tests: number
+  lessons: number
+  homework: number
+  tests: number
+}
+
+export type TimelineEvent =
+  | { kind: 'xp'; date: string; xp: number; parts: { attendance: number; homework: number; tests: number } }
+  | { kind: 'level'; date: string; level: number }
+  | { kind: 'achievement'; date: string; achievement: CollectionItem }
+
 export interface AchievementsOverview {
-  xp: { total: XpParts; month: XpParts; level: { level: number; floor: number; next: number; progress: number } }
-  earned: Achievement[]
-  milestones: { code: 'homework_streak' | 'top_homework' | 'level'; current: number; target: number | null; params?: Record<string, number> }[]
+  level: { level: number; floor: number; next: number; progress: number; total_xp: number; to_next: number; reached_on: string | null }
+  xp: { total: XpParts; month: XpParts; projects_supported: boolean }
+  achievements: CollectionItem[]
+  categories: AchievementCategory[]
+  goals: Goal[]
+  weekly: { start: string; end: string; days: WeeklyDay[]; total: number; previous_total: number | null }
+  timeline: TimelineEvent[]
 }
 
 export interface PortalDashboard {

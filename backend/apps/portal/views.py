@@ -28,7 +28,7 @@ from rest_framework.views import APIView
 from .access import is_portal_user
 from .models import PortalAccount
 from .serializers import PasswordChangeSerializer
-from .services import accounts, data, finance, report_pdf, reports, scope
+from .services import accounts, data, finance, gamification, report_pdf, reports, scope
 
 TAGS = ["Student & Parent Portal"]
 
@@ -168,7 +168,7 @@ class FeedbackView(PortalView):
 @extend_schema(tags=TAGS, responses={200: dict})
 class AchievementsView(PortalView):
     def get(self, request, student_id):
-        return Response(data.achievements_overview(self.student(student_id), today=self.today()))
+        return Response(gamification.overview(self.student(student_id), today=self.today()))
 
 
 @extend_schema(tags=TAGS, responses={200: dict})

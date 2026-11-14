@@ -476,31 +476,6 @@ def achievements(student: Student, *, today: dt.date) -> list[dict]:
     return badges
 
 
-def _next_threshold(value: int, thresholds) -> int | None:
-    return next((t for t in thresholds if value < t), None)
-
-
-def achievements_overview(student: Student, *, today: dt.date) -> dict:
-    """The «Жетишкендиктер» page: XP and level, earned badges, and how far
-    the student is from the next badge of each kind — all counted from the
-    same records and thresholds as `achievements` (nothing invented)."""
-    total = xp_for(student, dt.date(2000, 1, 1), today)
-    month_start, _ = month_bounds(today.year, today.month)
-    level = level_for(total["total"])
-    top = HomeworkResult.objects.filter(student=student, score=10).count()
-    done = HomeworkResult.objects.filter(student=student, status__in=DONE).count()
-    milestones = [
-        {"code": "homework_streak", "current": done, "target": _next_threshold(done, HOMEWORK_DONE_THRESHOLDS)},
-        {"code": "top_homework", "current": top, "target": _next_threshold(top, HOMEWORK_TOP_THRESHOLDS)},
-        {"code": "level", "current": total["total"], "target": level["next"], "params": {"level": level["level"] + 1}},
-    ]
-    return {
-        "xp": {"total": total, "month": xp_for(student, month_start, today), "level": level},
-        "earned": achievements(student, today=today),
-        "milestones": milestones,
-    }
-
-
 def course_progress(student: Student, *, today: dt.date) -> dict | None:
     """How far the student's current group is through its course: held
     (completed) lessons over every scheduled, non-cancelled lesson of the

@@ -595,17 +595,17 @@ class RedesignDataTests(PortalTestBase):
         self.assertEqual((progress["lessons_done"], progress["lessons_total"], progress["percent"]), (2, 4, 50))
         self.assertEqual(progress["group"]["name"], "PRO-01")
 
-    def test_achievements_page_shows_progress_to_the_next_badge(self):
+    def test_achievements_page_uses_the_new_collection(self):
         lesson = self.lesson(self.g1, self.gt1, TODAY - dt.timedelta(days=1))
         for i in range(6):
             hw = Homework.objects.create(lesson=lesson, title=f"HW{i}")
             HomeworkResult.objects.create(homework=hw, student=self.student, status="checked", score=10 if i < 2 else 8)
         data = self.client_.get(reverse("portal:achievements", args=[self.student.pk])).data
-        milestones = {m["code"]: (m["current"], m["target"]) for m in data["milestones"]}
-        self.assertEqual(milestones["homework_streak"], (6, 20))
-        self.assertEqual(milestones["top_homework"], (2, 10))
-        codes = {a["code"] for a in data["earned"]}
-        self.assertTrue({"homework_streak", "top_homework"} <= codes)
+        goals = {g["code"]: (g["current"], g["target"]) for g in data["goals"]}
+        self.assertEqual(goals["homework_done"], (6, 20))
+        self.assertEqual(goals["top_homework"], (2, 10))
+        unlocked = {a["id"] for a in data["achievements"] if a["unlocked"]}
+        self.assertTrue({"homework_done-5", "top_homework-1"} <= unlocked)
         self.assertEqual(data["xp"]["total"]["total"], 6 * 10 + 2 * 10 + 4 * 8)
 
     def test_achievements_are_only_for_own_children(self):
