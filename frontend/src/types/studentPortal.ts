@@ -198,9 +198,95 @@ export interface MonthlyReport {
     homework: { id: number; title: string; status: string | null; score: number | null }[] }[]
 }
 
-export interface PortalPayments {
+/** Billing stage of an invoice (billing.services.contracts.payment_stage). */
+export type InvoiceStage = 'awaiting' | 'deadline' | 'overdue' | 'paid'
+export type FinanceStatus = 'no_contract' | 'paid' | 'upcoming' | 'due' | 'overdue'
+export type PaymentMethod = 'cash' | 'bank' | 'card' | 'other'
+
+export interface PortalInvoice {
+  id: number
+  number: string | null
+  kind: 'PACKAGE' | 'MONTH' | 'COURSE'
+  month_number: number | null
+  package_number: number | null
+  course: string
+  subject: string | null
+  issue_date: string
+  period_date: string
+  due_date: string
+  due_lesson: number | null
+  lessons_used: number | null
+  amount: string
+  paid: string
+  adjusted: string
+  balance: string
+  status: string
+  stage: InvoiceStage
+  overdue_since: string | null
+  paid_at: string | null
+}
+
+export interface PortalFinance {
+  status: FinanceStatus
   summary: FinanceSummary | null
+  percent_paid: number | null
+  next_payment: PortalInvoice | null
+  open_invoices: PortalInvoice[]
+  contracts: {
+    id: number; course: string; subject: string | null; plan: string; status: string; start_date: string
+    contract_price: string | null; invoiced: string; paid: string; discount: string; adjusted: string
+    debt: string; due_now: string; overpayment: string
+  }[]
   currency: string
-  open_invoices: { id: number; number: string | null; kind: string; status: string; amount: string; balance: string; overdue_since: string | null; subject: string | null }[]
-  history: { id: number; kind: 'payment' | 'refund'; amount: string; date: string; method: string; service_start: string | null; service_end: string | null }[]
+}
+
+export type TransactionStatus = 'completed' | 'refunded' | 'cancelled'
+
+export interface ReceiptRef { id: number; number: string | null; status: 'ISSUED' | 'CANCELLED' }
+
+export interface PortalTransaction {
+  id: number
+  date: string
+  kind: 'payment' | 'refund'
+  status: TransactionStatus
+  amount: string
+  currency: string
+  course: string | null
+  method: PaymentMethod
+  reference: string
+  purpose: string
+  service_start: string | null
+  service_end: string | null
+  cashier: string
+  /** The accounting system's receipt for this operation, if one was issued. */
+  receipt: ReceiptRef | null
+}
+
+/** An internal Okurmen Kids receipt (billing.Receipt) — not a fiscal document. */
+export interface PortalReceipt {
+  id: number
+  number: string | null
+  kind: 'PAYMENT' | 'REFUND'
+  status: 'ISSUED' | 'CANCELLED'
+  issued_at: string
+  received_date: string
+  amount: string
+  currency: string
+  student: string
+  course: string
+  group: string
+  method: PaymentMethod
+  reference: string
+  cashier: string
+  cancelled_at: string | null
+}
+
+export interface PortalReceiptDetail extends PortalReceipt {
+  payer: string
+  purpose: string
+  purpose_lines: string[]
+  previously_paid: string | null
+  outstanding: string | null
+  credit: string | null
+  has_balances: boolean
 }

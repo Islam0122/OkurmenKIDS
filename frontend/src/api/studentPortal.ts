@@ -13,13 +13,19 @@ import type {
   PortalLesson,
   PortalMe,
   PortalNotification,
-  PortalPayments,
+  PortalFinance,
+  PortalReceiptDetail,
+  PortalReceipt,
+  PortalInvoice,
+  PortalTransaction,
 } from '@/types/studentPortal'
 
 const BASE = '/portal'
 const get = <T>(url: string, params?: object) => apiClient.get<T>(`${BASE}${url}`, { params }).then((r) => r.data)
 const post = <T>(url: string, body?: unknown) => apiClient.post<T>(`${BASE}${url}`, body).then((r) => r.data)
 const s = (id: number) => `/students/${id}`
+
+export type TransactionFilter = 'all' | 'completed' | 'refunded' | 'cancelled'
 
 export type HomeworkFilter = 'open' | 'done' | HomeworkState | 'all'
 
@@ -38,7 +44,16 @@ export const studentPortalApi = {
   notifications: (id: number) => get<{ results: PortalNotification[] }>(`${s(id)}/notifications/`),
   feedback: (id: number) => get<{ results: FeedbackItem[] }>(`${s(id)}/feedback/`),
   achievements: (id: number) => get<AchievementsOverview>(`${s(id)}/achievements/`),
-  payments: (id: number) => get<PortalPayments>(`${s(id)}/payments/`),
+  payments: (id: number) => get<PortalFinance>(`${s(id)}/payments/`),
+  transactions: (id: number, status: TransactionFilter) =>
+    get<{ results: PortalTransaction[] }>(`${s(id)}/payments/transactions/`, { status }),
+  paymentDocuments: (id: number) => get<{ receipts: PortalReceipt[]; invoices: PortalInvoice[] }>(`${s(id)}/payments/documents/`),
+  receipt: (id: number, receiptId: number) => get<PortalReceiptDetail>(`${s(id)}/payments/receipts/${receiptId}/`),
+  /** The accounting system's own receipt PDF (read-only). */
+  receiptPdf: (id: number, receiptId: number, download = false) =>
+    apiClient
+      .get<Blob>(`${BASE}${s(id)}/payments/receipts/${receiptId}/pdf/`, { params: download ? { download: 1 } : {}, responseType: 'blob' })
+      .then((r) => r.data),
   monthlyReport: (id: number, year: number, month: number) => get<MonthlyReport>(`${s(id)}/reports/monthly/`, { year, month }),
   monthlyReportPdf: (id: number, year: number, month: number, lang: string) =>
     apiClient

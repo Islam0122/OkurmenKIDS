@@ -28,7 +28,7 @@ from rest_framework.views import APIView
 from .access import is_portal_user
 from .models import PortalAccount
 from .serializers import PasswordChangeSerializer
-from .services import accounts, data, report_pdf, reports, scope
+from .services import accounts, data, finance, report_pdf, reports, scope
 
 TAGS = ["Student & Parent Portal"]
 
@@ -172,12 +172,58 @@ class AchievementsView(PortalView):
 
 
 @extend_schema(tags=TAGS, responses={200: dict})
-class PaymentsView(PortalView):
-    def get(self, request, student_id):
+class _FinanceView(PortalView):
+    """Read-only accounting data of a linked student — only for accounts the
+    school lets see payments (PortalAccount.can_view_payments)."""
+
+    def finance_student(self, student_id):
         student = self.student(student_id)
         if not self.account().can_view_payments:
             raise PermissionDenied("Информация об оплате для этого аккаунта скрыта.")
-        return Response(data.payments(student))
+        return student
+
+
+class PaymentsView(_FinanceView):
+    def get(self, request, student_id):
+        return Response(finance.overview(self.finance_student(student_id), today=self.today()))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class PaymentTransactionsView(_FinanceView):
+    def get(self, request, student_id):
+        student = self.finance_student(student_id)
+        status_ = request.query_params.get("status") or "all"
+        if status_ not in finance.TRANSACTION_FILTERS:
+            raise DRFValidationError({"status": f"Допустимо: {', '.join(finance.TRANSACTION_FILTERS)}."})
+        return Response({"results": finance.transactions(student, status=status_)})
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class PaymentDocumentsView(_FinanceView):
+    def get(self, request, student_id):
+        return Response(finance.documents(self.finance_student(student_id), today=self.today()))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class ReceiptDetailView(_FinanceView):
+    def get(self, request, student_id, receipt_id):
+        receipt = finance.get_receipt(self.finance_student(student_id), receipt_id)
+        return Response(finance.receipt_row(receipt, full=True))
+
+
+@extend_schema(tags=TAGS, responses={200: bytes})
+class ReceiptPdfView(_FinanceView):
+    """The receipt document exactly as the accounting system renders it.
+    `?download=1` → attachment, otherwise inline (preview / print)."""
+
+    def get(self, request, student_id, receipt_id):
+        receipt = finance.get_receipt(self.finance_student(student_id), receipt_id)
+        content = finance.receipt_pdf(receipt, compact=request.query_params.get("size") == "compact")
+        response = HttpResponse(content, content_type="application/pdf")
+        disposition = "attachment" if request.query_params.get("download") in ("1", "true") else "inline"
+        response["Content-Disposition"] = f'{disposition}; filename="receipt-{receipt.number or receipt.pk}.pdf"'
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 def _report(view: PortalView, student_id):
