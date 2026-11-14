@@ -61,6 +61,7 @@ export interface PortalHomework {
   is_open: boolean
   lesson: { id: number; date: string; topic: string; lesson_number: number | null }
   subject: Ref | null
+  group: Ref | null
   teacher: Ref | null
   /** Only a grade the trainer entered; null before evaluation. */
   score: number | null
@@ -143,9 +144,24 @@ export interface FinanceSummary {
   has_debt: boolean
 }
 
+export interface CourseProgress {
+  course: Ref | null
+  group: Ref | null
+  lessons_done: number
+  lessons_total: number
+  percent: number | null
+}
+
+export interface AchievementsOverview {
+  xp: { total: XpParts; month: XpParts; level: { level: number; floor: number; next: number; progress: number } }
+  earned: Achievement[]
+  milestones: { code: 'homework_streak' | 'top_homework' | 'level'; current: number; target: number | null; params?: Record<string, number> }[]
+}
+
 export interface PortalDashboard {
   student: PortalStudent
   today: string
+  course_progress: CourseProgress | null
   today_lessons: PortalLesson[]
   upcoming_lessons: PortalLesson[]
   homework: { open: PortalHomework[]; open_count: number; not_submitted_count: number; next_deadline: string | null }

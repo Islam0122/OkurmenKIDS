@@ -18,6 +18,7 @@ urlpatterns = [
     path(f"{student}notifications/", views.NotificationsView.as_view(), name="notifications"),
     path(f"{student}feedback/", views.FeedbackView.as_view(), name="feedback"),
     path(f"{student}payments/", views.PaymentsView.as_view(), name="payments"),
+    path(f"{student}achievements/", views.AchievementsView.as_view(), name="achievements"),
     path(f"{student}reports/monthly/", views.MonthlyReportView.as_view(), name="monthly-report"),
     path(f"{student}reports/monthly/pdf/", views.MonthlyReportPdfView.as_view(), name="monthly-report-pdf"),
 ]

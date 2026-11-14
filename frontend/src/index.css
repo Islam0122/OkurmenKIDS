@@ -306,3 +306,56 @@
 /* OKURMENKIDS DIGITAL: compact layout on short desktop screens (e.g. 1280×720, 1366×768 minus browser chrome). */
 @custom-variant short (@media (min-width: 1024px) and (max-height: 800px));
 @custom-variant tiny (@media (min-width: 1024px) and (max-height: 680px));
+
+/* Student & Parent Portal (features/studentPortal) — premium, calm, kid-friendly.
+   Manrope for every heading and number, the brand green as the only accent,
+   motion short and subtle, and none at all for prefers-reduced-motion. */
+.sp-root {
+  font-family: var(--font-display);
+  font-feature-settings: "tnum" 0;
+  -webkit-font-smoothing: antialiased;
+}
+.sp-card {
+  border-radius: 1.125rem;
+  background: var(--color-surface);
+  border: 1px solid rgb(225 231 226 / 0.7);
+  box-shadow: 0 1px 2px rgb(16 24 20 / 0.04), 0 8px 24px -12px rgb(16 24 20 / 0.08);
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+.sp-card-hover:hover {
+  border-color: var(--color-brand-200);
+  box-shadow: 0 1px 2px rgb(16 24 20 / 0.05), 0 14px 32px -16px rgb(31 95 60 / 0.25);
+  transform: translateY(-1px);
+}
+@keyframes sp-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sp-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+@keyframes sp-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes sp-sheet {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+.sp-rise { animation: sp-rise 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.sp-skeleton {
+  border-radius: 0.75rem;
+  background: linear-gradient(90deg, var(--color-surface-muted) 25%, #eef3ef 50%, var(--color-surface-muted) 75%);
+  background-size: 200% 100%;
+  animation: sp-shimmer 1.4s ease-in-out infinite;
+}
+.sp-grow { transform-origin: left; animation: sp-grow 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.sp-sheet { animation: sp-sheet 0.25s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.sp-press { transition: transform 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease; }
+.sp-press:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .sp-rise, .sp-grow, .sp-sheet, .sp-skeleton { animation: none; }
+  .sp-card, .sp-press { transition: none; }
+  .sp-card-hover:hover { transform: none; }
+}

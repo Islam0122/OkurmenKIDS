@@ -436,6 +436,7 @@ export const router = createBrowserRouter(withHydrateFallback([
               { path: 'homework/:id', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/HomeworkPages')).StudentHomeworkDetailPage }) },
               { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/AttendancePage')).StudentAttendancePage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/ReportsPage')).StudentReportsPage }) },
+              { path: 'achievements', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/AchievementsPage')).StudentAchievementsPage }) },
               { path: 'payments', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/PaymentsPage')).StudentPaymentsPage }) },
               { path: 'profile', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/ProfilePage')).StudentProfilePage }) },
               { path: '*', element: <Navigate to="/student" replace /> },

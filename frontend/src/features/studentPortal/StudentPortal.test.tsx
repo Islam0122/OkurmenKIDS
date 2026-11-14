@@ -15,6 +15,7 @@ vi.mock('@/api/studentPortal', () => ({
     homeworkDetail: vi.fn(),
     nextHomework: vi.fn(),
     homework: vi.fn(),
+    achievements: vi.fn(),
   },
 }))
 vi.mock('@/hooks/useAuth', () => ({
@@ -27,6 +28,7 @@ import { CredentialsCard } from '@/features/assistant/actions/StudentAccount'
 import { StudentPortalLayout } from './StudentPortalLayout'
 import { StudentDashboardPage } from './pages/DashboardPage'
 import { StudentHomeworkDetailPage, StudentHomeworkPage } from './pages/HomeworkPages'
+import { StudentAchievementsPage } from './pages/AchievementsPage'
 import { translate, DICTIONARIES } from './i18n'
 
 function child(id: number, first: string): PortalStudent {
@@ -41,7 +43,7 @@ const ME: PortalMe = { login: 'aibek.asanov', must_change_password: false, can_v
 function dashboard(student: PortalStudent): PortalDashboard {
   const empty = { marked: 0, present: 0, late: 0, absent: 0, excused: 0, attended: 0, percent: null }
   return {
-    student, today: '2026-11-14', today_lessons: [], upcoming_lessons: [],
+    student, today: '2026-11-14', course_progress: null, today_lessons: [], upcoming_lessons: [],
     homework: { open: [], open_count: 0, not_submitted_count: 0, next_deadline: null },
     attendance: { month: empty, overall: empty },
     performance: { average_score: null, month_average_score: null, homework_rate: null, scored_count: 0 },
@@ -90,28 +92,28 @@ describe('Student & Parent Portal', () => {
     await waitFor(() => expect(studentPortalApi.changePassword).toHaveBeenCalledWith({
       current_password: 'Hk7m-pQ3x-9tRw', new_password: 'MyOwn-Secret-2026', new_password_confirm: 'MyOwn-Secret-2026',
     }))
-    expect(await screen.findByRole('heading', { name: 'Айбек Асанов' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Привет, Айбек!' })).toBeInTheDocument()
   })
 
   it('switches between the children of one family account', async () => {
     vi.mocked(studentPortalApi.me).mockResolvedValue(ME)
     renderPortal()
-    expect(await screen.findByRole('heading', { name: 'Айбек Асанов' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Привет, Айбек!' })).toBeInTheDocument()
     expect(screen.getByText('Скоро срок: «Цикл for»')).toBeInTheDocument()
 
     const user = userEvent.setup()
     await user.click(screen.getAllByRole('button', { name: /Ребёнок: Айбек Асанов/ })[0])
     await user.click(screen.getByRole('option', { name: /Айжан Асанов/ }))
-    expect(await screen.findByRole('heading', { name: 'Айжан Асанов' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Привет, Айжан!' })).toBeInTheDocument()
     expect(studentPortalApi.dashboard).toHaveBeenLastCalledWith(2)
   })
 
   it('speaks Kyrgyz when asked', async () => {
     vi.mocked(studentPortalApi.me).mockResolvedValue(ME)
     renderPortal()
-    await screen.findByRole('heading', { name: 'Айбек Асанов' })
+    await screen.findByRole('heading', { name: 'Привет, Айбек!' })
     await userEvent.setup().click(screen.getAllByRole('button', { name: 'KG' })[0])
-    expect(await screen.findByText('Саламатсызбы!')).toBeInTheDocument()
+    expect(await screen.findByText('Салам, Айбек!')).toBeInTheDocument()
     expect(screen.getByText('Мөөнөтү жакындады: «Цикл for»')).toBeInTheDocument()
   })
 
@@ -140,7 +142,7 @@ function homework(overrides: Partial<PortalHomeworkDetail> = {}): PortalHomework
   return {
     id: 5, title: 'Цикл for', assigned_date: '2026-11-12', deadline: '2026-11-16', days_left: 2, state: 'awaiting', is_open: true,
     lesson: { id: 3, date: '2026-11-12', topic: 'Циклы', lesson_number: 7, description: '' },
-    subject: { id: 1, name: 'Python' }, teacher: { id: 1, name: 'Ислам' }, score: null, has_feedback: false,
+    subject: { id: 1, name: 'Python' }, group: { id: 1, name: 'PRO-01' }, teacher: { id: 1, name: 'Ислам' }, score: null, has_feedback: false,
     evaluated_at: null, checked_at: null, created_at: '2026-11-12T10:00:00Z',
     description: 'Решите 5 задач на цикл for.', attachments: [], feedback: '', ...overrides,
   }
@@ -183,7 +185,7 @@ describe('Homework page (offline checking, read-only)', () => {
     )
     renderDetail()
     expect(await screen.findByText('Проверено')).toBeInTheDocument()
-    expect(screen.getByTestId('hw-grade')).toHaveTextContent('10 / 10')
+    expect(screen.getByTestId('hw-grade')).toHaveTextContent('10/10')
     expect(screen.getByTestId('hw-feedback')).toHaveTextContent('«Отлично!»')
     expect(screen.getByText('Проверено тренером: 14.11.2026')).toBeInTheDocument()
   })
@@ -231,7 +233,8 @@ describe('Homework list: only the next lesson', () => {
       lessons: [{ lesson: lesson18(), homework: [homework({ id: 81, title: 'ДЗ к уроку 18', lesson: { ...homework().lesson, lesson_number: 18 } })] }],
     })
     renderList()
-    expect(await screen.findByText('Урок 18')).toBeInTheDocument()
+    expect((await screen.findAllByText('Урок 18')).length).toBeGreaterThan(0)
+    expect(screen.getByText('PRO-01')).toBeInTheDocument()
     expect(screen.getByText('ДЗ к уроку 18')).toBeInTheDocument()
     expect(screen.getByText('Решите 5 задач на цикл for.')).toBeInTheDocument()
     expect(screen.getByText(/Ещё не оценено/)).toBeInTheDocument()
@@ -241,7 +244,7 @@ describe('Homework list: only the next lesson', () => {
   it('says when the next lesson has no homework yet', async () => {
     vi.mocked(studentPortalApi.nextHomework).mockResolvedValue({ has_group: true, lessons: [{ lesson: lesson18(), homework: [] }] })
     renderList()
-    expect(await screen.findByText('Домашнее задание пока не назначено')).toBeInTheDocument()
+    expect(await screen.findByText('Пока домашнего задания нет')).toBeInTheDocument()
   })
 
   it('shows an empty state when no next lesson is scheduled', async () => {
@@ -261,5 +264,50 @@ describe('Homework list: only the next lesson', () => {
     expect(await screen.findByText('ДЗ к уроку 16')).toBeInTheDocument()
     expect(screen.getByText('9/10')).toBeInTheDocument()
     expect(studentPortalApi.homework).toHaveBeenCalledWith(1, 'all', 1)
+  })
+})
+
+describe('Redesigned portal pages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    vi.mocked(studentPortalApi.me).mockResolvedValue(ME)
+  })
+
+  it('shows the Kyrgyz empty state when the next lesson has no homework', async () => {
+    window.localStorage.setItem('okk-student-portal-lang', 'ky')
+    vi.mocked(studentPortalApi.nextHomework).mockResolvedValue({ has_group: true, lessons: [{ lesson: lesson18(), homework: [] }] })
+    renderWithProviders(
+      <Routes><Route path="/student" element={<StudentPortalLayout />}><Route path="homework" element={<StudentHomeworkPage />} /></Route></Routes>,
+      { route: '/student/homework' },
+    )
+    expect(await screen.findByText('Азырынча үй тапшырмасы жок')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('renders the achievements page from real XP, badges and next goals', async () => {
+    vi.mocked(studentPortalApi.achievements).mockResolvedValue({
+      xp: {
+        total: { attendance: 300, homework: 700, tests: 65, total: 1065 },
+        month: { attendance: 15, homework: 53, tests: 0, total: 68 },
+        level: { level: 5, floor: 1000, next: 1500, progress: 13 },
+      },
+      earned: [{ code: 'homework_streak', date: null, params: { count: 20 } }],
+      milestones: [
+        { code: 'homework_streak', current: 42, target: 50 },
+        { code: 'top_homework', current: 25, target: null },
+      ],
+    })
+    renderWithProviders(
+      <Routes><Route path="/student" element={<StudentPortalLayout />}><Route path="achievements" element={<StudentAchievementsPage />} /></Route></Routes>,
+      { route: '/student/achievements' },
+    )
+    expect(await screen.findByText('1065')).toBeInTheDocument()
+    expect(screen.getByText('20+ сданных заданий')).toBeInTheDocument()
+    expect(screen.getByText('Сдать 50 заданий')).toBeInTheDocument()
+    expect(screen.getByText('42/50')).toBeInTheDocument()
+    expect(screen.getByText('Все награды этого вида получены!')).toBeInTheDocument()
+    // Navigation: the achievements section is in the menu.
+    expect(screen.getAllByRole('link', { name: 'Достижения' }).length).toBeGreaterThan(0)
   })
 })

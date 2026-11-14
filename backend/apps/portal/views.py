@@ -166,6 +166,12 @@ class FeedbackView(PortalView):
 
 
 @extend_schema(tags=TAGS, responses={200: dict})
+class AchievementsView(PortalView):
+    def get(self, request, student_id):
+        return Response(data.achievements_overview(self.student(student_id), today=self.today()))
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
 class PaymentsView(PortalView):
     def get(self, request, student_id):
         student = self.student(student_id)
