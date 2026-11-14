@@ -359,3 +359,33 @@
   .sp-card, .sp-press { transition: none; }
   .sp-card-hover:hover { transform: none; }
 }
+
+/* Achievements (features/studentPortal/pages/AchievementsPage) — badge unlock
+   pop, level-up confetti and the legendary shine. Lightweight CSS only; all of
+   it is switched off for prefers-reduced-motion. */
+@keyframes sp-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes sp-confetti {
+  0% { transform: translate3d(0, -10vh, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate3d(var(--sp-drift, 0px), 105vh, 0) rotate(var(--sp-spin, 540deg)); opacity: 0.9; }
+}
+@keyframes sp-shine {
+  0%, 70% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+.sp-pop { animation: sp-pop 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.sp-confetti-piece { position: absolute; top: 0; width: 8px; height: 12px; border-radius: 2px; animation: sp-confetti 2.6s ease-in forwards; }
+.sp-shine { position: relative; overflow: hidden; }
+.sp-shine::after {
+  content: ""; position: absolute; inset: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+  animation: sp-shine 3.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-pop, .sp-confetti-piece { animation: none; }
+  .sp-confetti-piece { display: none; }
+  .sp-shine::after { animation: none; display: none; }
+}

@@ -232,9 +232,10 @@ def student_xp(period: Period, student_ids=None) -> dict[int, dict]:
     return xp
 
 
-def _test_xp(period: Period, student_ids=None) -> dict[int, int]:
-    """Best finished attempt per (student, session), credited on the local
-    date it was finished — so a re-take in a later period adds nothing."""
+def _test_credits(period: Period, student_ids=None) -> list[tuple[int, dt.date, int]]:
+    """(student_id, local date, XP) per credited test session: the best
+    finished attempt per (student, session), credited on the local date it was
+    finished — so a re-take in a later period adds nothing."""
     finished = StudentAttempt.objects.filter(status=AttemptStatus.FINISHED, student__isnull=False, finished_at__isnull=False)
     if student_ids is not None:
         finished = finished.filter(student_id__in=student_ids)
@@ -243,7 +244,7 @@ def _test_xp(period: Period, student_ids=None) -> dict[int, int]:
         .values_list("student_id", "session_id")
     )
     if not pairs:
-        return {}
+        return []
     best: dict[tuple, tuple] = {}
     rows = finished.filter(
         student_id__in={s for s, _ in pairs}, session_id__in={x for _, x in pairs}
@@ -256,11 +257,61 @@ def _test_xp(period: Period, student_ids=None) -> dict[int, int]:
         # Highest score wins; on a tie the earliest attempt that reached it.
         if current is None or score > current[0] or (score == current[0] and finished_at < current[1]):
             best[pair] = (score, finished_at)
-    xp: dict[int, int] = defaultdict(int)
+    credits = []
     for (student_id, _), (score, finished_at) in best.items():
-        if period.start <= timezone.localdate(finished_at) <= period.end:
-            xp[student_id] += int(max(score, 0) / XP_TEST_DIVISOR + 0.5)
+        day = timezone.localdate(finished_at)
+        if period.start <= day <= period.end:
+            credits.append((student_id, day, int(max(score, 0) / XP_TEST_DIVISOR + 0.5)))
+    return credits
+
+
+def _test_xp(period: Period, student_ids=None) -> dict[int, int]:
+    xp: dict[int, int] = defaultdict(int)
+    for student_id, _, points in _test_credits(period, student_ids):
+        xp[student_id] += points
     return xp
+
+
+def student_xp_daily(period: Period, student_id: int) -> dict[dt.date, dict]:
+    """{date: {attendance, homework, tests}} — one student's XP per day of
+    `period`, by exactly the rules of `student_xp` (same filters, same
+    constants): attendance and homework on their lesson's date, a test on the
+    local date its best attempt was finished. Summed over the period it
+    equals `student_xp(period)` for that student (asserted by the tests)."""
+    days: dict[dt.date, dict] = defaultdict(_empty)
+    in_period = (Q(lesson__date__range=(period.start, period.end)) & ~Q(lesson__status=Lesson.Status.CANCELLED)
+                 & Q(student_id=student_id))
+    attendance = (
+        Attendance.objects.filter(in_period, status__in=(Attendance.Status.PRESENT, Attendance.Status.LATE))
+        .values("lesson__date")
+        .annotate(
+            present=Count("id", filter=Q(status=Attendance.Status.PRESENT)),
+            late=Count("id", filter=Q(status=Attendance.Status.LATE)),
+        )
+    )
+    for row in attendance:
+        days[row["lesson__date"]]["attendance"] = row["present"] * XP_ATTENDANCE_PRESENT + row["late"] * XP_ATTENDANCE_LATE
+    homework = (
+        HomeworkResult.objects.filter(
+            student_id=student_id,
+            homework__lesson__date__range=(period.start, period.end),
+            status__in=(HomeworkResult.Status.SUBMITTED, HomeworkResult.Status.CHECKED, HomeworkResult.Status.LATE),
+        )
+        .exclude(homework__lesson__status=Lesson.Status.CANCELLED)
+        .values("homework__lesson__date")
+        .annotate(
+            done=Count("id", filter=~Q(status=HomeworkResult.Status.LATE)),
+            late=Count("id", filter=Q(status=HomeworkResult.Status.LATE)),
+            grades=Coalesce(Sum(Least("score", Value(10))), 0),
+        )
+    )
+    for row in homework:
+        days[row["homework__lesson__date"]]["homework"] = (
+            row["done"] * XP_HOMEWORK_DONE + row["late"] * XP_HOMEWORK_LATE + row["grades"]
+        )
+    for _, day, points in _test_credits(period, [student_id]):
+        days[day]["tests"] += points
+    return dict(days)
 
 
 # ---------------------------------------------------------------------------

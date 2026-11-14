@@ -273,6 +273,35 @@ describe('Homework list: only the next lesson', () => {
   })
 })
 
+function gamificationPayload() {
+  const days = Array.from({ length: 7 }, (_, i) => ({
+    date: `2026-11-${String(8 + i).padStart(2, '0')}`, xp: i === 5 ? 39 : 0, xp_attendance: i === 5 ? 10 : 0,
+    xp_homework: i === 5 ? 29 : 0, xp_tests: 0, lessons: i === 5 ? 1 : 0, homework: i === 5 ? 1 : 0, tests: 0,
+  }))
+  return {
+    level: { level: 5, floor: 1000, next: 1500, progress: 13, total_xp: 1065, to_next: 435, reached_on: '2026-11-01' },
+    xp: { total: { attendance: 300, homework: 700, tests: 65, total: 1065 }, month: { attendance: 15, homework: 53, tests: 0, total: 68 }, projects_supported: false },
+    achievements: [
+      { id: 'homework_done-20', code: 'homework_done' as const, category: 'homework' as const, rarity: 'rare' as const, threshold: 20, current: 20, unlocked: true, unlocked_on: '2026-10-02', xp_reward: null },
+      { id: 'homework_done-50', code: 'homework_done' as const, category: 'homework' as const, rarity: 'legendary' as const, threshold: 50, current: 42, unlocked: false, unlocked_on: null, xp_reward: null },
+    ],
+    categories: ['homework', 'quality', 'attendance', 'level', 'scholarship'] as ('homework' | 'quality' | 'attendance' | 'level' | 'scholarship')[],
+    goals: [
+      { code: 'homework_done' as const, category: 'homework' as const, rarity: 'legendary' as const, current: 42, target: 50, remaining: 8, xp_reward: null },
+      { code: 'level' as const, category: 'level' as const, rarity: null, current: 1065, target: 1500, remaining: 435, xp_reward: null, params: { level: 6 } },
+    ],
+    weekly: { start: '2026-11-08', end: '2026-11-14', days, total: 39, previous_total: 10 },
+    timeline: [{ kind: 'level' as const, date: '2026-11-01', level: 5 }],
+  }
+}
+
+function renderAchievements() {
+  return renderWithProviders(
+    <Routes><Route path="/student" element={<StudentPortalLayout />}><Route path="achievements" element={<StudentAchievementsPage />} /></Route></Routes>,
+    { route: '/student/achievements' },
+  )
+}
+
 describe('Redesigned portal pages', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -292,29 +321,49 @@ describe('Redesigned portal pages', () => {
   })
 
   it('renders the achievements page from real XP, badges and next goals', async () => {
-    vi.mocked(studentPortalApi.achievements).mockResolvedValue({
-      xp: {
-        total: { attendance: 300, homework: 700, tests: 65, total: 1065 },
-        month: { attendance: 15, homework: 53, tests: 0, total: 68 },
-        level: { level: 5, floor: 1000, next: 1500, progress: 13 },
-      },
-      earned: [{ code: 'homework_streak', date: null, params: { count: 20 } }],
-      milestones: [
-        { code: 'homework_streak', current: 42, target: 50 },
-        { code: 'top_homework', current: 25, target: null },
-      ],
-    })
-    renderWithProviders(
-      <Routes><Route path="/student" element={<StudentPortalLayout />}><Route path="achievements" element={<StudentAchievementsPage />} /></Route></Routes>,
-      { route: '/student/achievements' },
-    )
+    vi.mocked(studentPortalApi.achievements).mockResolvedValue(gamificationPayload())
+    renderAchievements()
     expect(await screen.findByText('1065')).toBeInTheDocument()
-    expect(screen.getByText('20+ сданных заданий')).toBeInTheDocument()
-    expect(screen.getByText('Сдать 50 заданий')).toBeInTheDocument()
-    expect(screen.getByText('42/50')).toBeInTheDocument()
-    expect(screen.getByText('Все награды этого вида получены!')).toBeInTheDocument()
-    // Navigation: the achievements section is in the menu.
+    expect(screen.getByText('До уровня 6 осталось 435 XP')).toBeInTheDocument()
+    expect(screen.getByText('Мастер заданий · 20')).toBeInTheDocument()
+    expect(screen.getByText('Легендарное')).toBeInTheDocument()
+    expect(screen.getByText('Получено 1 из 2')).toBeInTheDocument()
+    expect(screen.getAllByText('Сдать 50 домашних заданий').length).toBeGreaterThan(1) // locked badge + goal
+    expect(screen.getByText(/Осталось 8/)).toBeInTheDocument()
+    expect(screen.getByText('+29 XP к прошлой неделе')).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Достижения' }).length).toBeGreaterThan(0)
+  })
+
+  it('filters the collection by state and category', async () => {
+    vi.mocked(studentPortalApi.achievements).mockResolvedValue(gamificationPayload())
+    renderAchievements()
+    await screen.findByText('Мастер заданий · 20')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('tab', { name: 'Ещё впереди' }))
+    expect(screen.queryByText('Мастер заданий · 20')).not.toBeInTheDocument()
+    expect(screen.getByText('Мастер заданий · 50')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Все' }))
+    await user.click(screen.getByRole('button', { name: 'Посещение' }))
+    expect(screen.getByText('В этой категории пока ничего нет.')).toBeInTheDocument()
+  })
+
+  it('celebrates only a level reached since the last visit, and marks new badges', async () => {
+    window.localStorage.setItem('okk-sp-seen-level-1', '4')
+    window.localStorage.setItem('okk-sp-seen-badges-1', '[]')
+    vi.mocked(studentPortalApi.achievements).mockResolvedValue(gamificationPayload())
+    renderAchievements()
+    expect(await screen.findByRole('dialog', { name: 'Новый уровень!' })).toBeInTheDocument()
+    expect(screen.getByText('Ты достиг уровня 5. Так держать!')).toBeInTheDocument()
+    expect(screen.getByText('Новое')).toBeInTheDocument()
+  })
+
+  it('never celebrates on the first visit', async () => {
+    vi.mocked(studentPortalApi.achievements).mockResolvedValue(gamificationPayload())
+    renderAchievements()
+    await screen.findByText('1065')
+    expect(screen.queryByRole('dialog', { name: 'Новый уровень!' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Новое')).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('okk-sp-seen-level-1')).toBe('5')
   })
 })
 
