@@ -12,6 +12,13 @@ services.scope). Nothing here is stored or computed anew:
 * XP is the public leaderboard's own computation (leaderboard.student_xp);
 * money is billing's own summary (billing.services.archive.student_finance).
 
+Homework is done outside the LMS and checked OFFLINE by the trainer, who
+records each student's status, grade and comment in the existing grading
+form (HomeworkResult via services.homework_service). The portal only reads
+that row: there is no submission from here, and until the trainer has saved
+a result the homework is simply «awaiting check» — no status is inferred
+from the deadline and no grade is ever shown that the trainer did not enter.
+
 Texts are not built here: notifications and statuses go out as codes plus
 parameters, so the frontend renders them in Russian or Kyrgyz.
 """
@@ -20,7 +27,6 @@ from __future__ import annotations
 import datetime as dt
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -33,13 +39,17 @@ LESSON_RELATED = ("group__course", "subject", "room", "teacher__user", "group_te
 MAX_RANGE_DAYS = 62
 
 # Homework states as the portal shows them (derived, never stored).
-HW_CHECKED = "checked"
-HW_SUBMITTED = "submitted"
-HW_LATE = "late"
-HW_OVERDUE = "overdue"
-HW_PENDING = "pending"
-HW_STATES = (HW_PENDING, HW_OVERDUE, HW_SUBMITTED, HW_LATE, HW_CHECKED)
-HW_OPEN_STATES = (HW_PENDING, HW_OVERDUE)
+# Homework states as the portal shows them: the trainer's own HomeworkResult
+# status, or «awaiting» while the trainer has not recorded one yet.
+HW_AWAITING = "awaiting"
+HW_NOT_SUBMITTED = HomeworkResult.Status.NOT_SUBMITTED.value
+HW_SUBMITTED = HomeworkResult.Status.SUBMITTED.value
+HW_LATE = HomeworkResult.Status.LATE.value
+HW_CHECKED = HomeworkResult.Status.CHECKED.value
+HW_STATES = (HW_AWAITING, HW_NOT_SUBMITTED, HW_SUBMITTED, HW_LATE, HW_CHECKED)
+HW_DONE_STATES = (HW_SUBMITTED, HW_LATE, HW_CHECKED)
+# Still to be done / handed in to the trainer.
+HW_OPEN_STATES = (HW_AWAITING, HW_NOT_SUBMITTED)
 
 
 def _hm(value) -> str | None:
@@ -194,16 +204,9 @@ def visible_homework(student: Student) -> list[tuple[Homework, HomeworkResult | 
     return [(hw, results.get(hw.pk)) for hw in own]
 
 
-def homework_state(homework: Homework, result: HomeworkResult | None, today: dt.date) -> str:
-    if result is not None and result.status == HomeworkResult.Status.CHECKED:
-        return HW_CHECKED
-    if result is not None and result.status == HomeworkResult.Status.LATE:
-        return HW_LATE
-    if result is not None and result.status == HomeworkResult.Status.SUBMITTED:
-        return HW_SUBMITTED
-    if homework.deadline is not None and homework.deadline < today:
-        return HW_OVERDUE
-    return HW_PENDING
+def homework_state(result: HomeworkResult | None) -> str:
+    """Exactly what the trainer saved — nothing derived from the deadline."""
+    return result.status if result is not None else HW_AWAITING
 
 
 def _attachments(lesson: Lesson) -> list[dict]:
@@ -218,10 +221,11 @@ def _attachments(lesson: Lesson) -> list[dict]:
 
 def homework_row(homework: Homework, result: HomeworkResult | None, today: dt.date, *, full: bool = False) -> dict:
     lesson = homework.lesson
-    state = homework_state(homework, result, today)
+    state = homework_state(result)
     row = {
         "id": homework.pk,
         "title": homework.title,
+        "assigned_date": lesson.date,
         "deadline": homework.deadline,
         "days_left": (homework.deadline - today).days if homework.deadline else None,
         "state": state,
@@ -229,19 +233,19 @@ def homework_row(homework: Homework, result: HomeworkResult | None, today: dt.da
         "lesson": {"id": lesson.pk, "date": lesson.date, "topic": lesson.topic, "lesson_number": lesson.lesson_number},
         "subject": _ref(lesson.subject),
         "teacher": _ref(lesson.effective_teacher),
+        # Only what the trainer entered: no result or an empty grade → null.
         "score": result.score if result else None,
         "has_feedback": bool(result and result.comment),
-        "submitted_at": result.submitted_at if result else None,
+        "evaluated_at": result.updated_at if result else None,
         "checked_at": result.checked_at if result else None,
         "created_at": homework.created_at,
     }
     if full:
         row.update({
             "description": homework.description,
+            "lesson": {**row["lesson"], "description": lesson.description},
             "attachments": _attachments(lesson),
             "feedback": result.comment if result else "",
-            "submission": {"text": result.submission_text, "link": result.submission_link} if result else None,
-            "can_submit": state != HW_CHECKED,
         })
     return row
 
@@ -251,10 +255,10 @@ def homework_list(student: Student, *, state: str | None = None, today: dt.date)
     if state == "open":
         rows = [r for r in rows if r["is_open"]]
     elif state == "done":
-        rows = [r for r in rows if r["state"] in (HW_SUBMITTED, HW_LATE, HW_CHECKED)]
+        rows = [r for r in rows if r["state"] in HW_DONE_STATES]
     elif state in HW_STATES:
         rows = [r for r in rows if r["state"] == state]
-    if state in ("open", HW_PENDING, HW_OVERDUE):
+    if state in ("open", HW_AWAITING):
         # Open work: the nearest deadline first, undated last.
         rows.sort(key=lambda r: (r["deadline"] is None, r["deadline"] or dt.date.max))
     return rows
@@ -267,40 +271,6 @@ def homework_for(student: Student, homework_id) -> tuple[Homework, HomeworkResul
     from django.http import Http404
 
     raise Http404
-
-
-def submit_homework(student: Student, homework_id, *, text: str, link: str, user) -> tuple[Homework, HomeworkResult]:
-    """The student hands in their work. Writes the student's own
-    HomeworkResult — the row the trainer grades — as SUBMITTED, or LATE
-    after the deadline. A result the trainer already checked is final."""
-    text, link = (text or "").strip(), (link or "").strip()
-    if not text and not link:
-        raise ValidationError({"detail": "Добавьте ответ или ссылку на работу."})
-    homework, _ = homework_for(student, homework_id)
-    today = timezone.localdate()
-    with transaction.atomic():
-        result = HomeworkResult.objects.select_for_update().filter(homework=homework, student=student).first()
-        if result is not None and result.status == HomeworkResult.Status.CHECKED:
-            raise ValidationError({"detail": "Работа уже проверена тренером — изменить её нельзя."})
-        if result is None:
-            result = HomeworkResult(homework=homework, student=student)
-        late = homework.deadline is not None and homework.deadline < today
-        result.status = HomeworkResult.Status.LATE if late else HomeworkResult.Status.SUBMITTED
-        result.submission_text = text
-        result.submission_link = link
-        result.submitted_at = timezone.now()
-        # Field validation only: HomeworkResult.clean() compares the student's
-        # *current* group with the lesson's, which a transferred student no
-        # longer matches — the visibility check above already proved the link.
-        result.clean_fields(exclude=["homework", "student"])
-        result.save()
-        from django.contrib.admin.models import CHANGE, LogEntry
-
-        LogEntry.objects.log_actions(
-            user_id=user.pk, queryset=[result], action_flag=CHANGE, single_object=True,
-            change_message="Кабинет ученика: работа сдана" + (" с опозданием." if late else "."),
-        )
-    return homework, result
 
 
 # ---------------------------------------------------------------------------
@@ -472,18 +442,21 @@ def notifications(student: Student, *, today: dt.date, can_view_payments: bool) 
     stored): codes + parameters, rendered by the frontend in ru / ky."""
     items = []
     for homework, result in visible_homework(student):
-        state = homework_state(homework, result, today)
+        state = homework_state(result)
         base = {"homework_id": homework.pk, "title": homework.title}
-        if state == HW_OVERDUE and (today - homework.deadline).days <= 30:
-            items.append({"kind": "homework_overdue", "date": homework.deadline, "params": base, "priority": 1})
-        elif state == HW_PENDING and homework.deadline and 0 <= (homework.deadline - today).days <= 2:
+        if state == HW_AWAITING and homework.deadline and 0 <= (homework.deadline - today).days <= 2:
             items.append({"kind": "homework_due", "date": homework.deadline,
                           "params": {**base, "days_left": (homework.deadline - today).days}, "priority": 2})
-        elif state == HW_PENDING and timezone.localdate(homework.created_at) >= today - dt.timedelta(days=7):
+        elif state == HW_AWAITING and timezone.localdate(homework.created_at) >= today - dt.timedelta(days=7):
             items.append({"kind": "homework_new", "date": timezone.localdate(homework.created_at), "params": base,
                           "priority": 3})
-        if state == HW_CHECKED and result.checked_at and timezone.localdate(result.checked_at) >= today - dt.timedelta(days=14):
-            items.append({"kind": "homework_checked", "date": timezone.localdate(result.checked_at),
+        # The trainer's own verdicts, saved in the grading form.
+        recent = result is not None and timezone.localdate(result.updated_at) >= today - dt.timedelta(days=14)
+        if state == HW_NOT_SUBMITTED and recent:
+            items.append({"kind": "homework_not_submitted", "date": timezone.localdate(result.updated_at),
+                          "params": base, "priority": 1})
+        elif state == HW_CHECKED and recent:
+            items.append({"kind": "homework_checked", "date": timezone.localdate(result.checked_at or result.updated_at),
                           "params": {**base, "score": result.score}, "priority": 3})
     for lesson in lessons_between(student, today, today + dt.timedelta(days=14)):
         if lesson.status == Lesson.Status.CANCELLED:
@@ -556,11 +529,14 @@ def dashboard(student: Student, *, today: dt.date, can_view_payments: bool) -> d
     todays = [l for l in week_lessons if l.date == today]
 
     homework = [homework_row(hw, r, today) for hw, r in visible_homework(student)]
-    # What to do next first (nearest deadline), then the most recent overdue work.
-    pending = sorted((h for h in homework if h["state"] == HW_PENDING),
-                     key=lambda h: (h["deadline"] is None, h["deadline"] or dt.date.max))
-    overdue = sorted((h for h in homework if h["state"] == HW_OVERDUE), key=lambda h: h["deadline"], reverse=True)
-    open_hw = pending + overdue
+    # To do next: homework the trainer marked «Не сдано» (most recent first),
+    # then upcoming work by nearest deadline. Work whose deadline has passed
+    # but is not checked yet is not flagged — it is checked offline in class.
+    not_submitted = sorted((h for h in homework if h["state"] == HW_NOT_SUBMITTED),
+                           key=lambda h: h["assigned_date"], reverse=True)
+    upcoming_hw = sorted((h for h in homework if h["state"] == HW_AWAITING and (h["deadline"] is None or h["deadline"] >= today)),
+                         key=lambda h: (h["deadline"] is None, h["deadline"] or dt.date.max))
+    open_hw = not_submitted + upcoming_hw
 
     month_start, month_end = month_bounds(today.year, today.month)
     month_records = list(Attendance.objects.filter(student=student, lesson__date__range=(month_start, month_end))
@@ -569,8 +545,9 @@ def dashboard(student: Student, *, today: dt.date, can_view_payments: bool) -> d
                        .only("status"))
     scores = [h["score"] for h in homework if h["score"] is not None]
     recent_scores = [h["score"] for h in homework if h["score"] is not None and h["lesson"]["date"] >= month_start]
-    assigned = [h for h in homework if h["deadline"] is None or h["deadline"] <= today or not h["is_open"]]
-    done = [h for h in assigned if not h["is_open"]]
+    # Completion over what the trainer has evaluated — unchecked work counts neither way.
+    evaluated = [h for h in homework if h["state"] != HW_AWAITING]
+    done = [h for h in evaluated if h["state"] in HW_DONE_STATES]
 
     xp_month = xp_for(student, month_start, today)
     xp_total = xp_for(student, dt.date(2000, 1, 1), today)
@@ -583,14 +560,14 @@ def dashboard(student: Student, *, today: dt.date, can_view_payments: bool) -> d
         "homework": {
             "open": open_hw[:6],
             "open_count": len(open_hw),
-            "overdue_count": sum(1 for h in open_hw if h["state"] == HW_OVERDUE),
+            "not_submitted_count": len(not_submitted),
             "next_deadline": next((h["deadline"] for h in open_hw if h["deadline"] and h["deadline"] >= today), None),
         },
         "attendance": {"month": attendance_summary(month_records), "overall": attendance_summary(all_records)},
         "performance": {
             "average_score": round(sum(scores) / len(scores), 1) if scores else None,
             "month_average_score": round(sum(recent_scores) / len(recent_scores), 1) if recent_scores else None,
-            "homework_rate": round(len(done) / len(assigned) * 100, 1) if assigned else None,
+            "homework_rate": round(len(done) / len(evaluated) * 100, 1) if evaluated else None,
             "scored_count": len(scores),
         },
         "xp": {"month": xp_month, "total": xp_total["total"], "level": level_for(xp_total["total"])},

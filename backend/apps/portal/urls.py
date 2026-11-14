@@ -13,7 +13,6 @@ urlpatterns = [
     path(f"{student}schedule/", views.ScheduleView.as_view(), name="schedule"),
     path(f"{student}homework/", views.HomeworkListView.as_view(), name="homework"),
     path(f"{student}homework/<int:homework_id>/", views.HomeworkDetailView.as_view(), name="homework-detail"),
-    path(f"{student}homework/<int:homework_id>/submit/", views.HomeworkSubmitView.as_view(), name="homework-submit"),
     path(f"{student}attendance/", views.AttendanceView.as_view(), name="attendance"),
     path(f"{student}notifications/", views.NotificationsView.as_view(), name="notifications"),
     path(f"{student}feedback/", views.FeedbackView.as_view(), name="feedback"),

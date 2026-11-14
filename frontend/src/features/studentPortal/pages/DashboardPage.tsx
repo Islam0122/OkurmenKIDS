@@ -6,7 +6,7 @@ import { studentPortalApi } from '@/api/studentPortal'
 import { cn } from '@/utils/cn'
 import type { Achievement, FeedbackItem, PortalHomework, PortalNotification } from '@/types/studentPortal'
 
-import { PORTAL_KEY, usePortal } from '../context'
+import { LIVE_QUERY, PORTAL_KEY, usePortal } from '../context'
 import { usePortalI18n } from '../i18n'
 import type { TFunction } from '../i18n'
 import { Bar, Empty, HomeworkBadge, LessonRow, LoadError, Loading, PCard, ProgressRing } from '../ui'
@@ -19,7 +19,7 @@ export function notificationText(t: TFunction, n: PortalNotification): string {
 }
 
 const NOTIF_ICON = {
-  homework_overdue: { icon: AlertCircle, tone: 'text-danger bg-danger-soft' },
+  homework_not_submitted: { icon: AlertCircle, tone: 'text-danger bg-danger-soft' },
   homework_due: { icon: CalendarClock, tone: 'text-warning bg-warning-soft' },
   homework_new: { icon: ClipboardList, tone: 'text-info bg-info-soft' },
   homework_checked: { icon: CheckCircle2, tone: 'text-brand-700 bg-brand-50' },
@@ -67,11 +67,14 @@ export function HomeworkMini({ hw }: { hw: PortalHomework }) {
         <span className="block truncate text-xs text-ink-secondary">
           {hw.subject?.name ? `${hw.subject.name} · ` : ''}
           {hw.deadline ? t('hw.deadline', { date: date(hw.deadline) }) : t('hw.noDeadline')}
-          {hw.state === 'pending' && hw.days_left !== null && hw.days_left >= 0
+          {hw.state === 'awaiting' && hw.days_left !== null && hw.days_left >= 0
             ? ` · ${hw.days_left === 0 ? t('hw.dueToday') : t('hw.daysLeft', { n: hw.days_left })}` : ''}
         </span>
       </span>
-      <HomeworkBadge state={hw.state} />
+      <span className="flex shrink-0 items-center gap-2">
+        {hw.score !== null ? <span className="text-sm font-bold tabular-nums text-brand-700">{hw.score}/10</span> : null}
+        <HomeworkBadge state={hw.state} />
+      </span>
     </Link>
   )
 }
@@ -100,6 +103,7 @@ export function StudentDashboardPage() {
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: [...PORTAL_KEY, 'dashboard', student.id],
     queryFn: () => studentPortalApi.dashboard(student.id),
+    ...LIVE_QUERY,
   })
   if (isPending) return <Loading />
   if (isError || !data) return <LoadError onRetry={() => void refetch()} />
@@ -145,7 +149,7 @@ export function StudentDashboardPage() {
           action={<Link to="/student/homework" className="text-sm font-medium text-brand-700">{t('dash.details')}</Link>}>
           <p className="mb-3 text-sm text-ink-secondary">
             {t('dash.openCount', { n: data.homework.open_count })}
-            {data.homework.overdue_count ? <span className="text-danger"> · {t('dash.overdueCount', { n: data.homework.overdue_count })}</span> : null}
+            {data.homework.not_submitted_count ? <span className="text-danger"> · {t('dash.notSubmittedCount', { n: data.homework.not_submitted_count })}</span> : null}
           </p>
           {data.homework.open.length ? (
             <div className="grid gap-2 sm:grid-cols-2">{data.homework.open.map((hw) => <HomeworkMini key={hw.id} hw={hw} />)}</div>

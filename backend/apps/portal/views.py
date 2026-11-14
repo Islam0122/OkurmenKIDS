@@ -6,6 +6,11 @@ and resolves `student_id` only among the students linked to that account
 middleware (apps.portal.access) additionally keeps these accounts out of
 every other API and holds them on the password change until the temporary
 password is replaced.
+
+Homework is read-only here: it is done outside the LMS and checked offline
+by the trainer, who records status / grade / comment in the existing grading
+form (HomeworkViewSet.results → services.homework_service). The portal only
+shows what was saved there.
 """
 from __future__ import annotations
 
@@ -22,7 +27,7 @@ from rest_framework.views import APIView
 
 from .access import is_portal_user
 from .models import PortalAccount
-from .serializers import HomeworkSubmitSerializer, PasswordChangeSerializer
+from .serializers import PasswordChangeSerializer
 from .services import accounts, data, report_pdf, reports, scope
 
 TAGS = ["Student & Parent Portal"]
@@ -124,19 +129,6 @@ class HomeworkListView(PortalView):
 class HomeworkDetailView(PortalView):
     def get(self, request, student_id, homework_id):
         homework, result = data.homework_for(self.student(student_id), homework_id)
-        return Response(data.homework_row(homework, result, self.today(), full=True))
-
-
-@extend_schema(tags=TAGS, request=HomeworkSubmitSerializer, responses={200: dict})
-class HomeworkSubmitView(PortalView):
-    def post(self, request, student_id, homework_id):
-        student = self.student(student_id)
-        serializer = HomeworkSubmitSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            homework, result = data.submit_homework(student, homework_id, user=request.user, **serializer.validated_data)
-        except DjangoValidationError as exc:
-            raise _drf_error(exc)
         return Response(data.homework_row(homework, result, self.today(), full=True))
 
 

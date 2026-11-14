@@ -31,8 +31,6 @@ export const studentPortalApi = {
   homework: (id: number, state: HomeworkFilter, page = 1) =>
     get<Paginated<PortalHomework>>(`${s(id)}/homework/`, { state: state === 'all' ? undefined : state, page }),
   homeworkDetail: (id: number, homeworkId: number) => get<PortalHomeworkDetail>(`${s(id)}/homework/${homeworkId}/`),
-  submitHomework: (id: number, homeworkId: number, body: { text: string; link: string }) =>
-    post<PortalHomeworkDetail>(`${s(id)}/homework/${homeworkId}/submit/`, body),
   attendance: (id: number, year: number, month: number) => get<PortalAttendanceMonth>(`${s(id)}/attendance/`, { year, month }),
   notifications: (id: number) => get<{ results: PortalNotification[] }>(`${s(id)}/notifications/`),
   feedback: (id: number) => get<{ results: FeedbackItem[] }>(`${s(id)}/feedback/`),
