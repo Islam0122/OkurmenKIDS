@@ -122,7 +122,7 @@ class LocationSerializer(serializers.ModelSerializer):
 
 class SettingsSerializer(serializers.ModelSerializer):
     work_days = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), allow_empty=True)
-    tracked_roles = serializers.ListField(child=serializers.ChoiceField(choices=User.Role.choices), allow_empty=True)
+    tracked_roles = serializers.ListField(child=serializers.ChoiceField(choices=User.staff_role_choices()), allow_empty=True)
     updated_by_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -192,7 +192,7 @@ class AdjustSerializer(serializers.Serializer):
 
 
 class ManualSessionSerializer(AdjustSerializer):
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True))
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.staff().filter(is_active=True))
 
 
 class AdjustmentSerializer(serializers.ModelSerializer):

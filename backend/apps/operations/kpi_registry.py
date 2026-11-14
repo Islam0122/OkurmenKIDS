@@ -48,7 +48,7 @@ def _users(department: str | None, employee):
 
     if employee is not None:
         return [employee]
-    qs = User.objects.filter(is_active=True)
+    qs = User.objects.staff().filter(is_active=True)
     if department:
         qs = qs.filter(role__in=roles_of(department))
     return list(qs)

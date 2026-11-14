@@ -55,13 +55,14 @@ const OPTIONS: Options = {
   ],
   deactivation_reasons: [{ value: 'financial_issues', label: 'Финансовые проблемы' }, { value: 'other', label: 'Другая причина' }],
   group_statuses: [],
+  branches: [{ id: 1, name: 'Центр', address: 'Чуй 1' }],
 }
 
 function row(overrides: Partial<StudentRow> = {}): StudentRow {
   return {
     id: 7, first_name: 'Islam', last_name: 'Duishobaev', full_name: 'Islam Duishobaev', phone: '', parent_phone: '',
     group: { id: 1, name: 'PRO-01' }, course: { id: 1, name: 'Python' }, status: 'active', status_display: 'Активен',
-    enrollment_date: '2026-09-01', attendance_percent: 90, ...overrides,
+    enrollment_date: '2026-09-01', attendance_percent: 90, parent_name: '', branch: null, account: null, ...overrides,
   }
 }
 
@@ -76,7 +77,7 @@ const PREVIEW = {
 
 function detail(overrides: Partial<StudentDetail> = {}): StudentDetail {
   return {
-    ...row(), created_at: '2026-09-01T10:00:00Z', teachers: ['Islam'], group_status: 'Активна', schedule: [],
+    ...row(), account: null, birth_date: null, photo: null, family_accounts: [], created_at: '2026-09-01T10:00:00Z', teachers: ['Islam'], group_status: 'Активна', schedule: [],
     attendance: { attended: 9, marked: 10, records: [] }, homework: [], exams: [], scholarships: [], surveys: [], history: [],
     ...overrides,
   }

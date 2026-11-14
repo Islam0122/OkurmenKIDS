@@ -5,7 +5,8 @@
 /** Сотрудники с базовым доступом — вход и отметка прихода и ухода
  * (/attendance/staff); свой кабинет есть у HR (/hr) и маркетинга (/marketing). */
 export type StaffOnlyRole = 'dop' | 'rop' | 'operations_director' | 'hr_manager' | 'sales_manager' | 'marketing'
-export type UserRole = 'admin' | 'teacher' | 'team_lead' | 'assistant' | 'accountant' | 'director' | StaffOnlyRole
+/** `student_parent` — кабинет ученика и родителя (/student), видит только своих детей. */
+export type UserRole = 'admin' | 'teacher' | 'team_lead' | 'assistant' | 'accountant' | 'director' | 'student_parent' | StaffOnlyRole
 
 /** `apps.users.serializers.UserSerializer` — read-only in full. */
 export interface User {
@@ -17,6 +18,8 @@ export interface User {
   role: UserRole
   is_verified: boolean
   is_active: boolean
+  /** Кабинет ученика: временный пароль ещё не заменён (всегда false у сотрудников). */
+  must_change_password?: boolean
 }
 
 export interface LoginRequest {

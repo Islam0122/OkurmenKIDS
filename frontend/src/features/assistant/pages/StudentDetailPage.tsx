@@ -16,12 +16,15 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Menu } from '@/components/ui/Menu'
 import { Modal } from '@/components/ui/Modal'
 import { Tabs } from '@/components/ui/Tabs'
-import { useAssistantFormMutation, useAssistantStudent } from '@/hooks/useAssistant'
+import { Select } from '@/components/ui/Select'
+import { useAssistantFormMutation, useAssistantOptions, useAssistantStudent } from '@/hooks/useAssistant'
+import { resolveMediaUrl } from '@/lib/mediaUrl'
 import { extractErrorMessage, isNotFound } from '@/lib/apiError'
 import type { StudentDetail } from '@/types/assistant'
 import { formatDate, formatDateShort } from '@/utils/format'
 
 import { useAssistantActions } from '../actions/AssistantActions'
+import { StudentAccountPanel } from '../actions/StudentAccount'
 import { HistoryList } from '../shared'
 import { Field, FormError, InfoRow, ModalActions, StudentStatusBadge } from '../ui'
 
@@ -40,27 +43,48 @@ type TabKey = (typeof TABS)[number]['key']
 const ATTENDANCE_TONE = { present: 'success', late: 'warning', absent: 'danger', excused: 'info' } as const
 
 function EditContactsModal({ student, onClose }: { student: StudentDetail; onClose: () => void }) {
+  const { data: options } = useAssistantOptions()
   const [form, setForm] = useState({
     first_name: student.first_name,
     last_name: student.last_name,
     phone: student.phone,
     parent_phone: student.parent_phone,
+    parent_name: student.parent_name,
+    birth_date: student.birth_date ?? '',
+    branch: student.branch ? String(student.branch.id) : '',
     enrollment_date: student.enrollment_date ?? '',
   })
+  const [photo, setPhoto] = useState<File | null>(null)
   const set = (key: keyof typeof form) => (event: { target: { value: string } }) => setForm({ ...form, [key]: event.target.value })
   const mutation = useAssistantFormMutation(
-    () => assistantApi.updateStudent(student.id, { ...form, enrollment_date: form.enrollment_date || null }),
+    async () => {
+      const saved = await assistantApi.updateStudent(student.id, {
+        ...form, enrollment_date: form.enrollment_date || null, birth_date: form.birth_date || null,
+        branch: form.branch ? Number(form.branch) : null,
+      })
+      return photo ? assistantApi.uploadPhoto(student.id, photo) : saved
+    },
     'Данные студента сохранены',
   )
   return (
-    <Modal isOpen onClose={onClose} title="Контакты студента" icon={<Pencil className="size-5 text-brand-600" aria-hidden />}>
+    <Modal isOpen onClose={onClose} title="Данные студента" size="lg" icon={<Pencil className="size-5 text-brand-600" aria-hidden />}>
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); mutation.mutate(undefined, { onSuccess: onClose }) }}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Имя" htmlFor="contact-first" required><Input id="contact-first" value={form.first_name} onChange={set('first_name')} required /></Field>
           <Field label="Фамилия" htmlFor="contact-last"><Input id="contact-last" value={form.last_name} onChange={set('last_name')} /></Field>
           <Field label="Телефон" htmlFor="contact-phone"><Input id="contact-phone" type="tel" value={form.phone} onChange={set('phone')} /></Field>
           <Field label="Телефон родителя" htmlFor="contact-parent"><Input id="contact-parent" type="tel" value={form.parent_phone} onChange={set('parent_phone')} /></Field>
+          <Field label="Имя родителя" htmlFor="contact-parent-name"><Input id="contact-parent-name" value={form.parent_name} onChange={set('parent_name')} maxLength={150} /></Field>
+          <Field label="Дата рождения" htmlFor="contact-birth"><DatePicker id="contact-birth" value={form.birth_date} onChange={set('birth_date')} /></Field>
+          <Field label="Филиал" htmlFor="contact-branch">
+            <Select id="contact-branch" value={form.branch} onChange={set('branch')} placeholder="Не указан"
+              options={(options?.branches ?? []).map((b) => ({ value: String(b.id), label: b.name }))} />
+          </Field>
           <Field label="Дата начала обучения" htmlFor="contact-start"><DatePicker id="contact-start" value={form.enrollment_date} onChange={set('enrollment_date')} /></Field>
+          <Field label="Фото" htmlFor="contact-photo" className="sm:col-span-2">
+            <input id="contact-photo" type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-ink-secondary file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-brand-700" />
+          </Field>
         </div>
         <FormError message={mutation.error ? extractErrorMessage(mutation.error) : null} />
         <ModalActions>
@@ -96,7 +120,12 @@ export function AssistantStudentDetailPage() {
     <div>
       <BackLink to="/assistant/students">Все студенты</BackLink>
       <PageHeader
-        title={student.full_name}
+        title={student.photo ? (
+          <span className="flex items-center gap-3">
+            <img src={resolveMediaUrl(student.photo) ?? undefined} alt="" className="size-11 shrink-0 rounded-full object-cover ring-2 ring-brand-100" />
+            {student.full_name}
+          </span>
+        ) : student.full_name}
         badge={<StudentStatusBadge status={student.status} label={student.status_display} />}
         description={student.group ? <><Link to={`/assistant/groups/${student.group.id}`} className="hover:text-brand-700">{student.group.name}</Link> · {student.course?.name}</> : 'Без группы'}
         actions={
@@ -109,7 +138,7 @@ export function AssistantStudentDetailPage() {
             ) : student.status !== 'completed' ? (
               <Button leftIcon={<UserCheck className="size-4" aria-hidden />} onClick={() => open({ type: 'activate', student })}>Активировать</Button>
             ) : null}
-            <Menu items={[{ key: 'edit', label: 'Изменить контакты', icon: <Pencil className="size-4" aria-hidden />, onClick: () => setEditing(true) }]} />
+            <Menu items={[{ key: 'edit', label: 'Изменить данные', icon: <Pencil className="size-4" aria-hidden />, onClick: () => setEditing(true) }]} />
           </>
         }
       />
@@ -119,6 +148,7 @@ export function AssistantStudentDetailPage() {
         <div className="grid gap-6 lg:grid-cols-2">
           <Card title="Обучение">
             <dl className="divide-y divide-border">
+              <InfoRow label="Филиал">{student.branch?.name}</InfoRow>
               <InfoRow label="Группа">{student.group?.name}</InfoRow>
               <InfoRow label="Программа">{student.course?.name}</InfoRow>
               <InfoRow label="Тренер">{student.teachers.join(', ')}</InfoRow>
@@ -130,10 +160,13 @@ export function AssistantStudentDetailPage() {
           <Card title="Контакты" actions={<Button size="sm" variant="ghost" leftIcon={<Pencil className="size-4" aria-hidden />} onClick={() => setEditing(true)}>Изменить</Button>}>
             <dl className="divide-y divide-border">
               <InfoRow label="Телефон">{student.phone ? <a href={`tel:${student.phone}`} className="hover:text-brand-700">{student.phone}</a> : ''}</InfoRow>
+              <InfoRow label="Родитель">{student.parent_name}</InfoRow>
               <InfoRow label="Телефон родителя">{student.parent_phone ? <a href={`tel:${student.parent_phone}`} className="hover:text-brand-700">{student.parent_phone}</a> : ''}</InfoRow>
+              <InfoRow label="Дата рождения">{student.birth_date ? formatDate(student.birth_date) : ''}</InfoRow>
               <InfoRow label="В системе с">{formatDateShort(student.created_at.slice(0, 10))}</InfoRow>
             </dl>
           </Card>
+          <div className="lg:col-span-2"><StudentAccountPanel student={student} /></div>
         </div>
       ) : null}
 

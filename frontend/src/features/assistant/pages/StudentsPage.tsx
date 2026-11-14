@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ArrowRightLeft, GraduationCap, Plus, UserCheck, UsersRound, UserX, X } from 'lucide-react'
+import { ArrowRightLeft, Download, GraduationCap, Plus, UserCheck, UsersRound, UserX, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import { assistantApi } from '@/api/assistant'
 import type { StudentListParams } from '@/api/assistant'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -18,6 +19,7 @@ import { useAssistantOptions, useAssistantStudents } from '@/hooks/useAssistant'
 import type { BulkAction, StudentRow } from '@/types/assistant'
 
 import { useAssistantActions } from '../actions/AssistantActions'
+import { AccountStatusBadge } from '../actions/StudentAccount'
 import { StudentStatusBadge } from '../ui'
 
 type StatusTab = NonNullable<StudentListParams['status']>
@@ -69,22 +71,42 @@ export function AssistantStudentsPage() {
   const [group, setGroup] = useState(params.get('group') ?? '')
   const [course, setCourse] = useState('')
   const [teacher, setTeacher] = useState('')
+  const [branch, setBranch] = useState('')
+  const [account, setAccount] = useState<'' | NonNullable<StudentListParams['account']>>('')
+  const [exporting, setExporting] = useState(false)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Map<number, StudentRow>>(new Map())
   const { open } = useAssistantActions()
   const { data: options } = useAssistantOptions()
-  const { data, isPending, isError, refetch } = useAssistantStudents({
+  const listParams: StudentListParams = {
     status,
     search: search || undefined,
     group: group ? Number(group) : undefined,
     course: course ? Number(course) : undefined,
     teacher: teacher ? Number(teacher) : undefined,
+    branch: branch ? Number(branch) : undefined,
+    account: account || undefined,
     no_group: noGroup,
     page,
-  })
+  }
+  const { data, isPending, isError, refetch } = useAssistantStudents(listParams)
+  const exportList = async () => {
+    setExporting(true)
+    try {
+      const blob = await assistantApi.exportStudents(listParams)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `students_${new Date().toISOString().slice(0, 10)}.xlsx`
+      link.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }
   const rows = data?.results ?? []
   const allOnPageSelected = rows.length > 0 && rows.every((row) => selected.has(row.id))
-  const filtered = Boolean(search || group || course || teacher || noGroup || status !== 'all')
+  const filtered = Boolean(search || group || course || teacher || branch || account || noGroup || status !== 'all')
 
   const toggle = (student: StudentRow) =>
     setSelected((current) => {
@@ -113,14 +135,37 @@ export function AssistantStudentsPage() {
       <PageHeader
         title="Студенты"
         description="Поиск, статусы, переводы и групповые действия."
-        actions={<Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => open({ type: 'create-student' })}>Студент</Button>}
+        actions={
+          <>
+            <Button variant="secondary" leftIcon={<Download className="size-4" aria-hidden />} isLoading={exporting} onClick={() => void exportList()}>
+              Экспорт
+            </Button>
+            <Button leftIcon={<Plus className="size-4" aria-hidden />} onClick={() => open({ type: 'create-student' })}>Студент</Button>
+          </>
+        }
       />
       <div className="mb-4">
         <SegmentedControl aria-label="Статус студентов" options={TABS} value={status} onChange={setStatus} />
       </div>
       <FilterBar>
         <FilterField size="lg">
-          <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Имя, фамилия или телефон…" />
+          <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Имя, телефон или логин…" />
+        </FilterField>
+        {(options?.branches?.length ?? 0) > 0 ? (
+          <FilterField>
+            <Select aria-label="Филиал" value={branch} placeholder="Все филиалы" onChange={(e) => { setBranch(e.target.value); setPage(1) }}
+              options={(options?.branches ?? []).map((b) => ({ value: String(b.id), label: b.name }))} />
+          </FilterField>
+        ) : null}
+        <FilterField>
+          <Select aria-label="Кабинет" value={account} placeholder="Кабинет: все"
+            onChange={(e) => { setAccount(e.target.value as typeof account); setPage(1) }}
+            options={[
+              { value: 'none', label: 'Без кабинета' },
+              { value: 'pending', label: 'Ждёт первого входа' },
+              { value: 'active', label: 'Кабинет активен' },
+              { value: 'disabled', label: 'Кабинет отключён' },
+            ]} />
         </FilterField>
         <FilterField>
           <Select aria-label="Группа" value={group} placeholder="Все группы" onChange={(e) => { setGroup(e.target.value); setPage(1) }}
@@ -171,7 +216,7 @@ export function AssistantStudentsPage() {
               <thead>
                 <tr>
                   <th className="w-10"><input type="checkbox" aria-label="Выбрать всех на странице" className="size-4 accent-brand-500" checked={allOnPageSelected} onChange={togglePage} /></th>
-                  <th>Имя</th><th>Группа</th><th>Программа</th><th>Статус</th><th>Посещаемость</th><th className="text-right">Действия</th>
+                  <th>Имя</th><th>Группа</th><th>Филиал</th><th>Статус</th><th>Кабинет</th><th>Посещаемость</th><th className="text-right">Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -180,8 +225,12 @@ export function AssistantStudentsPage() {
                     <td><input type="checkbox" aria-label={`Выбрать ${student.full_name}`} className="size-4 accent-brand-500" checked={selected.has(student.id)} onChange={() => toggle(student)} /></td>
                     <td className="max-w-56"><Link to={`/assistant/students/${student.id}`} className="block truncate font-medium text-ink hover:text-brand-700">{student.full_name}</Link></td>
                     <td>{student.group ? <Link to={`/assistant/groups/${student.group.id}`} className="hover:text-brand-700">{student.group.name}</Link> : <span className="text-warning">Без группы</span>}</td>
-                    <td className="text-ink-secondary">{student.course?.name ?? '—'}</td>
+                    <td className="text-ink-secondary">{student.branch?.name ?? '—'}</td>
                     <td><StudentStatusBadge status={student.status} label={student.status_display} /></td>
+                    <td>
+                      <AccountStatusBadge status={student.account?.status} />
+                      {student.account ? <span className="mt-0.5 block font-mono text-xs text-ink-muted">{student.account.login}</span> : null}
+                    </td>
                     <td className="tabular-nums">{student.attendance_percent !== null ? `${student.attendance_percent}%` : '—'}</td>
                     <td><RowActions student={student} /></td>
                   </tr>
@@ -202,7 +251,10 @@ export function AssistantStudentsPage() {
                   <StudentStatusBadge status={student.status} label={student.status_display} />
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <span className="text-sm text-ink-secondary">Посещаемость: {student.attendance_percent !== null ? `${student.attendance_percent}%` : '—'}</span>
+                  <span className="flex flex-wrap items-center gap-2 text-sm text-ink-secondary">
+                    Посещаемость: {student.attendance_percent !== null ? `${student.attendance_percent}%` : '—'}
+                    <AccountStatusBadge status={student.account?.status} />
+                  </span>
                   <RowActions student={student} />
                 </div>
               </li>

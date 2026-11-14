@@ -63,11 +63,15 @@ ROLE_HELP_TEXT = (
 )
 
 
-def _role_choices(*, allow_admin: bool) -> list[tuple[str, str]]:
+def _role_choices(*, allow_admin: bool, keep: str | None = None) -> list[tuple[str, str]]:
+    # Portal accounts (ученик / родитель) are provisioned by the Assistant
+    # together with the student (apps.portal) — never handed out here; an
+    # existing portal account keeps its own role on its edit form.
     return [("", "— Выберите роль —")] + [
         (value, ROLE_ADMIN_LABELS.get(value, label))
         for value, label in User.Role.choices
-        if allow_admin or value != User.Role.ADMIN
+        if (value not in User.PORTAL_ROLES or value == keep)
+        and (allow_admin or value != User.Role.ADMIN)
     ]
 
 
@@ -84,7 +88,7 @@ class RoleFormMixin:
             return
         instance_role = getattr(self.instance, "role", None) if self.instance.pk else None
         allow_admin = self.allow_admin_role or instance_role == User.Role.ADMIN
-        field.choices = _role_choices(allow_admin=allow_admin)
+        field.choices = _role_choices(allow_admin=allow_admin, keep=instance_role)
         field.required = True
         field.help_text = ROLE_HELP_TEXT
         if not self.instance.pk:

@@ -16,6 +16,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   hr_manager: 'HR-менеджер',
   sales_manager: 'Менеджер по продажам',
   marketing: 'Маркетинг',
+  student_parent: 'Ученик / родитель',
 }
 
 /** Mirrors `User.STAFF_ONLY_ROLES`: these roles only sign in and mark
@@ -50,6 +51,11 @@ export function isAssistant(role: UserRole | undefined): boolean {
   return role === 'assistant'
 }
 
+/** Кабинет ученика и родителя: only /student (backend: apps.portal.access). */
+export function isPortalRole(role: UserRole | undefined): boolean {
+  return role === 'student_parent'
+}
+
 export function isTeamLead(role: UserRole | undefined): boolean {
   return role === 'team_lead'
 }
@@ -73,6 +79,7 @@ const PUBLIC_SITE_PATHS = ['/portal', '/projects', '/news']
 export function homeFor(role: UserRole | undefined, target: string): string {
   // The public OKURMENKIDS DIGITAL launcher is a valid return target for every role.
   if (PUBLIC_SITE_PATHS.some((path) => target === path || target.startsWith(`${path}/`))) return target
+  if (role === 'student_parent') return target.startsWith('/student') ? target : '/student'
   const personal = PERSONAL_WORK_PATHS.some((path) => target.startsWith(path))
   if (role === 'accountant' && !target.startsWith('/accounting') && !target.startsWith('/finance') && !personal) return '/accounting'
   if (role === 'hr_manager') return target.startsWith('/hr') || target.startsWith('/attendance') || personal ? target : '/hr'

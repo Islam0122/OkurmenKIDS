@@ -188,6 +188,14 @@ class Room(models.Model):
         return self.name
 
 
+def student_photo_path(instance, filename: str) -> str:
+    import os
+    import uuid
+
+    ext = os.path.splitext(filename)[1].lower()[:10]
+    return f"students/{timezone.now():%Y/%m}/{uuid.uuid4().hex}{ext}"
+
+
 class Student(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Активен"
@@ -216,6 +224,37 @@ class Student(models.Model):
         max_length=30,
         blank=True,
         verbose_name="Телефон родителя",
+    )
+
+    parent_name = models.CharField(
+        max_length=150,
+        blank=True,
+        verbose_name="Имя родителя",
+    )
+
+    birth_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата рождения",
+    )
+
+    photo = models.ImageField(
+        upload_to=student_photo_path,
+        max_length=255,
+        blank=True,
+        verbose_name="Фото",
+    )
+
+    # The academy's branches are the ones already kept for the public site
+    # (website.Branch: name, address, phone in ru/ky/en) — one table for
+    # both, never a second copy here.
+    branch = models.ForeignKey(
+        "website.Branch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="students",
+        verbose_name="Филиал",
     )
 
     group = models.ForeignKey(
@@ -1592,6 +1631,12 @@ class HomeworkResult(models.Model):
         blank=True,
         verbose_name="Комментарий",
     )
+
+    # What the student handed in through the Student & Parent Portal
+    # (apps.portal.services.homework.submit). The trainer still grades the
+    # same row — status / score / comment — through the existing screens.
+    submission_text = models.TextField(blank=True, max_length=4000, verbose_name="Ответ ученика")
+    submission_link = models.URLField(blank=True, max_length=500, verbose_name="Ссылка на работу")
 
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата сдачи")
     checked_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата проверки")

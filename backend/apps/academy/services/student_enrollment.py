@@ -66,6 +66,9 @@ def enroll_student(
     group: Group,
     enrollment_date: dt.date | None = None,
     performed_by=None,
+    parent_name: str = "",
+    birth_date: dt.date | None = None,
+    branch=None,
 ) -> Student:
     """Create a new, active Student studying in `group` from
     `enrollment_date` (today by default — the date scholarship eligibility
@@ -76,6 +79,9 @@ def enroll_student(
         last_name=last_name.strip(),
         phone=phone.strip(),
         parent_phone=parent_phone.strip(),
+        parent_name=(parent_name or "").strip(),
+        birth_date=birth_date,
+        branch=branch,
         group=group,
         enrollment_date=_today_or(enrollment_date),
         status=Student.Status.ACTIVE,

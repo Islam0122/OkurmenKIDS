@@ -45,7 +45,7 @@ class ActiveUserField(serializers.PrimaryKeyRelatedField):
     default_error_messages = {"does_not_exist": "Сотрудник не найден или неактивен."}
 
     def get_queryset(self):
-        return User.objects.filter(is_active=True)
+        return User.objects.staff().filter(is_active=True)
 
 
 # --- Задачи ------------------------------------------------------------------
@@ -407,7 +407,7 @@ class SettingsSerializer(serializers.ModelSerializer):
     def validate_required_reports(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Ожидается объект «роль → список отчётов».")
-        roles = set(User.Role.values)
+        roles = set(User.staff_role_values())
         for role, kinds in value.items():
             if role not in roles:
                 raise serializers.ValidationError(f"Неизвестная роль «{role}».")

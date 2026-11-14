@@ -29,7 +29,7 @@ PRIVILEGED_ROLES = (User.Role.ADMIN, User.Role.DIRECTOR)
 
 def requestable_roles() -> list[tuple[str, str]]:
     """Роли, которые выдаются только через согласование администратора."""
-    return [(value, label) for value, label in User.Role.choices
+    return [(value, label) for value, label in User.staff_role_choices()
             if value not in User.HR_MANAGEABLE_ROLES and value not in PRIVILEGED_ROLES]
 
 
@@ -122,7 +122,7 @@ def approve_request(request: AccountRequest, admin) -> AccountRequest:
     request = AccountRequest.objects.select_for_update().get(pk=request.pk)
     if request.status != AccountRequest.Status.PENDING:
         raise RecruitmentError("Запрос уже рассмотрен.", "not_pending")
-    if request.role in PRIVILEGED_ROLES or request.role not in dict(User.Role.choices):
+    if request.role in PRIVILEGED_ROLES or request.role not in dict(User.staff_role_choices()):
         raise RecruitmentError("Эту роль нельзя назначить при найме.", "role_forbidden", status=403)
     application = _lock(request.application)
     if application.hired_user_id or application.status != S.OFFER:

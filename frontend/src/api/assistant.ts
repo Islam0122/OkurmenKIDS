@@ -22,6 +22,8 @@ import type {
   ScheduleData,
   ScholarshipCandidate,
   ScholarshipPeriodRow,
+  AccountDetail,
+  FamilyAccount,
   StudentDetail,
   StudentRow,
   Survey,
@@ -61,6 +63,8 @@ export interface StudentListParams {
   course?: number
   teacher?: number
   no_group?: boolean
+  branch?: number
+  account?: 'none' | 'pending' | 'active' | 'disabled'
   page?: number
   page_size?: number
 }
@@ -70,8 +74,21 @@ export interface StudentInput {
   last_name: string
   phone?: string
   parent_phone?: string
+  parent_name?: string
+  birth_date?: string | null
+  branch?: number | null
   group: number
   enrollment_date?: string | null
+  /** Кабинет ученика и родителя: создать аккаунт (по умолчанию) … */
+  create_account?: boolean
+  login?: string
+  /** … или привязать к аккаунту брата / сестры. */
+  link_account?: number | null
+}
+
+export interface AccountCheck {
+  suggested_login: string
+  family_accounts: FamilyAccount[]
 }
 
 export interface DeactivateInput {
@@ -149,6 +166,29 @@ export const assistantApi = {
   deactivate: (id: number, body: DeactivateInput) => post<StudentDetail>(`/students/${id}/deactivate/`, body),
   activate: (id: number, body: ActivateInput) => post<StudentDetail>(`/students/${id}/activate/`, body),
   transfer: (id: number, body: TransferInput) => post<StudentDetail>(`/students/${id}/transfer/`, body),
+  accountCheck: (params: { first_name: string; last_name: string; parent_phone: string }) =>
+    get<AccountCheck>('/students/account-check/', params),
+  exportStudents: (params: StudentListParams, format: 'xlsx' | 'csv' = 'xlsx') =>
+    apiClient
+      .get<Blob>(`${BASE}/students/export/`, {
+        params: { ...params, no_group: params.no_group ? '1' : undefined, page: undefined, export_format: format },
+        responseType: 'blob',
+      })
+      .then((r) => r.data),
+  uploadPhoto: (id: number, file: File) => {
+    const form = new FormData()
+    form.append('photo', file)
+    return post<StudentDetail>(`/students/${id}/photo/`, form)
+  },
+  deletePhoto: (id: number) => apiClient.delete<StudentDetail>(`${BASE}/students/${id}/photo/`).then((r) => r.data),
+  account: (id: number) => get<AccountDetail | null>(`/students/${id}/account/`),
+  provisionAccount: (id: number, login?: string) => post<StudentDetail>(`/students/${id}/account/`, { login: login ?? '' }),
+  resetPassword: (id: number) => post<StudentDetail>(`/students/${id}/account/reset-password/`),
+  changeLogin: (id: number, login: string) => patch<StudentDetail>(`/students/${id}/account/login/`, { login }),
+  setAccountActive: (id: number, value: boolean) => post<StudentDetail>(`/students/${id}/account/active/`, { value }),
+  setPaymentsVisible: (id: number, value: boolean) => post<StudentDetail>(`/students/${id}/account/payments/`, { value }),
+  linkAccount: (id: number, account: number) => post<StudentDetail>(`/students/${id}/account/link/`, { account }),
+  unlinkAccount: (id: number) => post<StudentDetail>(`/students/${id}/account/unlink/`),
   bulk: (body: { action: BulkAction; students: number[]; group?: number | null; reason?: string; event_date?: string | null; comment?: string }) =>
     post<BulkResult>('/students/bulk/', body),
 

@@ -88,8 +88,8 @@ class MetaView(_OpsView):
             "periods": [{"value": v, "label": label} for v, label in period_service.PERIODS],
             "departments": department_choices(),
             "roles": [{"value": v, "label": label, "department": org.department_of(User(role=v))}
-                      for v, label in User.Role.choices],
-            "employees": [person(u) for u in User.objects.filter(is_active=True).order_by("first_name", "last_name")],
+                      for v, label in User.staff_role_choices()],
+            "employees": [person(u) for u in User.objects.staff().filter(is_active=True).order_by("first_name", "last_name")],
             "subjects": list(Subject.objects.filter(is_active=True).values("id", "name")),
             "groups": list(Group.objects.filter(status=Group.Status.ACTIVE).order_by("name").values("id", "name")),
             "metrics": [kpi_registry.describe(m) for m in kpi_registry.METRICS.values()],
@@ -273,7 +273,7 @@ class StaffAttendanceView(_OpsView):
 
 
 class PermissionInputSerializer(serializers.Serializer):
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True),
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.staff().filter(is_active=True),
                                               error_messages={"does_not_exist": "Сотрудник не найден."})
     kind = serializers.ChoiceField(choices=AttendancePermission.Kind.choices)
     starts_at = serializers.DateTimeField()
@@ -667,7 +667,7 @@ class SettingsView(_OpsView):
 
     def get(self, request):
         data = SettingsSerializer(OperationsSettings.load()).data
-        data["roles"] = [{"value": v, "label": label} for v, label in User.Role.choices]
+        data["roles"] = [{"value": v, "label": label} for v, label in User.staff_role_choices()]
         data["report_kinds"] = _choices(ReportKind)
         return Response(data)
 

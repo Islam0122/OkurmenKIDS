@@ -65,7 +65,7 @@ class OpsFilters:
         return OpsFilters("custom", prev_start, prev_end, self.today, self.department, self.role, self.employee_id)
 
     def users_qs(self):
-        qs = User.objects.filter(is_active=True)
+        qs = User.objects.staff().filter(is_active=True)
         if self.department:
             qs = qs.filter(role__in=roles_of(self.department))
         if self.role:
@@ -127,7 +127,7 @@ def from_query(params, *, default: str = "this_month", today: dt.date | None = N
     if department and department not in Department.values:
         raise ValidationError({"department": "Неизвестный отдел."})
     role = params.get("role") or None
-    if role and role not in User.Role.values:
+    if role and role not in User.staff_role_values():
         raise ValidationError({"role": "Неизвестная должность."})
     employee = params.get("employee") or None
     if employee and not str(employee).isdigit():

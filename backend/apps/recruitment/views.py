@@ -588,7 +588,7 @@ class MetaView(APIView):
 
     @extend_schema(tags=TAGS, responses=OpenApiTypes.OBJECT)
     def get(self, request):
-        people = User.objects.filter(is_active=True).order_by("last_name", "first_name")
+        people = User.objects.staff().filter(is_active=True).order_by("last_name", "first_name")
         return Response({
             "application_statuses": choices(Application.Status),
             "sources": choices(Application.Source),

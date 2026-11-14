@@ -133,7 +133,7 @@ def day_field(weekday: int, part: str) -> str:
 
 class WorkScheduleAdminForm(forms.ModelForm):
     user = EmployeeChoiceField(
-        queryset=User.objects.filter(is_active=True), label="Сотрудник", widget=EmployeeSelect,
+        queryset=User.objects.staff().filter(is_active=True), label="Сотрудник", widget=EmployeeSelect,
         error_messages={"required": "Выберите сотрудника.",
                         "invalid_choice": "Сотрудник не найден или деактивирован."},
     )

@@ -21,7 +21,7 @@ import { AuthContext, type AuthStatus } from './AuthContext'
 function isEligibleUser(user: User): boolean {
   if (!user.is_active) return false
   if (user.role === 'teacher') return user.is_verified
-  return ['admin', 'team_lead', 'assistant', 'accountant', 'director', ...STAFF_ONLY_ROLES].includes(user.role)
+  return ['admin', 'team_lead', 'assistant', 'accountant', 'director', 'student_parent', ...STAFF_ONLY_ROLES].includes(user.role)
 }
 
 function describeIneligibility(user: User): string {

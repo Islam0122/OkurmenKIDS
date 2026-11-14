@@ -32,7 +32,9 @@ from apps.academy.models import (
 )
 from apps.academy.services.group_schedule_conflicts import overlapping_groups
 from apps.academy.services.trainer_assignment import available_trainers
+from apps.portal.models import StudentLink
 from apps.scholarships.models import ScholarshipAward
+from apps.website.models import Branch
 
 from .history import student_counts
 
@@ -183,6 +185,36 @@ def _program_row(program: GroupTeacher) -> dict:
     }
 
 
+def account_row(account, *, full: bool = False) -> dict | None:
+    """Portal account state as staff see it — never a password."""
+    if account is None:
+        return None
+    user = account.user
+    row = {
+        "id": account.pk,
+        "login": user.username,
+        "status": account.credentials_status,
+        "is_active": user.is_active,
+        "must_change_password": account.must_change_password,
+    }
+    if full:
+        row.update({
+            "can_view_payments": account.can_view_payments,
+            "credentials_issued_at": account.credentials_issued_at,
+            "password_changed_at": account.password_changed_at,
+            "last_login": user.last_login,
+            "created_at": account.created_at,
+            "students": [{"id": s.pk, "name": str(s), "group": _ref(s.group)}
+                         for s in account.students.select_related("group").order_by("first_name")],
+        })
+    return row
+
+
+def _account_of(student: Student):
+    links = list(student.portal_links.all())
+    return links[0].account if links else None
+
+
 def student_row(student: Student) -> dict:
     attended = getattr(student, "attended_count", None)
     marked = getattr(student, "marked_count", None)
@@ -195,8 +227,11 @@ def student_row(student: Student) -> dict:
         "full_name": str(student),
         "phone": student.phone,
         "parent_phone": student.parent_phone,
+        "parent_name": student.parent_name,
         "group": _ref(group),
         "course": _ref(group.course) if group is not None else None,
+        "branch": _ref(student.branch),
+        "account": account_row(_account_of(student)),
         "status": student.status,
         "status_display": student.get_status_display(),
         "enrollment_date": student.enrollment_date,
@@ -205,7 +240,9 @@ def student_row(student: Student) -> dict:
 
 
 def students_queryset():
-    return Student.objects.select_related("group__course").annotate(
+    return Student.objects.select_related("group__course", "branch").prefetch_related(
+        Prefetch("portal_links", queryset=StudentLink.objects.select_related("account__user").order_by("pk")),
+    ).annotate(
         attended_count=Count("attendance_records", filter=Q(attendance_records__status__in=ATTENDED)),
         marked_count=Count("attendance_records"),
     )
@@ -221,6 +258,8 @@ def filter_students(qs, params):
             qs = qs.filter(
                 Q(first_name__icontains=word) | Q(last_name__icontains=word)
                 | Q(phone__icontains=word) | Q(parent_phone__icontains=word)
+                | Q(parent_name__icontains=word)
+                | Q(pk__in=StudentLink.objects.filter(account__user__username__icontains=word).values("student_id"))
             )
     if (group := params.get("group")) and str(group).isdigit():
         qs = qs.filter(group_id=group)
@@ -233,6 +272,18 @@ def filter_students(qs, params):
         ))
     if params.get("no_group") in ("1", "true"):
         qs = qs.filter(group__isnull=True)
+    if (branch := params.get("branch")) and str(branch).isdigit():
+        qs = qs.filter(branch_id=branch)
+    account = params.get("account")
+    linked = StudentLink.objects.values("student_id")
+    if account == "none":
+        qs = qs.exclude(pk__in=linked)
+    elif account == "pending":
+        qs = qs.filter(pk__in=linked.filter(account__must_change_password=True, account__user__is_active=True))
+    elif account == "active":
+        qs = qs.filter(pk__in=linked.filter(account__must_change_password=False, account__user__is_active=True))
+    elif account == "disabled":
+        qs = qs.filter(pk__in=linked.filter(account__user__is_active=False))
     return qs.order_by("last_name", "first_name", "pk")
 
 
@@ -431,8 +482,19 @@ def student_detail(student: Student) -> dict:
         if name not in teachers:
             teachers.append(name)
 
+    from apps.portal.services.accounts import family_accounts
+
+    account = _account_of(student)
+    family = [] if account is not None else [
+        {"id": a.pk, "login": a.user.username, "students": [str(s) for s in a.students.all()]}
+        for a in family_accounts(student.parent_phone, exclude_student=student)
+    ]
     return {
         **student_row(student),
+        "birth_date": student.birth_date,
+        "photo": student.photo.url if student.photo else None,
+        "account": account_row(account, full=True),
+        "family_accounts": family,
         "created_at": student.created_at,
         "teachers": teachers,
         "group_status": group.get_status_display() if group is not None else None,
@@ -798,4 +860,6 @@ def options() -> dict:
         "deactivation_reasons": [{"value": v, "label": StudentStatusEvent.Reason(v).label}
                                  for v in StudentStatusEvent.DEACTIVATION_REASONS],
         "group_statuses": [{"value": v, "label": l} for v, l in Group.Status.choices],
+        # Филиалы академии — те же, что на публичном сайте (website.Branch).
+        "branches": [{"id": b.pk, "name": b.name, "address": b.address} for b in Branch.objects.order_by("order", "pk")],
     }

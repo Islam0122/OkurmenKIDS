@@ -187,11 +187,15 @@ def _empty() -> dict:
     return {"attendance": 0, "homework": 0, "tests": 0}
 
 
-def student_xp(period: Period) -> dict[int, dict]:
+def student_xp(period: Period, student_ids=None) -> dict[int, dict]:
     """{student_id: {attendance, homework, tests}} — XP earned in `period`,
-    from three aggregate queries (no per-student queries)."""
+    from three aggregate queries (no per-student queries). `student_ids`
+    narrows it to those students (the Student & Parent Portal) with the very
+    same rules."""
     xp: dict[int, dict] = defaultdict(_empty)
     in_period = Q(lesson__date__range=(period.start, period.end)) & ~Q(lesson__status=Lesson.Status.CANCELLED)
+    if student_ids is not None:
+        in_period &= Q(student_id__in=student_ids)
 
     attendance = (
         Attendance.objects.filter(in_period, status__in=(Attendance.Status.PRESENT, Attendance.Status.LATE))
@@ -210,6 +214,7 @@ def student_xp(period: Period) -> dict[int, dict]:
             status__in=(HomeworkResult.Status.SUBMITTED, HomeworkResult.Status.CHECKED, HomeworkResult.Status.LATE),
         )
         .exclude(homework__lesson__status=Lesson.Status.CANCELLED)
+        .filter(**({"student_id__in": student_ids} if student_ids is not None else {}))
         .values("student_id")
         .annotate(
             done=Count("id", filter=~Q(status=HomeworkResult.Status.LATE)),
@@ -222,15 +227,17 @@ def student_xp(period: Period) -> dict[int, dict]:
             row["done"] * XP_HOMEWORK_DONE + row["late"] * XP_HOMEWORK_LATE + row["grades"]
         )
 
-    for student_id, points in _test_xp(period).items():
+    for student_id, points in _test_xp(period, student_ids).items():
         xp[student_id]["tests"] = points
     return xp
 
 
-def _test_xp(period: Period) -> dict[int, int]:
+def _test_xp(period: Period, student_ids=None) -> dict[int, int]:
     """Best finished attempt per (student, session), credited on the local
     date it was finished — so a re-take in a later period adds nothing."""
     finished = StudentAttempt.objects.filter(status=AttemptStatus.FINISHED, student__isnull=False, finished_at__isnull=False)
+    if student_ids is not None:
+        finished = finished.filter(student_id__in=student_ids)
     pairs = set(
         finished.filter(finished_at__gte=_day_start(period.start), finished_at__lt=_day_start(period.end + dt.timedelta(days=1)))
         .values_list("student_id", "session_id")
