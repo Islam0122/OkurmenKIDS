@@ -65,6 +65,7 @@ export function HomeworkMini({ hw }: { hw: PortalHomework }) {
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-ink">{hw.title}</span>
         <span className="block truncate text-xs text-ink-secondary">
+          {hw.lesson.lesson_number ? `${t('hw.nextLesson', { n: hw.lesson.lesson_number })} · ` : ''}
           {hw.subject?.name ? `${hw.subject.name} · ` : ''}
           {hw.deadline ? t('hw.deadline', { date: date(hw.deadline) }) : t('hw.noDeadline')}
           {hw.state === 'awaiting' && hw.days_left !== null && hw.days_left >= 0

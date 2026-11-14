@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ArrowLeft, CalendarDays, ExternalLink, FileText, Info, MessageSquareQuote, PlayCircle } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { studentPortalApi } from '@/api/studentPortal'
 import type { HomeworkFilter } from '@/api/studentPortal'
+import type { PortalHomeworkDetail } from '@/types/studentPortal'
 import { cn } from '@/utils/cn'
 
 import { LIVE_QUERY, PORTAL_KEY, usePortal } from '../context'
@@ -18,15 +19,77 @@ import { Empty, HomeworkBadge, LoadError, Loading, PCard, PageTitle } from '../u
  * trainer records status, grade and comment in the existing grading form.
  * This page only shows what was saved there — no answer field, no link, no
  * «submit» — and refreshes itself so a newly saved result appears at once.
+ *
+ * The list shows only the homework of the NEXT scheduled lesson (decided by
+ * the backend from the real schedule — portal.services.data.next_lessons);
+ * everything already given is under «История».
  */
 
-type FilterTab = Extract<HomeworkFilter, 'open' | 'not_submitted' | 'done' | 'checked' | 'all'>
-const FILTERS: FilterTab[] = ['open', 'not_submitted', 'done', 'checked', 'all']
+type View = 'next' | 'history'
+type FilterTab = Extract<HomeworkFilter, 'not_submitted' | 'done' | 'checked' | 'all'>
+const FILTERS: FilterTab[] = ['all', 'not_submitted', 'done', 'checked']
 
-export function StudentHomeworkPage() {
+/** One homework of the next lesson, shown in full: no click needed to read it. */
+function NextHomeworkCard({ hw }: { hw: PortalHomeworkDetail }) {
+  const { t, date } = usePortalI18n()
+  return (
+    <article className="rounded-xl border border-border/70 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <Link to={`/student/homework/${hw.id}`} className="min-w-0 text-base font-semibold text-ink hover:text-brand-700">{hw.title}</Link>
+        <HomeworkBadge state={hw.state} />
+      </div>
+      {hw.description
+        ? <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink">{hw.description}</p>
+        : <p className="mt-2 text-sm text-ink-muted">{t('hw.noDescription')}</p>}
+      <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-secondary">
+        <div>{hw.deadline ? t('hw.deadline', { date: date(hw.deadline, true) }) : t('hw.noDeadline')}</div>
+        <div>{t('hw.grade')}: {hw.score !== null ? <b className="text-brand-700">{hw.score}/10</b> : t('hw.notGraded')}</div>
+      </dl>
+      {hw.feedback ? <p className="mt-2 rounded-lg bg-brand-50/60 px-3 py-2 text-sm text-ink">«{hw.feedback}»</p> : null}
+    </article>
+  )
+}
+
+function NextLessonHomework() {
+  const { student } = usePortal()
+  const { t, date, weekday } = usePortalI18n()
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: [...PORTAL_KEY, 'homework-next', student.id],
+    queryFn: () => studentPortalApi.nextHomework(student.id),
+    ...LIVE_QUERY,
+  })
+  if (isPending) return <Loading />
+  if (isError || !data) return <LoadError onRetry={() => void refetch()} />
+  if (!data.lessons.length) return <Empty>{data.has_group ? t('hw.noNextLesson') : t('hw.noGroup')}</Empty>
+  return (
+    <div className="space-y-4">
+      {data.lessons.map(({ lesson, homework }) => {
+        const day = (new Date(`${lesson.date}T00:00:00`).getDay() + 6) % 7
+        return (
+          <PCard key={lesson.id} title={
+            <span className="flex flex-wrap items-center gap-x-2">
+              <CalendarDays className="size-4 text-brand-600" aria-hidden />
+              {lesson.lesson_number ? t('hw.nextLesson', { n: lesson.lesson_number }) : t('hw.relatedLesson')}
+              <span className="font-normal text-ink-secondary">
+                · {weekday(day, true)}, {date(lesson.date, true)}{lesson.start ? ` · ${lesson.start}` : ''}{lesson.subject ? ` · ${lesson.subject.name}` : ''}
+              </span>
+            </span>
+          }>
+            {lesson.topic ? <p className="-mt-1 mb-3 text-sm text-ink-secondary">{lesson.topic}</p> : null}
+            {homework.length
+              ? <div className="space-y-3">{homework.map((hw) => <NextHomeworkCard key={hw.id} hw={hw} />)}</div>
+              : <Empty>{t('hw.notAssigned')}</Empty>}
+          </PCard>
+        )
+      })}
+    </div>
+  )
+}
+
+function HomeworkHistory() {
   const { student } = usePortal()
   const { t } = usePortalI18n()
-  const [filter, setFilter] = useState<FilterTab>('open')
+  const [filter, setFilter] = useState<FilterTab>('all')
   const [page, setPage] = useState(1)
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: [...PORTAL_KEY, 'homework', student.id, filter, page],
@@ -36,8 +99,7 @@ export function StudentHomeworkPage() {
   })
   const label = (f: FilterTab) => (f === 'all' ? t('common.all') : t(`hw.filter.${f}`))
   return (
-    <div>
-      <PageTitle title={t('hw.title')} subtitle={t('hw.offline')} />
+    <>
       <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
         {FILTERS.map((f) => (
           <button key={f} type="button" onClick={() => { setFilter(f); setPage(1) }} aria-pressed={filter === f}
@@ -48,7 +110,7 @@ export function StudentHomeworkPage() {
         ))}
       </div>
       {isPending ? <Loading /> : isError || !data ? <LoadError onRetry={() => void refetch()} /> : data.results.length === 0 ? (
-        <Empty>{t('hw.empty')}</Empty>
+        <Empty>{filter === 'all' ? t('hw.historyEmpty') : t('hw.empty')}</Empty>
       ) : (
         <>
           <div className="grid gap-2 md:grid-cols-2">{data.results.map((hw) => <HomeworkMini key={hw.id} hw={hw} />)}</div>
@@ -61,6 +123,27 @@ export function StudentHomeworkPage() {
           ) : null}
         </>
       )}
+    </>
+  )
+}
+
+export function StudentHomeworkPage() {
+  const { t } = usePortalI18n()
+  const [params, setParams] = useSearchParams()
+  const view: View = params.get('view') === 'history' ? 'history' : 'next'
+  return (
+    <div>
+      <PageTitle title={t('hw.title')} subtitle={view === 'next' ? t('hw.nextSubtitle') : t('hw.offline')} />
+      <div className="mb-5 inline-flex rounded-xl bg-surface p-1 shadow-sm ring-1 ring-border/70" role="tablist">
+        {(['next', 'history'] as View[]).map((v) => (
+          <button key={v} type="button" role="tab" aria-selected={view === v}
+            onClick={() => setParams(v === 'next' ? {} : { view: v }, { replace: true })}
+            className={cn('rounded-lg px-4 py-1.5 text-sm font-medium', view === v ? 'bg-brand-500 text-white' : 'text-ink-secondary hover:text-ink')}>
+            {t(`hw.tab.${v}`)}
+          </button>
+        ))}
+      </div>
+      {view === 'next' ? <NextLessonHomework /> : <HomeworkHistory />}
     </div>
   )
 }

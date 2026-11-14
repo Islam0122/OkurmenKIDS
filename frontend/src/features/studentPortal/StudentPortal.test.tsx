@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { homeFor } from '@/lib/roles'
 import { renderWithProviders } from '@/test/testUtils'
-import type { PortalDashboard, PortalHomeworkDetail, PortalMe, PortalStudent } from '@/types/studentPortal'
+import type { PortalDashboard, PortalHomeworkDetail, PortalLesson, PortalMe, PortalStudent } from '@/types/studentPortal'
 
 vi.mock('@/api/studentPortal', () => ({
   studentPortalApi: {
@@ -13,6 +13,8 @@ vi.mock('@/api/studentPortal', () => ({
     changePassword: vi.fn(),
     dashboard: vi.fn(),
     homeworkDetail: vi.fn(),
+    nextHomework: vi.fn(),
+    homework: vi.fn(),
   },
 }))
 vi.mock('@/hooks/useAuth', () => ({
@@ -24,7 +26,7 @@ import { studentPortalApi } from '@/api/studentPortal'
 import { CredentialsCard } from '@/features/assistant/actions/StudentAccount'
 import { StudentPortalLayout } from './StudentPortalLayout'
 import { StudentDashboardPage } from './pages/DashboardPage'
-import { StudentHomeworkDetailPage } from './pages/HomeworkPages'
+import { StudentHomeworkDetailPage, StudentHomeworkPage } from './pages/HomeworkPages'
 import { translate, DICTIONARIES } from './i18n'
 
 function child(id: number, first: string): PortalStudent {
@@ -194,5 +196,70 @@ describe('Homework page (offline checking, read-only)', () => {
     vi.mocked(studentPortalApi.homeworkDetail).mockResolvedValue(homework({ state, is_open: state === 'not_submitted' }))
     renderDetail()
     expect(await screen.findByText(label)).toBeInTheDocument()
+  })
+})
+
+function lesson18(): PortalLesson {
+  return {
+    id: 18, date: '2026-11-17', start: '16:00', end: '17:30', subject: { id: 1, name: 'Python' }, teacher: null,
+    group: { id: 1, name: 'PRO-01' }, course: null, room: null, branch: null, topic: 'Функции', lesson_number: 18,
+    status: 'scheduled', cancellation_reason: '', attendance: null,
+  }
+}
+
+describe('Homework list: only the next lesson', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    vi.mocked(studentPortalApi.me).mockResolvedValue(ME)
+  })
+
+  function renderList(route = '/student/homework') {
+    return renderWithProviders(
+      <Routes>
+        <Route path="/student" element={<StudentPortalLayout />}>
+          <Route path="homework" element={<StudentHomeworkPage />} />
+        </Route>
+      </Routes>,
+      { route },
+    )
+  }
+
+  it('shows the homework of the next lesson in full, and nothing else', async () => {
+    vi.mocked(studentPortalApi.nextHomework).mockResolvedValue({
+      has_group: true,
+      lessons: [{ lesson: lesson18(), homework: [homework({ id: 81, title: 'ДЗ к уроку 18', lesson: { ...homework().lesson, lesson_number: 18 } })] }],
+    })
+    renderList()
+    expect(await screen.findByText('Урок 18')).toBeInTheDocument()
+    expect(screen.getByText('ДЗ к уроку 18')).toBeInTheDocument()
+    expect(screen.getByText('Решите 5 задач на цикл for.')).toBeInTheDocument()
+    expect(screen.getByText(/Ещё не оценено/)).toBeInTheDocument()
+    expect(studentPortalApi.homework).not.toHaveBeenCalled()
+  })
+
+  it('says when the next lesson has no homework yet', async () => {
+    vi.mocked(studentPortalApi.nextHomework).mockResolvedValue({ has_group: true, lessons: [{ lesson: lesson18(), homework: [] }] })
+    renderList()
+    expect(await screen.findByText('Домашнее задание пока не назначено')).toBeInTheDocument()
+  })
+
+  it('shows an empty state when no next lesson is scheduled', async () => {
+    vi.mocked(studentPortalApi.nextHomework).mockResolvedValue({ has_group: true, lessons: [] })
+    renderList()
+    expect(await screen.findByText('Следующее занятие пока не запланировано.')).toBeInTheDocument()
+  })
+
+  it('keeps earlier homework under «История»', async () => {
+    vi.mocked(studentPortalApi.nextHomework).mockResolvedValue({ has_group: true, lessons: [] })
+    vi.mocked(studentPortalApi.homework).mockResolvedValue({
+      count: 1, next: null, previous: null,
+      results: [{ ...homework({ id: 16, title: 'ДЗ к уроку 16', state: 'checked', score: 9 }) }],
+    })
+    renderList()
+    await userEvent.setup().click(await screen.findByRole('tab', { name: 'История' }))
+    expect(await screen.findByText('ДЗ к уроку 16')).toBeInTheDocument()
+    expect(screen.getByText('9/10')).toBeInTheDocument()
+    expect(studentPortalApi.homework).toHaveBeenCalledWith(1, 'all', 1)
   })
 })

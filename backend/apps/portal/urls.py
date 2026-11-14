@@ -12,6 +12,7 @@ urlpatterns = [
     path(f"{student}dashboard/", views.DashboardView.as_view(), name="dashboard"),
     path(f"{student}schedule/", views.ScheduleView.as_view(), name="schedule"),
     path(f"{student}homework/", views.HomeworkListView.as_view(), name="homework"),
+    path(f"{student}homework/next/", views.NextHomeworkView.as_view(), name="homework-next"),
     path(f"{student}homework/<int:homework_id>/", views.HomeworkDetailView.as_view(), name="homework-detail"),
     path(f"{student}attendance/", views.AttendanceView.as_view(), name="attendance"),
     path(f"{student}notifications/", views.NotificationsView.as_view(), name="notifications"),

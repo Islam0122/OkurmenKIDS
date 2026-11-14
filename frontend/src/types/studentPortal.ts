@@ -78,6 +78,12 @@ export interface PortalHomeworkDetail extends Omit<PortalHomework, 'lesson'> {
   feedback: string
 }
 
+/** `/homework/next/`: the next scheduled lesson of each program with its homework (possibly none). */
+export interface NextHomework {
+  has_group: boolean
+  lessons: { lesson: PortalLesson; homework: PortalHomeworkDetail[] }[]
+}
+
 export interface AttendanceSummary {
   marked: number
   present: number
