@@ -16,13 +16,23 @@
 export const SITE_ORIGIN = 'https://www.okurmenkids.com'
 export const BRAND = 'Okurmen Kids'
 /**
- * Spellings people search for (WebSite.alternateName) — above all the Cyrillic
- * «Окурмен Кидс», which Google does not reliably map to the Latin brand on its own.
- * The public brand itself stays «Okurmen Kids»; there are no separate pages for
- * these spellings.
+ * Spellings people search for — Cyrillic first: Google does not reliably map
+ * «Окурмен Кидс» / «Окурмэн» (the spelling on the official round logo) to the
+ * Latin brand on its own. One list for WebSite.alternateName and
+ * Organization.alternateName; both nodes are linked by @id, so every spelling
+ * names the same organization and website. The public brand stays
+ * «Okurmen Kids»; there are no separate pages for these spellings, and they
+ * are not repeated in visible text or meta descriptions.
  */
-export const BRAND_ALT = ['Окурмен Кидс', 'ОкурменKids', 'Окурмен Кидс Бишкек', 'okurmenkids']
-/** Organization.alternateName: the brand in Cyrillic. */
+export const BRAND_ALT = Object.freeze([...new Set([
+  'Окурмен Кидс',
+  'ОкурменKids',
+  'Окурмен Кидс Бишкек',
+  'Окурмэн Кидс',
+  'Окурмэн',
+  'okurmenkids',
+])])
+/** The brand in Cyrillic as used in the visible RU/KG text («Okurmen Kids (Окурмен Кидс)»). */
 export const BRAND_CYRILLIC = 'Окурмен Кидс'
 
 export const LANGS = ['ru', 'ky', 'en']
@@ -402,7 +412,7 @@ export function organizationLd(site, lang, settings) {
     '@type': ['Organization', 'EducationalOrganization'],
     '@id': `${site}/#organization`,
     name: BRAND,
-    alternateName: BRAND_CYRILLIC,
+    alternateName: [...BRAND_ALT],
     url: `${site}/`,
     logo: { '@type': 'ImageObject', url: `${site}${LOGO.path}`, contentUrl: `${site}${LOGO.path}`, width: LOGO.width, height: LOGO.height },
     image: `${site}/og-image.png`,
@@ -423,7 +433,7 @@ export function websiteLd(site, lang) {
     '@type': 'WebSite',
     '@id': `${site}/#website`,
     name: BRAND,
-    alternateName: BRAND_ALT,
+    alternateName: [...BRAND_ALT],
     url: `${site}/`,
     inLanguage: LANGS.map((code) => HTML_LANG[code]),
     description: pageSeo(lang, '/').description,

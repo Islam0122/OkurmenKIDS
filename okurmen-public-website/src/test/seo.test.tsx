@@ -10,6 +10,7 @@ import { ky } from '@/i18n/locales/ky'
 import { ru } from '@/i18n/locales/ru'
 import {
   BRAND,
+  BRAND_ALT,
   LOGO,
   canonicalPath,
   detailDescription,
@@ -195,11 +196,39 @@ describe('Brand search: Latin and Cyrillic', () => {
     expect(PAGES.ky['/'].description).toMatch(/^Окурмен Кидс \(Okurmen Kids\)/)
   })
 
-  it('WebSite JSON-LD names the brand and its search spellings', () => {
-    const ld = websiteLd(SITE, 'ru')
-    expect(ld.name).toBe('Okurmen Kids')
-    expect(ld.alternateName).toEqual(['Окурмен Кидс', 'ОкурменKids', 'Окурмен Кидс Бишкек', 'okurmenkids'])
-    expect(ld.url).toBe('https://www.okurmenkids.com/')
+  const ALT_NAMES = ['Окурмен Кидс', 'ОкурменKids', 'Окурмен Кидс Бишкек', 'Окурмэн Кидс', 'Окурмэн', 'okurmenkids']
+
+  it('the alternate-name list is exactly the approved spellings, unique, never the official name or «Digital»', () => {
+    expect([...BRAND_ALT]).toEqual(ALT_NAMES)
+    expect(new Set(BRAND_ALT).size).toBe(BRAND_ALT.length)
+    expect(BRAND_ALT).not.toContain(BRAND)
+    expect(BRAND_ALT.join(' ')).not.toMatch(/digital/i)
+    expect(BRAND).toBe('Okurmen Kids')
+  })
+
+  it('WebSite and Organization JSON-LD carry every spelling, in every language, and name one entity', () => {
+    for (const lang of ['ru', 'ky', 'en'] as const) {
+      const site = websiteLd(SITE, lang)
+      const org = organizationLd(SITE, lang, null)
+      expect(site.name).toBe('Okurmen Kids')
+      expect(org.name).toBe('Okurmen Kids')
+      expect(site.alternateName).toEqual(ALT_NAMES)
+      expect(org.alternateName).toEqual(ALT_NAMES)
+      // One organization, one website: the WebSite's publisher is the Organization node.
+      expect(site.publisher).toEqual({ '@id': org['@id'] })
+      expect(org['@id']).toBe('https://www.okurmenkids.com/#organization')
+      expect(site['@id']).toBe('https://www.okurmenkids.com/#website')
+      // Canonical URLs unchanged.
+      expect(site.url).toBe('https://www.okurmenkids.com/')
+      expect(org.url).toBe('https://www.okurmenkids.com/')
+    }
+  })
+
+  it('the spellings live in structured data only — page titles and descriptions are not stuffed', () => {
+    const text = JSON.stringify(PAGES)
+    expect(text).not.toContain('Окурмэн')
+    expect(text).not.toContain('ОкурменKids')
+    for (const lang of ['ru', 'ky'] as const) expect(PAGES[lang]['/'].description.split('Окурмен Кидс')).toHaveLength(2)
   })
 
   it('visible homepage text mentions «Окурмен Кидс» once, naturally, in RU and KG — not in EN', () => {
@@ -222,7 +251,7 @@ describe('Organization JSON-LD', () => {
     })
     expect(ld['@type']).toEqual(['Organization', 'EducationalOrganization'])
     expect(ld.name).toBe('Okurmen Kids')
-    expect(ld.alternateName).toBe('Окурмен Кидс')
+    expect(ld.alternateName).toEqual([...BRAND_ALT])
     expect(ld.description).toBe('Окурмен Кидс (Okurmen Kids) — академия программирования для детей и подростков в Бишкеке.')
     expect(ld.url).toBe('https://www.okurmenkids.com/')
     expect(ld.telephone).toBe('+996504677725')
