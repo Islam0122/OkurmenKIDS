@@ -25,9 +25,9 @@ export const NAV: NavItem[] = [
   { path: '/contacts', label: 'nav.contacts', icon: Mail },
 ]
 
-/** The public brand. Only «OKURMEN Kids» on the public website (see src/seo/core.js). */
+/** The public brand. Metadata, schema and accessible names: «Okurmen Kids» (see src/seo/core.js). */
 export const BRAND = {
-  name: 'OKURMEN Kids',
-  short: 'OKURMEN Kids',
+  name: 'Okurmen Kids',
+  short: 'Okurmen Kids',
   tagline: 'Learn. Create. Achieve.',
 } as const

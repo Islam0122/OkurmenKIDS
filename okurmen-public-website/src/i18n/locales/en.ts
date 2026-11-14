@@ -88,7 +88,7 @@ export const en: Messages = {
   'home.cta.title': 'Give your child a confident start in IT',
   'home.cta.text': 'Leave a request — we will call you back, pick a course for your child’s age and invite you to a trial lesson.',
   'home.hero.badge': 'IT academy for children aged 9–⁠15',
-  'home.hero.lead': 'Hands-on learning in programming, building projects and modern technologies.',
+  'home.hero.lead': 'Okurmen Kids is a coding academy for kids in Bishkek: hands-on learning in Python, web development and building their own projects.',
   'home.hero.primary': 'Book a trial lesson',
   'home.hero.secondary': 'Explore the programs',
   'home.hero.benefit1': 'Real projects from the first course',
