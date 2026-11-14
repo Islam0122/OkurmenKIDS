@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 import { AchievementCard } from '@/components/cards/AchievementCard'
 import { EventCard } from '@/components/cards/EventCard'
@@ -20,6 +20,7 @@ import { useHome } from '@/hooks/queries'
 import { useI18n } from '@/i18n'
 import type { HomeData, SectionKey } from '@/types/api'
 import { cn } from '@/utils/cn'
+import { isManagement, isTeacher } from '@/utils/team'
 
 /** The redesigned showcase blocks (projects, achievements, news): 1280 px wide, optional light-purple panel. */
 function Showcase({ children, panel }: { children: ReactNode; panel?: boolean }) {
@@ -73,13 +74,30 @@ function renderSection(key: SectionKey, data: HomeData, title: string, t: Return
           <CardGrid items={data.events.slice(0, SHOWCASE)} keyOf={(e) => e.slug} render={(e) => <EventCard event={e} />} scroll />
         </Showcase>
       ) : null
-    case 'team':
-      return data.team.length ? (
-        <Showcase key={key} panel>
-          <SectionHeader eyebrow={t('nav.team')} title={title || t('home.team.title')} text={t('home.team.text')} link={{ to: '/team', label: t('cta.allTeam') }} />
-          <CardGrid items={data.team} keyOf={(m) => m.id} render={(m) => <TeamCard member={m} />} columns={4} scroll />
-        </Showcase>
-      ) : null
+    case 'team': {
+      // Same rule as /team: leadership and teachers are separate blocks, a profile is in exactly one.
+      const management = (data.management ?? data.team).filter(isManagement)
+      const teachers = data.team.filter(isTeacher)
+      if (!management.length && !teachers.length) return null
+      return (
+        <Fragment key={key}>
+          {management.length ? (
+            <Showcase>
+              <SectionHeader eyebrow={t('nav.team')} title={t('team.section.management')} text={t('home.management.text')} />
+              <ul className={cn('grid gap-6', management.length > 1 && 'lg:grid-cols-2')}>
+                {management.map((m) => <li key={m.id} className="min-w-0"><TeamCard member={m} variant="lead" /></li>)}
+              </ul>
+            </Showcase>
+          ) : null}
+          {teachers.length ? (
+            <Showcase panel>
+              <SectionHeader eyebrow={t('nav.team')} title={title || t('home.team.title')} text={t('home.team.text')} link={{ to: '/team', label: t('cta.allTeam') }} />
+              <CardGrid items={teachers} keyOf={(m) => m.id} render={(m) => <TeamCard member={m} />} columns={4} scroll />
+            </Showcase>
+          ) : null}
+        </Fragment>
+      )
+    }
     case 'testimonials':
       return data.testimonials.length ? (
         <Showcase key={key}>

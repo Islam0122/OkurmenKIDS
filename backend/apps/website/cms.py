@@ -337,6 +337,16 @@ class TeamMemberSerializer(WorkflowSerializer):
         fields = "__all__"
         read_only_fields = ("created_by", "reviewed_by")
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+        category = attrs.get("category", inst.category if inst else m.TeamMember.Category.TEACHER)
+        group = attrs.get("group", inst.group if inst else "")
+        error = m.TeamMember.category_group_error(category, group)
+        if error:
+            raise ValidationError({"group": error})
+        return attrs
+
     def get_teacher_name(self, obj):
         return obj.teacher.user.get_full_name() if obj.teacher_id else None
 
@@ -678,7 +688,7 @@ class TeamMemberViewSet(WorkflowViewSet):
     queryset = m.TeamMember.objects.select_related("teacher__user", "created_by", "reviewed_by")
     serializer_class = TeamMemberSerializer
     search_fields = ("name", "position", "specialization", "teacher__user__first_name", "teacher__user__last_name")
-    filterset_fields = ("group",)
+    filterset_fields = ("category", "group")
 
 
 @extend_schema(tags=TAGS)
@@ -891,6 +901,7 @@ class MetaView(APIView):
                 "course_icon": _choices(m.CoursePage.Icon),
                 "project_category": [{"value": v, "label": label} for v, label in m.PROJECT_CATEGORIES if v],
                 "testimonial_role": _choices(m.Testimonial.Role),
+                "team_category": _choices(m.TeamMember.Category),
                 "team_group": _choices(m.TeamMember.Group),
                 "language": _choices(m.Testimonial.Language),
                 "news_category": _choices(Article.Category),

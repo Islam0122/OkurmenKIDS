@@ -533,6 +533,8 @@ def _member_record(m: TeamMember, lang: str) -> dict:
         "position": tr(m, "position", lang),
         # The job title as written in each language (null = not translated).
         "positions": {"ru": m.position, "ky": m.position_ky or None, "en": m.position_en or None},
+        # Public split of the team: management | teacher | staff (set in the CMS).
+        "category": m.category,
         "group": m.group or None,
         "specialization": specialization or None,
         "bio": tr(m, "bio", lang),
@@ -570,7 +572,14 @@ def team_member(slug: str, lang: str) -> dict | None:
     record = next((r for r in records if r["slug"] == slug), None)
     if record is None:
         return None
-    colleagues = [r for r in records if r["slug"] != slug and record["group"] and r["group"] == record["group"]]
+
+    def colleague(r):
+        if r["slug"] == slug or r["category"] != record["category"]:
+            return False
+        # Leadership is one section; teachers and staff — the same department.
+        return record["category"] == TeamMember.Category.MANAGEMENT or bool(record["group"]) and r["group"] == record["group"]
+
+    colleagues = [r for r in records if colleague(r)]
     card = lambda r: {k: v for k, v in _strip(r).items() if k not in PROFILE_ONLY}  # noqa: E731
     return {**_strip(record), "colleagues": [card(r) for r in colleagues[:3]]}
 
@@ -630,6 +639,9 @@ def home(lang: str) -> dict:
     course_cards = [r for r in courses(lang)["results"]]
     featured_courses = [c for c in course_cards if c["is_featured"]] or course_cards
     members = team(lang)["results"]
+    # «Наши преподаватели» shows teachers only; leadership has its own block.
+    teachers = [r for r in members if r["category"] == TeamMember.Category.TEACHER]
+    management = [r for r in members if r["category"] == TeamMember.Category.MANAGEMENT]
     reviews = sorted(_visible(_testimonials()), key=lambda r: not r["is_featured"])
     return {
         **data,
@@ -638,7 +650,8 @@ def home(lang: str) -> dict:
         "news": featured_news(raw["_featured_news"], lang=lang) if "news" in keys else [],
         "events": upcoming_events(lang) if "events" in keys else [],
         "achievements": featured_achievements(lang) if "achievements" in keys else [],
-        "team": members[:4] if "team" in keys else [],
+        "team": teachers[:4] if "team" in keys else [],
+        "management": management[:4] if "team" in keys else [],
         "testimonials": [_strip(r) for r in reviews[:6]] if "testimonials" in keys else [],
     }
 

@@ -155,6 +155,7 @@ const TEAM: TeamMember[] = Array.from({ length: 4 }, (_, i) => ({
   name: `${DEMO}-тренер ${i + 1}`,
   position: 'Тренер (демо)',
   specialization: ['Python', 'Веб-разработка', 'Game dev', 'Робототехника'][i],
+  category: (['teacher', 'teacher', 'teacher', 'management'] as const)[i],
   group: (['it_trainers', 'it_trainers', 'english_trainers', 'management'] as const)[i],
   bio: 'Демонстрационная биография.',
   experience_years: null,
@@ -197,7 +198,8 @@ export const home = (): Promise<HomeData> =>
     news: NEWS.slice(0, 3).map((n) => ({ ...card(n, ['body', 'author', 'photos', 'related']), photo_count: 0 })),
     events: EVENTS.filter((e) => e.phase !== 'completed').slice(0, 3),
     achievements: ACHIEVEMENTS,
-    team: TEAM,
+    team: TEAM.filter((m) => m.category === 'teacher'),
+    management: TEAM.filter((m) => m.category === 'management'),
     testimonials: TESTIMONIALS,
   })
 export const courses = () => delay({ results: COURSES as CourseCard[] })
@@ -229,5 +231,5 @@ export const submit = (): Promise<SubmitResult> => delay({ ok: true, duplicate: 
 export const vacancies = () => delay({ count: 0, results: [] })
 export const teamMember = (slug: string): Promise<TeamMemberDetail> => {
   const member = TEAM.find((m) => m.slug === slug)
-  return member ? delay({ ...member, career: [], achievements: [], colleagues: TEAM.filter((m) => m.slug !== slug && m.group === member.group) }) : notFound()
+  return member ? delay({ ...member, career: [], achievements: [], colleagues: TEAM.filter((m) => m.slug !== slug && m.category === member.category && (m.category === 'management' || m.group === member.group)) }) : notFound()
 }

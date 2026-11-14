@@ -108,7 +108,10 @@ export interface HomeData extends SiteSettings {
   news: NewsCard[]
   events: EventCard[]
   achievements: AchievementCard[]
+  /** «Наши преподаватели» — teachers only (category = teacher). */
   team: TeamMember[]
+  /** «Руководство академии» (category = management). Missing on an older API. */
+  management?: TeamMember[]
   testimonials: Testimonial[]
 }
 
@@ -280,6 +283,9 @@ export interface AchievementsPage extends Paginated<AchievementCard> {
 
 export type TeamGroup = 'it_trainers' | 'english_trainers' | 'soft_skills_trainers' | 'management' | 'administration'
 
+/** Public split of the team, set per profile in the CMS (independent of LMS roles). */
+export type TeamCategory = 'management' | 'teacher' | 'staff'
+
 export interface TeamMember {
   id: number
   /** Profile URL: /team/<slug> */
@@ -288,7 +294,9 @@ export interface TeamMember {
   /** The job title as written in each language (null = not translated). */
   positions?: { ru: string; ky: string | null; en: string | null }
   position: string
-  /** Department on the Team page (set in the CMS); null = not assigned. */
+  /** «Руководство академии» / «Наши преподаватели» / staff. Missing on an older API — see `teamCategory`. */
+  category?: TeamCategory
+  /** Department inside the category (set in the CMS); null = not assigned. */
   group: TeamGroup | null
   specialization: string | null
   bio: string

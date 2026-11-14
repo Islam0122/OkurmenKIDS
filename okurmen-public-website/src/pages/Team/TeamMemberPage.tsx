@@ -10,7 +10,9 @@ import { EnrollButton } from '@/features/enrollment/EnrollButton'
 import { isNotFound, useTeamMember } from '@/hooks/queries'
 import { LANG_SHORT, LANGS, useI18n, type MessageKey } from '@/i18n'
 import type { TeamMemberDetail } from '@/types/api'
+import { cn } from '@/utils/cn'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { teamCategory } from '@/utils/team'
 import { BRAND } from '@/app/config/site'
 import { useItemLangs } from '@/hooks/queries'
 
@@ -29,7 +31,11 @@ function Profile({ member }: { member: TeamMemberDetail }) {
   const tags = specializationTags(member.specialization)
   const positions = LANGS.map((code) => ({ code, value: member.positions?.[code] ?? (code === lang ? member.position : null) }))
     .filter((p): p is { code: typeof p.code; value: string } => Boolean(p.value))
-  const department = member.group ? t(`team.section.${member.group}` as MessageKey) : null
+  // Leadership is labelled as such whatever its department; teachers by their department.
+  const category = teamCategory(member)
+  const department = category === 'management' || !member.group
+    ? t(`team.category.${category}` as MessageKey)
+    : t(`team.section.${member.group}` as MessageKey)
 
   return (
     <>
@@ -159,8 +165,8 @@ function Profile({ member }: { member: TeamMemberDetail }) {
         <section className="border-t border-line bg-surface-soft py-12 sm:py-14">
           <div className="container-page">
             <h2 className="mb-8 text-2xl font-black sm:text-3xl">{t('team.profile.colleagues')}</h2>
-            <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {member.colleagues.map((c) => <li key={c.id} className="min-w-0"><TeamCard member={c} /></li>)}
+            <ul className={cn('grid gap-6', category === 'management' ? 'lg:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+              {member.colleagues.map((c) => <li key={c.id} className="min-w-0"><TeamCard member={c} variant={category === 'management' ? 'lead' : 'default'} /></li>)}
             </ul>
           </div>
         </section>

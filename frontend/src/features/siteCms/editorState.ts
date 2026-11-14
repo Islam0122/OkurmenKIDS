@@ -40,6 +40,7 @@ export function initialValues(def: ResourceDef, row: Row | null, choices?: (sour
     values.seo_description = row?.seo_description ?? ''
   }
   if (!row && def.key === 'testimonials') values.language = 'ru'
+  if (!row && def.key === 'team') values.category = 'teacher'
   return values
 }
 

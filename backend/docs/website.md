@@ -31,12 +31,12 @@ the existing LMS.
 | | |
 |---|---|
 | `GET settings/` | hero, intro video, about texts, contacts (as links), branches, stats, visible homepage blocks in order, active banners |
-| `GET home/` | settings + featured courses, projects, news, upcoming events, achievements, team, testimonials (one request) |
+| `GET home/` | settings + featured courses, projects, news, upcoming events, achievements, `team` (teachers only, `category=teacher`, max 4), `management` (`category=management`), testimonials (one request) |
 | `GET courses/`, `courses/<slug>/` | course pages; detail adds the LMS subjects, number of lessons and 3 published student projects of the course's category |
 | `GET events/?phase=upcoming\|ongoing\|completed&category=&page=`, `events/<slug>/` | phase and registration status computed per request |
 | `POST events/<slug>/register/` | `{parent_name, phone, child_name?, child_age?, comment?}` → 201 / 200 `duplicate` / 409 closed / 404 |
 | `GET achievements/?category=&page=`, `achievements/<slug>/` | with photos, related and `recipient` (student / organisation, optional); `category` takes one or several comma-separated values (the site groups e.g. `award,certificate,recognition`) |
-| `GET team/`, `team/<slug>/` | published profiles of active trainers / staff, with `group` (department) and `positions` (ru/ky/en); the profile adds `career`, `achievements` and up to 3 colleagues of the same department. Experience only as entered on the site profile |
+| `GET team/`, `team/<slug>/` | published profiles of active trainers / staff, with `category` (`management` = «Руководство академии», `teacher` = «Наши преподаватели», `staff`; set per profile in the CMS, independent of LMS roles), `group` (department inside the category) and `positions` (ru/ky/en); the profile adds `career`, `achievements` and up to 3 colleagues (management: other leaders; others: same category and department). The CMS rejects a department that does not fit the category (e.g. a teacher in «Администрация»). Experience only as entered on the site profile |
 | `GET testimonials/?kind=text\|photo\|video` | only `consent=True`; `average_rating` |
 | `POST leads/` | `{parent_name, phone, child_age, course?(slug), branch?(id), contact_method, message?, language?, source?, utm_*?}` → 201 / 200 `duplicate` / 400 |
 | `GET sitemap/` | slugs + dates of every public page (used at build time) |

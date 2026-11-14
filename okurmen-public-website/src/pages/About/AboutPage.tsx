@@ -19,8 +19,9 @@ import { EnrollButton } from '@/features/enrollment/EnrollButton'
 import { useAchievements, useCourses, useEvents, useNews, useProjects, useSettings, useTeam, useTestimonials } from '@/hooks/queries'
 import { useI18n, type MessageKey } from '@/i18n'
 import { siteApi } from '@/services/endpoints'
-import type { ImageAsset, NewsCategory, TeamGroup } from '@/types/api'
+import type { ImageAsset, NewsCategory } from '@/types/api'
 import { cn } from '@/utils/cn'
+import { isTeacher } from '@/utils/team'
 
 import { PROGRAMS, programTarget } from '@/features/programs/programs'
 import heroStudents from '@/assets/about/hero-students.webp'
@@ -55,7 +56,6 @@ const STAT_ICONS: LucideIcon[] = [Users, CalendarCheck, HeartHandshake, Award]
 /** News that report something that happened at the academy — their covers are event photos. Announcements and education posts often use illustrations. */
 const PHOTO_NEWS: NewsCategory[] = ['events', 'achievements', 'competitions', 'activities']
 
-const TRAINER_GROUPS: TeamGroup[] = ['it_trainers', 'soft_skills_trainers', 'english_trainers']
 
 /** CMS text can carry invisible characters (e.g. a zero-width space pasted before the address) that `trim()` keeps. */
 const clean = (value: string) => value.replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').trim()
@@ -94,7 +94,7 @@ export function AboutPage() {
     .map(({ image, title }) => ({ ...image, caption: image.caption || title }))
     .filter((p, i, all) => all.findIndex((q) => q.url === p.url) === i)
   const gallery = photos.slice(0, 7)
-  const trainers = (team.data?.results ?? []).filter((m) => m.group && TRAINER_GROUPS.includes(m.group))
+  const trainers = (team.data?.results ?? []).filter(isTeacher)
   const reviews = testimonials.data?.results ?? []
   const programNames = PROGRAMS.map((p) => t(`about.programs.${p.id}.title` as MessageKey)).join(', ')
 
@@ -306,7 +306,7 @@ export function AboutPage() {
         </div>
       </section>
 
-      {/* 8. Trainers — CMS team, trainer groups only */}
+      {/* 8. Trainers — CMS team, category «teacher» only (never management) */}
       {trainers.length ? (
         <section id="trainers" className="section scroll-mt-24 bg-surface-purple">
           <div className="container-page">
