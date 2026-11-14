@@ -470,7 +470,18 @@ class CoursePage(Publishable, CoverImage):
 class TeamMember(Publishable):
     """An approved public profile. A trainer (`users.Teacher`) appears on the
     site only through one of these; the photo is shown only with
-    `photo_approved`."""
+    `photo_approved`.
+
+    `category` is the public split of the team — «Руководство академии»
+    (management) vs «Наши преподаватели» (teachers) vs other staff. It is
+    independent of the LMS role: a director may also have a `users.Teacher`
+    record and still belongs to management on the site. `group` is the
+    department inside the category (IT / English / Soft Skills …)."""
+
+    class Category(models.TextChoices):
+        MANAGEMENT = "management", "Руководство академии"
+        TEACHER = "teacher", "Преподаватели"
+        STAFF = "staff", "Сотрудники академии"
 
     class Group(models.TextChoices):
         IT_TRAINERS = "it_trainers", "IT-тренеры"
@@ -479,10 +490,21 @@ class TeamMember(Publishable):
         MANAGEMENT = "management", "Руководство"
         ADMINISTRATION = "administration", "Администрация"
 
+    # Departments allowed in each category (empty department is always allowed).
+    CATEGORY_GROUPS = {
+        Category.MANAGEMENT: {Group.MANAGEMENT, Group.ADMINISTRATION},
+        Category.TEACHER: {Group.IT_TRAINERS, Group.ENGLISH_TRAINERS, Group.SOFT_SKILLS_TRAINERS},
+        Category.STAFF: {Group.ADMINISTRATION},
+    }
+
     teacher = models.OneToOneField("users.Teacher", on_delete=models.SET_NULL, null=True, blank=True,
                                    related_name="site_profile", verbose_name="Тренер в LMS")
     slug = models.SlugField(max_length=220, unique=True, blank=True, verbose_name="Адрес профиля (slug)",
                             help_text="/team/<slug>. Пусто — из имени.")
+    category = models.CharField(max_length=16, choices=Category.choices, default=Category.TEACHER, db_index=True,
+                                verbose_name="Раздел на сайте",
+                                help_text="Руководство академии, преподаватели или сотрудники. "
+                                          "Директора и управляющие — «Руководство академии».")
     group = models.CharField(max_length=24, choices=Group.choices, blank=True, db_index=True,
                              verbose_name="Отдел на сайте",
                              help_text="Раздел страницы «Команда». Пусто — без раздела.")
@@ -536,6 +558,17 @@ class TeamMember(Publishable):
     def clean(self):
         if not self.name and not self.teacher_id:
             raise ValidationError({"name": "Укажите имя или выберите тренера."})
+        error = self.category_group_error(self.category, self.group)
+        if error:
+            raise ValidationError({"group": error})
+
+    @classmethod
+    def category_group_error(cls, category: str, group: str) -> str | None:
+        allowed = cls.CATEGORY_GROUPS.get(category)
+        if not group or allowed is None or group in allowed:
+            return None
+        return (f"Отдел «{cls.Group(group).label}» не подходит для раздела «{cls.Category(category).label}». "
+                f"Допустимо: {', '.join(cls.Group(g).label for g in sorted(allowed))} или пусто.")
 
 
 # ---------------------------------------------------------------------------

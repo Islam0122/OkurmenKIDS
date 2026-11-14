@@ -32,12 +32,14 @@ export function TeamPhoto({ member, sizes, className, priority }: { member: Team
 
 /**
  * A team member from GET /api/v1/public/site/team/ — links to the profile
- * page /team/:slug. `lead` = the wider leadership card (photo beside text on desktop).
+ * page /team/:slug.
+ * - `default` — teacher card: name, teaching position, photo, description, technologies and skills;
+ * - `lead` — the wider leadership card (photo beside text on desktop): name, position, photo, description.
  */
 export function TeamCard({ member, variant = 'default' }: { member: TeamMember; variant?: 'default' | 'lead' }) {
   const { t, path } = useI18n()
   const lead = variant === 'lead'
-  const tags = specializationTags(member.specialization, lead ? 5 : 3)
+  const tags = lead ? [] : specializationTags(member.specialization, 3)
   return (
     <Link
       to={path(`/team/${member.slug}`)}

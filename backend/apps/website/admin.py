@@ -139,9 +139,9 @@ class AchievementAdmin(WorkflowAdmin):
 
 @admin.register(m.TeamMember)
 class TeamMemberAdmin(WorkflowAdmin):
-    list_display = ("__str__", "position", "group", "teacher", "photo_approved", "state", "order")
+    list_display = ("__str__", "position", "category", "group", "teacher", "photo_approved", "state", "order")
     list_editable = ("order",)
-    list_filter = ("status", "group", "photo_approved")
+    list_filter = ("status", "category", "group", "photo_approved")
     search_fields = ("name", "position", "specialization")
 
 

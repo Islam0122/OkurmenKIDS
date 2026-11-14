@@ -12,28 +12,47 @@ import { CardSkeletons, ErrorState } from '@/components/shared/States'
 import { Gallery } from '@/features/content/Gallery'
 import { useAchievements, useEvents, useOpenVacancies, useTeam } from '@/hooks/queries'
 import { useI18n, type MessageKey } from '@/i18n'
-import type { ImageAsset, TeamGroup, TeamMember } from '@/types/api'
+import type { ImageAsset, TeamCategory, TeamGroup, TeamMember } from '@/types/api'
 import { cn } from '@/utils/cn'
 import { absoluteUrl, mediaUrl } from '@/utils/media'
+import { teamCategory } from '@/utils/team'
 import { BRAND } from '@/app/config/site'
 
-/** Organisational order on the page. Sections come from each profile's department in the CMS. */
-const ORDER: TeamGroup[] = ['management', 'it_trainers', 'soft_skills_trainers', 'english_trainers', 'administration']
+/** Teaching departments in page order; teachers without a department come last. */
+const TEACHER_GROUPS: TeamGroup[] = ['it_trainers', 'soft_skills_trainers', 'english_trainers']
 
-interface Section {
+/** Public categories in page order — every profile is in exactly one (CMS field `category`). */
+const CATEGORIES: TeamCategory[] = ['management', 'teacher', 'staff']
+
+interface Department {
   key: TeamGroup | 'other'
   members: TeamMember[]
+}
+
+interface Section {
+  key: TeamCategory
+  members: TeamMember[]
+  /** Teachers only: split by department when more than one is filled. */
+  departments: Department[]
+}
+
+function teacherDepartments(members: TeamMember[]): Department[] {
+  const list: Department[] = TEACHER_GROUPS.map((key) => ({ key, members: members.filter((m) => m.group === key) }))
+  list.push({ key: 'other', members: members.filter((m) => !m.group || !TEACHER_GROUPS.includes(m.group)) })
+  const filled = list.filter((d) => d.members.length)
+  return filled.length > 1 ? filled : []
 }
 
 export function TeamPage() {
   const { t, path, lang } = useI18n()
   const team = useTeam()
   const members = useMemo(() => team.data?.results ?? [], [team.data])
-  const sections = useMemo<Section[]>(() => {
-    const list: Section[] = ORDER.map((key) => ({ key, members: members.filter((m) => m.group === key) }))
-    list.push({ key: 'other', members: members.filter((m) => !m.group) })
-    return list.filter((s) => s.members.length)
-  }, [members])
+  const sections = useMemo<Section[]>(() => CATEGORIES
+    .map((key) => {
+      const list = members.filter((m) => teamCategory(m) === key)
+      return { key, members: list, departments: key === 'teacher' ? teacherDepartments(list) : [] }
+    })
+    .filter((s) => s.members.length), [members])
 
   return (
     <>
@@ -77,12 +96,23 @@ export function TeamPage() {
   )
 }
 
-/** Leadership on a soft purple band with wide cards; departments on white with a 3-column grid. */
+/**
+ * «Руководство академии» on a soft purple band with wide professional cards;
+ * «Наши преподаватели» (and staff) on white with a 3-column grid of teacher cards.
+ */
 function TeamSection({ section, index }: { section: Section; index: number }) {
   const { t } = useI18n()
   const lead = section.key === 'management'
-  const text = section.key === 'other' ? undefined : t(`team.sectionText.${section.key}` as MessageKey)
   const number = String(index + 1).padStart(2, '0')
+  const grid = (members: TeamMember[]) => (
+    <ul className={cn('grid gap-6', lead ? 'lg:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+      {members.map((member, i) => (
+        <Reveal as="li" key={member.id} delay={Math.min(i, 6) * 0.06} className="min-w-0">
+          <TeamCard member={member} variant={lead ? 'lead' : 'default'} />
+        </Reveal>
+      ))}
+    </ul>
+  )
   return (
     <section aria-labelledby={`team-${section.key}`} className={cn(lead ? 'bg-surface-purple/70' : index > 0 && 'border-t border-line', 'py-12 sm:py-14')}>
       <div className="container-page">
@@ -93,17 +123,23 @@ function TeamSection({ section, index }: { section: Section; index: number }) {
               <span className="h-px w-8 bg-gold-400" aria-hidden />
               <span className="flex items-center gap-1.5 text-muted"><Users className="size-4" aria-hidden />{section.members.length}</span>
             </p>
-            <h2 id={`team-${section.key}`} className="text-section-title font-black">{t(`team.section.${section.key}` as MessageKey)}</h2>
-            {text ? <p className="mt-2 text-base text-muted sm:text-lg">{text}</p> : null}
+            <h2 id={`team-${section.key}`} className="text-section-title font-black">{t(`team.category.${section.key}` as MessageKey)}</h2>
+            <p className="mt-2 text-base text-muted sm:text-lg">{t(`team.categoryText.${section.key}` as MessageKey)}</p>
           </div>
         </Reveal>
-        <ul className={cn('grid gap-6', lead ? 'lg:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
-          {section.members.map((member, i) => (
-            <Reveal as="li" key={member.id} delay={Math.min(i, 6) * 0.06} className="min-w-0">
-              <TeamCard member={member} variant={lead ? 'lead' : 'default'} />
-            </Reveal>
-          ))}
-        </ul>
+        {section.departments.length ? (
+          <div className="space-y-10">
+            {section.departments.map((d) => (
+              <div key={d.key} aria-labelledby={`team-${section.key}-${d.key}`} role="group">
+                <h3 id={`team-${section.key}-${d.key}`} className="mb-5 flex items-center gap-3 font-display text-xl font-extrabold text-brand-800">
+                  <span className="h-5 w-1 rounded-full bg-gold-400" aria-hidden />
+                  {t(`team.section.${d.key}` as MessageKey)}
+                </h3>
+                {grid(d.members)}
+              </div>
+            ))}
+          </div>
+        ) : grid(section.members)}
       </div>
     </section>
   )

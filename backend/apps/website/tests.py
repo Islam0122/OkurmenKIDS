@@ -231,6 +231,66 @@ class PrivacyTests(Base):
         self.assertEqual([c["name"] for c in r["colleagues"]], ["Нурсултан Караталов"])
         self.assertEqual(self.anon.get(f"{PUBLIC}team/chernovik/").status_code, 404)
 
+    def _team_fixture(self):
+        director = TeamMember.objects.create(name="Директор", position="Директор академии", position_ky="Академиянын директору",
+                                             category=TeamMember.Category.MANAGEMENT,
+                                             group=TeamMember.Group.ADMINISTRATION, status=Workflow.PUBLISHED, order=1)
+        operations = TeamMember.objects.create(name="Операционный", position="Операционный директор",
+                                               category=TeamMember.Category.MANAGEMENT, status=Workflow.PUBLISHED, order=2)
+        trainers = [TeamMember.objects.create(name=f"Тренер {i}", position="IT-тренер", specialization="Python",
+                                              category=TeamMember.Category.TEACHER, group=TeamMember.Group.IT_TRAINERS,
+                                              status=Workflow.PUBLISHED, order=10 + i) for i in range(5)]
+        receptionist = TeamMember.objects.create(name="Администратор", position="Администратор",
+                                                 category=TeamMember.Category.STAFF,
+                                                 group=TeamMember.Group.ADMINISTRATION, status=Workflow.PUBLISHED, order=0)
+        return director, operations, trainers, receptionist
+
+    def test_team_category_is_public(self):
+        self._team_fixture()
+        results = self.anon.get(f"{PUBLIC}team/").data["results"]
+        by_name = {m["name"]: m["category"] for m in results}
+        self.assertEqual(by_name["Директор"], "management")
+        self.assertEqual(by_name["Операционный"], "management")
+        self.assertEqual(by_name["Тренер 0"], "teacher")
+        self.assertEqual(by_name["Администратор"], "staff")
+        # Every published profile exactly once.
+        self.assertEqual(len(results), len({m["id"] for m in results}))
+
+    def test_home_teachers_block_has_no_management(self):
+        self._team_fixture()
+        for lang in ("ru", "ky"):
+            home = self.anon.get(f"{PUBLIC}home/", {"lang": lang}).data
+            self.assertEqual({m["category"] for m in home["team"]}, {"teacher"})
+            self.assertEqual(len(home["team"]), 4)
+            self.assertEqual([m["name"] for m in home["management"]], ["Директор", "Операционный"])
+            self.assertFalse({m["id"] for m in home["team"]} & {m["id"] for m in home["management"]})
+        ky = self.anon.get(f"{PUBLIC}home/", {"lang": "ky"}).data
+        self.assertEqual(ky["management"][0]["position"], "Академиянын директору")
+
+    def test_management_colleagues_are_management(self):
+        director, operations, trainers, _ = self._team_fixture()
+        r = self.anon.get(f"{PUBLIC}team/{director.slug}/").data
+        self.assertEqual([c["name"] for c in r["colleagues"]], ["Операционный"])
+        r = self.anon.get(f"{PUBLIC}team/{trainers[0].slug}/").data
+        self.assertEqual({c["category"] for c in r["colleagues"]}, {"teacher"})
+
+    def test_cms_category_change_updates_site_and_is_validated(self):
+        director = TeamMember.objects.create(name="Директор", position="Директор академии",
+                                             group=TeamMember.Group.ADMINISTRATION, status=Workflow.PUBLISHED)
+        # Mis-categorised (ORM default) → shown as a teacher, the bug this guards against.
+        self.assertEqual([m["name"] for m in self.anon.get(f"{PUBLIC}home/").data["team"]], ["Директор"])
+        # «Администрация» is not a teaching department → the CMS refuses the combination.
+        c = self.as_(make_user("mkt", User.Role.MARKETING))
+        bad = c.patch(f"{CMS}team/{director.pk}/", {"category": "teacher", "group": "administration"}, format="json")
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("group", bad.data)
+        ok = c.patch(f"{CMS}team/{director.pk}/", {"category": "management"}, format="json")
+        self.assertEqual(ok.status_code, 200, ok.data)
+        home = self.anon.get(f"{PUBLIC}home/").data
+        self.assertEqual(home["team"], [])
+        self.assertEqual([m["name"] for m in home["management"]], ["Директор"])
+        self.assertTrue(TeamMember.objects.filter(pk=director.pk).exists())
+
     def test_testimonial_needs_consent(self):
         Testimonial.objects.create(author_name="Без согласия", text="…", status=Workflow.PUBLISHED, consent=False)
         Testimonial.objects.create(author_name="Айгуль", text="Спасибо!", rating=5, status=Workflow.PUBLISHED,
