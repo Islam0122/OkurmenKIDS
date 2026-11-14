@@ -23,6 +23,8 @@ export function AppLayout() {
   // The Assistant works only in its own workspace — /app (trainer, Team Lead
   // and Admin pages) always sends it to /assistant.
   if (isAssistant(user?.role)) return <Navigate to="/assistant" replace />
+  // Кабинет ученика и родителя lives only in /student.
+  if (user?.role === 'student_parent') return <Navigate to="/student" replace />
   // Бухгалтер и Директор — только в разделе бухгалтерии.
   if (isAccountingRole(user?.role)) return <Navigate to="/accounting" replace />
   // HR и маркетинг работают в своих кабинетах; остальные новые роли пока только отмечают приход и уход.

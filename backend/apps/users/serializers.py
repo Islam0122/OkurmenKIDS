@@ -54,6 +54,11 @@ class SubjectSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    # Student & Parent Portal: the first sign-in must replace the temporary
+    # password (apps.portal.access holds the account on that step). Always
+    # False for staff — and no extra query for them.
+    must_change_password = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
@@ -65,8 +70,22 @@ class UserSerializer(serializers.ModelSerializer):
             "role",
             "is_verified",
             "is_active",
+            "must_change_password",
         ]
         read_only_fields = fields
+
+    def get_must_change_password(self, obj) -> bool:
+        if obj.role not in User.PORTAL_ROLES:
+            return False
+        account = getattr(obj, "portal_account", None)
+        return bool(account is None or account.must_change_password)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # A portal account's e-mail is a technical placeholder (*.invalid).
+        if instance.role in User.PORTAL_ROLES:
+            data["email"] = ""
+        return data
 
 
 class TeacherSerializer(serializers.ModelSerializer):

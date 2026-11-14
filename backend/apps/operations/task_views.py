@@ -111,7 +111,7 @@ def filter_tasks(qs, params, user, now=None):
         qs = qs.filter(assignee__isnull=True)
     if (params.get("created_by") or "").isdigit():
         qs = qs.filter(created_by_id=int(params["created_by"]))
-    if params.get("role") in User.Role.values:
+    if params.get("role") in User.staff_role_values():
         qs = qs.filter(assignee__role=params["role"])
     if params.get("mine") == "1":
         qs = qs.filter(assignee=user)
@@ -308,7 +308,7 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Creat
     def meta(self, request):
         user = request.user
         roles = manageable_roles(user)
-        people = User.objects.filter(is_active=True).order_by("first_name", "last_name")
+        people = User.objects.staff().filter(is_active=True).order_by("first_name", "last_name")
         if roles is not None:
             people = people.filter(Q(role__in=roles) | Q(pk=user.pk))
         return Response({

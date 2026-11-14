@@ -118,8 +118,8 @@ def dashboard(f: OpsFilters) -> dict:
     return {
         "filters": f.as_dict(),
         "metrics": {
-            "total_employees": User.objects.filter(role__in=roles_of(f.department) if f.department
-                                                   else User.Role.values).count(),
+            "total_employees": User.objects.staff().filter(role__in=roles_of(f.department) if f.department
+                                                   else User.staff_role_values()).count(),
             "active_employees": users.count(),
             "tasks_completed": tasks["completed"],
             "tasks_in_progress": tasks["in_progress"],

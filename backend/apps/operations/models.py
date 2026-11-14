@@ -593,7 +593,7 @@ class OperationsSettings(models.Model):
 
         if not isinstance(self.required_reports, dict):
             raise ValidationError({"required_reports": "Ожидается объект «роль → список отчётов»."})
-        roles = set(User.Role.values)
+        roles = set(User.staff_role_values())
         for role, kinds in self.required_reports.items():
             if role not in roles or not isinstance(kinds, list) or not set(kinds) <= set(ReportKind.values):
                 raise ValidationError({"required_reports": f"Неверное правило для роли «{role}»."})

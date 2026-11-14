@@ -1749,7 +1749,7 @@ class ExpenseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     def options(self, request):
         """Справочники формы расхода: категории, способы, статусы и сотрудники
         (только id и ФИО — для поля «Ответственный»)."""
-        staff = User.objects.filter(is_active=True).order_by("last_name", "first_name") \
+        staff = User.objects.staff().filter(is_active=True).order_by("last_name", "first_name") \
             .values("id", "first_name", "last_name", "username")
         return Response({
             "categories": s.ExpenseCategorySerializer(ExpenseCategory.objects.all(), many=True).data,

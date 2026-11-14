@@ -80,6 +80,8 @@ LOCAL_APPS = [
     "apps.website.apps.WebsiteConfig",
     # Web Push для установленного PWA: подписки устройств и настройки (docs/push.md).
     "apps.push.apps.PushConfig",
+    # Кабинет ученика и родителя (роль STUDENT_PARENT, /api/v1/portal/).
+    "apps.portal.apps.PortalConfig",
 ]
 
 INSTALLED_APPS = (
@@ -102,6 +104,8 @@ MIDDLEWARE = [
     "apps.academy.services.trainer_history.ActorMiddleware",
     # Бухгалтер — только /api/v1/accounting/ и вход; LMS и /admin/ — 403.
     "apps.accounting.access.AccountingIsolationMiddleware",
+    # Ученик / родитель — только /api/v1/portal/ и вход; всё остальное — 403.
+    "apps.portal.access.PortalIsolationMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

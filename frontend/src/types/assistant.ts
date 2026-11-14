@@ -109,10 +109,46 @@ export interface StudentRow {
   parent_phone: string
   group: Ref | null
   course: Ref | null
+  parent_name: string
+  branch: Ref | null
+  /** Кабинет ученика и родителя (apps.portal) — никогда не пароль. */
+  account: AccountSummary | null
   status: StudentStatus
   status_display: string
   enrollment_date: string | null
   attendance_percent: number | null
+}
+
+/** pending — ждёт первого входа (временный пароль), active — семья сменила пароль, disabled — вход отключён. */
+export type AccountStatus = 'pending' | 'active' | 'disabled'
+
+export interface AccountSummary {
+  id: number
+  login: string
+  status: AccountStatus
+  is_active: boolean
+  must_change_password: boolean
+}
+
+export interface AccountDetail extends AccountSummary {
+  can_view_payments: boolean
+  credentials_issued_at: string | null
+  password_changed_at: string | null
+  last_login: string | null
+  created_at: string
+  students: { id: number; name: string; group: Ref | null }[]
+}
+
+/** Выдаётся ровно один раз — в ответе на создание аккаунта или сброс пароля. */
+export interface IssuedCredentials {
+  login: string
+  password: string
+}
+
+export interface FamilyAccount {
+  id: number
+  login: string
+  students: string[]
 }
 
 export interface HistoryRow {
@@ -154,7 +190,13 @@ export interface GenerationSummary {
   errors: string[]
 }
 
-export interface StudentDetail extends StudentRow {
+export interface StudentDetail extends Omit<StudentRow, 'account'> {
+  birth_date: string | null
+  photo: string | null
+  account: AccountDetail | null
+  family_accounts: FamilyAccount[]
+  /** Only on the response of the action that issued them. */
+  credentials?: IssuedCredentials
   created_at: string
   teachers: string[]
   group_status: string | null
@@ -191,6 +233,7 @@ export interface Options {
   weekdays: { code: DayOfWeek; label: string; short: string }[]
   deactivation_reasons: { value: string; label: string }[]
   group_statuses: { value: GroupStatus; label: string }[]
+  branches: { id: number; name: string; address: string }[]
 }
 
 export interface ScheduleConflict {

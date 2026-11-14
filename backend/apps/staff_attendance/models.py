@@ -48,7 +48,7 @@ def default_work_days() -> list[int]:
 def default_tracked_roles() -> list[str]:
     from apps.users.models import User
 
-    return [value for value, _ in User.Role.choices]
+    return User.staff_role_values()
 
 
 def new_location_code() -> str:

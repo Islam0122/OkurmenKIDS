@@ -184,7 +184,7 @@ class AttendanceWorkScheduleAdmin(SuperuserConfigAdmin):
             current = int(request.GET.get("current") or 0)
         except ValueError:
             current = 0
-        qs = (User.objects.filter(is_active=True)
+        qs = (User.objects.staff().filter(is_active=True)
               .select_related("salary_profile", "teacher_profile", "attendance_schedule")
               .order_by("last_name", "first_name", "username"))
         for word in term.split()[:5]:

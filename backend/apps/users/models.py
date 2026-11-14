@@ -17,6 +17,14 @@ class CustomUserManager(UserManager):
         extra_fields.setdefault("is_verified", True)
         return super().create_superuser(username, email, password, **extra_fields)
 
+    def staff(self):
+        """Every account except Student & Parent Portal accounts — the
+        queryset for anything that lists *employees* (pickers, KPI, staff
+        attendance, payroll, org stats). Portal accounts are not staff and
+        must never show up there; authentication itself still goes through
+        the unfiltered manager."""
+        return self.get_queryset().exclude(role__in=User.PORTAL_ROLES)
+
 
 class User(AbstractUser):
     class Role(models.TextChoices):
@@ -51,6 +59,13 @@ class User(AbstractUser):
         HR_MANAGER = "hr_manager", "HR-менеджер"
         SALES_MANAGER = "sales_manager", "Менеджер по продажам"
         MARKETING = "marketing", "Маркетинг"
+        # Кабинет ученика и родителя (apps.portal, /student во фронтенде,
+        # /api/v1/portal/ в API). Одна роль на семью: аккаунт связан с одним
+        # или несколькими студентами (portal.StudentLink) и видит только их.
+        # Создаётся ассистентом вместе со студентом; не сотрудник — исключён
+        # из всех списков сотрудников (User.objects.staff()) и изолирован
+        # middleware — см. apps.portal.access.
+        STUDENT_PARENT = "student_parent", "Ученик / родитель"
 
     username = models.CharField(
         max_length=150,
@@ -123,8 +138,21 @@ class User(AbstractUser):
         Role.TEACHER, Role.TEAM_LEAD, Role.ASSISTANT, Role.ROP, Role.HR_MANAGER,
         Role.SALES_MANAGER, Role.MARKETING,
     )
+    # Student & Parent Portal accounts: not employees (see CustomUserManager.staff).
+    PORTAL_ROLES = (Role.STUDENT_PARENT,)
     # Roles that work only through the LMS, never through Django admin.
-    LMS_ONLY_ROLES = (Role.TEAM_LEAD, Role.ASSISTANT, Role.ACCOUNTANT, Role.DIRECTOR, *STAFF_ONLY_ROLES)
+    LMS_ONLY_ROLES = (
+        Role.TEAM_LEAD, Role.ASSISTANT, Role.ACCOUNTANT, Role.DIRECTOR, *STAFF_ONLY_ROLES, *PORTAL_ROLES,
+    )
+
+    @classmethod
+    def staff_role_choices(cls) -> list[tuple[str, str]]:
+        """Role choices of employees — every role but the portal one."""
+        return [(value, label) for value, label in cls.Role.choices if value not in cls.PORTAL_ROLES]
+
+    @classmethod
+    def staff_role_values(cls) -> list[str]:
+        return [value for value, _ in cls.staff_role_choices()]
 
     class Meta:
         verbose_name = "Пользователь"
@@ -176,6 +204,10 @@ class User(AbstractUser):
     @property
     def is_staff_only(self):
         return self.role in self.STAFF_ONLY_ROLES
+
+    @property
+    def is_portal_user(self):
+        return self.role in self.PORTAL_ROLES
 
 
 class Subject(models.Model):

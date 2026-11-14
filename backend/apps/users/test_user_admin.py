@@ -75,7 +75,8 @@ class UserAdminFormTests(UserAdminTestBase):
         self.assertEqual(labels[User.Role.TEACHER], "👨‍💻 Тренер")
         self.assertEqual(labels[User.Role.ADMIN], "👑 Администратор")
         # Only the roles that really exist — no invented Director/Assistant/…
-        self.assertEqual(set(labels) - {""}, set(User.Role.values))
+        # Portal accounts (ученик / родитель) are provisioned by the Assistant, never here.
+        self.assertEqual(set(labels) - {""}, set(User.staff_role_values()))
         self.assertNotContains(response, "Can add")
 
     def test_change_form_has_no_groups_and_no_permissions_list(self):

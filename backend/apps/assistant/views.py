@@ -38,6 +38,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -54,11 +55,16 @@ from apps.academy.services.student_enrollment import add_students_to_group, enro
 from apps.scholarships.models import EligibilityStatus, ScholarshipAward, ScholarshipEvaluation, ScholarshipPeriod, ScholarshipRunLog
 from apps.scholarships.services.generation import add_award, generate_period, get_active_configuration
 from apps.scholarships.services.periods import latest_award_date
+from apps.portal.services import accounts as portal_accounts
 from apps.users.permissions import IsAdmin, IsAdminOrAssistant
 
 from . import activity, monthly, monthly_pdf, records, selectors
 from .serializers import (
     PAUSE,
+    AccountFlagSerializer,
+    AccountLinkSerializer,
+    AccountLoginSerializer,
+    AccountProvisionSerializer,
     ActivateSerializer,
     AttendanceEntrySerializer,
     AwardAddSerializer,
@@ -72,6 +78,7 @@ from .serializers import (
     ProgramSerializer,
     StudentCreateSerializer,
     StudentIdsSerializer,
+    StudentPhotoSerializer,
     StudentUpdateSerializer,
     TransferSerializer,
 )
@@ -285,15 +292,219 @@ class StudentListView(AssistantView):
 
     def post(self, request):
         data = self.body(StudentCreateSerializer)
+        credentials = None
         try:
-            student = enroll_student(
-                first_name=data["first_name"], last_name=data["last_name"], phone=data["phone"],
-                parent_phone=data["parent_phone"], group=data["group"],
-                enrollment_date=data.get("enrollment_date"), performed_by=request.user,
-            )
+            # Student + portal account (or family link) — both or neither.
+            with transaction.atomic():
+                student = enroll_student(
+                    first_name=data["first_name"], last_name=data["last_name"], phone=data["phone"],
+                    parent_phone=data["parent_phone"], parent_name=data["parent_name"],
+                    birth_date=data.get("birth_date"), branch=data.get("branch"), group=data["group"],
+                    enrollment_date=data.get("enrollment_date"), performed_by=request.user,
+                )
+                if data.get("link_account") is not None:
+                    portal_accounts.link_student(data["link_account"], student, performed_by=request.user)
+                elif data["create_account"]:
+                    credentials = portal_accounts.provision_account(
+                        student, performed_by=request.user, login=data["login"] or None,
+                    )
         except DjangoValidationError as exc:
             raise _drf_error(exc)
-        return Response(selectors.student_detail(student), status=status.HTTP_201_CREATED)
+        payload = selectors.student_detail(student)
+        if credentials is not None:
+            payload["credentials"] = _credentials(credentials)
+        return _no_store(Response(payload, status=status.HTTP_201_CREATED))
+
+
+def _credentials(issued) -> dict:
+    """The one and only place a temporary password leaves the server: the
+    response to the action that created it."""
+    return {"login": issued.login, "password": issued.password}
+
+
+def _no_store(response: Response) -> Response:
+    response["Cache-Control"] = "no-store, private"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+@extend_schema(tags=TAGS, responses={200: dict})
+class StudentAccountCheckView(AssistantView):
+    """Before «Добавить студента»: the login that would be generated and the
+    family accounts that already use this parent phone."""
+
+    def get(self, request):
+        params = request.query_params
+        return Response({
+            "suggested_login": portal_accounts.suggest_login(params.get("first_name", ""), params.get("last_name", "")),
+            "family_accounts": [
+                {"id": a.pk, "login": a.user.username, "students": [str(s) for s in a.students.all()]}
+                for a in portal_accounts.family_accounts(params.get("parent_phone", ""))
+            ],
+        })
+
+
+@extend_schema(tags=TAGS, responses={200: bytes})
+class StudentExportView(AssistantView):
+    """The filtered student list as CSV / XLSX. Logins and account status
+    are included; passwords never exist outside the hash."""
+
+    def get(self, request):
+        from apps.users.import_export.formats import UnsupportedFileFormat, build_export_response
+
+        qs = selectors.filter_students(selectors.students_queryset(), request.query_params)
+        rows = []
+        for student in qs:
+            row = selectors.student_row(student)
+            account = row["account"]
+            rows.append({
+                "last_name": student.last_name, "first_name": student.first_name,
+                "birth_date": student.birth_date.isoformat() if student.birth_date else "",
+                "group": row["group"]["name"] if row["group"] else "",
+                "course": row["course"]["name"] if row["course"] else "",
+                "branch": row["branch"]["name"] if row["branch"] else "",
+                "status": row["status_display"], "phone": student.phone,
+                "parent_name": student.parent_name, "parent_phone": student.parent_phone,
+                "enrollment_date": student.enrollment_date.isoformat() if student.enrollment_date else "",
+                "attendance": "" if row["attendance_percent"] is None else row["attendance_percent"],
+                "login": account["login"] if account else "",
+                "account_status": ACCOUNT_STATUS_LABELS[account["status"]] if account else "Нет аккаунта",
+            })
+        headers = {
+            "last_name": "Фамилия", "first_name": "Имя", "birth_date": "Дата рождения", "group": "Группа",
+            "course": "Курс", "branch": "Филиал", "status": "Статус", "phone": "Телефон", "parent_name": "Родитель",
+            "parent_phone": "Телефон родителя", "enrollment_date": "Начало обучения", "attendance": "Посещаемость, %",
+            "login": "Логин кабинета", "account_status": "Кабинет",
+        }
+        try:
+            return build_export_response(rows, list(headers), request.query_params.get("export_format", "xlsx"),
+                                         "students", headers=headers)
+        except UnsupportedFileFormat as exc:
+            raise DRFValidationError({"detail": str(exc)})
+
+
+ACCOUNT_STATUS_LABELS = {"pending": "Ожидает первого входа", "active": "Активен", "disabled": "Отключён"}
+
+
+@extend_schema(tags=TAGS, request=StudentPhotoSerializer, responses={200: dict})
+class StudentPhotoView(AssistantView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        data = self.body(StudentPhotoSerializer)
+        old = student.photo.name if student.photo else None
+        student.photo = data["photo"]
+        student.save(update_fields=["photo", "updated_at"])
+        if old:
+            student.photo.storage.delete(old)
+        LogEntry.objects.log_actions(user_id=request.user.pk, queryset=[student], action_flag=CHANGE,
+                                     change_message="Фото обновлено.", single_object=True)
+        return Response(selectors.student_detail(student))
+
+    def delete(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        if student.photo:
+            student.photo.delete(save=False)
+            student.photo = ""
+            student.save(update_fields=["photo", "updated_at"])
+            LogEntry.objects.log_actions(user_id=request.user.pk, queryset=[student], action_flag=CHANGE,
+                                         change_message="Фото удалено.", single_object=True)
+        return Response(selectors.student_detail(student))
+
+
+class _AccountView(AssistantView):
+    """Account actions on a student's portal account. Admin or Assistant
+    (IsAdminOrAssistant); each write is audited by apps.portal.services."""
+
+    def account(self, student: Student):
+        account = portal_accounts.account_of(student)
+        if account is None:
+            raise DRFValidationError({"detail": "У студента ещё нет аккаунта кабинета."})
+        return account
+
+    def respond(self, student: Student, credentials=None) -> Response:
+        payload = selectors.student_detail(student)
+        if credentials is not None:
+            payload["credentials"] = _credentials(credentials)
+        return _no_store(Response(payload))
+
+
+@extend_schema(tags=TAGS, request=AccountProvisionSerializer, responses={200: dict})
+class StudentAccountView(_AccountView):
+    def get(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        return Response(selectors.account_row(portal_accounts.account_of(student), full=True))
+
+    def post(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        data = self.body(AccountProvisionSerializer)
+        try:
+            issued = portal_accounts.provision_account(student, performed_by=request.user, login=data["login"] or None)
+        except DjangoValidationError as exc:
+            raise _drf_error(exc)
+        return self.respond(student, issued)
+
+
+@extend_schema(tags=TAGS, request=None, responses={200: dict})
+class StudentAccountResetView(_AccountView):
+    def post(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        issued = portal_accounts.reset_password(self.account(student), performed_by=request.user)
+        return self.respond(student, issued)
+
+
+@extend_schema(tags=TAGS, request=AccountLoginSerializer, responses={200: dict})
+class StudentAccountLoginView(_AccountView):
+    def patch(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        data = self.body(AccountLoginSerializer)
+        try:
+            portal_accounts.change_login(self.account(student), data["login"], performed_by=request.user)
+        except DjangoValidationError as exc:
+            raise _drf_error(exc)
+        return self.respond(student)
+
+
+@extend_schema(tags=TAGS, request=AccountFlagSerializer, responses={200: dict})
+class StudentAccountActiveView(_AccountView):
+    def post(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        data = self.body(AccountFlagSerializer)
+        portal_accounts.set_active(self.account(student), data["value"], performed_by=request.user)
+        return self.respond(student)
+
+
+@extend_schema(tags=TAGS, request=AccountFlagSerializer, responses={200: dict})
+class StudentAccountPaymentsView(_AccountView):
+    def post(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        data = self.body(AccountFlagSerializer)
+        portal_accounts.set_payments_visible(self.account(student), data["value"], performed_by=request.user)
+        return self.respond(student)
+
+
+@extend_schema(tags=TAGS, request=AccountLinkSerializer, responses={200: dict})
+class StudentAccountLinkView(_AccountView):
+    def post(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        data = self.body(AccountLinkSerializer)
+        try:
+            portal_accounts.link_student(data["account"], student, performed_by=request.user)
+        except DjangoValidationError as exc:
+            raise _drf_error(exc)
+        return self.respond(student)
+
+
+@extend_schema(tags=TAGS, request=None, responses={200: dict})
+class StudentAccountUnlinkView(_AccountView):
+    def post(self, request, pk):
+        student = get_object_or_404(Student, pk=pk)
+        try:
+            portal_accounts.unlink_student(self.account(student), student, performed_by=request.user)
+        except DjangoValidationError as exc:
+            raise _drf_error(exc)
+        return self.respond(student)
 
 
 @extend_schema(tags=TAGS, request=StudentUpdateSerializer, responses={200: dict})

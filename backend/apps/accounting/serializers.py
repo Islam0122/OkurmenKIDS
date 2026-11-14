@@ -806,7 +806,7 @@ class DeductionRuleInputSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
     frequency = serializers.ChoiceField(choices=DeductionRule.Frequency.choices, default=DeductionRule.Frequency.MONTHLY)
     scope = serializers.ChoiceField(choices=DeductionRule.Scope.choices, default=DeductionRule.Scope.EMPLOYEE)
-    employee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    employee = serializers.PrimaryKeyRelatedField(queryset=User.objects.staff(), required=False, allow_null=True)
     department = serializers.ChoiceField(choices=Department.choices, required=False, allow_blank=True, default="")
     effective_from = serializers.DateField()
     effective_to = serializers.DateField(required=False, allow_null=True)
@@ -823,7 +823,7 @@ class DeductionRuleChangeSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"), required=False)
     frequency = serializers.ChoiceField(choices=DeductionRule.Frequency.choices, required=False)
     scope = serializers.ChoiceField(choices=DeductionRule.Scope.choices, required=False)
-    employee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    employee = serializers.PrimaryKeyRelatedField(queryset=User.objects.staff(), required=False, allow_null=True)
     department = serializers.ChoiceField(choices=Department.choices, required=False, allow_blank=True)
     effective_from = serializers.DateField(required=False)
     effective_to = serializers.DateField(required=False, allow_null=True)
@@ -892,7 +892,7 @@ class _ExpenseFieldsSerializer(serializers.Serializer):
     due_date = serializers.DateField(required=False, allow_null=True)
     vendor = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
     payment_method = serializers.ChoiceField(choices=PaymentMethod.choices, default=PaymentMethod.CASH)
-    responsible = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True), required=False,
+    responsible = serializers.PrimaryKeyRelatedField(queryset=User.objects.staff().filter(is_active=True), required=False,
                                                      allow_null=True)
     reference = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     comment = serializers.CharField(required=False, allow_blank=True, default="")

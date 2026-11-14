@@ -418,6 +418,34 @@ export const router = createBrowserRouter(withHydrateFallback([
     ],
   },
   {
+    // Кабинет ученика и родителя — роль student_parent (backend: apps.portal;
+    // apps.portal.access keeps it out of every other API).
+    path: '/student',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['student_parent']} />,
+        children: [
+          {
+            lazy: async () => ({ Component: (await import('@/features/studentPortal/StudentPortalLayout')).StudentPortalLayout }),
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/DashboardPage')).StudentDashboardPage }) },
+              { path: 'schedule', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/SchedulePage')).StudentSchedulePage }) },
+              { path: 'homework', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/HomeworkPages')).StudentHomeworkPage }) },
+              { path: 'homework/:id', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/HomeworkPages')).StudentHomeworkDetailPage }) },
+              { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/AttendancePage')).StudentAttendancePage }) },
+              { path: 'reports', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/ReportsPage')).StudentReportsPage }) },
+              { path: 'payments', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/PaymentsPage')).StudentPaymentsPage }) },
+              { path: 'profile', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/ProfilePage')).StudentProfilePage }) },
+              { path: '*', element: <Navigate to="/student" replace /> },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
     // Кабинет операционного директора — ему, директору и администратору
     // (backend: apps.operations.permissions.CanOversee).
     path: '/operations',

@@ -46,8 +46,8 @@ def employee_card(user) -> dict:
 
 
 def employees(f: OpsFilters, *, search: str = "", include_inactive: bool = False) -> list[dict]:
-    qs = f.users_qs() if not include_inactive else User.objects.filter(
-        role__in=roles_of(f.department) if f.department else User.Role.values)
+    qs = f.users_qs() if not include_inactive else User.objects.staff().filter(
+        role__in=roles_of(f.department) if f.department else User.staff_role_values())
     if search:
         qs = qs.filter(Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(username__icontains=search))
     users = list(qs.select_related("teacher_profile").order_by("first_name", "last_name"))
@@ -138,7 +138,7 @@ def _subordinates(user) -> list[dict]:
 def department_overview(f: OpsFilters) -> list[dict]:
     now = timezone.now()
     users_by_dep = defaultdict(list)
-    for user in User.objects.filter(is_active=True):
+    for user in User.objects.staff().filter(is_active=True):
         users_by_dep[department_of(user)].append(user)
     task_rows = Task.objects.exclude(status=TaskStatus.CANCELLED).values("department").annotate(
         open=Count("id", filter=Q(status__in=OPEN_STATUSES)),
@@ -336,8 +336,8 @@ def hr_overview(f: OpsFilters) -> dict:
     не ведутся — вопрос к руководству (docs/operations.md)."""
     from apps.recruitment.models import Application, Interview, Vacancy
 
-    users = User.objects.filter(is_active=True)
-    joined = User.objects.filter(date_joined__date__range=(f.start, f.end))
+    users = User.objects.staff().filter(is_active=True)
+    joined = User.objects.staff().filter(date_joined__date__range=(f.start, f.end))
     applications = Application.objects.filter(applied_on__range=(f.start, f.end))
     funnel = {row["status"]: row["n"] for row in applications.values("status").annotate(n=Count("id"))}
     hr_team = list(User.objects.filter(is_active=True, role=User.Role.HR_MANAGER))

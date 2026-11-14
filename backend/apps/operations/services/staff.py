@@ -103,7 +103,7 @@ def _permission_status(row: sa.DayRow) -> str | None:
 
 def tracked_users(qs=None) -> list:
     config = AttendanceSettings.load()
-    qs = qs if qs is not None else User.objects.all()
+    qs = qs if qs is not None else User.objects.staff()
     return list(qs.filter(is_active=True, role__in=config.tracked_roles or [])
                 .exclude(attendance_profile__tracking_enabled=False)  # учёт выключен суперпользователем
                 .order_by("first_name", "last_name"))

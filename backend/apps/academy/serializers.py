@@ -1137,12 +1137,15 @@ class HomeworkResultSerializer(_RequestAwareSerializer):
             "status_display",
             "score",
             "comment",
+            "submission_text",
+            "submission_link",
             "submitted_at",
             "checked_at",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        # The student's own answer (Student & Parent Portal) — staff read it, never rewrite it.
+        read_only_fields = ["id", "submission_text", "submission_link", "created_at", "updated_at"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

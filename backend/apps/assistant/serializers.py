@@ -6,7 +6,9 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from apps.academy.models import Attendance, Course, Group, Room, Student, StudentStatusEvent
+from apps.portal.models import PortalAccount
 from apps.users.models import Subject, Teacher
+from apps.website.models import Branch
 
 # «Пауза» is not a departure reason: it routes the same modal to
 # services.student_status.pause_student instead of deactivate_student.
@@ -64,22 +66,62 @@ class StudentIdsSerializer(serializers.Serializer):
 
 
 class StudentCreateSerializer(serializers.Serializer):
+    """«Добавить студента». With `create_account` (the default) the student
+    gets a Student & Parent Portal account in the same transaction — or, with
+    `link_account`, joins the family account of a brother or sister."""
+
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100)
     phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
     parent_phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
+    parent_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    birth_date = serializers.DateField(required=False, allow_null=True)
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), required=False, allow_null=True)
     group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all())
     enrollment_date = serializers.DateField(required=False, allow_null=True)
+    create_account = serializers.BooleanField(required=False, default=True)
+    login = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")
+    link_account = serializers.PrimaryKeyRelatedField(
+        queryset=PortalAccount.objects.all(), required=False, allow_null=True,
+    )
 
 
 class StudentUpdateSerializer(serializers.Serializer):
-    """Contacts only — the group and status change through their own actions."""
+    """Contacts and profile — the group and status change through their own actions."""
 
     first_name = serializers.CharField(max_length=100, required=False)
     last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
     parent_phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    parent_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    birth_date = serializers.DateField(required=False, allow_null=True)
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), required=False, allow_null=True)
     enrollment_date = serializers.DateField(required=False, allow_null=True)
+
+
+class StudentPhotoSerializer(serializers.Serializer):
+    photo = serializers.ImageField()
+
+    def validate_photo(self, value):
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("Фото не больше 5 МБ.")
+        return value
+
+
+class AccountProvisionSerializer(serializers.Serializer):
+    login = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")
+
+
+class AccountLoginSerializer(serializers.Serializer):
+    login = serializers.CharField(max_length=40)
+
+
+class AccountFlagSerializer(serializers.Serializer):
+    value = serializers.BooleanField()
+
+
+class AccountLinkSerializer(serializers.Serializer):
+    account = serializers.PrimaryKeyRelatedField(queryset=PortalAccount.objects.all())
 
 
 class DeactivateSerializer(serializers.Serializer):

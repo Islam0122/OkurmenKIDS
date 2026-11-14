@@ -40,7 +40,7 @@ class PersonField(serializers.PrimaryKeyRelatedField):
     """Ответственный или интервьюер — любой активный пользователь LMS."""
 
     def get_queryset(self):
-        return User.objects.filter(is_active=True)
+        return User.objects.staff().filter(is_active=True)
 
 
 # ---------------------------------------------------------------------------
