@@ -609,36 +609,6 @@ def payments_summary(student: Student) -> dict | None:
     return student_finance(student, profiles)
 
 
-def payments(student: Student) -> dict:
-    from apps.accounting.models import StudentPayment
-    from apps.billing.models import Invoice
-
-    summary = payments_summary(student)
-    history = (
-        StudentPayment.objects.filter(student=student, status=StudentPayment.Status.CONFIRMED)
-        .order_by("-received_date", "-pk")[:24]
-    )
-    invoices = (
-        Invoice.objects.filter(profile__student=student, status__in=Invoice.UNPAID_STATUSES)
-        .select_related("profile__subject").order_by("due_reached_on", "pk")[:12]
-    )
-    return {
-        "summary": summary,
-        "currency": "KGS",
-        "open_invoices": [
-            {"id": i.pk, "number": i.number, "kind": i.kind, "status": i.status, "amount": str(i.amount),
-             "balance": str(i.balance), "overdue_since": i.overdue_since,
-             "subject": i.profile.subject.name if i.profile.subject_id else None}
-            for i in invoices
-        ],
-        "history": [
-            {"id": p.pk, "kind": p.kind, "amount": str(p.amount), "date": p.received_date, "method": p.method,
-             "service_start": p.service_start, "service_end": p.service_end}
-            for p in history
-        ],
-    }
-
-
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------

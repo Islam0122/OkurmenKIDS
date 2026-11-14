@@ -16,6 +16,11 @@ vi.mock('@/api/studentPortal', () => ({
     nextHomework: vi.fn(),
     homework: vi.fn(),
     achievements: vi.fn(),
+    payments: vi.fn(),
+    transactions: vi.fn(),
+    paymentDocuments: vi.fn(),
+    receipt: vi.fn(),
+    receiptPdf: vi.fn(),
   },
 }))
 vi.mock('@/hooks/useAuth', () => ({
@@ -29,6 +34,7 @@ import { StudentPortalLayout } from './StudentPortalLayout'
 import { StudentDashboardPage } from './pages/DashboardPage'
 import { StudentHomeworkDetailPage, StudentHomeworkPage } from './pages/HomeworkPages'
 import { StudentAchievementsPage } from './pages/AchievementsPage'
+import { StudentPaymentsPage } from './pages/PaymentsPage'
 import { translate, DICTIONARIES } from './i18n'
 
 function child(id: number, first: string): PortalStudent {
@@ -309,5 +315,82 @@ describe('Redesigned portal pages', () => {
     expect(screen.getByText('Все награды этого вида получены!')).toBeInTheDocument()
     // Navigation: the achievements section is in the menu.
     expect(screen.getAllByRole('link', { name: 'Достижения' }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('Finance page (read-only accounting data)', () => {
+  const invoice = {
+    id: 4, number: 'INV-2026-000004', kind: 'PACKAGE' as const, month_number: null, package_number: 4, course: 'Python 8 уроков',
+    subject: 'Python', issue_date: '2026-08-13', period_date: '2026-08-13', due_date: '2026-08-18', due_lesson: null,
+    lessons_used: null, amount: '6000.00', paid: '3500.00', adjusted: '0.00', balance: '2500.00', status: 'OVERDUE',
+    stage: 'overdue' as const, overdue_since: '2026-08-19', paid_at: null,
+  }
+  const receipt = {
+    id: 11, number: 'OK-2026-000004', kind: 'PAYMENT' as const, status: 'ISSUED' as const, issued_at: '2026-11-14T10:00:00Z',
+    received_date: '2026-11-14', amount: '6000.00', currency: 'KGS', student: 'Асанов Айбек', course: 'Python 8 уроков',
+    group: 'PRO-01', method: 'cash' as const, reference: '', cashier: 'Гульнара Бухгалтер', cancelled_at: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    vi.mocked(studentPortalApi.me).mockResolvedValue(ME)
+    vi.mocked(studentPortalApi.payments).mockResolvedValue({
+      status: 'overdue', percent_paid: 51, next_payment: invoice, open_invoices: [invoice], contracts: [], currency: 'KGS',
+      summary: { contract_price: null, invoiced: '42000.00', paid: '21500.00', discount: '0.00', adjusted: '0.00', debt: '20500.00',
+        due_now: '20500.00', overpayment: '0.00', contracts_count: 1, has_debt: true },
+    })
+    vi.mocked(studentPortalApi.transactions).mockResolvedValue({ results: [
+      { id: 1, date: '2026-11-14', kind: 'payment', status: 'completed', amount: '6000.00', currency: 'KGS', course: 'Программирование',
+        method: 'cash', reference: '', purpose: 'tuition', service_start: null, service_end: null, cashier: 'Гульнара Бухгалтер',
+        receipt: { id: 11, number: 'OK-2026-000004', status: 'ISSUED' } },
+      { id: 2, date: '2026-10-01', kind: 'payment', status: 'completed', amount: '700.00', currency: 'KGS', course: null,
+        method: 'bank', reference: 'PP-1', purpose: '', service_start: null, service_end: null, cashier: '', receipt: null },
+    ] })
+    vi.mocked(studentPortalApi.receipt).mockResolvedValue({
+      ...receipt, payer: 'Асанова Жылдыз', purpose: 'Оплата обучения', purpose_lines: [], previously_paid: '21500.00',
+      outstanding: '14500.00', credit: '0.00', has_balances: true,
+    })
+    vi.mocked(studentPortalApi.receiptPdf).mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))
+    vi.mocked(studentPortalApi.paymentDocuments).mockResolvedValue({ receipts: [receipt], invoices: [invoice] })
+    // jsdom has no object URLs; browsers do.
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:receipt'), revokeObjectURL: vi.fn() })
+  })
+
+  function renderPayments(route = '/student/payments') {
+    return renderWithProviders(
+      <Routes><Route path="/student" element={<StudentPortalLayout />}><Route path="payments" element={<StudentPaymentsPage />} /></Route></Routes>,
+      { route },
+    )
+  }
+
+  it('shows the real summary, labels a package tariff total as charged, and lists the overdue invoice', async () => {
+    renderPayments()
+    expect(await screen.findByText('Есть просрочка')).toBeInTheDocument()
+    expect(screen.getByText('51%')).toBeInTheDocument()
+    expect(screen.getByText('Начислено')).toBeInTheDocument() // no fixed course price on a package tariff
+    expect(screen.queryByText('Стоимость курса')).not.toBeInTheDocument()
+    expect(screen.getByText('Пакет уроков №4')).toBeInTheDocument()
+    expect(screen.getAllByText('Просрочено').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: /Оплатить/ })).not.toBeInTheDocument() // no online payment
+  })
+
+  it('links a payment to its accounting receipt and never invents one', async () => {
+    renderPayments('/student/payments?tab=history')
+    expect(await screen.findByRole('button', { name: 'Чек OK-2026-000004' })).toBeInTheDocument()
+    expect(screen.getByText('Без чека')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Чек OK-2026-000004' }))
+    expect(await screen.findByRole('dialog', { name: 'OK-2026-000004' })).toBeInTheDocument()
+    expect(screen.getByText('Асанова Жылдыз')).toBeInTheDocument()
+    expect(screen.getByText(/Не является фискальным документом/)).toBeInTheDocument()
+    await waitFor(() => expect(studentPortalApi.receiptPdf).toHaveBeenCalledWith(1, 11))
+    expect(screen.getByRole('button', { name: 'Скачать PDF' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Печать' })).toBeInTheDocument()
+  })
+
+  it('lists receipts and invoices under «Документы и чеки»', async () => {
+    renderPayments('/student/payments?tab=docs')
+    expect(await screen.findByText('OK-2026-000004')).toBeInTheDocument()
+    expect(screen.getByText(/отдельный документ по ним не формируется/)).toBeInTheDocument()
   })
 })
