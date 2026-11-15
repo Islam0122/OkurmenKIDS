@@ -9,6 +9,8 @@ export const academicProgressApi = {
   program: async (id: number) => (await apiClient.get<ProgramDetail>(`${BASE}/programs/${id}/`)).data,
   saveProgram: async (id: number, data: ProgramInput) => (await apiClient.put<ProgramDetail>(`${BASE}/programs/${id}/`, data)).data,
   group: async (id: number) => (await apiClient.get<GroupAcademicProgress>(`${BASE}/groups/${id}/`)).data,
+  saveGroupNumbering: async (id: number, lessonsPerMonth: number | null) =>
+    (await apiClient.put<GroupAcademicProgress>(`${BASE}/groups/${id}/numbering/`, { lessons_per_month: lessonsPerMonth })).data,
   confirmHistory: async (id: number, lessonsBeforeLms: number, comment = '') =>
     (await apiClient.put<GroupAcademicProgress>(`${BASE}/groups/${id}/history/`, { lessons_before_lms: lessonsBeforeLms, comment })).data,
 }

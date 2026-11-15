@@ -1,3 +1,5 @@
+import type { LessonNumbering } from './lessonNumbering'
+
 /** Monthly attendance & homework matrix — /api/v1/attendance-matrix/
  * (backend: apps.attendance_matrix). Attendance and homework stay two
  * separate values in every cell. */
@@ -32,6 +34,7 @@ export interface MatrixColumn {
   start: string
   end: string
   lesson_number: number
+  numbering?: LessonNumbering | null
   topic: string
   subject: string
   teacher: string
@@ -197,6 +200,7 @@ export interface CellDetail {
     end: string
     topic: string
     number: number
+    numbering?: LessonNumbering | null
     subject: string
     teacher: string
     status: string

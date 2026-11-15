@@ -4,6 +4,7 @@ import type { AcademicProgress } from '@/types/academicProgress'
  * /api/v1/operations/academy/…, только чтение; цифры — из Reports / KPI,
  * «Прогресс студентов», оплаты обучения, рейтинга XP и стипендий). */
 import type { FiltersEcho } from './operations'
+import type { LessonNumbering } from './lessonNumbering'
 
 type Rate = number | null
 type Money = string | null
@@ -100,7 +101,7 @@ export interface AcademyGroupDetail {
   plan: GroupPlan
   academic: AcademicProgress
   schedule: { day: string; start: string; end: string; subject: string | null; trainer: string | null; room: string | null; is_active: boolean }[]
-  lesson_history: { id: number; date: string; number: number | null; start: string | null; topic: string; subject: string | null; trainer: string | null; status: string; status_display: string; attendance: { marked: number; attended: number } }[]
+  lesson_history: { id: number; date: string; number: number | null; numbering?: LessonNumbering | null; start: string | null; topic: string; subject: string | null; trainer: string | null; status: string; status_display: string; attendance: { marked: number; attended: number } }[]
   student_progress: StudentProgressRow[]
   assessments: Assessments
   achievements: Achievement[]

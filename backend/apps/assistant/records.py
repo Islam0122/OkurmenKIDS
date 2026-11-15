@@ -11,6 +11,7 @@ from collections import defaultdict
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.academy.models import Attendance, Group, Homework, HomeworkResult, Lesson, Student
 from apps.academy.services.lesson_status import held_q
 
@@ -80,6 +81,7 @@ def _lesson_head(lesson: Lesson) -> dict:
         "start": lesson.start_time.strftime("%H:%M"),
         "end": lesson.end_time.strftime("%H:%M"),
         "lesson_number": lesson.lesson_number,
+        "numbering": numbering.of(lesson),
         "topic": lesson.topic,
         "subject": _ref(lesson.subject),
         "teacher": _ref(lesson.effective_teacher),
@@ -219,7 +221,8 @@ def homework_row(hw: Homework, roster_size: int, results: list[HomeworkResult] |
     return {
         "id": hw.pk,
         "title": hw.title,
-        "lesson": {"id": hw.lesson_id, "number": hw.lesson.lesson_number, "topic": hw.lesson.topic, "date": hw.lesson.date},
+        "lesson": {"id": hw.lesson_id, "number": hw.lesson.lesson_number, "numbering": numbering.of(hw.lesson),
+                   "topic": hw.lesson.topic, "date": hw.lesson.date},
         "deadline": hw.deadline,
         "issued": hw.lesson.date,
         "done": done,

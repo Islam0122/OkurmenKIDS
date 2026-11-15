@@ -14,6 +14,7 @@ import type { ControlPeriod, Ref } from '@/types/assistant'
 import { cn } from '@/utils/cn'
 
 import { AttendanceBadge, ControlStatusBadge, HomeworkStateBadge, Percent, PercentBar, SubmissionBadge } from './badges'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 /**
  * Read-only detail views of the Assistant's records: a lesson (marks +
@@ -47,7 +48,7 @@ export function LessonDetailModal({ lessonId, onClose, onOpenHomework }: { lesso
   const { data, isPending, isError, refetch } = useLessonDetail(lessonId)
   return (
     <Modal isOpen onClose={onClose} size="lg" icon={<BookOpen className="size-5 text-brand-600" aria-hidden />}
-      title={data ? `${dayLong(data.date)} · Занятие ${data.lesson_number}` : 'Занятие'}>
+      title={data ? `${dayLong(data.date)} · ${lessonLabel(data.numbering, data.lesson_number)}` : 'Занятие'}>
       {isPending ? <LoadingState label="Загружаем…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
       {data ? (
@@ -114,7 +115,7 @@ export function HomeworkDetailModal({ homeworkId, onClose, onOpenLesson }: { hom
   const [opened, setOpened] = useState<number | null>(null)
   return (
     <Modal isOpen onClose={onClose} size="lg" icon={<NotebookPen className="size-5 text-brand-600" aria-hidden />}
-      title={data ? `ДЗ к занятию ${data.lesson.number}` : 'Домашнее задание'}>
+      title={data ? `ДЗ · ${lessonLabel(data.lesson.numbering, data.lesson.number)}` : 'Домашнее задание'}>
       {isPending ? <LoadingState label="Загружаем…" /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}
       {data ? (
@@ -128,7 +129,7 @@ export function HomeworkDetailModal({ homeworkId, onClose, onOpenLesson }: { hom
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
             <div><dt className="text-xs text-ink-secondary">Урок</dt>
-              <dd><button type="button" onClick={() => onOpenLesson(data.lesson.id)} className="font-medium text-brand-700 hover:underline">Занятие {data.lesson.number}</button></dd></div>
+              <dd><button type="button" onClick={() => onOpenLesson(data.lesson.id)} className="font-medium text-brand-700 hover:underline">{lessonLabel(data.lesson.numbering, data.lesson.number)}</button></dd></div>
             <div><dt className="text-xs text-ink-secondary">Тренер</dt><dd className="truncate font-medium text-ink">{data.teacher?.name ?? '—'}</dd></div>
             <div><dt className="text-xs text-ink-secondary">Выдано</dt><dd className="font-medium text-ink">{dayLong(data.issued)}</dd></div>
             <div><dt className="text-xs text-ink-secondary">Дедлайн</dt><dd className="font-medium text-ink">{data.deadline ? dayLong(data.deadline) : 'без срока'}</dd></div>
@@ -198,7 +199,7 @@ export function StudentAttendanceModal({ groupId, student, onClose, onOpenLesson
                 {data.lessons.map((l) => (
                   <tr key={l.id} className="cursor-pointer hover:bg-surface-hover" onClick={() => onOpenLesson(l.id)}>
                     <td className="px-3 py-1.5 whitespace-nowrap text-ink">{day(l.date)}</td>
-                    <td className="px-3 py-1.5 text-ink-secondary">Занятие {l.lesson_number}</td>
+                    <td className="px-3 py-1.5 text-ink-secondary">{lessonLabel(l.numbering, l.lesson_number)}</td>
                     <td className="px-3 py-1.5"><AttendanceBadge status={l.student_status} /></td>
                   </tr>
                 ))}

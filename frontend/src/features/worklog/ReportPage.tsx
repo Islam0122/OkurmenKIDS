@@ -43,6 +43,7 @@ import { EntryModal } from './EntryModal'
 import { Field, fieldErrors, idOrNull, shiftDate, today } from './formUi'
 import { ReportFieldInput, ReportFieldValue, cleanData } from './ReportFields'
 import { ReportMetrics } from './ReportMetrics'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 const BACK = '/app/worklog?tab=reports'
 
@@ -109,7 +110,7 @@ function LessonPicker({ group, value, onChange, error }: { group: string; value:
         placeholder={lessons.isFetching ? 'Загрузка…' : 'Не выбрано'}
         options={(lessons.data?.results ?? []).map((l) => ({
           value: String(l.id),
-          label: `${formatDate(l.date)}, ${l.start_time.slice(0, 5)}, №${l.lesson_number}${l.subject_name ? `, ${l.subject_name}` : ''}${l.topic ? ` — ${l.topic}` : ''}`,
+          label: `${formatDate(l.date)}, ${l.start_time.slice(0, 5)}, ${lessonLabel(l.numbering, l.lesson_number)}${l.subject_name ? `, ${l.subject_name}` : ''}${l.topic ? ` — ${l.topic}` : ''}`,
         }))}
       />
     </Field>

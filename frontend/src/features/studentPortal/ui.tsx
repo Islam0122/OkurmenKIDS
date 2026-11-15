@@ -8,7 +8,9 @@ import { resolveMediaUrl } from '@/lib/mediaUrl'
 import { cn } from '@/utils/cn'
 import type { AttendanceMark, HomeworkState, PortalLesson, PortalStudent } from '@/types/studentPortal'
 
-import { usePortalI18n } from './i18n'
+import type { LessonNumbering } from '@/types/lessonNumbering'
+
+import { usePortalI18n, type translate } from './i18n'
 
 /**
  * Building blocks of the Student & Parent Portal — one visual language for
@@ -177,6 +179,16 @@ export function LessonStatusBadge({ lesson }: { lesson: PortalLesson }) {
   return <span className={cn(PILL, 'pl-2.5', tone)}>{t(`lesson.status.${lesson.status}`)}</span>
 }
 
+type T = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => string
+
+/** «Месяц 2 · Урок 1» / «2-ай · 1-сабак» — the educational month and lesson
+ * (12 or 20 lessons per month, set for the group / program); '' without a number. */
+export function lessonNo(t: T, lesson: { lesson_number?: number | null; numbering?: LessonNumbering | null } | null | undefined): string {
+  if (!lesson) return ''
+  if (lesson.numbering) return t('lesson.monthly', { month: lesson.numbering.month, lesson: lesson.numbering.lesson })
+  return lesson.lesson_number ? t('lesson.number', { n: lesson.lesson_number }) : ''
+}
+
 export function LessonRow({ lesson, showDate = false }: { lesson: PortalLesson; showDate?: boolean }) {
   const { t, date, weekday } = usePortalI18n()
   const cancelled = lesson.status === 'cancelled'
@@ -193,7 +205,7 @@ export function LessonRow({ lesson, showDate = false }: { lesson: PortalLesson; 
           <p className={cn('truncate font-bold text-ink', cancelled && 'line-through')}>{lesson.subject?.name ?? lesson.course?.name ?? '—'}</p>
           <LessonStatusBadge lesson={lesson} />
         </div>
-        {lesson.topic ? <p className="truncate text-sm text-ink-secondary">{lesson.lesson_number ? `${t('lesson.number', { n: lesson.lesson_number })} · ` : ''}{lesson.topic}</p> : null}
+        {lesson.topic ? <p className="truncate text-sm text-ink-secondary">{lessonNo(t, lesson) ? `${lessonNo(t, lesson)} · ` : ''}{lesson.topic}</p> : null}
         <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-muted">
           {lesson.teacher ? <span className="inline-flex items-center gap-1"><User className="size-3" aria-hidden />{lesson.teacher.name}</span> : null}
           {lesson.group ? <span>{lesson.group.name}</span> : null}

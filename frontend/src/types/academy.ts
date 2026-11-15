@@ -1,5 +1,6 @@
 import type { User } from '@/types/auth'
 import type { DayOfWeek } from '@/types/common'
+import type { LessonNumbering } from './lessonNumbering'
 
 /** `apps.users.serializers.SubjectSerializer` */
 export interface Subject {
@@ -226,6 +227,8 @@ export interface Lesson {
   group_name: string
   plan: number | null
   lesson_number: number
+  /** «Месяц · Урок» (apps.academic_progress.numbering). */
+  numbering?: LessonNumbering | null
   date: string
   start_time: string
   end_time: string

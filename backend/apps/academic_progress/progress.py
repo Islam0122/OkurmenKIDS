@@ -28,7 +28,7 @@ from django.utils import timezone
 
 from apps.academy.models import Attendance, Group, Lesson, Student
 
-from .models import GroupProgressAdjustment, ProgramCurriculum
+from .models import GroupLessonNumbering, GroupProgressAdjustment, ProgramCurriculum
 
 ATTENDED = (Attendance.Status.PRESENT, Attendance.Status.LATE)
 
@@ -59,15 +59,17 @@ class Block:
     subject: object | None
 
 
-def blocks(curriculum: ProgramCurriculum) -> list[Block]:
-    """The program's study months, in order, with defaults filled in."""
+def blocks(curriculum: ProgramCurriculum, per_month: int | None = None) -> list[Block]:
+    """The program's study months, in order, with defaults filled in. A
+    group's own lessons per month (`per_month`, GroupLessonNumbering) sizes
+    every month of that group."""
     overrides = {m.number: m for m in curriculum.months.all()}
     out = []
     for number in range(1, curriculum.duration_months + 1):
         m = overrides.get(number)
         out.append(Block(
             number=number,
-            planned=(m.planned_lessons if m and m.planned_lessons else curriculum.lessons_per_month),
+            planned=per_month or (m.planned_lessons if m and m.planned_lessons else curriculum.lessons_per_month),
             subject=(m.subject if m and m.subject_id else curriculum.main_subject),
         ))
     return out
@@ -133,8 +135,10 @@ def progress_for(groups: list[Group], *, today: dt.date | None = None) -> dict[i
     counted = _counted_lessons(groups, curricula)
     gaps = _history_gaps(groups, curricula)
     adjustments = {a.group_id: a for a in GroupProgressAdjustment.objects.filter(group__in=groups)}
+    own = dict(GroupLessonNumbering.objects.filter(group__in=groups).values_list("group_id", "lessons_per_month"))
     return {
-        g.pk: _progress(g, curricula.get(g.course_id), counted.get(g.pk, []), g.pk in gaps, adjustments.get(g.pk), today)
+        g.pk: _progress(g, curricula.get(g.course_id), counted.get(g.pk, []), g.pk in gaps, adjustments.get(g.pk), today,
+                        own.get(g.pk))
         for g in groups
     }
 
@@ -143,7 +147,7 @@ def group_progress(group: Group, *, today: dt.date | None = None) -> dict:
     return progress_for([group], today=today)[group.pk]
 
 
-def _progress(group, curriculum, lessons, gap, adjustment, today) -> dict:
+def _progress(group, curriculum, lessons, gap, adjustment, today, per_month=None) -> dict:
     before = adjustment.lessons_before_lms if adjustment else 0
     held_in_lms = len(lessons)
     base = {
@@ -151,6 +155,8 @@ def _progress(group, curriculum, lessons, gap, adjustment, today) -> dict:
         "lessons_in_lms": held_in_lms,
         "lessons_before_lms": before,
         "history_confirmed": adjustment is not None,
+        "lessons_per_month": per_month or (curriculum.lessons_per_month if curriculum else None),
+        "lessons_per_month_source": "group" if per_month else ("program" if curriculum else "default"),
         "last_lesson_date": lessons[-1].date if lessons else None,
     }
     if curriculum is None:
@@ -161,7 +167,7 @@ def _progress(group, curriculum, lessons, gap, adjustment, today) -> dict:
                 "reason": "Первые занятия группы не внесены в LMS — укажите, сколько занятий проведено до LMS.",
                 "month": None, "months": [], "course": None}
 
-    plan = blocks(curriculum)
+    plan = blocks(curriculum, per_month)
     done_total = held_in_lms + before
     planned_total = sum(b.planned for b in plan)
 

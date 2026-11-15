@@ -30,6 +30,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.academy.models import Attendance, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
 from apps.academy.services.analytics.student_progress import membership
 
@@ -145,6 +146,7 @@ def lesson_row(lesson: Lesson, attendance: Attendance | None, branch=None) -> di
         "branch": _ref(branch),
         "topic": lesson.topic,
         "lesson_number": lesson.lesson_number,
+        "numbering": numbering.of(lesson),
         "status": lesson.status,
         "cancellation_reason": lesson.cancellation_reason if lesson.status == Lesson.Status.CANCELLED else "",
         "attendance": attendance.status if attendance else None,
@@ -286,7 +288,8 @@ def homework_row(homework: Homework, result: HomeworkResult | None, today: dt.da
         "days_left": (homework.deadline - today).days if homework.deadline else None,
         "state": state,
         "is_open": state in HW_OPEN_STATES,
-        "lesson": {"id": lesson.pk, "date": lesson.date, "topic": lesson.topic, "lesson_number": lesson.lesson_number},
+        "lesson": {"id": lesson.pk, "date": lesson.date, "topic": lesson.topic, "lesson_number": lesson.lesson_number,
+                   "numbering": numbering.of(lesson)},
         "subject": _ref(lesson.subject),
         "group": _ref(lesson.group),
         "teacher": _ref(lesson.effective_teacher),

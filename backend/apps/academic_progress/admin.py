@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CurriculumMonth, GroupProgressAdjustment, ProgramCurriculum
+from .models import CurriculumMonth, GroupLessonNumbering, GroupProgressAdjustment, NumberingFreeze, ProgramCurriculum
 
 
 class CurriculumMonthInline(admin.TabularInline):
@@ -20,3 +20,28 @@ class ProgramCurriculumAdmin(admin.ModelAdmin):
 class GroupProgressAdjustmentAdmin(admin.ModelAdmin):
     list_display = ("group", "lessons_before_lms", "updated_by", "updated_at")
     readonly_fields = ("updated_by", "updated_at")
+
+
+@admin.register(GroupLessonNumbering)
+class GroupLessonNumberingAdmin(admin.ModelAdmin):
+    list_display = ("group", "lessons_per_month", "updated_by", "updated_at")
+    autocomplete_fields = ("group",)
+    readonly_fields = ("updated_by", "updated_at")
+
+    def save_model(self, request, obj, form, change):
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(NumberingFreeze)
+class NumberingFreezeAdmin(admin.ModelAdmin):
+    """Read-only: written automatically so a change never renumbers held lessons."""
+
+    list_display = ("group_teacher", "first_lesson", "last_lesson", "first_month", "lessons_per_month", "created_at")
+    list_filter = ("lessons_per_month",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

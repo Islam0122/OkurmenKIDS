@@ -27,6 +27,7 @@ import type { OpsPeriod } from '@/types/operations'
 import type { AttentionRow } from '@/types/operationsAcademy'
 
 import { LevelBadge, Note, OpsFilters, Progress, QueryView, Section, Table, num, pct, shortDate, useOpsFilters } from './shared'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 /* Раздел «Академия» кабинета операционного директора — только просмотр.
  * Цифры приходят с сервера (/operations/academy/…): Reports / KPI,
@@ -245,8 +246,8 @@ export function OperationsAcademyGroupPage() {
               </Table>
             </Section>
             <Section title="История занятий" padding={false}>
-              <Table empty={!d.lesson_history.length} headers={['Дата', '№', 'Тема', 'Предмет', 'Тренер', 'Отмечено / были', 'Статус']}>
-                {d.lesson_history.map((l) => <tr key={l.id}><td className="whitespace-nowrap">{shortDate(l.date)} {l.start ?? ''}</td><td>{l.number ?? '—'}</td><td className="text-sm">{l.topic || '—'}</td><td>{l.subject ?? '—'}</td><td className="text-sm">{l.trainer ?? '—'}</td><td className="tabular-nums">{l.attendance.marked} / {l.attendance.attended}</td><td><Badge tone={l.status === 'completed' ? 'success' : l.status === 'cancelled' ? 'danger' : 'muted'}>{l.status_display}</Badge></td></tr>)}
+              <Table empty={!d.lesson_history.length} headers={['Дата', 'Занятие', 'Тема', 'Предмет', 'Тренер', 'Отмечено / были', 'Статус']}>
+                {d.lesson_history.map((l) => <tr key={l.id}><td className="whitespace-nowrap">{shortDate(l.date)} {l.start ?? ''}</td><td className="whitespace-nowrap">{lessonLabel(l.numbering, l.number) || '—'}</td><td className="text-sm">{l.topic || '—'}</td><td>{l.subject ?? '—'}</td><td className="text-sm">{l.trainer ?? '—'}</td><td className="tabular-nums">{l.attendance.marked} / {l.attendance.attended}</td><td><Badge tone={l.status === 'completed' ? 'success' : l.status === 'cancelled' ? 'danger' : 'muted'}>{l.status_display}</Badge></td></tr>)}
               </Table>
             </Section>
           </div>

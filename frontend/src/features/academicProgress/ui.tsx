@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { useToast } from '@/components/ui/Toast'
-import { useConfirmHistory, useGroupAcademicProgress } from '@/hooks/useAcademicProgress'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { useConfirmHistory, useGroupAcademicProgress, useSaveGroupNumbering } from '@/hooks/useAcademicProgress'
 import { extractErrorMessage } from '@/lib/apiError'
-import type { AcademicProgress } from '@/types/academicProgress'
+import type { AcademicProgress, GroupNumberingSettings } from '@/types/academicProgress'
 import { cn } from '@/utils/cn'
 
 function Bar({ value, className }: { value: number | null; className?: string }) {
@@ -76,6 +77,7 @@ export function GroupStudyMonths({ groupId, settingsPath }: { groupId: number; s
   const p = data.progress
   return (
     <div className="space-y-4">
+      {data.numbering ? <GroupNumberingCard groupId={groupId} numbering={data.numbering} canEdit={data.can_edit} /> : null}
       {p.status === 'needs_setup' ? (
         <div className="rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
           <p className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4" aria-hidden />Требуется настройка</p>
@@ -152,5 +154,55 @@ function HistoryForm({ groupId, inLms }: { groupId: number; inLms: number }) {
       </label>
       <Button type="submit" size="sm" isLoading={save.isPending}>Подтвердить</Button>
     </form>
+  )
+}
+
+/** «Нумерация уроков» of one group: its lessons per educational month (12 or
+ * 20) or the program's. Shown with the progress; saving re-labels every page,
+ * held lessons keep their «Месяц · Урок» (the server freezes them). */
+export function GroupNumberingCard({ groupId, numbering, canEdit }: { groupId: number; numbering: GroupNumberingSettings; canEdit: boolean }) {
+  const save = useSaveGroupNumbering(groupId)
+  const { showToast } = useToast()
+  const current = numbering.group_value === null ? 'program' : String(numbering.group_value)
+  const inherited = numbering.program_value ?? numbering.default
+  const options = [
+    { value: 'program', label: `Как в программе (${inherited})` },
+    ...numbering.choices.map((n) => ({ value: String(n), label: `${n} занятий` })),
+  ]
+  const change = (value: string) => {
+    if (value === current) return
+    save.mutate(value === 'program' ? null : Number(value), {
+      onSuccess: () => showToast('Нумерация уроков группы сохранена', 'success'),
+      onError: (error) => showToast(extractErrorMessage(error, 'Не удалось сохранить'), 'error'),
+    })
+  }
+  const example = numbering.lessons_per_month
+  return (
+    <section aria-labelledby={`numbering-${groupId}`} className="rounded-lg border border-border px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 id={`numbering-${groupId}`} className="text-sm font-semibold text-ink">Нумерация уроков</h3>
+          <p className="text-xs text-ink-secondary">
+            {example} занятий в учебном месяце: занятие №{example + 1} — «Месяц 2 · Урок 1». Учебный месяц — это число занятий, а не календарный месяц.
+          </p>
+        </div>
+        {canEdit ? (
+          <SegmentedControl aria-label="Занятий в учебном месяце группы" value={current} onChange={change} options={options}
+            className={save.isPending ? 'pointer-events-none opacity-60' : undefined} />
+        ) : (
+          <span className="text-sm font-medium text-ink">{example} занятий{numbering.group_value === null ? ' (как в программе)' : ''}</span>
+        )}
+      </div>
+      {canEdit ? <p className="mt-2 text-xs text-ink-muted">Проведённые занятия сохранят свои номера — новое число действует со следующего учебного месяца.</p> : null}
+      {numbering.frozen.length ? (
+        <ul className="mt-2 space-y-0.5 text-xs text-ink-muted">
+          {numbering.frozen.map((f) => (
+            <li key={`${f.subject}-${f.first_lesson}`}>
+              {f.subject ?? 'Программа'}: занятия №{f.first_lesson}–{f.last_lesson} оставлены по {f.lessons_per_month} в месяце (с {f.first_month}-го месяца)
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   )
 }

@@ -11,8 +11,16 @@ from rest_framework.views import APIView
 from apps.academy.models import Group
 from apps.users.models import Subject
 
-from . import access, progress
-from .models import CurriculumMonth, GroupProgressAdjustment, ProgramCurriculum
+from . import access, numbering, progress
+from .models import (
+    ALLOWED_LESSONS_PER_MONTH,
+    CurriculumMonth,
+    GroupLessonNumbering,
+    GroupProgressAdjustment,
+    NumberingFreeze,
+    ProgramCurriculum,
+)
+from .models import DEFAULT_LESSONS_PER_MONTH
 
 
 class CanView(BasePermission):
@@ -62,7 +70,7 @@ class MetaView(_View):
         return Response({
             "subjects": [_ref(s) for s in Subject.objects.filter(is_active=True).order_by("name")],
             "can_edit": access.can_edit(request.user),
-            "presets": [12, 20],
+            "presets": list(ALLOWED_LESSONS_PER_MONTH),
         })
 
 
@@ -135,6 +143,10 @@ class ProgramView(_View):
             return Response({"detail": "Изменять настройки этой программы вы не можете."}, status=403)
         d, errors = request.data, {}
         per_month = _int(d.get("lessons_per_month"), "lessons_per_month", errors)
+        current = ProgramCurriculum.objects.filter(course=course).values_list("lessons_per_month", flat=True).first()
+        # 12 or 20; a program saved earlier with another value may keep it until changed.
+        if per_month is not None and per_month not in ALLOWED_LESSONS_PER_MONTH and per_month != current:
+            errors["lessons_per_month"] = "Занятий в учебном месяце: 12 или 20."
         duration = _int(d.get("duration_months"), "duration_months", errors, hi=60)
         main = _subject(d.get("main_subject"), "main_subject", errors)
         extra = [_subject(v, "extra_subjects", errors) for v in (d.get("extra_subjects") or [])]
@@ -188,7 +200,54 @@ class GroupProgressView(_View):
             "progress": data,
             "students": progress.student_progress(group, data),
             "can_edit": access.can_edit(request.user, group.course),
+            "numbering": _group_numbering(group),
         })
+
+
+def _group_numbering(group) -> dict:
+    own = GroupLessonNumbering.objects.filter(group=group).values_list("lessons_per_month", flat=True).first()
+    program = ProgramCurriculum.objects.filter(course_id=group.course_id).values_list("lessons_per_month", flat=True).first()
+    return {
+        "lessons_per_month": numbering.effective_sizes([group.pk])[group.pk],
+        "group_value": own,
+        "program_value": program,
+        "default": DEFAULT_LESSONS_PER_MONTH,
+        "choices": list(ALLOWED_LESSONS_PER_MONTH),
+        "frozen": [
+            {"subject": f.group_teacher.subject.name if f.group_teacher.subject_id else None,
+             "first_lesson": f.first_lesson, "last_lesson": f.last_lesson,
+             "first_month": f.first_month, "lessons_per_month": f.lessons_per_month}
+            for f in NumberingFreeze.objects.filter(group_teacher__group=group).select_related("group_teacher__subject")
+        ],
+    }
+
+
+class GroupNumberingView(GroupProgressView):
+    """A group's own lessons per educational month (12 / 20), or null to
+    follow its program. Lessons already held keep their «Месяц · Урок»."""
+
+    def put(self, request, pk):
+        group = self._group(request, pk)
+        if not access.can_edit(request.user, group.course):
+            return Response({"detail": "Изменять настройки этой группы вы не можете."}, status=403)
+        value = request.data.get("lessons_per_month")
+        if value in (None, ""):
+            row = GroupLessonNumbering.objects.filter(group=group).first()
+            if row is not None:
+                row.updated_by = request.user
+                row.delete()
+            return self.get(request, pk)
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = None
+        if value not in ALLOWED_LESSONS_PER_MONTH:
+            return Response({"lessons_per_month": "Занятий в учебном месяце: 12 или 20."}, status=400)
+        row = GroupLessonNumbering.objects.filter(group=group).first() or GroupLessonNumbering(group=group)
+        if row.pk is None or row.lessons_per_month != value:
+            row.lessons_per_month, row.updated_by = value, request.user
+            row.save()
+        return self.get(request, pk)
 
 
 class GroupHistoryView(GroupProgressView):

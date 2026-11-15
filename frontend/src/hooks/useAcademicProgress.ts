@@ -31,11 +31,22 @@ function useInvalidateProgress() {
 }
 
 export function useSaveProgram(id: number) {
-  const invalidate = useInvalidateProgress()
-  return useMutation({ mutationFn: (data: ProgramInput) => academicProgressApi.saveProgram(id, data), onSuccess: invalidate })
+  const qc = useQueryClient()
+  // Lessons per month renumbers «Месяц · Урок» everywhere — refresh every query.
+  return useMutation({ mutationFn: (data: ProgramInput) => academicProgressApi.saveProgram(id, data), onSuccess: () => void qc.invalidateQueries() })
 }
 
 export function useConfirmHistory(groupId: number) {
   const invalidate = useInvalidateProgress()
   return useMutation({ mutationFn: (n: number) => academicProgressApi.confirmHistory(groupId, n), onSuccess: invalidate })
+}
+
+/** A group's lessons per month changes «Месяц · Урок» on every page of the
+ * LMS (schedule, homework, attendance, reports…) — refresh everything. */
+export function useSaveGroupNumbering(groupId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (value: number | null) => academicProgressApi.saveGroupNumbering(groupId, value),
+    onSuccess: () => void qc.invalidateQueries(),
+  })
 }

@@ -31,6 +31,7 @@ import { useAssistantActions } from '../actions/AssistantActions'
 import { GroupAttendanceTab, GroupHomeworkTab } from '../records/GroupRecordTabs'
 import { HistoryList, LessonList } from '../shared'
 import { Field, FormError, GroupStatusBadge, InfoRow, ModalActions, StudentStatusBadge } from '../ui'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 const TABS = [
   { key: 'overview', label: 'Обзор' },
@@ -227,7 +228,7 @@ export function AssistantGroupDetailPage() {
                     className="flex w-full items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-left text-sm hover:border-brand-200 hover:bg-brand-50/40">
                     <span className="min-w-0">
                       <span className="block font-medium text-ink">{formatDate(lesson.date, false)} · {lesson.start}–{lesson.end}</span>
-                      <span className="block truncate text-ink-secondary">№{lesson.lesson_number} {lesson.topic || lesson.subject?.name} · {lesson.teacher?.name ?? '—'}</span>
+                      <span className="block truncate text-ink-secondary">{lessonLabel(lesson.numbering, lesson.lesson_number)} · {lesson.topic || lesson.subject?.name} · {lesson.teacher?.name ?? '—'}</span>
                     </span>
                     <span className="shrink-0 text-xs text-ink-muted">{lesson.status_display}</span>
                   </button>

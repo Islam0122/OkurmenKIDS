@@ -1,3 +1,5 @@
+import type { LessonNumbering } from './lessonNumbering'
+
 /**
  * `/api/v1/control/` — "did the responsible trainer fill in everything their
  * lessons require?" Every count, percent, level and status here is computed
@@ -116,6 +118,7 @@ export type ControlComponentState =
 export interface ControlLesson {
   id: number
   lesson_number: number
+  numbering?: LessonNumbering | null
   date: string
   start_time: string
   end_time: string

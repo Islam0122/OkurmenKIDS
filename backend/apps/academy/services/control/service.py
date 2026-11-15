@@ -14,6 +14,7 @@ from collections import defaultdict
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.users.models import Subject, Teacher
 
 from apps.academy.models import Attendance, Group, Homework, HomeworkResult, Lesson, Student
@@ -557,6 +558,7 @@ def lesson_payload(check: LessonCheck) -> dict:
     return {
         "id": lesson.id,
         "lesson_number": lesson.lesson_number,
+        "numbering": numbering.of(lesson),
         "date": lesson.date,
         "start_time": lesson.start_time,
         "end_time": lesson.end_time,

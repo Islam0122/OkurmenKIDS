@@ -36,6 +36,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.academy.models import Attendance, Group, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
 from apps.academy.services.lesson_status import held_q
 
@@ -307,7 +308,7 @@ def analyse_students(students: list[Student], *, start: dt.date | None, today: d
                     "date": lesson.date, "kind": "attendance", "ok": status in ATTENDED,
                     "text": {Attendance.Status.PRESENT: "Был на уроке", Attendance.Status.LATE: "Опоздал",
                              Attendance.Status.ABSENT: "Не пришёл", Attendance.Status.EXCUSED: "Уважительная причина"}[status],
-                    "detail": f"№{lesson.lesson_number} {lesson.subject.name if lesson.subject_id else ''}".strip(),
+                    "detail": f"{_lesson_label(lesson)} {lesson.subject.name if lesson.subject_id else ''}".strip(),
                     "neutral": status == Attendance.Status.EXCUSED,
                 })
         row.attendance = _pct(row.attended, row.marked)
@@ -407,3 +408,8 @@ def student_profile(student: Student, period: str) -> dict:
         "timeline": timelines.get(student.pk, [])[:40],
         "note": note,
     }
+
+
+def _lesson_label(lesson) -> str:
+    n = numbering.of(lesson)
+    return n["label"] if n else f"№{lesson.lesson_number}"
