@@ -384,31 +384,6 @@ def attendance_summary(records) -> dict:
     }
 
 
-def attendance_month(student: Student, year: int, month: int) -> dict:
-    start, end = month_bounds(year, month)
-    records = list(
-        Attendance.objects.filter(student=student, lesson__date__range=(start, end))
-        .exclude(lesson__status=Lesson.Status.CANCELLED)
-        .select_related(*(f"lesson__{rel}" for rel in LESSON_RELATED))
-        .order_by("lesson__date", "lesson__start_time")
-    )
-    return {
-        "year": year,
-        "month": month,
-        "summary": attendance_summary(records),
-        "records": [
-            {
-                "id": r.pk,
-                "status": r.status,
-                "comment": r.comment,
-                "excuse_reason": r.excuse_reason,
-                "lesson": lesson_row(r.lesson, r, student.branch),
-            }
-            for r in records
-        ],
-    }
-
-
 # ---------------------------------------------------------------------------
 # XP & achievements
 # ---------------------------------------------------------------------------

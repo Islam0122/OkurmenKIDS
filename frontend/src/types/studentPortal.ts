@@ -224,11 +224,42 @@ export interface PortalDashboard {
   payments: FinanceSummary | null
 }
 
+/** Attendance summary by the KPI rules: attended = present + late, missed = absent + excused, percent over marked. */
+export interface AttendanceStats extends AttendanceSummary { missed: number }
+
+/** How one of the student's lessons looks in the calendar. */
+export type LessonState = AttendanceMark | 'unmarked' | 'future' | 'cancelled'
+
+export interface CalendarLesson extends PortalLesson {
+  state: LessonState
+  comment: string
+  excuse_reason: string
+}
+
 export interface PortalAttendanceMonth {
   year: number
   month: number
-  summary: AttendanceSummary
-  records: { id: number; status: AttendanceMark; comment: string; excuse_reason: string; lesson: PortalLesson }[]
+  today: string
+  summary: AttendanceStats
+  lessons: CalendarLesson[]
+}
+
+export interface AttendanceOverview {
+  rules: { attended: AttendanceMark[]; missed: AttendanceMark[]; percent: string; unmarked_counts_as_missed: boolean; cancelled_counts: boolean }
+  summary: AttendanceStats & { held: number; unmarked: number }
+  streak: { current: number; best: number }
+  months: (AttendanceStats & { year: number; month: number })[]
+  subjects: (AttendanceStats & { subject: string | null })[]
+  weeks: (AttendanceStats & { start: string; end: string })[]
+  since: string
+}
+
+export interface AttendanceHistoryRow {
+  id: number
+  status: AttendanceMark
+  comment: string
+  excuse_reason: string
+  lesson: PortalLesson
 }
 
 export interface MonthlyReport {

@@ -21,6 +21,9 @@ vi.mock('@/api/studentPortal', () => ({
     paymentDocuments: vi.fn(),
     receipt: vi.fn(),
     receiptPdf: vi.fn(),
+    attendance: vi.fn(),
+    attendanceOverview: vi.fn(),
+    attendanceHistory: vi.fn(),
   },
 }))
 vi.mock('@/hooks/useAuth', () => ({
@@ -35,6 +38,7 @@ import { StudentDashboardPage } from './pages/DashboardPage'
 import { StudentHomeworkDetailPage, StudentHomeworkPage } from './pages/HomeworkPages'
 import { StudentAchievementsPage } from './pages/AchievementsPage'
 import { StudentPaymentsPage } from './pages/PaymentsPage'
+import { StudentAttendancePage } from './pages/AttendancePage'
 import { translate, DICTIONARIES } from './i18n'
 
 function child(id: number, first: string): PortalStudent {
@@ -441,5 +445,88 @@ describe('Finance page (read-only accounting data)', () => {
     renderPayments('/student/payments?tab=docs')
     expect(await screen.findByText('OK-2026-000004')).toBeInTheDocument()
     expect(screen.getByText(/отдельный документ по ним не формируется/)).toBeInTheDocument()
+  })
+})
+
+describe('Attendance dashboard (read-only, KPI rules)', () => {
+  const now = new Date()
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const lesson = (id: number, day: string, start: string, extra: Record<string, unknown> = {}) => ({
+    ...lesson18(), id, date: `${ym}-${day}`, start, end: '17:30', lesson_number: id, topic: `Тема ${id}`,
+    teacher: { id: 1, name: 'Ислам' }, comment: '', excuse_reason: '', state: 'present' as const, ...extra,
+  })
+  const stats = { marked: 6, present: 3, late: 1, absent: 1, excused: 1, attended: 4, missed: 2, percent: 66.7 }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    vi.mocked(studentPortalApi.me).mockResolvedValue(ME)
+    vi.mocked(studentPortalApi.attendanceOverview).mockResolvedValue({
+      rules: { attended: ['present', 'late'], missed: ['absent', 'excused'], percent: 'attended / marked', unmarked_counts_as_missed: false, cancelled_counts: false },
+      summary: { ...stats, held: 7, unmarked: 1 },
+      streak: { current: 2, best: 3 },
+      months: [{ year: now.getFullYear(), month: now.getMonth() + 1, ...stats }],
+      subjects: [{ subject: 'Python', ...stats }],
+      weeks: [{ start: `${ym}-01`, end: `${ym}-07`, ...stats }],
+      since: `${ym}-01`,
+    })
+    vi.mocked(studentPortalApi.attendance).mockResolvedValue({
+      year: now.getFullYear(), month: now.getMonth() + 1, today: `${ym}-15`, summary: stats,
+      lessons: [
+        lesson(1, '03', '10:00', { state: 'present', attendance: 'present' }),
+        lesson(2, '03', '16:00', { state: 'late', attendance: 'late', subject: { id: 2, name: 'English' } }),
+        lesson(3, '05', '16:00', { state: 'absent', attendance: 'absent' }),
+        lesson(4, '07', '16:00', { state: 'excused', attendance: 'excused', excuse_reason: 'Болел' }),
+      ],
+    })
+    vi.mocked(studentPortalApi.attendanceHistory).mockResolvedValue({ count: 1, next: null, previous: null, results: [
+      { id: 9, status: 'absent', comment: '', excuse_reason: '', lesson: { ...lesson18(), date: `${ym}-05`, teacher: { id: 1, name: 'Ислам' } } },
+    ] })
+  })
+
+  function renderAttendance() {
+    return renderWithProviders(
+      <Routes><Route path="/student" element={<StudentPortalLayout />}><Route path="attendance" element={<StudentAttendancePage />} /></Route></Routes>,
+      { route: '/student/attendance' },
+    )
+  }
+
+  it('shows the real totals and explains the rules', async () => {
+    renderAttendance()
+    expect(await screen.findByText('4 из 6 отмеченных')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /Общая посещаемость 67%/ })).toBeInTheDocument()
+    expect(screen.getByText('Без отметки: 1')).toBeInTheDocument()
+    expect(screen.getByText(/Посещено = «был» \+ «опоздал»/)).toBeInTheDocument()
+    expect(screen.getByText('2 подряд')).toBeInTheDocument()
+  })
+
+  it('colours the calendar by status and lists every lesson of a day', async () => {
+    renderAttendance()
+    const day3 = await screen.findByRole('button', { name: `${ym}-03: Был, Опоздал` })
+    expect(day3.className).toContain('bg-brand-50') // present → green
+    expect(screen.getByRole('button', { name: `${ym}-05: Не был` }).className).toContain('bg-danger-soft') // red
+    expect(screen.getByRole('button', { name: `${ym}-07: Уважительная причина` }).className).toContain('bg-info-soft') // blue
+    await userEvent.setup().click(day3)
+    expect((await screen.findAllByText('Занятий: 2')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('English').length).toBeGreaterThan(0)
+  })
+
+  it('navigates months and filters the history', async () => {
+    renderAttendance()
+    await screen.findByText('4 из 6 отмеченных')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Предыдущий месяц' }))
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    await waitFor(() => expect(studentPortalApi.attendance).toHaveBeenLastCalledWith(1, prev.getFullYear(), prev.getMonth() + 1))
+    await user.click(screen.getByRole('button', { name: /^Не был$/ }))
+    await waitFor(() => expect(studentPortalApi.attendanceHistory).toHaveBeenLastCalledWith(1, 'absent', 1))
+    expect(screen.queryByRole('button', { name: /Отметить|Сохранить/ })).not.toBeInTheDocument() // read-only
+  })
+
+  it('speaks Kyrgyz', async () => {
+    window.localStorage.setItem('okk-student-portal-lang', 'ky')
+    renderAttendance()
+    expect(await screen.findByText('6 белгиленгендин 4')).toBeInTheDocument()
+    expect(screen.getByText('Катышуу календары')).toBeInTheDocument()
   })
 })
