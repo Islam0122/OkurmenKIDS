@@ -132,6 +132,34 @@ already shows a header install button. «Не сейчас» snoozes it for 21 d
 after 3 dismissals it never appears on its own again. Once installed, every
 prompt disappears.
 
+## Install landing page and QR code
+
+**`/install`** (`src/features/install/InstallPage.tsx`, public, no login) is where the
+official QR code leads. It reads the platform and browser from the user agent
+(`detect.ts`) and shows only the steps for that device, in Russian or Kyrgyz
+(shared language choice with the portal):
+
+| Device / browser | What the page shows |
+| --- | --- |
+| iPhone / iPad — Safari | Animated 4 steps: Safari ✓ → «Поделиться» (or «⋯» → «Поделиться» on iOS 26) → «На экран „Домой“» → «Добавить» |
+| iPhone — Chrome, Edge, Firefox… | «Открыть в Safari»: copy-link button, steps; Chrome/Edge also their own Share → Add to Home Screen |
+| Instagram, Telegram, WhatsApp… (iOS / Android) | Open in Safari / Chrome first, copy link |
+| Android — Chrome, Samsung Internet, Edge… | Big «Установить приложение» = the real `beforeinstallprompt` dialog; the browser's menu steps if no prompt arrives within 3.5 s or it is dismissed |
+| Computer — Chrome / Edge / Safari (macOS) | Install button or menu steps, plus a QR code to install on the phone |
+| Computer — Firefox | Explains it cannot install; QR code for the phone |
+| Installed app (standalone) / installed from this browser | «Приложение установлено!» → «Войти в кабинет» / «Открыть кабинет» |
+
+The page never signs anyone in or out and keeps the floating install card away.
+
+**`/install/qr`** (`InstallQrPage.tsx`; admin, director, operations director,
+assistant — linked in the admin and assistant menus) shows the official code for
+`VITE_PUBLIC_APP_URL` + `/install` (default: the current site). Exports: PNG
+2048 px, SVG (vector, logo embedded) and an A4 poster via the browser's print
+dialog (also «Save as PDF»). The code is black on white with a 4-module quiet zone;
+with the logo it uses error correction H and the logo covers ≈5 % of the modules.
+Before anything can be exported the page paints the code and decodes it back
+(jsQR) at full size and at 220 px; if the logo version fails, the plain code is used.
+
 ## Push notifications
 
 The browser asks for permission **only** when the user turns on the switch in

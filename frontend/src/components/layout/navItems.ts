@@ -13,6 +13,7 @@ import {
   LineChart,
   LayoutDashboard,
   ListChecks,
+  QrCode,
   Megaphone,
   MonitorCheck,
   NotebookPen,
@@ -98,6 +99,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/news', label: 'Новости', icon: Megaphone, roles: ['admin', 'teacher'] },
   // Раздел бухгалтерии — для администратора только просмотр (backend: apps.accounting).
   { to: '/accounting', label: 'Бухгалтерия', icon: Calculator, roles: ['admin'] },
+  // Официальный QR-код установки приложения для родителей (features/install).
+  { to: '/install/qr', label: 'QR приложения', icon: QrCode, roles: ['admin'] },
 ]
 
 export const PROFILE_NAV_ITEM: NavItem = { to: '/app/profile', label: 'Профиль', icon: User }
