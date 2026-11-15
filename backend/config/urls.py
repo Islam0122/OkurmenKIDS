@@ -48,6 +48,8 @@ urlpatterns = [
     path("api/v1/assistant/", include("apps.assistant.urls")),
     # Кабинет ученика и родителя — роль STUDENT_PARENT (см. apps.portal).
     path("api/v1/portal/", include("apps.portal.urls")),
+    # «Сообщество»: staff moderation + signed photo links (apps.community).
+    path("api/v1/community/", include("apps.community.urls")),
     # Месячная матрица посещаемости и ДЗ — все роли академии (apps.attendance_matrix).
     path("api/v1/attendance-matrix/", include("apps.attendance_matrix.urls")),
     # Учебные месяцы программ и прогресс групп (apps.academic_progress).

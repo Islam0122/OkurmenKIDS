@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  BarChart3, BookOpenCheck, CalendarDays, Check, ChevronDown, Home, LogOut, MoreHorizontal, Trophy, UserCheck, UserRound,
+  BarChart3, BookOpenCheck, CalendarDays, Check, ChevronDown, Home, LogOut, MoreHorizontal, Trophy, UserCheck, UserRound, UsersRound,
   Wallet,
 } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
@@ -30,7 +30,7 @@ import { Avatar, LoadError, Loading } from './ui'
  * (the backend refuses every data request meanwhile — apps.portal.access).
  */
 
-type NavKey = 'nav.home' | 'nav.schedule' | 'nav.homework' | 'nav.attendance' | 'nav.reports' | 'nav.achievements' | 'nav.payments' | 'nav.profile'
+type NavKey = 'nav.home' | 'nav.schedule' | 'nav.homework' | 'nav.attendance' | 'nav.reports' | 'nav.achievements' | 'nav.community' | 'nav.payments' | 'nav.profile'
 interface NavItem { to: string; key: NavKey; icon: typeof Home; end?: boolean; payments?: boolean }
 
 const NAV: NavItem[] = [
@@ -39,18 +39,20 @@ const NAV: NavItem[] = [
   { to: '/student/homework', key: 'nav.homework', icon: BookOpenCheck },
   { to: '/student/attendance', key: 'nav.attendance', icon: UserCheck },
   { to: '/student/reports', key: 'nav.reports', icon: BarChart3 },
+  { to: '/student/community', key: 'nav.community', icon: UsersRound },
   { to: '/student/achievements', key: 'nav.achievements', icon: Trophy },
   { to: '/student/payments', key: 'nav.payments', icon: Wallet, payments: true },
   { to: '/student/profile', key: 'nav.profile', icon: UserRound },
 ]
 
 /** Phone/tablet bottom bar; everything else lives in the «Дагы» sheet. */
-const BOTTOM = ['/student', '/student/schedule', '/student/homework', '/student/achievements']
-const SHORT: Partial<Record<NavKey, 'nav.short.home' | 'nav.short.schedule' | 'nav.short.homework' | 'nav.short.achievements'>> = {
+const BOTTOM = ['/student', '/student/schedule', '/student/homework', '/student/community']
+const SHORT: Partial<Record<NavKey, 'nav.short.home' | 'nav.short.schedule' | 'nav.short.homework' | 'nav.short.achievements' | 'nav.short.community'>> = {
   'nav.home': 'nav.short.home',
   'nav.schedule': 'nav.short.schedule',
   'nav.homework': 'nav.short.homework',
   'nav.achievements': 'nav.short.achievements',
+  'nav.community': 'nav.short.community',
 }
 
 function LangSwitch({ className }: { className?: string }) {

@@ -1,5 +1,7 @@
 from django.urls import path
 
+from apps.community import portal_views as community
+
 from . import views
 
 app_name = "portal"
@@ -27,4 +29,17 @@ urlpatterns = [
     path(f"{student}achievements/", views.AchievementsView.as_view(), name="achievements"),
     path(f"{student}reports/monthly/", views.MonthlyReportView.as_view(), name="monthly-report"),
     path(f"{student}reports/monthly/pdf/", views.MonthlyReportPdfView.as_view(), name="monthly-report-pdf"),
+    # «Сообщество» (apps.community) — as the selected child.
+    path(f"{student}community/", community.FeedView.as_view(), name="community-feed"),
+    path(f"{student}community/summary/", community.SummaryView.as_view(), name="community-summary"),
+    path(f"{student}community/mine/", community.MineView.as_view(), name="community-mine"),
+    path(f"{student}community/posts/<int:post_id>/", community.PostView.as_view(), name="community-post"),
+    path(f"{student}community/posts/<int:post_id>/like/", community.LikeView.as_view(), name="community-like"),
+    path(f"{student}community/posts/<int:post_id>/comments/", community.CommentsView.as_view(), name="community-comments"),
+    path(f"{student}community/posts/<int:post_id>/report/", community.ReportView.as_view(), name="community-report-post"),
+    path(f"{student}community/comments/<int:comment_id>/", community.CommentView.as_view(), name="community-comment"),
+    path(f"{student}community/comments/<int:comment_id>/report/", community.ReportView.as_view(),
+         name="community-report-comment"),
+    path(f"{student}community/profiles/<int:other_id>/", community.ProfileView.as_view(), name="community-profile"),
+    path(f"{student}community/notifications/", community.NotificationsView.as_view(), name="community-notifications"),
 ]

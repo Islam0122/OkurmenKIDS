@@ -14,6 +14,8 @@ shows what was saved there.
 """
 from __future__ import annotations
 
+import datetime
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
 from django.utils import timezone
@@ -172,9 +174,19 @@ class AttendanceHistoryView(PortalView):
 @extend_schema(tags=TAGS, responses={200: dict})
 class NotificationsView(PortalView):
     def get(self, request, student_id):
-        return Response({"results": data.notifications(
-            self.student(student_id), today=self.today(), can_view_payments=self.account().can_view_payments,
-        )})
+        from apps.community.models import CommunityNotification
+
+        student = self.student(student_id)
+        items = data.notifications(student, today=self.today(), can_view_payments=self.account().can_view_payments)
+        # «Сообщество»: unread events of the last 30 days (comments, replies,
+        # likes, moderation decisions) — the same list, rendered by code.
+        since = timezone.now() - datetime.timedelta(days=30)
+        for row in CommunityNotification.objects.filter(recipient=student, is_read=False, created_at__gte=since)[:20]:
+            items.append({
+                "id": f"community-{row.pk}", "kind": f"community_{row.kind}", "date": timezone.localdate(row.created_at),
+                "params": {"post_id": row.post_id, "actor": row.actor_name, "note": row.note}, "priority": 2,
+            })
+        return Response({"results": items})
 
 
 @extend_schema(tags=TAGS, responses={200: dict})

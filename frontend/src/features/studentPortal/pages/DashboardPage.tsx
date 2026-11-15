@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle, ArrowRight, Award, Bell, BookOpenCheck, CalendarClock, CalendarDays, CalendarX, CheckCircle2, ClipboardList,
-  CreditCard, Flame, GraduationCap, MapPin, MessageSquareQuote, Sparkles, Star, Trophy, UserCheck, Zap,
+  CreditCard, Flame, GraduationCap, Heart, MapPin, MessageCircle, MessageSquareQuote, Sparkles, Star, Trophy, UserCheck, Zap,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -28,6 +28,12 @@ const NOTIF_ICON = {
   homework_checked: { icon: CheckCircle2, tone: 'text-brand-700 bg-brand-50' },
   lesson_cancelled: { icon: CalendarX, tone: 'text-danger bg-danger-soft' },
   payment_due: { icon: CreditCard, tone: 'text-warning bg-warning-soft' },
+  community_comment: { icon: MessageCircle, tone: 'text-brand-700 bg-brand-50' },
+  community_reply: { icon: MessageCircle, tone: 'text-brand-700 bg-brand-50' },
+  community_like: { icon: Heart, tone: 'text-rose-600 bg-rose-50' },
+  community_approved: { icon: CheckCircle2, tone: 'text-brand-700 bg-brand-50' },
+  community_rejected: { icon: AlertCircle, tone: 'text-danger bg-danger-soft' },
+  community_hidden: { icon: AlertCircle, tone: 'text-danger bg-danger-soft' },
 } as const
 
 export function NotificationList({ items }: { items: PortalNotification[] }) {
@@ -37,7 +43,9 @@ export function NotificationList({ items }: { items: PortalNotification[] }) {
     <ul className="space-y-1">
       {items.map((n) => {
         const { icon: Icon, tone } = NOTIF_ICON[n.kind]
-        const href = n.params.homework_id ? `/student/homework/${n.params.homework_id}` : n.kind === 'payment_due' ? '/student/payments' : '/student/schedule'
+        const href = n.kind.startsWith('community_')
+          ? `/student/community${n.params.post_id ? `?post=${n.params.post_id}` : ''}`
+          : n.params.homework_id ? `/student/homework/${n.params.homework_id}` : n.kind === 'payment_due' ? '/student/payments' : '/student/schedule'
         return (
           <li key={n.id}>
             <Link to={href} className="sp-press flex items-start gap-3 rounded-xl p-2.5 hover:bg-surface-hover">
