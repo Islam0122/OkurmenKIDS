@@ -59,7 +59,7 @@ describe('Настройки учебной программы', () => {
     expect(within(dialog).queryByRole('radio', { name: 'Другое' })).not.toBeInTheDocument()
     expect(within(dialog).queryByRole('spinbutton', { name: 'Своё количество занятий' })).not.toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('radio', { name: '20 занятий' }))
-    expect(within(dialog).getByText(/занятие №21 — «Месяц 2 · Урок 1»/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/21-й урок предмета — «2 месяц · 1 урок»/)).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
     await waitFor(() => expect(api.saveProgram).toHaveBeenCalledWith(7, expect.objectContaining({ lessons_per_month: 20 })))
   })

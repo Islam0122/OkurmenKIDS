@@ -50,7 +50,7 @@ export function LessonModal({ lesson, onClose }: { lesson: AssistantLesson & { c
         <div><dt className="field-label">Предмет</dt><dd className="font-medium text-ink">{lesson.subject?.name ?? '—'}</dd></div>
         <div><dt className="field-label">Кабинет</dt><dd className="font-medium text-ink">{lesson.room?.name ?? 'Не указан'}</dd></div>
         <div><dt className="field-label">Студентов</dt><dd className="font-medium text-ink">{lesson.students_count ?? 0}</dd></div>
-        <div className="col-span-2"><dt className="field-label">Тема</dt><dd className="font-medium text-ink">{lessonLabel(lesson.numbering, lesson.lesson_number)} · {lesson.topic || '—'}</dd></div>
+        <div className="col-span-2"><dt className="field-label">Тема</dt><dd className="font-medium text-ink">{[lessonLabel(lesson.numbering), lesson.topic || '—'].filter(Boolean).join(' · ')}</dd></div>
       </dl>
       {mode === 'view' ? <div className="mb-3"><ConflictNotes lesson={lesson} /></div> : null}
       {lesson.status !== 'scheduled' ? <Badge tone={lesson.status === 'cancelled' ? 'danger' : 'info'}>{lesson.status_display}</Badge> : null}

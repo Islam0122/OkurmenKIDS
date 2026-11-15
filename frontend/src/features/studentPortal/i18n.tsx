@@ -180,7 +180,7 @@ const ru = {
   'lesson.status.cancelled': 'Отменено',
   'lesson.room': 'Каб. {room}',
   'lesson.number': 'Урок {n}',
-  'lesson.monthly': 'Месяц {month} · Урок {lesson}',
+  'lesson.monthly': '{month} месяц · {lesson} урок',
   'att.present': 'Был',
   'att.late': 'Опоздал',
   'att.absent': 'Пропустил',

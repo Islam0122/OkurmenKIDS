@@ -60,7 +60,7 @@ function NextHomeworkCard({ hw }: { hw: PortalHomeworkDetail }) {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
-              {hw.lesson.lesson_number ? (
+              {hw.lesson.numbering ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-brand-700"><Hash className="size-3" aria-hidden />{lessonNo(t, hw.lesson)}</span>
               ) : null}
               {hw.subject ? <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary"><BookOpen className="size-3" aria-hidden />{hw.subject.name}</span> : null}
@@ -242,7 +242,7 @@ export function StudentHomeworkDetailPage() {
         <span className={cn('absolute inset-x-0 top-0 h-1.5', style.dot)} aria-hidden />
         <div className="p-5 sm:p-7">
           <div className="mb-2 flex flex-wrap gap-1.5 text-xs font-semibold">
-            {data.lesson.lesson_number ? <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700">{lessonNo(t, data.lesson)}</span> : null}
+            {data.lesson.numbering ? <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700">{lessonNo(t, data.lesson)}</span> : null}
             {data.subject ? <span className="rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary">{data.subject.name}</span> : null}
             {data.group ? <span className="rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary">{data.group.name}</span> : null}
           </div>
@@ -294,7 +294,7 @@ export function StudentHomeworkDetailPage() {
         <PCard title={t('hw.relatedLesson')} icon={<CalendarDays className="size-4" aria-hidden />}>
           <p className="text-sm font-bold text-ink">
             {t('hw.lesson', { date: date(data.lesson.date, true) })}
-            {data.lesson.lesson_number ? <span className="font-medium text-ink-muted"> · {lessonNo(t, data.lesson)}</span> : null}
+            {data.lesson.numbering ? <span className="font-medium text-ink-muted"> · {lessonNo(t, data.lesson)}</span> : null}
           </p>
           {data.lesson.topic ? <p className="mt-1 text-sm text-ink-secondary">{data.lesson.topic}</p> : null}
           {data.lesson.description ? <p className="mt-2 whitespace-pre-line text-sm text-ink-secondary">{data.lesson.description}</p> : null}

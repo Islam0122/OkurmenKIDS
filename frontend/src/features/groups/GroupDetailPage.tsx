@@ -283,7 +283,7 @@ function ScheduleTab({ groupId }: { groupId: number }) {
                       <p className="text-sm font-medium text-ink">
                         {formatTimeRange(lesson.start_time, lesson.end_time)}
                         <span className="ml-2 font-normal text-ink-secondary">
-                          {formatDateShort(lesson.date)} · {lessonLabel(lesson.numbering, lesson.lesson_number)}
+                          {[formatDateShort(lesson.date), lessonLabel(lesson.numbering)].filter(Boolean).join(' · ')}
                         </span>
                       </p>
                       <p className="mt-0.5 text-sm text-ink-secondary">

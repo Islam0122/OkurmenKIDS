@@ -1,10 +1,7 @@
-"""Keep past lessons' «Месяц · Урок» when lessons per month changes.
-
-Whatever changes a group's effective lessons per month — its program's
-setting (ProgramCurriculum), the group's own (GroupLessonNumbering), from the
-API or Django admin, created, edited or deleted — the sizes are read before
-the change and numbering.freeze_history() fixes the months already started.
-"""
+"""Keep past lessons' «месяц · урок» when numbering settings are saved
+outside an explicit numbering.preserving() block (the program API and the
+Django admin form wrap their whole save in one): e.g. a group's own lessons
+per month, or a curriculum saved in code."""
 from __future__ import annotations
 
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
@@ -24,21 +21,18 @@ def _groups(instance) -> list[int]:
 @receiver(pre_save, sender=GroupLessonNumbering)
 @receiver(pre_delete, sender=ProgramCurriculum)
 @receiver(pre_delete, sender=GroupLessonNumbering)
-def _remember_sizes(sender, instance, **kwargs):
-    instance._numbering_before = numbering.effective_sizes(_groups(instance))
+def _before(sender, instance, **kwargs):
+    instance._numbering_state = None if numbering._preserving.get() else numbering.begin(_groups(instance))
 
 
 @receiver(post_save, sender=ProgramCurriculum)
 @receiver(post_save, sender=GroupLessonNumbering)
 @receiver(post_delete, sender=ProgramCurriculum)
 @receiver(post_delete, sender=GroupLessonNumbering)
-def _freeze_started_months(sender, instance, **kwargs):
-    numbering.invalidate()
-    before = getattr(instance, "_numbering_before", None)
-    if not before:
+def _after(sender, instance, **kwargs):
+    state = getattr(instance, "_numbering_state", None)
+    instance._numbering_state = None
+    if state is None:
+        numbering.invalidate()
         return
-    after = numbering.effective_sizes(before)
-    changed = {group: old for group, old in before.items() if after.get(group) != old}
-    if changed:
-        numbering.freeze_history(changed, user=getattr(instance, "updated_by", None),
-                                 reason=f"Занятий в месяце изменено на {', '.join(sorted({str(after[g]) for g in changed}))}")
+    numbering.finish(state, user=getattr(instance, "updated_by", None), reason="Изменено число занятий в учебном месяце")

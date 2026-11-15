@@ -247,7 +247,7 @@ export function OperationsAcademyGroupPage() {
             </Section>
             <Section title="История занятий" padding={false}>
               <Table empty={!d.lesson_history.length} headers={['Дата', 'Занятие', 'Тема', 'Предмет', 'Тренер', 'Отмечено / были', 'Статус']}>
-                {d.lesson_history.map((l) => <tr key={l.id}><td className="whitespace-nowrap">{shortDate(l.date)} {l.start ?? ''}</td><td className="whitespace-nowrap">{lessonLabel(l.numbering, l.number) || '—'}</td><td className="text-sm">{l.topic || '—'}</td><td>{l.subject ?? '—'}</td><td className="text-sm">{l.trainer ?? '—'}</td><td className="tabular-nums">{l.attendance.marked} / {l.attendance.attended}</td><td><Badge tone={l.status === 'completed' ? 'success' : l.status === 'cancelled' ? 'danger' : 'muted'}>{l.status_display}</Badge></td></tr>)}
+                {d.lesson_history.map((l) => <tr key={l.id}><td className="whitespace-nowrap">{shortDate(l.date)} {l.start ?? ''}</td><td className="whitespace-nowrap">{lessonLabel(l.numbering) || '—'}</td><td className="text-sm">{l.topic || '—'}</td><td>{l.subject ?? '—'}</td><td className="text-sm">{l.trainer ?? '—'}</td><td className="tabular-nums">{l.attendance.marked} / {l.attendance.attended}</td><td><Badge tone={l.status === 'completed' ? 'success' : l.status === 'cancelled' ? 'danger' : 'muted'}>{l.status_display}</Badge></td></tr>)}
               </Table>
             </Section>
           </div>

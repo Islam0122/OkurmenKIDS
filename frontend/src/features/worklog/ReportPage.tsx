@@ -110,7 +110,7 @@ function LessonPicker({ group, value, onChange, error }: { group: string; value:
         placeholder={lessons.isFetching ? 'Загрузка…' : 'Не выбрано'}
         options={(lessons.data?.results ?? []).map((l) => ({
           value: String(l.id),
-          label: `${formatDate(l.date)}, ${l.start_time.slice(0, 5)}, ${lessonLabel(l.numbering, l.lesson_number)}${l.subject_name ? `, ${l.subject_name}` : ''}${l.topic ? ` — ${l.topic}` : ''}`,
+          label: `${[formatDate(l.date), l.start_time.slice(0, 5), lessonLabel(l.numbering), l.subject_name].filter(Boolean).join(', ')}${l.topic ? ` — ${l.topic}` : ''}`,
         }))}
       />
     </Field>

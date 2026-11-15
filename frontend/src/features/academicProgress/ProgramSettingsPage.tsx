@@ -147,7 +147,7 @@ function EditorForm({ detail, onClose }: { detail: ProgramDetail; onClose: () =>
               ]} />
           </div>
           <p className="mt-1.5 text-xs text-ink-muted">
-            Номера уроков во всей LMS: занятие №{Number(perMonth) + 1} — «Месяц 2 · Урок 1».
+            Номера уроков во всей LMS: {Number(perMonth) + 1}-й урок предмета — «2 месяц · 1 урок». У каждого предмета (IT, English, Soft Skills…) своя нумерация.
             Учебный месяц — {perMonth} занятий, а не календарный месяц. Группа может задать своё число; проведённые занятия не перенумеровываются.
           </p>
           {err('lessons_per_month')}

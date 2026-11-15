@@ -5,6 +5,7 @@ import type { BoardLesson } from '@/types/schedule'
 import { cn } from '@/utils/cn'
 
 import { formatDuration } from './timeGrid'
+import { lessonLabel as numberingLabel } from '@/lib/lessonNumbering'
 
 const NEUTRAL = '#94A3B8'
 
@@ -34,6 +35,7 @@ export function lessonLabel(lesson: BoardLesson): string {
     `${lesson.start}–${lesson.end} (${formatDuration(lesson.duration_minutes)})`,
     lesson.group.name,
     lesson.subject?.name,
+    numberingLabel(lesson.numbering),
     `Тренер: ${lesson.teacher?.name ?? '—'}`,
     `Кабинет: ${lesson.room?.name ?? 'не указан'}`,
     lesson.status_display,
@@ -100,6 +102,7 @@ export function LessonCard({
         <span className="truncate text-2xs leading-tight text-ink-muted">
           {formatDuration(lesson.duration_minutes)}
           {lesson.subject ? ` · ${lesson.subject.name}` : ''}
+          {lesson.numbering ? ` · ${numberingLabel(lesson.numbering)}` : ''}
           {lesson.status !== 'scheduled' ? ` · ${lesson.status_display}` : ''}
         </span>
       ) : null}
