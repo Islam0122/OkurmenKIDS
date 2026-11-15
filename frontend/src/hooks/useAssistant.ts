@@ -4,7 +4,7 @@ import { assistantApi, surveysApi, type GroupListParams, type RecordFilters, typ
 import { useToast } from '@/components/ui/Toast'
 import { extractErrorMessage } from '@/lib/apiError'
 import { SCHEDULE_KEY } from '@/hooks/useSchedule'
-import type { ReportFilters } from '@/types/assistant'
+import type { BulkScope, ReportFilters } from '@/types/assistant'
 
 /** Every Assistant Workspace query lives under one key root, so a write can
  * refresh everything it may have touched (a transfer changes two groups,
@@ -148,3 +148,34 @@ export function useMonthlyReport(year: number, month: number, filters: Partial<R
     placeholderData: keepPreviousData,
   })
 }
+
+/* ---------------- Пакетное создание кабинетов учеников ---------------- */
+
+export function useBulkPreview(scope: BulkScope, groupIds: number[], enabled = true) {
+  return useQuery({
+    queryKey: [...ASSISTANT_KEY, 'bulk-preview', scope, groupIds],
+    queryFn: () => assistantApi.bulkPreview(scope, groupIds),
+    enabled,
+  })
+}
+
+export function useBulkRuns() {
+  return useQuery({ queryKey: [...ASSISTANT_KEY, 'bulk-runs'], queryFn: assistantApi.bulkRuns })
+}
+
+export function useBulkRun(id: number | undefined) {
+  return useQuery({
+    queryKey: [...ASSISTANT_KEY, 'bulk-run', id],
+    queryFn: () => assistantApi.bulkRun(id as number),
+    enabled: id !== undefined,
+  })
+}
+
+export function useBulkCreate() {
+  return useAssistantFormMutation((vars: { scope: BulkScope; groupIds: number[] }) => assistantApi.bulkCreate(vars.scope, vars.groupIds))
+}
+
+export function useBulkRetry() {
+  return useAssistantFormMutation((id: number) => assistantApi.bulkRetry(id), 'Повтор запущен')
+}
+

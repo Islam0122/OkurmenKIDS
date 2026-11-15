@@ -416,6 +416,7 @@ export const router = createBrowserRouter(withHydrateFallback([
               { path: 'groups/create', lazy: async () => ({ Component: (await import('@/features/assistant/pages/GroupCreatePage')).AssistantGroupCreatePage }) },
               { path: 'groups/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/GroupDetailPage')).AssistantGroupDetailPage }) },
               { path: 'students', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentsPage')).AssistantStudentsPage }) },
+              { path: 'students/accounts', lazy: async () => ({ Component: (await import('@/features/assistant/pages/BulkAccountsPage')).AssistantBulkAccountsPage }) },
               { path: 'students/create', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentCreatePage')).AssistantStudentCreatePage }) },
               { path: 'students/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentDetailPage')).AssistantStudentDetailPage }) },
               { path: 'schedule', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SchedulePage')).AssistantSchedulePage }) },

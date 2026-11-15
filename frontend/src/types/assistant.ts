@@ -759,3 +759,82 @@ export interface ReportShare { key: string; label: string; count: number; percen
 
 /** Narrow the departure sections of the monthly report. */
 export interface ReportFilters { group: number; teacher: number; reason: string }
+
+/* ---------------- Пакетное создание кабинетов учеников ---------------- */
+
+export type BulkScope = 'all' | 'groups'
+
+export interface BulkPreviewStudent {
+  id: number
+  full_name: string
+  group: string
+  has_account: boolean
+  /** Существующий логин или тот, который получит студент при создании (предварительно). */
+  login: string
+}
+
+export interface BulkPreview {
+  scope: BulkScope
+  group_ids: number[]
+  group_names: string[]
+  total: number
+  existing: number
+  to_create: number
+  students: BulkPreviewStudent[]
+}
+
+export type BulkRunStatus = 'pending' | 'running' | 'completed'
+export type BulkExportState = 'none' | 'ready' | 'downloaded' | 'expired'
+
+export interface BulkRunCounts {
+  total: number
+  existing: number
+  created: number
+  failed: number
+  pending: number
+}
+
+export interface BulkRunExport {
+  state: BulkExportState
+  label: string
+  downloadable: boolean
+  expires_at: string | null
+  exported_at: string | null
+}
+
+export interface BulkRunFailed {
+  id: number
+  student_id: number | null
+  full_name: string
+  group: string
+  reason: string
+}
+
+export interface BulkRunCreated {
+  student_id: number | null
+  full_name: string
+  group: string
+  login: string
+}
+
+export interface BulkRun {
+  id: number
+  scope: BulkScope
+  scope_label: string
+  group_names: string[]
+  status: BulkRunStatus
+  status_display: string
+  created_at: string
+  finished_at: string | null
+  created_by: string | null
+  retry_of: number | null
+  counts: BulkRunCounts
+  progress: number
+  export: BulkRunExport
+  failed: BulkRunFailed[]
+  created: BulkRunCreated[]
+}
+
+export interface BulkRunList {
+  results: BulkRun[]
+}

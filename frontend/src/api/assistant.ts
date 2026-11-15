@@ -30,6 +30,10 @@ import type {
   SurveyAnalytics,
   SurveyDetail,
   QuestionType,
+  BulkPreview,
+  BulkRun,
+  BulkRunList,
+  BulkScope,
 } from '@/types/assistant'
 import type { SubjectStartOverview } from '@/types/academy'
 import type { Paginated } from '@/types/common'
@@ -168,6 +172,19 @@ export const assistantApi = {
   transfer: (id: number, body: TransferInput) => post<StudentDetail>(`/students/${id}/transfer/`, body),
   accountCheck: (params: { first_name: string; last_name: string; parent_phone: string }) =>
     get<AccountCheck>('/students/account-check/', params),
+  /** Пакетное создание кабинетов: что будет сделано (ничего не записывается). */
+  bulkPreview: (scope: BulkScope, groupIds: number[]) =>
+    get<BulkPreview>('/bulk-accounts/preview/', { scope, group_ids: groupIds.join(',') }),
+  bulkRuns: () => get<BulkRunList>('/bulk-accounts/runs/'),
+  bulkRun: (id: number) => get<BulkRun>(`/bulk-accounts/runs/${id}/`),
+  bulkCreate: (scope: BulkScope, groupIds: number[]) =>
+    post<BulkRun>('/bulk-accounts/runs/', { scope, group_ids: groupIds, confirm: true }),
+  /** Один небольшой шаг пакета; вызывается, пока `counts.pending` не станет 0. */
+  bulkProcess: (id: number, limit = 10) => post<BulkRun>(`/bulk-accounts/runs/${id}/process/`, { limit }),
+  bulkRetry: (id: number) => post<BulkRun>(`/bulk-accounts/runs/${id}/retry/`),
+  /** Одноразовая выгрузка XLSX с временными паролями. JWT-запрос, поэтому blob, а не ссылка. */
+  bulkExport: (id: number) =>
+    apiClient.get<Blob>(`${BASE}/bulk-accounts/runs/${id}/export/`, { responseType: 'blob' }).then((r) => r.data),
   exportStudents: (params: StudentListParams, format: 'xlsx' | 'csv' = 'xlsx') =>
     apiClient
       .get<Blob>(`${BASE}/students/export/`, {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ArrowRightLeft, Download, GraduationCap, Plus, UserCheck, UsersRound, UserX, X } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { ArrowRightLeft, Download, GraduationCap, KeyRound, Plus, UserCheck, UsersRound, UserX, X } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { assistantApi } from '@/api/assistant'
 import type { StudentListParams } from '@/api/assistant'
@@ -77,6 +77,7 @@ export function AssistantStudentsPage() {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Map<number, StudentRow>>(new Map())
   const { open } = useAssistantActions()
+  const navigate = useNavigate()
   const { data: options } = useAssistantOptions()
   const listParams: StudentListParams = {
     status,
@@ -137,6 +138,9 @@ export function AssistantStudentsPage() {
         description="Поиск, статусы, переводы и групповые действия."
         actions={
           <>
+            <Button variant="secondary" leftIcon={<KeyRound className="size-4" aria-hidden />} onClick={() => navigate('/assistant/students/accounts')}>
+              Кабинеты
+            </Button>
             <Button variant="secondary" leftIcon={<Download className="size-4" aria-hidden />} isLoading={exporting} onClick={() => void exportList()}>
               Экспорт
             </Button>

@@ -1,5 +1,6 @@
 from django.urls import path
 
+from . import bulk_accounts_views as bulk_views
 from . import views
 
 app_name = "assistant"
@@ -41,6 +42,16 @@ urlpatterns = [
          name="student-account-payments"),
     path("students/<int:pk>/account/link/", views.StudentAccountLinkView.as_view(), name="student-account-link"),
     path("students/<int:pk>/account/unlink/", views.StudentAccountUnlinkView.as_view(), name="student-account-unlink"),
+    # Пакетное создание кабинетов учеников (apps.portal.services.bulk_accounts).
+    path("bulk-accounts/preview/", bulk_views.BulkAccountPreviewView.as_view(), name="bulk-accounts-preview"),
+    path("bulk-accounts/runs/", bulk_views.BulkAccountRunListView.as_view(), name="bulk-accounts-runs"),
+    path("bulk-accounts/runs/<int:pk>/", bulk_views.BulkAccountRunDetailView.as_view(), name="bulk-accounts-run"),
+    path("bulk-accounts/runs/<int:pk>/process/", bulk_views.BulkAccountRunProcessView.as_view(),
+         name="bulk-accounts-process"),
+    path("bulk-accounts/runs/<int:pk>/retry/", bulk_views.BulkAccountRunRetryView.as_view(),
+         name="bulk-accounts-retry"),
+    path("bulk-accounts/runs/<int:pk>/export/", bulk_views.BulkAccountRunExportView.as_view(),
+         name="bulk-accounts-export"),
     path("students/<int:pk>/", views.StudentDetailView.as_view(), name="student-detail"),
     path("students/<int:pk>/deactivation-preview/", views.StudentDeactivationPreviewView.as_view(),
          name="student-deactivation-preview"),

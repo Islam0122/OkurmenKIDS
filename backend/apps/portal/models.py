@@ -83,3 +83,104 @@ class StudentLink(models.Model):
 
     def __str__(self):
         return f"{self.account} → {self.student}"
+
+
+# ---------------------------------------------------------------------------
+# Bulk account generation (Assistant Workspace → Студенты → Кабинеты).
+#
+# A run is one batch: every student in the chosen scope is recorded as an
+# item up front (already has an account / pending / created / failed), and
+# the accounts are then provisioned a few at a time through the same
+# services.accounts.provision_account the single-student flow uses.
+#
+# Plaintext passwords are never stored. A generated password exists in
+# memory only while its account is being created; it is then kept as a
+# Fernet token (`sealed_password`, key derived from SECRET_KEY) until the
+# one-time XLSX export is downloaded or the secrets expire — whichever comes
+# first — and is wiped at that point. The run and item rows never carry the
+# password itself.
+# ---------------------------------------------------------------------------
+
+class BulkAccountRun(models.Model):
+    class Scope(models.TextChoices):
+        ALL = "all", "Все активные студенты"
+        GROUPS = "groups", "Выбранные группы"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "В очереди"
+        RUNNING = "running", "Выполняется"
+        COMPLETED = "completed", "Завершён"
+
+    class ExportState(models.TextChoices):
+        NONE = "none", "Нет учётных данных"
+        READY = "ready", "Готов к выгрузке"
+        DOWNLOADED = "downloaded", "Выгружен"
+        EXPIRED = "expired", "Истёк срок выгрузки"
+
+    scope = models.CharField(max_length=10, choices=Scope.choices, verbose_name="Охват")
+    group_ids = models.JSONField(default=list, blank=True, verbose_name="Группы")
+    group_names = models.JSONField(default=list, blank=True, verbose_name="Названия групп")
+    retry_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="retries", verbose_name="Повтор для",
+    )
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True,
+                              verbose_name="Статус")
+    export_state = models.CharField(max_length=12, choices=ExportState.choices, default=ExportState.NONE,
+                                    verbose_name="Выгрузка")
+    secrets_expire_at = models.DateTimeField(null=True, blank=True, verbose_name="Пароли удаляются")
+    exported_at = models.DateTimeField(null=True, blank=True, verbose_name="Выгружен")
+    exported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        verbose_name="Выгрузил",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        verbose_name="Запустил",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Запущен")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Завершён")
+
+    class Meta:
+        verbose_name = "Пакетное создание аккаунтов"
+        verbose_name_plural = "Пакетное создание аккаунтов"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"Пакет №{self.pk}"
+
+
+class BulkAccountRunItem(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает"
+        CREATED = "created", "Аккаунт создан"
+        EXISTING = "existing", "Аккаунт уже был"
+        FAILED = "failed", "Ошибка"
+
+    run = models.ForeignKey(BulkAccountRun, on_delete=models.CASCADE, related_name="items", verbose_name="Пакет")
+    student = models.ForeignKey(
+        Student, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Студент",
+    )
+    # Snapshots, so the report stays readable if the student or group is later renamed or removed.
+    student_name = models.CharField(max_length=300, verbose_name="Студент (ФИО)")
+    group_name = models.CharField(max_length=150, blank=True, verbose_name="Группа")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True,
+                              verbose_name="Статус")
+    login = models.CharField(max_length=40, blank=True, verbose_name="Логин")
+    account = models.ForeignKey(
+        PortalAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Аккаунт",
+    )
+    error = models.CharField(max_length=500, blank=True, verbose_name="Причина ошибки")
+    # Fernet token of the temporary password — see the section comment above. Cleared after export/expiry.
+    sealed_password = models.TextField(blank=True, verbose_name="Зашифрованный временный пароль")
+    issued_at = models.DateTimeField(null=True, blank=True, verbose_name="Учётные данные созданы")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Добавлен")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Изменён")
+
+    class Meta:
+        verbose_name = "Строка пакета"
+        verbose_name_plural = "Строки пакета"
+        ordering = ["pk"]
+        indexes = [models.Index(fields=["run", "status"])]
+
+    def __str__(self):
+        return f"{self.student_name}: {self.get_status_display()}"
