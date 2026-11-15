@@ -15,6 +15,7 @@ import {
   ListChecks,
   QrCode,
   Megaphone,
+  MessagesSquare,
   MonitorCheck,
   NotebookPen,
   ScanLine,
@@ -97,6 +98,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'Отчёты' } },
   { to: '/app/scholarships', label: 'Стипендии', icon: Award, roles: ['admin', 'teacher'] },
   { to: '/app/news', label: 'Новости', icon: Megaphone, roles: ['admin', 'teacher'] },
+  // Модерация сообщества учеников (backend: apps.community; тренер — свои группы).
+  { to: '/app/community', label: 'Сообщество', icon: MessagesSquare, roles: ['admin', 'teacher', 'team_lead'] },
   // Раздел бухгалтерии — для администратора только просмотр (backend: apps.accounting).
   { to: '/accounting', label: 'Бухгалтерия', icon: Calculator, roles: ['admin'] },
   // Официальный QR-код установки приложения для родителей (features/install).

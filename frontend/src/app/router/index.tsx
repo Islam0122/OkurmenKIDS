@@ -319,6 +319,11 @@ export const router = createBrowserRouter(withHydrateFallback([
           },
           { path: 'salary', element: <Navigate to="/app/my-salary" replace /> },
           {
+            // «Сообщество»: модерация публикаций учеников (backend: apps.community — тренер видит свои группы).
+            element: <RequireRoles roles={['admin', 'teacher', 'team_lead', 'director', 'operations_director']} />,
+            children: [{ path: 'community', lazy: async () => ({ Component: (await import('@/features/community/ModerationPage')).CommunityModerationPage }) }],
+          },
+          {
             path: 'news',
             lazy: async () => {
               const { NewsListPage } = await import('@/features/news/NewsListPage')
@@ -421,6 +426,7 @@ export const router = createBrowserRouter(withHydrateFallback([
               { path: 'attendance-summary', lazy: async () => ({ Component: (await import('@/features/attendanceMatrix/AttendanceOverviewPage')).AttendanceOverviewPage }) },
               { path: 'scholarships', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ScholarshipsPage')).AssistantScholarshipsPage }) },
               { path: 'surveys', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveysPage')).AssistantSurveysPage }) },
+              { path: 'community', lazy: async () => ({ Component: (await import('@/features/community/ModerationPage')).CommunityModerationPage }) },
               { path: 'surveys/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SurveyDetailPage')).AssistantSurveyDetailPage }) },
               { path: 'my-salary', lazy: async () => ({ Component: (await import('@/features/accounting/MySalaryPage')).MySalaryPage }) },
               { path: 'profile', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ProfilePage')).AssistantProfilePage }) },
@@ -451,6 +457,8 @@ export const router = createBrowserRouter(withHydrateFallback([
               { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/AttendancePage')).StudentAttendancePage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/ReportsPage')).StudentReportsPage }) },
               { path: 'achievements', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/AchievementsPage')).StudentAchievementsPage }) },
+              { path: 'community', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/CommunityPage')).StudentCommunityPage }) },
+              { path: 'community/u/:id', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/CommunityProfilePage')).StudentCommunityProfilePage }) },
               { path: 'payments', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/PaymentsPage')).StudentPaymentsPage }) },
               { path: 'profile', lazy: async () => ({ Component: (await import('@/features/studentPortal/pages/ProfilePage')).StudentProfilePage }) },
               { path: '*', element: <Navigate to="/student" replace /> },

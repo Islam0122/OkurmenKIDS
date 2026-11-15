@@ -1,0 +1,7 @@
+# Private areas of the LMS are never indexed (sign-in required anyway);
+# the public sites of this build (news, schedule, projects, careers…) stay open.
+User-agent: *
+Disallow: /student/
+Disallow: /app/
+Disallow: /assistant/
+Disallow: /api/

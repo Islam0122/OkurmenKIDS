@@ -24,6 +24,7 @@ import {
   BookOpen,
   FileQuestion,
   FolderKanban,
+  MessagesSquare,
   Wallet,
   ScanLine,
   UserCheck,
@@ -96,6 +97,8 @@ export const TEAM_LEAD_SECTIONS: TeamLeadSection[] = [
       { label: 'Настройки программ', to: '/team-lead/programs', icon: Table2 },
       { label: 'Домашние задания', to: '/app/homework', icon: NotebookPen /* journal-text */ },
       { label: 'Проекты студентов', to: '/trainer/projects', icon: FolderKanban },
+      // Модерация сообщества учеников (backend: apps.community).
+      { label: 'Сообщество', to: '/app/community', icon: MessagesSquare },
     ],
   },
   {

@@ -124,13 +124,15 @@ export interface FeedbackItem {
 
 export type NotificationKind =
   | 'homework_not_submitted' | 'homework_due' | 'homework_new' | 'homework_checked' | 'lesson_cancelled' | 'payment_due'
+  // «Сообщество» (apps.community): stored events, unread, last 30 days.
+  | 'community_comment' | 'community_reply' | 'community_like' | 'community_approved' | 'community_rejected' | 'community_hidden'
 
 export interface PortalNotification {
   id: string
   kind: NotificationKind
   date: string | null
   priority: number
-  params: { homework_id?: number; lesson_id?: number; title?: string; days_left?: number; score?: number | null;
+  params: { homework_id?: number; lesson_id?: number; post_id?: number | null; actor?: string; note?: string; title?: string; days_left?: number; score?: number | null;
     subject?: string; start?: string | null; amount?: string }
 }
 

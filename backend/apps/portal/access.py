@@ -32,6 +32,8 @@ ALLOWED_PREFIXES = (
     "/api/v1/auth/refresh/",
     "/api/v1/auth/me/",
     PORTAL_API_PREFIX,
+    # Community photos by signed link (the signature is the permission).
+    "/api/v1/community/media/",
     # Anonymous public sites (leaderboard, schedule, projects, news, careers…).
     "/api/v1/public/",
 )

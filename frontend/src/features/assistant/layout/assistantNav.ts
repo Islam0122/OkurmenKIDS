@@ -7,6 +7,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   MessageSquareText,
+  MessagesSquare,
   QrCode,
   ScanLine,
   ShieldAlert,
@@ -60,6 +61,7 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
       { to: '/assistant/attendance-matrix', label: 'Посещаемость групп', icon: Table2 },
       { to: '/assistant/scholarships', label: 'Стипендии', icon: Award },
       { to: '/assistant/surveys', label: 'Опросы', icon: MessageSquareText },
+      { to: '/assistant/community', label: 'Сообщество', icon: MessagesSquare },
     ],
   },
   {

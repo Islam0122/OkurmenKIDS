@@ -82,6 +82,7 @@ LOCAL_APPS = [
     "apps.push.apps.PushConfig",
     # Кабинет ученика и родителя (роль STUDENT_PARENT, /api/v1/portal/).
     "apps.portal.apps.PortalConfig",
+    "apps.community.apps.CommunityConfig",
 ]
 
 INSTALLED_APPS = (
