@@ -43,6 +43,9 @@ import { ATTENDANCE_STATUS_LABELS } from '@/types/attendance'
 import { DAY_LABELS, WEEKDAY_ORDER } from '@/types/common'
 import { cn } from '@/utils/cn'
 import { formatDateShort, formatTimeRange } from '@/utils/format'
+import { lessonLabel } from '@/lib/lessonNumbering'
+import { GroupNumberingCard } from '@/features/academicProgress/ui'
+import { useGroupAcademicProgress } from '@/hooks/useAcademicProgress'
 
 const STATUS_TONE: Record<Group['status'], BadgeTone> = {
   active: 'success',
@@ -96,7 +99,10 @@ export function GroupDetailPage() {
       <Tabs aria-label="Разделы группы" items={tabs} value={tab} onChange={setTab} />
 
       {tab === 'overview' ? (
-        <OverviewTab group={group} linkTrainers={academyView} onEditSchedule={() => setTab('schedule')} />
+        <div className="space-y-6">
+          <OverviewTab group={group} linkTrainers={academyView} onEditSchedule={() => setTab('schedule')} />
+          {academyView ? <GroupNumbering groupId={groupId} /> : null}
+        </div>
       ) : null}
       {tab === 'students' ? <StudentsTab groupId={groupId} /> : null}
       {tab === 'schedule' ? (
@@ -120,6 +126,13 @@ export function GroupDetailPage() {
       {tab === 'analytics' && academyView ? <AnalyticsTab groupId={groupId} /> : null}
     </div>
   )
+}
+
+/** «Нумерация уроков» (12 / 20 lessons per educational month) for staff who see the whole academy. */
+function GroupNumbering({ groupId }: { groupId: number }) {
+  const { data } = useGroupAcademicProgress(groupId)
+  if (!data?.numbering) return null
+  return <div className="card card-body"><GroupNumberingCard groupId={groupId} numbering={data.numbering} canEdit={data.can_edit} /></div>
 }
 
 function OverviewTab({ group, linkTrainers, onEditSchedule }: { group: Group; linkTrainers: boolean; onEditSchedule: () => void }) {
@@ -270,7 +283,7 @@ function ScheduleTab({ groupId }: { groupId: number }) {
                       <p className="text-sm font-medium text-ink">
                         {formatTimeRange(lesson.start_time, lesson.end_time)}
                         <span className="ml-2 font-normal text-ink-secondary">
-                          {formatDateShort(lesson.date)} · Занятие {lesson.lesson_number}
+                          {formatDateShort(lesson.date)} · {lessonLabel(lesson.numbering, lesson.lesson_number)}
                         </span>
                       </p>
                       <p className="mt-0.5 text-sm text-ink-secondary">
@@ -313,7 +326,7 @@ function AttendanceLog({ groupId }: { groupId: number }) {
         getRowKey={(record) => record.id ?? `${record.student}-${record.lesson}`}
         rows={data.results}
         columns={[
-          { key: 'date', header: 'Дата', render: (record) => formatDateShort(record.lesson_date) },
+          { key: 'date', header: 'Дата', render: (record) => `${formatDateShort(record.lesson_date)}${record.lesson_numbering ? ` · ${lessonLabel(record.lesson_numbering)}` : ''}` },
           { key: 'student', header: 'Студент', render: (record) => record.student_name },
           {
             key: 'status',

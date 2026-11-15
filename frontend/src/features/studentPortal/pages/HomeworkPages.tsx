@@ -13,7 +13,7 @@ import type { PortalHomeworkDetail, PortalLesson } from '@/types/studentPortal'
 import { LIVE_QUERY, PORTAL_KEY, usePortal } from '../context'
 import { usePortalI18n } from '../i18n'
 import { HomeworkMini } from './DashboardPage'
-import { Empty, HomeworkBadge, HW_STYLE, LoadError, Loading, PCard, PageTitle } from '../ui'
+import { Empty, HomeworkBadge, HW_STYLE, LoadError, Loading, PCard, PageTitle, lessonNo } from '../ui'
 
 /**
  * Homework in the Student & Parent Portal is READ-ONLY. The work is done
@@ -61,7 +61,7 @@ function NextHomeworkCard({ hw }: { hw: PortalHomeworkDetail }) {
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
               {hw.lesson.lesson_number ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-brand-700"><Hash className="size-3" aria-hidden />{t('hw.lessonNo', { n: hw.lesson.lesson_number })}</span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-brand-700"><Hash className="size-3" aria-hidden />{lessonNo(t, hw.lesson)}</span>
               ) : null}
               {hw.subject ? <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary"><BookOpen className="size-3" aria-hidden />{hw.subject.name}</span> : null}
               {hw.group ? <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary"><Users className="size-3" aria-hidden />{hw.group.name}</span> : null}
@@ -107,7 +107,7 @@ function LessonHeader({ lesson }: { lesson: PortalLesson }) {
       <span className="flex size-11 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-sm"><CalendarDays className="size-5" aria-hidden /></span>
       <div className="min-w-0">
         <p className="text-base font-extrabold tracking-tight text-ink">
-          {lesson.lesson_number ? t('hw.nextLesson', { n: lesson.lesson_number }) : t('hw.relatedLesson')}
+          {lessonNo(t, lesson) || t('hw.relatedLesson')}
           {lesson.topic ? <span className="font-semibold text-ink-secondary"> · {lesson.topic}</span> : null}
         </p>
         <p className="text-sm text-ink-secondary">
@@ -242,7 +242,7 @@ export function StudentHomeworkDetailPage() {
         <span className={cn('absolute inset-x-0 top-0 h-1.5', style.dot)} aria-hidden />
         <div className="p-5 sm:p-7">
           <div className="mb-2 flex flex-wrap gap-1.5 text-xs font-semibold">
-            {data.lesson.lesson_number ? <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700">{t('hw.lessonNo', { n: data.lesson.lesson_number })}</span> : null}
+            {data.lesson.lesson_number ? <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700">{lessonNo(t, data.lesson)}</span> : null}
             {data.subject ? <span className="rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary">{data.subject.name}</span> : null}
             {data.group ? <span className="rounded-full bg-surface-muted px-2.5 py-1 text-ink-secondary">{data.group.name}</span> : null}
           </div>
@@ -294,7 +294,7 @@ export function StudentHomeworkDetailPage() {
         <PCard title={t('hw.relatedLesson')} icon={<CalendarDays className="size-4" aria-hidden />}>
           <p className="text-sm font-bold text-ink">
             {t('hw.lesson', { date: date(data.lesson.date, true) })}
-            {data.lesson.lesson_number ? <span className="font-medium text-ink-muted"> · №{data.lesson.lesson_number}</span> : null}
+            {data.lesson.lesson_number ? <span className="font-medium text-ink-muted"> · {lessonNo(t, data.lesson)}</span> : null}
           </p>
           {data.lesson.topic ? <p className="mt-1 text-sm text-ink-secondary">{data.lesson.topic}</p> : null}
           {data.lesson.description ? <p className="mt-2 whitespace-pre-line text-sm text-ink-secondary">{data.lesson.description}</p> : null}

@@ -8,6 +8,7 @@ import type { BoardLesson } from '@/types/schedule'
 
 import { TrainerDot } from './LessonCard'
 import { formatDuration } from './timeGrid'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 /** A lesson's details for a reader (Team Lead): who, where, when, how long,
  * its status and its conflicts — and the way to the full lesson page. */
@@ -37,7 +38,7 @@ export function LessonFacts({ lesson }: { lesson: BoardLesson }) {
       <div><dt className="field-label">Предмет</dt><dd className="font-medium text-ink">{lesson.subject?.name ?? '—'}</dd></div>
       <div><dt className="field-label">Статус</dt><dd className="font-medium text-ink">{lesson.status_display}{lesson.schedule_overridden ? ' · перенесено' : ''}</dd></div>
       <div><dt className="field-label">Студентов</dt><dd className="font-medium text-ink">{lesson.students_count ?? 0}</dd></div>
-      <div><dt className="field-label">Тема</dt><dd className="font-medium text-ink">№{lesson.lesson_number} {lesson.topic || '—'}</dd></div>
+      <div><dt className="field-label">Тема</dt><dd className="font-medium text-ink">{lessonLabel(lesson.numbering, lesson.lesson_number)} · {lesson.topic || '—'}</dd></div>
     </dl>
   )
 }

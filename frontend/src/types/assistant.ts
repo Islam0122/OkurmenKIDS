@@ -1,5 +1,6 @@
 /** Shapes of the Assistant Workspace API (`/api/v1/assistant/`, backend: apps.assistant). */
 import type { DayOfWeek } from '@/types/common'
+import type { LessonNumbering } from './lessonNumbering'
 
 export interface Ref {
   id: number
@@ -30,6 +31,7 @@ export interface AssistantLesson {
   room: Ref | null
   topic: string
   lesson_number: number
+  numbering?: LessonNumbering | null
   status: LessonStatus
   status_display: string
   students_count: number | null
@@ -382,6 +384,7 @@ export interface LessonHead {
   start: string
   end: string
   lesson_number: number
+  numbering?: LessonNumbering | null
   topic: string
   subject: Ref | null
   teacher: Ref | null
@@ -413,7 +416,7 @@ export type HomeworkState = 'open' | 'review' | 'complete' | 'missing'
 export interface HomeworkRow {
   id: number
   title: string
-  lesson: { id: number; number: number; topic: string; date: string }
+  lesson: { id: number; number: number; numbering?: LessonNumbering | null; topic: string; date: string }
   teacher?: Ref | null
   deadline: string | null
   issued: string

@@ -9,6 +9,7 @@ import { formatTimeRange } from '@/utils/format'
 
 import { getPrimaryCardAction } from './lessonActions'
 import { hasLessonPassed, needsAttentionCheck } from './lessonViews'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 export interface LessonDayCardProps {
   lesson: Lesson
@@ -44,7 +45,7 @@ export function LessonDayCard({ lesson, studentsCount, attendanceFilled, homewor
           <p className="font-mono text-sm font-semibold text-ink">{formatTimeRange(lesson.start_time, lesson.end_time)}</p>
           <p className="mt-1 text-sm font-medium text-ink">{lesson.group_name}</p>
           <p className="text-sm text-ink-secondary">
-            {lesson.subject_name ?? 'Без предмета'} · Урок #{lesson.lesson_number}
+            {lesson.subject_name ?? 'Без предмета'} · {lessonLabel(lesson.numbering, lesson.lesson_number)}
             {lesson.topic ? <span> — {lesson.topic}</span> : null}
           </p>
           <p className="mt-1 text-xs text-ink-muted">

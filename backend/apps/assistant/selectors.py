@@ -17,6 +17,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.academy.constants import WEEKDAY_CODES, WEEKDAY_LABELS_FULL, WEEKDAY_LABELS_SHORT
 from apps.academy.models import (
     Attendance,
@@ -346,6 +347,7 @@ def _lesson_row(lesson: Lesson, students_count: int | None = None) -> dict:
         "room": _ref(lesson.room),
         "topic": lesson.topic,
         "lesson_number": lesson.lesson_number,
+        "numbering": numbering.of(lesson),
         "status": lesson.status,
         "status_display": lesson.get_status_display(),
         "students_count": students_count,

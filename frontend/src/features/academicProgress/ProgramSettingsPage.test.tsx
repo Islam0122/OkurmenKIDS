@@ -51,16 +51,31 @@ describe('Настройки учебной программы', () => {
     }))
   })
 
-  it('a custom number of lessons', async () => {
+  it('only 12 or 20 lessons per educational month', async () => {
     renderWithProviders(<ProgramSettingsPage />)
     await userEvent.click(await screen.findByRole('button', { name: 'Настроить' }))
     const dialog = await screen.findByRole('dialog')
-    await userEvent.click(within(dialog).getByRole('radio', { name: 'Другое' }))
-    const input = within(dialog).getByRole('spinbutton', { name: 'Своё количество занятий' })
-    await userEvent.clear(input)
-    await userEvent.type(input, '16')
+    expect(within(dialog).getAllByRole('radio').map((r) => r.textContent).slice(0, 3)).toEqual(['12 занятий', '20 занятий', expect.any(String)])
+    expect(within(dialog).queryByRole('radio', { name: 'Другое' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('spinbutton', { name: 'Своё количество занятий' })).not.toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('radio', { name: '20 занятий' }))
+    expect(within(dialog).getByText(/занятие №21 — «Месяц 2 · Урок 1»/)).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(api.saveProgram).toHaveBeenCalledWith(7, expect.objectContaining({ lessons_per_month: 16 })))
+    await waitFor(() => expect(api.saveProgram).toHaveBeenCalledWith(7, expect.objectContaining({ lessons_per_month: 20 })))
+  })
+
+  it('a value saved earlier (not 12 / 20) is shown and kept until changed', async () => {
+    api.program.mockResolvedValue({
+      ...DETAIL, configured: true,
+      settings: {
+        lessons_per_month: 16, duration_months: 6, main_subject: null, extra_subjects: [], count_mode: 'main', months: [],
+        blocks: [], total_lessons: 96, updated_at: null, updated_by: null,
+      },
+    } as ProgramDetail)
+    renderWithProviders(<ProgramSettingsPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Настроить' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('radio', { name: '16 (прежнее)' })).toBeChecked()
   })
 
   it('view-only for roles that may not edit', async () => {

@@ -1,4 +1,5 @@
 import type { LessonStatus, Ref } from '@/types/assistant'
+import type { LessonNumbering } from './lessonNumbering'
 
 /** /api/v1/schedule/ — the Team Lead's and the Assistant's «Расписание». */
 
@@ -30,6 +31,7 @@ export interface BoardLesson {
   room: Ref | null
   topic: string
   lesson_number: number
+  numbering?: LessonNumbering | null
   status: LessonStatus
   status_display: string
   students_count: number | null

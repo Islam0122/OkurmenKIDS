@@ -10,6 +10,7 @@ from __future__ import annotations
 from django.db import transaction
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.academy.models import Attendance, Homework, HomeworkResult, Lesson, Student
 from apps.academy.services import lesson_lifecycle
 
@@ -102,6 +103,7 @@ def detail(user, lesson: Lesson, student: Student) -> dict:
             "end": lesson.end_time.strftime("%H:%M"),
             "topic": lesson.topic,
             "number": lesson.lesson_number,
+            "numbering": numbering.of(lesson),
             "subject": lesson.subject.name if lesson.subject_id else "",
             "teacher": str(lesson.effective_teacher) if lesson.effective_teacher else "",
             "status": lesson.status,

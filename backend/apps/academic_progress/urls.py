@@ -7,5 +7,6 @@ urlpatterns = [
     path("programs/", views.ProgramsView.as_view(), name="academic-progress-programs"),
     path("programs/<int:pk>/", views.ProgramView.as_view(), name="academic-progress-program"),
     path("groups/<int:pk>/", views.GroupProgressView.as_view(), name="academic-progress-group"),
+    path("groups/<int:pk>/numbering/", views.GroupNumberingView.as_view(), name="academic-progress-group-numbering"),
     path("groups/<int:pk>/history/", views.GroupHistoryView.as_view(), name="academic-progress-group-history"),
 ]

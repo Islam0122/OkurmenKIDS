@@ -15,6 +15,7 @@ import { useGroupStudentProgress, useStudentProgressDetail } from '@/hooks/useKP
 import type { StudentProgressParams, StudentProgressRow } from '@/types/studentProgress'
 import { cn } from '@/utils/cn'
 import { formatDateShort, formatRuPercent } from '@/utils/format'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 export const NO_DATA = 'Нет данных'
 
@@ -378,11 +379,11 @@ function StudentProgressDetailPanel({ groupId, row, params }: { groupId: number;
                 <li key={lesson.id} className="grid grid-cols-1 gap-2 px-3 py-2.5 text-sm sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-start">
                   <div className="text-ink-secondary tabular-nums">
                     {formatDateShort(lesson.date)}
-                    <span className="block text-xs text-ink-muted">Занятие {lesson.lesson_number}</span>
+                    <span className="block text-xs text-ink-muted">{lessonLabel(lesson.numbering, lesson.lesson_number)}</span>
                   </div>
                   <div className="min-w-0">
                     <Link to={`/app/lessons/${lesson.id}`} className="text-ink hover:text-brand-700 hover:underline">
-                      {lesson.topic || lesson.subject || `Занятие ${lesson.lesson_number}`}
+                      {lesson.topic || lesson.subject || lessonLabel(lesson.numbering, lesson.lesson_number)}
                     </Link>
                     {lesson.homework.length ? (
                       <ul className="mt-1 space-y-1">

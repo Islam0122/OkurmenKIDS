@@ -35,6 +35,7 @@ from decimal import Decimal
 
 from django.db.models import Avg, Count, Q
 
+from apps.academic_progress import numbering
 from apps.academy.models import Group, GroupSchedule, GroupTeacher, Lesson, Student, StudentStatusEvent
 from apps.academy.services.analytics import assessments
 from apps.academy.services.analytics.student_progress import group_student_progress, student_progress_detail
@@ -349,7 +350,7 @@ def _lesson_history(group: Group, rf: ReportFilters) -> list[dict]:
     for lesson in lessons:
         teacher = lesson.effective_teacher
         result.append({
-            "id": lesson.pk, "date": lesson.date, "number": lesson.lesson_number,
+            "id": lesson.pk, "date": lesson.date, "number": lesson.lesson_number, "numbering": numbering.of(lesson),
             "start": lesson.start_time.strftime("%H:%M") if lesson.start_time else None,
             "topic": lesson.topic, "subject": lesson.subject.name if lesson.subject_id else None,
             "trainer": str(teacher) if teacher else None,

@@ -21,6 +21,7 @@ import { pluralize } from '@/utils/format'
 import { CellModal } from './CellModal'
 import type { CellTarget } from './CellModal'
 import { CELL_STYLE, CellIcon, HOMEWORK_LABEL, LEVEL_STYLE, Legend, SummaryCard, WarningDot, pct, percentTone, shortDate, todayIso } from './ui'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 const PERIOD_OPTIONS: { value: MatrixPeriod; label: string }[] = [
   { value: 'day', label: 'День' },
@@ -340,7 +341,7 @@ function MatrixTable({ data, rows, onOpen, dimmed }: { data: GroupMatrix; rows: 
 
 function ColumnHead({ col }: { col: MatrixColumn }) {
   const weekend = col.weekday === 'Сб' || col.weekday === 'Вс'
-  const title = [col.cancelled ? 'Занятие отменено — отметки сохранены, в статистику не входят' : '', col.topic || `Занятие ${col.lesson_number}`, col.subject, col.teacher, `${col.start}–${col.end}`].filter(Boolean).join(' · ')
+  const title = [col.cancelled ? 'Занятие отменено — отметки сохранены, в статистику не входят' : '', lessonLabel(col.numbering, col.lesson_number), col.topic, col.subject, col.teacher, `${col.start}–${col.end}`].filter(Boolean).join(' · ')
   return (
     <th scope="col" title={title} className={cn('min-w-12 px-1 py-2 text-center font-medium', col.cancelled ? 'bg-surface-hover text-ink-muted' : weekend ? 'bg-brand-50 text-brand-700' : 'bg-surface-muted text-ink-secondary')}>
       <span className="block text-xs">{col.weekday}</span>
@@ -425,7 +426,7 @@ function LessonsTable({ data, onOpen, dimmed }: { data: GroupMatrix; onOpen: (le
               </td>
               <td className={cn(LESSON_TD, 'whitespace-nowrap tabular-nums')}>{col.start}–{col.end}</td>
               <td className={LESSON_TD}>{col.subject || '—'}</td>
-              <td className={cn(LESSON_TD, 'max-w-56 truncate')} title={col.topic}>{col.topic || `Занятие ${col.lesson_number}`}</td>
+              <td className={cn(LESSON_TD, 'max-w-56 truncate')} title={col.topic}>{[lessonLabel(col.numbering, col.lesson_number), col.topic].filter(Boolean).join(' · ')}</td>
               <td className={cn(LESSON_TD, 'text-ink-secondary')}>{col.teacher || '—'}</td>
               <td className={LESSON_TD}>{col.stats.present}</td>
               <td className={LESSON_TD}>{col.stats.excused}</td>
@@ -456,7 +457,7 @@ function LessonMarksModal({ data, rows, lessonId, onClose, onOpenCell }: {
       {col ? (
         <div className="space-y-3">
           <p className="text-sm text-ink-secondary">
-            {[col.topic || `Занятие ${col.lesson_number}`, col.teacher, `${col.start}–${col.end}`, col.cancelled ? 'занятие отменено' : ''].filter(Boolean).join(' · ')}
+            {[lessonLabel(col.numbering, col.lesson_number), col.topic, col.teacher, `${col.start}–${col.end}`, col.cancelled ? 'занятие отменено' : ''].filter(Boolean).join(' · ')}
           </p>
           <ul className="divide-y divide-border">
             {rows.map((row) => {

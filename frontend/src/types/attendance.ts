@@ -1,3 +1,5 @@
+import type { LessonNumbering } from './lessonNumbering'
+
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused'
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
@@ -33,6 +35,7 @@ export interface AttendanceRecord {
   lesson: number
   group_name: string
   lesson_date: string
+  lesson_numbering?: LessonNumbering | null
   status: AttendanceStatus | null
   status_display: string | null
   comment: string

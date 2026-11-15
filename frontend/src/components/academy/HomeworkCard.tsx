@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 
 import type { Homework } from '@/types/homework'
 import { formatDate } from '@/utils/format'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 export interface HomeworkCardProps {
   homework: Homework
@@ -19,7 +20,7 @@ export function HomeworkCard({ homework, submitted, checked, pending, totalStude
     >
       <p className="font-medium text-ink">{homework.title}</p>
       <p className="mt-1 text-sm text-ink-secondary">
-        {homework.group_name} · {formatDate(homework.lesson_date, false)}
+        {homework.group_name} · {homework.lesson_numbering ? `${lessonLabel(homework.lesson_numbering)} · ` : ''}{formatDate(homework.lesson_date, false)}
       </p>
       {homework.deadline ? <p className="mt-1 text-xs text-ink-muted">Срок сдачи: {formatDate(homework.deadline)}</p> : null}
 

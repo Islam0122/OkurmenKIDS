@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.academy.models import Attendance, Group, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
 from apps.assistant.activity import join_dates
 
@@ -369,6 +370,7 @@ def _group_matrix(group, lessons, students, attendance, homeworks, results, toda
 
     columns = []
     col_stats = []
+    numbering.prime(lessons)
     for lesson in lessons:
         held = is_held(lesson, today)
         columns.append({
@@ -378,6 +380,7 @@ def _group_matrix(group, lessons, students, attendance, homeworks, results, toda
             "start": lesson.start_time.strftime("%H:%M"),
             "end": lesson.end_time.strftime("%H:%M"),
             "lesson_number": lesson.lesson_number,
+            "numbering": numbering.of(lesson),
             "topic": lesson.topic,
             "subject": lesson.subject.name if lesson.subject_id else "",
             "teacher": teacher_name(lesson),

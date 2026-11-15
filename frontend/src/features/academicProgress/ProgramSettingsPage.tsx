@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, Settings2 } from 'lucide-react'
 
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -90,9 +90,9 @@ function EditorForm({ detail, onClose }: { detail: ProgramDetail; onClose: () =>
   const save = useSaveProgram(detail.course.id)
   const { showToast } = useToast()
   const s = detail.settings
-  const presetOf = (n: number) => (n === 12 || n === 20 ? String(n) : 'custom')
+  // 12 or 20; a program saved earlier with another number keeps it until changed.
+  const legacy = s && s.lessons_per_month !== 12 && s.lessons_per_month !== 20 ? s.lessons_per_month : null
   const [perMonth, setPerMonth] = useState(String(s?.lessons_per_month ?? 12))
-  const [preset, setPreset] = useState(presetOf(s?.lessons_per_month ?? 12))
   const [duration, setDuration] = useState(String(s?.duration_months ?? 6))
   const [main, setMain] = useState(String(s?.main_subject?.id ?? ''))
   const [extra, setExtra] = useState<number[]>(s?.extra_subjects.map((x) => x.id) ?? [])
@@ -101,10 +101,6 @@ function EditorForm({ detail, onClose }: { detail: ProgramDetail; onClose: () =>
     Object.fromEntries((s?.months ?? []).map((m) => [m.number, { subject: String(m.subject?.id ?? ''), planned: m.planned_lessons ? String(m.planned_lessons) : '' }])))
   const [errors, setErrors] = useState<Record<string, unknown>>({})
   const readOnly = !detail.can_edit
-
-  useEffect(() => {
-    if (preset !== 'custom') setPerMonth(preset)
-  }, [preset])
 
   const subjects: Ref[] = useMemo(() => {
     const all = meta.data?.subjects ?? detail.course.subjects
@@ -143,12 +139,17 @@ function EditorForm({ detail, onClose }: { detail: ProgramDetail; onClose: () =>
         <div>
           <p className="mb-2 text-sm font-medium text-ink">Занятий в одном учебном месяце</p>
           <div className="flex flex-wrap items-center gap-3">
-            <SegmentedControl aria-label="Занятий в месяце" value={preset} onChange={setPreset}
-              options={[{ value: '12', label: '12 занятий' }, { value: '20', label: '20 занятий' }, { value: 'custom', label: 'Другое' }]} />
-            {preset === 'custom' ? (
-              <input aria-label="Своё количество занятий" type="number" min={1} max={200} className="form-control w-24" value={perMonth} onChange={(e) => setPerMonth(e.target.value)} />
-            ) : null}
+            <SegmentedControl aria-label="Занятий в месяце" value={perMonth} onChange={setPerMonth}
+              options={[
+                { value: '12', label: '12 занятий' },
+                { value: '20', label: '20 занятий' },
+                ...(legacy ? [{ value: String(legacy), label: `${legacy} (прежнее)` }] : []),
+              ]} />
           </div>
+          <p className="mt-1.5 text-xs text-ink-muted">
+            Номера уроков во всей LMS: занятие №{Number(perMonth) + 1} — «Месяц 2 · Урок 1».
+            Учебный месяц — {perMonth} занятий, а не календарный месяц. Группа может задать своё число; проведённые занятия не перенумеровываются.
+          </p>
           {err('lessons_per_month')}
         </div>
 

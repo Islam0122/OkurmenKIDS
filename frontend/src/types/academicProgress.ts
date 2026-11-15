@@ -32,6 +32,20 @@ export interface AcademicProgress {
   months: StudyMonth[]
   course: { done: number; planned: number; remaining: number; progress: number | null; extra: number } | null
   count_mode?: 'main' | 'all'
+  lessons_per_month?: number | null
+  lessons_per_month_source?: 'group' | 'program' | 'default'
+}
+
+/** Lessons per educational month of a group — «Месяц · Урок» numbering. */
+export interface GroupNumberingSettings {
+  /** In effect: the group's own, else the program's, else `default`. */
+  lessons_per_month: number
+  group_value: number | null
+  program_value: number | null
+  default: number
+  choices: number[]
+  /** Lesson ranges kept with an earlier size, so held lessons were not renumbered. */
+  frozen: { subject: string | null; first_lesson: number; last_lesson: number; first_month: number; lessons_per_month: number }[]
 }
 
 export interface StudentMonthProgress {
@@ -49,6 +63,7 @@ export interface GroupAcademicProgress {
   progress: AcademicProgress
   students: StudentMonthProgress[]
   can_edit: boolean
+  numbering?: GroupNumberingSettings
 }
 
 export interface ProgramRow {

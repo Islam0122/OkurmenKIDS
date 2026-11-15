@@ -14,6 +14,7 @@ import { cn } from '@/utils/cn'
 
 import { CellIcon, HOMEWORK_LABEL, formatDateTime } from './ui'
 import type { CellCode } from '@/types/attendanceMatrix'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 const ATTENDANCE_OPTIONS: { value: MatrixAttendance; label: string; code: CellCode }[] = [
   { value: 'present', label: 'Присутствовал', code: 'done' },
@@ -80,7 +81,8 @@ function CellForm({ cell, onClose }: { cell: CellDetail; onClose: () => void }) 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl bg-surface-muted p-3 text-sm">
         <Info label="Группа" value={cell.group.name} />
         <Info label="Дата урока" value={`${formatDay(cell.lesson.date)} · ${cell.lesson.start}–${cell.lesson.end}`} />
-        <Info label="Тема" value={cell.lesson.topic || `Занятие ${cell.lesson.number}`} />
+        <Info label="Занятие" value={lessonLabel(cell.lesson.numbering, cell.lesson.number)} />
+        <Info label="Тема" value={cell.lesson.topic || '—'} />
         <Info label="Тренер" value={cell.lesson.teacher || '—'} />
       </dl>
 

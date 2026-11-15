@@ -24,6 +24,7 @@ import { useReturnLink } from '@/lib/returnTo'
 import { todayISO } from '@/features/dashboard/useDashboardData'
 import type { AttendanceStatus } from '@/types/attendance'
 import { formatDate, formatTimeRange } from '@/utils/format'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 /** No lesson (opened straight from the nav/dashboard, not from a Lesson
  * Detail page) has nowhere sensible to return to but the attendance list
@@ -82,7 +83,7 @@ function LessonPicker({ onSelect }: { onSelect: (lessonId: number) => void }) {
               >
                 <span>
                   <span className="block text-sm font-medium text-ink">
-                    {formatTimeRange(lesson.start_time, lesson.end_time)} · {lesson.subject_name ?? 'Без предмета'}
+                    {formatTimeRange(lesson.start_time, lesson.end_time)} · {lesson.subject_name ?? 'Без предмета'}{lesson.numbering ? ` · ${lessonLabel(lesson.numbering)}` : ''}
                   </span>
                   <span className="block text-xs text-ink-secondary">{lesson.group_name}</span>
                 </span>
@@ -163,7 +164,7 @@ function AttendanceEditor({
 
       <PageHeader
         title="Посещаемость"
-        description={lesson ? `${formatDate(lesson.date)} · ${formatTimeRange(lesson.start_time, lesson.end_time)} · ${lesson.group_name}` : undefined}
+        description={lesson ? `${lesson.numbering ? `${lessonLabel(lesson.numbering)} · ` : ''}${formatDate(lesson.date)} · ${formatTimeRange(lesson.start_time, lesson.end_time)} · ${lesson.group_name}` : undefined}
         actions={
           isReadOnly ? (
             <Badge tone="muted">Только просмотр</Badge>

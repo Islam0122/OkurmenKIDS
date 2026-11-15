@@ -1,3 +1,5 @@
+import type { LessonNumbering } from './lessonNumbering'
+
 export type HomeworkResultStatus = 'not_submitted' | 'submitted' | 'checked' | 'late'
 
 export const HOMEWORK_RESULT_STATUS_LABELS: Record<HomeworkResultStatus, string> = {
@@ -13,6 +15,7 @@ export interface Homework {
   lesson: number
   group_name: string
   lesson_date: string
+  lesson_numbering?: LessonNumbering | null
   lesson_status: string
   title: string
   description: string

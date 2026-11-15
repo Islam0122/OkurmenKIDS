@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import type { AssistantLesson, HistoryRow } from '@/types/assistant'
 import { formatDate, formatDateShort } from '@/utils/format'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 /** History timeline and lesson list, shared by the group and student pages. */
 
@@ -35,7 +36,7 @@ export function LessonList({ lessons, empty, onOpen }: { lessons: AssistantLesso
           <div className="min-w-0">
             <p className="font-medium text-ink">{formatDate(lesson.date, false)} · {lesson.start}–{lesson.end}</p>
             <p className="truncate text-ink-secondary">
-              №{lesson.lesson_number} {lesson.topic || lesson.subject?.name || ''} · {lesson.teacher?.name ?? '—'}
+              {lessonLabel(lesson.numbering, lesson.lesson_number)} · {lesson.topic || lesson.subject?.name || ''} · {lesson.teacher?.name ?? '—'}
             </p>
           </div>
           <Badge tone={lesson.status === 'completed' ? 'success' : lesson.status === 'cancelled' ? 'danger' : lesson.status === 'in_progress' ? 'info' : 'muted'}>

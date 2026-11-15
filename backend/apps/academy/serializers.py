@@ -68,6 +68,21 @@ class _RequestAwareSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         return getattr(request, "user", None)
 
+    def _lesson_numbering(self, lesson):
+        """«Месяц · Урок» of a lesson (apps.academic_progress.numbering); a
+        list response loads the settings of all its lessons at once."""
+        if lesson is None:
+            return None
+        from apps.academic_progress import numbering
+
+        context = self.root._context
+        if isinstance(context, dict) and not context.get("_numbering_primed"):
+            context["_numbering_primed"] = True
+            instances = getattr(self.parent, "instance", None) if self.parent is not None else None
+            if instances is not None and not hasattr(instances, "_meta"):
+                numbering.prime(getattr(item, "lesson", item) for item in instances)
+        return numbering.of(lesson)
+
 
 # ---------------------------------------------------------------------------
 # Course catalogue
@@ -758,6 +773,7 @@ class LessonSerializer(_RequestAwareSerializer):
     homework_summary = serializers.SerializerMethodField()
     attendance_editable = serializers.SerializerMethodField()
     rescheduled_to = serializers.SerializerMethodField()
+    numbering = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
@@ -769,6 +785,7 @@ class LessonSerializer(_RequestAwareSerializer):
             "plan",
             "individual_plan",
             "lesson_number",
+            "numbering",
             "date",
             "start_time",
             "end_time",
@@ -821,6 +838,9 @@ class LessonSerializer(_RequestAwareSerializer):
             "schedule_overridden", "started_at", "completed_at", "completed_by", "rescheduled_from",
             "created_at", "updated_at",
         ]
+
+    def get_numbering(self, obj: Lesson) -> dict | None:
+        return self._lesson_numbering(obj)
 
     def get_teacher_name(self, obj: Lesson) -> str | None:
         teacher = obj.effective_teacher
@@ -1003,7 +1023,11 @@ class AttendanceSerializer(_RequestAwareSerializer):
     student_name = serializers.CharField(source="student.__str__", read_only=True)
     group_name = serializers.CharField(source="lesson.group.name", read_only=True)
     lesson_date = serializers.DateField(source="lesson.date", read_only=True)
+    lesson_numbering = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    def get_lesson_numbering(self, obj: Attendance) -> dict | None:
+        return self._lesson_numbering(obj.lesson)
 
     class Meta:
         model = Attendance
@@ -1014,6 +1038,7 @@ class AttendanceSerializer(_RequestAwareSerializer):
             "lesson",
             "group_name",
             "lesson_date",
+            "lesson_numbering",
             "status",
             "status_display",
             "comment",
@@ -1075,6 +1100,7 @@ class HomeworkSerializer(_RequestAwareSerializer):
     group_name = serializers.CharField(source="lesson.group.name", read_only=True)
     lesson_date = serializers.DateField(source="lesson.date", read_only=True)
     lesson_status = serializers.CharField(source="lesson.status", read_only=True)
+    lesson_numbering = serializers.SerializerMethodField()
     results_count = serializers.SerializerMethodField()
     results_editable = serializers.SerializerMethodField()
 
@@ -1086,6 +1112,7 @@ class HomeworkSerializer(_RequestAwareSerializer):
             "group_name",
             "lesson_date",
             "lesson_status",
+            "lesson_numbering",
             "title",
             "description",
             "deadline",
@@ -1101,6 +1128,9 @@ class HomeworkSerializer(_RequestAwareSerializer):
         user = self._request_user()
         if _is_teacher(user):
             self.fields["lesson"].queryset = _teacher_owned_lessons(user)
+
+    def get_lesson_numbering(self, obj: Homework) -> dict | None:
+        return self._lesson_numbering(obj.lesson)
 
     def get_results_count(self, obj: Homework) -> int:
         return obj.results.count()

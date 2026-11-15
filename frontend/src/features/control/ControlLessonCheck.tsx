@@ -8,6 +8,7 @@ import { formatDateShort, formatTimeRange } from '@/utils/format'
 
 import { CONTROL_STATUS_TONE, LevelIcon } from './controlDisplay'
 import { formatDateTime } from './format'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 const HOMEWORK_CHECKED_LABEL: Partial<Record<ControlComponentState, string>> = {
   ok: 'Да',
@@ -50,7 +51,7 @@ export function ControlLessonCheck({ lesson }: { lesson: ControlLesson }) {
         <Field label="Дата">
           {formatDateShort(lesson.date)} · {formatTimeRange(lesson.start_time, lesson.end_time)}
         </Field>
-        <Field label="Занятие">№{lesson.lesson_number}{lesson.topic ? ` · ${lesson.topic}` : ''}</Field>
+        <Field label="Занятие">{lessonLabel(lesson.numbering, lesson.lesson_number)}{lesson.topic ? ` · ${lesson.topic}` : ''}</Field>
         <Field label="Ответственный тренер">
           {lesson.teacher?.name ?? 'Не назначен'}
           {lesson.planned_teacher ? (

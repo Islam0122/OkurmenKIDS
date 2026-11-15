@@ -6,10 +6,23 @@ from __future__ import annotations
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from apps.academy.models import Course, Group
+from apps.academy.models import Course, Group, GroupTeacher
 from apps.users.models import Subject, User
 
 LESSONS = [MinValueValidator(1), MaxValueValidator(200)]
+
+#: Lessons in one educational month — what the monthly lesson numbering
+#: («Месяц 2 · Урок 1») and the study months use. Without any setting: 12.
+LESSONS_PER_MONTH_CHOICES = [(12, "12 занятий"), (20, "20 занятий")]
+ALLOWED_LESSONS_PER_MONTH = tuple(value for value, _ in LESSONS_PER_MONTH_CHOICES)
+DEFAULT_LESSONS_PER_MONTH = 12
+
+
+def validate_lessons_per_month(value):
+    from django.core.exceptions import ValidationError
+
+    if value not in ALLOWED_LESSONS_PER_MONTH:
+        raise ValidationError("Занятий в учебном месяце: 12 или 20.")
 
 
 class ProgramCurriculum(models.Model):
@@ -21,8 +34,8 @@ class ProgramCurriculum(models.Model):
 
     course = models.OneToOneField(Course, on_delete=models.CASCADE, related_name="curriculum", verbose_name="Программа")
     lessons_per_month = models.PositiveSmallIntegerField(
-        default=12, validators=LESSONS, verbose_name="Занятий в учебном месяце",
-        help_text="По умолчанию для каждого месяца; отдельный месяц может задать своё число.",
+        default=DEFAULT_LESSONS_PER_MONTH, validators=[validate_lessons_per_month], verbose_name="Занятий в учебном месяце",
+        help_text="12 или 20. Задаёт нумерацию «Месяц · Урок» всех групп программы (группа может задать своё).",
     )
     duration_months = models.PositiveSmallIntegerField(
         default=6, validators=[MinValueValidator(1), MaxValueValidator(60)], verbose_name="Продолжительность, месяцев",
@@ -86,3 +99,56 @@ class GroupProgressAdjustment(models.Model):
 
     def __str__(self):
         return f"{self.group} — до LMS: {self.lessons_before_lms}"
+
+
+class GroupLessonNumbering(models.Model):
+    """A group's own number of lessons per educational month, when it differs
+    from its program's (ProgramCurriculum.lessons_per_month)."""
+
+    group = models.OneToOneField(Group, on_delete=models.CASCADE, related_name="lesson_numbering", verbose_name="Группа")
+    lessons_per_month = models.PositiveSmallIntegerField(
+        choices=LESSONS_PER_MONTH_CHOICES, validators=[validate_lessons_per_month], verbose_name="Занятий в учебном месяце",
+    )
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Кто изменил")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Изменено")
+
+    class Meta:
+        verbose_name = "Нумерация занятий группы"
+        verbose_name_plural = "Нумерация занятий групп"
+
+    def __str__(self):
+        return f"{self.group} — {self.lessons_per_month} занятий в месяце"
+
+
+class NumberingFreeze(models.Model):
+    """Lessons whose «Месяц · Урок» was fixed before a change of the lessons
+    per month, so the change never renumbers what already took place.
+
+    Covers whole educational months of one lesson sequence (a GroupTeacher's
+    lesson_number): lessons `first_lesson`…`last_lesson` are months
+    `first_month`… of `lessons_per_month` lessons each. Written by
+    numbering.freeze_history(); lessons after the last frozen one follow the
+    current setting.
+    """
+
+    group_teacher = models.ForeignKey(GroupTeacher, on_delete=models.CASCADE, related_name="numbering_freezes",
+                                      verbose_name="Программа группы")
+    first_lesson = models.PositiveIntegerField(verbose_name="С занятия №")
+    last_lesson = models.PositiveIntegerField(verbose_name="По занятие №")
+    first_month = models.PositiveSmallIntegerField(verbose_name="С учебного месяца")
+    lessons_per_month = models.PositiveSmallIntegerField(verbose_name="Занятий в месяце")
+    reason = models.CharField(max_length=255, blank=True, verbose_name="Причина")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Кто")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+
+    class Meta:
+        verbose_name = "Зафиксированная нумерация"
+        verbose_name_plural = "Зафиксированная нумерация"
+        ordering = ["group_teacher", "first_lesson"]
+        constraints = [
+            models.UniqueConstraint(fields=["group_teacher", "first_lesson"], name="unique_numbering_freeze_start"),
+            models.CheckConstraint(condition=models.Q(last_lesson__gte=models.F("first_lesson")), name="numbering_freeze_range"),
+        ]
+
+    def __str__(self):
+        return f"{self.group_teacher}: №{self.first_lesson}–{self.last_lesson} по {self.lessons_per_month}"

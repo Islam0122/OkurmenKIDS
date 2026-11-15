@@ -1,4 +1,5 @@
 import type { KPIPeriodKey } from '@/types/kpi'
+import type { LessonNumbering } from './lessonNumbering'
 
 /** `GET /groups/{id}/student-progress/` — «Прогресс студентов» of the group
  * KPI (backend: services.analytics.student_progress). A rate / average is
@@ -52,6 +53,7 @@ export interface StudentProgressLesson {
   id: number
   date: string
   lesson_number: number
+  numbering?: LessonNumbering | null
   topic: string
   subject: string | null
   attendance: 'present' | 'absent' | 'late' | 'excused' | null

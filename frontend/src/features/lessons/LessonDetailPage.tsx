@@ -26,6 +26,7 @@ import { LessonActionBar } from './LessonActionBar'
 import type { LessonActionKey } from './lessonActions'
 import { LessonProgressChecklist } from './LessonProgressChecklist'
 import { ParentReportModal } from './ParentReportModal'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 export function LessonDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -121,7 +122,7 @@ export function LessonDetailPage() {
     <div>
       <PageHeader
         title={formatTimeRange(lesson.start_time, lesson.end_time)}
-        description={`${formatDate(lesson.date)} · ${lesson.subject_name ?? 'Без предмета'}${lesson.topic ? ` — ${lesson.topic}` : ''}`}
+        description={`${lesson.numbering ? `${lessonLabel(lesson.numbering)} · ` : ''}${formatDate(lesson.date)} · ${lesson.subject_name ?? 'Без предмета'}${lesson.topic ? ` — ${lesson.topic}` : ''}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={LESSON_STATUS_TONE[lesson.status]}>{LESSON_STATUS_LABEL[lesson.status]}</Badge>

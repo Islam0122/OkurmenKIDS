@@ -34,6 +34,7 @@ import datetime as dt
 
 from django.db.models import Prefetch, Q
 
+from apps.academic_progress import numbering
 from apps.academy.models import Attendance, Group, Homework, HomeworkResult, Lesson, Student, StudentStatusEvent
 from .period import DateRange, resolve_comparison, resolve_period
 from .scope import AnalyticsScope
@@ -285,6 +286,7 @@ def _lesson_detail(student: Student, lesson: Lesson, rows: _Rows) -> dict:
         "id": lesson.pk,
         "date": lesson.date,
         "lesson_number": lesson.lesson_number,
+        "numbering": numbering.of(lesson),
         "topic": lesson.topic,
         "subject": lesson.subject.name if lesson.subject_id else None,
         "attendance": status,

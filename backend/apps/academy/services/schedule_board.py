@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from django.db.models import Count, Q
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.users.models import Teacher, User
 
 from ..models import Group, Lesson, Room, Student
@@ -412,6 +413,7 @@ def lesson_row(lesson: Lesson, students_count: int | None, conflicts: list[dict]
         "room": _ref(lesson.room),
         "topic": lesson.topic,
         "lesson_number": lesson.lesson_number,
+        "numbering": numbering.of(lesson),
         "status": lesson.status,
         "status_display": lesson.get_status_display(),
         "students_count": students_count,

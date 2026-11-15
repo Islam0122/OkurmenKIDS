@@ -106,6 +106,8 @@ MIDDLEWARE = [
     "apps.accounting.access.AccountingIsolationMiddleware",
     # Ученик / родитель — только /api/v1/portal/ и вход; всё остальное — 403.
     "apps.portal.access.PortalIsolationMiddleware",
+    # One «Месяц · Урок» resolver per request (apps.academic_progress.numbering).
+    "apps.academic_progress.numbering.NumberingMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

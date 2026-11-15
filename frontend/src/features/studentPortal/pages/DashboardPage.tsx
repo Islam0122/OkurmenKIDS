@@ -12,7 +12,7 @@ import type { Achievement, FeedbackItem, PortalHomework, PortalLesson, PortalNot
 import { LIVE_QUERY, PORTAL_KEY, usePortal } from '../context'
 import { usePortalI18n } from '../i18n'
 import type { TFunction } from '../i18n'
-import { Avatar, Bar, CARD_LINK, Empty, HomeworkBadge, HW_STYLE, LessonRow, LoadError, Loading, PCard, ProgressRing } from '../ui'
+import { Avatar, Bar, CARD_LINK, Empty, HomeworkBadge, HW_STYLE, LessonRow, LoadError, Loading, PCard, ProgressRing, lessonNo } from '../ui'
 
 export function notificationText(t: TFunction, n: PortalNotification): string {
   const p = n.params
@@ -71,7 +71,7 @@ export function HomeworkMini({ hw }: { hw: PortalHomework }) {
       <span className="min-w-0">
         <span className="block truncate text-sm font-bold text-ink group-hover:text-brand-700">{hw.title}</span>
         <span className="mt-0.5 block truncate text-xs text-ink-secondary">
-          {hw.lesson.lesson_number ? `${t('hw.nextLesson', { n: hw.lesson.lesson_number })} · ` : ''}
+          {hw.lesson.lesson_number ? `${lessonNo(t, hw.lesson)} · ` : ''}
           {hw.subject?.name ? `${hw.subject.name} · ` : ''}
           {hw.deadline ? t('hw.deadline', { date: date(hw.deadline) }) : t('hw.noDeadline')}
           {hw.state === 'awaiting' && hw.days_left !== null && hw.days_left >= 0
@@ -127,7 +127,7 @@ function NextLessonCard({ lesson }: { lesson: PortalLesson | undefined }) {
         <div className="min-w-0">
           <p className="truncate text-lg font-extrabold tracking-tight text-ink">{lesson.subject?.name ?? lesson.course?.name}</p>
           <p className="truncate text-sm text-ink-secondary">
-            {lesson.lesson_number ? `${t('hw.lessonNo', { n: lesson.lesson_number })} · ` : ''}{lesson.topic}
+            {lesson.lesson_number ? `${lessonNo(t, lesson)} · ` : ''}{lesson.topic}
           </p>
           <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-ink-muted">
             <span className="whitespace-nowrap">{weekday(day, true)}, {date(lesson.date, true)}</span>

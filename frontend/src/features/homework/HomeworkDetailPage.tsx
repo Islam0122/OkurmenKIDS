@@ -15,6 +15,7 @@ import { extractErrorMessage } from '@/lib/apiError'
 import { useReturnLink } from '@/lib/returnTo'
 import type { BulkHomeworkResultItem, HomeworkResultStatus } from '@/types/homework'
 import { formatDate } from '@/utils/format'
+import { lessonLabel } from '@/lib/lessonNumbering'
 
 /** No lesson to return to (opened straight from the homework list, not
  * from a Lesson Detail page) has nowhere sensible to go but that list. */
@@ -114,7 +115,7 @@ export function HomeworkDetailPage() {
 
       <PageHeader
         title={homework.title}
-        description={`${homework.group_name} · ${formatDate(homework.lesson_date, false)}${homework.deadline ? ` · срок: ${formatDate(homework.deadline)}` : ''}`}
+        description={`${homework.group_name} · ${homework.lesson_numbering ? `${lessonLabel(homework.lesson_numbering)} · ` : ''}${formatDate(homework.lesson_date, false)}${homework.deadline ? ` · срок: ${formatDate(homework.deadline)}` : ''}`}
         actions={isReadOnly ? <Badge tone="muted">Только просмотр</Badge> : undefined}
       />
 

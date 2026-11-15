@@ -9,3 +9,6 @@ class AcademicProgressConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.academic_progress"
     verbose_name = "Учебные месяцы программ"
+
+    def ready(self):
+        from . import signals  # noqa: F401

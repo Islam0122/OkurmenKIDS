@@ -17,6 +17,7 @@ import { cn } from '@/utils/cn'
 
 import { useAssistantActions } from '../actions/AssistantActions'
 import { AttendanceBadge, HomeworkStateBadge, Percent, PercentBar } from './badges'
+import { lessonLabel, lessonLabelShort } from '@/lib/lessonNumbering'
 
 /**
  * The group's «Посещаемость» and «ДЗ» tabs for the Assistant — read only:
@@ -130,7 +131,7 @@ export function GroupAttendanceTab({ group }: { group: GroupDetail }) {
                     {data.lessons.map((l) => (
                       <tr key={l.id} onClick={() => open({ type: 'lesson-detail', lessonId: l.id })} className="cursor-pointer hover:bg-surface-hover">
                         <td className="px-4 py-2 whitespace-nowrap text-ink">{day(l.date)}</td>
-                        <td className="max-w-56 px-2 py-2"><span className="block truncate text-ink">Занятие {l.lesson_number}</span><span className="block truncate text-xs text-ink-muted">{l.topic || l.subject?.name}</span></td>
+                        <td className="max-w-56 px-2 py-2"><span className="block truncate text-ink">{lessonLabel(l.numbering, l.lesson_number)}</span><span className="block truncate text-xs text-ink-muted">{l.topic || l.subject?.name}</span></td>
                         <td className="max-w-40 truncate px-2 py-2 text-ink-secondary">{l.teacher?.name ?? '—'}</td>
                         {filters.student ? <td className="px-2 py-2"><AttendanceBadge status={l.student_status} /></td> : (
                           <>
@@ -213,9 +214,9 @@ export function GroupHomeworkTab({ group }: { group: GroupDetail }) {
               <tbody className="divide-y divide-border">
                 {data.homeworks.map((hw) => (
                   <tr key={hw.id} onClick={() => open({ type: 'homework', homeworkId: hw.id })} className="cursor-pointer hover:bg-surface-hover">
-                    <td className="px-4 py-2 text-ink-secondary tabular-nums">{hw.lesson.number}</td>
+                    <td className="px-4 py-2 text-ink-secondary tabular-nums">{lessonLabelShort(hw.lesson.numbering, hw.lesson.number)}</td>
                     <td className="max-w-64 px-2 py-2"><span className="block truncate font-medium text-ink">{hw.title}</span>{hw.teacher ? <span className="block truncate text-xs text-ink-muted">{hw.teacher.name}</span> : null}</td>
-                    <td className="px-2 py-2 whitespace-nowrap text-ink-secondary">Занятие {hw.lesson.number} · {day(hw.issued)}</td>
+                    <td className="px-2 py-2 whitespace-nowrap text-ink-secondary">{lessonLabel(hw.lesson.numbering, hw.lesson.number)} · {day(hw.issued)}</td>
                     <td className="px-2 py-2 whitespace-nowrap text-ink-secondary">{hw.deadline ? day(hw.deadline) : '—'}</td>
                     <td className="w-32 px-2 py-2">
                       <span className="text-ink tabular-nums">{hw.done}/{hw.expected}</span>

@@ -1,3 +1,5 @@
+import type { LessonNumbering } from './lessonNumbering'
+
 /** Student & Parent Portal API (backend: apps.portal, /api/v1/portal/). */
 
 export interface Ref {
@@ -42,6 +44,7 @@ export interface PortalLesson {
   branch: Ref | null
   topic: string
   lesson_number: number | null
+  numbering?: LessonNumbering | null
   status: LessonStatus
   cancellation_reason: string
   attendance: AttendanceMark | null
@@ -59,7 +62,7 @@ export interface PortalHomework {
   days_left: number | null
   state: HomeworkState
   is_open: boolean
-  lesson: { id: number; date: string; topic: string; lesson_number: number | null }
+  lesson: { id: number; date: string; topic: string; lesson_number: number | null; numbering?: LessonNumbering | null }
   subject: Ref | null
   group: Ref | null
   teacher: Ref | null

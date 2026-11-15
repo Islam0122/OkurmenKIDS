@@ -21,6 +21,7 @@ import datetime as dt
 from django.db.models import Avg, Q
 from django.utils import timezone
 
+from apps.academic_progress import numbering
 from apps.academy.models import Group, Lesson, Student
 from apps.academy.services.reports import ReportFilters, build_overview, build_student_rows, build_teacher_detail
 from apps.users.models import Teacher
@@ -195,7 +196,8 @@ def student_metrics(student: Student, on: dt.date) -> dict:
 
 def lesson_metrics(lesson: Lesson) -> dict:
     return {
-        "lesson": {"id": lesson.pk, "number": lesson.lesson_number, "topic": lesson.topic},
+        # A snapshot: the «Месяц · Урок» shown when the report was made stays with it.
+        "lesson": {"id": lesson.pk, "number": lesson.lesson_number, "numbering": numbering.of(lesson), "topic": lesson.topic},
         "date": lesson.date.isoformat(),
         "time": f"{lesson.start_time:%H:%M}–{lesson.end_time:%H:%M}",
         "group": {"id": lesson.group_id, "name": lesson.group.name},
