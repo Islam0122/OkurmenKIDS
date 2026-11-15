@@ -21,6 +21,9 @@ interface ImportMetaEnv {
   /** «true» — build without the PWA service worker: the build ships a worker
    * that removes any previously installed one (emergency off switch). */
   readonly VITE_PWA_DISABLED?: string
+  /** Public address of this LMS (https://lms.example.com) for the official
+   * «install the app» QR code (features/install). Default: the current site. */
+  readonly VITE_PUBLIC_APP_URL?: string
 }
 
 interface ImportMeta {

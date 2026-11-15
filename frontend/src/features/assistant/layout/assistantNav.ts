@@ -7,6 +7,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   MessageSquareText,
+  QrCode,
   ScanLine,
   ShieldAlert,
   User,
@@ -46,6 +47,8 @@ export const ASSISTANT_SECTIONS: AssistantNavSection[] = [
       // Договоры и статусы оплаты — отдельный раздел «Финансы» (/finance).
       { to: '/finance/students', label: 'Оплата студентов', icon: Wallet },
       { to: '/assistant/schedule', label: 'Расписание', icon: CalendarDays },
+      // Официальный QR-код установки приложения для родителей (features/install).
+      { to: '/install/qr', label: 'QR для родителей', icon: QrCode },
     ],
   },
   {

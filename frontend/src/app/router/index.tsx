@@ -32,6 +32,20 @@ export const withHydrateFallback = (routes: RouteObject[]): RouteObject[] =>
 export const router = createBrowserRouter(withHydrateFallback([
   { path: '/', element: <RootRedirect />, errorElement: <RouteErrorPage /> },
   { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
+  // «Установить приложение»: куда ведёт официальный QR-код (публично, без входа).
+  { path: '/install', lazy: async () => ({ Component: (await import('@/features/install/InstallPage')).InstallPage }), errorElement: <RouteErrorPage /> },
+  {
+    // Официальный QR-код установки (PNG / SVG / печать A4) — администрация и ассистенты.
+    path: '/install/qr',
+    element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        element: <RequireRoles roles={['admin', 'director', 'operations_director', 'assistant']} />,
+        children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/install/InstallQrPage')).InstallQrPage }) }],
+      },
+    ],
+  },
   {
     // Короткий адрес «Моей зарплаты»: ведёт на страницу в кабинете своей роли.
     path: '/my-salary',

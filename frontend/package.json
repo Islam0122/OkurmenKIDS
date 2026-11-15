@@ -20,6 +20,7 @@
     "framer-motion": "^11.18.2",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.469.0",
+    "qrcode-generator": "2.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",
