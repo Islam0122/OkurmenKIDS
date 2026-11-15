@@ -183,7 +183,7 @@ export function GroupNumberingCard({ groupId, numbering, canEdit }: { groupId: n
         <div>
           <h3 id={`numbering-${groupId}`} className="text-sm font-semibold text-ink">Нумерация уроков</h3>
           <p className="text-xs text-ink-secondary">
-            {example} занятий в учебном месяце: занятие №{example + 1} — «Месяц 2 · Урок 1». Учебный месяц — это число занятий, а не календарный месяц.
+            {example} занятий в учебном месяце: {example + 1}-й урок предмета — «2 месяц · 1 урок». У каждого предмета своя нумерация; учебный месяц — это число уроков по плану, а не календарный месяц.
           </p>
         </div>
         {canEdit ? (
@@ -198,7 +198,7 @@ export function GroupNumberingCard({ groupId, numbering, canEdit }: { groupId: n
         <ul className="mt-2 space-y-0.5 text-xs text-ink-muted">
           {numbering.frozen.map((f) => (
             <li key={`${f.subject}-${f.first_lesson}`}>
-              {f.subject ?? 'Программа'}: занятия №{f.first_lesson}–{f.last_lesson} оставлены по {f.lessons_per_month} в месяце (с {f.first_month}-го месяца)
+              {f.subject ?? 'Предмет'}: уроки {f.first_lesson}–{f.last_lesson} оставлены по {f.lessons_per_month} в месяце (с {f.first_month}-го месяца)
             </li>
           ))}
         </ul>

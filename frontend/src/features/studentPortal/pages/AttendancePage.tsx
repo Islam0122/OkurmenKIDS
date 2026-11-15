@@ -154,7 +154,7 @@ function DayDetails({ day, lessons }: { day: string | null; lessons: CalendarLes
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={cn('font-bold text-ink', l.state === 'cancelled' && 'line-through')}>{l.subject?.name ?? l.course?.name ?? '—'}</p>
-                  <p className="text-xs text-ink-secondary">{l.start}–{l.end}{l.lesson_number ? ` · ${lessonNo(t, l)}` : ''}</p>
+                  <p className="text-xs text-ink-secondary">{l.start}–{l.end}{l.numbering ? ` · ${lessonNo(t, l)}` : ''}</p>
                 </div>
                 <StateBadge state={l.state} />
               </div>
@@ -362,7 +362,7 @@ function HistoryCard({ row }: { row: AttendanceHistoryRow }) {
           <p className="truncate font-bold text-ink">{l.subject?.name ?? l.course?.name ?? '—'}</p>
           <StateBadge state={row.status} />
         </div>
-        <p className="truncate text-sm text-ink-secondary">{l.lesson_number ? `${lessonNo(t, l)} · ` : ''}{l.topic}</p>
+        <p className="truncate text-sm text-ink-secondary">{l.numbering ? `${lessonNo(t, l)} · ` : ''}{l.topic}</p>
         <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-ink-muted">
           <span>{l.start}–{l.end}</span>
           {l.teacher ? <span className="inline-flex items-center gap-1"><User className="size-3" aria-hidden />{l.teacher.name}</span> : null}

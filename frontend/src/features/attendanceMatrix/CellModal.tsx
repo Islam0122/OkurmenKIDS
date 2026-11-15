@@ -81,7 +81,7 @@ function CellForm({ cell, onClose }: { cell: CellDetail; onClose: () => void }) 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl bg-surface-muted p-3 text-sm">
         <Info label="Группа" value={cell.group.name} />
         <Info label="Дата урока" value={`${formatDay(cell.lesson.date)} · ${cell.lesson.start}–${cell.lesson.end}`} />
-        <Info label="Занятие" value={lessonLabel(cell.lesson.numbering, cell.lesson.number)} />
+        <Info label="Занятие" value={lessonLabel(cell.lesson.numbering) || '—'} />
         <Info label="Тема" value={cell.lesson.topic || '—'} />
         <Info label="Тренер" value={cell.lesson.teacher || '—'} />
       </dl>

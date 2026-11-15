@@ -1,58 +1,55 @@
-# Monthly lesson numbering — «Месяц 2 · Урок 1»
+# Educational month and lesson — «3 месяц · 5 урок»
 
-Lessons are shown by **educational month** and **lesson in that month**
-instead of a running number. Code: `apps/academic_progress/numbering.py`.
+One service computes every lesson's educational month and lesson number:
+`apps/academic_progress/numbering.py`. Every API payload carries its result
+as `numbering` (`lesson_numbering` on homework / attendance rows):
+`{number, month, lesson, per_month, subject_id, label, labels: {ru, ky, en}}`.
 
-## Rules
+| Language | Format |
+| --- | --- |
+| Russian | `3 месяц · 5 урок` |
+| Kyrgyz | `3-ай · 5-сабак` |
+| English | `Month 3 · Lesson 5` |
 
-* The stored `Lesson.lesson_number` stays the internal, global sequence (one
-  sequence per `GroupTeacher` — each subject/trainer program of a group). It is
-  never rewritten; a cancelled lesson keeps its number and its make-up re-uses
-  it, so nothing after it shifts.
-* Month and lesson are **derived**, not stored:
+## Where the numbers come from (audit)
 
-  ```
-  month  = (n - 1) // lessons_per_month + 1
-  lesson = (n - 1) %  lessons_per_month + 1
-  ```
+* `Lesson.lesson_number` is **not** the lesson's number in its subject. A
+  lesson generated from the group's shared course plan carries the plan row's
+  number, and `CourseLessonPlan` is numbered once per course across all
+  subjects. In a plan that interleaves IT, Soft Skills and English, IT lesson
+  29 is row 85 — the first version of this feature split 85 into months and
+  showed «Month 8 · Lesson 1». It is never used for display.
+* **Position in the subject** — the lesson's rank among the plan rows of its
+  own subject:
+  * shared course plan (`Lesson.plan`): rank among the course's rows of that
+    subject, ordered by row number;
+  * a program's own plan (`Lesson.individual_plan`): rank in that plan;
+  * no plan link (row deleted, lesson made by hand): the plan row of the same
+    subject and number, if any.
+  Otherwise the curriculum does not say, and **no number is shown** (nothing
+  is invented). IT, English, Soft Skills and every other subject are separate
+  sequences. A cancelled lesson and its make-up keep their plan row.
+* **Educational month** — from the program's study months («Учебные месяцы»,
+  `ProgramCurriculum` / `CurriculumMonth`), never from dates:
+  * a subject named in the study months (main subject, or a month's own
+    subject) follows those months: their numbers and lesson counts (e.g.
+    React in months 4–6 starts at «4 месяц · 1 урок»; a month planned with 10
+    lessons is 10 long);
+  * every other subject (English, Soft Skills…) is split into months of the
+    group's lessons per month — its own (12 / 20, «Нумерация уроков» on the
+    group page), else the program's, else 12.
+  Lessons beyond the planned months continue with the same size.
 
-  12 per month: №12 → Месяц 1 · Урок 12, №13 → Месяц 2 · Урок 1.
-  20 per month: №20 → Месяц 1 · Урок 20, №21 → Месяц 2 · Урок 1.
-* An educational month is a number of lessons, **not a calendar month**.
+## Changing settings never renumbers the past
 
-## Configuration (12 or 20)
+Any change of the lessons per month or of the study months — program API,
+Django admin form, group setting — runs inside `numbering.preserving()`:
+before, it notes every subject's last lesson already held (or dated today)
+and its months; after, whatever would move is frozen as it was
+(`NumberingFreeze`: group + subject + positions + month + size). The change
+applies from the next educational month. Frozen ranges are listed on the
+group card. Migration `0003_freeze_by_subject` converted freezes of the first
+version (written in course-wide numbers) to subject positions.
 
-| Level | Where | Who |
-| --- | --- | --- |
-| Group (overrides the program) | `GroupLessonNumbering` — group page «Нумерация уроков», `PUT /api/v1/academic-progress/groups/<id>/numbering/` (`null` = as the program) | admin, operations director, team lead of the program |
-| Program | `ProgramCurriculum.lessons_per_month` — «Настройки программ» | same |
-| Default | 12 | — |
-
-The study months of «Учебные месяцы» (progress) use the same value; a group's
-own setting sizes every month of that group. A program saved earlier with
-another number keeps it until it is changed (new values: 12 or 20 only).
-
-## Changing the setting never renumbers what took place
-
-On any change of a group's effective value (API or Django admin; signals in
-`signals.py`), `freeze_history()` writes `NumberingFreeze` rows: for each
-lesson sequence, the educational months up to the last lesson already held
-(or dated today or earlier) are fixed with the **old** size — the started month
-is finished as it began — and the new size applies from the next month on.
-Sequences with nothing held yet simply follow the new value. Frozen ranges are
-listed on the group card and read-only in admin.
-
-## Where it appears
-
-Every lesson payload carries `numbering` (`{number, month, lesson, per_month,
-label}`; homework and attendance rows: `lesson_numbering`): the lesson API
-(teacher schedule, lesson page, attendance), homework, the attendance matrix,
-assistant records and schedule, «Контроль», the schedule board, student
-progress, the operations academy cabinet, the student/parent portal
-(dashboard, schedule, homework, attendance — RU «Месяц 2 · Урок 1», KY
-«2-ай · 1-сабак»). Team Lead reports store it in their metrics snapshot, so a
-saved report keeps the label it was written with. The frontend formats it with
-`lib/lessonNumbering.ts` (`lessonLabel`).
-
-Performance: one resolver per request (`NumberingMiddleware`) reads each
-group's setting and frozen ranges once.
+Performance: one resolver per request (`NumberingMiddleware`); the curriculum
+and plan ranks are read once per group/course.

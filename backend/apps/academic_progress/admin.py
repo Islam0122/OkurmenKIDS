@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from . import numbering
 from .models import CurriculumMonth, GroupLessonNumbering, GroupProgressAdjustment, NumberingFreeze, ProgramCurriculum
 
 
@@ -14,6 +15,17 @@ class ProgramCurriculumAdmin(admin.ModelAdmin):
     filter_horizontal = ("extra_subjects",)
     inlines = [CurriculumMonthInline]
     readonly_fields = ("updated_by", "created_at", "updated_at")
+
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        """The settings and their study months are saved in one form: lessons
+        already held keep their «месяц · урок» (numbering.preserving)."""
+        if request.method != "POST":
+            return super().changeform_view(request, object_id, form_url, extra_context)
+        course_id = (ProgramCurriculum.objects.filter(pk=object_id).values_list("course_id", flat=True).first()
+                     if object_id else request.POST.get("course"))
+        groups = numbering.groups_of_course(int(course_id)) if str(course_id or "").isdigit() else []
+        with numbering.preserving(groups, user=request.user):
+            return super().changeform_view(request, object_id, form_url, extra_context)
 
 
 @admin.register(GroupProgressAdjustment)
@@ -37,8 +49,8 @@ class GroupLessonNumberingAdmin(admin.ModelAdmin):
 class NumberingFreezeAdmin(admin.ModelAdmin):
     """Read-only: written automatically so a change never renumbers held lessons."""
 
-    list_display = ("group_teacher", "first_lesson", "last_lesson", "first_month", "lessons_per_month", "created_at")
-    list_filter = ("lessons_per_month",)
+    list_display = ("group", "subject", "first_lesson", "last_lesson", "first_month", "lessons_per_month", "created_at")
+    list_filter = ("lessons_per_month", "subject")
 
     def has_add_permission(self, request):
         return False

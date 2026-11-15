@@ -80,10 +80,10 @@ describe('GroupDetailPage', () => {
       group: buildGroup({ id: 1, name: 'Роботы-1' }),
       lessons: [
         buildGroupScheduleLesson({
-          id: 5, lesson_number: 5, date: '2026-09-07', weekday: 'mon', weekday_label: 'Понедельник', topic: 'Переменные',
+          id: 5, lesson_number: 5, numbering: { number: 5, month: 1, lesson: 5, per_month: 12, label: '1 месяц · 5 урок' }, date: '2026-09-07', weekday: 'mon', weekday_label: 'Понедельник', topic: 'Переменные',
         }),
         buildGroupScheduleLesson({
-          id: 6, lesson_number: 6, date: '2026-09-09', weekday: 'wed', weekday_label: 'Среда', topic: 'Условия',
+          id: 6, lesson_number: 6, numbering: { number: 6, month: 1, lesson: 6, per_month: 12, label: '1 месяц · 6 урок' }, date: '2026-09-09', weekday: 'wed', weekday_label: 'Среда', topic: 'Условия',
         }),
       ],
     })
@@ -96,8 +96,8 @@ describe('GroupDetailPage', () => {
 
     await waitFor(() => expect(screen.getByText('Понедельник')).toBeInTheDocument())
     expect(screen.getByText('Среда')).toBeInTheDocument()
-    expect(screen.getByText('Занятие 5', { exact: false })).toBeInTheDocument()
-    expect(screen.getByText('Занятие 6', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('1 месяц · 5 урок', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('1 месяц · 6 урок', { exact: false })).toBeInTheDocument()
   })
 
   it('shows KPI data for a period whose lessons are all completed', async () => {

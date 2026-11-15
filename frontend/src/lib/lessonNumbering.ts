@@ -2,29 +2,27 @@ import type { LessonNumbering } from '@/types/lessonNumbering'
 
 export type { LessonNumbering }
 
-export type NumberingLang = 'ru' | 'ky'
+export type NumberingLang = 'ru' | 'ky' | 'en'
 
-/**
- * The one way a lesson's number is shown: «Месяц 2 · Урок 1» (ru) /
- * «2-ай · 1-сабак» (ky). The educational month comes from the server
- * (lessons per month of the group / program — 12 or 20), so every page shows
- * the same thing. A payload without numbering (an old snapshot) falls back to
- * the plain global number.
- */
-export function lessonLabel(
-  numbering: LessonNumbering | null | undefined,
-  fallbackNumber?: number | null,
-  lang: NumberingLang = 'ru',
-): string {
-  if (numbering) {
-    return lang === 'ky' ? `${numbering.month}-ай · ${numbering.lesson}-сабак` : `Месяц ${numbering.month} · Урок ${numbering.lesson}`
-  }
-  if (!fallbackNumber) return ''
-  return lang === 'ky' ? `${fallbackNumber}-сабак` : `Занятие ${fallbackNumber}`
+const FORMAT: Record<NumberingLang, (month: number, lesson: number) => string> = {
+  ru: (month, lesson) => `${month} месяц · ${lesson} урок`,
+  ky: (month, lesson) => `${month}-ай · ${lesson}-сабак`,
+  en: (month, lesson) => `Month ${month} · Lesson ${lesson}`,
 }
 
-/** Short form for tight table cells: «М2 · У1» / «2-ай · 1». */
-export function lessonLabelShort(numbering: LessonNumbering | null | undefined, fallbackNumber?: number | null): string {
-  if (numbering) return `М${numbering.month} · У${numbering.lesson}`
-  return fallbackNumber ? `№${fallbackNumber}` : ''
+/**
+ * The one way a lesson's number is shown: «3 месяц · 5 урок» (ru),
+ * «3-ай · 5-сабак» (ky), «Month 3 · Lesson 5» (en). The month and lesson come
+ * from the server's single numbering service. Without them the result is
+ * empty: the stored lesson_number is a course-wide plan row (IT lesson 29 can
+ * be row 85) and is never shown as the lesson's number.
+ */
+export function lessonLabel(numbering: LessonNumbering | null | undefined, _legacyNumber?: number | null, lang: NumberingLang = 'ru'): string {
+  if (!numbering) return ''
+  return FORMAT[lang](numbering.month, numbering.lesson)
+}
+
+/** Same in tight table cells. */
+export function lessonLabelShort(numbering: LessonNumbering | null | undefined, _legacyNumber?: number | null): string {
+  return lessonLabel(numbering)
 }

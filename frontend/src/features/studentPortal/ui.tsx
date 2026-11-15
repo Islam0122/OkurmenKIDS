@@ -181,12 +181,12 @@ export function LessonStatusBadge({ lesson }: { lesson: PortalLesson }) {
 
 type T = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => string
 
-/** «Месяц 2 · Урок 1» / «2-ай · 1-сабак» — the educational month and lesson
- * (12 or 20 lessons per month, set for the group / program); '' without a number. */
+/** «3 месяц · 5 урок» / «3-ай · 5-сабак» — the educational month and lesson
+ * from the server's numbering service; '' when the curriculum does not say. */
 export function lessonNo(t: T, lesson: { lesson_number?: number | null; numbering?: LessonNumbering | null } | null | undefined): string {
-  if (!lesson) return ''
-  if (lesson.numbering) return t('lesson.monthly', { month: lesson.numbering.month, lesson: lesson.numbering.lesson })
-  return lesson.lesson_number ? t('lesson.number', { n: lesson.lesson_number }) : ''
+  // No numbering = the curriculum does not say; the course-wide lesson_number is never shown.
+  if (!lesson?.numbering) return ''
+  return t('lesson.monthly', { month: lesson.numbering.month, lesson: lesson.numbering.lesson })
 }
 
 export function LessonRow({ lesson, showDate = false }: { lesson: PortalLesson; showDate?: boolean }) {

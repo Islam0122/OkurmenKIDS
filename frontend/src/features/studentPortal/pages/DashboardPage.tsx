@@ -79,7 +79,7 @@ export function HomeworkMini({ hw }: { hw: PortalHomework }) {
       <span className="min-w-0">
         <span className="block truncate text-sm font-bold text-ink group-hover:text-brand-700">{hw.title}</span>
         <span className="mt-0.5 block truncate text-xs text-ink-secondary">
-          {hw.lesson.lesson_number ? `${lessonNo(t, hw.lesson)} · ` : ''}
+          {hw.lesson.numbering ? `${lessonNo(t, hw.lesson)} · ` : ''}
           {hw.subject?.name ? `${hw.subject.name} · ` : ''}
           {hw.deadline ? t('hw.deadline', { date: date(hw.deadline) }) : t('hw.noDeadline')}
           {hw.state === 'awaiting' && hw.days_left !== null && hw.days_left >= 0
@@ -135,7 +135,7 @@ function NextLessonCard({ lesson }: { lesson: PortalLesson | undefined }) {
         <div className="min-w-0">
           <p className="truncate text-lg font-extrabold tracking-tight text-ink">{lesson.subject?.name ?? lesson.course?.name}</p>
           <p className="truncate text-sm text-ink-secondary">
-            {lesson.lesson_number ? `${lessonNo(t, lesson)} · ` : ''}{lesson.topic}
+            {lesson.numbering ? `${lessonNo(t, lesson)} · ` : ''}{lesson.topic}
           </p>
           <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-ink-muted">
             <span className="whitespace-nowrap">{weekday(day, true)}, {date(lesson.date, true)}</span>

@@ -214,7 +214,7 @@ describe('Homework page (offline checking, read-only)', () => {
 function lesson18(): PortalLesson {
   return {
     id: 18, date: '2026-11-17', start: '16:00', end: '17:30', subject: { id: 1, name: 'Python' }, teacher: null,
-    group: { id: 1, name: 'PRO-01' }, course: null, room: null, branch: null, topic: 'Функции', lesson_number: 18,
+    group: { id: 1, name: 'PRO-01' }, course: null, room: null, branch: null, topic: 'Функции', lesson_number: 18, numbering: { number: 18, month: 2, lesson: 6, per_month: 12, label: '2 месяц · 6 урок' },
     status: 'scheduled', cancellation_reason: '', attendance: null,
   }
 }
@@ -240,10 +240,10 @@ describe('Homework list: only the next lesson', () => {
   it('shows the homework of the next lesson in full, and nothing else', async () => {
     vi.mocked(studentPortalApi.nextHomework).mockResolvedValue({
       has_group: true,
-      lessons: [{ lesson: lesson18(), homework: [homework({ id: 81, title: 'ДЗ к уроку 18', lesson: { ...homework().lesson, lesson_number: 18 } })] }],
+      lessons: [{ lesson: lesson18(), homework: [homework({ id: 81, title: 'ДЗ к уроку 18', lesson: { ...homework().lesson, lesson_number: 18, numbering: { number: 18, month: 2, lesson: 6, per_month: 12, label: '2 месяц · 6 урок' } } })] }],
     })
     renderList()
-    expect((await screen.findAllByText('Урок 18')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('2 месяц · 6 урок')).length).toBeGreaterThan(0)
     expect(screen.getByText('PRO-01')).toBeInTheDocument()
     expect(screen.getByText('ДЗ к уроку 18')).toBeInTheDocument()
     expect(screen.getByText('Решите 5 задач на цикл for.')).toBeInTheDocument()

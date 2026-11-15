@@ -173,7 +173,8 @@ class ProgramView(_View):
             errors["months"] = month_errors
         if errors:
             return Response(errors, status=400)
-        with transaction.atomic():
+        # Lessons already held keep their «месяц · урок» whatever changes here.
+        with transaction.atomic(), numbering.preserving(numbering.groups_of_course(course.pk), user=request.user):
             curriculum, _ = ProgramCurriculum.objects.get_or_create(course=course)
             curriculum.lessons_per_month, curriculum.duration_months = per_month, duration
             curriculum.main_subject, curriculum.count_mode, curriculum.updated_by = main, mode, request.user
@@ -214,10 +215,10 @@ def _group_numbering(group) -> dict:
         "default": DEFAULT_LESSONS_PER_MONTH,
         "choices": list(ALLOWED_LESSONS_PER_MONTH),
         "frozen": [
-            {"subject": f.group_teacher.subject.name if f.group_teacher.subject_id else None,
+            {"subject": f.subject.name if f.subject_id else None,
              "first_lesson": f.first_lesson, "last_lesson": f.last_lesson,
              "first_month": f.first_month, "lessons_per_month": f.lessons_per_month}
-            for f in NumberingFreeze.objects.filter(group_teacher__group=group).select_related("group_teacher__subject")
+            for f in NumberingFreeze.objects.filter(group=group).select_related("subject")
         ],
     }
 

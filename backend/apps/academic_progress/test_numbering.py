@@ -1,274 +1,284 @@
-"""Monthly lesson numbering «Месяц N · Урок K»: derived from the global
-lesson_number with 12 or 20 lessons per educational month (group > program
-> 12), boundaries, cancellations, no renumbering of held lessons when the
-setting changes, the settings API, and the same numbers in every module."""
+"""Educational month and lesson — «3 месяц · 5 урок».
+
+The fixture is the real shape of the data: ONE shared course plan whose rows
+interleave IT, Soft Skills and English (row 1 IT, 2 Soft, 3 English, 4 IT…),
+so IT lesson 29 is plan row 85. The month must come from the lesson's place
+in its own subject (29 → 3 месяц · 5 урок at 12 per month), never from the
+course-wide row number (85 → «8 месяц · 1 урок», the old bug)."""
 from __future__ import annotations
 
 import datetime as dt
+from importlib import import_module
 
+from django.apps import apps as django_apps
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.academy.models import Attendance, Homework, Lesson, Student
-from apps.users.models import User
+from apps.academy.models import (
+    Attendance,
+    Course,
+    CourseLessonPlan,
+    Group,
+    GroupTeacher,
+    GroupTeacherLessonPlan,
+    Homework,
+    Lesson,
+    Student,
+)
+from apps.users.models import Subject, Teacher, User
 
 from . import numbering
-from .models import GroupLessonNumbering, NumberingFreeze, ProgramCurriculum
-from .tests import BASE, Base, user
+from .models import CurriculumMonth, GroupLessonNumbering, NumberingFreeze, ProgramCurriculum
 
 TODAY = timezone.localdate()
+BASE = "/api/v1/academic-progress"
+PER_SUBJECT = 72
 
 
-def pair(n: int, per_month: int) -> tuple[int, int]:
-    return numbering.split(n, per_month)
+def make_user(username, role) -> User:
+    return User.objects.create_user(username=username, email=f"{username}@x.kg", password="x", role=role, is_verified=True)
 
 
 class FormulaTests(TestCase):
-    def test_12_lessons_per_month(self):
-        cases = {1: (1, 1), 12: (1, 12), 13: (2, 1), 24: (2, 12), 25: (3, 1)}
-        for n, expected in cases.items():
-            self.assertEqual(pair(n, 12), expected, n)
+    def test_12_and_20_boundaries(self):
+        for n, expected in {1: (1, 1), 12: (1, 12), 13: (2, 1), 24: (2, 12), 25: (3, 1), 29: (3, 5)}.items():
+            self.assertEqual(numbering.split(n, 12), expected, n)
+        for n, expected in {1: (1, 1), 20: (1, 20), 21: (2, 1), 40: (2, 20), 41: (3, 1)}.items():
+            self.assertEqual(numbering.split(n, 20), expected, n)
 
-    def test_20_lessons_per_month(self):
-        cases = {1: (1, 1), 20: (1, 20), 21: (2, 1), 40: (2, 20), 41: (3, 1)}
-        for n, expected in cases.items():
-            self.assertEqual(pair(n, 20), expected, n)
-
-    def test_matches_the_formula_everywhere(self):
-        for per_month in (12, 20):
-            for n in range(1, 400):
-                self.assertEqual(pair(n, per_month), ((n - 1) // per_month + 1, (n - 1) % per_month + 1))
-
-    def test_labels(self):
-        self.assertEqual(numbering.label(2, 1), "Месяц 2 · Урок 1")
-        self.assertEqual(numbering.label(2, 1, "ky"), "2-ай · 1-сабак")
+    def test_labels_in_three_languages(self):
+        self.assertEqual(numbering.label(3, 5), "3 месяц · 5 урок")
+        self.assertEqual(numbering.label(3, 5, "ky"), "3-ай · 5-сабак")
+        self.assertEqual(numbering.label(3, 5, "en"), "Month 3 · Lesson 5")
 
 
-class NumberingBase(Base):
-    def future(self, count, *, gt=None, first_number=1, status=Lesson.Status.SCHEDULED):
-        """Lessons that have not taken place yet (nothing to freeze)."""
-        gt = gt or self.gt
-        return [
-            Lesson.objects.create(
-                group=self.group, group_teacher=gt, teacher=self.teacher, subject=gt.subject, lesson_number=n,
-                date=TODAY + dt.timedelta(days=30 + n), start_time=dt.time(16), end_time=dt.time(17), status=status,
-            )
-            for n in range(first_number, first_number + count)
-        ]
+class CurriculumBase(TestCase):
+    def setUp(self):
+        self.it, _ = Subject.objects.get_or_create(name="IT")
+        self.soft, _ = Subject.objects.get_or_create(name="Soft Skills")
+        self.english, _ = Subject.objects.get_or_create(name="English")
+        self.course = Course.objects.create(name="NEXT", count_lesson=PER_SUBJECT * 3)
+        self.course.subjects.set([self.it, self.soft, self.english])
+        # The interleaved shared plan: IT k = row 3k-2, Soft k = 3k-1, English k = 3k.
+        self.rows = {}
+        for k in range(1, PER_SUBJECT + 1):
+            for offset, subject in enumerate((self.it, self.soft, self.english)):
+                row = CourseLessonPlan.objects.create(course=self.course, lesson_number=3 * (k - 1) + offset + 1,
+                                                      subject=subject, topic=f"{subject.name} {k}")
+                self.rows[(subject.pk, k)] = row
+        self.teacher = Teacher.objects.create(user=make_user("islam", User.Role.TEACHER))
+        self.group = Group.objects.create(name="NEXT-1", course=self.course, start_date=TODAY - dt.timedelta(days=200))
+        self.programs = {s.pk: GroupTeacher.objects.create(group=self.group, teacher=self.teacher, subject=s)
+                         for s in (self.it, self.soft, self.english)}
+        self.slot = 0
 
-    def held_until(self, last_number, *, gt=None):
-        gt = gt or self.gt
-        return [
-            Lesson.objects.create(
-                group=self.group, group_teacher=gt, teacher=self.teacher, subject=gt.subject, lesson_number=n,
-                date=TODAY - dt.timedelta(days=last_number - n + 1), start_time=dt.time(16), end_time=dt.time(17),
-                status=Lesson.Status.COMPLETED,
-            )
-            for n in range(1, last_number + 1)
-        ]
+    def lesson(self, subject, k, *, held=False, status=None, **extra):
+        """Lesson k of a subject, generated from its shared plan row (as the generator does)."""
+        row = self.rows[(subject.pk, k)]
+        self.slot += 1
+        date = TODAY - dt.timedelta(days=400 - self.slot) if held else TODAY + dt.timedelta(days=self.slot)
+        fields = dict(group=self.group, group_teacher=self.programs[subject.pk], plan=row, teacher=self.teacher,
+                      subject=subject, lesson_number=row.lesson_number, date=date,
+                      start_time=dt.time(8 + self.slot % 10), end_time=dt.time(9 + self.slot % 10),
+                      status=status or (Lesson.Status.COMPLETED if held else Lesson.Status.SCHEDULED))
+        fields.update(extra)
+        return Lesson.objects.create(**fields)
 
     def at(self, lesson):
-        data = numbering.of(lesson)
-        return data["month"], data["lesson"]
+        data = numbering.Numbering().of(lesson)
+        return None if data is None else (data["month"], data["lesson"])
+
+    def curriculum(self, per_month=12, months=6, main=None) -> ProgramCurriculum:
+        return ProgramCurriculum.objects.create(course=self.course, lessons_per_month=per_month, duration_months=months,
+                                                main_subject=main or self.it)
 
 
-class ConfigurationTests(NumberingBase):
-    def test_without_settings_12_per_month(self):
-        lessons = {lesson.lesson_number: lesson for lesson in self.future(25)}
-        self.assertEqual(self.at(lessons[12]), (1, 12))
-        self.assertEqual(self.at(lessons[13]), (2, 1))
-        self.assertEqual(numbering.of(lessons[13])["label"], "Месяц 2 · Урок 1")
+class SubjectSequenceTests(CurriculumBase):
+    def test_lesson_29_of_it_is_month_3_lesson_5_not_month_8(self):
+        lesson = self.lesson(self.it, 29)
+        self.assertEqual(lesson.lesson_number, 85)            # course-wide plan row
+        data = numbering.Numbering().of(lesson)
+        self.assertEqual((data["month"], data["lesson"], data["number"]), (3, 5, 29))
+        self.assertEqual(data["label"], "3 месяц · 5 урок")
+        self.assertEqual(data["labels"], {"ru": "3 месяц · 5 урок", "ky": "3-ай · 5-сабак", "en": "Month 3 · Lesson 5"})
 
-    def test_program_with_20(self):
-        self.curriculum(20)
-        lessons = {lesson.lesson_number: lesson for lesson in self.future(45)}
-        self.assertEqual(self.at(lessons[20]), (1, 20))
-        self.assertEqual(self.at(lessons[21]), (2, 1))
-        self.assertEqual(self.at(lessons[40]), (2, 20))
-        self.assertEqual(self.at(lessons[41]), (3, 1))
-        self.assertEqual(numbering.of(lessons[41])["per_month"], 20)
+    def test_subjects_never_mix(self):
+        it, soft, en = self.lesson(self.it, 29), self.lesson(self.soft, 29), self.lesson(self.english, 1)
+        self.assertEqual(self.at(it), (3, 5))
+        self.assertEqual(self.at(soft), (3, 5))                # row 86, its own sequence
+        self.assertEqual(self.at(en), (1, 1))                  # row 3: English starts at its own lesson 1
 
-    def test_group_setting_beats_the_program(self):
+    def test_12_per_month_boundaries_per_subject(self):
         self.curriculum(12)
-        lessons = {lesson.lesson_number: lesson for lesson in self.future(25)}
+        for subject in (self.it, self.english):
+            self.assertEqual(self.at(self.lesson(subject, 12)), (1, 12))
+            self.assertEqual(self.at(self.lesson(subject, 13)), (2, 1))
+
+    def test_20_per_month_boundaries_per_subject(self):
+        self.curriculum(20)
+        for subject in (self.it, self.soft):
+            self.assertEqual(self.at(self.lesson(subject, 20)), (1, 20))
+            self.assertEqual(self.at(self.lesson(subject, 21)), (2, 1))
+            self.assertEqual(self.at(self.lesson(subject, 41)), (3, 1))
+
+    def test_group_setting_over_program(self):
+        self.curriculum(12)
         GroupLessonNumbering.objects.create(group=self.group, lessons_per_month=20)
-        self.assertEqual(self.at(lessons[13]), (1, 13))
-        self.assertEqual(self.at(lessons[21]), (2, 1))
-        # Another group of the same program still uses the program's 12.
-        other = self.group.__class__.objects.create(name="NEXT 2", course=self.course, start_date=TODAY)
-        gt = other.teachers.create(teacher=self.teacher, subject=self.it)
-        lesson = Lesson.objects.create(group=other, group_teacher=gt, teacher=self.teacher, subject=self.it, lesson_number=13,
-                                       date=TODAY + dt.timedelta(days=40), start_time=dt.time(16), end_time=dt.time(17))
+        self.assertEqual(self.at(self.lesson(self.english, 13)), (1, 13))
+        self.assertEqual(self.at(self.lesson(self.it, 21)), (2, 1))
+
+    def test_cancelled_lesson_and_make_up_keep_their_place(self):
+        original = self.lesson(self.it, 13, status=Lesson.Status.CANCELLED)
+        makeup = self.lesson(self.it, 13, rescheduled_from=original)
+        nxt = self.lesson(self.it, 14)
+        self.assertEqual((self.at(original), self.at(makeup), self.at(nxt)), ((2, 1), (2, 1), (2, 2)))
+
+    def test_programs_own_plan(self):
+        program = self.programs[self.english.pk]
+        own = [GroupTeacherLessonPlan.objects.create(group_teacher=program, lesson_number=n, topic=f"Unit {n}")
+               for n in range(1, 15)]
+        lesson = Lesson.objects.create(group=self.group, group_teacher=program, individual_plan=own[12], teacher=self.teacher,
+                                       subject=self.english, lesson_number=13, date=TODAY, start_time=dt.time(18),
+                                       end_time=dt.time(19))
         self.assertEqual(self.at(lesson), (2, 1))
 
-    def test_each_program_of_a_group_has_its_own_sequence(self):
-        it = {lesson.lesson_number: lesson for lesson in self.future(14)}
-        en = {lesson.lesson_number: lesson for lesson in self.future(3, gt=self.gt_en)}
-        self.assertEqual(self.at(it[14]), (2, 2))
-        self.assertEqual(self.at(en[3]), (1, 3))
+    def test_without_a_plan_link_the_plan_row_of_the_same_subject_is_used(self):
+        lesson = self.lesson(self.it, 29)
+        Lesson.objects.filter(pk=lesson.pk).update(plan=None)   # the plan row was deleted (SET_NULL)
+        lesson.refresh_from_db()
+        self.assertEqual(self.at(lesson), (3, 5))
 
-    def test_progress_months_use_the_group_setting(self):
-        self.curriculum(12)
-        GroupLessonNumbering.objects.create(group=self.group, lessons_per_month=20)
-        self.held(15)
-        p = self.p()
-        self.assertEqual((p["month"]["number"], p["month"]["planned"]), (1, 20))
-        self.assertEqual(p["lessons_per_month_source"], "group")
+    def test_nothing_is_invented_without_curriculum_information(self):
+        stray = Lesson.objects.create(group=self.group, group_teacher=self.programs[self.it.pk], teacher=self.teacher,
+                                      subject=self.it, lesson_number=999, date=TODAY, start_time=dt.time(20),
+                                      end_time=dt.time(21))
+        self.assertIsNone(numbering.Numbering().of(stray))
 
 
-class HistoryTests(NumberingBase):
-    def test_cancelled_lesson_and_its_make_up_keep_the_same_number(self):
-        lessons = {lesson.lesson_number: lesson for lesson in self.future(14)}
-        Lesson.objects.filter(pk=lessons[13].pk).update(status=Lesson.Status.CANCELLED)
-        makeup = Lesson.objects.create(group=self.group, group_teacher=self.gt, teacher=self.teacher, subject=self.it,
-                                       lesson_number=13, date=TODAY + dt.timedelta(days=90), start_time=dt.time(16),
-                                       end_time=dt.time(17), rescheduled_from=lessons[13])
-        self.assertEqual(self.at(makeup), (2, 1))
-        self.assertEqual(self.at(lessons[14]), (2, 2))  # nothing after it shifts
+class CurriculumMonthsTests(CurriculumBase):
+    def test_study_months_with_their_own_subject_and_size(self):
+        react, _ = Subject.objects.get_or_create(name="React")
+        curriculum = self.curriculum(12, months=6)
+        CurriculumMonth.objects.create(curriculum=curriculum, number=2, planned_lessons=10)
+        for n in (4, 5, 6):
+            CurriculumMonth.objects.create(curriculum=curriculum, number=n, subject=react)
+        # IT: month 1 = 12, month 2 = 10, month 3 = 12 → IT lesson 23 opens month 3.
+        self.assertEqual(self.at(self.lesson(self.it, 22)), (2, 10))
+        self.assertEqual(self.at(self.lesson(self.it, 23)), (3, 1))
+        # React's own lessons start in the curriculum's month 4.
+        react_program = GroupTeacher.objects.create(group=self.group, teacher=self.teacher, subject=react)
+        plan = [GroupTeacherLessonPlan.objects.create(group_teacher=react_program, lesson_number=n, topic=f"React {n}")
+                for n in range(1, 6)]
+        react_lesson = Lesson.objects.create(group=self.group, group_teacher=react_program, individual_plan=plan[4],
+                                             teacher=self.teacher, subject=react, lesson_number=5, date=TODAY,
+                                             start_time=dt.time(19), end_time=dt.time(20))
+        self.assertEqual(self.at(react_lesson), (4, 5))
+        # English is not a study-month subject: plain months of 12.
+        self.assertEqual(self.at(self.lesson(self.english, 23)), (2, 11))
 
-    def test_changing_12_to_20_never_renumbers_held_lessons(self):
-        self.curriculum(12)
-        held = {lesson.lesson_number: lesson for lesson in self.held_until(30)}          # month 3, lesson 6
-        later = {lesson.lesson_number: lesson for lesson in self.future(30, first_number=31)}
-        before = {n: self.at(lesson) for n, lesson in held.items()}
 
-        curriculum = ProgramCurriculum.objects.get(course=self.course)
+class HistoryTests(CurriculumBase):
+    def test_changing_12_to_20_keeps_held_lessons(self):
+        curriculum = self.curriculum(12)
+        held = {k: self.lesson(self.it, k, held=True) for k in range(1, 31)}     # IT: 3 месяц · 6 урок
+        future = {k: self.lesson(self.it, k) for k in range(31, 61)}
+        english = {k: self.lesson(self.english, k) for k in range(1, 25)}      # nothing held yet
+        before = {k: self.at(lesson) for k, lesson in held.items()}
         curriculum.lessons_per_month = 20
         curriculum.save()
+        self.assertEqual({k: self.at(lesson) for k, lesson in held.items()}, before)
+        self.assertEqual(self.at(future[36]), (3, 12))
+        self.assertEqual(self.at(future[37]), (4, 1))
+        self.assertEqual(self.at(future[56]), (4, 20))
+        self.assertEqual(self.at(english[21]), (2, 1))                         # follows the new size
+        # IT follows the study months: its months 1–3 are kept, as months of 12.
+        rows = list(NumberingFreeze.objects.order_by("first_lesson").values_list("subject_id", "first_lesson", "last_lesson",
+                                                                                   "first_month", "lessons_per_month"))
+        self.assertEqual(rows, [(self.it.pk, 1, 12, 1, 12), (self.it.pk, 13, 24, 2, 12), (self.it.pk, 25, 36, 3, 12)])
 
-        self.assertEqual({n: self.at(lesson) for n, lesson in held.items()}, before)
-        self.assertEqual(self.at(held[30]), (3, 6))
-        self.assertEqual(self.at(later[36]), (3, 12))   # the started month is finished as it began
-        self.assertEqual(self.at(later[37]), (4, 1))    # the new size from the next month
-        self.assertEqual(self.at(later[56]), (4, 20))
-        self.assertEqual(self.at(later[57]), (5, 1))
-        freeze = NumberingFreeze.objects.get(group_teacher=self.gt)
-        self.assertEqual((freeze.first_lesson, freeze.last_lesson, freeze.first_month, freeze.lessons_per_month), (1, 36, 1, 12))
-        # A sequence with no lesson held yet simply follows the new setting.
-        en = self.future(21, gt=self.gt_en)
-        self.assertEqual(self.at(en[20]), (2, 1))
-
-    def test_a_second_change_keeps_both_histories(self):
+    def test_api_change_of_study_months_keeps_the_past(self):
         self.curriculum(12)
-        self.held_until(14)                              # month 2 started with 12
-        GroupLessonNumbering.objects.create(group=self.group, lessons_per_month=20)
-        self.assertEqual(NumberingFreeze.objects.get().last_lesson, 24)
-        # 20 more lessons held → month 3 (lessons 25…44) under 20; then back to 12.
-        for n in range(15, 31):
-            Lesson.objects.create(group=self.group, group_teacher=self.gt, teacher=self.teacher, subject=self.it,
-                                  lesson_number=n, date=TODAY, start_time=dt.time(8 + n % 10), end_time=dt.time(9 + n % 10),
-                                  status=Lesson.Status.COMPLETED)
-        row = GroupLessonNumbering.objects.get(group=self.group)
-        row.delete()                                     # back to the program's 12
-        lessons = {lesson.lesson_number: lesson for lesson in self.future(30, first_number=31)}
-        self.assertEqual(self.at(Lesson.objects.get(group_teacher=self.gt, lesson_number=25)), (3, 1))
-        self.assertEqual(self.at(lessons[44]), (3, 20))
-        self.assertEqual(self.at(lessons[45]), (4, 1))
-        self.assertEqual(self.at(lessons[57]), (5, 1))
-        self.assertEqual(NumberingFreeze.objects.count(), 2)
+        held = self.lesson(self.it, 15, held=True)                               # 2 месяц · 3 урок
+        api = APIClient()
+        api.force_authenticate(make_user("boss", User.Role.ADMIN))
+        response = api.put(f"{BASE}/programs/{self.course.pk}/", {
+            "lessons_per_month": 12, "duration_months": 6, "main_subject": self.it.pk, "extra_subjects": [],
+            "count_mode": "main", "months": [{"number": 1, "planned_lessons": 20}],
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.at(held), (2, 3))
+        self.assertEqual(self.at(self.lesson(self.it, 25)), (3, 1))
+        # Without held lessons the new month 1 of 20 applies directly.
+        other = Group.objects.create(name="NEXT-2", course=self.course, start_date=TODAY)
+        gt = GroupTeacher.objects.create(group=other, teacher=self.teacher, subject=self.it)
+        fresh = Lesson.objects.create(group=other, group_teacher=gt, plan=self.rows[(self.it.pk, 15)], teacher=self.teacher,
+                                      subject=self.it, lesson_number=43, date=TODAY + dt.timedelta(days=5),
+                                      start_time=dt.time(8), end_time=dt.time(9))
+        self.assertEqual(self.at(fresh), (1, 15))
 
-    def test_same_value_or_unrelated_edit_freezes_nothing(self):
+    def test_unrelated_edits_freeze_nothing(self):
         curriculum = self.curriculum(12)
-        self.held_until(5)
+        self.lesson(self.it, 5, held=True)
         curriculum.duration_months = 8
         curriculum.save()
         GroupLessonNumbering.objects.create(group=self.group, lessons_per_month=12)
         self.assertFalse(NumberingFreeze.objects.exists())
 
-
-class ApiTests(NumberingBase):
-    def setUp(self):
-        super().setUp()
-        self.admin = user("boss", User.Role.ADMIN)
-        self.client_ = APIClient()
-        self.client_.force_authenticate(self.admin)
-
-    def program_put(self, per_month):
-        return self.client_.put(f"{BASE}/programs/{self.course.pk}/", {
-            "lessons_per_month": per_month, "duration_months": 6, "main_subject": self.it.pk,
-            "extra_subjects": [], "count_mode": "main", "months": [],
-        }, format="json")
-
-    def test_program_accepts_only_12_or_20(self):
-        self.assertEqual(self.program_put(15).status_code, 400)
-        self.assertEqual(self.program_put(20).status_code, 200)
-        self.assertEqual(ProgramCurriculum.objects.get(course=self.course).lessons_per_month, 20)
-        self.assertEqual(self.client_.get(f"{BASE}/meta/").data["presets"], [12, 20])
-
-    def test_a_legacy_value_may_stay_until_changed(self):
-        ProgramCurriculum.objects.create(course=self.course, lessons_per_month=16, duration_months=6)
-        self.assertEqual(self.program_put(16).status_code, 200)
-        self.assertEqual(self.program_put(8).status_code, 400)
-
-    def test_group_setting(self):
-        url = f"{BASE}/groups/{self.group.pk}/numbering/"
-        self.assertEqual(self.client_.put(url, {"lessons_per_month": 13}, format="json").status_code, 400)
-        data = self.client_.put(url, {"lessons_per_month": 20}, format="json").data
-        self.assertEqual((data["numbering"]["lessons_per_month"], data["numbering"]["group_value"]), (20, 20))
-        data = self.client_.put(url, {"lessons_per_month": None}, format="json").data
-        self.assertEqual((data["numbering"]["lessons_per_month"], data["numbering"]["group_value"]), (12, None))
-        teacher = APIClient()
-        teacher.force_authenticate(self.teacher.user)
-        self.assertIn(teacher.put(url, {"lessons_per_month": 20}, format="json").status_code, (403, 404))
-        self.assertFalse(GroupLessonNumbering.objects.exists())
+    def test_old_freezes_are_converted_to_subject_positions(self):
+        migration = import_module("apps.academic_progress.migrations.0003_freeze_by_subject")
+        for k in range(1, 31):
+            self.lesson(self.it, k, held=True)
+        # A first-version freeze: course-wide numbers 1–96 of the IT program, 12 per month.
+        NumberingFreeze.objects.create(group_teacher=self.programs[self.it.pk], first_lesson=1, last_lesson=96,
+                                       first_month=1, lessons_per_month=12)
+        migration.to_subject_positions(django_apps, None)
+        row = NumberingFreeze.objects.get()
+        self.assertEqual((row.group_id, row.subject_id, row.first_lesson, row.last_lesson), (self.group.pk, self.it.pk, 1, 36))
 
 
-class ConsistencyTests(NumberingBase):
-    """The same «Месяц · Урок» wherever the lesson appears."""
+class EverywhereTests(CurriculumBase):
+    """The same «3 месяц · 5 урок» in every module."""
 
     def setUp(self):
         super().setUp()
-        self.curriculum(20)
-        self.lessons = {lesson.lesson_number: lesson for lesson in self.held_until(21)}
-        self.lesson = self.lessons[21]
+        self.target = self.lesson(self.it, 29, held=True)
         self.student = Student.objects.create(first_name="Ali", last_name="Asanov", group=self.group,
-                                              enrollment_date=TODAY - dt.timedelta(days=60))
-        Attendance.objects.create(student=self.student, lesson=self.lesson, status=Attendance.Status.PRESENT)
-        self.homework = Homework.objects.create(lesson=self.lesson, title="ДЗ")
-        self.admin = user("boss", User.Role.ADMIN)
+                                              enrollment_date=TODAY - dt.timedelta(days=600))
+        Attendance.objects.create(student=self.student, lesson=self.target, status=Attendance.Status.PRESENT)
+        self.homework = Homework.objects.create(lesson=self.target, title="ДЗ")
         self.api = APIClient()
+        self.admin = make_user("boss", User.Role.ADMIN)
         self.api.force_authenticate(self.admin)
-        self.expected = {"number": 21, "month": 2, "lesson": 1, "per_month": 20, "label": "Месяц 2 · Урок 1"}
 
-    def test_lesson_homework_and_attendance_api(self):
-        self.assertEqual(self.api.get(f"/api/v1/lessons/{self.lesson.pk}/").data["numbering"], self.expected)
-        lessons = self.api.get("/api/v1/lessons/", {"group": self.group.pk, "ordering": "-lesson_number"}).data
-        rows = lessons["results"] if isinstance(lessons, dict) else lessons
-        by_id = {row["id"]: row["numbering"] for row in rows}
-        self.assertEqual(by_id[self.lesson.pk], self.expected)
-        self.assertEqual(by_id[self.lessons[20].pk]["label"], "Месяц 1 · Урок 20")
-        hw = self.api.get(f"/api/v1/homework/{self.homework.pk}/")
-        self.assertEqual(hw.data["lesson_numbering"], self.expected)
+    def check(self, data):
+        self.assertEqual((data["month"], data["lesson"], data["label"]), (3, 5, "3 месяц · 5 урок"))
 
-    def test_student_portal_and_reports_services(self):
+    def test_lessons_homework_attendance_api(self):
+        self.check(self.api.get(f"/api/v1/lessons/{self.target.pk}/").data["numbering"])
+        self.check(self.api.get(f"/api/v1/homework/{self.homework.pk}/").data["lesson_numbering"])
+
+    def test_portal_assistant_matrix(self):
+        from apps.assistant import records, selectors
+        from apps.attendance_matrix import cells
         from apps.portal.services import data
 
-        row = data.lesson_row(self.lesson, None, None)
-        self.assertEqual(row["numbering"], self.expected)
-        hw_row = data.homework_row(self.homework, None, TODAY)
-        self.assertEqual(hw_row["lesson"]["numbering"], self.expected)
+        self.check(data.lesson_row(self.target, None, None)["numbering"])
+        self.check(data.homework_row(self.homework, None, TODAY)["lesson"]["numbering"])
+        self.check(records._lesson_head(self.target)["numbering"])
+        self.check(selectors._lesson_row(self.target)["numbering"])
+        self.check(cells.detail(self.admin, self.target, self.student)["lesson"]["numbering"])
 
-    def test_attendance_matrix_and_assistant(self):
-        from apps.assistant import records, selectors
-
-        self.assertEqual(records._lesson_head(self.lesson)["numbering"], self.expected)
-        self.assertEqual(selectors._lesson_row(self.lesson)["numbering"], self.expected)
-        from apps.attendance_matrix import cells
-
-        self.assertEqual(cells.detail(self.admin, self.lesson, self.student)["lesson"]["numbering"], self.expected)
-
-    def test_one_request_reads_settings_once(self):
-        for n in range(22, 60):
-            Lesson.objects.create(group=self.group, group_teacher=self.gt, teacher=self.teacher, subject=self.it,
-                                  lesson_number=n, date=TODAY + dt.timedelta(days=n), start_time=dt.time(16),
-                                  end_time=dt.time(17))
+    def test_one_request_reads_the_curriculum_once(self):
+        for k in range(1, 40):
+            self.lesson(self.soft, k)
+        lessons = list(Lesson.objects.filter(group=self.group))
         token = numbering._current.set(numbering.Numbering())
         try:
-            lessons = list(Lesson.objects.filter(group=self.group))
             numbering.prime(lessons)
-            with self.assertNumQueries(0):
+            numbering.of(lessons[0])
+            with self.assertNumQueries(0):   # everything after the first lookup comes from the cache
                 labels = [numbering.of(lesson)["label"] for lesson in lessons]
         finally:
             numbering._current.reset(token)
-        self.assertIn("Месяц 3 · Урок 19", labels)
+        self.assertIn("3 месяц · 3 урок", labels)

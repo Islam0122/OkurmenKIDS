@@ -121,20 +121,25 @@ class GroupLessonNumbering(models.Model):
 
 
 class NumberingFreeze(models.Model):
-    """Lessons whose «Месяц · Урок» was fixed before a change of the lessons
-    per month, so the change never renumbers what already took place.
+    """Educational months fixed before a change of the lessons per month, so
+    a change never renumbers lessons that already took place.
 
-    Covers whole educational months of one lesson sequence (a GroupTeacher's
-    lesson_number): lessons `first_lesson`…`last_lesson` are months
+    Covers whole months of ONE subject's lesson sequence in a group (IT,
+    English and Soft Skills are separate sequences): positions
+    `first_lesson`…`last_lesson` of that subject's plan are months
     `first_month`… of `lessons_per_month` lessons each. Written by
-    numbering.freeze_history(); lessons after the last frozen one follow the
-    current setting.
+    numbering.freeze_history(); later positions follow the current settings.
     """
 
-    group_teacher = models.ForeignKey(GroupTeacher, on_delete=models.CASCADE, related_name="numbering_freezes",
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, null=True, related_name="numbering_freezes",
+                              verbose_name="Группа")
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, null=True, blank=True, related_name="+",
+                                verbose_name="Предмет")
+    # Kept for history only (the first version keyed freezes by program).
+    group_teacher = models.ForeignKey(GroupTeacher, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
                                       verbose_name="Программа группы")
-    first_lesson = models.PositiveIntegerField(verbose_name="С занятия №")
-    last_lesson = models.PositiveIntegerField(verbose_name="По занятие №")
+    first_lesson = models.PositiveIntegerField(verbose_name="С урока предмета №")
+    last_lesson = models.PositiveIntegerField(verbose_name="По урок предмета №")
     first_month = models.PositiveSmallIntegerField(verbose_name="С учебного месяца")
     lessons_per_month = models.PositiveSmallIntegerField(verbose_name="Занятий в месяце")
     reason = models.CharField(max_length=255, blank=True, verbose_name="Причина")
@@ -144,11 +149,12 @@ class NumberingFreeze(models.Model):
     class Meta:
         verbose_name = "Зафиксированная нумерация"
         verbose_name_plural = "Зафиксированная нумерация"
-        ordering = ["group_teacher", "first_lesson"]
+        ordering = ["group", "subject", "first_lesson"]
         constraints = [
-            models.UniqueConstraint(fields=["group_teacher", "first_lesson"], name="unique_numbering_freeze_start"),
+            models.UniqueConstraint(fields=["group", "subject", "first_lesson"], name="unique_numbering_freeze_subject_start"),
             models.CheckConstraint(condition=models.Q(last_lesson__gte=models.F("first_lesson")), name="numbering_freeze_range"),
         ]
 
     def __str__(self):
-        return f"{self.group_teacher}: №{self.first_lesson}–{self.last_lesson} по {self.lessons_per_month}"
+        subject = self.subject.name if self.subject_id else "—"
+        return f"{self.group} · {subject}: уроки {self.first_lesson}–{self.last_lesson} по {self.lessons_per_month}"

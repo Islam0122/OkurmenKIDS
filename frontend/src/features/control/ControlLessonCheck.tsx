@@ -51,7 +51,7 @@ export function ControlLessonCheck({ lesson }: { lesson: ControlLesson }) {
         <Field label="Дата">
           {formatDateShort(lesson.date)} · {formatTimeRange(lesson.start_time, lesson.end_time)}
         </Field>
-        <Field label="Занятие">{lessonLabel(lesson.numbering, lesson.lesson_number)}{lesson.topic ? ` · ${lesson.topic}` : ''}</Field>
+        <Field label="Занятие">{[lessonLabel(lesson.numbering), lesson.topic].filter(Boolean).join(' · ') || '—'}</Field>
         <Field label="Ответственный тренер">
           {lesson.teacher?.name ?? 'Не назначен'}
           {lesson.planned_teacher ? (
