@@ -44,27 +44,29 @@ The public website (okurmen-public-website) reads
 **published** and have **consent** (cached; every save clears the cache). The
 same list is shown on `/testimonials`, `/ky/testimonials` and `/en/testimonials`.
 
-A student review reaches it like this:
+A student review reaches it automatically:
 
 1. The family posts a **review** and ticks «Разрешаем показать этот отзыв на сайте».
 2. It is stored as a community post, **pending** (not public anywhere).
-3. A director / administrator (the people who publish on the website —
-   `website.cms.can_approve`) clicks **«Одобрить и опубликовать на сайте»**
-   (or «Опубликовать на сайте» on an already approved review).
-4. One `Testimonial` is created (or the post's existing one updated — never a
-   duplicate): «Имя И.», role student, course, text, language detected
-   (ru / ky / en); no photo, no surname, no group. It is published at once.
-5. The public API and the website show it on the next request.
+3. A moderator approves it («Одобрить»).
+4. The approval itself publishes it: one `Testimonial` (created once, then
+   updated — never a duplicate): «Имя И.», role student, course, text,
+   detected language (ru / ky / en); no photo, surname or group.
+5. The public API and the website show it on the next request (no redeploy).
 
-It leaves the site automatically (archived, kept for history) when the review
-is rejected, hidden (by a moderator or by reports), edited (back to review —
-publish again after approval) or deleted, and by «Снять с сайта». Reviews
-without the family's consent, other categories, and pending posts can never
-be published. Testimonials created by hand in the site CMS are untouched.
+Reviews without the family's consent, other categories and pending posts
+never go to the site. A published review leaves the site automatically
+(archived, kept) when it is rejected, hidden (moderator or reports), edited
+back to review or deleted. A director / administrator can take one off by hand
+(«Снять с сайта») and put it back («Опубликовать на сайте» — moderation tab
+«Для сайта», or Управление сайтом → Отзывы). Testimonials made by hand in the
+site CMS are untouched.
 
-Before this fix the button created a **draft** in the site CMS, which then had
-to be published separately in «Управление сайтом» — reviews approved in the
-LMS therefore never appeared on the website.
+Migration `community.0002_publish_approved_reviews` published, once, the
+reviews approved with consent before approval became automatic (those with
+no testimonial yet; a review taken off by an administrator is left off).
+`manage.py community_website_audit` shows every review's LMS status, consent,
+testimonial and public-API state (read-only).
 
 ## API
 
