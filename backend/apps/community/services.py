@@ -468,6 +468,25 @@ def unpublish_from_website(user, post: Post) -> bool:
     return withdraw_from_website(post, user)
 
 
+def website_eligible_q():
+    """Reviews that may go on the website: approved in the LMS, review type,
+    a student's, with the family's explicit consent."""
+    return Q(status=PostStatus.APPROVED, category=Category.REVIEW, website_consent=True, author_student__isnull=False)
+
+
+def website_live_q():
+    """…and actually shown on okurmenkids.com now (published, consent, due)."""
+    from apps.website.models import Workflow
+
+    return Q(website_testimonial__status=Workflow.PUBLISHED, website_testimonial__consent=True,
+             website_testimonial__published_at__lte=timezone.now())
+
+
+def website_waiting(qs):
+    """Eligible reviews that are NOT on the website — what an administrator still has to publish."""
+    return qs.filter(website_eligible_q()).exclude(website_live_q())
+
+
 # ------------------------------------------------------------------ queries
 
 def annotate(qs, student: Student | None = None):

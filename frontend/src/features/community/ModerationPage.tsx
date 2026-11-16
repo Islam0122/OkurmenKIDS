@@ -42,7 +42,7 @@ import { cn } from '@/utils/cn'
 
 const KEY = ['community-moderation'] as const
 type ModerationAction = 'approve' | 'reject' | 'hide' | 'pin' | 'to-website' | 'from-website'
-type Tab = 'pending' | 'reports' | 'approved' | 'rejected' | 'hidden' | 'announce'
+type Tab = 'pending' | 'website' | 'reports' | 'approved' | 'rejected' | 'hidden' | 'announce'
 
 const CATEGORY: Record<CommunityCategory, string> = {
   general: 'Общее', review: 'Отзыв', achievement: 'Достижение', project: 'Проект', learning_progress: 'Прогресс в учёбе', news: 'Новости',
@@ -50,7 +50,7 @@ const CATEGORY: Record<CommunityCategory, string> = {
 const STATUS: Record<PostStatus, { label: string; tone: BadgeTone }> = {
   draft: { label: 'Черновик', tone: 'muted' },
   pending: { label: 'На проверке', tone: 'warning' },
-  approved: { label: 'Опубликовано', tone: 'success' },
+  approved: { label: 'Опубликовано в LMS', tone: 'success' },
   rejected: { label: 'Отклонено', tone: 'danger' },
   hidden: { label: 'Скрыто', tone: 'danger' },
 }
@@ -71,7 +71,8 @@ export function CommunityModerationPage() {
   const tabs = [
     { key: 'pending' as const, label: `На проверке${meta.data?.pending ? ` · ${meta.data.pending}` : ''}` },
     { key: 'reports' as const, label: `Жалобы${meta.data?.open_reports ? ` · ${meta.data.open_reports}` : ''}` },
-    { key: 'approved' as const, label: 'Опубликованные' },
+    { key: 'website' as const, label: `Для сайта${meta.data?.website_waiting ? ` · ${meta.data.website_waiting}` : ''}` },
+    { key: 'approved' as const, label: 'Опубликованные в LMS' },
     { key: 'rejected' as const, label: 'Отклонённые' },
     { key: 'hidden' as const, label: 'Скрытые' },
     { key: 'announce' as const, label: 'Объявление' },
@@ -84,23 +85,23 @@ export function CommunityModerationPage() {
       />
       <Tabs aria-label="Разделы модерации" items={tabs} value={tab} onChange={setTab} />
       <div className="mt-5">
-        {tab === 'reports' ? <ReportsList /> : tab === 'announce' ? <AnnouncementForm onDone={() => setTab('approved')} /> : <PostsList status={tab} canWebsite={meta.data?.can_send_to_website ?? false} />}
+        {tab === 'reports' ? <ReportsList /> : tab === 'announce' ? <AnnouncementForm onDone={() => setTab('approved')} /> : <PostsList status={tab === 'website' ? 'approved' : tab} website={tab === 'website' ? 'waiting' : undefined} canWebsite={meta.data?.can_send_to_website ?? false} />}
       </div>
     </div>
   )
 }
 
-function PostsList({ status, canWebsite }: { status: PostStatus; canWebsite: boolean }) {
+function PostsList({ status, website, canWebsite }: { status: PostStatus; website?: 'waiting'; canWebsite: boolean }) {
   const [page, setPage] = useState(1)
   const [q, setQ] = useState('')
-  const query = useQuery({ queryKey: [...KEY, 'posts', status, page, q], queryFn: () => moderationApi.posts(status, page, q) })
+  const query = useQuery({ queryKey: [...KEY, 'posts', status, website, page, q], queryFn: () => moderationApi.posts(status, page, q, website) })
   return (
     <div className="space-y-4">
       <div className="max-w-sm"><SearchInput value={q} onChange={(v) => { setQ(v); setPage(1) }} placeholder="Поиск по тексту, ученику, группе…" /></div>
       {query.isPending ? <LoadingState label="Загружаем публикации…" /> : null}
       {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : null}
       {query.data && !query.data.results.length ? (
-        <EmptyState icon={ShieldCheck} title={status === 'pending' ? 'Все публикации проверены' : 'Здесь пусто'} />
+        <EmptyState icon={ShieldCheck} title={website ? 'Все отзывы с согласием семьи уже на сайте' : status === 'pending' ? 'Все публикации проверены' : 'Здесь пусто'} />
       ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
         {query.data?.results.map((post) => <ModerationCard key={post.id} post={post} canWebsite={canWebsite} />)}
@@ -165,13 +166,8 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
         </div>
       ) : null}
       {post.moderation?.note ? <p className="rounded-lg bg-surface-hover px-3 py-2 text-xs text-ink-secondary">Комментарий модератора{post.moderation.by ? ` (${post.moderation.by})` : ''}: {post.moderation.note}</p> : null}
-      {post.category === 'review' ? (
-        <p className="text-xs text-ink-muted">
-          {post.website_consent ? 'Семья разрешила показать отзыв на сайте (имя и первая буква фамилии, без фото).' : 'Согласия на показ на сайте нет — на сайт этот отзыв не попадёт.'}
-          {post.website?.is_public ? <Badge tone="success" className="ml-2">На сайте okurmenkids.com</Badge> : null}
-          {post.website && !post.website.is_public ? <span> На сайте не показывается ({post.website.status === 'archived' ? 'снят' : post.website.status}).</span> : null}
-        </p>
-      ) : null}
+      {post.category === 'review' && !post.is_announcement ? <WebsitePanel post={post} canWebsite={canWebsite} busy={act.isPending}
+        onPublish={() => act.mutate({ action: 'to-website' })} onUnpublish={() => act.mutate({ action: 'from-website' })} /> : null}
 
       {noteFor ? (
         <div className="space-y-2 rounded-lg border border-border p-3">
@@ -206,13 +202,6 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
               {post.comments ? <Button size="sm" variant="ghost" leftIcon={<MessageCircle className="size-4" aria-hidden />} onClick={() => setDetail(true)}>Комментарии · {post.comments}</Button> : null}
             </>
           ) : null}
-          {websiteReady && post.status === 'approved' ? (
-            post.website?.is_public ? (
-              <Button size="sm" variant="ghost" leftIcon={<Globe className="size-4" aria-hidden />} onClick={() => act.mutate({ action: 'from-website' })}>Снять с сайта</Button>
-            ) : (
-              <Button size="sm" variant="ghost" leftIcon={<Globe className="size-4" aria-hidden />} onClick={() => act.mutate({ action: 'to-website' })}>Опубликовать на сайте</Button>
-            )
-          ) : null}
           {post.is_announcement ? (
             <Button size="sm" variant="ghost" leftIcon={<Trash2 className="size-4" aria-hidden />} onClick={() => { if (window.confirm('Удалить объявление?')) remove.mutate() }}>Удалить</Button>
           ) : null}
@@ -220,6 +209,46 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
       )}
       {detail ? <PostDetail postId={post.id} onClose={() => setDetail(false)} /> : null}
     </article>
+  )
+}
+
+/**
+ * The website status of a review, apart from its LMS status: «Опубликовано в
+ * LMS» only means the community feed. A review is on okurmenkids.com only when
+ * this panel says «На сайте okurmenkids.com».
+ */
+function WebsitePanel({ post, canWebsite, busy, onPublish, onUnpublish }: {
+  post: CommunityPost
+  canWebsite: boolean
+  busy: boolean
+  onPublish: () => void
+  onUnpublish: () => void
+}) {
+  const live = Boolean(post.website?.is_public)
+  const eligible = Boolean(post.website_eligible)
+  const state = live
+    ? { tone: 'success' as const, badge: 'На сайте okurmenkids.com', text: 'Отзыв показывается на /testimonials, /ky/testimonials и /en/testimonials.' }
+    : eligible
+      ? { tone: 'warning' as const, badge: 'Не на сайте', text: post.website?.status === 'archived' ? 'Отзыв был снят с сайта.' : 'Опубликован только в LMS. Семья разрешила показать его на сайте.' }
+      : post.website_consent && post.status === 'pending'
+        ? { tone: 'muted' as const, badge: 'Не на сайте', text: 'Семья разрешила показать отзыв на сайте — его можно опубликовать вместе с одобрением.' }
+        : post.website_consent
+          ? { tone: 'muted' as const, badge: 'Не на сайте', text: 'На сайт можно только одобренный отзыв.' }
+          : { tone: 'muted' as const, badge: 'Без согласия семьи', text: 'Семья не разрешила показывать этот отзыв — на сайт он не попадёт.' }
+  return (
+    <section aria-label="Сайт okurmenkids.com" className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2.5',
+      live ? 'border-brand-200 bg-brand-50/60' : eligible ? 'border-warning/30 bg-warning-soft/40' : 'border-border bg-surface-hover/50')}>
+      <Globe className={cn('size-4 shrink-0', live ? 'text-brand-600' : 'text-ink-muted')} aria-hidden />
+      <span className="text-xs font-semibold text-ink">Сайт:</span>
+      <Badge tone={state.tone}>{state.badge}</Badge>
+      <span className="min-w-0 flex-1 basis-56 text-xs text-ink-secondary">{state.text}</span>
+      {eligible && !live ? (
+        canWebsite
+          ? <Button size="sm" leftIcon={<Globe className="size-4" aria-hidden />} isLoading={busy} onClick={onPublish}>Опубликовать на сайте</Button>
+          : <span className="text-xs font-medium text-warning">Опубликовать на сайте может директор или администратор.</span>
+      ) : null}
+      {live && canWebsite ? <Button size="sm" variant="ghost" onClick={onUnpublish}>Снять с сайта</Button> : null}
+    </section>
   )
 }
 

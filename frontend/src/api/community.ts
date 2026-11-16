@@ -62,8 +62,8 @@ const M = '/community'
 /** Staff moderation (admin, assistants, team leads; trainers — their groups). */
 export const moderationApi = {
   meta: () => data(apiClient.get<ModerationMeta>(`${M}/meta/`)),
-  posts: (status: PostStatus | 'all', page: number, q = '') =>
-    data(apiClient.get<Paginated<CommunityPost>>(`${M}/posts/`, { params: { status, page, q: q || undefined } })),
+  posts: (status: PostStatus | 'all', page: number, q = '', website?: 'waiting' | 'live') =>
+    data(apiClient.get<Paginated<CommunityPost>>(`${M}/posts/`, { params: { status, page, q: q || undefined, website } })),
   post: (postId: number) => data(apiClient.get<CommunityPost>(`${M}/posts/${postId}/`)),
   act: (postId: number, action: 'approve' | 'reject' | 'hide' | 'pin' | 'to-website' | 'from-website', body: object = {}) =>
     data(apiClient.post<CommunityPost>(`${M}/posts/${postId}/${action}/`, body)),

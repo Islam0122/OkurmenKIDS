@@ -46,6 +46,8 @@ export interface CommunityPost {
   can_delete: boolean
   moderation?: { note: string; moderated_at: string | null; submitted_at: string | null; by?: string | null }
   website_consent?: boolean
+  /** Staff: approved review with consent — may be published on the website. */
+  website_eligible?: boolean
   // staff only
   open_reports?: number
   /** The website testimonial of this review (okurmenkids.com/testimonials). */
@@ -129,6 +131,8 @@ export interface ModerationMeta {
   open_reports: number
   can_announce_academy: boolean
   can_send_to_website: boolean
+  /** Approved reviews with the family's consent that are not on okurmenkids.com yet. */
+  website_waiting?: number
   groups: { id: number; name: string }[]
 }
 

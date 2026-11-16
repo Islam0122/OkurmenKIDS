@@ -16,6 +16,7 @@ import { siteCmsApi, toList, useSiteInvalidate, useSiteList, useSiteMeta, type R
 import { useChoices } from './useChoices'
 import { CONTENT_KEYS, RESOURCES, type ResourceDef } from './schema'
 import { CmsPage, Dropdown, editorPath, formatDate, linkButton, ListSkeleton, relativeTime, StatusBadge } from './ui'
+import { WebsiteWaitingReviews } from '@/features/community/WebsiteWaitingReviews'
 
 const PAGE_SIZE = 30
 
@@ -97,6 +98,7 @@ export function ContentListPage({ resource, embedded }: { resource: ResourceDef[
 
   const body = (
     <>
+      {resource === 'testimonials' ? <WebsiteWaitingReviews onPublished={invalidate} /> : null}
       {tabs.length ? (
         <div role="tablist" aria-label="Статус" className="scroll-x -mx-4 flex gap-1 px-4 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
