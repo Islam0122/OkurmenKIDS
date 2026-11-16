@@ -364,11 +364,18 @@ class WebsiteTests(CommunityBase):
         self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/")
         self.assertEqual(Testimonial.objects.count(), 1)
 
-    def test_community_approval_alone_and_publishing_later(self):
-        post = self.approve(self.review())
-        self.assertEqual(self.public(), {})                                    # community only
-        self.assertEqual(self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 200)
+    def test_approval_publishes_a_consented_review_automatically(self):
+        """«там авто должен»: the moderator's approval is enough — no second step."""
+        post = self.review()
+        self.assistant_api.post(f"{STAFF}/posts/{post.pk}/approve/")         # an assistant, plain «Одобрить»
         self.assertIn(post.text, self.public())
+        for lang in ("ky", "en"):
+            self.assertIn(post.text, self.public(lang))
+        self.assertEqual(Testimonial.objects.count(), 1)
+        # A teacher approving a review of their own group: the same.
+        other = self.review(text="Ислам агай лучший тренер")
+        self.teacher_api.post(f"{STAFF}/posts/{other.pk}/approve/")
+        self.assertIn(other.text, self.public())
 
     def test_language_of_the_review(self):
         post = self.approve(self.review(text="Эң жакшы академия, мугалимдер күчтүү!"))
@@ -412,41 +419,67 @@ class WebsiteTests(CommunityBase):
         self.assertEqual(self.public(), {})
         self.assertFalse(Testimonial.objects.filter(status=Workflow.PUBLISHED).exists())
 
-    def test_only_those_who_publish_on_the_website(self):
-        post = self.approve(self.review())
+    def test_publishing_by_hand_only_by_those_who_publish_on_the_website(self):
+        post = self.approve(self.review())                                       # live automatically
+        self.admin_api.post(f"{STAFF}/posts/{post.pk}/from-website/")
         for client in (self.teacher_api, self.assistant_api):
             self.assertEqual(client.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 403)
-        ops = self.api(User.objects.create_user(username="ops", email="o@x.kg", password="x",
-                                                role=User.Role.OPERATIONS_DIRECTOR))
-        self.assertEqual(ops.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 403)
+            self.assertEqual(client.post(f"{STAFF}/posts/{post.pk}/from-website/").status_code, 403)
         self.assertEqual(self.public(), {})
         self.assertEqual(self.director.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 200)
+        self.assertIn(post.text, self.public())
+
+    def test_backfill_publishes_reviews_approved_before(self):
+        from importlib import import_module
+
+        from django.apps import apps as django_apps
+
+        legacy = self.review(text="Эмир: мне очень нравится")
+        Post.objects.filter(pk=legacy.pk).update(status=PostStatus.APPROVED)
+        no_consent = self.review(consent=False, text="Без согласия")
+        Post.objects.filter(pk=no_consent.pk).update(status=PostStatus.APPROVED)
+        general = self.publish(category="general", text="Обычный пост")
+        Post.objects.filter(pk=general.pk).update(status=PostStatus.APPROVED)
+        pending = self.review(text="Ещё на проверке")
+        taken_off = self.approve(self.review(text="Снят администратором"))
+        self.admin_api.post(f"{STAFF}/posts/{taken_off.pk}/from-website/")
+        migration = import_module("apps.community.migrations.0002_publish_approved_reviews")
+        migration.publish_waiting(django_apps, None)
+        migration.publish_waiting(django_apps, None)                              # idempotent
+        shown = self.public()
+        self.assertIn(legacy.text, shown)
+        self.assertEqual(shown[legacy.text]["author_name"], "Айбек А.")
+        for post in (no_consent, general, pending, taken_off):
+            self.assertNotIn(post.text, shown)
+        self.assertEqual(Testimonial.objects.count(), 2)                           # legacy + the archived one
 
     def test_consent_only_for_reviews(self):
         post = self.publish(category="general", website_consent="true")
         self.assertFalse(post.website_consent)
 
-    def test_lms_approval_alone_is_waiting_for_the_website(self):
-        """The production case: «Опубликовано» in the LMS, not on the site."""
-        waiting = self.approve(self.review(text="Ислам агай лучший тренер"))
+    def test_taken_off_by_hand_is_waiting_until_published_again(self):
+        live = self.approve(self.review(text="Ислам агай лучший тренер"))
         self.approve(self.review(consent=False, text="Без согласия"))
-        meta = self.admin_api.get(f"{STAFF}/meta/").data
-        self.assertEqual(meta["website_waiting"], 1)
-        rows = self.admin_api.get(f"{STAFF}/posts/", {"status": "approved", "website": "waiting"}).data["results"]
-        self.assertEqual([(r["id"], r["website_eligible"], r["website"]) for r in rows], [(waiting.pk, True, None)])
-        self.assertEqual(self.public(), {})
-        self.admin_api.post(f"{STAFF}/posts/{waiting.pk}/to-website/")
-        self.assertIn(waiting.text, self.public())
+        self.assertIn(live.text, self.public())
         self.assertEqual(self.admin_api.get(f"{STAFF}/meta/").data["website_waiting"], 0)
-        live = self.admin_api.get(f"{STAFF}/posts/", {"status": "approved", "website": "live"}).data["results"]
-        self.assertEqual([r["id"] for r in live], [waiting.pk])
+        self.admin_api.post(f"{STAFF}/posts/{live.pk}/from-website/")
+        self.assertNotIn(live.text, self.public())
+        rows = self.admin_api.get(f"{STAFF}/posts/", {"status": "approved", "website": "waiting"}).data["results"]
+        self.assertEqual([(r["id"], r["website_eligible"]) for r in rows], [(live.pk, True)])
+        self.admin_api.post(f"{STAFF}/posts/{live.pk}/to-website/")
+        self.assertIn(live.text, self.public())
+        live_rows = self.admin_api.get(f"{STAFF}/posts/", {"status": "approved", "website": "live"}).data["results"]
+        self.assertEqual([r["id"] for r in live_rows], [live.pk])
+        self.assertEqual(Testimonial.objects.count(), 1)
 
     def test_audit_command_is_read_only_unless_asked(self):
         from io import StringIO
 
         from django.core.management import call_command
 
-        waiting = self.approve(self.review(text="Талант: islam teacher the best"))
+        # A review approved the old way (before automatic publishing): approved, consent, no testimonial.
+        legacy = self.review(text="Талант: islam teacher the best")
+        Post.objects.filter(pk=legacy.pk).update(status=PostStatus.APPROVED)
         self.approve(self.review(consent=False, text="Без согласия"))
         out = StringIO()
         call_command("community_website_audit", stdout=out)
@@ -455,11 +488,8 @@ class WebsiteTests(CommunityBase):
         self.assertIn("not eligible", report)
         self.assertIn("Eligible but not on the website: 1", report)
         self.assertFalse(Testimonial.objects.exists())                         # nothing changed
-        call_command("community_website_audit", "--publish", str(waiting.pk), "--as", "boss", stdout=StringIO())
-        self.assertIn(waiting.text, self.public())
-        out = StringIO()
-        call_command("community_website_audit", "--name", "Айбек", stdout=out)
-        self.assertIn("ON SITE", out.getvalue())
+        call_command("community_website_audit", "--publish", str(legacy.pk), "--as", "boss", stdout=StringIO())
+        self.assertIn(legacy.text, self.public())
 
     def test_existing_cms_testimonials_are_untouched(self):
         manual = Testimonial.objects.create(author_name="Айгуль, мама Эмира", text="Спасибо!", consent=True,

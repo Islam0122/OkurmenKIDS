@@ -119,9 +119,9 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
   const [detail, setDetail] = useState(false)
   const act = useMutation({
     mutationFn: ({ action, body }: { action: ModerationAction; body?: object }) => moderationApi.act(post.id, action, body),
-    onSuccess: (_data, { action, body }) => {
+    onSuccess: (_data, { action }) => {
       const done = {
-        approve: body && 'website' in body ? 'Одобрено и опубликовано на сайте okurmenkids.com' : 'Опубликовано',
+        approve: autoWebsite ? 'Одобрено — отзыв опубликован и на сайте okurmenkids.com' : 'Опубликовано в LMS',
         reject: 'Отклонено — ученик увидит комментарий', hide: 'Скрыто', pin: 'Готово',
         'to-website': 'Отзыв опубликован на сайте okurmenkids.com', 'from-website': 'Отзыв снят с сайта',
       }
@@ -137,7 +137,8 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
   })
   const s = STATUS[post.status]
   // An approved review the family allowed for the website — publishing it is the administrator's / director's call.
-  const websiteReady = canWebsite && post.category === 'review' && post.website_consent && !post.is_announcement
+  // A review the family allowed for the website goes there by the approval itself.
+  const autoWebsite = post.category === 'review' && Boolean(post.website_consent) && !post.is_announcement && post.author.type === 'student'
   return (
     <article className="card card-body space-y-3">
       <header className="flex flex-wrap items-start justify-between gap-2">
@@ -187,10 +188,6 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
             <Button size="sm" leftIcon={post.status === 'pending' ? <Check className="size-4" aria-hidden /> : <RotateCcw className="size-4" aria-hidden />}
               isLoading={act.isPending} onClick={() => act.mutate({ action: 'approve' })}>{post.status === 'pending' ? 'Одобрить' : 'Вернуть в ленту'}</Button>
           ) : null}
-          {websiteReady && post.status === 'pending' ? (
-            <Button size="sm" variant="secondary" leftIcon={<Globe className="size-4" aria-hidden />} isLoading={act.isPending}
-              onClick={() => act.mutate({ action: 'approve', body: { website: true } })}>Одобрить и опубликовать на сайте</Button>
-          ) : null}
           {post.status === 'pending' || post.status === 'approved' ? (
             !post.is_announcement ? <Button size="sm" variant="secondary" leftIcon={<X className="size-4" aria-hidden />} onClick={() => setNoteFor('reject')}>Отклонить</Button> : null
           ) : null}
@@ -231,7 +228,7 @@ function WebsitePanel({ post, canWebsite, busy, onPublish, onUnpublish }: {
     : eligible
       ? { tone: 'warning' as const, badge: 'Не на сайте', text: post.website?.status === 'archived' ? 'Отзыв был снят с сайта.' : 'Опубликован только в LMS. Семья разрешила показать его на сайте.' }
       : post.website_consent && post.status === 'pending'
-        ? { tone: 'muted' as const, badge: 'Не на сайте', text: 'Семья разрешила показать отзыв на сайте — его можно опубликовать вместе с одобрением.' }
+        ? { tone: 'muted' as const, badge: 'Не на сайте', text: 'Семья разрешила показать отзыв на сайте — после одобрения он автоматически появится на okurmenkids.com.' }
         : post.website_consent
           ? { tone: 'muted' as const, badge: 'Не на сайте', text: 'На сайт можно только одобренный отзыв.' }
           : { tone: 'muted' as const, badge: 'Без согласия семьи', text: 'Семья не разрешила показывать этот отзыв — на сайт он не попадёт.' }

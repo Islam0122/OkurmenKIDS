@@ -218,11 +218,12 @@ describe('Community moderation (staff)', () => {
     await waitFor(() => expect(mod.act).toHaveBeenCalledWith(40, 'approve', undefined))
   })
 
-  it('a review the family allowed: approve and publish on okurmenkids.com in one step', async () => {
+  it('approving a review the family allowed publishes it on the website automatically', async () => {
     renderWithProviders(<CommunityModerationPage />)
-    expect(await screen.findByText(/его можно опубликовать вместе с одобрением/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Одобрить и опубликовать на сайте' }))
-    await waitFor(() => expect(mod.act).toHaveBeenCalledWith(40, 'approve', { website: true }))
+    expect(await screen.findByText(/после одобрения он автоматически появится на okurmenkids.com/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Одобрить и опубликовать на сайте' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Одобрить' }))
+    await waitFor(() => expect(mod.act).toHaveBeenCalledWith(40, 'approve', undefined))
   })
 
   it('a published review shows its site status and can be taken off', async () => {

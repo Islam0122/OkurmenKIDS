@@ -276,20 +276,24 @@ def _moderated(post: Post, user, status: str, note: str = "") -> None:
     post.save()
 
 
+def website_eligible(post: Post) -> bool:
+    return (post.status == PostStatus.APPROVED and post.category == Category.REVIEW and post.website_consent
+            and post.author_student_id is not None)
+
+
 def approve(user, post: Post, *, website: bool = False, language: str | None = None) -> Post:
-    """Approve for the community; with `website` (an administrator / director,
-    a review the family allowed) also publish it on okurmenkids.com at once."""
+    """Approve for the community. A review whose family allowed the website is
+    published on okurmenkids.com automatically by this approval (`website` is
+    kept for older clients and changes nothing). Other posts never go there."""
     _check_staff_post(user, post)
-    if website and not scope.can_send_to_website(user):
-        raise PermissionDenied("Публиковать отзывы на сайте может директор или администратор.")
     if post.status not in (PostStatus.PENDING, PostStatus.HIDDEN, PostStatus.REJECTED):
         raise ValidationError({"detail": "Одобрить можно публикацию на проверке, скрытую или отклонённую."})
     _moderated(post, user, PostStatus.APPROVED)
     Report.objects.filter(post=post, status=ReportStatus.OPEN).update(
         status=ReportStatus.DISMISSED, resolved_by=user, resolved_at=timezone.now())
     notify(post.author_student, NotificationKind.APPROVED, post=post, key=f"approved:{post.pk}:{int(post.moderated_at.timestamp())}")
-    if website:
-        publish_to_website(user, post, language)
+    if website_eligible(post):
+        publish_to_website(user, post, language, automatic=True)
     return post
 
 
@@ -408,16 +412,19 @@ def _testimonial_fields(post: Post, language: str | None) -> dict:
     }
 
 
-def publish_to_website(user, post: Post, language: str | None = None):
-    """The administrator's approval puts an approved review on
-    okurmenkids.com/testimonials (RU / KY / EN pages) at once: one website
-    Testimonial per post (created once, updated after that — never a
-    duplicate), first name + initial, course, text; no photo, no group, no
-    surname. Only with the family's consent; only by those who may publish on
-    the website (website.cms.can_approve: administrator, director)."""
+def publish_to_website(user, post: Post, language: str | None = None, *, automatic: bool = False):
+    """Put an approved review on okurmenkids.com/testimonials (RU / KY / EN
+    pages) at once: one website Testimonial per post (created once, updated
+    after that — never a duplicate), first name + initial, course, text; no
+    photo, no group, no surname. Only with the family's consent.
+
+    automatic=True — the moderator's approval itself (approve()): the family's
+    explicit consent plus the moderation are the decision. By hand («Опубликовать
+    на сайте», e.g. after «Снять с сайта») — those who publish on the website
+    (website.cms.can_approve: administrator, director)."""
     from apps.website.models import Testimonial, Workflow
 
-    if not scope.can_send_to_website(user):
+    if not automatic and not scope.can_send_to_website(user):
         raise PermissionDenied("Публиковать отзывы на сайте может директор или администратор.")
     if post.category != Category.REVIEW or post.status != PostStatus.APPROVED or post.author_student_id is None:
         raise ValidationError({"detail": "На сайт можно опубликовать только одобренный отзыв ученика."})
