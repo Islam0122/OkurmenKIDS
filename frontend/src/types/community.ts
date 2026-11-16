@@ -48,7 +48,8 @@ export interface CommunityPost {
   website_consent?: boolean
   // staff only
   open_reports?: number
-  website?: { testimonial_id: number; status: string } | null
+  /** The website testimonial of this review (okurmenkids.com/testimonials). */
+  website?: { testimonial_id: number; status: string; is_public: boolean; language: string } | null
   comment_list?: CommunityComment[]
   reports?: { id: number; reason: string; reason_display: string; details: string; status: string; created_at: string }[]
 }

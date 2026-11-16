@@ -82,8 +82,10 @@ def post(post: Post, request, *, student: Student | None = None, staff: bool = F
         data["moderation"]["by"] = (post.moderated_by.get_full_name() or post.moderated_by.username) \
             if post.moderated_by_id else None
         data["open_reports"] = post.reports.filter(status="open").count()
-        data["website"] = ({"testimonial_id": post.website_testimonial_id,
-                            "status": post.website_testimonial.status} if post.website_testimonial_id else None)
+        testimonial = post.website_testimonial if post.website_testimonial_id else None
+        data["website"] = ({"testimonial_id": testimonial.pk, "status": testimonial.status,
+                            "is_public": testimonial.is_public, "language": testimonial.language}
+                           if testimonial is not None else None)
         data["author_account"] = post.author.username if post.author_id and post.is_announcement else None
     return data
 

@@ -65,7 +65,7 @@ export const moderationApi = {
   posts: (status: PostStatus | 'all', page: number, q = '') =>
     data(apiClient.get<Paginated<CommunityPost>>(`${M}/posts/`, { params: { status, page, q: q || undefined } })),
   post: (postId: number) => data(apiClient.get<CommunityPost>(`${M}/posts/${postId}/`)),
-  act: (postId: number, action: 'approve' | 'reject' | 'hide' | 'pin' | 'to-website', body: object = {}) =>
+  act: (postId: number, action: 'approve' | 'reject' | 'hide' | 'pin' | 'to-website' | 'from-website', body: object = {}) =>
     data(apiClient.post<CommunityPost>(`${M}/posts/${postId}/${action}/`, body)),
   removeAnnouncement: (postId: number) => apiClient.delete(`${M}/posts/${postId}/`),
   announce: (input: { text: string; group: number | null; pinned: boolean; images: File[] }) => {

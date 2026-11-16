@@ -217,4 +217,29 @@ describe('Community moderation (staff)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Одобрить' }))
     await waitFor(() => expect(mod.act).toHaveBeenCalledWith(40, 'approve', undefined))
   })
+
+  it('a review the family allowed: approve and publish on okurmenkids.com in one step', async () => {
+    renderWithProviders(<CommunityModerationPage />)
+    expect(await screen.findByText(/Семья разрешила показать отзыв на сайте/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Одобрить и опубликовать на сайте' }))
+    await waitFor(() => expect(mod.act).toHaveBeenCalledWith(40, 'approve', { website: true }))
+  })
+
+  it('a published review shows its site status and can be taken off', async () => {
+    mod.posts.mockResolvedValue({ count: 1, next: null, previous: null, results: [post(41, {
+      status: 'approved', category: 'review', website_consent: true,
+      website: { testimonial_id: 9, status: 'published', is_public: true, language: 'ru' },
+    })] })
+    renderWithProviders(<CommunityModerationPage />)
+    expect(await screen.findByText('На сайте okurmenkids.com')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Снять с сайта' }))
+    await waitFor(() => expect(mod.act).toHaveBeenCalledWith(41, 'from-website', undefined))
+  })
+
+  it('no consent — nothing to publish', async () => {
+    mod.posts.mockResolvedValue({ count: 1, next: null, previous: null, results: [post(42, { status: 'approved', category: 'review', website_consent: false })] })
+    renderWithProviders(<CommunityModerationPage />)
+    expect(await screen.findByText(/на сайт этот отзыв не попадёт/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /опубликовать на сайте/i })).not.toBeInTheDocument()
+  })
 })
