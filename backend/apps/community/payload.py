@@ -82,6 +82,10 @@ def post(post: Post, request, *, student: Student | None = None, staff: bool = F
         data["moderation"]["by"] = (post.moderated_by.get_full_name() or post.moderated_by.username) \
             if post.moderated_by_id else None
         data["open_reports"] = post.reports.filter(status="open").count()
+        # LMS status (status) and website status (website) are separate: «Опубликовано в LMS»
+        # never means «на сайте». website_eligible = may be published there.
+        data["website_eligible"] = (post.status == PostStatus.APPROVED and post.category == Category.REVIEW
+                                    and post.website_consent and post.author_student_id is not None)
         testimonial = post.website_testimonial if post.website_testimonial_id else None
         data["website"] = ({"testimonial_id": testimonial.pk, "status": testimonial.status,
                             "is_public": testimonial.is_public, "language": testimonial.language}

@@ -220,7 +220,7 @@ describe('Community moderation (staff)', () => {
 
   it('a review the family allowed: approve and publish on okurmenkids.com in one step', async () => {
     renderWithProviders(<CommunityModerationPage />)
-    expect(await screen.findByText(/Семья разрешила показать отзыв на сайте/)).toBeInTheDocument()
+    expect(await screen.findByText(/его можно опубликовать вместе с одобрением/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Одобрить и опубликовать на сайте' }))
     await waitFor(() => expect(mod.act).toHaveBeenCalledWith(40, 'approve', { website: true }))
   })
@@ -239,7 +239,37 @@ describe('Community moderation (staff)', () => {
   it('no consent — nothing to publish', async () => {
     mod.posts.mockResolvedValue({ count: 1, next: null, previous: null, results: [post(42, { status: 'approved', category: 'review', website_consent: false })] })
     renderWithProviders(<CommunityModerationPage />)
-    expect(await screen.findByText(/на сайт этот отзыв не попадёт/)).toBeInTheDocument()
+    expect(await screen.findByText(/на сайт он не попадёт/)).toBeInTheDocument()
+    expect(screen.getByText('Без согласия семьи')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /опубликовать на сайте/i })).not.toBeInTheDocument()
+  })
+
+  it('«Опубликовано в LMS» is not «на сайте»: an eligible review shows «Не на сайте» and the publish action', async () => {
+    mod.posts.mockResolvedValue({ count: 1, next: null, previous: null, results: [post(43, {
+      status: 'approved', category: 'review', website_consent: true, website_eligible: true, website: null,
+    })] })
+    mod.act.mockResolvedValue(post(43))
+    renderWithProviders(<CommunityModerationPage />)
+    expect(await screen.findByText('Опубликовано в LMS')).toBeInTheDocument()
+    expect(screen.getByText('Не на сайте')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Опубликовать на сайте' }))
+    await waitFor(() => expect(mod.act).toHaveBeenCalledWith(43, 'to-website', undefined))
+  })
+
+  it('moderators who may not publish on the website see why', async () => {
+    mod.meta.mockResolvedValue({ pending: 0, open_reports: 0, can_announce_academy: true, can_send_to_website: false, groups: [], website_waiting: 1 })
+    mod.posts.mockResolvedValue({ count: 1, next: null, previous: null, results: [post(44, {
+      status: 'approved', category: 'review', website_consent: true, website_eligible: true, website: null,
+    })] })
+    renderWithProviders(<CommunityModerationPage />)
+    expect(await screen.findByText('Опубликовать на сайте может директор или администратор.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Опубликовать на сайте' })).not.toBeInTheDocument()
+  })
+
+  it('the «Для сайта» tab lists eligible reviews not yet on the website', async () => {
+    mod.meta.mockResolvedValue({ pending: 0, open_reports: 0, can_announce_academy: true, can_send_to_website: true, groups: [], website_waiting: 2 })
+    renderWithProviders(<CommunityModerationPage />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Для сайта · 2' }))
+    await waitFor(() => expect(mod.posts).toHaveBeenLastCalledWith('approved', 1, '', 'waiting'))
   })
 })

@@ -74,12 +74,15 @@ class MetaView(_Staff):
             "open_reports": reports.count(),
             "can_announce_academy": scope.can_publish_academy_wide(user),
             "can_send_to_website": scope.can_send_to_website(user),
+            # Approved reviews with the family's consent that are not on okurmenkids.com yet.
+            "website_waiting": services.website_waiting(posts).count(),
             "groups": [{"id": g.pk, "name": g.name} for g in group_qs],
         })
 
 
 class PostsView(_Staff):
-    """GET ?status=pending|approved|rejected|hidden|draft|all&category=&q="""
+    """GET ?status=pending|approved|rejected|hidden|all&category=&q=&website=waiting|live
+    (website: approved reviews with consent not yet / already on okurmenkids.com)."""
 
     def get(self, request):
         qs = scope.staff_posts(request.user)
@@ -90,6 +93,11 @@ class PostsView(_Staff):
             qs = qs.filter(status=status)
         if request.query_params.get("category"):
             qs = qs.filter(category=request.query_params["category"])
+        website = request.query_params.get("website")
+        if website == "waiting":
+            qs = services.website_waiting(qs)
+        elif website == "live":
+            qs = qs.filter(services.website_eligible_q() & services.website_live_q())
         if request.query_params.get("q"):
             q = request.query_params["q"].strip()
             qs = qs.filter(Q(text__icontains=q) | Q(author_student__first_name__icontains=q)

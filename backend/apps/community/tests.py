@@ -426,6 +426,41 @@ class WebsiteTests(CommunityBase):
         post = self.publish(category="general", website_consent="true")
         self.assertFalse(post.website_consent)
 
+    def test_lms_approval_alone_is_waiting_for_the_website(self):
+        """The production case: «Опубликовано» in the LMS, not on the site."""
+        waiting = self.approve(self.review(text="Ислам агай лучший тренер"))
+        self.approve(self.review(consent=False, text="Без согласия"))
+        meta = self.admin_api.get(f"{STAFF}/meta/").data
+        self.assertEqual(meta["website_waiting"], 1)
+        rows = self.admin_api.get(f"{STAFF}/posts/", {"status": "approved", "website": "waiting"}).data["results"]
+        self.assertEqual([(r["id"], r["website_eligible"], r["website"]) for r in rows], [(waiting.pk, True, None)])
+        self.assertEqual(self.public(), {})
+        self.admin_api.post(f"{STAFF}/posts/{waiting.pk}/to-website/")
+        self.assertIn(waiting.text, self.public())
+        self.assertEqual(self.admin_api.get(f"{STAFF}/meta/").data["website_waiting"], 0)
+        live = self.admin_api.get(f"{STAFF}/posts/", {"status": "approved", "website": "live"}).data["results"]
+        self.assertEqual([r["id"] for r in live], [waiting.pk])
+
+    def test_audit_command_is_read_only_unless_asked(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        waiting = self.approve(self.review(text="Талант: islam teacher the best"))
+        self.approve(self.review(consent=False, text="Без согласия"))
+        out = StringIO()
+        call_command("community_website_audit", stdout=out)
+        report = out.getvalue()
+        self.assertIn("WAITING", report)
+        self.assertIn("not eligible", report)
+        self.assertIn("Eligible but not on the website: 1", report)
+        self.assertFalse(Testimonial.objects.exists())                         # nothing changed
+        call_command("community_website_audit", "--publish", str(waiting.pk), "--as", "boss", stdout=StringIO())
+        self.assertIn(waiting.text, self.public())
+        out = StringIO()
+        call_command("community_website_audit", "--name", "Айбек", stdout=out)
+        self.assertIn("ON SITE", out.getvalue())
+
     def test_existing_cms_testimonials_are_untouched(self):
         manual = Testimonial.objects.create(author_name="Айгуль, мама Эмира", text="Спасибо!", consent=True,
                                             status=Workflow.PUBLISHED)
