@@ -24,7 +24,7 @@ safety-first.
 | Family account (STUDENT_PARENT), as one linked child | Read the feed; post (active/paused students), save drafts, edit/delete own; like; comment and reply; delete own comments; report; view classmates' community profiles (name, group, photo, badges, posts, projects — no contacts, birth date, branch, payments, grades) |
 | Admin, director, operations director, team lead, assistant | Moderate everything: approve, reject (with a note for the student), hide, restore, pin; hide/restore comments; close reports; publish academy-wide or group announcements |
 | Trainer | The same for students / groups they teach (active GroupTeacher); announcements only to own groups |
-| Admin, director, operations director | Hand an approved review to the website (below) |
+| Admin, director | Publish an approved review on the website (below) |
 
 Moderators get no access to student accounts. Family accounts cannot reach
 `/api/v1/community/` (portal isolation middleware).
@@ -39,17 +39,32 @@ accounts have no web-push subscription, so there is no push.
 
 ## Website testimonials (okurmenkids.com/testimonials)
 
-The public testimonials page reads `website.Testimonial` (CMS workflow
-draft → review → published, consent required). A community post reaches it
-only when:
+The public website (okurmen-public-website) reads
+`GET /api/v1/public/site/testimonials/` — `website.Testimonial` records that are
+**published** and have **consent** (cached; every save clears the cache). The
+same list is shown on `/testimonials`, `/ky/testimonials` and `/en/testimonials`.
 
-1. it is a **review**, **approved** in the community;
-2. the family ticked «Разрешаем показать этот отзыв на сайте» when posting;
-3. an admin / director / operations director clicks «На сайт (черновик)».
+A student review reaches it like this:
 
-That creates a **draft** testimonial: «Имя И., ученик Okurmen Kids», course,
-text — no photo, no group, no surname. It appears on the site only after the
-CMS publishes it through its own workflow.
+1. The family posts a **review** and ticks «Разрешаем показать этот отзыв на сайте».
+2. It is stored as a community post, **pending** (not public anywhere).
+3. A director / administrator (the people who publish on the website —
+   `website.cms.can_approve`) clicks **«Одобрить и опубликовать на сайте»**
+   (or «Опубликовать на сайте» on an already approved review).
+4. One `Testimonial` is created (or the post's existing one updated — never a
+   duplicate): «Имя И.», role student, course, text, language detected
+   (ru / ky / en); no photo, no surname, no group. It is published at once.
+5. The public API and the website show it on the next request.
+
+It leaves the site automatically (archived, kept for history) when the review
+is rejected, hidden (by a moderator or by reports), edited (back to review —
+publish again after approval) or deleted, and by «Снять с сайта». Reviews
+without the family's consent, other categories, and pending posts can never
+be published. Testimonials created by hand in the site CMS are untouched.
+
+Before this fix the button created a **draft** in the site CMS, which then had
+to be published separately in «Управление сайтом» — reviews approved in the
+LMS therefore never appeared on the website.
 
 ## API
 

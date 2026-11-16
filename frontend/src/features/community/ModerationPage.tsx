@@ -41,6 +41,7 @@ import { cn } from '@/utils/cn'
  */
 
 const KEY = ['community-moderation'] as const
+type ModerationAction = 'approve' | 'reject' | 'hide' | 'pin' | 'to-website' | 'from-website'
 type Tab = 'pending' | 'reports' | 'approved' | 'rejected' | 'hidden' | 'announce'
 
 const CATEGORY: Record<CommunityCategory, string> = {
@@ -116,9 +117,13 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
   const [note, setNote] = useState('')
   const [detail, setDetail] = useState(false)
   const act = useMutation({
-    mutationFn: ({ action, body }: { action: 'approve' | 'reject' | 'hide' | 'pin' | 'to-website'; body?: object }) => moderationApi.act(post.id, action, body),
-    onSuccess: (_data, { action }) => {
-      const done = { approve: 'Опубликовано', reject: 'Отклонено — ученик увидит комментарий', hide: 'Скрыто', pin: 'Готово', 'to-website': 'Отзыв передан на сайт как черновик' }
+    mutationFn: ({ action, body }: { action: ModerationAction; body?: object }) => moderationApi.act(post.id, action, body),
+    onSuccess: (_data, { action, body }) => {
+      const done = {
+        approve: body && 'website' in body ? 'Одобрено и опубликовано на сайте okurmenkids.com' : 'Опубликовано',
+        reject: 'Отклонено — ученик увидит комментарий', hide: 'Скрыто', pin: 'Готово',
+        'to-website': 'Отзыв опубликован на сайте okurmenkids.com', 'from-website': 'Отзыв снят с сайта',
+      }
       showToast(done[action], 'success')
       setNoteFor(null); setNote('')
       invalidate()
@@ -130,6 +135,8 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
     onSuccess: () => { showToast('Объявление удалено', 'success'); invalidate() },
   })
   const s = STATUS[post.status]
+  // An approved review the family allowed for the website — publishing it is the administrator's / director's call.
+  const websiteReady = canWebsite && post.category === 'review' && post.website_consent && !post.is_announcement
   return (
     <article className="card card-body space-y-3">
       <header className="flex flex-wrap items-start justify-between gap-2">
@@ -160,8 +167,9 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
       {post.moderation?.note ? <p className="rounded-lg bg-surface-hover px-3 py-2 text-xs text-ink-secondary">Комментарий модератора{post.moderation.by ? ` (${post.moderation.by})` : ''}: {post.moderation.note}</p> : null}
       {post.category === 'review' ? (
         <p className="text-xs text-ink-muted">
-          {post.website_consent ? 'Семья разрешила показать отзыв на сайте.' : 'Согласия на показ на сайте нет.'}
-          {post.website ? ` На сайте: черновик №${post.website.testimonial_id} (${post.website.status}).` : ''}
+          {post.website_consent ? 'Семья разрешила показать отзыв на сайте (имя и первая буква фамилии, без фото).' : 'Согласия на показ на сайте нет — на сайт этот отзыв не попадёт.'}
+          {post.website?.is_public ? <Badge tone="success" className="ml-2">На сайте okurmenkids.com</Badge> : null}
+          {post.website && !post.website.is_public ? <span> На сайте не показывается ({post.website.status === 'archived' ? 'снят' : post.website.status}).</span> : null}
         </p>
       ) : null}
 
@@ -183,6 +191,10 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
             <Button size="sm" leftIcon={post.status === 'pending' ? <Check className="size-4" aria-hidden /> : <RotateCcw className="size-4" aria-hidden />}
               isLoading={act.isPending} onClick={() => act.mutate({ action: 'approve' })}>{post.status === 'pending' ? 'Одобрить' : 'Вернуть в ленту'}</Button>
           ) : null}
+          {websiteReady && post.status === 'pending' ? (
+            <Button size="sm" variant="secondary" leftIcon={<Globe className="size-4" aria-hidden />} isLoading={act.isPending}
+              onClick={() => act.mutate({ action: 'approve', body: { website: true } })}>Одобрить и опубликовать на сайте</Button>
+          ) : null}
           {post.status === 'pending' || post.status === 'approved' ? (
             !post.is_announcement ? <Button size="sm" variant="secondary" leftIcon={<X className="size-4" aria-hidden />} onClick={() => setNoteFor('reject')}>Отклонить</Button> : null
           ) : null}
@@ -194,8 +206,12 @@ function ModerationCard({ post, canWebsite }: { post: CommunityPost; canWebsite:
               {post.comments ? <Button size="sm" variant="ghost" leftIcon={<MessageCircle className="size-4" aria-hidden />} onClick={() => setDetail(true)}>Комментарии · {post.comments}</Button> : null}
             </>
           ) : null}
-          {canWebsite && post.category === 'review' && post.status === 'approved' && post.website_consent && !post.website ? (
-            <Button size="sm" variant="ghost" leftIcon={<Globe className="size-4" aria-hidden />} onClick={() => act.mutate({ action: 'to-website' })}>На сайт (черновик)</Button>
+          {websiteReady && post.status === 'approved' ? (
+            post.website?.is_public ? (
+              <Button size="sm" variant="ghost" leftIcon={<Globe className="size-4" aria-hidden />} onClick={() => act.mutate({ action: 'from-website' })}>Снять с сайта</Button>
+            ) : (
+              <Button size="sm" variant="ghost" leftIcon={<Globe className="size-4" aria-hidden />} onClick={() => act.mutate({ action: 'to-website' })}>Опубликовать на сайте</Button>
+            )
           ) : null}
           {post.is_announcement ? (
             <Button size="sm" variant="ghost" leftIcon={<Trash2 className="size-4" aria-hidden />} onClick={() => { if (window.confirm('Удалить объявление?')) remove.mutate() }}>Удалить</Button>

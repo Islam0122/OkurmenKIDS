@@ -151,6 +151,8 @@ def update_post(post: Post, user, data, uploads=(), remove_images=(), *, submit:
         raise PermissionDenied("Скрытую модератором публикацию изменить нельзя.")
     fields = _post_fields(data)
     was_consent = post.website_consent
+    # The site shows what the administrator approved: an edit takes it off until approved again.
+    withdraw_from_website(post)
     for name, value in fields.items():
         setattr(post, name, value)
     if post.website_consent and not was_consent:
@@ -169,6 +171,7 @@ def update_post(post: Post, user, data, uploads=(), remove_images=(), *, submit:
 
 @transaction.atomic
 def delete_post(post: Post) -> None:
+    withdraw_from_website(post)
     for image in list(post.images.all()):
         image.delete()
     post.delete()
@@ -244,6 +247,7 @@ def report(student: Student, *, post: Post | None = None, comment: Comment | Non
     open_reports = Report.objects.filter(status=ReportStatus.OPEN, **target).values("reporter_student").distinct().count()
     if open_reports >= AUTO_HIDE_REPORTS:
         if post is not None and post.status == PostStatus.APPROVED:
+            withdraw_from_website(post)
             post.status, post.is_pinned = PostStatus.HIDDEN, False
             post.moderation_note = "Скрыто автоматически после жалоб — до проверки модератором."
             post.save(update_fields=["status", "is_pinned", "moderation_note", "updated_at"])
@@ -261,6 +265,8 @@ def _check_staff_post(user, post: Post) -> None:
 
 
 def _moderated(post: Post, user, status: str, note: str = "") -> None:
+    if status != PostStatus.APPROVED:
+        withdraw_from_website(post, user)
     post.status, post.moderated_by, post.moderated_at = status, user, timezone.now()
     post.moderation_note = note[:500]
     if status == PostStatus.APPROVED and post.published_at is None:
@@ -270,14 +276,20 @@ def _moderated(post: Post, user, status: str, note: str = "") -> None:
     post.save()
 
 
-def approve(user, post: Post) -> Post:
+def approve(user, post: Post, *, website: bool = False, language: str | None = None) -> Post:
+    """Approve for the community; with `website` (an administrator / director,
+    a review the family allowed) also publish it on okurmenkids.com at once."""
     _check_staff_post(user, post)
+    if website and not scope.can_send_to_website(user):
+        raise PermissionDenied("Публиковать отзывы на сайте может директор или администратор.")
     if post.status not in (PostStatus.PENDING, PostStatus.HIDDEN, PostStatus.REJECTED):
         raise ValidationError({"detail": "Одобрить можно публикацию на проверке, скрытую или отклонённую."})
     _moderated(post, user, PostStatus.APPROVED)
     Report.objects.filter(post=post, status=ReportStatus.OPEN).update(
         status=ReportStatus.DISMISSED, resolved_by=user, resolved_at=timezone.now())
     notify(post.author_student, NotificationKind.APPROVED, post=post, key=f"approved:{post.pk}:{int(post.moderated_at.timestamp())}")
+    if website:
+        publish_to_website(user, post, language)
     return post
 
 
@@ -365,39 +377,101 @@ def close_report(user, report_row: Report, status: str) -> Report:
 
 # ------------------------------------------------------------------ website testimonials
 
-def send_to_website(user, post: Post, language: str = "ru"):
-    """Hand an approved review to the website CMS (okurmenkids.com/testimonials)
-    as a DRAFT: first name + initial, course, text — no photo, no group, no
-    contacts. It appears on the site only after the CMS workflow publishes it."""
-    from apps.website.models import Testimonial, Workflow
+_KY_LETTERS = set("ңөүҢӨҮ")
 
-    if not scope.can_send_to_website(user):
-        raise PermissionDenied("Передавать отзывы на сайт может администрация.")
-    if post.category != Category.REVIEW or post.status != PostStatus.APPROVED or post.author_student_id is None:
-        raise ValidationError({"detail": "На сайт можно передать только опубликованный отзыв ученика."})
-    if not post.website_consent:
-        raise ValidationError({"detail": "Семья не разрешила показывать этот отзыв на сайте."})
-    if post.website_testimonial_id:
-        return post.website_testimonial
-    if language not in Testimonial.Language.values:
-        language = Testimonial.Language.RU
+
+def guess_language(text: str) -> str:
+    """ru / ky / en for the testimonial's `lang` attribute (the site shows every
+    language on every page; this only marks the text correctly)."""
+    letters = [ch for ch in text if ch.isalpha()]
+    if any(ch in _KY_LETTERS for ch in letters):
+        return "ky"
+    if letters and sum(1 for ch in letters if ch.isascii()) / len(letters) > 0.6:
+        return "en"
+    return "ru"
+
+
+def _testimonial_fields(post: Post, language: str | None) -> dict:
+    from apps.website.models import Testimonial
+
     student = post.author_student
     initial = f" {student.last_name[:1]}." if student.last_name else ""
     course = post.group.course.name if post.group_id else ""
-    testimonial = Testimonial.objects.create(
-        author_name=f"{student.first_name}{initial}, ученик Okurmen Kids"[:120],
-        author_role=Testimonial.Role.STUDENT, course_label=course[:120], text=post.text, language=language,
-        consent=True, status=Workflow.DRAFT, created_by=user,
-    )
-    post.website_testimonial = testimonial
-    post.save(update_fields=["website_testimonial", "updated_at"])
+    language = language if language in Testimonial.Language.values else guess_language(post.text)
+    return {
+        "author_name": f"{student.first_name}{initial}"[:120],
+        "author_role": Testimonial.Role.STUDENT,
+        "course_label": course[:120],
+        "text": post.text,
+        "language": language,
+        "consent": True,  # the family's explicit «yes» on this post (website_consent_at)
+    }
+
+
+def publish_to_website(user, post: Post, language: str | None = None):
+    """The administrator's approval puts an approved review on
+    okurmenkids.com/testimonials (RU / KY / EN pages) at once: one website
+    Testimonial per post (created once, updated after that — never a
+    duplicate), first name + initial, course, text; no photo, no group, no
+    surname. Only with the family's consent; only by those who may publish on
+    the website (website.cms.can_approve: administrator, director)."""
+    from apps.website.models import Testimonial, Workflow
+
+    if not scope.can_send_to_website(user):
+        raise PermissionDenied("Публиковать отзывы на сайте может директор или администратор.")
+    if post.category != Category.REVIEW or post.status != PostStatus.APPROVED or post.author_student_id is None:
+        raise ValidationError({"detail": "На сайт можно опубликовать только одобренный отзыв ученика."})
+    if not post.website_consent:
+        raise ValidationError({"detail": "Семья не разрешила показывать этот отзыв на сайте."})
+    now = timezone.now()
+    testimonial = post.website_testimonial if post.website_testimonial_id else Testimonial(created_by=user)
+    for name, value in _testimonial_fields(post, language).items():
+        setattr(testimonial, name, value)
+    if testimonial.status != Workflow.PUBLISHED or testimonial.published_at > now:
+        testimonial.published_at = now
+    testimonial.status, testimonial.reviewed_by = Workflow.PUBLISHED, user
+    testimonial.full_clean(exclude=["photo", "video_url"])
+    testimonial.save()  # website.signals clears the public cache: visible on the next request
+    if post.website_testimonial_id != testimonial.pk:
+        post.website_testimonial = testimonial
+        post.save(update_fields=["website_testimonial", "updated_at"])
     return testimonial
+
+
+# Kept for the first version's URL / callers.
+send_to_website = publish_to_website
+
+
+def withdraw_from_website(post: Post, user=None) -> bool:
+    """Take the post's testimonial off the website (archived, kept for history).
+    Called when the review stops being an approved, consented post: hidden,
+    rejected, edited (back to review), consent withdrawn, deleted — or by an
+    administrator. Returns whether something was published."""
+    from apps.website.models import Testimonial, Workflow
+
+    if not post.website_testimonial_id:
+        return False
+    testimonial = Testimonial.objects.filter(pk=post.website_testimonial_id).first()
+    if testimonial is None or testimonial.status == Workflow.ARCHIVED:
+        return False
+    was_public = testimonial.status == Workflow.PUBLISHED
+    testimonial.status = Workflow.ARCHIVED
+    if user is not None:
+        testimonial.reviewed_by = user
+    testimonial.save(update_fields=["status", "reviewed_by", "updated_at"])
+    return was_public
+
+
+def unpublish_from_website(user, post: Post) -> bool:
+    if not scope.can_send_to_website(user):
+        raise PermissionDenied("Снимать отзывы с сайта может директор или администратор.")
+    return withdraw_from_website(post, user)
 
 
 # ------------------------------------------------------------------ queries
 
 def annotate(qs, student: Student | None = None):
-    qs = qs.select_related("author_student__group", "group__course", "author", "moderated_by").prefetch_related("images")
+    qs = qs.select_related("author_student__group", "group__course", "author", "moderated_by", "website_testimonial").prefetch_related("images")
     qs = qs.annotate(
         likes=Count("reactions", distinct=True),
         comments_total=Count("comments", filter=Q(comments__status=CommentStatus.VISIBLE), distinct=True),

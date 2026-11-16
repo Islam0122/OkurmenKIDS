@@ -123,17 +123,20 @@ class PostView(_Staff):
 
 
 class ModerateView(_Staff):
-    """POST posts/<id>/<action>/: approve, reject {note}, hide {note}, pin {pinned}, to-website {language}."""
+    """POST posts/<id>/<action>/: approve {website?, language?}, reject {note}, hide {note}, pin {pinned},
+    to-website {language?} (publish on okurmenkids.com/testimonials), from-website (take it off)."""
 
     def post(self, request, post_id, action):
         post = self.post_for(post_id)
         user, data = request.user, request.data
         actions = {
-            "approve": lambda: services.approve(user, post),
+            "approve": lambda: services.approve(user, post, website=str(data.get("website", "")).lower() in ("1", "true"),
+                                                language=data.get("language") or None),
             "reject": lambda: services.reject(user, post, data.get("note", "")),
             "hide": lambda: services.hide(user, post, data.get("note", "")),
             "pin": lambda: services.pin(user, post, str(data.get("pinned", "true")).lower() != "false"),
-            "to-website": lambda: services.send_to_website(user, post, data.get("language") or "ru"),
+            "to-website": lambda: services.publish_to_website(user, post, data.get("language") or None),
+            "from-website": lambda: services.unpublish_from_website(user, post),
         }
         if action not in actions:
             raise Http404

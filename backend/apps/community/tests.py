@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 
+from django.test import override_settings
 from django.urls import reverse
 from PIL import Image
 from rest_framework.test import APIClient
@@ -322,31 +323,115 @@ class ProfileTests(CommunityBase):
         self.assertEqual(self.c_client.get(self.url("profile", self.c, other_id=self.a.pk)).status_code, 404)
 
 
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "testimonials-lifecycle"}},
+    PUBLIC_SITE_CACHE_SECONDS=120,
+)
 class WebsiteTests(CommunityBase):
-    def review(self, consent: bool):
-        return self.approve(self.publish(category="review", text="Мне очень нравится учиться в Okurmen Kids!",
-                                         website_consent="true" if consent else "false"))
+    """The whole review lifecycle as okurmenkids.com sees it: the public site
+    reads GET /api/v1/public/site/testimonials/ (cached like in production)."""
 
-    def test_review_with_family_consent_goes_to_the_cms_as_a_draft(self):
-        post = self.review(True)
-        response = self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/", {"language": "ru"})
+    PUBLIC = "/api/v1/public/site/testimonials/"
+
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+
+        cache.clear()
+        self.director = self.api(User.objects.create_user(username="dir", email="dir@x.kg", password="x",
+                                                          role=User.Role.DIRECTOR))
+
+    def review(self, consent: bool = True, text="Мне очень нравится учиться в Okurmen Kids!", client=None, student=None):
+        return self.publish(client, student, category="review", text=text, website_consent="true" if consent else "false")
+
+    def public(self, lang="ru"):
+        response = APIClient().get(self.PUBLIC, {"lang": lang, "page_size": 36})
+        self.assertEqual(response.status_code, 200)
+        return {row["text"]: row for row in response.data["results"]}
+
+    def test_submit_approve_and_it_is_on_the_site_in_every_language(self):
+        post = self.review()
+        self.assertEqual(self.public(), {})                                    # pending: not public
+        response = self.admin_api.post(f"{STAFF}/posts/{post.pk}/approve/", {"website": True}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
-        t = Testimonial.objects.get()
-        self.assertEqual((t.author_name, t.author_role, t.status, t.consent, bool(t.photo)),
-                         ("Айбек А., ученик Okurmen Kids", "student", Workflow.DRAFT, True, False))
-        self.assertEqual(t.text, post.text)
-        self.assertEqual(Testimonial.objects.public().count(), 0)   # not on the site until the CMS publishes it
-        # Idempotent.
+        self.assertTrue(response.data["website"]["is_public"])
+        for lang in ("ru", "ky", "en"):                                         # /testimonials, /ky/…, /en/…
+            row = self.public(lang)[post.text]
+            self.assertEqual((row["author_name"], row["author_role"], row["course"], row["photo"], row["language"]),
+                             ("Айбек А.", "student", "Prog", None, "ru"))
+        self.assertNotIn("Асанов", str(self.public()))                           # no surname
+        # Approving again / publishing again never duplicates the record.
         self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/")
         self.assertEqual(Testimonial.objects.count(), 1)
 
-    def test_without_consent_or_by_a_trainer_nothing_goes_out(self):
-        post = self.review(False)
-        self.assertEqual(self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 400)
-        consented = self.review(True)
-        self.assertEqual(self.teacher_api.post(f"{STAFF}/posts/{consented.pk}/to-website/").status_code, 403)
-        self.assertFalse(Testimonial.objects.exists())
+    def test_community_approval_alone_and_publishing_later(self):
+        post = self.approve(self.review())
+        self.assertEqual(self.public(), {})                                    # community only
+        self.assertEqual(self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 200)
+        self.assertIn(post.text, self.public())
+
+    def test_language_of_the_review(self):
+        post = self.approve(self.review(text="Эң жакшы академия, мугалимдер күчтүү!"))
+        self.director.post(f"{STAFF}/posts/{post.pk}/to-website/")
+        self.assertEqual(self.public()[post.text]["language"], "ky")
+
+    def test_rejected_hidden_edited_or_deleted_reviews_leave_the_site(self):
+        for action in ("reject", "hide", "edit", "delete"):
+            post = self.approve(self.review(text=f"Отличные уроки — {action}"))
+            self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/")
+            self.assertIn(post.text, self.public(), action)
+            if action in ("reject", "hide"):
+                self.assistant_api.post(f"{STAFF}/posts/{post.pk}/{action}/", {"note": "Не для сайта"})
+            elif action == "edit":
+                self.a_client.patch(self.url("post", self.a, post_id=post.pk),
+                                    {"text": "Новый текст", "category": "review", "website_consent": "true"}, format="multipart")
+            else:
+                self.a_client.delete(self.url("post", self.a, post_id=post.pk))
+            self.assertNotIn(post.text, self.public(), action)
+        # Kept for history in the CMS, archived — never deleted, never duplicated.
+        self.assertEqual(set(Testimonial.objects.values_list("status", flat=True)), {Workflow.ARCHIVED})
+
+    def test_unpublish_and_republish_reuse_the_same_record(self):
+        post = self.approve(self.review())
+        self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/")
+        self.admin_api.post(f"{STAFF}/posts/{post.pk}/from-website/")
+        self.assertNotIn(post.text, self.public())
+        self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/")
+        self.assertIn(post.text, self.public())
+        self.assertEqual(Testimonial.objects.count(), 1)
+
+    def test_nothing_unapproved_or_unconsented_goes_public(self):
+        pending = self.review()
+        self.assertEqual(self.admin_api.post(f"{STAFF}/posts/{pending.pk}/to-website/").status_code, 400)
+        no_consent = self.approve(self.review(consent=False, text="Без согласия"))
+        self.assertEqual(self.admin_api.post(f"{STAFF}/posts/{no_consent.pk}/to-website/").status_code, 400)
+        self.assertEqual(self.admin_api.post(f"{STAFF}/posts/{no_consent.pk}/approve/", {"website": True},
+                                             format="json").status_code, 400)
+        general = self.approve(self.publish(category="general", text="Обычный пост", website_consent="true"))
+        self.assertEqual(self.admin_api.post(f"{STAFF}/posts/{general.pk}/to-website/").status_code, 400)
+        self.assertEqual(self.public(), {})
+        self.assertFalse(Testimonial.objects.filter(status=Workflow.PUBLISHED).exists())
+
+    def test_only_those_who_publish_on_the_website(self):
+        post = self.approve(self.review())
+        for client in (self.teacher_api, self.assistant_api):
+            self.assertEqual(client.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 403)
+        ops = self.api(User.objects.create_user(username="ops", email="o@x.kg", password="x",
+                                                role=User.Role.OPERATIONS_DIRECTOR))
+        self.assertEqual(ops.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 403)
+        self.assertEqual(self.public(), {})
+        self.assertEqual(self.director.post(f"{STAFF}/posts/{post.pk}/to-website/").status_code, 200)
 
     def test_consent_only_for_reviews(self):
         post = self.publish(category="general", website_consent="true")
         self.assertFalse(post.website_consent)
+
+    def test_existing_cms_testimonials_are_untouched(self):
+        manual = Testimonial.objects.create(author_name="Айгуль, мама Эмира", text="Спасибо!", consent=True,
+                                            status=Workflow.PUBLISHED)
+        post = self.approve(self.review())
+        self.admin_api.post(f"{STAFF}/posts/{post.pk}/to-website/")
+        self.admin_api.post(f"{STAFF}/posts/{post.pk}/hide/", {"note": "x"})
+        manual.refresh_from_db()
+        self.assertEqual(manual.status, Workflow.PUBLISHED)
+        self.assertEqual(set(self.public()), {"Спасибо!"})

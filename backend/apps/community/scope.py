@@ -96,4 +96,7 @@ def can_publish_academy_wide(user) -> bool:
 
 
 def can_send_to_website(user) -> bool:
-    return _active(user) and (user.is_superuser or user.role in WEBSITE_EDITORS)
+    """The same people who may publish on the website itself (site CMS)."""
+    from apps.website.cms import can_approve
+
+    return _active(user) and can_approve(user)
