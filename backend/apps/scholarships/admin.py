@@ -25,6 +25,8 @@ from .models import (
     ScholarshipPeriod,
     ScholarshipRunLog,
     ScholarshipSubjectScore,
+    ScoreCopyItem,
+    ScoreCopyOperation,
     TrainerFeedback,
 )
 from .permissions import can_manage, can_pay
@@ -934,3 +936,26 @@ class TrainerFeedbackAdmin(admin.ModelAdmin):
 class ScholarshipRunLogAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = ("created_at", "action", "trigger", "result", "period", "award_date", "message", "triggered_by")
     list_filter = ("result", "action", "trigger")
+
+
+# ---------------------------------------------------------------------------
+# Bulk score copy — the audit log (read-only; copying and undo run in the LMS,
+# /app/scholarships/copy-scores, through services.score_copy)
+# ---------------------------------------------------------------------------
+
+class ScoreCopyItemInline(ReadOnlyAdminMixin, admin.TabularInline):
+    model = ScoreCopyItem
+    extra = 0
+    fields = ("student", "teacher", "action", "before", "after", "undo_result", "feedback")
+    readonly_fields = fields
+    can_delete = False
+
+
+@admin.register(ScoreCopyOperation)
+class ScoreCopyOperationAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("created_at", "group_name", "source_subject_name", "target_subject_name", "target_period",
+                    "copied_count", "overwritten_count", "skipped_count", "status", "created_by")
+    list_filter = ("status", "target_period")
+    search_fields = ("group_name", "source_subject_name", "target_subject_name", "operation_id")
+    readonly_fields = [f.name for f in ScoreCopyOperation._meta.fields]
+    inlines = [ScoreCopyItemInline]

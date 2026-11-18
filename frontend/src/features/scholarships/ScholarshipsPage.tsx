@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Award, CheckCircle2, ClipboardList, RefreshCw, Users } from 'lucide-react'
+import { Award, CheckCircle2, ClipboardCopy, ClipboardList, RefreshCw, Users } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
@@ -310,6 +311,7 @@ function AdminRanking({ period }: { period: ScholarshipPeriod }) {
 export function ScholarshipsPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const navigate = useNavigate()
   const { data, isPending, isError, refetch } = useScholarshipPeriods()
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
@@ -325,6 +327,11 @@ export function ScholarshipsPage() {
             ? 'Ежемесячный рейтинг студентов по всем предметам'
             : 'Оценки ваших студентов для стипендиального рейтинга'
         }
+        actions={isAdmin ? (
+          <Button variant="secondary" onClick={() => navigate('/app/scholarships/copy-scores')}>
+            <ClipboardCopy className="size-4" aria-hidden />Копировать оценки между предметами
+          </Button>
+        ) : undefined}
       />
       {isPending ? <LoadingState /> : null}
       {isError ? <ErrorState onRetry={() => void refetch()} /> : null}

@@ -706,3 +706,108 @@ class ScholarshipRunLog(models.Model):
 
     def __str__(self):
         return f"{self.get_action_display()} — {self.get_result_display()} ({self.created_at:%d.%m.%Y %H:%M})"
+
+
+# ---------------------------------------------------------------------------
+# Bulk score copy between subjects (services.score_copy)
+# ---------------------------------------------------------------------------
+
+class ScoreCopyOperation(models.Model):
+    """One bulk copy of trainer feedback (TrainerFeedback) from one subject /
+    period to another for one group — the audit record and the handle for
+    undoing it. Every changed row is kept in ScoreCopyItem with its values
+    before and after, so an undo restores exactly what was there and never
+    touches a row that was edited by hand afterwards."""
+
+    class Status(models.TextChoices):
+        APPLIED = "applied", "Применено"
+        REVERTED = "reverted", "Отменено"
+        PARTIALLY_REVERTED = "partially_reverted", "Отменено частично"
+
+    # Client-generated idempotency key: a retried request (double click,
+    # network retry) returns the same operation instead of copying twice.
+    operation_id = models.UUIDField(unique=True, editable=False, verbose_name="Идентификатор операции")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.APPLIED, db_index=True,
+                              verbose_name="Статус")
+
+    group = models.ForeignKey("academy.Group", on_delete=models.SET_NULL, null=True, related_name="+",
+                              verbose_name="Группа")
+    group_name = models.CharField(max_length=150, verbose_name="Группа (название)")
+    source_subject = models.ForeignKey("users.Subject", on_delete=models.SET_NULL, null=True, related_name="+",
+                                       verbose_name="Предмет-источник")
+    source_subject_name = models.CharField(max_length=100, verbose_name="Предмет-источник (название)")
+    target_subject = models.ForeignKey("users.Subject", on_delete=models.SET_NULL, null=True, related_name="+",
+                                       verbose_name="Целевой предмет")
+    target_subject_name = models.CharField(max_length=100, verbose_name="Целевой предмет (название)")
+    source_period = models.ForeignKey(ScholarshipPeriod, on_delete=models.SET_NULL, null=True, related_name="+",
+                                      verbose_name="Период-источник")
+    target_period = models.ForeignKey(ScholarshipPeriod, on_delete=models.SET_NULL, null=True, related_name="+",
+                                      verbose_name="Целевой период")
+    # mode, student_ids, conflict policy, copy_comment, chosen trainers.
+    options = models.JSONField(default=dict, blank=True, verbose_name="Параметры")
+
+    copied_count = models.PositiveIntegerField(default=0, verbose_name="Скопировано (новые)")
+    overwritten_count = models.PositiveIntegerField(default=0, verbose_name="Перезаписано")
+    skipped_count = models.PositiveIntegerField(default=0, verbose_name="Пропущено")
+    # Per-reason breakdown of the skipped rows (empty, existing, unmatched…).
+    skipped_details = models.JSONField(default=dict, blank=True, verbose_name="Причины пропуска")
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+",
+                                   verbose_name="Администратор")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Время")
+    reverted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="+", verbose_name="Отменил")
+    reverted_at = models.DateTimeField(null=True, blank=True, verbose_name="Время отмены")
+    revert_details = models.JSONField(default=dict, blank=True, verbose_name="Итог отмены")
+
+    class Meta:
+        verbose_name = "Копирование оценок"
+        verbose_name_plural = "Копирование оценок между предметами"
+        ordering = ["-created_at", "-id"]
+        permissions = [("copy_scores", "Может копировать оценки тренеров между предметами")]
+
+    def __str__(self):
+        return f"{self.group_name}: {self.source_subject_name} → {self.target_subject_name} ({self.created_at:%d.%m.%Y %H:%M})"
+
+
+class ScoreCopyItem(models.Model):
+    """One TrainerFeedback row a copy created or overwrote."""
+
+    class Action(models.TextChoices):
+        CREATED = "created", "Создана"
+        OVERWRITTEN = "overwritten", "Перезаписана"
+
+    class UndoResult(models.TextChoices):
+        PENDING = "", "—"
+        RESTORED = "restored", "Восстановлена"
+        DELETED = "deleted", "Удалена (была создана копированием)"
+        SKIPPED_CHANGED = "skipped_changed", "Не тронута: изменена после копирования"
+        SKIPPED_MISSING = "skipped_missing", "Не тронута: оценка уже удалена"
+
+    operation = models.ForeignKey(ScoreCopyOperation, on_delete=models.CASCADE, related_name="items",
+                                  verbose_name="Операция")
+    feedback = models.ForeignKey(TrainerFeedback, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+                                 verbose_name="Оценка тренера")
+    student = models.ForeignKey("academy.Student", on_delete=models.CASCADE, related_name="+", verbose_name="Студент")
+    teacher = models.ForeignKey("users.Teacher", on_delete=models.SET_NULL, null=True, related_name="+",
+                                verbose_name="Тренер (целевой)")
+    source_feedback = models.ForeignKey(TrainerFeedback, on_delete=models.SET_NULL, null=True, blank=True,
+                                        related_name="+", verbose_name="Оценка-источник")
+    action = models.CharField(max_length=12, choices=Action.choices, verbose_name="Действие")
+    # {progress, participation, discipline, understanding, comment}; `before` is null for a created row.
+    before = models.JSONField(null=True, blank=True, verbose_name="Было")
+    after = models.JSONField(verbose_name="Стало")
+    undo_result = models.CharField(max_length=20, choices=UndoResult.choices, blank=True, default="",
+                                   verbose_name="Результат отмены")
+
+    class Meta:
+        verbose_name = "Строка копирования"
+        verbose_name_plural = "Строки копирования"
+        ordering = ["operation", "id"]
+        constraints = [
+            # One student can be written only once per operation (duplicate prevention).
+            models.UniqueConstraint(fields=["operation", "student"], name="unique_score_copy_item_student"),
+        ]
+
+    def __str__(self):
+        return f"{self.operation_id}: {self.student_id} ({self.get_action_display()})"
