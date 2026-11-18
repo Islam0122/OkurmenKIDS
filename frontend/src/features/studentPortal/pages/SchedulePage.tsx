@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
+import { ArrowRight, CalendarRange, RotateCcw } from 'lucide-react'
 
 import { studentPortalApi } from '@/api/studentPortal'
 import { cn } from '@/utils/cn'
@@ -8,150 +9,242 @@ import type { PortalLesson } from '@/types/studentPortal'
 
 import { PORTAL_KEY, usePortal } from '../context'
 import { usePortalI18n } from '../i18n'
-import { Empty, LessonRow, LoadError, Loading, PCard, PageTitle, isoDate } from '../ui'
+import { LoadError, Skeleton, isoDate } from '../ui'
+import { LessonCard } from '../schedule/LessonCard'
+import {
+  EmptyState, GHOST_BTN, MonthGrid, PRIMARY_BTN, ScheduleHeader, ScheduleToolbar, StatCards, StatCardsSkeleton, WeekStrip,
+} from '../schedule/ScheduleParts'
+import { TodayTimeline } from '../schedule/TodayTimeline'
+import {
+  addDays, byStart, daysBetween, groupByDay, minutesOf, mondayOf, nowMinutes, range, stats, useNow, type View,
+} from '../schedule/model'
 
-type View = 'week' | 'month'
+/**
+ * «Моё расписание» (/student/schedule). One request per visible period —
+ * GET /portal/students/:id/schedule/?start&end (apps.portal ScheduleView,
+ * scoped to the family's own children by apps.portal.access) — plus the
+ * current week for the header and «Сегодняшние занятия» (the same cached
+ * query whenever the current week is on screen). Statistics are counted from
+ * those lessons; nothing is invented.
+ */
 
-function mondayOf(d: Date) {
-  const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  copy.setDate(copy.getDate() - ((copy.getDay() + 6) % 7))
-  return copy
-}
-
-function addDays(d: Date, n: number) {
-  const copy = new Date(d)
-  copy.setDate(copy.getDate() + n)
-  return copy
-}
-
-function range(view: View, anchor: Date): [Date, Date] {
-  if (view === 'week') {
-    const start = mondayOf(anchor)
-    return [start, addDays(start, 6)]
+function scheduleQuery(studentId: number, start: Date, end: Date) {
+  const startIso = isoDate(start)
+  const endIso = isoDate(end)
+  return {
+    queryKey: [...PORTAL_KEY, 'schedule', studentId, startIso, endIso],
+    queryFn: () => studentPortalApi.schedule(studentId, startIso, endIso),
   }
-  // The month grid: Monday of the first week → Sunday of the last.
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
-  const last = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
-  return [mondayOf(first), addDays(mondayOf(last), 6)]
-}
-
-const DOT: Record<string, string> = {
-  cancelled: 'bg-danger',
-  completed: 'bg-ink-muted',
-  scheduled: 'bg-brand-500',
-  in_progress: 'bg-brand-500',
 }
 
 export function StudentSchedulePage() {
   const { student } = usePortal()
-  const { t, month, weekday, date } = usePortalI18n()
+  const { t, month, weekday, dayMonth } = usePortalI18n()
+  const now = useNow()
+  const todayIso = isoDate(now)
+
   const [view, setView] = useState<View>('week')
   const [anchor, setAnchor] = useState(() => new Date())
   const [picked, setPicked] = useState<string | null>(null)
+  const direction = useRef<1 | -1>(1)
+
   const [start, end] = range(view, anchor)
   const startIso = isoDate(start)
   const endIso = isoDate(end)
-  const todayIso = isoDate(new Date())
+  const [weekStart, weekEnd] = range('week', now)
 
-  const { data, isPending, isError, refetch } = useQuery({
-    queryKey: [...PORTAL_KEY, 'schedule', student.id, startIso, endIso],
-    queryFn: () => studentPortalApi.schedule(student.id, startIso, endIso),
-  })
-  const byDay = useMemo(() => {
-    const map = new Map<string, PortalLesson[]>()
-    for (const lesson of data?.lessons ?? []) map.set(lesson.date, [...(map.get(lesson.date) ?? []), lesson])
-    return map
-  }, [data])
+  const period = useQuery({ ...scheduleQuery(student.id, start, end), placeholderData: keepPreviousData })
+  const week = useQuery(scheduleQuery(student.id, weekStart, weekEnd))
 
-  const shift = (direction: -1 | 1) => {
+  const lessons = useMemo(() => period.data?.lessons ?? [], [period.data])
+  const byDay = useMemo(() => groupByDay(lessons), [lessons])
+  const inPeriod = useMemo(
+    () => (view === 'month' ? lessons.filter((l) => Number(l.date.slice(5, 7)) === anchor.getMonth() + 1) : lessons),
+    [lessons, view, anchor],
+  )
+  const periodStats = useMemo(() => stats(inPeriod), [inPeriod])
+
+  const weekLessons = useMemo(() => [...(week.data?.lessons ?? [])].sort(byStart), [week.data])
+  const weekStats = useMemo(() => (week.data ? stats(weekLessons) : null), [week.data, weekLessons])
+  const todayLessons = weekLessons.filter((l) => l.date === todayIso)
+  const live = todayLessons.find((l) => l.status === 'in_progress') ?? null
+  const next = weekLessons.find((l) => l.status === 'scheduled'
+    && (l.date > todayIso || (l.date === todayIso && (minutesOf(l.start) ?? 0) > nowMinutes(now)))) ?? null
+
+  const isCurrent = view === 'week'
+    ? startIso === isoDate(mondayOf(now))
+    : anchor.getFullYear() === now.getFullYear() && anchor.getMonth() === now.getMonth()
+
+  const changeView = (v: View) => {
+    if (v === view) return
+    setView(v)
     setPicked(null)
-    setAnchor((a) => (view === 'week' ? addDays(a, 7 * direction) : new Date(a.getFullYear(), a.getMonth() + direction, 1)))
   }
+  const shift = (d: -1 | 1) => {
+    direction.current = d
+    setPicked(null)
+    setAnchor((a) => (view === 'week' ? addDays(a, 7 * d) : new Date(a.getFullYear(), a.getMonth() + d, 1)))
+  }
+  const goToday = () => {
+    direction.current = anchor < now ? 1 : -1
+    setAnchor(new Date())
+    setPicked(view === 'month' ? todayIso : null)
+  }
+
+  const sameMonth = startIso.slice(0, 7) === endIso.slice(0, 7)
   const title = view === 'week'
-    ? `${date(startIso)} – ${date(endIso, true)}`
+    ? `${sameMonth ? Number(startIso.slice(8)) : dayMonth(startIso)} – ${dayMonth(endIso)}`
     : `${month(anchor.getMonth() + 1)} ${anchor.getFullYear()}`
-  const days = Array.from({ length: Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1 }, (_, i) => addDays(start, i))
+  const periodHint = view === 'week'
+    ? t(isCurrent ? 'schedule.hint.week' : 'schedule.hint.otherWeek')
+    : t('schedule.hint.month', { month: month(anchor.getMonth() + 1).toLowerCase() })
+  const days = daysBetween(start, end)
+
+  /** The nearest day of the period with lessons, looking forward from `from` first. */
+  const nearest = (from: string) => {
+    const withLessons = days.map(isoDate).filter((iso) => (byDay.get(iso)?.length ?? 0) > 0)
+    return withLessons.find((iso) => iso > from) ?? [...withLessons].reverse().find((iso) => iso < from) ?? null
+  }
+
+  const groupLine = [student.group?.name, student.course?.name, student.branch?.name].filter(Boolean).join(' · ')
+  const contentKey = `${view}:${period.data?.start ?? startIso}`
+
+  const periodEmpty = (
+    <EmptyState illustration
+      title={view === 'week' ? t('schedule.weekEmpty') : t('schedule.monthEmpty')}
+      hint={t('schedule.periodEmptyHint')}
+      actions={(
+        <>
+          <button type="button" onClick={() => shift(1)} className={PRIMARY_BTN}>
+            {view === 'week' ? t('schedule.nextWeek') : t('schedule.nextMonth')}<ArrowRight className="size-4" aria-hidden />
+          </button>
+          {!isCurrent ? <button type="button" onClick={goToday} className={GHOST_BTN}><RotateCcw className="size-4" aria-hidden />{t('schedule.current')}</button> : null}
+        </>
+      )} />
+  )
+
+  const dayEmpty = (iso: string, onShowAll?: () => void) => {
+    const target = nearest(iso)
+    return (
+      <EmptyState title={t('schedule.dayEmpty')} hint={t('schedule.dayEmptyHint')}
+        actions={(
+          <>
+            {target ? (
+              <button type="button" onClick={() => setPicked(target)} className={PRIMARY_BTN}>
+                {t('schedule.goNearest')}<ArrowRight className="size-4" aria-hidden />
+              </button>
+            ) : null}
+            {onShowAll ? <button type="button" onClick={onShowAll} className={GHOST_BTN}><CalendarRange className="size-4" aria-hidden />{t('schedule.showWeek')}</button> : null}
+          </>
+        )} />
+    )
+  }
+
+  const dayHeading = (iso: string, count: number) => {
+    const d = (new Date(`${iso}T00:00:00`).getDay() + 6) % 7
+    const today = iso === todayIso
+    return (
+      <h3 className="mb-2.5 flex items-center gap-2 px-1 text-sm font-bold text-ink">
+        <span className={cn(today && 'text-brand-700')}>{weekday(d, true)}</span>
+        <span className="font-semibold text-ink-muted">{dayMonth(iso)}</span>
+        {today ? <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-bold text-white">{t('common.today')}</span> : null}
+        <span className="ml-auto shrink-0 text-xs font-semibold text-ink-muted">{t('common.lessonsCount', { n: count })}</span>
+      </h3>
+    )
+  }
+
+  const renderList = (list: PortalLesson[]) => (
+    <div className="grid gap-3 xl:grid-cols-2">
+      {list.map((l, i) => (
+        <motion.div key={l.id} className="min-w-0" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: Math.min(i, 6) * 0.03 }}>
+          <LessonCard lesson={l} />
+        </motion.div>
+      ))}
+    </div>
+  )
+
+  const weekContent = () => {
+    if (lessons.length === 0) return periodEmpty
+    if (picked) {
+      const list = byDay.get(picked) ?? []
+      return list.length ? <div>{dayHeading(picked, list.length)}{renderList(list)}</div> : dayEmpty(picked, () => setPicked(null))
+    }
+    return (
+      <div className="space-y-6">
+        {days.map((day) => {
+          const iso = isoDate(day)
+          const list = byDay.get(iso) ?? []
+          return list.length ? <section key={iso}>{dayHeading(iso, list.length)}{renderList(list)}</section> : null
+        })}
+      </div>
+    )
+  }
+
+  const anchorMonth = anchor.getMonth() + 1
+  const monthPicked = picked
+    ?? (Number(todayIso.slice(5, 7)) === anchorMonth && Number(todayIso.slice(0, 4)) === anchor.getFullYear() ? todayIso : null)
+    ?? days.map(isoDate).find((iso) => Number(iso.slice(5, 7)) === anchorMonth && byDay.has(iso))
+    ?? isoDate(new Date(anchor.getFullYear(), anchor.getMonth(), 1))
+
+  const monthContent = () => {
+    const list = byDay.get(monthPicked) ?? []
+    return (
+      <div className="space-y-5">
+        <MonthGrid days={days} byDay={byDay} picked={monthPicked} onPick={setPicked} todayIso={todayIso} month={anchor.getMonth()} />
+        {inPeriod.length === 0 ? periodEmpty : list.length ? (
+          <div>{dayHeading(monthPicked, list.length)}{renderList(list)}</div>
+        ) : dayEmpty(monthPicked)}
+      </div>
+    )
+  }
 
   return (
-    <div>
-      <PageTitle title={t('schedule.title')} subtitle={`${student.group?.name ?? ''}${student.branch ? ` · ${student.branch.name}` : ''}`} />
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-xl bg-surface p-1 shadow-sm ring-1 ring-border/70" role="group">
-          {(['week', 'month'] as View[]).map((v) => (
-            <button key={v} type="button" onClick={() => { setView(v); setPicked(null) }} aria-pressed={view === v}
-              className={cn('rounded-lg px-3.5 py-1.5 text-sm font-medium', view === v ? 'bg-brand-500 text-white' : 'text-ink-secondary hover:text-ink')}>
-              {t(`schedule.${v}`)}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => shift(-1)} aria-label={t('schedule.prev')} className="rounded-lg p-2 text-ink-secondary hover:bg-surface hover:text-ink"><ChevronLeft className="size-5" /></button>
-          <span className="min-w-36 text-center text-sm font-semibold text-ink">{title}</span>
-          <button type="button" onClick={() => shift(1)} aria-label={t('schedule.next')} className="rounded-lg p-2 text-ink-secondary hover:bg-surface hover:text-ink"><ChevronRight className="size-5" /></button>
-          <button type="button" onClick={() => { setAnchor(new Date()); setPicked(null) }} className="ml-1 rounded-lg border border-brand-200 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50">
-            {t('schedule.current')}
-          </button>
+    <MotionConfig reducedMotion="user">
+      <ScheduleHeader now={now} week={weekStats} next={next} live={live} loading={week.isPending} groupLine={groupLine} />
+
+      {period.isPending ? <StatCardsSkeleton /> : period.isError ? null : <StatCards stats={periodStats} periodHint={periodHint} />}
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
+        <aside className="min-w-0 lg:order-last">
+          <div className="lg:sticky lg:top-6">
+            {week.isError ? <LoadError onRetry={() => void week.refetch()} /> : (
+              <TodayTimeline lessons={todayLessons} loading={week.isPending} now={now} />
+            )}
+          </div>
+        </aside>
+
+        <div className="min-w-0">
+          <ScheduleToolbar view={view} onView={changeView} title={title} onShift={shift} onToday={goToday} isCurrent={isCurrent} />
+          {view === 'week' && !period.isError ? (
+            <WeekStrip days={days} byDay={byDay} picked={picked} onPick={setPicked} todayIso={todayIso} />
+          ) : null}
+
+          {period.isPending ? (
+            <div className="space-y-3" role="status" aria-label={t('common.loading')}>
+              <span className="sr-only">{t('common.loading')}</span>
+              <Skeleton className="h-5 w-48" />
+              <div className="grid gap-3 xl:grid-cols-2"><Skeleton className="h-44 rounded-[18px]" /><Skeleton className="h-44 rounded-[18px]" /></div>
+              <Skeleton className="mt-4 h-5 w-40" />
+              <Skeleton className="h-44 rounded-[18px]" />
+            </div>
+          ) : period.isError ? <LoadError onRetry={() => void period.refetch()} /> : (
+            <div className={cn('overflow-x-clip transition-opacity duration-200', period.isPlaceholderData && 'pointer-events-none opacity-60')} aria-busy={period.isPlaceholderData}>
+              <AnimatePresence mode="wait" initial={false} custom={direction.current}>
+                <motion.div key={contentKey} custom={direction.current}
+                  variants={{
+                    enter: (d: number) => ({ opacity: 0, x: 24 * d }),
+                    center: { opacity: 1, x: 0 },
+                    exit: (d: number) => ({ opacity: 0, x: -24 * d }),
+                  }}
+                  initial="enter" animate="center" exit="exit" transition={{ duration: 0.22, ease: [0.2, 0.7, 0.2, 1] }}>
+                  {view === 'week' ? weekContent() : monthContent()}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       </div>
-
-      {isPending ? <Loading /> : isError ? <LoadError onRetry={() => void refetch()} /> : view === 'week' ? (
-        <div className="space-y-3">
-          {data.lessons.length === 0 ? <Empty>{t('schedule.empty')}</Empty> : days.map((day, i) => {
-            const iso = isoDate(day)
-            const lessons = byDay.get(iso) ?? []
-            if (!lessons.length) return null
-            return (
-              <PCard key={iso} title={
-                <span className={cn(iso === todayIso && 'text-brand-700')}>
-                  {weekday(i, true)}, {date(iso)}{iso === todayIso ? ` · ${t('common.today')}` : ''}
-                </span>
-              }>
-                <div className="space-y-2">{lessons.map((l) => <LessonRow key={l.id} lesson={l} />)}</div>
-              </PCard>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-          <PCard padded={false}>
-            <div className="grid grid-cols-7 border-b border-border/70 px-2 pt-3 text-center text-xs font-medium text-ink-muted">
-              {Array.from({ length: 7 }, (_, i) => <span key={i} className="pb-2">{weekday(i)}</span>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1 p-2">
-              {days.map((day) => {
-                const iso = isoDate(day)
-                const lessons = byDay.get(iso) ?? []
-                const inMonth = day.getMonth() === anchor.getMonth()
-                return (
-                  <button key={iso} type="button" onClick={() => setPicked(iso)} aria-label={`${date(iso, true)}: ${lessons.length}`}
-                    className={cn('flex min-h-14 flex-col items-center rounded-xl p-1.5 text-sm transition-colors sm:min-h-20 sm:items-start',
-                      inMonth ? 'text-ink' : 'text-ink-muted/60', picked === iso ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-surface-hover')}>
-                    <span className={cn('flex size-7 items-center justify-center rounded-full tabular-nums', iso === todayIso && 'bg-brand-500 font-semibold text-white')}>{day.getDate()}</span>
-                    <span className="mt-1 flex flex-wrap justify-center gap-1 sm:hidden">
-                      {lessons.slice(0, 3).map((l) => <span key={l.id} className={cn('size-1.5 rounded-full', DOT[l.status])} />)}
-                    </span>
-                    <span className="mt-1 hidden w-full space-y-0.5 sm:block">
-                      {lessons.slice(0, 2).map((l) => (
-                        <span key={l.id} className={cn('block truncate rounded px-1 text-left text-[11px]',
-                          l.status === 'cancelled' ? 'bg-danger-soft text-danger line-through' : 'bg-brand-50 text-brand-700')}>
-                          {l.start} {l.subject?.name ?? ''}
-                        </span>
-                      ))}
-                      {lessons.length > 2 ? <span className="block text-[11px] text-ink-muted">+{lessons.length - 2}</span> : null}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </PCard>
-          <PCard title={picked ? date(picked, true) : t('common.today')}>
-            {(() => {
-              const lessons = byDay.get(picked ?? todayIso) ?? []
-              return lessons.length ? <div className="space-y-2">{lessons.map((l) => <LessonRow key={l.id} lesson={l} />)}</div> : <Empty>{t('schedule.empty')}</Empty>
-            })()}
-          </PCard>
-        </div>
-      )}
-    </div>
+    </MotionConfig>
   )
 }

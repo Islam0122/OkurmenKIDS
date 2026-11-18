@@ -198,6 +198,52 @@ const ru = {
   'schedule.group': 'Группа',
   'schedule.branch': 'Филиал',
   'schedule.time': 'Время',
+  'schedule.myTitle': 'Моё расписание',
+  'schedule.subtitle': 'Следи за своими уроками и планируй обучение.',
+  'schedule.weekProgress': 'Прогресс недели',
+  'schedule.weekProgressValue': '{done} из {total} проведено',
+  'schedule.nextLesson': 'Следующий урок',
+  'schedule.liveNow': 'Сейчас идёт',
+  'schedule.noMoreThisWeek': 'На этой неделе больше занятий нет',
+  'schedule.dayAt': '{day}, {time}',
+  'schedule.leftThisWeek': 'Ещё {n} на этой неделе',
+  'schedule.stat.total': 'Всего уроков',
+  'schedule.stat.completed': 'Проведено',
+  'schedule.stat.upcoming': 'Предстоит',
+  'schedule.stat.missed': 'Пропуски',
+  'schedule.hint.week': 'за эту неделю',
+  'schedule.hint.otherWeek': 'за выбранную неделю',
+  'schedule.hint.month': 'за {month}',
+  'schedule.hint.cancelled': 'Отменено: {n}',
+  'schedule.hint.completed': '{p}% от всех уроков',
+  'schedule.hint.upcoming': 'ещё впереди',
+  'schedule.hint.missed': 'из {n} проведённых',
+  'schedule.hint.noMissed': 'Ни одного пропуска',
+  'schedule.statsLabel': 'Итоги периода',
+  'schedule.today': 'Сегодняшние занятия',
+  'schedule.todayEmpty': 'Сегодня занятий нет',
+  'schedule.todayEmptyHint': 'Отдохни и подготовься к следующему уроку.',
+  'schedule.now': 'Сейчас {time}',
+  'schedule.startsIn': 'через {n} мин',
+  'schedule.startsInH': 'через {h} ч {m} мин',
+  'schedule.dayDone': 'Все занятия на сегодня завершены',
+  'schedule.dayEmpty': 'На этот день занятий нет',
+  'schedule.dayEmptyHint': 'Выбери другой день или перейди к ближайшему занятию.',
+  'schedule.goNearest': 'Ближайший день с уроками',
+  'schedule.showWeek': 'Вся неделя',
+  'schedule.weekEmpty': 'На этой неделе занятий нет',
+  'schedule.monthEmpty': 'В этом месяце занятий нет',
+  'schedule.periodEmptyHint': 'Посмотри соседний период или вернись к сегодняшнему дню.',
+  'schedule.nextWeek': 'Следующая неделя',
+  'schedule.nextMonth': 'Следующий месяц',
+  'schedule.noLessons': 'Нет занятий',
+  'schedule.status.missed': 'Пропущено',
+  'schedule.excused': 'по уважительной причине',
+  'schedule.minutes': '{n} мин',
+  'schedule.reason': 'Причина: {reason}',
+  'schedule.viewLabel': 'Вид расписания',
+  'schedule.pickDay': 'Выбрать день',
+  'schedule.lessonsOfDay': '{date}: занятий — {n}',
 
   'hw.title': 'Домашние задания',
   'hw.filter.open': 'Открытые',
@@ -780,6 +826,52 @@ const ky: Record<Key, string> = {
   'schedule.group': 'Топ',
   'schedule.branch': 'Филиал',
   'schedule.time': 'Убакыт',
+  'schedule.myTitle': 'Менин сабак тартибим',
+  'schedule.subtitle': 'Сабактарыңды көзөмөлдөп, окууңду пландап тур.',
+  'schedule.weekProgress': 'Аптанын прогресси',
+  'schedule.weekProgressValue': '{total} сабактын {done} өттү',
+  'schedule.nextLesson': 'Кийинки сабак',
+  'schedule.liveNow': 'Азыр жүрүп жатат',
+  'schedule.noMoreThisWeek': 'Бул аптада дагы сабак жок',
+  'schedule.dayAt': '{day}, {time}',
+  'schedule.leftThisWeek': 'Бул аптада дагы {n}',
+  'schedule.stat.total': 'Бардык сабактар',
+  'schedule.stat.completed': 'Өттү',
+  'schedule.stat.upcoming': 'Алдыда',
+  'schedule.stat.missed': 'Калтырылган',
+  'schedule.hint.week': 'ушул аптада',
+  'schedule.hint.otherWeek': 'тандалган аптада',
+  'schedule.hint.month': '{month} ичинде',
+  'schedule.hint.cancelled': 'Жокко чыгарылды: {n}',
+  'schedule.hint.completed': 'бардык сабактын {p}%',
+  'schedule.hint.upcoming': 'дагы алдыда',
+  'schedule.hint.missed': 'өткөн {n} сабактан',
+  'schedule.hint.noMissed': 'Бир да сабак калтырылган жок',
+  'schedule.statsLabel': 'Мезгилдин жыйынтыгы',
+  'schedule.today': 'Бүгүнкү сабактар',
+  'schedule.todayEmpty': 'Бүгүн сабак жок',
+  'schedule.todayEmptyHint': 'Эс алып, кийинки сабакка даярдан.',
+  'schedule.now': 'Азыр {time}',
+  'schedule.startsIn': '{n} мүнөттөн кийин',
+  'schedule.startsInH': '{h} саат {m} мүнөттөн кийин',
+  'schedule.dayDone': 'Бүгүнкү бардык сабактар бүттү',
+  'schedule.dayEmpty': 'Бул күнү сабак жок',
+  'schedule.dayEmptyHint': 'Башка күндү танда же жакынкы сабакка өт.',
+  'schedule.goNearest': 'Сабагы бар жакынкы күн',
+  'schedule.showWeek': 'Бүт апта',
+  'schedule.weekEmpty': 'Бул аптада сабак жок',
+  'schedule.monthEmpty': 'Бул айда сабак жок',
+  'schedule.periodEmptyHint': 'Коңшу мезгилди карап көр же бүгүнкү күнгө кайт.',
+  'schedule.nextWeek': 'Кийинки апта',
+  'schedule.nextMonth': 'Кийинки ай',
+  'schedule.noLessons': 'Сабак жок',
+  'schedule.status.missed': 'Калтырылды',
+  'schedule.excused': 'жүйөлүү себеп менен',
+  'schedule.minutes': '{n} мүн',
+  'schedule.reason': 'Себеби: {reason}',
+  'schedule.viewLabel': 'Сабак тартибинин түрү',
+  'schedule.pickDay': 'Күндү тандоо',
+  'schedule.lessonsOfDay': '{date}: сабак — {n}',
 
   'hw.title': 'Үй тапшырмалары',
   'hw.filter.open': 'Ачык',
@@ -1180,6 +1272,10 @@ const MONTHS: Record<Lang, string[]> = {
   ru: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
   ky: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
 }
+const MONTHS_GEN: Record<Lang, string[]> = {
+  ru: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+  ky: ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'],
+}
 const WEEKDAYS: Record<Lang, string[]> = {
   ru: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
   ky: ['Дш', 'Шш', 'Шр', 'Бш', 'Жм', 'Иш', 'Жк'],
@@ -1199,6 +1295,8 @@ interface I18nValue {
   weekday: (mondayIndex: number, full?: boolean) => string
   /** dd.MM or «5 ноября»-like short date, locale-neutral. */
   date: (iso: string | null | undefined, withYear?: boolean) => string
+  /** «18 ноября» / «18-ноябрь». */
+  dayMonth: (iso: string) => string
 }
 
 const I18nContext = createContext<I18nValue | null>(null)
@@ -1240,6 +1338,11 @@ export function PortalI18nProvider({ children }: { children: ReactNode }) {
       if (!iso) return '—'
       const [y, m, d] = iso.slice(0, 10).split('-')
       return withYear ? `${d}.${m}.${y}` : `${d}.${m}`
+    },
+    dayMonth: (iso) => {
+      const [, m, d] = iso.slice(0, 10).split('-').map(Number)
+      const name = MONTHS_GEN[lang][m - 1] ?? ''
+      return lang === 'ky' ? `${d}-${name}` : `${d} ${name}`
     },
   }), [lang, setLang])
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
