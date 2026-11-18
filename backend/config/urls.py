@@ -34,6 +34,8 @@ urlpatterns = [
     path("api/v1/", include("apps.worklog.urls")),
     # Проекты студентов — projects/, projects/{id}/images/ (см. apps.projects).
     path("api/v1/", include("apps.projects.urls")),
+    # Массовое копирование посещаемости / ДЗ / оценок (см. apps.bulk_copy).
+    path("api/v1/bulk-copy/", include("apps.bulk_copy.urls")),
     # Публичная галерея опубликованных проектов (без входа, только GET) — apps.projects.public.
     path("api/v1/public/projects/", include("apps.projects.public_urls")),
     # Публичные новости академии (без входа, только GET) — apps.academy_news.

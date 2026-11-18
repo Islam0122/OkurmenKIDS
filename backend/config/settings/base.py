@@ -51,6 +51,7 @@ LOCAL_APPS = [
     "apps.news.apps.NewsConfig",
     "apps.feedback.apps.FeedbackConfig",
     "apps.scholarships.apps.ScholarshipsConfig",
+    "apps.bulk_copy.apps.BulkCopyConfig",
     "apps.testing.apps.TestingConfig",
     "apps.training.apps.TrainingConfig",
     "apps.worklog.apps.WorklogConfig",

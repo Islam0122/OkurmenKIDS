@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
+  CopyPlus,
   FileQuestion,
   FileText,
   FolderKanban,
@@ -97,6 +98,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/app/worklog', label: 'Рабочий журнал', shortLabel: 'Журнал', icon: ScrollText, roles: ['admin', 'team_lead'] },
   { to: '/app/academy-report', label: 'Отчёты академии', icon: School, roles: ['admin', 'team_lead'], roleLabels: { team_lead: 'Отчёты' } },
   { to: '/app/scholarships', label: 'Стипендии', icon: Award, roles: ['admin', 'teacher'] },
+  // Массовое копирование посещаемости / ДЗ / оценок (backend: apps.bulk_copy).
+  { to: '/app/bulk-copy', label: 'Массовое копирование', shortLabel: 'Копирование', icon: CopyPlus, roles: ['admin'] },
   { to: '/app/news', label: 'Новости', icon: Megaphone, roles: ['admin', 'teacher'] },
   // Модерация сообщества учеников (backend: apps.community; тренер — свои группы).
   { to: '/app/community', label: 'Сообщество', icon: MessagesSquare, roles: ['admin', 'teacher', 'team_lead'] },

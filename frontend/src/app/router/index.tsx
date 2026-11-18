@@ -308,6 +308,15 @@ export const router = createBrowserRouter(withHydrateFallback([
             },
           },
           {
+            // Массовое копирование посещаемости, результатов ДЗ и оценок между группами /
+            // предметами / периодами — администратор или сотрудник с правом bulk_copy.run_bulk_copy.
+            path: 'bulk-copy',
+            lazy: async () => {
+              const { BulkCopyPage } = await import('@/features/bulkCopy/BulkCopyPage')
+              return { Component: BulkCopyPage }
+            },
+          },
+          {
             // Копирование оценок тренера между предметами — администратор или сотрудник
             // с правом scholarships.copy_scores (backend: apps.scholarships.score_copy_views).
             path: 'scholarships/copy-scores',
