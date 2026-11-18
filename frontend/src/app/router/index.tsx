@@ -308,6 +308,15 @@ export const router = createBrowserRouter(withHydrateFallback([
             },
           },
           {
+            // Копирование оценок тренера между предметами — администратор или сотрудник
+            // с правом scholarships.copy_scores (backend: apps.scholarships.score_copy_views).
+            path: 'scholarships/copy-scores',
+            lazy: async () => {
+              const { ScoreCopyPage } = await import('@/features/scholarships/ScoreCopyPage')
+              return { Component: ScoreCopyPage }
+            },
+          },
+          {
             // «Моя зарплата» Тренера и Team Lead (backend: /accounting/my/salary/ — только свои, только чтение).
             element: <RequireRoles roles={['teacher', 'team_lead']} />,
             children: [

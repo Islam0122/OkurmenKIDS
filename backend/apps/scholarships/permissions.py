@@ -65,3 +65,21 @@ class IsAdminOrTeacher(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         return is_admin(request.user) or teacher_profile(request.user) is not None
+
+
+def can_copy_scores(user) -> bool:
+    """Bulk copy of trainer scores between subjects (services.score_copy):
+    an Admin, or staff explicitly given `scholarships.copy_scores`. Never a
+    trainer by role, never a Student & Parent Portal account."""
+    if not (user and user.is_authenticated and user.is_active):
+        return False
+    if getattr(user, "role", None) in User.PORTAL_ROLES:
+        return False
+    return is_admin(user) or user.has_perm("scholarships.copy_scores")
+
+
+class CanCopyScores(BasePermission):
+    message = "Копирование оценок доступно только администратору или сотруднику с отдельным разрешением."
+
+    def has_permission(self, request, view) -> bool:
+        return can_copy_scores(request.user)
