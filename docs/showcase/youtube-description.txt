@@ -1,0 +1,39 @@
+OkurmenKIDS — Production EdTech Platform | Django REST API, React + TypeScript, Railway & Vercel
+
+A walkthrough of OkurmenKIDS: a live education technology platform for a children's programming academy in Bishkek, Kyrgyzstan. One Django REST API serves three independently deployed React + TypeScript frontends and the Django admin.
+
+🔗 Production services
+1. Public Website — https://okurmenkids.com
+2. Learning Management System — https://lms.okurmenkids.com
+3. Django Administration — https://api.okurmenkids.com/admin/
+4. Backend REST API — https://api.okurmenkids.com
+5. Training Portal — https://training.okurmenkids.com
+
+💻 Source code: https://github.com/Islam0122/OkurmenKIDS
+👤 GitHub profile / portfolio: https://github.com/Islam0122
+
+⏱ Chapters
+0:00 Introduction
+0:24 Platform overview — five production URLs
+1:06 Public website — okurmenkids.com
+1:36 Learning management system — lms.okurmenkids.com
+2:36 Django administration — api.okurmenkids.com/admin/
+3:10 Backend REST API — api.okurmenkids.com
+4:01 Training portal — training.okurmenkids.com
+4:33 Technical architecture
+5:34 Technology stack
+5:52 Conclusion
+
+🧱 Stack
+Python · Django · Django REST Framework · PostgreSQL · Celery (optional Redis broker) · React · TypeScript · Vite · Docker · Railway · Vercel
+
+📌 Notes
+• The LMS cabinets and the production Django admin require a login and contain personal data, so only public pages are shown. Student names on public galleries are blurred.
+• The admin dashboard shown in the video runs locally on an empty development database (labelled on screen).
+• Background work is written as Celery tasks; a Redis broker is optional, and a Railway cron job runs scheduled tasks every 30 minutes.
+• API figures (724 paths, 966 operations) come from the production OpenAPI schema at https://api.okurmenkids.com/api/schema/ as of November 2026.
+
+Subtitles: English and Russian.
+Music: original background track generated for this video.
+
+#Django #Python #React #TypeScript #FullStack #BackendDevelopment #DevOps #EdTech

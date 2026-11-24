@@ -1,0 +1,199 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--bg1:#0a0f24;--bg2:#1b1250;--violet:#7c5cff;--violet2:#a78bfa;--amber:#fbbf24;--teal:#2dd4bf;--ink:#eef0ff;--mute:#a9acd6;}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;font-family:'Inter','Inter Display',sans-serif;color:var(--ink);background:transparent}
+#stage{position:absolute;inset:0;overflow:hidden}
+.bg{position:absolute;inset:0;background:radial-gradient(1200px 700px at 15% 10%,#2a1c7a 0%,transparent 60%),radial-gradient(900px 600px at 90% 90%,#3b1f66 0%,transparent 60%),linear-gradient(135deg,var(--bg1),var(--bg2));}
+.grid{position:absolute;inset:-100px;background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);background-size:64px 64px;}
+.orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:.55}
+.abs{position:absolute}
+.display{font-family:'Inter Display','Inter',sans-serif}
+.mono{font-family:'DejaVu Sans Mono',monospace}
+.kicker{font-size:22px;letter-spacing:.32em;text-transform:uppercase;color:var(--amber);font-weight:700}
+.card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:22px;backdrop-filter:blur(8px);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.pill{display:inline-flex;align-items:center;gap:12px;border-radius:999px;padding:12px 26px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18)}
+.url{font-family:'DejaVu Sans Mono',monospace;color:#fff}
+.lock{width:22px;height:22px}
+.node{position:absolute;display:flex;flex-direction:column;justify-content:center;padding:0 26px;border-radius:18px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.2)}
+.node b{font-size:28px;font-weight:700}
+.node span{font-size:18px;color:var(--mute);margin-top:4px}
+.chip{position:absolute;display:flex;align-items:center;justify-content:center;border-radius:20px;font-weight:700;font-size:30px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.18)}
+</style></head>
+<body><div id="stage"></div>
+<script>
+const $=(h)=>{const d=document.createElement('div');d.innerHTML=h.trim();return d.firstChild};
+const stage=document.getElementById('stage');
+const clamp=(x)=>Math.max(0,Math.min(1,x));
+const eo=(x)=>1-Math.pow(1-clamp(x),3);              // ease out cubic
+const eio=(x)=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
+const P=new URLSearchParams(location.search);
+const SCENE=P.get('s'); const CUES=JSON.parse(P.get('cues')||'[]'); const DUR=+P.get('d')||10; const ARG=JSON.parse(P.get('a')||'{}');
+const cue=(i)=>CUES[i]!==undefined?CUES[i]:DUR*i/Math.max(1,CUES.length);
+function inUp(el,t,start,len=.8,dist=40){const k=eo((t-start)/len);el.style.opacity=k;el.style.transform=`translateY(${(1-k)*dist}px)`+(el.dataset.tf||'');}
+function fadeOutAll(t){const k=clamp((t-(DUR-.6))/.6);stage.style.opacity=SCENE.startsWith('frame')?1:1-k*0;} // xfade handles exits
+function LOCK(c='#34d399'){return `<svg class="lock" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.4"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>`}
+
+function background(){
+  stage.appendChild($('<div class="bg"></div>'));
+  const g=$('<div class="grid"></div>');stage.appendChild(g);
+  const o1=$('<div class="orb" style="width:520px;height:520px;background:#6d4aff;left:-120px;top:-140px"></div>');
+  const o2=$('<div class="orb" style="width:460px;height:460px;background:#f59e0b;right:-160px;bottom:-200px;opacity:.28"></div>');
+  stage.append(o1,o2);
+  return (t)=>{g.style.transform=`translate(${(t*6)%64}px,${(t*4)%64}px)`;o1.style.transform=`translate(${Math.sin(t*.25)*60}px,${Math.cos(t*.2)*40}px)`;o2.style.transform=`translate(${Math.cos(t*.22)*50}px,${Math.sin(t*.3)*40}px)`;}
+}
+
+const SCENES={};
+
+/* ---------- 1. Intro ---------- */
+SCENES.intro=()=>{
+  const bg=background();
+  const logo=$('<img src="../logo.png" class="abs" style="left:50%;top:170px;width:170px;height:170px;margin-left:-85px;border-radius:50%;box-shadow:0 0 0 8px rgba(255,255,255,.08),0 30px 80px rgba(124,92,255,.5)">');
+  const title=$('<div class="abs display" style="left:0;right:0;top:380px;text-align:center;font-size:150px;font-weight:900;letter-spacing:.04em;background:linear-gradient(90deg,#fff,#c4b5fd 50%,#fde68a);-webkit-background-clip:text;color:transparent">OKURMENKIDS</div>');
+  const sub=$('<div class="abs" style="left:0;right:0;top:580px;text-align:center;font-size:52px;font-weight:600;color:#e7e7ff">Production EdTech Platform</div>');
+  const line=$('<div class="abs" style="left:50%;top:668px;height:4px;width:0;background:linear-gradient(90deg,var(--violet),var(--amber));border-radius:4px"></div>');
+  const roles=$('<div class="abs" style="left:0;right:0;top:712px;text-align:center;font-size:36px;color:var(--mute);font-weight:500">Full Stack Development <span style="color:var(--amber)">|</span> Backend Engineering <span style="color:var(--amber)">|</span> DevOps</div>');
+  const urls=$('<div class="abs mono" style="left:0;right:0;top:860px;text-align:center;font-size:28px;color:#c7c9f2">okurmenkids.com · lms · api · training</div>');
+  stage.append(logo,title,sub,line,roles,urls);
+  return (t)=>{bg(t);
+    const k=eo(t/1.0);logo.style.opacity=k;logo.style.transform=`scale(${.6+.4*k}) rotate(${(1-k)*-40}deg)`;
+    const tk=eo((t-.4)/1.2);title.style.opacity=tk;title.style.letterSpacing=`${.04+(1-tk)*.3}em`;
+    inUp(sub,t,1.1);const lk=eio((t-1.5)/1.0);line.style.width=lk*760+'px';line.style.marginLeft=-lk*380+'px';
+    inUp(roles,t,1.9);inUp(urls,t,cue(1)||4);
+  };
+};
+
+/* ---------- 2. Overview: five URLs ---------- */
+SCENES.overview=()=>{
+  const bg=background();
+  const head=$('<div class="abs" style="left:140px;top:90px"><div class="kicker">02 · Platform overview</div><div class="display" style="font-size:66px;font-weight:800;margin-top:14px">Five production services, one backend</div></div>');
+  stage.append(head);
+  const items=[['Public Website','https://okurmenkids.com','React · TypeScript · Vite','#fbbf24'],['Learning Management System','https://lms.okurmenkids.com','React · TypeScript · Vite · PWA','#a78bfa'],['Django Administration','https://api.okurmenkids.com/admin/','Django admin · Jazzmin','#34d399'],['Backend REST API','https://api.okurmenkids.com','Django REST Framework · OpenAPI','#60a5fa'],['Training Portal','https://training.okurmenkids.com','React · TypeScript · Vite','#f472b6']];
+  const rows=items.map(([n,u,s,c],i)=>{const r=$(`<div class="abs card" style="left:140px;top:${290+i*128}px;width:1640px;height:108px;display:flex;align-items:center;padding:0 36px;gap:30px">
+    <div style="width:60px;height:60px;border-radius:16px;background:${c}22;border:2px solid ${c};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:28px;color:${c}">${i+1}</div>
+    <div style="width:520px"><div style="font-size:32px;font-weight:700">${n}</div><div style="font-size:20px;color:var(--mute);margin-top:4px">${s}</div></div>
+    <div class="pill" style="margin-left:auto;padding:14px 30px">${LOCK()}<span class="url" style="font-size:34px">${u}</span></div></div>`);stage.appendChild(r);return r;});
+  const foot=$('<div class="abs" style="left:140px;top:950px;font-size:28px;color:#d9dbff"><span style="color:var(--amber);font-weight:700">Vercel</span> hosts the three React frontends &nbsp;·&nbsp; <span style="color:#a78bfa;font-weight:700">Railway</span> hosts Django + PostgreSQL</div>');
+  stage.appendChild(foot);
+  return (t)=>{bg(t);inUp(head,t,0);rows.forEach((r,i)=>{inUp(r,t,cue(i+1)-.25,.7,30);});inUp(foot,t,cue(6)-.2);
+    const act=CUES.findIndex((c,i)=>t>=c&&(i+1>=CUES.length||t<CUES[i+1]));
+    rows.forEach((r,i)=>{r.style.borderColor=(act===i+1)?items[i][3]:'rgba(255,255,255,.14)';r.style.background=(act===i+1)?'rgba(255,255,255,.11)':'rgba(255,255,255,.06)';});
+  };
+};
+
+/* ---------- LMS roles (from users.User.Role) ---------- */
+SCENES.roles=()=>{
+  const bg=background();
+  const head=$('<div class="abs" style="left:140px;top:90px"><div class="kicker">04 · LMS · role-based access</div><div class="display" style="font-size:62px;font-weight:800;margin-top:14px">One application, a cabinet for every role</div><div style="font-size:24px;color:var(--mute);margin-top:12px" class="mono">backend/apps/users/models.py → User.Role</div></div>');
+  stage.append(head);
+  const roles=['Admin','Trainer','Team Lead','Assistant','Accountant','Director','Operations Director','HR Manager','Sales Manager','Marketing','+ 2 more staff roles','Student / Parent'];
+  const chips=roles.map((r,i)=>{const col=i%4,row=Math.floor(i/4);const last=r==='Student / Parent';const c=$(`<div class="chip" style="left:${140+col*418}px;top:${330+row*112}px;width:390px;height:88px;font-size:26px;${last?'border-color:#fbbf24;color:#fde68a':''}">${r}</div>`);stage.appendChild(c);return c;});
+  const cab=['Lessons','Attendance','Homework','Exams','Scholarships','Salaries','Recruitment','Marketing'];
+  const cw=$('<div class="abs" style="left:140px;top:735px;width:1660px;display:flex;gap:16px"></div>');stage.appendChild(cw);const cabs=cab.map((r,i)=>{const c=$(`<div class="pill" style="font-size:24px;font-weight:600;color:#ddd6fe;border-color:#7c5cff88">${r}</div>`);cw.appendChild(c);return c;});
+  const lbl=$('<div class="abs kicker" style="left:140px;top:690px;color:#a78bfa;font-size:18px">Cabinets</div>');stage.appendChild(lbl);
+  const note=$('<div class="abs card" style="left:140px;top:850px;width:1640px;padding:26px 34px;font-size:28px;display:flex;gap:18px;align-items:center"><span style="font-size:34px">🔒</span><span>Cabinets contain private student data — only the <b style="color:var(--amber)">public pages</b> of the LMS are shown in this video.</span></div>');stage.appendChild(note);
+  return (t)=>{bg(t);inUp(head,t,0);chips.forEach((c,i)=>inUp(c,t,cue(0)+.5+i*.12,.5,24));lbl.style.opacity=eo((t-cue(1)+.3)/.5);cabs.forEach((c,i)=>inUp(c,t,cue(1)+i*.25,.5,20));inUp(note,t,cue(2)-.2);};
+};
+
+/* ---------- API chart (production OpenAPI schema) ---------- */
+SCENES.apichart=()=>{
+  const bg=background();
+  const head=$('<div class="abs" style="left:140px;top:80px"><div class="kicker">06 · Production OpenAPI schema</div><div class="display" style="font-size:60px;font-weight:800;margin-top:14px">api.okurmenkids.com/api/schema/</div></div>');stage.append(head);
+  const stats=[['724','paths'],['966','operations'],['28','Django apps']];
+  const st=stats.map(([v,l],i)=>{const e=$(`<div class="abs card" style="left:${140+i*360}px;top:290px;width:330px;height:170px;padding:24px 30px"><div class="display v" style="font-size:78px;font-weight:900;color:${['#fbbf24','#a78bfa','#34d399'][i]}">0</div><div style="font-size:26px;color:var(--mute)">${l}</div></div>`);stage.appendChild(e);return [e,+v];});
+  const data=ARG.bars||[];const max=Math.max(...data.map(d=>d[1]));
+  const ttl=$('<div class="abs" style="left:1240px;top:250px;font-size:24px;color:var(--mute)">Operations per API area (top 10)</div>');stage.appendChild(ttl);
+  const bars=data.map(([n,v],i)=>{const e=$(`<div class="abs" style="left:1240px;top:${300+i*62}px;width:560px;height:50px"><div class="mono" style="position:absolute;left:0;top:12px;width:230px;font-size:20px;color:#dfe1ff;text-align:right">${n}</div><div class="b" style="position:absolute;left:250px;top:8px;height:34px;border-radius:8px;background:linear-gradient(90deg,#7c5cff,#a78bfa)"></div><div class="n" style="position:absolute;top:12px;font-size:20px;font-weight:700"></div></div>`);stage.appendChild(e);return [e,v];});
+  const apps=['academy','academic_progress','academy_news','accounting','assistant','attendance_matrix','billing','bulk_copy','community','data_io','feedback','leaderboard','marketing','news','operations','performance','portal','projects','push','recruitment','reports','scholarships','staff_attendance','testing','training','users','website','worklog'];
+  const ap=$(`<div class="abs" style="left:140px;top:520px;width:1040px;display:flex;flex-wrap:wrap;gap:10px">${apps.map(a=>`<span class="mono" style="font-size:19px;padding:8px 14px;border-radius:10px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);opacity:0">${a}</span>`).join('')}</div>`);stage.appendChild(ap);
+  const apl=$('<div class="abs mono" style="left:140px;top:480px;font-size:18px;color:var(--amber)">backend/apps/</div>');stage.appendChild(apl);
+  return (t)=>{bg(t);inUp(head,t,0);st.forEach(([e,v],i)=>{inUp(e,t,.3+i*.2);e.querySelector('.v').textContent=Math.round(v*eio((t-.4-i*.2)/1.6));});
+    ttl.style.opacity=eo((t-.8)/.6);bars.forEach(([e,v],i)=>{const k=eio((t-1-i*.12)/1.0);e.style.opacity=clamp((t-1-i*.12)/.3);e.querySelector('.b').style.width=(v/max*250*k)+'px';const n=e.querySelector('.n');n.style.left=(258+v/max*250*k)+'px';n.textContent=Math.round(v*k);});
+    apl.style.opacity=eo((t-cue(1)+.2)/.5);[...ap.children].forEach((c,i)=>{const k=eo((t-cue(1)-i*.07)/.4);c.style.opacity=k;c.style.transform=`translateY(${(1-k)*12}px)`;});
+  };
+};
+
+/* ---------- Architecture ---------- */
+SCENES.arch=()=>{
+  const bg=background();
+  const head=$('<div class="abs" style="left:120px;top:60px"><div class="kicker">08 · Technical architecture</div><div class="display" style="font-size:56px;font-weight:800;margin-top:12px">High-level architecture</div></div>');stage.append(head);
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('width',1920);svg.setAttribute('height',1080);svg.style.position='absolute';svg.style.left=0;svg.style.top=0;stage.appendChild(svg);
+  const N=(x,y,w,h,title,sub,color)=>{const e=$(`<div class="node" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;border-color:${color}"><b>${title}</b><span>${sub}</span></div>`);stage.appendChild(e);return e;};
+  const vercel=$('<div class="abs" style="left:96px;top:208px;width:560px;height:520px;border-radius:26px;border:2px dashed rgba(251,191,36,.55)"><div class="kicker" style="position:absolute;left:24px;top:-14px;background:#120f35;padding:0 12px;font-size:18px">Vercel · 3 projects</div></div>');stage.appendChild(vercel);
+  const railway=$('<div class="abs" style="left:780px;top:208px;width:1040px;height:760px;border-radius:26px;border:2px dashed rgba(167,139,250,.6)"><div class="kicker" style="position:absolute;left:24px;top:-14px;background:#16113f;padding:0 12px;font-size:18px;color:#c4b5fd">Railway</div></div>');stage.appendChild(railway);
+  const fe=[N(126,250,500,120,'Public Website','okurmenkids.com','#fbbf24'),N(126,410,500,120,'LMS','lms.okurmenkids.com','#a78bfa'),N(126,570,500,120,'Training Portal','training.okurmenkids.com','#f472b6')];
+  const admin=N(126,790,500,120,'Django Admin','api.okurmenkids.com/admin/','#34d399');
+  const api=N(830,400,500,170,'Django REST API','api.okurmenkids.com · Docker · Gunicorn · WhiteNoise','#60a5fa');
+  const pg=N(1400,260,380,120,'PostgreSQL','primary database','#38bdf8');
+  const media=N(1400,420,380,110,'Media volume','uploaded files','#94a3b8');
+  const celery=N(1400,580,380,130,'Celery tasks','Redis broker optional · eager without one','#f97316');
+  const cron=N(1400,760,380,110,'Railway cron','run_scheduled_tasks · every 30 min','#fb7185');
+  const pw=N(830,760,500,110,'Playwright · Chromium','parent report images','#22c55e');
+  const mig=$('<div class="abs card" style="left:830px;top:620px;width:500px;padding:16px 22px;font-size:19px;color:#dfe1ff;line-height:1.4">Entrypoint: <span class="mono" style="color:#fde68a">collectstatic</span> → <span class="mono" style="color:#fde68a">migrate_with_lock</span> (PostgreSQL advisory lock) → gunicorn</div>');stage.appendChild(mig);
+  const path=(d,c)=>{const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',d);p.setAttribute('stroke',c);p.setAttribute('stroke-width',4);p.setAttribute('fill','none');p.setAttribute('stroke-linecap','round');svg.appendChild(p);const L=p.getTotalLength();p.style.strokeDasharray=L;p.style.strokeDashoffset=L;return [p,L];};
+  const dot=(c)=>{const d=document.createElementNS('http://www.w3.org/2000/svg','circle');d.setAttribute('r',7);d.setAttribute('fill',c);svg.appendChild(d);return d;};
+  const lines=[path('M626 310 C 730 310, 730 470, 830 470','#fbbf24'),path('M626 470 C 730 470, 730 485, 830 485','#a78bfa'),path('M626 630 C 730 630, 730 500, 830 500','#f472b6'),path('M626 850 C 760 850, 760 545, 830 545','#34d399')];
+  const back=[path('M1330 450 C 1370 450, 1360 320, 1400 320','#38bdf8'),path('M1330 475 L 1400 475','#94a3b8'),path('M1330 520 C 1370 520, 1360 645, 1400 645','#f97316'),path('M1590 760 L 1590 710','#fb7185'),path('M1080 570 L 1080 620','#60a5fa'),path('M1080 690 L 1080 760','#22c55e')];
+  const dots=[...lines,...back].map(([p])=>dot(p.getAttribute('stroke')));
+  return (t)=>{bg(t);inUp(head,t,0);
+    const c1=cue(1),c2=cue(2),c3=cue(3),c4=cue(4),c5=cue(5),c6=cue(6);
+    vercel.style.opacity=eo((t-c1+.3)/.6);fe.forEach((e,i)=>inUp(e,t,c1+.1+i*.35,.6,24));
+    inUp(api,t,c2-.2,.7,24);railway.style.opacity=eo((t-c2+.3)/.6);
+    lines.slice(0,3).forEach(([p,L],i)=>{p.style.strokeDashoffset=L*(1-eio((t-c2-.3-i*.25)/1.0));});
+    inUp(admin,t,c2+1.4,.6,24);{const [p,L]=lines[3];p.style.strokeDashoffset=L*(1-eio((t-c2-1.8)/1.0));}
+    inUp(mig,t,c3+.3,.6,20);{const [p,L]=back[4];p.style.strokeDashoffset=L*(1-eio((t-c3)/.6));}
+    inUp(pg,t,c4-.1,.6,20);inUp(media,t,c4+1.6,.6,20);[0,1].forEach(i=>{const [p,L]=back[i];p.style.strokeDashoffset=L*(1-eio((t-c4-.1-i*1.7)/.8));});
+    inUp(celery,t,c5-.1,.6,20);inUp(cron,t,c5+5.5,.6,20);{const [p,L]=back[2];p.style.strokeDashoffset=L*(1-eio((t-c5)/.8));}{const [p,L]=back[3];p.style.strokeDashoffset=L*(1-eio((t-c5-5.7)/.6));}
+    inUp(pw,t,c6-.1,.6,20);{const [p,L]=back[5];p.style.strokeDashoffset=L*(1-eio((t-c6)/.6));}
+    // travelling request dots
+    [...lines,...back].forEach(([p,L],i)=>{const vis=1-parseFloat(p.style.strokeDashoffset)/L;const d=dots[i];if(vis<.99){d.setAttribute('opacity',0);return;}const ph=((t*.45+i*.17)%1);const pt=p.getPointAtLength(L*ph);d.setAttribute('cx',pt.x);d.setAttribute('cy',pt.y);d.setAttribute('opacity',.95);});
+  };
+};
+
+/* ---------- Stack ---------- */
+SCENES.stack=()=>{
+  const bg=background();
+  const head=$('<div class="abs" style="left:140px;top:90px"><div class="kicker">09 · Technology stack</div><div class="display" style="font-size:66px;font-weight:800;margin-top:14px">Verified in the repository</div></div>');stage.append(head);
+  const items=[['Python','backend runtime · 3.12 image','#fbbf24'],['Django','6.1 · ORM · admin','#34d399'],['Django REST Framework','3.18 · SimpleJWT · drf-spectacular','#f87171'],['PostgreSQL','production database','#38bdf8'],['Redis','optional Celery broker','#ef4444'],['Celery','5.5 · billing & scheduled tasks','#a3e635'],['React','19 · three SPAs','#22d3ee'],['TypeScript','all three frontends','#60a5fa'],['Vite','build tooling','#a78bfa'],['Docker','python:3.12-slim backend image','#3b82f6'],['Railway','backend · database · cron','#c084fc'],['Vercel','3 independent frontend projects','#f5f5f5']];
+  const cs=items.map(([n,s,c],i)=>{const col=i%4,row=Math.floor(i/4);const e=$(`<div class="abs card" style="left:${140+col*414}px;top:${300+row*210}px;width:390px;height:184px;padding:30px 30px;border-top:4px solid ${c}"><div style="font-size:38px;font-weight:800">${n}</div><div style="font-size:21px;color:var(--mute);margin-top:12px;line-height:1.35">${s}</div></div>`);stage.appendChild(e);return e;});
+  return (t)=>{bg(t);inUp(head,t,0);cs.forEach((e,i)=>{const st=i<6?cue(0)+.3+i*.55:cue(1)+(i-6)*.6;inUp(e,t,st,.6,30);});};
+};
+
+/* ---------- Outro ---------- */
+SCENES.outro=()=>{
+  const bg=background();
+  const logo=$('<img src="../logo.png" class="abs" style="left:140px;top:130px;width:120px;height:120px;border-radius:50%">');
+  const name=$('<div class="abs" style="left:290px;top:138px"><div class="kicker">10 · My role</div><div class="display" style="font-size:64px;font-weight:800;margin-top:10px">Islam Duishobaev</div></div>');
+  const r1=$('<div class="abs pill" style="left:140px;top:320px;font-size:36px;font-weight:700;padding:18px 34px;border-color:#a78bfa">Full Stack Developer</div>');
+  const r2=$('<div class="abs pill" style="left:620px;top:320px;font-size:36px;font-weight:700;padding:18px 34px;border-color:#fbbf24">Python Backend Developer</div>');
+  const gh=$(`<div class="abs card" style="left:140px;top:470px;width:1640px;padding:30px 40px"><div style="font-size:22px;color:var(--mute);letter-spacing:.2em;text-transform:uppercase">GitHub repository</div><div class="url" style="font-size:44px;margin-top:10px">https://github.com/Islam0122/OkurmenKIDS</div></div>`);
+  const pf=$(`<div class="abs card" style="left:140px;top:640px;width:1640px;padding:30px 40px"><div style="font-size:22px;color:var(--mute);letter-spacing:.2em;text-transform:uppercase">Portfolio</div><div class="url" style="font-size:44px;margin-top:10px">https://github.com/Islam0122</div></div>`);
+  const quote=$('<div class="abs display" style="left:140px;right:140px;top:860px;font-size:42px;font-weight:700;line-height:1.3;background:linear-gradient(90deg,#fff,#c4b5fd 60%,#fde68a);-webkit-background-clip:text;color:transparent">“Building real-world software products, from backend architecture to production deployment.”</div>');
+  stage.append(logo,name,r1,r2,gh,pf,quote);
+  return (t)=>{bg(t);inUp(logo,t,0);inUp(name,t,.2);inUp(r1,t,.7);inUp(r2,t,1.0);inUp(gh,t,cue(1)-.3);inUp(pf,t,cue(1)+1.6);inUp(quote,t,cue(2)-.2,1.0);};
+};
+
+/* ---------- Browser-scene frame: background layer + foreground layer ---------- */
+SCENES.frame=()=>{
+  const layer=ARG.layer; const X=160,Y=190,W=1600,H=860;
+  if(layer==='bg'){
+    const bg=background();bg(3);
+    const head=$(`<div class="abs" style="left:${X}px;top:38px"><div class="kicker" style="font-size:20px">${ARG.num} · ${ARG.kicker}</div><div class="display" style="font-size:52px;font-weight:800;margin-top:8px">${ARG.title}</div></div>`);
+    const url=$(`<div class="abs pill" style="right:${1920-X-W}px;top:52px;padding:16px 30px;background:rgba(10,10,30,.55);border-color:${ARG.local?'#fbbf24':'rgba(255,255,255,.25)'}">${ARG.local?'<span style="font-size:24px">💻</span>':LOCK()}<span class="url" style="font-size:${ARG.url.length>42?26:32}px">${ARG.url}</span></div>`);
+    const win=$(`<div class="abs" style="left:${X-2}px;top:${Y-2}px;width:${W+4}px;height:${H+4}px;border-radius:20px;background:#fff;box-shadow:0 40px 100px rgba(0,0,0,.55),0 0 0 2px rgba(255,255,255,.18)"></div>`);
+    stage.append(head,url,win);
+  } else {
+    // foreground: rounded-corner masks + caption
+    const r=18,c='#0c0f2a';
+    const corners=$(`<svg class="abs" style="left:${X}px;top:${Y}px" width="${W}" height="${H}"><defs><mask id="m"><rect width="${W}" height="${H}" fill="white"/><rect width="${W}" height="${H}" rx="${r}" fill="black"/></mask></defs><rect width="${W}" height="${H}" fill="${c}" mask="url(#m)"/></svg>`);
+    stage.appendChild(corners);
+    if(ARG.caption){stage.appendChild($(`<div class="abs" style="left:${X+28}px;top:${Y+H-86}px;padding:14px 24px;border-radius:14px;background:rgba(12,10,40,.86);border:1px solid ${ARG.local?'#fbbf24':'rgba(167,139,250,.6)'};font-size:25px;font-weight:600;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.35)">${ARG.caption}</div>`));}
+  }
+  return ()=>{};
+};
+
+window.__draw = SCENES[SCENE]();
+window.setT = (t)=>{ window.__draw(t); };
+window.setT(0);
+</script></body></html>
