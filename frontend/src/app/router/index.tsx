@@ -118,6 +118,15 @@ export const router = createBrowserRouter(withHydrateFallback([
             },
           },
           {
+            // «Параллельные занятия»: Admin manages, Team Lead reads, a Trainer
+            // works with the sessions they give (backend: parallel_session_views).
+            element: <RequireRoles roles={['admin', 'team_lead', 'teacher']} />,
+            children: [
+              { path: 'parallel-lessons', lazy: async () => ({ Component: (await import('@/features/parallelLessons/ParallelLessonsPage')).ParallelLessonsPage }) },
+              { path: 'parallel-lessons/:id', lazy: async () => ({ Component: (await import('@/features/parallelLessons/SessionDetailPage')).SessionDetailPage }) },
+            ],
+          },
+          {
             // Academy-wide sections: Admin and Team Lead (backend: IsAdminOrTeamLeadReadOnly).
             element: <RequireRoles roles={['admin', 'team_lead']} />,
             children: [
@@ -438,6 +447,8 @@ export const router = createBrowserRouter(withHydrateFallback([
               { path: 'students/create', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentCreatePage')).AssistantStudentCreatePage }) },
               { path: 'students/:id', lazy: async () => ({ Component: (await import('@/features/assistant/pages/StudentDetailPage')).AssistantStudentDetailPage }) },
               { path: 'schedule', lazy: async () => ({ Component: (await import('@/features/assistant/pages/SchedulePage')).AssistantSchedulePage }) },
+              { path: 'parallel-lessons', lazy: async () => ({ Component: (await import('@/features/parallelLessons/ParallelLessonsPage')).ParallelLessonsPage }) },
+              { path: 'parallel-lessons/:id', lazy: async () => ({ Component: (await import('@/features/parallelLessons/SessionDetailPage')).SessionDetailPage }) },
               { path: 'control', lazy: async () => ({ Component: (await import('@/features/assistant/pages/ControlPage')).AssistantControlPage }) },
               { path: 'reports', lazy: async () => ({ Component: (await import('@/features/assistant/pages/MonthlyReportPage')).AssistantMonthlyReportPage }) },
               { path: 'attendance', lazy: async () => ({ Component: (await import('@/features/assistant/pages/AttendancePage')).AssistantAttendancePage }) },

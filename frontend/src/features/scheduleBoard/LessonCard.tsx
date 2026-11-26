@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { AlertTriangle, Ban, CheckCircle2, CirclePlay } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, CirclePlay, Layers } from 'lucide-react'
 
 import type { BoardLesson } from '@/types/schedule'
 import { cn } from '@/utils/cn'
@@ -39,6 +39,7 @@ export function lessonLabel(lesson: BoardLesson): string {
     `Тренер: ${lesson.teacher?.name ?? '—'}`,
     `Кабинет: ${lesson.room?.name ?? 'не указан'}`,
     lesson.status_display,
+    lesson.parallel_session ? `Параллельное занятие${lesson.parallel_session.groups_count ? ` · ${lesson.parallel_session.groups_count} групп` : ''}` : '',
     ...lesson.conflicts.map((c) => `Конфликт: ${c.message}`),
   ].filter(Boolean).join(' · ')
 }
@@ -63,6 +64,7 @@ export function LessonCard({
   style?: CSSProperties
 }) {
   const conflict = lesson.conflicts.length > 0
+  const shared = Boolean(lesson.parallel_session)
   return (
     <button
       type="button"
@@ -73,18 +75,22 @@ export function LessonCard({
       title={lessonLabel(lesson)}
       aria-label={lessonLabel(lesson)}
       data-lesson-id={lesson.id}
+      data-parallel-session={lesson.parallel_session?.id}
       className={cn(
         'group/card flex min-w-0 flex-col overflow-hidden rounded-md border border-l-[3px] border-black/5 px-1.5 text-left text-ink shadow-xs transition',
         'hover:z-20 hover:shadow-md focus-visible:z-20 focus-visible:outline-2 focus-visible:outline-brand-500',
         density === 'tiny' ? 'justify-center py-0' : 'py-1',
         lesson.status === 'cancelled' && 'opacity-60',
         conflict && 'ring-2 ring-danger/70',
+        // A parallel session (several groups, one trainer): dashed outline.
+        shared && !conflict && 'outline-1 outline-dashed outline-ink-secondary/60 -outline-offset-2',
         className,
       )}
       style={{ ...trainerStyle(lesson.teacher?.color, lesson.status), ...style }}
     >
       <span className="flex min-w-0 items-center gap-1">
         {conflict ? <AlertTriangle className="size-3.5 shrink-0 text-danger" aria-hidden /> : null}
+        {shared ? <Layers className="size-3.5 shrink-0 text-ink-secondary" aria-label="Параллельное занятие" /> : null}
         <span className="shrink-0 text-2xs font-semibold tabular-nums text-ink-secondary">{lesson.start}–{lesson.end}</span>
         {density === 'tiny' ? <span className={cn('truncate text-xs font-semibold', lesson.status === 'cancelled' && 'line-through')}>{lesson.group.name}</span> : null}
         <span className="ml-auto"><StatusIcon status={lesson.status} /></span>

@@ -10,7 +10,7 @@ together (spec: Teaching Assignment isolation).
 """
 from __future__ import annotations
 
-from django.db.models import Count
+from django.db.models import Count, Q
 
 from .metrics import build_metric
 from .period import DateRange
@@ -28,7 +28,10 @@ def _workload(scope: AnalyticsScope, date_range: DateRange) -> list[dict]:
         scope.lessons_qs(date_range=date_range)
         .annotate(eff_teacher=effective_teacher())
         .values("eff_teacher")
-        .annotate(lessons=Count("id"))
+        # A parallel session (several groups, one trainer at once —
+        # services.parallel_sessions) is ONE lesson of the trainer's workload.
+        .annotate(lessons=Count("id", filter=Q(parallel_session__isnull=True))
+                  + Count("parallel_session", distinct=True))
         .order_by("-lessons")
     )
     workload = [

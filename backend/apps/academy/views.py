@@ -1089,6 +1089,14 @@ class LessonViewSet(
                 for name in names
             )
 
+        if lesson.parallel_session_id and changed((*Lesson.SCHEDULE_FIELDS, "room")):
+            # Date, time and room are shared by every group of a parallel
+            # session — edited on the session (services.parallel_sessions).
+            raise DRFValidationError({"parallel_session": (
+                f"Занятие — часть параллельного занятия №{lesson.parallel_session_id}: дату, время и аудиторию "
+                "меняйте в самом параллельном занятии."
+            )})
+
         flags = {}
         if changed(Lesson.PLAN_CONTENT_FIELDS):
             flags["manually_edited"] = True

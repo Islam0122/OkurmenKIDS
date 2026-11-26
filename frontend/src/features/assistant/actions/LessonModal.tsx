@@ -15,7 +15,7 @@ import { useConflictCheck } from '@/hooks/useSchedule'
 import { extractErrorMessage } from '@/lib/apiError'
 import type { AssistantLesson } from '@/types/assistant'
 import type { LessonConflict } from '@/types/schedule'
-import { ConflictNotes } from '@/features/scheduleBoard/LessonPreviewModal'
+import { ConflictNotes, ParallelNote } from '@/features/scheduleBoard/LessonPreviewModal'
 
 import { Field, FormError, ModalActions } from '../ui'
 import { lessonLabel } from '@/lib/lessonNumbering'
@@ -33,7 +33,8 @@ export function LessonModal({ lesson, onClose }: { lesson: AssistantLesson & { c
   const move = useAssistantFormMutation(() => assistantApi.moveLesson(lesson.id, { date, start_time: start, end_time: end }), 'Занятие перенесено')
   const cancel = useAssistantFormMutation(() => assistantApi.cancelLesson(lesson.id, { reason, reschedule }), (res) =>
     res.rescheduled_to ? `Занятие отменено, тема перенесена на ${res.rescheduled_to.date} ${res.rescheduled_to.start}` : 'Занятие отменено')
-  const editable = lesson.status === 'scheduled'
+  // A parallel session's group lesson is moved/cancelled with the session.
+  const editable = lesson.status === 'scheduled' && !lesson.parallel_session
   const error = move.error ?? cancel.error
   const unchanged = date === lesson.date && start === lesson.start && end === lesson.end
   // Live preview of the backend's own check (trainer / group / room); the
@@ -52,7 +53,7 @@ export function LessonModal({ lesson, onClose }: { lesson: AssistantLesson & { c
         <div><dt className="field-label">Студентов</dt><dd className="font-medium text-ink">{lesson.students_count ?? 0}</dd></div>
         <div className="col-span-2"><dt className="field-label">Тема</dt><dd className="font-medium text-ink">{[lessonLabel(lesson.numbering), lesson.topic || '—'].filter(Boolean).join(' · ')}</dd></div>
       </dl>
-      {mode === 'view' ? <div className="mb-3"><ConflictNotes lesson={lesson} /></div> : null}
+      {mode === 'view' ? <div className="mb-3"><ParallelNote session={lesson.parallel_session} onClose={onClose} /><ConflictNotes lesson={lesson} /></div> : null}
       {lesson.status !== 'scheduled' ? <Badge tone={lesson.status === 'cancelled' ? 'danger' : 'info'}>{lesson.status_display}</Badge> : null}
 
       {mode === 'move' ? (

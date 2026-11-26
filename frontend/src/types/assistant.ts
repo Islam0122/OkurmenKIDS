@@ -36,6 +36,8 @@ export interface AssistantLesson {
   status_display: string
   students_count: number | null
   schedule_overridden: boolean
+  /** Part of a parallel session — moved/cancelled with the session only. */
+  parallel_session?: { id: number; groups_count: number | null } | null
 }
 
 export interface ActivityRow {

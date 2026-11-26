@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import control_views, public_schedule_views, report_views, schedule_views, views
+from . import control_views, parallel_session_views, public_schedule_views, report_views, schedule_views, views
 
 router = DefaultRouter()
 router.register("courses", views.CourseViewSet, basename="course")
@@ -18,6 +18,8 @@ router.register("homework", views.HomeworkViewSet, basename="homework")
 router.register("homework-results", views.HomeworkResultViewSet, basename="homework-result")
 router.register("monthly-reports", views.MonthlyTeacherReportViewSet, basename="monthly-report")
 router.register("academy-reports", views.AcademyMonthlyReportViewSet, basename="academy-report")
+# Параллельные занятия: несколько групп, одна аудитория, один тренер (see parallel_session_views).
+router.register("parallel-lessons", parallel_session_views.ParallelSessionViewSet, basename="parallel-lesson")
 
 urlpatterns = [
     path("analytics/dashboard/", views.AnalyticsDashboardView.as_view(), name="analytics-dashboard"),

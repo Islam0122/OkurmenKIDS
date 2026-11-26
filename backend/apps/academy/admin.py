@@ -77,6 +77,8 @@ from .admin_views import (
 )
 from .help_center import help_center_view
 from .models import (
+    ParallelSession,
+    ParallelSessionGroup,
     TrainerAssignment,
     Attendance,
     Course,
@@ -1912,3 +1914,39 @@ class GroupSubjectAdmin(admin.ModelAdmin):
     def delete_model(self, request, obj):
         # Deleting the row only means «starts with the group» again; lessons stay as they are.
         super().delete_model(request, obj)
+
+
+# ---------------------------------------------------------------------------
+# Parallel lessons — read only here, like Lesson: every write goes through
+# services.parallel_sessions (the API), which keeps the groups' lessons, the
+# conflict checks and the history consistent.
+# ---------------------------------------------------------------------------
+
+class ParallelSessionGroupInline(admin.TabularInline):
+    model = ParallelSessionGroup
+    extra = 0
+    can_delete = False
+    fields = ("group", "lesson", "status", "students_count", "added_at", "removed_at", "removal_reason")
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ParallelSession)
+class ParallelSessionAdmin(admin.ModelAdmin):
+    list_display = ("id", "date", "start_time", "end_time", "teacher", "room", "status", "topic")
+    list_filter = ("status", "room")
+    search_fields = ("topic", "teacher__user__first_name", "teacher__user__last_name", "room__name")
+    date_hierarchy = "date"
+    inlines = [ParallelSessionGroupInline]
+    actions = None
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
