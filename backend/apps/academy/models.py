@@ -1440,6 +1440,21 @@ class Lesson(models.Model):
         ),
     )
 
+    parallel_session = models.ForeignKey(
+        "ParallelSession",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="lessons",
+        verbose_name="Параллельное занятие",
+        help_text=(
+            "Общее занятие нескольких групп с одним тренером в одной аудитории (см. "
+            "ParallelSession). У каждой группы-участницы своё занятие — со своей "
+            "посещаемостью и ДЗ; дата, время, аудитория и тренер ведутся на уровне "
+            "параллельного занятия."
+        ),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
@@ -1456,6 +1471,13 @@ class Lesson(models.Model):
                 fields=["group_teacher", "lesson_number"],
                 condition=~models.Q(status="cancelled"),
                 name="unique_active_group_teacher_lesson_number",
+            ),
+            # A group takes part in a parallel session at most once: one live
+            # (not cancelled) lesson per (session, group).
+            models.UniqueConstraint(
+                fields=["parallel_session", "group"],
+                condition=models.Q(parallel_session__isnull=False) & ~models.Q(status="cancelled"),
+                name="unique_active_parallel_session_group_lesson",
             ),
         ]
         indexes = [
@@ -1740,6 +1762,165 @@ class Attendance(models.Model):
     def clean(self):
         if self.student_id and self.lesson_id and self.student.group_id != self.lesson.group_id:
             raise ValidationError({"student": "Студент не принадлежит группе этого занятия."})
+
+
+# ---------------------------------------------------------------------------
+# Parallel lessons — several groups study at the same time, in one room, with
+# one shared trainer: ONE actual lesson session. The session owns what is
+# shared (trainer, room, date, time, topic, materials, status); every
+# participating group keeps its own regular Lesson row linked to it
+# (Lesson.parallel_session), so attendance, homework, the lesson lifecycle,
+# the attendance matrix, the student portal and payroll cycles keep working
+# per group, unchanged. ParallelSessionGroup is the participation history
+# (who was added/removed, when, by whom). All writes go through
+# services.parallel_sessions.
+# ---------------------------------------------------------------------------
+
+class ParallelSession(models.Model):
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "Запланировано"
+        IN_PROGRESS = "in_progress", "Идёт занятие"
+        COMPLETED = "completed", "Проведено"
+        CANCELLED = "cancelled", "Отменено"
+
+    teacher = models.ForeignKey(
+        Teacher,
+        on_delete=models.PROTECT,
+        related_name="parallel_sessions",
+        verbose_name="Тренер",
+    )
+
+    room = models.ForeignKey(
+        Room,
+        on_delete=models.PROTECT,
+        related_name="parallel_sessions",
+        verbose_name="Аудитория",
+    )
+
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="parallel_sessions",
+        verbose_name="Предмет",
+        help_text="Необязательно: по нему выбирается учебная программа каждой группы.",
+    )
+
+    date = models.DateField(db_index=True, verbose_name="Дата")
+    start_time = models.TimeField(verbose_name="Время начала")
+    end_time = models.TimeField(verbose_name="Время окончания")
+
+    topic = models.CharField(max_length=255, blank=True, verbose_name="Тема")
+    description = models.TextField(blank=True, verbose_name="Описание")
+    notes = models.TextField(blank=True, verbose_name="Заметки")
+    youtube_url = models.URLField(blank=True, verbose_name="Ссылка на YouTube")
+    presentation_urls = models.JSONField(default=list, blank=True, verbose_name="Ссылки на презентации")
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.SCHEDULED,
+        db_index=True,
+        verbose_name="Статус",
+    )
+    cancellation_reason = models.CharField(max_length=255, blank=True, verbose_name="Причина отмены")
+
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Создал",
+    )
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Завершено")
+    completed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Завершил",
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Отменено")
+    cancelled_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Отменил",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Параллельное занятие"
+        verbose_name_plural = "Параллельные занятия"
+        ordering = ["-date", "-start_time", "-pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_time__gt=models.F("start_time")),
+                name="parallel_session_end_after_start",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["teacher", "date"], name="ix_psession_teacher_date"),
+            models.Index(fields=["room", "date"], name="ix_psession_room_date"),
+            models.Index(fields=["status", "date"], name="ix_psession_status_date"),
+        ]
+
+    def __str__(self):
+        return f"Параллельное занятие {self.date:%d.%m.%Y} {self.start_time:%H:%M}–{self.end_time:%H:%M} ({self.room})"
+
+    def clean(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in (self.Status.SCHEDULED, self.Status.IN_PROGRESS)
+
+
+class ParallelSessionGroup(models.Model):
+    """One group's participation in a ParallelSession — kept as history when
+    the group is removed (status «removed», the group's lesson cancelled, its
+    data untouched). Unique per (session, group): a group can't take part in
+    the same session twice; adding it back re-activates this row."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Участвует"
+        REMOVED = "removed", "Исключена"
+
+    session = models.ForeignKey(
+        ParallelSession, on_delete=models.CASCADE, related_name="participants", verbose_name="Параллельное занятие",
+    )
+    group = models.ForeignKey(
+        Group, on_delete=models.PROTECT, related_name="parallel_participations", verbose_name="Группа",
+    )
+    lesson = models.ForeignKey(
+        Lesson,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Занятие группы",
+        help_text="Текущее занятие группы в этом параллельном занятии.",
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True, verbose_name="Статус",
+    )
+    students_count = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Студентов (на момент проведения)",
+        help_text="Снимок числа активных студентов группы при завершении занятия.",
+    )
+    added_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Добавил",
+    )
+    added_at = models.DateTimeField(default=timezone.now, verbose_name="Добавлена")
+    removed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Исключил",
+    )
+    removed_at = models.DateTimeField(null=True, blank=True, verbose_name="Исключена")
+    removal_reason = models.CharField(max_length=255, blank=True, verbose_name="Причина исключения")
+
+    class Meta:
+        verbose_name = "Группа параллельного занятия"
+        verbose_name_plural = "Группы параллельного занятия"
+        ordering = ["session", "group__name"]
+        constraints = [
+            models.UniqueConstraint(fields=["session", "group"], name="unique_parallel_session_group"),
+        ]
+
+    def __str__(self):
+        return f"{self.group} — {self.session}"
 
 
 # ---------------------------------------------------------------------------

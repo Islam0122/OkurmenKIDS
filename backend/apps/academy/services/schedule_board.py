@@ -156,6 +156,7 @@ class _Slot:
     group_name: str
     room_name: str | None
     teacher_name: str
+    parallel_session_id: int | None = None
 
 
 def _teacher_name(first, last, username) -> str:
@@ -169,7 +170,8 @@ def _live_slots(**lookup) -> list[_Slot]:
         Lesson.objects.filter(**lookup)
         .exclude(status=Lesson.Status.CANCELLED)
         .annotate(_teacher=trainer_history.effective_teacher())
-        .values_list("id", "date", "start_time", "end_time", "_teacher", "room_id", "group_id", "group__name", "room__name")
+        .values_list("id", "date", "start_time", "end_time", "_teacher", "room_id", "group_id", "group__name", "room__name",
+                     "parallel_session_id")
     )
     names = {
         pk: _teacher_name(first, last, username)
@@ -178,8 +180,9 @@ def _live_slots(**lookup) -> list[_Slot]:
     }
     return [
         _Slot(id=pk, date=date, start_time=start, end_time=end, teacher_id=teacher_id, room_id=room_id,
-              group_id=group_id, group_name=group_name, room_name=room_name, teacher_name=names.get(teacher_id, ""))
-        for pk, date, start, end, teacher_id, room_id, group_id, group_name, room_name in rows
+              group_id=group_id, group_name=group_name, room_name=room_name, teacher_name=names.get(teacher_id, ""),
+              parallel_session_id=session_id)
+        for pk, date, start, end, teacher_id, room_id, group_id, group_name, room_name, session_id in rows
     ]
 
 
@@ -192,6 +195,7 @@ def _slot_ref(slot: _Slot) -> dict:
         "group": {"id": slot.group_id, "name": slot.group_name},
         "teacher": {"id": slot.teacher_id, "name": slot.teacher_name} if slot.teacher_id else None,
         "room": {"id": slot.room_id, "name": slot.room_name} if slot.room_id else None,
+        "parallel_session": {"id": slot.parallel_session_id} if slot.parallel_session_id else None,
     }
 
 
@@ -207,10 +211,13 @@ def conflict_message(kind: str, *, teacher_name: str = "", group_name: str = "",
 
 def find_conflicts(*, date: dt.date, start_time: dt.time, end_time: dt.time, teacher_id: int | None = None,
                    room_id: int | None = None, group_id: int | None = None, exclude_lesson_id: int | None = None,
-                   teacher_name: str = "", group_name: str = "", room_name: str = "") -> list[dict]:
+                   teacher_name: str = "", group_name: str = "", room_name: str = "",
+                   exclude_parallel_session_id: int | None = None) -> list[dict]:
     """Every live lesson that a lesson at date/start–end with this trainer,
     room and group would clash with — one entry per (kind, other lesson):
-    {"kind", "kind_label", "message", "lesson"}. Touching ends never clash."""
+    {"kind", "kind_label", "message", "lesson"}. Touching ends never clash.
+    The lessons of `exclude_parallel_session_id` (the parallel session being
+    checked — they share its trainer and room by design) are ignored."""
     candidates = Q()
     if teacher_id:
         candidates |= teacher_q(teacher_id)
@@ -223,6 +230,8 @@ def find_conflicts(*, date: dt.date, start_time: dt.time, end_time: dt.time, tea
     qs = Lesson.objects.filter(candidates, date=date, start_time__lt=end_time, end_time__gt=start_time)
     if exclude_lesson_id:
         qs = qs.exclude(pk=exclude_lesson_id)
+    if exclude_parallel_session_id:
+        qs = qs.exclude(parallel_session_id=exclude_parallel_session_id)
     ids = list(qs.values_list("id", flat=True))
     if not ids:
         return []
@@ -250,7 +259,7 @@ def lesson_conflicts(lesson: Lesson, *, date: dt.date, start_time: dt.time, end_
     return find_conflicts(
         date=date, start_time=start_time, end_time=end_time,
         teacher_id=teacher.pk if teacher else None, room_id=lesson.room_id, group_id=lesson.group_id,
-        exclude_lesson_id=lesson.pk,
+        exclude_lesson_id=lesson.pk, exclude_parallel_session_id=lesson.parallel_session_id,
         teacher_name=str(teacher) if teacher else "", group_name=lesson.group.name,
         room_name=lesson.room.name if lesson.room_id else "",
     )
@@ -260,6 +269,11 @@ def period_conflicts(start: dt.date, end: dt.date) -> tuple[list[dict], dict[int
     """Every clash among the live lessons of [start, end] — across the whole
     academy, never just the filtered lessons on screen (a room filter must
     not hide that the trainer is elsewhere at the same time).
+
+    The lessons of one parallel session (several groups, one trainer, one
+    room — services.parallel_sessions) occupy their trainer and room once:
+    for those two kinds they count as a single item and never clash with
+    each other.
 
     Returns (the clash list, {lesson id: the clashes it is part of})."""
     buckets: dict[tuple, list[_Slot]] = defaultdict(list)
@@ -273,7 +287,25 @@ def period_conflicts(start: dt.date, end: dt.date) -> tuple[list[dict], dict[int
     conflicts: list[dict] = []
     by_lesson: dict[int, list[dict]] = defaultdict(list)
     for (kind, _key, date), items in buckets.items():
+        members: dict[int, list[_Slot]] = {}
+        if kind in ("teacher", "room"):
+            # One representative per parallel session (shared trainer/room).
+            representative: dict[int, _Slot] = {}
+            singles: list[_Slot] = []
+            for slot in items:
+                if slot.parallel_session_id is None:
+                    singles.append(slot)
+                    members[slot.id] = [slot]
+                elif slot.parallel_session_id in representative:
+                    members[representative[slot.parallel_session_id].id].append(slot)
+                else:
+                    representative[slot.parallel_session_id] = slot
+                    members[slot.id] = [slot]
+            items = singles + list(representative.values())
+        else:
+            members = {slot.id: [slot] for slot in items}
         for component in overlapping_groups(items):
+            expanded = [m for rep in component for m in members[rep.id]]
             first = component[0]
             name = {"teacher": first.teacher_name, "room": first.room_name, "group": first.group_name}[kind]
             entry = {
@@ -283,22 +315,32 @@ def period_conflicts(start: dt.date, end: dt.date) -> tuple[list[dict], dict[int
                 "date": date,
                 "message": (
                     f"{CONFLICT_LABELS[kind]} «{name}»: {len(component)} занятия пересекаются по времени "
-                    f"({', '.join(f'{s.group_name} {s.start_time:%H:%M}–{s.end_time:%H:%M}' for s in component)})."
+                    f"({', '.join(_component_label(members[s.id]) for s in component)})."
                 ),
-                "lessons": [_slot_ref(s) for s in component],
+                "lessons": [_slot_ref(s) for s in expanded],
             }
             conflicts.append(entry)
-            for slot in component:
-                by_lesson[slot.id].append({
-                    "kind": kind,
-                    "kind_label": CONFLICT_LABELS[kind],
-                    "message": entry["message"],
-                    # Only the lessons that overlap this one directly (a
-                    # chain A–B–C is one clash, but A doesn't touch C).
-                    "with": [o.id for o in component if o.id != slot.id and time_ranges_overlap(slot, o)],
-                })
+            for rep in component:
+                overlapping = [o for o in component if o.id != rep.id and time_ranges_overlap(rep, o)]
+                for slot in members[rep.id]:
+                    by_lesson[slot.id].append({
+                        "kind": kind,
+                        "kind_label": CONFLICT_LABELS[kind],
+                        "message": entry["message"],
+                        # Only the lessons that overlap this one directly (a
+                        # chain A–B–C is one clash, but A doesn't touch C).
+                        "with": [m.id for o in overlapping for m in members[o.id]],
+                    })
     conflicts.sort(key=lambda c: (c["date"], c["lessons"][0]["start"], c["kind"], c["name"]))
     return conflicts, by_lesson
+
+
+def _component_label(slots: list[_Slot]) -> str:
+    first = slots[0]
+    when = f"{first.start_time:%H:%M}–{first.end_time:%H:%M}"
+    if len(slots) > 1:
+        return f"параллельное занятие ({', '.join(s.group_name for s in slots)}) {when}"
+    return f"{first.group_name} {when}"
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +460,18 @@ def lesson_row(lesson: Lesson, students_count: int | None, conflicts: list[dict]
         "status_display": lesson.get_status_display(),
         "students_count": students_count,
         "schedule_overridden": lesson.schedule_overridden,
+        # A shared session of several groups: the calendar marks it and
+        # links to the session (services.parallel_sessions).
+        "parallel_session": parallel_ref(lesson),
         "conflicts": conflicts,
     }
+
+
+def parallel_ref(lesson: Lesson) -> dict | None:
+    if not lesson.parallel_session_id:
+        return None
+    groups = getattr(lesson, "_parallel_groups", None)
+    return {"id": lesson.parallel_session_id, "groups_count": groups}
 
 
 def teacher_ref(teacher: Teacher) -> dict:
@@ -473,14 +525,30 @@ def board(start: dt.date, end: dt.date, filters: ScheduleFilters, *, can_edit: b
     conflicts, by_lesson = period_conflicts(start, end)
     shown = {lesson.pk for lesson in lessons}
     conflicts = [c for c in conflicts if any(item["id"] in shown for item in c["lessons"])]
+    session_groups = defaultdict(int)
+    session_ids = {l.parallel_session_id for l in lessons if l.parallel_session_id}
+    if session_ids:
+        for session_id in (Lesson.objects.filter(parallel_session_id__in=session_ids)
+                           .exclude(status=Lesson.Status.CANCELLED).values_list("parallel_session_id", flat=True)):
+            session_groups[session_id] += 1
+    for lesson in lessons:
+        if lesson.parallel_session_id:
+            lesson._parallel_groups = session_groups.get(lesson.parallel_session_id, 0)
     rows = [lesson_row(l, counts.get(l.group_id, 0), by_lesson.get(l.pk, [])) for l in lessons]
 
+    # The legend counts a trainer's conducted lessons: a parallel session is
+    # ONE lesson of its trainer, however many groups take part.
     legend: dict[int, dict] = {}
+    counted_sessions: set[int] = set()
     for lesson in lessons:
         teacher = lesson.effective_teacher
         if teacher is not None and teacher.pk not in legend:
             legend[teacher.pk] = {**teacher_ref(teacher), "lessons_count": 0}
         if teacher is not None and lesson.status != Lesson.Status.CANCELLED:
+            if lesson.parallel_session_id:
+                if lesson.parallel_session_id in counted_sessions:
+                    continue
+                counted_sessions.add(lesson.parallel_session_id)
             legend[teacher.pk]["lessons_count"] += 1
 
     live = [row for row in rows if row["status"] != Lesson.Status.CANCELLED]
@@ -501,6 +569,7 @@ def board(start: dt.date, end: dt.date, filters: ScheduleFilters, *, can_edit: b
             "lessons": len(live),
             "by_status": dict(by_status),
             "conflicts": len(conflicts),
+            "parallel_sessions": len({row["parallel_session"]["id"] for row in live if row["parallel_session"]}),
             "minutes": sum(row["duration_minutes"] for row in live),
             "free_rooms": _free_rooms_stat(start, end, filters, now),
         },

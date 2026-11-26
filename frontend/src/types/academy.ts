@@ -263,6 +263,8 @@ export interface Lesson {
   attendance_summary: LessonAttendanceSummary
   homework_summary: LessonHomeworkSummary | null
   attendance_editable: boolean
+  /** Id of the parallel session (several groups, one trainer) this lesson is part of. */
+  parallel_session?: number | null
   created_at: string
   updated_at: string
 }

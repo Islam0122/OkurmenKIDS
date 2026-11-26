@@ -236,7 +236,10 @@ def set_subject_start_date(group: Group, subject: Subject, start_date: dt.date, 
             except Lesson.DoesNotExist:
                 return False
 
-        fixed = [lesson for lesson in lessons if is_history(lesson) or lesson.rescheduled_from_id or has_makeup(lesson)]
+        # A parallel session's lesson (services.parallel_sessions) keeps the
+        # session's date/time: it is never re-planned on its own.
+        fixed = [lesson for lesson in lessons if is_history(lesson) or lesson.rescheduled_from_id or has_makeup(lesson)
+                 or lesson.parallel_session_id]
         blocking = [lesson for lesson in fixed if lesson.date < start_date]
         if blocking:
             listed = ", ".join(_fmt(lesson) for lesson in blocking[:_MAX_LISTED])

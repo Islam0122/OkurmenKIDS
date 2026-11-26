@@ -52,8 +52,13 @@ def compute_monthly_stats(teacher: Teacher, year: int, month: int) -> dict:
     start, end = month_bounds(year, month)
 
     lessons_qs = Lesson.objects.for_teacher(teacher).filter(date__gte=start, date__lte=end)
-    lessons_total = lessons_qs.count()
-    lessons_completed = lessons_qs.filter(status=Lesson.Status.COMPLETED).count()
+    # The trainer's own workload: a parallel session given to several groups
+    # at once is ONE lesson (services.parallel_sessions.teaching_occasions);
+    # the per-group table below still shows each group's own lesson.
+    from .parallel_sessions import teaching_occasions
+
+    lessons_total = teaching_occasions(lessons_qs)
+    lessons_completed = teaching_occasions(lessons_qs.filter(status=Lesson.Status.COMPLETED))
 
     attendance_qs = Attendance.objects.filter(lesson__in=lessons_qs)
     attendance_agg = attendance_qs.aggregate(

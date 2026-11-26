@@ -136,6 +136,13 @@ def reschedule_cancelled_lesson(lesson: Lesson) -> RescheduleResult:
         existing = Lesson.objects.filter(rescheduled_from=lesson).first()
         if existing is not None:
             return RescheduleResult(makeup=existing)
+        if lesson.parallel_session_id:
+            # An extra lesson of the program (services.parallel_sessions):
+            # it has no topic in the program's sequence to move forward.
+            return RescheduleResult(
+                makeup=None,
+                warning="Занятие было частью параллельного занятия — тема программы не переносится.",
+            )
         if lesson.group_teacher_id is None:
             # A lesson whose program was deleted (Lesson.group_teacher is
             # SET_NULL) has no schedule to move its topic into. Reported like
@@ -153,6 +160,8 @@ def reschedule_cancelled_lesson(lesson: Lesson) -> RescheduleResult:
         chain = list(
             Lesson.objects.select_for_update()
             .filter(group_teacher_id=lesson.group_teacher_id, status=Lesson.Status.SCHEDULED, started_at__isnull=True)
+            # Parallel sessions' lessons keep the session's shared date/time.
+            .filter(parallel_session__isnull=True)
             .filter(Q(date__gt=lesson.date) | Q(date=lesson.date, start_time__gt=lesson.start_time))
             .order_by("date", "start_time", "pk")
         )
@@ -219,6 +228,14 @@ def cancel_and_reschedule(lesson: Lesson, user, reason: str = "", reschedule: bo
         # generation (group row first), so they can never deadlock.
         Group.objects.select_for_update().get(pk=lesson.group_id)
         lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+        if lesson.parallel_session_id and lesson.status != Lesson.Status.CANCELLED:
+            # A group's lesson of a parallel session is cancelled with the
+            # session, or by removing the group from it — never on its own
+            # (services.parallel_sessions keeps the participation history).
+            raise ValidationError({"status": [
+                f"Занятие — часть параллельного занятия №{lesson.parallel_session_id}: отмените параллельное "
+                "занятие или исключите из него группу."
+            ]})
         lesson = lesson_lifecycle.cancel_lesson(lesson, user, reason=reason)
         result = reschedule_cancelled_lesson(lesson) if reschedule else None
     return lesson, result

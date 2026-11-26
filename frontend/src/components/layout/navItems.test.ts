@@ -9,6 +9,7 @@ describe('navigation by role', () => {
     expect(labels('team_lead')).toEqual([
       'Dashboard',
       'Расписание',
+      'Параллельные занятия',
       'Тренеры',
       'Группы',
       'Студенты',
@@ -43,12 +44,15 @@ describe('navigation by role', () => {
     expect(canOpen('team_lead', '/app/trainers/5')).toBe(true)
     expect(canOpen('team_lead', '/app/worklog/reports/3')).toBe(true)
     expect(canOpen('teacher', '/app/worklog')).toBe(false)
+    expect(canOpen('team_lead', '/app/parallel-lessons/7')).toBe(true)
+    expect(canOpen('teacher', '/app/parallel-lessons')).toBe(true)
   })
 
   it('gives a Trainer the teaching sections and monitoring', () => {
     expect(labels('teacher')).toEqual([
       'Сегодня',
       'Расписание',
+      'Параллельные занятия',
       'Мои группы',
       'Экзамены',
       'Мониторинг',

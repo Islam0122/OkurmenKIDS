@@ -1,10 +1,11 @@
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { AlertTriangle, CalendarClock, ExternalLink } from 'lucide-react'
+import { AlertTriangle, CalendarClock, ExternalLink, Layers } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Modal } from '@/components/ui/Modal'
 import type { BoardLesson } from '@/types/schedule'
+import { useParallelBase } from '@/features/parallelLessons/shared'
 
 import { TrainerDot } from './LessonCard'
 import { formatDuration } from './timeGrid'
@@ -16,6 +17,7 @@ export function LessonPreviewModal({ lesson, detailsHref, onClose }: { lesson: B
   return (
     <Modal isOpen onClose={onClose} title={`${lesson.group.name} · ${lesson.start}–${lesson.end}`} icon={<CalendarClock className="size-5 text-brand-600" aria-hidden />}>
       <LessonFacts lesson={lesson} />
+      <ParallelNote session={lesson.parallel_session} onClose={onClose} />
       <ConflictNotes lesson={lesson} />
       {detailsHref ? (
         <div className="mt-4 flex justify-end">
@@ -40,6 +42,20 @@ export function LessonFacts({ lesson }: { lesson: BoardLesson }) {
       <div><dt className="field-label">Студентов</dt><dd className="font-medium text-ink">{lesson.students_count ?? 0}</dd></div>
       <div><dt className="field-label">Тема</dt><dd className="font-medium text-ink">{[lessonLabel(lesson.numbering), lesson.topic || '—'].filter(Boolean).join(' · ')}</dd></div>
     </dl>
+  )
+}
+
+/** The lesson is one group's part of a parallel session: say so and link to
+ * the session, where date/time/room and the other groups are managed. */
+export function ParallelNote({ session, onClose }: { session?: BoardLesson['parallel_session']; onClose?: () => void }) {
+  const base = useParallelBase()
+  if (!session) return null
+  return (
+    <div className="mt-3 flex flex-col gap-1 rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm sm:flex-row sm:items-center">
+      <span className="flex items-center gap-1.5 font-medium text-ink"><Layers className="size-4 text-brand-600" aria-hidden />
+        Параллельное занятие{session.groups_count ? ` · ${session.groups_count} групп` : ''}</span>
+      <Link to={`${base}/${session.id}`} onClick={onClose} className="text-brand-700 hover:underline sm:ml-auto">Открыть общее занятие</Link>
+    </div>
   )
 }
 

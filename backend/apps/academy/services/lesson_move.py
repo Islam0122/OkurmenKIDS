@@ -32,6 +32,11 @@ def find_lesson_conflicts(lesson: Lesson, *, date: dt.date, start_time: dt.time,
 def move_lesson(lesson: Lesson, *, date: dt.date, start_time: dt.time, end_time: dt.time, user=None) -> Lesson:
     if lesson.status != Lesson.Status.SCHEDULED:
         raise ValidationError("Перенести можно только запланированное занятие.")
+    if lesson.parallel_session_id:
+        raise ValidationError(
+            f"Занятие — часть параллельного занятия №{lesson.parallel_session_id}: переносите его целиком "
+            "(раздел «Параллельные занятия»)."
+        )
     if end_time <= start_time:
         raise ValidationError({"end_time": "Время окончания должно быть позже времени начала."})
     check_lesson_date(lesson, date)

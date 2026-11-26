@@ -822,6 +822,7 @@ class LessonSerializer(_RequestAwareSerializer):
             "attendance_editable",
             "rescheduled_from",
             "rescheduled_to",
+            "parallel_session",
             "created_at",
             "updated_at",
         ]
@@ -836,7 +837,7 @@ class LessonSerializer(_RequestAwareSerializer):
             "id", "group", "group_teacher", "plan", "individual_plan", "lesson_number", "teacher",
             "status", "cancellation_reason", "homework_not_required", "manually_edited",
             "schedule_overridden", "started_at", "completed_at", "completed_by", "rescheduled_from",
-            "created_at", "updated_at",
+            "parallel_session", "created_at", "updated_at",
         ]
 
     def get_numbering(self, obj: Lesson) -> dict | None:

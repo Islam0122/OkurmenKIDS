@@ -36,6 +36,8 @@ export interface BoardLesson {
   status_display: string
   students_count: number | null
   schedule_overridden: boolean
+  /** Part of a parallel session (several groups, one trainer, one room). */
+  parallel_session?: { id: number; groups_count: number | null } | null
   conflicts: LessonConflict[]
 }
 
@@ -83,6 +85,7 @@ export interface ScheduleBoardData {
     lessons: number
     by_status: Partial<Record<LessonStatus, number>>
     conflicts: number
+    parallel_sessions?: number
     minutes: number
     free_rooms: FreeRoomsStat | null
   }
